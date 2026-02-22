@@ -1,0 +1,20 @@
+# Markdown files
+*.md
+
+# Build outputs
+dist/
+node_modules/
+.turbo/
+
+# Backlog task files
+backlog/
+
+# Tools (third-party source code)
+tools/
+
+# Lock files
+bun.lockb
+package-lock.json
+
+# Generated files
+*.d.ts
