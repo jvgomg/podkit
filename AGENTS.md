@@ -1,34 +1,14 @@
 # AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Instructions for AI agents (Claude Code, Cursor, etc.) working in this repository.
 
-## Project Overview
+## Project Summary
 
-podkit is a TypeScript toolkit for syncing music collections to iPod devices. It provides a CLI tool and library that synchronizes music from collection sources (Strawberry, beets, local files) to iPod devices, handling transcoding, metadata, and artwork.
+**podkit** is a TypeScript toolkit for syncing music collections to iPod devices. It provides a CLI and library that handles collection diffing, transcoding (FLAC→AAC), metadata preservation, and artwork transfer.
 
 **Status:** Pre-development (planning/documentation phase)
 
-## Commands
-
-```bash
-# Development (uses Bun)
-bun install          # Install dependencies
-bun run dev          # Run in development mode
-bun test             # Run tests
-bun test path/to/file.test.ts  # Run single test file
-
-# Build for production (Node.js compatible)
-bun run build        # Build all packages
-
-# CLI usage (once implemented)
-podkit sync --source strawberry --dry-run
-podkit status
-```
-
-## Architecture
-
-### Monorepo Structure
-
+**Monorepo structure:**
 ```
 packages/
 ├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
@@ -36,70 +16,136 @@ packages/
 └── podkit-cli/      # Command-line interface
 ```
 
-### Key Technical Decisions
+## Quick Reference
 
-- **Runtime:** Bun for development, Node.js 20+ for distribution (ADR-001)
-- **libgpod bindings:** Hybrid approach - ffi-napi prototype, then N-API for production (ADR-002)
-- **Transcoding:** FFmpeg with AAC encoder
-- **Collection sources:** Adapter pattern (Strawberry SQLite, beets, directory scanning)
+### Commands
 
-### Core Data Flow
+```bash
+# Development (uses Bun)
+bun install                      # Install dependencies
+bun run dev                      # Run in development mode
+bun test                         # Run all tests
+bun test packages/podkit-core    # Run tests for specific package
 
-1. **Collection Adapter** reads tracks from source (Strawberry/beets/directory)
-2. **Differ** compares collection tracks to iPod tracks by (artist, title, album)
-3. **Planner** creates operations: transcode, copy, remove, update-metadata
-4. **Executor** runs operations: transcode → extract artwork → add to iPod DB → copy file
-5. **libgpod** writes changes to iPod database
+# Build
+bun run build                    # Build all packages for Node.js
 
-### Key Interfaces
+# CLI (once implemented)
+podkit sync --source strawberry --dry-run
+podkit status
+```
 
-- `CollectionAdapter` - Uniform interface for reading from music sources
-- `IPodDatabase` - Wrapper around libgpod operations
-- `Transcoder` - FFmpeg-based audio conversion
-- `SyncEngine` - Orchestrates diff → plan → execute workflow
+### System Dependencies
 
-## System Dependencies
+| Dependency | Debian/Ubuntu | macOS (Homebrew) |
+|------------|---------------|------------------|
+| libgpod | `libgpod-dev` | `libgpod` |
+| FFmpeg | `ffmpeg` | `ffmpeg` |
+| GLib | `libglib2.0-dev` | (included with libgpod) |
 
-| Dependency | Debian | macOS (Homebrew) |
-|------------|--------|------------------|
-| libgpod    | `libgpod-dev` | `libgpod` |
-| FFmpeg     | `ffmpeg` | `ffmpeg` |
-| GLib       | `libglib2.0-dev` | (with libgpod) |
+## Documentation Map
 
-## Documentation
+Read these documents based on what you're working on:
 
-- `docs/PRD.md` - Product requirements and user stories
-- `docs/ARCHITECTURE.md` - Component design and interfaces
-- `docs/LIBGPOD.md` - libgpod API research
-- `docs/TRANSCODING.md` - FFmpeg AAC encoding configuration
-- `docs/adr/` - Architecture Decision Records
+| Document | When to Read |
+|----------|--------------|
+| [docs/README.md](docs/README.md) | First time in repo, need orientation |
+| [docs/PRD.md](docs/PRD.md) | Understanding requirements, user stories, scope |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Understanding component design, interfaces, data flow |
+| [docs/adr/README.md](docs/adr/README.md) | Understanding or making architectural decisions |
+| [docs/LIBGPOD.md](docs/LIBGPOD.md) | Working on iPod database integration |
+| [docs/TRANSCODING.md](docs/TRANSCODING.md) | Working on audio conversion |
+| [docs/COLLECTION-SOURCES.md](docs/COLLECTION-SOURCES.md) | Working on Strawberry/beets adapters |
+| [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
 
+## Task Management (Backlog.md)
 
-<!-- BACKLOG.MD MCP GUIDELINES START -->
+This project uses Backlog.md for task management via MCP tools. **Never edit backlog files directly** — always use the MCP tools.
 
-<CRITICAL_INSTRUCTION>
+### When to Create Tasks
 
-## BACKLOG WORKFLOW INSTRUCTIONS
+**Create a task** when work requires planning or decisions (investigating bugs, designing features, choosing approaches).
 
-This project uses Backlog.md MCP for all task and project management activities.
+**Skip tasks** for trivial/mechanical changes (typos, version bumps, obvious one-line fixes).
 
-**CRITICAL GUIDANCE**
+### Workflow
 
-- If your client supports MCP resources, read `backlog://workflow/overview` to understand when and how to use Backlog for this project.
-- If your client only supports tools or the above request fails, call `backlog.get_workflow_overview()` tool to load the tool-oriented overview (it lists the matching guide tools).
+1. **Search first:** Use `task_search` or `task_list` to find existing related work
+2. **View details:** Use `task_view` to understand existing task scope and progress
+3. **Create if needed:** Use `task_create` for new work (consult `get_task_creation_guide` for structure)
+4. **Update progress:** Use `task_edit` to update status, add notes, check acceptance criteria
+5. **Mark done:** Set status to "Done" when complete (do not use `task_complete` — that's for batch cleanup)
 
-- **First time working here?** Read the overview resource IMMEDIATELY to learn the workflow
-- **Already familiar?** You should have the overview cached ("## Backlog.md Overview (MCP)")
-- **When to read it**: BEFORE creating tasks, or when you're unsure whether to track work
+### MCP Tools Reference
 
-These guides cover:
-- Decision framework for when to create tasks
-- Search-first workflow to avoid duplicates
-- Links to detailed guides for task creation, execution, and finalization
-- MCP tools reference
+```
+Guides:     get_workflow_overview, get_task_creation_guide,
+            get_task_execution_guide, get_task_finalization_guide
+Tasks:      task_list, task_search, task_view, task_create, task_edit
+Documents:  document_list, document_view, document_create, document_update
+```
 
-You MUST read the overview resource to understand the complete workflow. The information is NOT summarized here.
+## Architecture Decision Records (ADRs)
 
-</CRITICAL_INSTRUCTION>
+ADRs document significant technical decisions. See [docs/adr/README.md](docs/adr/README.md) for the full workflow.
 
-<!-- BACKLOG.MD MCP GUIDELINES END -->
+### When to Create ADRs
+
+- **Research tasks:** Create an ADR to capture findings and recommendations
+- **Architectural changes:** Document the decision and alternatives considered
+- **Technology choices:** Record why a library/pattern/approach was chosen
+
+**Guidance:**
+- If clearly significant (new package, binding strategy, data model) → create ADR without asking
+- If unsure and working interactively → ask the user
+- If unsure and working autonomously → create the ADR (easier to delete than reconstruct reasoning)
+
+### Referencing ADRs
+
+- Link ADRs in backlog tasks that implement them
+- Update ADR status to "Accepted" when implementation begins
+- Reference ADRs in code comments for non-obvious decisions
+
+## Documentation Maintenance
+
+**Continuously improve documentation as you work:**
+
+1. **Fix errors:** If docs are wrong or outdated, fix them
+2. **Fill gaps:** If you needed information that wasn't documented, add it
+3. **Clarify ambiguity:** If you had to guess or ask for clarification, improve the docs
+4. **Update status:** Keep ADR statuses, feature flags, and roadmaps current
+
+**When creating new docs:**
+- Place in `docs/` with a clear, descriptive filename
+- Add to the Documentation Map above
+- Add to `docs/README.md` index
+- Keep docs focused and modular (one topic per file)
+
+## Key Technical Decisions
+
+These decisions are documented in ADRs — read the full ADR for context:
+
+| Decision | Summary | ADR |
+|----------|---------|-----|
+| Runtime | Bun for dev, Node.js for distribution | [ADR-001](docs/adr/ADR-001-runtime.md) |
+| libgpod bindings | ffi-napi prototype, then N-API | [ADR-002](docs/adr/ADR-002-libgpod-binding.md) |
+| Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/adr/ADR-003-transcoding.md) |
+| Collection sources | Adapter pattern | [ADR-004](docs/adr/ADR-004-collection-sources.md) |
+
+## Code Conventions
+
+*(To be established when implementation begins — document conventions here as they emerge)*
+
+- TypeScript strict mode
+- Bun test runner
+- ESM modules
+
+## Entry Points
+
+When implementation exists, key files to understand:
+
+| Purpose | Path |
+|---------|------|
+| CLI entry | `packages/podkit-cli/src/main.ts` |
+| Core library | `packages/podkit-core/src/index.ts` |
+| libgpod bindings | `packages/libgpod-node/src/index.ts` |

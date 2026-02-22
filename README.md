@@ -48,6 +48,8 @@ podkit/
 
 ### Architecture Decision Records
 
+See [docs/adr/README.md](docs/adr/README.md) for the full ADR index and workflow.
+
 | ADR | Title | Status |
 |-----|-------|--------|
 | [ADR-001](docs/adr/ADR-001-runtime.md) | Runtime Choice (Bun/Node) | Proposed |
@@ -125,4 +127,4 @@ MIT
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+Development guidelines will be documented as the project matures. For now, see [docs/README.md](docs/README.md) for documentation structure and [AGENTS.md](AGENTS.md) for working in this codebase.
