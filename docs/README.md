@@ -19,6 +19,7 @@ If you're new to the project, read in this order:
 |----------|---------|
 | [PRD.md](PRD.md) | Product requirements, user stories, functional requirements, milestones |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Component design, interfaces, data flow, error handling |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Development environment setup (macOS, Linux, Windows) |
 
 ### Research & Reference
 

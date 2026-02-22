@@ -37,11 +37,13 @@ podkit status
 
 ### System Dependencies
 
-| Dependency | Debian/Ubuntu | macOS (Homebrew) |
-|------------|---------------|------------------|
-| libgpod | `libgpod-dev` | `libgpod` |
-| FFmpeg | `ffmpeg` | `ffmpeg` |
-| GLib | `libglib2.0-dev` | (included with libgpod) |
+| Dependency | Debian/Ubuntu | macOS |
+|------------|---------------|-------|
+| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) |
+| FFmpeg | `ffmpeg` | `brew install ffmpeg` |
+| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) |
+
+See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full setup instructions.
 
 ## Documentation Map
 
@@ -50,6 +52,7 @@ Read these documents based on what you're working on:
 | Document | When to Read |
 |----------|--------------|
 | [docs/README.md](docs/README.md) | First time in repo, need orientation |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setting up development environment |
 | [docs/PRD.md](docs/PRD.md) | Understanding requirements, user stories, scope |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Understanding component design, interfaces, data flow |
 | [docs/adr/README.md](docs/adr/README.md) | Understanding or making architectural decisions |
