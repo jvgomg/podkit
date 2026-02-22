@@ -4,6 +4,30 @@
 
 podkit uses FFmpeg for audio transcoding. This document covers AAC encoding configuration, quality settings, and platform-specific considerations.
 
+## Quick Reference
+
+### Recommended Presets
+
+| Preset | Mode | Target | Description |
+|--------|------|--------|-------------|
+| `high` | VBR | ~256 kbps | Transparent quality, recommended for most users |
+| `medium` | VBR | ~192 kbps | Excellent quality, good balance |
+| `low` | VBR | ~128 kbps | Good quality, space-efficient |
+| `cbr-256` | CBR | 256 kbps | Constant bitrate, predictable file sizes |
+| `cbr-192` | CBR | 192 kbps | Constant bitrate |
+| `cbr-128` | CBR | 128 kbps | Constant bitrate |
+
+**Default:** `high` (VBR ~256 kbps)
+
+### VBR vs CBR
+
+| Mode | Pros | Cons |
+|------|------|------|
+| **VBR** | Better quality-per-MB, adapts to content complexity | Less predictable file sizes |
+| **CBR** | Predictable file sizes, simpler | May waste bits on simple passages |
+
+**Note:** VBR AAC works correctly for seeking on iPods (unlike VBR MP3). podkit defaults to VBR for better quality efficiency.
+
 ## Why FFmpeg?
 
 | Backend | Pros | Cons |
@@ -25,9 +49,46 @@ FFmpeg can use several AAC encoders:
 
 | Encoder | Quality | License | Availability |
 |---------|---------|---------|--------------|
+| **aac_at** | Excellent | Proprietary | macOS only (AudioToolbox) |
+| **libfdk_aac** | Excellent | Non-free | Requires custom build |
 | **aac** (native) | Very Good | LGPL | Always available |
-| **libfdk_aac** | Excellent | Non-free | Requires compilation flag |
-| **aac_at** | Excellent | Proprietary | macOS only |
+
+### Platform Availability
+
+| Platform | Encoders Available | Best Available |
+|----------|-------------------|----------------|
+| macOS (Homebrew) | `aac`, `aac_at` | `aac_at` |
+| Linux (apt/dnf) | `aac` only | `aac` |
+| Linux (custom build) | `aac`, `libfdk_aac` | `libfdk_aac` |
+
+### Encoder Selection Strategy
+
+podkit automatically selects the best available encoder:
+
+```typescript
+function selectEncoder(available: string[]): string {
+  // Prefer in order of quality
+  if (available.includes('aac_at')) return 'aac_at';       // macOS
+  if (available.includes('libfdk_aac')) return 'libfdk_aac'; // Custom build
+  if (available.includes('aac')) return 'aac';             // Always available
+  throw new Error('No AAC encoder available');
+}
+```
+
+### Building FFmpeg with libfdk_aac (Linux)
+
+For the best quality on Linux, you can build FFmpeg with the Fraunhofer FDK AAC encoder. See [`tools/ffmpeg-linux/`](../tools/ffmpeg-linux/) for build scripts:
+
+```bash
+cd tools/ffmpeg-linux
+sudo ./install-deps.sh
+./build-ffmpeg.sh
+
+# Use the custom build
+export PODKIT_FFMPEG_PATH="$(pwd)/ffmpeg-build/bin/ffmpeg"
+```
+
+**Note:** The native FFmpeg AAC encoder is very good and sufficient for most uses. Custom builds are optional.
 
 ### Encoder Detection
 
@@ -43,75 +104,94 @@ ffmpeg -encoders 2>/dev/null | grep aac
 
 ### Quality Ranking
 
-For transparent audio quality:
-1. **libfdk_aac** - Fraunhofer reference implementation
-2. **aac_at** - Apple's encoder (macOS)
+Per [FFmpeg Wiki](https://trac.ffmpeg.org/wiki/Encode/AAC), for transparent audio quality:
+
+1. **aac_at** - Apple's encoder (macOS only) - equal to or better than libfdk_aac
+2. **libfdk_aac** - Fraunhofer reference implementation (requires custom build)
 3. **aac** (native) - FFmpeg's built-in encoder
 
-However, the native AAC encoder is **excellent** for most use cases and doesn't require special builds.
+The native AAC encoder is **very good** for most use cases and doesn't require special builds. macOS users get the best encoder (`aac_at`) automatically via Homebrew.
 
 ## Quality Presets
 
 ### Preset Definitions
 
 ```typescript
+type BitrateMode = 'vbr' | 'cbr';
+
 interface TranscodePreset {
   name: string;
-  encoder: 'aac' | 'libfdk_aac' | 'aac_at';
-  bitrate?: number;      // CBR mode (kbps)
-  vbr?: number;          // VBR mode (1-5, encoder specific)
-  sampleRate: number;
-  channels: number;
+  mode: BitrateMode;
+  // For VBR: quality level (0-5 scale, higher = better)
+  // For CBR: target bitrate in kbps
+  value: number;
+  description: string;
 }
 
-const PRESETS = {
-  high: {
-    name: 'high',
-    encoder: 'aac',
-    bitrate: 256,
-    sampleRate: 44100,
-    channels: 2,
-  },
-  medium: {
-    name: 'medium',
-    encoder: 'aac',
-    bitrate: 192,
-    sampleRate: 44100,
-    channels: 2,
-  },
-  low: {
-    name: 'low',
-    encoder: 'aac',
-    bitrate: 128,
-    sampleRate: 44100,
-    channels: 2,
-  },
+const PRESETS: Record<string, TranscodePreset> = {
+  // VBR presets (recommended - better quality per MB)
+  'high':   { name: 'high',   mode: 'vbr', value: 5, description: '~256 kbps, transparent' },
+  'medium': { name: 'medium', mode: 'vbr', value: 4, description: '~192 kbps, excellent' },
+  'low':    { name: 'low',    mode: 'vbr', value: 2, description: '~128 kbps, good' },
+
+  // CBR presets (predictable file sizes)
+  'cbr-256': { name: 'cbr-256', mode: 'cbr', value: 256, description: '256 kbps constant' },
+  'cbr-192': { name: 'cbr-192', mode: 'cbr', value: 192, description: '192 kbps constant' },
+  'cbr-128': { name: 'cbr-128', mode: 'cbr', value: 128, description: '128 kbps constant' },
 };
 ```
 
-### Bitrate Guidelines
+### VBR Quality Mapping
 
-| Preset | Bitrate | Quality | File Size (4 min song) |
-|--------|---------|---------|------------------------|
-| **High** | 256 kbps | Transparent | ~7.5 MB |
-| **Medium** | 192 kbps | Excellent | ~5.6 MB |
-| **Low** | 128 kbps | Good | ~3.8 MB |
+VBR quality levels map differently per encoder:
 
-**Note:** For critical listening or archival, consider keeping lossless files and only transcoding to the device.
+| Preset | Native AAC (`-q:a`) | libfdk_aac (`-vbr`) | Approx Bitrate |
+|--------|---------------------|---------------------|----------------|
+| high | 5 | 5 | ~256 kbps |
+| medium | 4 | 4 | ~192 kbps |
+| low | 2 | 3 | ~128 kbps |
+
+### File Size Guidelines
+
+| Preset | Mode | Approx Bitrate | File Size (4 min song) |
+|--------|------|----------------|------------------------|
+| **high** | VBR | ~256 kbps | ~7.5 MB |
+| **medium** | VBR | ~192 kbps | ~5.6 MB |
+| **low** | VBR | ~128 kbps | ~3.8 MB |
+| **cbr-256** | CBR | 256 kbps | 7.5 MB |
+| **cbr-192** | CBR | 192 kbps | 5.6 MB |
+| **cbr-128** | CBR | 128 kbps | 3.8 MB |
+
+**Note:** VBR file sizes vary based on content complexity. CBR sizes are exact.
+
+**Note:** For critical listening or archival, keep lossless source files and only transcode to the device.
 
 ## FFmpeg Commands
 
-### Basic Transcoding
+### VBR Encoding (Recommended)
 
 ```bash
-# High quality (256 kbps CBR)
-ffmpeg -i input.flac -c:a aac -b:a 256k -ar 44100 output.m4a
+# High quality VBR (native AAC)
+ffmpeg -i input.flac -c:a aac -q:a 5 -ar 44100 -map_metadata 0 output.m4a
 
-# With metadata preservation
+# Medium quality VBR
+ffmpeg -i input.flac -c:a aac -q:a 4 -ar 44100 -map_metadata 0 output.m4a
+
+# Low quality VBR
+ffmpeg -i input.flac -c:a aac -q:a 2 -ar 44100 -map_metadata 0 output.m4a
+```
+
+### CBR Encoding
+
+```bash
+# 256 kbps CBR
 ffmpeg -i input.flac -c:a aac -b:a 256k -ar 44100 -map_metadata 0 output.m4a
 
-# VBR mode (quality-based)
-ffmpeg -i input.flac -c:a aac -q:a 2 -ar 44100 output.m4a
+# 192 kbps CBR
+ffmpeg -i input.flac -c:a aac -b:a 192k -ar 44100 -map_metadata 0 output.m4a
+
+# 128 kbps CBR
+ffmpeg -i input.flac -c:a aac -b:a 128k -ar 44100 -map_metadata 0 output.m4a
 ```
 
 ### VBR Quality Scale
@@ -127,14 +207,26 @@ For FFmpeg's native AAC encoder (`-q:a`):
 | 4 | ~192 kbps | Excellent |
 | 5 | ~256 kbps | Transparent |
 
-### With libfdk_aac (if available)
+### With libfdk_aac (Custom Build)
 
 ```bash
+# VBR mode (recommended)
+ffmpeg -i input.flac -c:a libfdk_aac -vbr 5 -cutoff 18000 output.m4a
+
 # CBR mode
 ffmpeg -i input.flac -c:a libfdk_aac -b:a 256k output.m4a
+```
 
-# VBR mode (1-5, 5 is highest quality)
-ffmpeg -i input.flac -c:a libfdk_aac -vbr 5 output.m4a
+**Note:** libfdk_aac defaults to a 14kHz low-pass filter. Use `-cutoff 18000` to preserve higher frequencies.
+
+### With aac_at (macOS)
+
+```bash
+# VBR mode
+ffmpeg -i input.flac -c:a aac_at -q:a 14 -ar 44100 output.m4a
+
+# CBR mode
+ffmpeg -i input.flac -c:a aac_at -b:a 256k -ar 44100 output.m4a
 ```
 
 ### Metadata Handling
@@ -307,8 +399,8 @@ class Transcoder {
 
 ```typescript
 function selectEncoder(available: string[]): string {
-  // Prefer in order: libfdk_aac > aac_at > aac
-  const priority = ['libfdk_aac', 'aac_at', 'aac'];
+  // Prefer in order: aac_at ≥ libfdk_aac > aac
+  const priority = ['aac_at', 'libfdk_aac', 'aac'];
 
   for (const encoder of priority) {
     if (available.includes(encoder)) {
@@ -326,35 +418,52 @@ function selectEncoder(available: string[]): string {
 function buildCommand(
   input: string,
   output: string,
+  encoder: string,
   preset: TranscodePreset,
   options: TranscodeOptions
 ): string[] {
-  const args = [
-    '-i', input,
-    '-c:a', preset.encoder,
-    '-b:a', `${preset.bitrate}k`,
-    '-ar', String(preset.sampleRate),
-    '-ac', String(preset.channels),
-  ];
+  const args = ['-i', input, '-c:a', encoder];
+
+  // Apply quality settings based on mode
+  if (preset.mode === 'vbr') {
+    args.push(...getVbrArgs(encoder, preset.value));
+  } else {
+    args.push('-b:a', `${preset.value}k`);
+  }
+
+  // Common settings
+  args.push('-ar', '44100', '-ac', '2');
 
   if (options.preserveMetadata) {
     args.push('-map_metadata', '0');
   }
 
   if (options.preserveArtwork) {
-    args.push('-c:v', 'copy');
-    args.push('-disposition:v', 'attached_pic');
+    args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   }
 
-  // Output format
-  args.push('-f', 'ipod');  // M4A container optimized for iPod
-
-  // Overwrite output
-  args.push('-y');
-
-  args.push(output);
+  // Output format (M4A container optimized for iPod)
+  args.push('-f', 'ipod', '-y', output);
 
   return args;
+}
+
+function getVbrArgs(encoder: string, quality: number): string[] {
+  switch (encoder) {
+    case 'libfdk_aac':
+      // libfdk_aac uses -vbr 1-5 scale
+      // Also set cutoff to preserve high frequencies
+      return ['-vbr', String(quality), '-cutoff', '18000'];
+    case 'aac_at':
+      // aac_at uses -q:a 0-14 scale (14 = highest)
+      // Map our 1-5 to aac_at's scale
+      const aacAtQuality = Math.round(quality * 2.8);
+      return ['-q:a', String(aacAtQuality)];
+    case 'aac':
+    default:
+      // Native AAC uses -q:a 0.1-5 scale
+      return ['-q:a', String(quality)];
+  }
 }
 ```
 

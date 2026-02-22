@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted** (2026-02-22)
 
 ## Context
 
@@ -142,12 +142,22 @@ interface TranscoderInfo {
 
 ## Encoder Selection Strategy
 
+Quality ranking (per [FFmpeg Wiki](https://trac.ffmpeg.org/wiki/Encode/AAC)):
+```
+aac_at ≥ libfdk_aac > native aac
+```
+
+Platform availability:
+- **macOS (Homebrew):** `aac`, `aac_at` - no custom build needed
+- **Linux (apt/dnf):** `aac` only - `libfdk_aac` requires custom build
+- **Linux (custom):** `aac`, `libfdk_aac` - see `tools/ffmpeg-linux/`
+
 ```typescript
 function selectEncoder(info: TranscoderInfo): string {
   // Prefer in order of quality
-  if (info.encoders.libfdk_aac) return 'libfdk_aac';
-  if (info.encoders.aac_at) return 'aac_at';  // macOS only
-  if (info.encoders.aac) return 'aac';
+  if (info.encoders.aac_at) return 'aac_at';       // macOS (best)
+  if (info.encoders.libfdk_aac) return 'libfdk_aac'; // Custom build
+  if (info.encoders.aac) return 'aac';             // Always available
 
   throw new Error('No AAC encoder available');
 }
@@ -155,31 +165,42 @@ function selectEncoder(info: TranscoderInfo): string {
 
 ## Quality Presets
 
-| Preset | Encoder Args | Approximate Bitrate |
-|--------|--------------|---------------------|
-| high | `-b:a 256k` | 256 kbps CBR |
-| medium | `-b:a 192k` | 192 kbps CBR |
-| low | `-b:a 128k` | 128 kbps CBR |
-| custom | User-defined | Variable |
+Default mode is **VBR** (better quality-per-MB, works correctly for seeking on iPods).
+
+| Preset | Mode | Target | Description |
+|--------|------|--------|-------------|
+| high | VBR | ~256 kbps | Transparent quality (default) |
+| medium | VBR | ~192 kbps | Excellent quality |
+| low | VBR | ~128 kbps | Good quality, space-efficient |
+| cbr-256 | CBR | 256 kbps | Predictable file size |
+| cbr-192 | CBR | 192 kbps | Predictable file size |
+| cbr-128 | CBR | 128 kbps | Predictable file size |
 
 ## Platform Notes
+
+### macOS (Recommended)
+
+```bash
+# Install via Homebrew - includes aac_at (Apple's encoder)
+brew install ffmpeg
+
+# Verify aac_at is available
+ffmpeg -encoders 2>/dev/null | grep aac_at
+```
+
+macOS users get the best encoder (`aac_at`) automatically. No custom builds needed.
 
 ### Debian/Ubuntu
 
 ```bash
-# Install FFmpeg (includes native AAC)
+# Install FFmpeg (includes native AAC only)
 sudo apt install ffmpeg
 
-# For libfdk_aac (must build from source)
-# Due to licensing, not included in Debian packages
+# Verify installation
+ffmpeg -encoders 2>/dev/null | grep aac
 ```
 
-### macOS
-
-```bash
-# Install via Homebrew (includes aac_at)
-brew install ffmpeg
-```
+The native AAC encoder is very good for most uses. For the best quality, see `tools/ffmpeg-linux/` to build FFmpeg with libfdk_aac.
 
 ### Windows
 
@@ -222,3 +243,4 @@ winget install FFmpeg
 - [FFmpeg AAC Encoding Guide](https://trac.ffmpeg.org/wiki/Encode/AAC)
 - [Hydrogenaudio AAC Encoder Comparison](https://wiki.hydrogenaud.io/index.php?title=AAC_encoders)
 - [fluent-ffmpeg npm package](https://www.npmjs.com/package/fluent-ffmpeg)
+- [tools/ffmpeg-linux/](../../tools/ffmpeg-linux/) - Build scripts for FFmpeg with libfdk_aac
