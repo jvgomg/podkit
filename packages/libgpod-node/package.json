@@ -1,6 +1,7 @@
 {
   "name": "@podkit/libgpod-node",
   "version": "0.0.0",
+  "description": "Native Node.js bindings for libgpod",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -11,18 +12,34 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "build/Release/*.node",
+    "native",
+    "binding.gyp"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build": "bun run build:native && bun run build:ts",
+    "build:native": "node-gyp rebuild",
+    "build:ts": "bun build src/index.ts --outdir dist --target node && bun run build:types",
     "build:types": "tsc --emitDeclarationOnly --outDir dist",
+    "clean": "rm -rf dist build",
+    "install": "node-gyp rebuild || echo 'Native build failed - some features may not work'",
     "test": "bun test",
     "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No unit tests found'",
     "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No integration tests found'",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "rebuild": "node-gyp rebuild"
+  },
+  "dependencies": {
+    "node-addon-api": "^8.3.1"
   },
   "devDependencies": {
-    "@types/bun": "latest"
-  }
+    "@podkit/gpod-testing": "workspace:*",
+    "@types/bun": "latest",
+    "node-gyp": "^11.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "gypfile": true
 }
