@@ -8,6 +8,22 @@ A command-line utility for libgpod operations. This tool enables creating and ma
 - **Development**: Manually create and inspect iPod databases
 - **CI/CD**: Automate iPod database operations in build pipelines
 
+## Quick Start
+
+The easiest way to build and use gpod-tool is via mise:
+
+```bash
+# Build (compiles and copies to ./bin/)
+mise run tools:build
+
+# Trust the mise config (first time only)
+mise trust
+
+# Restart shell or run: eval "$(mise activate bash)"
+# Now gpod-tool is in PATH
+gpod-tool --help
+```
+
 ## Requirements
 
 - libgpod (with development headers)
@@ -17,12 +33,7 @@ A command-line utility for libgpod operations. This tool enables creating and ma
 
 ### macOS Setup
 
-If you built libgpod locally (see `tools/libgpod-macos/`):
-
-```bash
-export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
-export DYLD_LIBRARY_PATH="$HOME/.local/lib:$DYLD_LIBRARY_PATH"
-```
+Build libgpod locally (see `tools/libgpod-macos/`). The mise tasks handle the environment setup automatically.
 
 ### Linux Setup
 
@@ -36,21 +47,25 @@ sudo dnf install libgpod-devel
 
 ## Building
 
+### Via mise (recommended)
+
+```bash
+mise run tools:build   # Build and install to ./bin/
+mise run tools:check   # Build and run tests
+mise run tools:clean   # Clean build artifacts
+```
+
+### Manual build
+
 ```bash
 cd tools/gpod-tool
+
+# On macOS with local libgpod:
+export PKG_CONFIG_PATH="$HOME/.local/lib/pkgconfig:$PKG_CONFIG_PATH"
+
 make
-```
-
-To run basic tests:
-
-```bash
-make check
-```
-
-To install system-wide:
-
-```bash
-sudo make install
+make check      # Run tests
+make install    # Install to /usr/local/bin (optional)
 ```
 
 ## Commands
