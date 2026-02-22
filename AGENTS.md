@@ -11,9 +11,14 @@ Instructions for AI agents (Claude Code, Cursor, etc.) working in this repositor
 **Monorepo structure:**
 ```
 packages/
+├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
 ├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
 └── podkit-cli/      # Command-line interface
+
+tools/
+├── gpod-tool/       # C CLI for iPod database operations
+└── libgpod-macos/   # macOS build scripts for libgpod
 ```
 
 ## Quick Reference
@@ -60,6 +65,7 @@ Read these documents based on what you're working on:
 | [docs/TRANSCODING.md](docs/TRANSCODING.md) | Working on audio conversion |
 | [docs/COLLECTION-SOURCES.md](docs/COLLECTION-SOURCES.md) | Working on Strawberry/beets adapters |
 | [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
+| [packages/gpod-testing/README.md](packages/gpod-testing/README.md) | Writing tests that need iPod databases |
 
 ## Task Management (Backlog.md)
 
@@ -131,13 +137,81 @@ These decisions are documented in ADRs — read the full ADR for context:
 | Decision | Summary | ADR |
 |----------|---------|-----|
 | Runtime | Bun for dev, Node.js for distribution | [ADR-001](docs/adr/ADR-001-runtime.md) |
-| libgpod bindings | ffi-napi prototype, then N-API | [ADR-002](docs/adr/ADR-002-libgpod-binding.md) |
+| libgpod bindings | N-API (node-addon-api) directly | [ADR-002](docs/adr/ADR-002-libgpod-binding.md) |
 | Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/adr/ADR-003-transcoding.md) |
 | Collection sources | Adapter pattern | [ADR-004](docs/adr/ADR-004-collection-sources.md) |
+| Test environments | gpod-tool + temp directories | [ADR-005](docs/adr/ADR-005-test-ipod-environment.md) |
+
+## Testing
+
+### Test Environment Setup
+
+Before running tests that interact with iPod databases, build the gpod-tool:
+
+```bash
+mise run tools:build   # Build gpod-tool CLI
+mise trust             # Trust mise config (first time only)
+```
+
+### Writing Tests with iPod Databases
+
+Use `@podkit/gpod-testing` to create test iPod environments. This package creates real iTunesDB databases in temp directories—no physical iPod needed.
+
+**Basic pattern:**
+
+```typescript
+import { describe, it, expect, beforeAll } from 'bun:test';
+import { withTestIpod, isGpodToolAvailable } from '@podkit/gpod-testing';
+
+describe('MyFeature', () => {
+  beforeAll(async () => {
+    if (!(await isGpodToolAvailable())) {
+      throw new Error('Run `mise run tools:build` first');
+    }
+  });
+
+  it('works with iPod database', async () => {
+    await withTestIpod(async (ipod) => {
+      // ipod.path - absolute path to test iPod
+      // ipod.addTrack() - add track metadata
+      // ipod.info() - get database info
+      // ipod.tracks() - list all tracks
+      // Cleanup is automatic
+
+      await ipod.addTrack({ title: 'Test', artist: 'Artist' });
+      const info = await ipod.info();
+      expect(info.trackCount).toBe(1);
+    });
+  });
+});
+```
+
+**Manual cleanup (for complex setups):**
+
+```typescript
+import { createTestIpod } from '@podkit/gpod-testing';
+
+const ipod = await createTestIpod({ model: 'MA147' });
+try {
+  // Use ipod.path for testing
+} finally {
+  await ipod.cleanup();
+}
+```
+
+**Supported models for testing:**
+
+| Model | Device | Notes |
+|-------|--------|-------|
+| `MA147` | iPod Video 60GB | Default, recommended |
+| `MA002` | iPod Video 30GB | Alternative |
+| `MA477` | iPod Nano 2GB | Nano testing |
+
+> **Note:** iPod Classic 6th gen+ models (MB565, MC297) require FirewireID and won't work for test environments.
+
+See [packages/gpod-testing/README.md](packages/gpod-testing/README.md) for full API documentation.
 
 ## Code Conventions
-
-*(To be established when implementation begins — document conventions here as they emerge)*
 
 - TypeScript strict mode
 - Bun test runner
@@ -145,10 +219,12 @@ These decisions are documented in ADRs — read the full ADR for context:
 
 ## Entry Points
 
-When implementation exists, key files to understand:
+Key files to understand:
 
 | Purpose | Path |
 |---------|------|
 | CLI entry | `packages/podkit-cli/src/main.ts` |
 | Core library | `packages/podkit-core/src/index.ts` |
 | libgpod bindings | `packages/libgpod-node/src/index.ts` |
+| Test utilities | `packages/gpod-testing/src/index.ts` |
+| gpod-tool CLI | `tools/gpod-tool/gpod-tool.c` |
