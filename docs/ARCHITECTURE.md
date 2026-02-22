@@ -6,18 +6,17 @@
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              User Environment                                │
 │                                                                             │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐                │
-│  │  Strawberry  │     │    beets     │     │ Music Files  │                │
-│  │   Database   │     │   Database   │     │  (Directory) │                │
-│  └──────┬───────┘     └──────┬───────┘     └──────┬───────┘                │
-│         │                    │                    │                         │
-│         └────────────────────┼────────────────────┘                         │
-│                              │                                              │
-│                              ▼                                              │
-│                     ┌────────────────┐                                      │
-│                     │     podkit     │                                      │
-│                     │      CLI       │                                      │
-│                     └────────┬───────┘                                      │
+│                          ┌──────────────────┐                               │
+│                          │  Music Directory │                               │
+│                          │   (FLAC, MP3,    │                               │
+│                          │    M4A, etc.)    │                               │
+│                          └────────┬─────────┘                               │
+│                                   │                                         │
+│                                   ▼                                         │
+│                          ┌────────────────┐                                 │
+│                          │     podkit     │                                 │
+│                          │      CLI       │                                 │
+│                          └────────┬───────┘                                 │
 │                              │                                              │
 │         ┌────────────────────┼────────────────────┐                         │
 │         │                    │                    │                         │
@@ -55,9 +54,8 @@ packages/
 │   ├── src/
 │   │   ├── adapters/      # Collection source adapters
 │   │   │   ├── interface.ts
-│   │   │   ├── strawberry.ts
-│   │   │   ├── beets.ts
-│   │   │   └── directory.ts
+│   │   │   ├── directory.ts
+│   │   │   └── registry.ts
 │   │   ├── sync/          # Sync engine
 │   │   │   ├── differ.ts
 │   │   │   ├── planner.ts
@@ -341,8 +339,8 @@ interface CLI {
 }
 
 interface SyncOptions {
-  source: 'strawberry' | 'beets' | 'directory';
-  sourcePath?: string;
+  source: string;  // Directory path to scan
+  sourcePath?: string;  // Alias for source
   device?: string;  // Mount point, auto-detect if not specified
   quality: 'high' | 'medium' | 'low';
   dryRun: boolean;
@@ -465,21 +463,11 @@ type PodkitError =
 # Default quality preset
 quality: high
 
-# Collection source
-source: strawberry
+# Music source directory
+source: /mnt/music/library
 
-# Strawberry database path (auto-detected if not specified)
-strawberry:
-  database: ~/.local/share/strawberry/strawberry/strawberry.db
-
-# beets database path
-beets:
-  database: ~/.config/beets/library.db
-
-# Directory scan settings
-directory:
-  path: /mnt/music/library
-  extensions: [flac, mp3, m4a, ogg, opus]
+# File extensions to scan (defaults shown)
+extensions: [flac, mp3, m4a, ogg, opus]
 
 # Transcoding settings
 transcode:

@@ -1,9 +1,10 @@
 ---
 id: TASK-013
 title: 'Research collection source: beets CLI vs direct file reading'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-22 19:23'
+updated_date: '2026-02-22 21:55'
 labels:
   - research
   - decision
@@ -47,8 +48,49 @@ Decide how podkit will read music collections. Two main approaches:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Options evaluated with pros/cons documented
-- [ ] #2 Metadata parsing approach validated with prototype
-- [ ] #3 ADR created or updated with decision
-- [ ] #4 Recommended approach has clear implementation path
+- [x] #1 Options evaluated with pros/cons documented
+- [x] #2 Metadata parsing approach validated with prototype
+- [x] #3 ADR created or updated with decision
+- [x] #4 Recommended approach has clear implementation path
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Research Summary
+
+### Options Evaluated
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **beets CLI** | Uses beets query language, respects plugins | Requires beets, slow (process spawn), fragile output parsing |
+| **beets SQLite** | Fast, SQL filtering | Schema may change, beets-only users |
+| **Strawberry SQLite** | Rich metadata | Strawberry-only users |
+| **Directory + music-metadata** | Universal, works for anyone | Must scan files |
+
+### Decision: Directory + music-metadata only
+
+**Rationale:**
+- Works for any user with music files, regardless of music player
+- `music-metadata` is actively maintained (v11.12.1), TypeScript native
+- Supports all formats: FLAC, MP3, M4A, OGG, OPUS
+- Extracts MusicBrainz IDs, embedded artwork
+- Strawberry/beets users already have well-tagged files
+- Simpler implementation and maintenance
+
+### beets custom fields
+
+The main advantage of beets (custom DB fields like `sync_to_ipod`) is rare. Most users:
+1. Have well-tagged files (music-metadata works)
+2. Use playlists to organize sync selection
+
+Filtering/sync selection will be addressed in M4 via playlists, path patterns, or tag filters.
+
+### Adapter pattern
+
+Retained in code for future extensibility, but only DirectoryAdapter implemented for v1.0.
+
+## Prototype Validation
+
+`music-metadata` is a well-established library (v11.12.1, 1,032+ npm dependents). Full validation will occur during TASK-015/TASK-016 implementation. The library's TypeScript types and format support have been reviewed and meet our requirements.
+<!-- SECTION:NOTES:END -->

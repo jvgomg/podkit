@@ -27,7 +27,7 @@ If you're new to the project, read in this order:
 |----------|---------|
 | [LIBGPOD.md](LIBGPOD.md) | libgpod C library API, binding approaches, implementation notes |
 | [TRANSCODING.md](TRANSCODING.md) | FFmpeg AAC encoding, quality presets, metadata handling |
-| [COLLECTION-SOURCES.md](COLLECTION-SOURCES.md) | Strawberry/beets database schemas, adapter design |
+| [COLLECTION-SOURCES.md](COLLECTION-SOURCES.md) | Directory scanning with music-metadata, adapter interface |
 | [IPOD-INTERNALS.md](IPOD-INTERNALS.md) | iTunesDB format, artwork formats, device quirks |
 
 ### Architecture Decision Records
@@ -37,7 +37,7 @@ If you're new to the project, read in this order:
 | [ADR-001](adr/ADR-001-runtime.md) | Runtime Choice (Bun/Node) | Proposed |
 | [ADR-002](adr/ADR-002-libgpod-binding.md) | libgpod Binding Approach | Proposed |
 | [ADR-003](adr/ADR-003-transcoding.md) | Transcoding Backend | Proposed |
-| [ADR-004](adr/ADR-004-collection-sources.md) | Collection Source Abstraction | Proposed |
+| [ADR-004](adr/ADR-004-collection-sources.md) | Collection Source Abstraction | Accepted |
 
 See [adr/README.md](adr/README.md) for ADR workflow and how to create new ADRs.
 

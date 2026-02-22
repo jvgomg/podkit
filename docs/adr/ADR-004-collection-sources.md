@@ -2,17 +2,32 @@
 
 ## Status
 
-**Proposed**
+**Accepted** (2026-02-22)
 
 ## Context
 
-podkit must support multiple music collection sources:
-- Strawberry Music Player (v1.0)
-- beets (v1.1)
-- Directory scanning (v1.1)
-- Future sources (Navidrome, Jellyfin, etc.)
+podkit needs to read music collections to determine what to sync to iPods. After evaluating options, we decided to focus on a single, universal approach rather than supporting multiple source-specific adapters.
 
-An abstraction layer is needed to decouple sync logic from source-specific implementations.
+### Options Evaluated
+
+| Approach | Pros | Cons |
+|----------|------|------|
+| **Strawberry SQLite** | Rich metadata, fast queries | Strawberry-only users |
+| **beets SQLite/CLI** | Custom fields, query language | beets-only users, rare edge cases |
+| **Directory + music-metadata** | Universal, works for everyone | Must scan files, no custom DB fields |
+
+### Decision
+
+**Directory scanning with `music-metadata` library** as the sole collection source for v1.0.
+
+**Rationale:**
+- Works for any user with music files, regardless of music player
+- `music-metadata` is actively maintained, supports all common formats (FLAC, MP3, M4A, OGG, OPUS)
+- Extracts MusicBrainz IDs, embedded artwork detection
+- Strawberry/beets users already have well-tagged files
+- Simpler implementation and maintenance
+
+The adapter pattern is retained in the codebase for potential future sources, but only the directory adapter will be implemented initially.
 
 ## Decision Drivers
 
@@ -248,75 +263,82 @@ type AdapterFactory = (config?: AdapterConfig) => CollectionAdapter;
 
 ## Implementation Strategy
 
-### v1.0: Strawberry Adapter
+### v1.0: Directory Adapter with music-metadata
 
 ```typescript
-// packages/podkit-core/src/adapters/strawberry.ts
-import Database from 'better-sqlite3';
+// packages/podkit-core/src/adapters/directory.ts
+import { glob } from 'glob';
+import * as mm from 'music-metadata';
 
-export class StrawberryAdapter implements CollectionAdapter {
-  readonly name = 'strawberry';
-  readonly description = 'Strawberry Music Player';
-  readonly configSchema = {
-    database: {
-      type: 'string',
-      description: 'Path to strawberry.db',
-      default: '~/.local/share/strawberry/strawberry/strawberry.db',
-    },
-  };
+export class DirectoryAdapter implements CollectionAdapter {
+  readonly name = 'directory';
+  readonly description = 'Directory scan with music-metadata';
 
-  // Implementation...
+  constructor(private config: { path: string; extensions?: string[] }) {}
+
+  async connect(): Promise<void> {
+    await this.scan();
+  }
+
+  async getTracks(): Promise<CollectionTrack[]> {
+    // Scan directory, parse metadata with music-metadata
+  }
 }
 ```
 
-### v1.1: Additional Adapters
-
-```typescript
-// beets adapter
-export class BeetsAdapter implements CollectionAdapter { ... }
-
-// Directory scanner
-export class DirectoryAdapter implements CollectionAdapter { ... }
-```
-
-### Default Registry
+### Registry (simplified)
 
 ```typescript
 // packages/podkit-core/src/adapters/index.ts
 import { AdapterRegistry } from './registry';
-import { StrawberryAdapter } from './strawberry';
-import { BeetsAdapter } from './beets';
 import { DirectoryAdapter } from './directory';
 
 export const defaultRegistry = new AdapterRegistry();
-
-defaultRegistry.register('strawberry', (config) => new StrawberryAdapter(config));
-defaultRegistry.register('beets', (config) => new BeetsAdapter(config));
 defaultRegistry.register('directory', (config) => new DirectoryAdapter(config));
 
 export { defaultRegistry as registry };
 ```
 
+### Future Adapters (on request)
+
+Additional adapters may be added if users request them:
+- Strawberry (SQLite)
+- beets (SQLite)
+- Navidrome/Jellyfin (API)
+- iTunes XML (legacy)
+
 ## Consequences
 
 ### Positive
 
-- Clean architecture with single responsibility
-- Easy to test adapters in isolation
-- Simple to add new sources
-- Consistent sync engine behavior
+- Universal: works for any user with music files
+- Simple: single implementation to maintain
+- No external dependencies on music players
+- Adapter pattern retained for future extensibility
 
 ### Negative
 
-- All adapters must fit the interface (some mapping required)
-- Slight overhead from abstraction
-- May need interface evolution for edge cases
+- Must scan files each time (no database cache)
+- Cannot access music-player-specific custom fields
+- Users who don't tag their files will have poor metadata
+
+### Filtering & Sync Selection (Future - M4)
+
+Without beets' custom fields, users need other ways to control what syncs:
+
+| Approach | Description |
+|----------|-------------|
+| **Playlist-based** | Import M3U/M3U8 playlists |
+| **Path patterns** | Include/exclude directories |
+| **Tag filters** | Filter by genre, artist, year, etc. |
+
+Playlist-based is recommended as the primary approach - users already know how to create playlists.
 
 ### Future Considerations
 
-1. **Streaming results** - For very large collections, consider `AsyncIterable<CollectionTrack>`
-2. **Incremental updates** - Adapters could provide "changes since last sync"
-3. **Two-way sync** - Interface could expand for write operations
+1. **Caching** - Cache scan results to speed up subsequent runs
+2. **Incremental scanning** - Only re-scan files with changed mtime
+3. **Additional adapters** - Add Strawberry/beets if users request
 
 ## Related Decisions
 
