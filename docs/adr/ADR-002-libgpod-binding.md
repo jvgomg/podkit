@@ -2,7 +2,7 @@
 
 ## Status
 
-**Proposed**
+**Accepted** (2026-02-22)
 
 ## Context
 
@@ -135,55 +135,77 @@ Start with ffi-napi for rapid prototyping, migrate to N-API for production.
 
 ## Decision
 
-**Option D: Hybrid approach (Recommended)**
+**Option B: N-API (node-addon-api) directly**
 
-### Phase 1: ffi-napi Prototype
-- Validate libgpod API usage
-- Test with real iPod devices
-- Identify edge cases and requirements
-
-### Phase 2: N-API Implementation
-- Port to node-addon-api
-- Proper async operations
-- Memory-safe GLib handling
+Skip the ffi-napi prototype phase and implement N-API bindings from the start.
 
 ### Rationale
 
-1. **Risk reduction** - Prototype validates approach before C++ investment
-2. **Learning curve** - Understand libgpod API in familiar language first
-3. **Production quality** - N-API provides best performance and stability
+1. **GLib complexity** - ffi-napi struggles with GLib types (GList, GError, opaque structs); we'd fight the tooling instead of learning libgpod
+2. **Small API surface** - libgpod has ~20 functions we need; not enough to justify throwaway prototype code
+3. **Existing references** - gtkpod and Strawberry source code show libgpod usage patterns
 4. **Cross-runtime** - N-API stable ABI works with both Node and Bun
+5. **Async support** - N-API AsyncWorker provides proper non-blocking I/O
 
-## Implementation Plan
+## Architecture
 
-### Phase 1 Deliverables (ffi-napi)
+Two-layer design separating native marshaling from TypeScript API:
+
+### Layer 1: C++ Bindings (thin)
+
+Minimal C++ that wraps libgpod and handles GLib memory:
+
+```cpp
+// src/native/binding.cc - ~300-500 lines total
+class DatabaseWrapper : public Napi::ObjectWrap<DatabaseWrapper> {
+    Itdb_iTunesDB* db_;
+    // Constructor, destructor handle GLib memory
+};
+
+// Async worker for I/O operations
+class ParseWorker : public Napi::AsyncWorker {
+    void Execute() override { db_ = itdb_parse(path_.c_str(), &error_); }
+    void OnOK() override { /* wrap and resolve */ }
+};
+```
+
+### Layer 2: TypeScript API (rich)
+
+Clean async interface with full types and error handling:
 
 ```typescript
-// Minimal viable bindings
-interface LibgpodFFI {
-  itdb_parse(mountpoint: string): Promise<Database>;
-  itdb_write(db: Database): Promise<void>;
-  itdb_free(db: Database): void;
-  itdb_track_new(): Track;
-  itdb_track_add(db: Database, track: Track, pos: number): void;
-  itdb_cp_track_to_ipod(track: Track, filename: string): Promise<boolean>;
+// src/index.ts
+export class Database {
+  static async open(mountpoint: string): Promise<Database>;
+  async save(): Promise<void>;
+  close(): void;
+
+  readonly tracks: ReadonlyArray<Track>;
+  readonly playlists: ReadonlyArray<Playlist>;
+
+  addTrack(track: TrackInput): Track;
+  removeTrack(track: Track): void;
+  copyTrackToDevice(track: Track, sourcePath: string): Promise<void>;
+}
+
+export class LibgpodError extends Error {
+  readonly code: ErrorCode;
+  readonly operation: string;
 }
 ```
 
-### Phase 2 Deliverables (N-API)
+### Build Configuration
 
-```cpp
+```javascript
 // binding.gyp
 {
   "targets": [{
-    "target_name": "libgpod_node",
-    "sources": ["src/binding.cc"],
+    "target_name": "libgpod_native",
+    "sources": ["src/native/binding.cc"],
     "include_dirs": [
       "<!@(pkg-config --cflags-only-I gpod-1.0 glib-2.0 | sed 's/-I//g')"
     ],
-    "libraries": [
-      "<!@(pkg-config --libs gpod-1.0 glib-2.0)"
-    ]
+    "libraries": ["<!@(pkg-config --libs gpod-1.0 glib-2.0)"]
   }]
 }
 ```
@@ -192,21 +214,23 @@ interface LibgpodFFI {
 
 ### Positive
 
-- Validated approach before major investment
-- Production-quality native bindings
+- Production-quality bindings from day one
+- Proper async support via N-API AsyncWorker
+- Clean TypeScript API with full type safety
+- No throwaway prototype code
 - Cross-platform and cross-runtime support
 
 ### Negative
 
-- Longer total development time
-- Must maintain ffi-napi code during prototype phase
-- C++ expertise required for Phase 2
+- Steeper initial learning curve (C++ required)
+- node-gyp build complexity for contributors
+- Must distribute prebuilt binaries for easy installation
 
-### Migration Path
+### Mitigations
 
-1. Keep ffi-napi and N-API implementations behind same TypeScript interface
-2. Feature flag to switch implementations
-3. Deprecate ffi-napi once N-API is stable
+- Keep C++ layer minimal (~300-500 lines) - just marshaling
+- Use prebuildify for binary distribution
+- Document build setup clearly in DEVELOPMENT.md
 
 ## Related Decisions
 

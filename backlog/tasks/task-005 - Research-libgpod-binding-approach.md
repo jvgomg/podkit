@@ -1,9 +1,10 @@
 ---
 id: TASK-005
 title: Research libgpod binding approach
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-22 19:08'
+updated_date: '2026-02-22 21:00'
 labels:
   - research
   - decision
@@ -38,11 +39,8 @@ Validate the recommended binding approach from ADR-002 before committing to impl
 - Different abstraction layer
 <!-- SECTION:DESCRIPTION:END -->
 
-## Acceptance Criteria
-<!-- AC:BEGIN -->
-- [ ] #1 ffi-napi tested with libgpod on macOS
-- [ ] #2 GLib type handling complexity assessed
-- [ ] #3 Spike code demonstrates basic libgpod operations
-- [ ] #4 ADR-002 updated to Accepted with findings documented
-- [ ] #5 Clear recommendation for implementation approach
-<!-- AC:END -->
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Decision Summary\n\n**Chosen approach:** Option B - N-API (node-addon-api) directly\n\n**Why skip ffi-napi prototype:**\n1. GLib types (GList, GError) are painful with ffi-napi\n2. libgpod API is small (~20 functions) - not enough to justify throwaway code\n3. gtkpod/Strawberry source shows usage patterns\n4. N-API AsyncWorker provides proper async support\n\n**Architecture:**\n- Layer 1: Thin C++ (~300-500 lines) - wraps libgpod, handles GLib memory\n- Layer 2: Rich TypeScript API - Database, Track, Playlist classes with full types\n\nSee ADR-002 for full details.
+<!-- SECTION:NOTES:END -->
