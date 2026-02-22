@@ -38,8 +38,40 @@ detect_package_manager() {
     fi
 }
 
+# Enable non-free repository for Debian (required for libfdk-aac-dev)
+enable_nonfree_debian() {
+    # Check if we're on Debian (not Ubuntu)
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        if [[ "$ID" == "debian" ]]; then
+            info "Enabling non-free repository for Debian..."
+
+            # Modern Debian uses DEB822 format in /etc/apt/sources.list.d/*.sources
+            # Check for DEB822 format first
+            if ls /etc/apt/sources.list.d/*.sources &> /dev/null; then
+                # Add non-free to existing DEB822 sources
+                for f in /etc/apt/sources.list.d/*.sources; do
+                    if grep -q "Components:" "$f" && ! grep -q "non-free" "$f"; then
+                        sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/' "$f"
+                        info "Updated $f with non-free components"
+                    fi
+                done
+            # Fall back to traditional sources.list
+            elif [[ -f /etc/apt/sources.list ]]; then
+                if ! grep -q "non-free" /etc/apt/sources.list; then
+                    sed -i 's/main$/main contrib non-free non-free-firmware/' /etc/apt/sources.list
+                    info "Updated /etc/apt/sources.list with non-free components"
+                fi
+            fi
+        fi
+    fi
+}
+
 # Install dependencies for Debian/Ubuntu
 install_apt() {
+    # Enable non-free repo if on Debian (libfdk-aac-dev is non-free)
+    enable_nonfree_debian
+
     info "Updating package lists..."
     apt-get update
 

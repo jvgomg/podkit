@@ -128,6 +128,8 @@ configure_ffmpeg() {
         --disable-filters
         --enable-filter=aresample
         --enable-filter=volume
+        --enable-filter=sine
+        --enable-filter=aevalsrc
         # Keep only necessary demuxers/muxers
         --disable-demuxers
         --enable-demuxer=flac
@@ -136,6 +138,7 @@ configure_ffmpeg() {
         --enable-demuxer=mp3
         --enable-demuxer=ogg
         --enable-demuxer=mov
+        --enable-demuxer=lavfi
         --disable-muxers
         --enable-muxer=ipod
         --enable-muxer=mp4

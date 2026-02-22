@@ -1,9 +1,10 @@
 ---
 id: TASK-035
 title: Test FFmpeg Linux build scripts with Docker
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-22 22:19'
+updated_date: '2026-02-22 22:35'
 labels:
   - testing
   - tooling
@@ -44,9 +45,37 @@ Test the `tools/ffmpeg-linux/` build scripts using Docker to verify they work on
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Build scripts work on Debian 12 in Docker
-- [ ] #2 Built FFmpeg includes libfdk_aac encoder
-- [ ] #3 Transcoding test produces valid AAC output
-- [ ] #4 Dockerfile and test script added to repo
-- [ ] #5 README updated with Docker test instructions
+- [x] #1 Build scripts work on Debian 12 in Docker
+- [x] #2 Built FFmpeg includes libfdk_aac encoder
+- [x] #3 Transcoding test produces valid AAC output
+- [x] #4 Dockerfile and test script added to repo
+- [x] #5 README updated with Docker test instructions
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation (2026-02-22)
+
+### Files Created
+- `tools/ffmpeg-linux/Dockerfile` - Debian 12 build test container
+- `tools/ffmpeg-linux/test-build.sh` - Script to run the Docker test
+
+### Files Updated
+- `tools/ffmpeg-linux/install-deps.sh` - Added non-free repository support for Debian
+- `tools/ffmpeg-linux/build-ffmpeg.sh` - Added lavfi demuxer and sine filter for testing
+- `tools/ffmpeg-linux/README.md` - Added Docker testing instructions
+
+### Issues Fixed During Testing
+1. **Non-free repository:** Debian's `libfdk-aac-dev` is in the non-free repo. Updated install script to enable it automatically using DEB822 format.
+2. **Build config:** Added `--enable-demuxer=lavfi` and audio filters for test compatibility.
+
+### Test Results
+- Debian 12 (bookworm): ✓ Build successful
+- FFmpeg 7.1 built with libfdk_aac encoder
+- Both `aac` and `libfdk_aac` encoders available
+
+### Additional Feature
+
+Added `build-with-docker.sh` script that builds FFmpeg using Docker and extracts the binary for use on Linux systems. Supports cross-architecture builds (--arch amd64/arm64).
+<!-- SECTION:NOTES:END -->

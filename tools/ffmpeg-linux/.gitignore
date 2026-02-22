@@ -1,0 +1,6 @@
+# Build artifacts
+ffmpeg-build/
+ffmpeg-src/
+
+# Docker test artifacts
+*.m4a
