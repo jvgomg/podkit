@@ -181,6 +181,84 @@ mise trust  # First time only
 # See docs/TRANSCODING.md for installation
 ```
 
+## Test Fixtures
+
+### Audio File Fixtures
+
+Integration tests that need real audio files generate them dynamically using FFmpeg rather than storing binary fixtures in the repository.
+
+**Why dynamic generation?**
+
+1. **No binaries in repo:** Keeps repository small and avoids Git LFS complexity
+2. **Always current:** Fixtures match the exact format requirements of tests
+3. **Easy to modify:** Adding new test scenarios only requires code changes
+4. **Verifies real parsing:** Tests actual music-metadata library behavior
+
+**Example: Generating test audio files**
+
+```typescript
+async function generateTestAudio(
+  filePath: string,
+  format: string,
+  metadata: Record<string, string>
+): Promise<void> {
+  // Build FFmpeg metadata arguments
+  const metadataArgs = Object.entries(metadata)
+    .map(([key, value]) => ['-metadata', `${key}=${value}`])
+    .flat();
+
+  // Generate a 0.1 second silent audio file
+  const args = [
+    '-f', 'lavfi',
+    '-i', 'anullsrc=r=44100:cl=stereo',
+    '-t', '0.1',
+    ...metadataArgs,
+    '-y', // Overwrite output
+    '-loglevel', 'error',
+    filePath,
+  ];
+
+  const result = spawnSync('ffmpeg', args, { stdio: 'ignore' });
+  if (result.status !== 0) {
+    throw new Error(`FFmpeg failed with status ${result.status}`);
+  }
+}
+```
+
+**Usage in tests:**
+
+```typescript
+beforeAll(async () => {
+  testDir = join(tmpdir(), `podkit-test-${Date.now()}`);
+  await mkdir(testDir, { recursive: true });
+
+  await generateTestAudio(join(testDir, 'song.mp3'), 'mp3', {
+    title: 'Test Track',
+    artist: 'Test Artist',
+    album: 'Test Album',
+    track: '1/10',
+    date: '2023',
+    genre: 'Rock',
+  });
+});
+
+afterAll(async () => {
+  await rm(testDir, { recursive: true, force: true });
+});
+```
+
+**Supported metadata keys for FFmpeg:**
+- `title` - Track title
+- `artist` - Artist name
+- `album` - Album name
+- `albumartist` - Album artist (for compilations)
+- `track` - Track number (format: "N/M" or just "N")
+- `disc` - Disc number
+- `date` - Year (or full date)
+- `genre` - Genre name
+
+See `packages/podkit-core/src/adapters/directory.integration.test.ts` for complete examples.
+
 ## CI Considerations
 
 Integration tests may be skipped in CI if dependencies aren't available. The test output will show skipped tests clearly.
