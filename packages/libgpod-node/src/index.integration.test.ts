@@ -1003,6 +1003,560 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
 });
 
 // ============================================================================
+// Extended artwork management tests (TASK-040.03)
+// ============================================================================
+
+describe('libgpod-node artwork management APIs', () => {
+  // Temp directory for test images
+  let tempDir: string | null = null;
+
+  // Create temp directory for test images
+  async function getTempDir(): Promise<string> {
+    if (tempDir === null) {
+      tempDir = join(tmpdir(), `libgpod-artwork-test-${randomUUID()}`);
+      await mkdir(tempDir, { recursive: true });
+    }
+    return tempDir;
+  }
+
+  // Cleanup temp directory after each test
+  afterEach(async () => {
+    if (tempDir !== null) {
+      try {
+        await rm(tempDir, { recursive: true, force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+      tempDir = null;
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // hasTrackArtwork tests
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!isNativeAvailable())(
+    'hasTrackArtwork returns false for track without artwork',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'No Artwork Track', artist: 'Artist' });
+
+        // Track should not have artwork
+        expect(db.hasTrackArtwork(track.id)).toBe(false);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'hasTrackArtwork returns true for track with artwork',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const dir = await getTempDir();
+        const imagePath = join(dir, 'test.jpg');
+        await writeFile(imagePath, createMinimalJpeg());
+
+        const track = db.addTrack({ title: 'With Artwork', artist: 'Artist' });
+        db.setTrackArtwork(track.id, imagePath);
+
+        // Track should have artwork now
+        expect(db.hasTrackArtwork(track.id)).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'hasTrackArtwork throws for non-existent track',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        expect(() => db.hasTrackArtwork(999999)).toThrow();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'hasTrackArtwork throws when database is closed',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        const track = db.addTrack({ title: 'Test', artist: 'Test' });
+        db.close();
+
+        expect(() => db.hasTrackArtwork(track.id)).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // removeTrackArtwork tests
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!isNativeAvailable())(
+    'removeTrackArtwork removes artwork from track',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const dir = await getTempDir();
+        const imagePath = join(dir, 'artwork.jpg');
+        await writeFile(imagePath, createMinimalJpeg());
+
+        // Add track and set artwork
+        const track = db.addTrack({ title: 'Track With Artwork', artist: 'Artist' });
+        db.setTrackArtwork(track.id, imagePath);
+
+        // Verify artwork is set
+        expect(db.hasTrackArtwork(track.id)).toBe(true);
+
+        // Remove artwork
+        const updated = db.removeTrackArtwork(track.id);
+
+        // Track should no longer have artwork
+        expect(updated.hasArtwork).toBe(false);
+        expect(db.hasTrackArtwork(track.id)).toBe(false);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'removeTrackArtwork is safe for track without artwork',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Add track without artwork
+        const track = db.addTrack({ title: 'No Artwork', artist: 'Artist' });
+
+        // Removing artwork from a track without any should be safe
+        const updated = db.removeTrackArtwork(track.id);
+
+        expect(updated.hasArtwork).toBe(false);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'removeTrackArtwork throws for non-existent track',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        expect(() => db.removeTrackArtwork(999999)).toThrow();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'removeTrackArtwork persists after save',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const dir = await getTempDir();
+        const imagePath = join(dir, 'artwork.jpg');
+        await writeFile(imagePath, createMinimalJpeg());
+
+        // Add track with artwork and save to get proper ID
+        db.addTrack({ title: 'Persist Test', artist: 'Artist' });
+        db.saveSync();
+
+        // Re-fetch track with assigned ID
+        const tracks = db.getTracks();
+        const track = tracks.find((t) => t.title === 'Persist Test')!;
+
+        // Set artwork
+        db.setTrackArtwork(track.id, imagePath);
+        db.saveSync();
+
+        // Verify artwork is set
+        expect(db.hasTrackArtwork(track.id)).toBe(true);
+
+        // Remove artwork and save
+        db.removeTrackArtwork(track.id);
+        db.saveSync();
+        db.close();
+
+        // Re-open and verify artwork is removed
+        const db2 = Database.openSync(ipod.path);
+        const tracks2 = db2.getTracks();
+        expect(tracks2).toHaveLength(1);
+        expect(tracks2[0].hasArtwork).toBe(false);
+        db2.close();
+      });
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // setTrackArtworkFromData tests
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData sets artwork from JPEG buffer',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'From Data Test', artist: 'Artist' });
+
+        // Set artwork from buffer
+        const imageData = createMinimalJpeg();
+        const updated = db.setTrackArtworkFromData(track.id, imageData);
+
+        expect(updated.hasArtwork).toBe(true);
+        expect(db.hasTrackArtwork(track.id)).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData sets artwork from PNG buffer',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'PNG Data Test', artist: 'Artist' });
+
+        // Set artwork from PNG buffer
+        const imageData = createMinimalPng();
+        const updated = db.setTrackArtworkFromData(track.id, imageData);
+
+        expect(updated.hasArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData throws for non-existent track',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const imageData = createMinimalJpeg();
+
+        expect(() => db.setTrackArtworkFromData(999999, imageData)).toThrow();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData persists after save',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'Persist Data Test', artist: 'Artist' });
+        const imageData = createMinimalJpeg();
+        db.setTrackArtworkFromData(track.id, imageData);
+
+        db.saveSync();
+        db.close();
+
+        // Re-open and verify
+        const db2 = Database.openSync(ipod.path);
+        const tracks = db2.getTracks();
+        expect(tracks).toHaveLength(1);
+        expect(tracks[0].hasArtwork).toBe(true);
+        db2.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromDataAsync works correctly',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = await Database.open(ipod.path);
+
+        const track = db.addTrack({ title: 'Async Data Test', artist: 'Artist' });
+        const imageData = createMinimalJpeg();
+
+        const updated = await db.setTrackArtworkFromDataAsync(track.id, imageData);
+
+        expect(updated.hasArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData replaces existing artwork',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const dir = await getTempDir();
+        const imagePath = join(dir, 'original.jpg');
+        await writeFile(imagePath, createMinimalJpeg());
+
+        // Add track with artwork from file
+        const track = db.addTrack({ title: 'Replace Test', artist: 'Artist' });
+        db.setTrackArtwork(track.id, imagePath);
+        expect(db.hasTrackArtwork(track.id)).toBe(true);
+
+        // Replace with artwork from buffer
+        const newImageData = createMinimalPng();
+        const updated = db.setTrackArtworkFromData(track.id, newImageData);
+
+        expect(updated.hasArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // getArtworkCapabilities tests
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!isNativeAvailable())(
+    'getArtworkCapabilities returns capability information',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const caps = db.getArtworkCapabilities();
+
+        // Should have required fields
+        expect(typeof caps.supportsArtwork).toBe('boolean');
+        expect(typeof caps.generation).toBe('string');
+        expect(typeof caps.model).toBe('string');
+
+        // Test iPod supports artwork
+        expect(caps.supportsArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'getArtworkCapabilities throws when database is closed',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        db.close();
+
+        expect(() => db.getArtworkCapabilities()).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  // -------------------------------------------------------------------------
+  // Combined workflow tests
+  // -------------------------------------------------------------------------
+
+  it.skipIf(!isNativeAvailable())(
+    'full artwork workflow: check, set, verify, remove',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // 1. Add track without artwork and save to get proper ID
+        db.addTrack({ title: 'Workflow Test', artist: 'Artist' });
+        db.saveSync();
+
+        // Re-fetch track with assigned ID
+        const tracks = db.getTracks();
+        const trackId = tracks[0].id;
+
+        // 2. Check - no artwork initially
+        expect(db.hasTrackArtwork(trackId)).toBe(false);
+        expect(tracks[0].hasArtwork).toBe(false);
+
+        // 3. Set artwork from buffer
+        const imageData = createMinimalJpeg();
+        const withArtwork = db.setTrackArtworkFromData(trackId, imageData);
+
+        // 4. Verify artwork is set
+        expect(withArtwork.hasArtwork).toBe(true);
+        expect(db.hasTrackArtwork(trackId)).toBe(true);
+
+        // 5. Save and re-verify
+        db.saveSync();
+
+        // 6. Check via fresh getTrackById
+        const refreshed = db.getTrackById(trackId);
+        expect(refreshed).not.toBeNull();
+        expect(refreshed!.hasArtwork).toBe(true);
+
+        // 7. Remove artwork
+        const withoutArtwork = db.removeTrackArtwork(trackId);
+        expect(withoutArtwork.hasArtwork).toBe(false);
+        expect(db.hasTrackArtwork(trackId)).toBe(false);
+
+        // 8. Save and re-verify removal persisted
+        db.saveSync();
+        db.close();
+
+        const db2 = Database.openSync(ipod.path);
+        const finalTrack = db2.getTracks()[0];
+        expect(finalTrack.hasArtwork).toBe(false);
+        db2.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtwork throws when database is closed',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const dir = await getTempDir();
+        const imagePath = join(dir, 'artwork.jpg');
+        await writeFile(imagePath, createMinimalJpeg());
+
+        const track = db.addTrack({ title: 'Test', artist: 'Test' });
+        db.close();
+
+        expect(() => db.setTrackArtwork(track.id, imagePath)).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData throws when database is closed',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'Test', artist: 'Test' });
+        const imageData = createMinimalJpeg();
+        db.close();
+
+        expect(() => db.setTrackArtworkFromData(track.id, imageData)).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'removeTrackArtwork throws when database is closed',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        const track = db.addTrack({ title: 'Test', artist: 'Test' });
+        db.close();
+
+        expect(() => db.removeTrackArtwork(track.id)).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData accepts empty buffer without throwing',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'Empty Buffer Test', artist: 'Artist' });
+        const emptyBuffer = Buffer.alloc(0);
+
+        // Note: libgpod's itdb_track_set_thumbnails_from_data does not validate
+        // the image data. It accepts any buffer including empty ones.
+        // The actual image processing happens during save().
+        const updated = db.setTrackArtworkFromData(track.id, emptyBuffer);
+
+        // libgpod sets hasArtwork flag even for empty/invalid data
+        expect(updated.hasArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setTrackArtworkFromData accepts arbitrary data without validation',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const track = db.addTrack({ title: 'Invalid Data Test', artist: 'Artist' });
+
+        // Random bytes that are not a valid image
+        const invalidData = Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04, 0x05]);
+
+        // Note: libgpod does not validate image data at set time.
+        // It defers processing to the save() operation.
+        // This is expected behavior - callers should validate images before setting.
+        const updated = db.setTrackArtworkFromData(track.id, invalidData);
+
+        // libgpod sets hasArtwork flag even for invalid data
+        expect(updated.hasArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'artwork operations work with multiple tracks',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Add multiple tracks and save to get proper IDs
+        db.addTrack({ title: 'Track 1', artist: 'Artist' });
+        db.addTrack({ title: 'Track 2', artist: 'Artist' });
+        db.addTrack({ title: 'Track 3', artist: 'Artist' });
+        db.saveSync();
+
+        // Re-fetch tracks with assigned IDs
+        const allTracks = db.getTracks();
+        const track1 = allTracks.find((t) => t.title === 'Track 1')!;
+        const track2 = allTracks.find((t) => t.title === 'Track 2')!;
+        const track3 = allTracks.find((t) => t.title === 'Track 3')!;
+
+        // Set artwork on tracks 1 and 2 only
+        const jpegData = createMinimalJpeg();
+        const pngData = createMinimalPng();
+
+        db.setTrackArtworkFromData(track1.id, jpegData);
+        db.setTrackArtworkFromData(track2.id, pngData);
+        // track3 gets no artwork
+
+        // Verify each track's state
+        expect(db.hasTrackArtwork(track1.id)).toBe(true);
+        expect(db.hasTrackArtwork(track2.id)).toBe(true);
+        expect(db.hasTrackArtwork(track3.id)).toBe(false);
+
+        // Remove artwork from track 1
+        db.removeTrackArtwork(track1.id);
+        expect(db.hasTrackArtwork(track1.id)).toBe(false);
+
+        // track 2 should still have artwork
+        expect(db.hasTrackArtwork(track2.id)).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+});
+
+// ============================================================================
 // Playlist CRUD tests
 // ============================================================================
 

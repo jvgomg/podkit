@@ -323,6 +323,22 @@ export interface Playlist {
 }
 
 /**
+ * Artwork capability information for the device.
+ *
+ * Note: The detailed artwork formats are handled internally by libgpod.
+ * This interface provides basic capability information to help determine
+ * if artwork operations are supported.
+ */
+export interface ArtworkCapabilities {
+  /** Whether the device supports artwork */
+  supportsArtwork: boolean;
+  /** iPod generation (for determining supported artwork sizes) */
+  generation: string;
+  /** iPod model type */
+  model: string;
+}
+
+/**
  * Error codes from libgpod.
  */
 export enum LibgpodErrorCode {

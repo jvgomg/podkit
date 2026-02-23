@@ -222,7 +222,8 @@ static Napi::Object TrackToObject(Napi::Env env, const Itdb_Track* track) {
     obj.Set("rating", Napi::Number::New(env, track->rating));
 
     // Artwork
-    obj.Set("hasArtwork", Napi::Boolean::New(env, track->has_artwork != 0));
+    // has_artwork values: 0x00 = never had, 0x01 = has artwork, 0x02 = removed
+    obj.Set("hasArtwork", Napi::Boolean::New(env, track->has_artwork == 0x01));
 
     // Compilation
     obj.Set("compilation", Napi::Boolean::New(env, track->compilation != 0));
@@ -278,7 +279,11 @@ private:
     Napi::Value GetMountpoint(const Napi::CallbackInfo& info);
     Napi::Value GetTrackById(const Napi::CallbackInfo& info);
     Napi::Value SetTrackThumbnails(const Napi::CallbackInfo& info);
+    Napi::Value SetTrackThumbnailsFromData(const Napi::CallbackInfo& info);
+    Napi::Value RemoveTrackThumbnails(const Napi::CallbackInfo& info);
+    Napi::Value HasTrackThumbnails(const Napi::CallbackInfo& info);
     Napi::Value GetUniqueArtworkIds(const Napi::CallbackInfo& info);
+    Napi::Value GetArtworkFormats(const Napi::CallbackInfo& info);
 
     // Playlist methods
     Napi::Value CreatePlaylist(const Napi::CallbackInfo& info);
@@ -309,7 +314,11 @@ Napi::Object DatabaseWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("getMountpoint", &DatabaseWrapper::GetMountpoint),
         InstanceMethod("getTrackById", &DatabaseWrapper::GetTrackById),
         InstanceMethod("setTrackThumbnails", &DatabaseWrapper::SetTrackThumbnails),
+        InstanceMethod("setTrackThumbnailsFromData", &DatabaseWrapper::SetTrackThumbnailsFromData),
+        InstanceMethod("removeTrackThumbnails", &DatabaseWrapper::RemoveTrackThumbnails),
+        InstanceMethod("hasTrackThumbnails", &DatabaseWrapper::HasTrackThumbnails),
         InstanceMethod("getUniqueArtworkIds", &DatabaseWrapper::GetUniqueArtworkIds),
+        InstanceMethod("getArtworkFormats", &DatabaseWrapper::GetArtworkFormats),
         // Playlist methods
         InstanceMethod("createPlaylist", &DatabaseWrapper::CreatePlaylist),
         InstanceMethod("removePlaylist", &DatabaseWrapper::RemovePlaylist),
@@ -691,6 +700,149 @@ Napi::Value DatabaseWrapper::GetUniqueArtworkIds(const Napi::CallbackInfo& info)
     uint32_t index = 0;
     for (uint32_t id : uniqueIds) {
         result.Set(index++, Napi::Number::New(env, id));
+    }
+
+    return result;
+}
+
+Napi::Value DatabaseWrapper::SetTrackThumbnailsFromData(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (info.Length() < 2) {
+        Napi::TypeError::New(env, "Expected track ID and image data buffer").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected track ID as number").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!info[1].IsBuffer()) {
+        Napi::TypeError::New(env, "Expected image data as Buffer").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    uint32_t trackId = info[0].As<Napi::Number>().Uint32Value();
+    Napi::Buffer<guchar> buffer = info[1].As<Napi::Buffer<guchar>>();
+
+    // Find the track by ID
+    Itdb_Track* track = itdb_track_by_id(db_, trackId);
+    if (!track) {
+        Napi::Error::New(env, "Track not found").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Set thumbnails from raw image data
+    gboolean success = itdb_track_set_thumbnails_from_data(
+        track,
+        buffer.Data(),
+        static_cast<gsize>(buffer.Length())
+    );
+
+    if (!success) {
+        Napi::Error::New(env, "Failed to set track thumbnails from data - check image data is valid").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Return the updated track object
+    return TrackToObject(env, track);
+}
+
+Napi::Value DatabaseWrapper::RemoveTrackThumbnails(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected track ID").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    uint32_t trackId = info[0].As<Napi::Number>().Uint32Value();
+
+    // Find the track by ID
+    Itdb_Track* track = itdb_track_by_id(db_, trackId);
+    if (!track) {
+        Napi::Error::New(env, "Track not found").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Remove thumbnails from the track
+    itdb_track_remove_thumbnails(track);
+
+    // Return the updated track object
+    return TrackToObject(env, track);
+}
+
+Napi::Value DatabaseWrapper::HasTrackThumbnails(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (info.Length() < 1 || !info[0].IsNumber()) {
+        Napi::TypeError::New(env, "Expected track ID").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    uint32_t trackId = info[0].As<Napi::Number>().Uint32Value();
+
+    // Find the track by ID
+    Itdb_Track* track = itdb_track_by_id(db_, trackId);
+    if (!track) {
+        Napi::Error::New(env, "Track not found").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Check if track has thumbnails
+    gboolean hasThumbnails = itdb_track_has_thumbnails(track);
+
+    return Napi::Boolean::New(env, hasThumbnails != FALSE);
+}
+
+Napi::Value DatabaseWrapper::GetArtworkFormats(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Note: itdb_device_get_cover_art_formats is an internal API.
+    // We return basic artwork capability information from the device.
+    // The actual formats used are determined internally by libgpod when
+    // setting thumbnails.
+
+    Napi::Object result = Napi::Object::New(env);
+
+    if (db_->device) {
+        result.Set("supportsArtwork", Napi::Boolean::New(env,
+            itdb_device_supports_artwork(db_->device)));
+
+        // Get device info for additional context
+        const Itdb_IpodInfo* ipodInfo = itdb_device_get_ipod_info(db_->device);
+        if (ipodInfo) {
+            result.Set("generation", Napi::String::New(env, GenerationToString(ipodInfo->ipod_generation)));
+            result.Set("model", Napi::String::New(env, ModelToString(ipodInfo->ipod_model)));
+        } else {
+            result.Set("generation", Napi::String::New(env, "unknown"));
+            result.Set("model", Napi::String::New(env, "unknown"));
+        }
+    } else {
+        result.Set("supportsArtwork", Napi::Boolean::New(env, false));
+        result.Set("generation", Napi::String::New(env, "unknown"));
+        result.Set("model", Napi::String::New(env, "unknown"));
     }
 
     return result;

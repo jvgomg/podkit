@@ -14,6 +14,7 @@ import type {
   Playlist,
   DeviceInfo,
   TrackInput,
+  ArtworkCapabilities,
 } from './types';
 
 /**
@@ -39,11 +40,15 @@ export interface NativeDatabase {
   removeTrack(trackId: number): void;
   copyTrackToDevice(trackId: number, sourcePath: string): Track;
   setTrackThumbnails(trackId: number, imagePath: string): Track;
+  setTrackThumbnailsFromData(trackId: number, imageData: Buffer): Track;
+  removeTrackThumbnails(trackId: number): Track;
+  hasTrackThumbnails(trackId: number): boolean;
   write(): boolean;
   close(): void;
   getMountpoint(): string | null;
   getTrackById(id: number): Track | null;
   getUniqueArtworkIds(): number[];
+  getArtworkFormats(): ArtworkCapabilities;
 
   // Playlist operations
   createPlaylist(name: string): Playlist;

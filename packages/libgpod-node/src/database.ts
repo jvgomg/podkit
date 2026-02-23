@@ -16,6 +16,7 @@ import type {
   DatabaseInfo,
   TrackInput,
   DeviceInfo,
+  ArtworkCapabilities,
 } from './types';
 
 import { LibgpodError, LibgpodErrorCode } from './types';
@@ -326,6 +327,139 @@ export class Database {
    */
   async setTrackArtworkAsync(trackId: number, imagePath: string): Promise<Track> {
     return this.setTrackArtwork(trackId, imagePath);
+  }
+
+  /**
+   * Set artwork for a track from raw image data.
+   *
+   * Uses libgpod's `itdb_track_set_thumbnails_from_data` to set artwork
+   * from a Buffer containing image data. This is useful when artwork
+   * is already loaded in memory (e.g., extracted from audio file metadata).
+   *
+   * @param trackId ID of the track to set artwork for
+   * @param imageData Buffer containing image data (JPEG or PNG)
+   * @returns The updated track with hasArtwork set to true
+   * @throws LibgpodError if setting artwork fails
+   *
+   * @example
+   * ```typescript
+   * // Read image data from file
+   * const imageData = await fs.readFile('/path/to/artwork.jpg');
+   * db.setTrackArtworkFromData(track.id, imageData);
+   * await db.save();
+   * ```
+   */
+  setTrackArtworkFromData(trackId: number, imageData: Buffer): Track {
+    const native = this.ensureOpen();
+    try {
+      return native.setTrackThumbnailsFromData(trackId, imageData);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'setTrackArtworkFromData'
+      );
+    }
+  }
+
+  /**
+   * Async version of setTrackArtworkFromData.
+   *
+   * @param trackId ID of the track to set artwork for
+   * @param imageData Buffer containing image data
+   * @returns The updated track with hasArtwork set to true
+   */
+  async setTrackArtworkFromDataAsync(trackId: number, imageData: Buffer): Promise<Track> {
+    return this.setTrackArtworkFromData(trackId, imageData);
+  }
+
+  /**
+   * Remove artwork from a track.
+   *
+   * This removes all thumbnails associated with the track.
+   * Changes take effect when save() is called.
+   *
+   * @param trackId ID of the track to remove artwork from
+   * @returns The updated track with hasArtwork set to false
+   * @throws LibgpodError if the track is not found
+   *
+   * @example
+   * ```typescript
+   * const track = db.getTrackById(trackId);
+   * if (track && track.hasArtwork) {
+   *   db.removeTrackArtwork(trackId);
+   *   await db.save();
+   * }
+   * ```
+   */
+  removeTrackArtwork(trackId: number): Track {
+    const native = this.ensureOpen();
+    try {
+      return native.removeTrackThumbnails(trackId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'removeTrackArtwork'
+      );
+    }
+  }
+
+  /**
+   * Check if a track has artwork.
+   *
+   * This uses libgpod's `itdb_track_has_thumbnails` to check if artwork
+   * exists for the track. This is more reliable than checking the
+   * hasArtwork property, as it actually checks for thumbnail data.
+   *
+   * @param trackId ID of the track to check
+   * @returns True if the track has artwork
+   * @throws LibgpodError if the track is not found
+   *
+   * @example
+   * ```typescript
+   * const hasArtwork = db.hasTrackArtwork(track.id);
+   * if (!hasArtwork) {
+   *   // Set artwork from source file
+   *   db.setTrackArtwork(track.id, artworkPath);
+   * }
+   * ```
+   */
+  hasTrackArtwork(trackId: number): boolean {
+    const native = this.ensureOpen();
+    try {
+      return native.hasTrackThumbnails(trackId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'hasTrackArtwork'
+      );
+    }
+  }
+
+  /**
+   * Get artwork capability information for the device.
+   *
+   * Returns information about the device's artwork support, including
+   * whether artwork is supported and the device generation/model.
+   *
+   * Note: The detailed artwork formats are handled internally by libgpod
+   * when setting thumbnails. This method provides basic capability info.
+   *
+   * @returns Artwork capabilities information
+   *
+   * @example
+   * ```typescript
+   * const caps = db.getArtworkCapabilities();
+   * if (caps.supportsArtwork) {
+   *   console.log(`Device ${caps.model} supports artwork`);
+   * }
+   * ```
+   */
+  getArtworkCapabilities(): ArtworkCapabilities {
+    const native = this.ensureOpen();
+    return native.getArtworkFormats();
   }
 
   /**

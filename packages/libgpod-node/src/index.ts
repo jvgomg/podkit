@@ -49,6 +49,7 @@ export type {
   Playlist,
   DeviceInfo,
   DatabaseInfo,
+  ArtworkCapabilities,
 
   // Enums and type aliases
   IpodGeneration,
