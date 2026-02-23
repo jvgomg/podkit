@@ -46,6 +46,10 @@ Napi::Object DatabaseWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("removeTrackFromPlaylist", &DatabaseWrapper::RemoveTrackFromPlaylist),
         InstanceMethod("playlistContainsTrack", &DatabaseWrapper::PlaylistContainsTrack),
         InstanceMethod("getPlaylistTracks", &DatabaseWrapper::GetPlaylistTracks),
+        // Device capability methods
+        InstanceMethod("getDeviceCapabilities", &DatabaseWrapper::GetDeviceCapabilities),
+        InstanceMethod("getSysInfo", &DatabaseWrapper::GetSysInfo),
+        InstanceMethod("setSysInfo", &DatabaseWrapper::SetSysInfo),
     });
 
     constructor = Napi::Persistent(func);
@@ -180,4 +184,128 @@ Napi::Value DatabaseWrapper::GetMountpoint(const Napi::CallbackInfo& info) {
     }
 
     return GcharToValue(env, itdb_get_mountpoint(db_));
+}
+
+Napi::Value DatabaseWrapper::GetDeviceCapabilities(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    Napi::Object result = Napi::Object::New(env);
+
+    if (!db_->device) {
+        // No device info available - return empty/default capabilities
+        result.Set("supportsArtwork", Napi::Boolean::New(env, false));
+        result.Set("supportsVideo", Napi::Boolean::New(env, false));
+        result.Set("supportsPhoto", Napi::Boolean::New(env, false));
+        result.Set("supportsPodcast", Napi::Boolean::New(env, false));
+        result.Set("supportsChapterImage", Napi::Boolean::New(env, false));
+        result.Set("generation", Napi::String::New(env, "unknown"));
+        result.Set("model", Napi::String::New(env, "unknown"));
+        result.Set("modelNumber", env.Null());
+        result.Set("modelName", Napi::String::New(env, "Unknown"));
+        return result;
+    }
+
+    const Itdb_Device* device = db_->device;
+
+    // Device capability checks
+    result.Set("supportsArtwork", Napi::Boolean::New(env, itdb_device_supports_artwork(device)));
+    result.Set("supportsVideo", Napi::Boolean::New(env, itdb_device_supports_video(device)));
+    result.Set("supportsPhoto", Napi::Boolean::New(env, itdb_device_supports_photo(device)));
+    result.Set("supportsPodcast", Napi::Boolean::New(env, itdb_device_supports_podcast(device)));
+    result.Set("supportsChapterImage", Napi::Boolean::New(env, itdb_device_supports_chapter_image(device)));
+
+    // Device identification
+    const Itdb_IpodInfo* ipodInfo = itdb_device_get_ipod_info(device);
+    if (ipodInfo) {
+        result.Set("generation", Napi::String::New(env, GenerationToString(ipodInfo->ipod_generation)));
+        result.Set("model", Napi::String::New(env, ModelToString(ipodInfo->ipod_model)));
+        result.Set("modelNumber", GcharToValue(env, ipodInfo->model_number));
+        result.Set("modelName", Napi::String::New(env,
+            itdb_info_get_ipod_model_name_string(ipodInfo->ipod_model) ?: "Unknown"));
+    } else {
+        result.Set("generation", Napi::String::New(env, "unknown"));
+        result.Set("model", Napi::String::New(env, "unknown"));
+        result.Set("modelNumber", env.Null());
+        result.Set("modelName", Napi::String::New(env, "Unknown"));
+    }
+
+    return result;
+}
+
+Napi::Value DatabaseWrapper::GetSysInfo(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!db_->device) {
+        return env.Null();
+    }
+
+    // Check for required field argument
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "Field name must be a string").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string field = info[0].As<Napi::String>().Utf8Value();
+
+    // Get the sysinfo value for the specified field
+    gchar* value = itdb_device_get_sysinfo(db_->device, field.c_str());
+
+    if (value) {
+        Napi::String result = Napi::String::New(env, value);
+        g_free(value);
+        return result;
+    }
+
+    return env.Null();
+}
+
+Napi::Value DatabaseWrapper::SetSysInfo(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (!db_) {
+        Napi::Error::New(env, "Database not open").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!db_->device) {
+        Napi::Error::New(env, "No device associated with database").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Check for required arguments
+    if (info.Length() < 2) {
+        Napi::TypeError::New(env, "Field name and value are required").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    if (!info[0].IsString()) {
+        Napi::TypeError::New(env, "Field name must be a string").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string field = info[0].As<Napi::String>().Utf8Value();
+
+    // Value can be string (to set) or null/undefined (to remove)
+    if (info[1].IsNull() || info[1].IsUndefined()) {
+        // Remove the field by setting value to NULL
+        itdb_device_set_sysinfo(db_->device, field.c_str(), NULL);
+    } else if (info[1].IsString()) {
+        std::string value = info[1].As<Napi::String>().Utf8Value();
+        itdb_device_set_sysinfo(db_->device, field.c_str(), value.c_str());
+    } else {
+        Napi::TypeError::New(env, "Value must be a string or null").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    return env.Undefined();
 }

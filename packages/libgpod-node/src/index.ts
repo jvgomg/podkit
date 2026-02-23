@@ -50,6 +50,7 @@ export type {
   DeviceInfo,
   DatabaseInfo,
   ArtworkCapabilities,
+  DeviceCapabilities,
 
   // Enums and type aliases
   IpodGeneration,

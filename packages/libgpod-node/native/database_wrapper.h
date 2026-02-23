@@ -61,4 +61,9 @@ private:
     Napi::Value RemoveTrackFromPlaylist(const Napi::CallbackInfo& info);
     Napi::Value PlaylistContainsTrack(const Napi::CallbackInfo& info);
     Napi::Value GetPlaylistTracks(const Napi::CallbackInfo& info);
+
+    // Device capability operations (database_wrapper.cc)
+    Napi::Value GetDeviceCapabilities(const Napi::CallbackInfo& info);
+    Napi::Value GetSysInfo(const Napi::CallbackInfo& info);
+    Napi::Value SetSysInfo(const Napi::CallbackInfo& info);
 };

@@ -17,6 +17,7 @@ import type {
   TrackInput,
   DeviceInfo,
   ArtworkCapabilities,
+  DeviceCapabilities,
 } from './types';
 
 import { LibgpodError, LibgpodErrorCode } from './types';
@@ -953,6 +954,129 @@ export class Database {
   getMasterPlaylist(): Playlist | null {
     const playlists = this.getPlaylists();
     return playlists.find((p) => p.isMaster) ?? null;
+  }
+
+  // ============================================================================
+  // Device capability operations
+  // ============================================================================
+
+  /**
+   * Get detailed device capability information.
+   *
+   * Returns information about what features the connected iPod supports,
+   * including artwork, video, photo, podcast, and chapter image support.
+   * Also includes device identification information.
+   *
+   * This method exposes libgpod's device capability checking APIs:
+   * - `itdb_device_supports_artwork()`
+   * - `itdb_device_supports_video()`
+   * - `itdb_device_supports_photo()`
+   * - `itdb_device_supports_podcast()`
+   * - `itdb_device_supports_chapter_image()`
+   *
+   * @returns Device capabilities object
+   *
+   * @example
+   * ```typescript
+   * const db = Database.openSync('/media/ipod');
+   * const caps = db.getDeviceCapabilities();
+   *
+   * if (caps.supportsVideo) {
+   *   console.log('This iPod can play videos');
+   * }
+   *
+   * if (caps.supportsPodcast) {
+   *   console.log('This iPod supports podcasts');
+   * }
+   *
+   * console.log(`Device: ${caps.modelName} (${caps.generation})`);
+   * ```
+   */
+  getDeviceCapabilities(): DeviceCapabilities {
+    const native = this.ensureOpen();
+    return native.getDeviceCapabilities();
+  }
+
+  /**
+   * Get a SysInfo field value from the device.
+   *
+   * The SysInfo file on the iPod contains key-value pairs with device
+   * information. Common fields include:
+   * - `ModelNumStr` - Device model number (e.g., "MA147")
+   * - `FirewireGuid` - Device unique identifier
+   * - `buildID` - Firmware build ID
+   * - `visibleBuildID` - Visible firmware version
+   * - `BoardHwName` - Hardware board name
+   * - `RegionCode` - Device region
+   * - `PolicyFlags` - Policy settings
+   *
+   * @param field The SysInfo field name to retrieve
+   * @returns The field value, or null if the field doesn't exist
+   *
+   * @example
+   * ```typescript
+   * const db = Database.openSync('/media/ipod');
+   *
+   * const modelNum = db.getSysInfo('ModelNumStr');
+   * console.log(`Model number: ${modelNum}`);
+   *
+   * const firewireId = db.getSysInfo('FirewireGuid');
+   * console.log(`Firewire GUID: ${firewireId}`);
+   * ```
+   */
+  getSysInfo(field: string): string | null {
+    const native = this.ensureOpen();
+    try {
+      return native.getSysInfo(field);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'getSysInfo'
+      );
+    }
+  }
+
+  /**
+   * Set a SysInfo field value on the device.
+   *
+   * This modifies the in-memory SysInfo data. The changes are written
+   * to the iPod's SysInfo file when the database is saved with `save()`.
+   *
+   * **Warning:** Modifying SysInfo can affect device behavior and compatibility.
+   * Only modify fields if you understand their purpose. The most common
+   * safe use case is setting `ModelNumStr` for device identification.
+   *
+   * Pass `null` as the value to remove a field from SysInfo.
+   *
+   * @param field The SysInfo field name to set
+   * @param value The value to set, or null to remove the field
+   *
+   * @example
+   * ```typescript
+   * const db = Database.openSync('/media/ipod');
+   *
+   * // Set model number (commonly done for device identification)
+   * db.setSysInfo('ModelNumStr', 'MA147');
+   *
+   * // Remove a field
+   * db.setSysInfo('SomeField', null);
+   *
+   * // Save changes to write SysInfo to device
+   * await db.save();
+   * ```
+   */
+  setSysInfo(field: string, value: string | null): void {
+    const native = this.ensureOpen();
+    try {
+      native.setSysInfo(field, value);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'setSysInfo'
+      );
+    }
   }
 
   /**

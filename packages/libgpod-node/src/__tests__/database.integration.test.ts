@@ -265,4 +265,211 @@ describe('libgpod-node with native binding', () => {
       });
     }
   );
+
+  // ============================================================================
+  // Device capability tests
+  // ============================================================================
+
+  it.skipIf(!isNativeAvailable())(
+    'can get device capabilities',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        const caps = db.getDeviceCapabilities();
+
+        // Check that all capability fields are present
+        expect(typeof caps.supportsArtwork).toBe('boolean');
+        expect(typeof caps.supportsVideo).toBe('boolean');
+        expect(typeof caps.supportsPhoto).toBe('boolean');
+        expect(typeof caps.supportsPodcast).toBe('boolean');
+        expect(typeof caps.supportsChapterImage).toBe('boolean');
+
+        // Check device identification fields
+        expect(typeof caps.generation).toBe('string');
+        expect(typeof caps.model).toBe('string');
+        expect(typeof caps.modelName).toBe('string');
+
+        // modelNumber can be string or null
+        expect(
+          caps.modelNumber === null || typeof caps.modelNumber === 'string'
+        ).toBe(true);
+
+        // Test iPod created by gpod-testing should support artwork
+        // (it's configured as a video iPod)
+        expect(caps.supportsArtwork).toBe(true);
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'can read SysInfo values',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Test iPod created by gpod-testing should have ModelNumStr set
+        const modelNum = db.getSysInfo('ModelNumStr');
+
+        // gpod-testing sets ModelNumStr during init
+        // The value should be a string (not null)
+        expect(modelNum).not.toBeNull();
+        expect(typeof modelNum).toBe('string');
+
+        // Try to get a non-existent field
+        const nonExistent = db.getSysInfo('NonExistentField');
+        expect(nonExistent).toBeNull();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'can set and read SysInfo values',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Set a custom SysInfo field
+        db.setSysInfo('TestField', 'TestValue');
+
+        // Read it back
+        const value = db.getSysInfo('TestField');
+        expect(value).toBe('TestValue');
+
+        // Remove the field by setting to null
+        db.setSysInfo('TestField', null);
+
+        // Verify it's gone
+        const removedValue = db.getSysInfo('TestField');
+        expect(removedValue).toBeNull();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'SysInfo changes persist after save and reopen',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Set a custom SysInfo field
+        db.setSysInfo('PersistTestField', 'PersistTestValue');
+
+        // Save the database
+        db.saveSync();
+        db.close();
+
+        // Reopen and verify the value persists
+        const db2 = Database.openSync(ipod.path);
+        const value = db2.getSysInfo('PersistTestField');
+        expect(value).toBe('PersistTestValue');
+
+        db2.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'throws error when calling getDeviceCapabilities on closed database',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        db.close();
+
+        expect(() => db.getDeviceCapabilities()).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'throws error when calling getSysInfo on closed database',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        db.close();
+
+        expect(() => db.getSysInfo('ModelNumStr')).toThrow(LibgpodError);
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'throws error when calling setSysInfo on closed database',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+        db.close();
+
+        expect(() => db.setSysInfo('TestField', 'TestValue')).toThrow(
+          LibgpodError
+        );
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'getSysInfo handles empty string field name',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Empty field name should return null (field doesn't exist)
+        const value = db.getSysInfo('');
+        expect(value).toBeNull();
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'setSysInfo can overwrite existing values',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Set initial value
+        db.setSysInfo('OverwriteTest', 'Value1');
+        expect(db.getSysInfo('OverwriteTest')).toBe('Value1');
+
+        // Overwrite with new value
+        db.setSysInfo('OverwriteTest', 'Value2');
+        expect(db.getSysInfo('OverwriteTest')).toBe('Value2');
+
+        db.close();
+      });
+    }
+  );
+
+  it.skipIf(!isNativeAvailable())(
+    'getDeviceCapabilities returns consistent types across calls',
+    async () => {
+      await withTestIpod(async (ipod) => {
+        const db = Database.openSync(ipod.path);
+
+        // Call multiple times to ensure consistency
+        const caps1 = db.getDeviceCapabilities();
+        const caps2 = db.getDeviceCapabilities();
+
+        // Values should be identical
+        expect(caps1.supportsArtwork).toBe(caps2.supportsArtwork);
+        expect(caps1.supportsVideo).toBe(caps2.supportsVideo);
+        expect(caps1.supportsPhoto).toBe(caps2.supportsPhoto);
+        expect(caps1.supportsPodcast).toBe(caps2.supportsPodcast);
+        expect(caps1.supportsChapterImage).toBe(caps2.supportsChapterImage);
+        expect(caps1.generation).toBe(caps2.generation);
+        expect(caps1.model).toBe(caps2.model);
+        expect(caps1.modelNumber).toBe(caps2.modelNumber);
+        expect(caps1.modelName).toBe(caps2.modelName);
+
+        db.close();
+      });
+    }
+  );
 });

@@ -15,6 +15,7 @@ import type {
   DeviceInfo,
   TrackInput,
   ArtworkCapabilities,
+  DeviceCapabilities,
 } from './types';
 
 /**
@@ -64,6 +65,11 @@ export interface NativeDatabase {
   removeTrackFromPlaylist(playlistId: bigint, trackId: number): Playlist;
   playlistContainsTrack(playlistId: bigint, trackId: number): boolean;
   getPlaylistTracks(playlistId: bigint): Track[];
+
+  // Device capability operations
+  getDeviceCapabilities(): DeviceCapabilities;
+  getSysInfo(field: string): string | null;
+  setSysInfo(field: string, value: string | null): void;
 }
 
 /**

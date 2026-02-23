@@ -346,6 +346,33 @@ export interface ArtworkCapabilities {
 }
 
 /**
+ * Device capability information.
+ *
+ * Contains all capability flags and device identification
+ * from libgpod's device capability checking APIs.
+ */
+export interface DeviceCapabilities {
+  /** Whether the device supports album artwork */
+  supportsArtwork: boolean;
+  /** Whether the device supports video playback */
+  supportsVideo: boolean;
+  /** Whether the device supports photo display */
+  supportsPhoto: boolean;
+  /** Whether the device supports podcasts */
+  supportsPodcast: boolean;
+  /** Whether the device supports chapter images (for audiobooks/podcasts) */
+  supportsChapterImage: boolean;
+  /** iPod generation identifier */
+  generation: IpodGeneration | 'unknown';
+  /** iPod model type */
+  model: IpodModel | 'unknown';
+  /** Model number string (e.g., "MA147") or null if unknown */
+  modelNumber: string | null;
+  /** Human-readable model name (e.g., "iPod Video (60GB)") */
+  modelName: string;
+}
+
+/**
  * Error codes from libgpod.
  */
 export enum LibgpodErrorCode {
