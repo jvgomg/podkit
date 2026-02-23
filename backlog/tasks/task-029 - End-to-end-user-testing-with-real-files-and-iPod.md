@@ -4,6 +4,7 @@ title: End-to-end user testing with real files and iPod
 status: To Do
 assignee: []
 created_date: '2026-02-22 19:38'
+updated_date: '2026-02-23 01:23'
 labels: []
 milestone: 'M3: Production Ready (v1.0.0)'
 dependencies:
@@ -50,3 +51,9 @@ Comprehensive testing session with real music files and physical iPod.
 - [ ] #4 Issues documented and triaged
 - [ ] #5 Ready for 1.0 release
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Deferred from M2 - integration tests provide sufficient coverage for now
+<!-- SECTION:NOTES:END -->

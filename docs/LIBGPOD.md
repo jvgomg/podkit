@@ -113,9 +113,36 @@ Itdb_Playlist *itdb_playlist_mpl(Itdb_iTunesDB *itdb);
 
 ### Artwork Operations
 
+libgpod handles artwork resizing and format conversion automatically. When you call `itdb_track_set_thumbnails()`, libgpod will:
+
+1. Detect the iPod model from SysInfo
+2. Query the device's supported artwork formats
+3. Generate all required thumbnail sizes
+4. Convert to the correct pixel format (RGB565, JPEG, etc.)
+5. Write to the appropriate `.ithmb` files during `itdb_write()`
+
 ```c
+// Set artwork from image file (any gdk-pixbuf format: JPEG, PNG, etc.)
+// Thumbnails generated lazily when itdb_write() is called
+gboolean itdb_track_set_thumbnails(Itdb_Track *track, const gchar *filename);
+
+// Variants for raw data or pixbuf
+gboolean itdb_track_set_thumbnails_from_data(Itdb_Track *track,
+                                              const guchar *image_data,
+                                              gsize image_data_len);
+gboolean itdb_track_set_thumbnails_from_pixbuf(Itdb_Track *track, gpointer pixbuf);
+
+// Remove artwork
+void itdb_track_remove_thumbnails(Itdb_Track *track);
+
+// Check if track has artwork
+gboolean itdb_track_has_thumbnails(Itdb_Track *track);
+
 // Get cover art formats supported by device
 GList *itdb_device_get_cover_art_formats(const Itdb_Device *device);
+
+// Check if device supports artwork
+gboolean itdb_device_supports_artwork(const Itdb_Device *device);
 
 // Artwork format structure
 typedef struct {
@@ -123,8 +150,16 @@ typedef struct {
     gint width;
     gint height;
     ItdbThumbFormat format;  // e.g., THUMB_FORMAT_RGB565_LE
+    gboolean crop;
+    gint rotation;
+    // ... other fields
 } Itdb_ArtworkFormat;
 ```
+
+**Important notes:**
+- **File-based approach recommended**: `itdb_track_set_thumbnails(track, filepath)` is more reliable than the `_from_data()` variant (based on Strawberry Music Player experience)
+- **Lazy generation**: Image files must exist until `itdb_write()` completes
+- **iTunes compatibility**: iTunes stores artwork in file tags, not the iPod database. If iTunes accesses tracks synced with libgpod, it may "lose" the artwork
 
 ## Key Data Structures
 
