@@ -50,6 +50,20 @@ export type {
   TranscodePresetRef,
 } from './sync/types.js';
 
+// Track matching
+export type { Matchable, MatchResult } from './sync/matching.js';
+export {
+  normalizeString,
+  normalizeArtist,
+  normalizeTitle,
+  normalizeAlbum,
+  getMatchKey,
+  tracksMatch,
+  buildMatchIndex,
+  findMatches,
+  findOrphanedTracks,
+} from './sync/matching.js';
+
 // Transcoding
 export type {
   TranscodePreset,
