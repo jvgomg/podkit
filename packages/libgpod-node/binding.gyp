@@ -2,7 +2,15 @@
   "targets": [
     {
       "target_name": "gpod_binding",
-      "sources": ["native/gpod_binding.cc"],
+      "sources": [
+        "native/gpod_binding.cc",
+        "native/gpod_helpers.cc",
+        "native/gpod_converters.cc",
+        "native/database_wrapper.cc",
+        "native/track_operations.cc",
+        "native/artwork_operations.cc",
+        "native/playlist_operations.cc"
+      ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
       ],
