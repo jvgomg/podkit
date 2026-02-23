@@ -39,6 +39,32 @@ import type {
 // =============================================================================
 
 /**
+ * Error category for determining retry behavior and reporting
+ */
+export type ErrorCategory =
+  | 'transcode' // FFmpeg failure - retry once
+  | 'copy' // File copy failure - retry once
+  | 'database' // iPod database error - no retry
+  | 'artwork' // Artwork error - skip artwork only, continue sync
+  | 'unknown'; // Other errors - no retry
+
+/**
+ * Extended error with category information
+ */
+export interface CategorizedError {
+  /** The original error */
+  error: Error;
+  /** Category of the error */
+  category: ErrorCategory;
+  /** Track identifier for display */
+  trackName: string;
+  /** Number of retry attempts made */
+  retryAttempts: number;
+  /** Whether this error type was retried */
+  wasRetried: boolean;
+}
+
+/**
  * Extended progress information for sync operations
  */
 export interface ExecutorProgress extends SyncProgress {
@@ -48,9 +74,37 @@ export interface ExecutorProgress extends SyncProgress {
   index: number;
   /** Error if operation failed */
   error?: Error;
+  /** Categorized error with additional context */
+  categorizedError?: CategorizedError;
   /** Whether this operation was skipped (dry-run) */
   skipped?: boolean;
+  /** Current retry attempt (0 = first try, 1 = first retry) */
+  retryAttempt?: number;
 }
+
+/**
+ * Retry configuration for different operation types
+ */
+export interface RetryConfig {
+  /** Number of retries for transcode operations (default: 1) */
+  transcodeRetries?: number;
+  /** Number of retries for copy operations (default: 1) */
+  copyRetries?: number;
+  /** Number of retries for database operations (default: 0) */
+  databaseRetries?: number;
+  /** Delay between retries in milliseconds (default: 1000) */
+  retryDelayMs?: number;
+}
+
+/**
+ * Default retry configuration
+ */
+export const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
+  transcodeRetries: 1,
+  copyRetries: 1,
+  databaseRetries: 0, // Database errors are usually persistent
+  retryDelayMs: 1000,
+};
 
 /**
  * Extended options for sync execution
@@ -60,6 +114,8 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
   continueOnError?: boolean;
   /** Temporary directory for transcoded files (defaults to system temp) */
   tempDir?: string;
+  /** Retry configuration for failed operations */
+  retryConfig?: RetryConfig;
 }
 
 /**
@@ -72,8 +128,10 @@ export interface ExecuteResult {
   failed: number;
   /** Number of operations skipped (dry-run) */
   skipped: number;
-  /** Errors encountered during execution */
+  /** Errors encountered during execution (legacy format) */
   errors: Array<{ operation: SyncOperation; error: Error }>;
+  /** Categorized errors with full context */
+  categorizedErrors: CategorizedError[];
   /** Total bytes transferred */
   bytesTransferred: number;
 }
@@ -143,6 +201,113 @@ function calculateTotalBytes(plan: SyncPlan): number {
   return plan.estimatedSize;
 }
 
+/**
+ * Categorize an error based on its message and operation type
+ *
+ * Priority order:
+ * 1. Check error message for specific keywords (most reliable)
+ * 2. Fall back to operation type as a hint
+ */
+export function categorizeError(
+  error: Error,
+  operationType: SyncOperation['type']
+): ErrorCategory {
+  const message = error.message.toLowerCase();
+
+  // Check for database errors FIRST (most specific, no retry)
+  if (
+    message.includes('database') ||
+    message.includes('itunes') ||
+    message.includes('libgpod') ||
+    message.includes('ipod')
+  ) {
+    return 'database';
+  }
+
+  // Check for artwork errors (no retry, but continue sync)
+  if (message.includes('artwork') || message.includes('image')) {
+    return 'artwork';
+  }
+
+  // Check for file I/O errors (retry once)
+  if (
+    message.includes('enoent') ||
+    message.includes('eacces') ||
+    message.includes('enospc') ||
+    message.includes('file not found') ||
+    message.includes('permission denied') ||
+    message.includes('no space')
+  ) {
+    return 'copy';
+  }
+
+  // Check for FFmpeg/transcode related errors (retry once)
+  if (
+    message.includes('ffmpeg') ||
+    message.includes('transcode') ||
+    message.includes('encoder') ||
+    message.includes('codec')
+  ) {
+    return 'transcode';
+  }
+
+  // Fall back to operation type as a hint for generic errors
+  if (operationType === 'transcode') {
+    return 'transcode';
+  }
+  if (operationType === 'copy') {
+    return 'copy';
+  }
+
+  return 'unknown';
+}
+
+/**
+ * Get the number of retries allowed for an error category
+ */
+export function getRetriesForCategory(
+  category: ErrorCategory,
+  config: Required<RetryConfig>
+): number {
+  switch (category) {
+    case 'transcode':
+      return config.transcodeRetries;
+    case 'copy':
+      return config.copyRetries;
+    case 'database':
+      return config.databaseRetries;
+    case 'artwork':
+      return 0; // Artwork errors should skip artwork, not retry
+    case 'unknown':
+      return 0;
+  }
+}
+
+/**
+ * Create a categorized error object
+ */
+export function createCategorizedError(
+  error: Error,
+  operation: SyncOperation,
+  retryAttempts: number,
+  wasRetried: boolean
+): CategorizedError {
+  return {
+    error,
+    category: categorizeError(error, operation.type),
+    trackName: getOperationDisplayName(operation),
+    retryAttempts,
+    wasRetried,
+  };
+}
+
+/**
+ * Sleep for a specified number of milliseconds
+ */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 // =============================================================================
 // Executor Implementation
 // =============================================================================
@@ -164,6 +329,12 @@ export class DefaultSyncExecutor implements SyncExecutor {
    *
    * Yields progress updates for each operation. In dry-run mode,
    * operations are simulated without making actual changes.
+   *
+   * Retry behavior:
+   * - Transcode failures: retry once (might be transient)
+   * - Copy failures: retry once (might be transient I/O)
+   * - Database errors: do NOT retry (likely persistent)
+   * - Artwork errors: do NOT retry (skip artwork, continue sync)
    */
   async *execute(
     plan: SyncPlan,
@@ -174,7 +345,14 @@ export class DefaultSyncExecutor implements SyncExecutor {
       continueOnError = false,
       signal,
       tempDir = tmpdir(),
+      retryConfig = {},
     } = options;
+
+    // Merge retry config with defaults
+    const mergedRetryConfig: Required<RetryConfig> = {
+      ...DEFAULT_RETRY_CONFIG,
+      ...retryConfig,
+    };
 
     const total = plan.operations.length;
     const totalBytes = calculateTotalBytes(plan);
@@ -215,47 +393,8 @@ export class DefaultSyncExecutor implements SyncExecutor {
           bytesTotal: totalBytes,
         };
 
-        try {
-          if (dryRun) {
-            // Dry-run: simulate the operation
-            yield {
-              phase,
-              operation,
-              index,
-              current: index,
-              total,
-              currentTrack: getOperationDisplayName(operation),
-              bytesProcessed,
-              bytesTotal: totalBytes,
-              skipped: true,
-            };
-            _skipped++;
-          } else {
-            // Execute the actual operation
-            const result = await this.executeOperation(
-              operation,
-              transcodeDir,
-              signal
-            );
-
-            bytesProcessed += result.bytesTransferred;
-            completed++;
-
-            yield {
-              phase,
-              operation,
-              index,
-              current: index,
-              total,
-              currentTrack: getOperationDisplayName(operation),
-              bytesProcessed,
-              bytesTotal: totalBytes,
-            };
-          }
-        } catch (error) {
-          failed++;
-          const err = error instanceof Error ? error : new Error(String(error));
-
+        if (dryRun) {
+          // Dry-run: simulate the operation
           yield {
             phase,
             operation,
@@ -265,11 +404,111 @@ export class DefaultSyncExecutor implements SyncExecutor {
             currentTrack: getOperationDisplayName(operation),
             bytesProcessed,
             bytesTotal: totalBytes,
-            error: err,
+            skipped: true,
           };
+          _skipped++;
+        } else {
+          // Execute with retry logic
+          let lastError: Error | undefined;
+          let retryAttempt = 0;
+          let success = false;
 
-          if (!continueOnError) {
-            throw err;
+          // Determine max retries based on operation type
+          const category = categorizeError(
+            new Error('placeholder'),
+            operation.type
+          );
+          // Override category for known operation types
+          const effectiveCategory =
+            operation.type === 'transcode'
+              ? 'transcode'
+              : operation.type === 'copy'
+                ? 'copy'
+                : category;
+          const maxRetries = getRetriesForCategory(
+            effectiveCategory,
+            mergedRetryConfig
+          );
+
+          while (!success && retryAttempt <= maxRetries) {
+            // Check abort signal before each attempt
+            if (signal?.aborted) {
+              throw new Error('Sync aborted');
+            }
+
+            try {
+              const result = await this.executeOperation(
+                operation,
+                transcodeDir,
+                signal
+              );
+
+              bytesProcessed += result.bytesTransferred;
+              completed++;
+              success = true;
+
+              yield {
+                phase,
+                operation,
+                index,
+                current: index,
+                total,
+                currentTrack: getOperationDisplayName(operation),
+                bytesProcessed,
+                bytesTotal: totalBytes,
+                retryAttempt: retryAttempt > 0 ? retryAttempt : undefined,
+              };
+            } catch (error) {
+              lastError =
+                error instanceof Error ? error : new Error(String(error));
+              const errorCategory = categorizeError(lastError, operation.type);
+              const retriesForThisError = getRetriesForCategory(
+                errorCategory,
+                mergedRetryConfig
+              );
+
+              // Check if we should retry this specific error
+              if (retryAttempt < retriesForThisError) {
+                retryAttempt++;
+                // Wait before retry
+                if (mergedRetryConfig.retryDelayMs > 0) {
+                  await sleep(mergedRetryConfig.retryDelayMs);
+                }
+                // Continue to next iteration (retry)
+              } else {
+                // No more retries available
+                break;
+              }
+            }
+          }
+
+          // If we exhausted retries and still failed
+          if (!success && lastError) {
+            failed++;
+            const categorizedError = createCategorizedError(
+              lastError,
+              operation,
+              retryAttempt,
+              retryAttempt > 0
+            );
+
+            yield {
+              phase,
+              operation,
+              index,
+              current: index,
+              total,
+              currentTrack: getOperationDisplayName(operation),
+              bytesProcessed,
+              bytesTotal: totalBytes,
+              error: lastError,
+              categorizedError,
+              retryAttempt,
+            };
+
+            if (!continueOnError) {
+              throw lastError;
+            }
           }
         }
       }
@@ -472,6 +711,7 @@ export async function executePlan(
   let skipped = 0;
   let bytesTransferred = 0;
   const errors: Array<{ operation: SyncOperation; error: Error }> = [];
+  const categorizedErrors: CategorizedError[] = [];
 
   for await (const progress of executor.execute(plan, options)) {
     if (progress.phase === 'complete') {
@@ -479,6 +719,14 @@ export async function executePlan(
     } else if (progress.error) {
       failed++;
       errors.push({ operation: progress.operation, error: progress.error });
+      if (progress.categorizedError) {
+        categorizedErrors.push(progress.categorizedError);
+      } else {
+        // Create a categorized error if not provided
+        categorizedErrors.push(
+          createCategorizedError(progress.error, progress.operation, 0, false)
+        );
+      }
     } else if (progress.skipped) {
       skipped++;
     } else if (
@@ -496,6 +744,7 @@ export async function executePlan(
     failed,
     skipped,
     errors,
+    categorizedErrors,
     bytesTransferred,
   };
 }

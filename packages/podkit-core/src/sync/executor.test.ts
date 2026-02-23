@@ -19,6 +19,9 @@ import {
   createExecutor,
   executePlan,
   getOperationDisplayName,
+  categorizeError,
+  getRetriesForCategory,
+  DEFAULT_RETRY_CONFIG,
   type ExecutorDependencies,
   type ExecutorProgress,
 } from './executor.js';
@@ -596,19 +599,9 @@ describe('DefaultSyncExecutor - error handling', () => {
   });
 
   it('continues on error when continueOnError is true', async () => {
-    // Make first transcode fail
-    let callCount = 0;
+    // Make first transcode fail permanently (both initial and retry)
     mockTranscoder.transcode = mock(async () => {
-      callCount++;
-      if (callCount === 1) {
-        throw new Error('First transcode failed');
-      }
-      return {
-        outputPath: '/tmp/output.m4a',
-        size: 5000000,
-        duration: 1000,
-        bitrate: 256,
-      };
+      throw new Error('Transcode failed permanently');
     });
     deps = createDependencies(mockDb, mockTranscoder);
 
@@ -627,14 +620,14 @@ describe('DefaultSyncExecutor - error handling', () => {
     };
 
     const progress: ExecutorProgress[] = [];
-    for await (const p of executor.execute(plan, { continueOnError: true })) {
+    for await (const p of executor.execute(plan, { continueOnError: true, retryConfig: { retryDelayMs: 0 } })) {
       progress.push(p);
     }
 
-    // Should have error in progress
+    // Should have error in progress (after retry exhausted)
     const errorEvents = progress.filter((p) => p.error !== undefined);
     expect(errorEvents.length).toBe(1);
-    expect(errorEvents[0]!.error!.message).toBe('First transcode failed');
+    expect(errorEvents[0]!.error!.message).toBe('Transcode failed permanently');
 
     // Second operation should have been executed
     expect(mockDb.addTrack.mock.calls.length).toBe(1);
@@ -812,12 +805,12 @@ describe('executePlan', () => {
     const mockDb = createMockDatabase();
     const mockTranscoder = createMockTranscoder();
 
-    // Make first copy fail
+    // Make first copy fail permanently with a database error (no retry)
     let callCount = 0;
     mockDb.addTrack = mock((input: { title: string }) => {
       callCount++;
       if (callCount === 1) {
-        throw new Error('First add failed');
+        throw new Error('iPod database error: add failed');
       }
       return { id: callCount, title: input.title, artist: '', album: '' };
     });
@@ -833,12 +826,12 @@ describe('executePlan', () => {
       estimatedSize: 10000000,
     };
 
-    const result = await executePlan(plan, deps, { continueOnError: true });
+    const result = await executePlan(plan, deps, { continueOnError: true, retryConfig: { retryDelayMs: 0 } });
 
     expect(result.failed).toBe(1);
     expect(result.completed).toBe(1);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.error.message).toBe('First add failed');
+    expect(result.errors[0]!.error.message).toBe('iPod database error: add failed');
   });
 });
 
@@ -959,5 +952,368 @@ describe('filetype detection', () => {
 
     const trackInput = mockDb.addTrack.mock.calls[0]![0] as { filetype: string };
     expect(trackInput.filetype).toBe('AAC audio file');
+  });
+});
+
+// =============================================================================
+// Error Categorization Tests
+// =============================================================================
+
+describe('categorizeError', () => {
+  it('categorizes FFmpeg errors as transcode', () => {
+    expect(categorizeError(new Error('FFmpeg failed'), 'transcode')).toBe('transcode');
+    expect(categorizeError(new Error('encoder not found'), 'transcode')).toBe('transcode');
+    expect(categorizeError(new Error('codec error'), 'copy')).toBe('transcode');
+  });
+
+  it('categorizes file errors as copy', () => {
+    expect(categorizeError(new Error('ENOENT: file not found'), 'copy')).toBe('copy');
+    expect(categorizeError(new Error('EACCES: permission denied'), 'copy')).toBe('copy');
+    // File I/O errors take precedence over operation type
+    expect(categorizeError(new Error('ENOSPC: no space left'), 'transcode')).toBe('copy');
+    expect(categorizeError(new Error('permission denied'), 'transcode')).toBe('copy');
+  });
+
+  it('categorizes database errors correctly', () => {
+    expect(categorizeError(new Error('database error'), 'copy')).toBe('database');
+    expect(categorizeError(new Error('libgpod failed'), 'copy')).toBe('database');
+    expect(categorizeError(new Error('iTunes error'), 'copy')).toBe('database');
+  });
+
+  it('categorizes artwork errors correctly', () => {
+    expect(categorizeError(new Error('artwork failed'), 'copy')).toBe('artwork');
+    expect(categorizeError(new Error('image processing error'), 'copy')).toBe('artwork');
+  });
+
+  it('returns unknown for unrecognized errors', () => {
+    expect(categorizeError(new Error('something went wrong'), 'remove')).toBe('unknown');
+  });
+
+  it('uses operation type as hint for generic errors', () => {
+    // When error message doesn't match any specific category, fall back to operation type
+    expect(categorizeError(new Error('something failed'), 'transcode')).toBe('transcode');
+    expect(categorizeError(new Error('something failed'), 'copy')).toBe('copy');
+    // But specific error messages take precedence over operation type
+    expect(categorizeError(new Error('database corruption'), 'transcode')).toBe('database');
+    expect(categorizeError(new Error('ENOENT'), 'transcode')).toBe('copy');
+  });
+});
+
+describe('getRetriesForCategory', () => {
+  it('returns correct retries for transcode errors', () => {
+    expect(getRetriesForCategory('transcode', DEFAULT_RETRY_CONFIG)).toBe(1);
+  });
+
+  it('returns correct retries for copy errors', () => {
+    expect(getRetriesForCategory('copy', DEFAULT_RETRY_CONFIG)).toBe(1);
+  });
+
+  it('returns 0 retries for database errors', () => {
+    expect(getRetriesForCategory('database', DEFAULT_RETRY_CONFIG)).toBe(0);
+  });
+
+  it('returns 0 retries for artwork errors', () => {
+    expect(getRetriesForCategory('artwork', DEFAULT_RETRY_CONFIG)).toBe(0);
+  });
+
+  it('returns 0 retries for unknown errors', () => {
+    expect(getRetriesForCategory('unknown', DEFAULT_RETRY_CONFIG)).toBe(0);
+  });
+
+  it('respects custom retry config', () => {
+    const customConfig = {
+      transcodeRetries: 3,
+      copyRetries: 2,
+      databaseRetries: 1,
+      retryDelayMs: 500,
+    };
+    expect(getRetriesForCategory('transcode', customConfig)).toBe(3);
+    expect(getRetriesForCategory('copy', customConfig)).toBe(2);
+    expect(getRetriesForCategory('database', customConfig)).toBe(1);
+  });
+});
+
+// =============================================================================
+// Retry Logic Tests
+// =============================================================================
+
+describe('DefaultSyncExecutor - retry logic', () => {
+  let mockDb: MockDatabase;
+  let mockTranscoder: MockTranscoder;
+  let deps: ExecutorDependencies;
+
+  beforeEach(() => {
+    mockDb = createMockDatabase();
+    mockTranscoder = createMockTranscoder();
+    deps = createDependencies(mockDb, mockTranscoder);
+  });
+
+  it('retries transcode operation once on failure then succeeds', async () => {
+    let transcodeAttempts = 0;
+    mockTranscoder.transcode = mock(async () => {
+      transcodeAttempts++;
+      if (transcodeAttempts === 1) {
+        throw new Error('FFmpeg transient failure');
+      }
+      return {
+        outputPath: '/tmp/output.m4a',
+        size: 5000000,
+        duration: 1000,
+        bitrate: 256,
+      };
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'transcode',
+          source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ],
+      estimatedTime: 18,
+      estimatedSize: 5000000,
+    };
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 }, // No delay for tests
+    })) {
+      progress.push(p);
+    }
+
+    // Should have succeeded after retry
+    expect(transcodeAttempts).toBe(2);
+    expect(mockDb.addTrack.mock.calls.length).toBe(1);
+    // No error events since it succeeded on retry
+    const errorEvents = progress.filter((p) => p.error !== undefined);
+    expect(errorEvents.length).toBe(0);
+  });
+
+  it('retries transcode operation once on failure then fails permanently', async () => {
+    mockTranscoder.transcode = mock(async () => {
+      throw new Error('FFmpeg permanent failure');
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'transcode',
+          source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ],
+      estimatedTime: 18,
+      estimatedSize: 5000000,
+    };
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 },
+    })) {
+      progress.push(p);
+    }
+
+    // Should have tried twice (initial + 1 retry)
+    expect(mockTranscoder.transcode.mock.calls.length).toBe(2);
+    // Should have error with categorized info
+    const errorEvents = progress.filter((p) => p.error !== undefined);
+    expect(errorEvents.length).toBe(1);
+    expect(errorEvents[0]!.categorizedError).toBeDefined();
+    expect(errorEvents[0]!.categorizedError!.wasRetried).toBe(true);
+    expect(errorEvents[0]!.categorizedError!.retryAttempts).toBe(1);
+  });
+
+  it('retries copy operation once on failure', async () => {
+    let copyAttempts = 0;
+    mockDb.copyTrackToDevice = mock(() => {
+      copyAttempts++;
+      if (copyAttempts === 1) {
+        throw new Error('ENOENT: file not found');
+      }
+      return {};
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'copy',
+          source: createCollectionTrack('A', 'S1', 'Album', 'mp3'),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+    };
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 },
+    })) {
+      progress.push(p);
+    }
+
+    // Should have succeeded after retry
+    expect(copyAttempts).toBe(2);
+    const errorEvents = progress.filter((p) => p.error !== undefined);
+    expect(errorEvents.length).toBe(0);
+  });
+
+  it('does not retry database errors', async () => {
+    mockDb.addTrack = mock(() => {
+      throw new Error('iPod database corruption');
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'copy',
+          source: createCollectionTrack('A', 'S1', 'Album', 'mp3'),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+    };
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 },
+    })) {
+      progress.push(p);
+    }
+
+    // Should only try once (no retry for database errors)
+    expect(mockDb.addTrack.mock.calls.length).toBe(1);
+    const errorEvents = progress.filter((p) => p.error !== undefined);
+    expect(errorEvents.length).toBe(1);
+    expect(errorEvents[0]!.categorizedError?.wasRetried).toBe(false);
+  });
+
+  it('includes retry attempt in progress events', async () => {
+    let transcodeAttempts = 0;
+    mockTranscoder.transcode = mock(async () => {
+      transcodeAttempts++;
+      if (transcodeAttempts === 1) {
+        throw new Error('FFmpeg transient failure');
+      }
+      return {
+        outputPath: '/tmp/output.m4a',
+        size: 5000000,
+        duration: 1000,
+        bitrate: 256,
+      };
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'transcode',
+          source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ],
+      estimatedTime: 18,
+      estimatedSize: 5000000,
+    };
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 },
+    })) {
+      progress.push(p);
+    }
+
+    // Success event should include retry attempt info
+    const transcodeEvents = progress.filter((p) => p.phase === 'transcoding');
+    expect(transcodeEvents.length).toBeGreaterThan(0);
+    const successEvent = transcodeEvents.find((p) => !p.error);
+    expect(successEvent?.retryAttempt).toBe(1);
+  });
+
+  it('respects custom retry configuration', async () => {
+    mockTranscoder.transcode = mock(async () => {
+      throw new Error('FFmpeg failure');
+    });
+    deps = createDependencies(mockDb, mockTranscoder);
+
+    const executor = new DefaultSyncExecutor(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'transcode',
+          source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ],
+      estimatedTime: 18,
+      estimatedSize: 5000000,
+    };
+
+    for await (const _p of executor.execute(plan, {
+      continueOnError: true,
+      retryConfig: { transcodeRetries: 3, retryDelayMs: 0 },
+    })) {
+      // iterate
+    }
+
+    // Should have tried 4 times (initial + 3 retries)
+    expect(mockTranscoder.transcode.mock.calls.length).toBe(4);
+  });
+});
+
+// =============================================================================
+// executePlan with categorized errors Tests
+// =============================================================================
+
+describe('executePlan - categorized errors', () => {
+  it('collects categorized errors in result', async () => {
+    const mockDb = createMockDatabase();
+    const mockTranscoder = createMockTranscoder();
+
+    // Make transcode fail
+    mockTranscoder.transcode = mock(async () => {
+      throw new Error('FFmpeg error');
+    });
+
+    const deps = createDependencies(mockDb, mockTranscoder);
+
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'transcode',
+          source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+      ],
+      estimatedTime: 20,
+      estimatedSize: 10000000,
+    };
+
+    const result = await executePlan(plan, deps, {
+      continueOnError: true,
+      retryConfig: { retryDelayMs: 0 },
+    });
+
+    expect(result.failed).toBe(1);
+    expect(result.completed).toBe(1);
+    expect(result.categorizedErrors).toHaveLength(1);
+    expect(result.categorizedErrors[0]!.category).toBe('transcode');
+    expect(result.categorizedErrors[0]!.trackName).toBe('A - S1');
+    expect(result.categorizedErrors[0]!.wasRetried).toBe(true);
   });
 });

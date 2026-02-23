@@ -39,6 +39,18 @@ interface SyncOptions {
 }
 
 /**
+ * Categorized error info for JSON output
+ */
+interface ErrorInfo {
+  track: string;
+  category: string;
+  message: string;
+  retryAttempts: number;
+  wasRetried: boolean;
+  stack?: string;
+}
+
+/**
  * JSON output structure for sync command
  */
 interface SyncOutput {
@@ -67,6 +79,7 @@ interface SyncOutput {
     bytesTransferred: number;
     duration: number;
   };
+  errors?: ErrorInfo[];
   error?: string;
 }
 
@@ -173,6 +186,82 @@ export function renderProgressBar(current: number, total: number, width = 30): s
   const bar = '='.repeat(filled) + (filled < width ? '>' : '') + ' '.repeat(Math.max(0, empty - 1));
   const percentStr = `${Math.round(percent * 100)}%`.padStart(4);
   return `[${bar}] ${percentStr}`;
+}
+
+/**
+ * Collected error for reporting
+ */
+interface CollectedError {
+  trackName: string;
+  category: string;
+  message: string;
+  retryAttempts: number;
+  wasRetried: boolean;
+  stack?: string;
+}
+
+/**
+ * Format errors based on verbosity level
+ *
+ * Verbosity levels:
+ * - 0 (normal): summary only ("5 tracks failed")
+ * - 1 (-v): list failed track names
+ * - 2 (-vv): show error type/category for each failure
+ * - 3 (-vvv): full error details including stack traces
+ */
+function formatErrors(errors: CollectedError[], verbosity: number): string[] {
+  const lines: string[] = [];
+
+  if (errors.length === 0) {
+    return lines;
+  }
+
+  // Always show summary
+  lines.push('');
+  lines.push(`Failed: ${errors.length} track${errors.length === 1 ? '' : 's'}`);
+
+  if (verbosity === 0) {
+    // Normal: just the summary count
+    return lines;
+  }
+
+  lines.push('');
+
+  if (verbosity === 1) {
+    // -v: list track names
+    for (const err of errors) {
+      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
+      lines.push(`  - ${err.trackName}${retryInfo}`);
+    }
+  } else if (verbosity === 2) {
+    // -vv: show error type for each
+    for (const err of errors) {
+      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
+      lines.push(`  - ${err.trackName}${retryInfo}`);
+      lines.push(`    [${err.category}] ${err.message}`);
+    }
+  } else {
+    // -vvv: full details including stack
+    for (const err of errors) {
+      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
+      lines.push(`  - ${err.trackName}${retryInfo}`);
+      lines.push(`    Category: ${err.category}`);
+      lines.push(`    Error: ${err.message}`);
+      if (err.stack) {
+        lines.push('    Stack trace:');
+        const stackLines = err.stack.split('\n').slice(1); // Skip first line (error message)
+        for (const stackLine of stackLines.slice(0, 5)) { // Limit to 5 lines
+          lines.push(`      ${stackLine.trim()}`);
+        }
+        if (stackLines.length > 5) {
+          lines.push(`      ... (${stackLines.length - 5} more)`);
+        }
+      }
+      lines.push('');
+    }
+  }
+
+  return lines;
 }
 
 // =============================================================================
@@ -673,6 +762,7 @@ export const syncCommand = new Command('sync')
       }
 
       const operationResults: SyncOutput['operations'] = [];
+      const collectedErrors: CollectedError[] = [];
       let completed = 0;
       let failed = 0;
 
@@ -688,6 +778,18 @@ export const syncCommand = new Command('sync')
             status: 'failed',
             error: progress.error.message,
           });
+
+          // Collect categorized error for detailed reporting
+          const categorized = progress.categorizedError;
+          collectedErrors.push({
+            trackName: categorized?.trackName ?? core.getOperationDisplayName(progress.operation),
+            category: categorized?.category ?? 'unknown',
+            message: progress.error.message,
+            retryAttempts: categorized?.retryAttempts ?? 0,
+            wasRetried: categorized?.wasRetried ?? false,
+            stack: progress.error.stack,
+          });
+
           failed++;
         } else if (progress.phase !== 'preparing' && progress.phase !== 'updating-db' && progress.phase !== 'complete') {
           // Count completed operations
@@ -716,6 +818,17 @@ export const syncCommand = new Command('sync')
       const duration = (Date.now() - startTime) / 1000;
 
       if (globalOpts.json) {
+        // Convert collected errors to JSON format
+        const errorInfos: ErrorInfo[] = collectedErrors.map((err) => ({
+          track: err.trackName,
+          category: err.category,
+          message: err.message,
+          retryAttempts: err.retryAttempts,
+          wasRetried: err.wasRetried,
+          // Only include stack in verbose JSON mode
+          ...(globalOpts.verbose >= 3 ? { stack: err.stack } : {}),
+        }));
+
         outputJson({
           success: failed === 0,
           dryRun: false,
@@ -737,17 +850,31 @@ export const syncCommand = new Command('sync')
             bytesTransferred: plan.estimatedSize,
             duration,
           },
+          errors: errorInfos.length > 0 ? errorInfos : undefined,
         });
       } else if (!globalOpts.quiet) {
         console.log('');
         console.log('=== Summary ===');
         console.log('');
-        console.log(`Completed: ${formatNumber(completed)} operations`);
+
+        // Show success message with track counts
+        const total = plan.operations.length;
         if (failed > 0) {
-          console.log(`Failed: ${formatNumber(failed)} operations`);
+          console.log(`Synced ${formatNumber(completed)}/${formatNumber(total)} tracks (${formatNumber(failed)} failed)`);
+        } else {
+          console.log(`Synced ${formatNumber(completed)} tracks successfully`);
         }
+
         console.log(`Duration: ${formatDuration(duration)}`);
         console.log(`Data transferred: ~${formatBytes(plan.estimatedSize)}`);
+
+        // Display errors based on verbosity
+        if (collectedErrors.length > 0) {
+          const errorLines = formatErrors(collectedErrors, globalOpts.verbose);
+          for (const line of errorLines) {
+            console.log(line);
+          }
+        }
       }
 
       if (failed > 0) {

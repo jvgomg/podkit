@@ -91,12 +91,19 @@ export type {
   ExtendedExecuteOptions,
   ExecuteResult,
   ExecutorDependencies,
+  ErrorCategory,
+  CategorizedError,
+  RetryConfig,
 } from './sync/executor.js';
 export {
   DefaultSyncExecutor,
   createExecutor,
   executePlan,
   getOperationDisplayName,
+  categorizeError,
+  createCategorizedError,
+  getRetriesForCategory,
+  DEFAULT_RETRY_CONFIG,
 } from './sync/executor.js';
 
 // Transcoding
