@@ -23,6 +23,16 @@ export type {
   AdapterConfig,
 } from './adapters/interface.js';
 
+export {
+  DirectoryAdapter,
+  createDirectoryAdapter,
+} from './adapters/directory.js';
+
+export type {
+  DirectoryAdapterConfig,
+  ScanProgress,
+} from './adapters/directory.js';
+
 // Sync engine
 export type {
   IPodTrack,
