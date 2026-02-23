@@ -300,6 +300,13 @@ export interface TrackInput {
 
   /** Compilation flag */
   compilation?: boolean;
+
+  /** Rating (0-100, where 20 = 1 star) - for updates */
+  rating?: number;
+  /** Play count - for updates */
+  playCount?: number;
+  /** Skip count - for updates */
+  skipCount?: number;
 }
 
 /**

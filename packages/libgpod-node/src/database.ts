@@ -182,12 +182,35 @@ export class Database {
   /**
    * Get a track by its ID.
    *
-   * @param id Track ID
+   * @param id Track ID (32-bit, assigned by libgpod)
    * @returns Track or null if not found
    */
   getTrackById(id: number): Track | null {
     const native = this.ensureOpen();
     return native.getTrackById(id);
+  }
+
+  /**
+   * Get a track by its database ID (dbid).
+   *
+   * The dbid is a 64-bit unique identifier that persists across database
+   * operations, unlike the regular track ID which is re-assigned on export.
+   *
+   * @param dbid Database ID (64-bit BigInt)
+   * @returns Track or null if not found
+   *
+   * @example
+   * ```typescript
+   * const track = db.getTracks()[0];
+   * const dbid = track.dbid;
+   *
+   * // Later, look up by dbid
+   * const found = db.getTrackByDbId(dbid);
+   * ```
+   */
+  getTrackByDbId(dbid: bigint): Track | null {
+    const native = this.ensureOpen();
+    return native.getTrackByDbId(dbid);
   }
 
   /**
@@ -274,6 +297,130 @@ export class Database {
   removeTrack(trackId: number): void {
     const native = this.ensureOpen();
     native.removeTrack(trackId);
+  }
+
+  /**
+   * Update an existing track's metadata.
+   *
+   * Only the fields provided in the input object will be updated.
+   * Other fields will retain their current values.
+   *
+   * @param trackId ID of the track to update
+   * @param fields Partial track input with fields to update
+   * @returns The updated track
+   * @throws LibgpodError if the track is not found
+   *
+   * @example
+   * ```typescript
+   * // Update just the title and artist
+   * const updated = db.updateTrack(track.id, {
+   *   title: 'New Title',
+   *   artist: 'New Artist'
+   * });
+   *
+   * // Update rating and play count
+   * db.updateTrack(track.id, {
+   *   rating: 80,  // 4 stars
+   *   playCount: 10
+   * });
+   *
+   * await db.save();
+   * ```
+   */
+  updateTrack(trackId: number, fields: Partial<TrackInput>): Track {
+    const native = this.ensureOpen();
+    try {
+      return native.updateTrack(trackId, fields);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'updateTrack'
+      );
+    }
+  }
+
+  /**
+   * Get the full filesystem path for a track on the iPod.
+   *
+   * This uses libgpod's `itdb_filename_on_ipod()` to construct the
+   * full path by combining the mountpoint with the track's ipod_path.
+   *
+   * @param trackId ID of the track
+   * @returns Full filesystem path or null if track has no file
+   * @throws LibgpodError if the track is not found
+   *
+   * @example
+   * ```typescript
+   * const track = db.getTrackById(trackId);
+   * const filePath = db.getTrackFilePath(trackId);
+   * if (filePath) {
+   *   console.log(`Track file: ${filePath}`);
+   *   // e.g., "/media/ipod/iPod_Control/Music/F00/ABCD.mp3"
+   * }
+   * ```
+   */
+  getTrackFilePath(trackId: number): string | null {
+    const native = this.ensureOpen();
+    try {
+      return native.getTrackFilePath(trackId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'getTrackFilePath'
+      );
+    }
+  }
+
+  /**
+   * Duplicate an existing track.
+   *
+   * Creates a copy of the track's metadata. The duplicate will have:
+   * - A new track ID (assigned by libgpod)
+   * - A new database ID (dbid)
+   * - ipodPath set to null (no file association)
+   * - transferred set to false
+   * - time_added set to now
+   *
+   * The duplicate is automatically added to the database and master playlist.
+   *
+   * To also copy the audio file, call `copyTrackToDevice()` on the
+   * duplicate with a source file path.
+   *
+   * @param trackId ID of the track to duplicate
+   * @returns The newly created duplicate track
+   * @throws LibgpodError if the track is not found
+   *
+   * @example
+   * ```typescript
+   * // Duplicate a track
+   * const original = db.getTrackById(trackId);
+   * const copy = db.duplicateTrack(trackId);
+   *
+   * // Optionally modify the copy
+   * db.updateTrack(copy.id, { title: `${original.title} (Copy)` });
+   *
+   * // Optionally copy the audio file
+   * const originalPath = db.getTrackFilePath(trackId);
+   * if (originalPath) {
+   *   db.copyTrackToDevice(copy.id, originalPath);
+   * }
+   *
+   * await db.save();
+   * ```
+   */
+  duplicateTrack(trackId: number): Track {
+    const native = this.ensureOpen();
+    try {
+      return native.duplicateTrack(trackId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'duplicateTrack'
+      );
+    }
   }
 
   /**

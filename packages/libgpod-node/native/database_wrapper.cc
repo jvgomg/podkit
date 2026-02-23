@@ -22,9 +22,13 @@ Napi::Object DatabaseWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("getMountpoint", &DatabaseWrapper::GetMountpoint),
         // Track methods
         InstanceMethod("getTrackById", &DatabaseWrapper::GetTrackById),
+        InstanceMethod("getTrackByDbId", &DatabaseWrapper::GetTrackByDbId),
         InstanceMethod("addTrack", &DatabaseWrapper::AddTrack),
         InstanceMethod("removeTrack", &DatabaseWrapper::RemoveTrack),
         InstanceMethod("copyTrackToDevice", &DatabaseWrapper::CopyTrackToDevice),
+        InstanceMethod("updateTrack", &DatabaseWrapper::UpdateTrack),
+        InstanceMethod("getTrackFilePath", &DatabaseWrapper::GetTrackFilePath),
+        InstanceMethod("duplicateTrack", &DatabaseWrapper::DuplicateTrack),
         // Artwork methods
         InstanceMethod("setTrackThumbnails", &DatabaseWrapper::SetTrackThumbnails),
         InstanceMethod("setTrackThumbnailsFromData", &DatabaseWrapper::SetTrackThumbnailsFromData),

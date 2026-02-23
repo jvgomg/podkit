@@ -35,9 +35,13 @@ private:
 
     // Track operations (track_operations.cc)
     Napi::Value GetTrackById(const Napi::CallbackInfo& info);
+    Napi::Value GetTrackByDbId(const Napi::CallbackInfo& info);
     Napi::Value AddTrack(const Napi::CallbackInfo& info);
     Napi::Value RemoveTrack(const Napi::CallbackInfo& info);
     Napi::Value CopyTrackToDevice(const Napi::CallbackInfo& info);
+    Napi::Value UpdateTrack(const Napi::CallbackInfo& info);
+    Napi::Value GetTrackFilePath(const Napi::CallbackInfo& info);
+    Napi::Value DuplicateTrack(const Napi::CallbackInfo& info);
 
     // Artwork operations (artwork_operations.cc)
     Napi::Value SetTrackThumbnails(const Napi::CallbackInfo& info);

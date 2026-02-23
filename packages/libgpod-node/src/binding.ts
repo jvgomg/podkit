@@ -47,6 +47,10 @@ export interface NativeDatabase {
   close(): void;
   getMountpoint(): string | null;
   getTrackById(id: number): Track | null;
+  getTrackByDbId(dbid: bigint): Track | null;
+  updateTrack(trackId: number, fields: Partial<TrackInput>): Track;
+  getTrackFilePath(trackId: number): string | null;
+  duplicateTrack(trackId: number): Track;
   getUniqueArtworkIds(): number[];
   getArtworkFormats(): ArtworkCapabilities;
 
