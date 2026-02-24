@@ -64,6 +64,16 @@ private:
     Napi::Value PlaylistContainsTrack(const Napi::CallbackInfo& info);
     Napi::Value GetPlaylistTracks(const Napi::CallbackInfo& info);
 
+    // Smart playlist operations (playlist_operations.cc)
+    Napi::Value CreateSmartPlaylist(const Napi::CallbackInfo& info);
+    Napi::Value GetSmartPlaylistRules(const Napi::CallbackInfo& info);
+    Napi::Value AddSmartPlaylistRule(const Napi::CallbackInfo& info);
+    Napi::Value RemoveSmartPlaylistRule(const Napi::CallbackInfo& info);
+    Napi::Value ClearSmartPlaylistRules(const Napi::CallbackInfo& info);
+    Napi::Value SetSmartPlaylistPreferences(const Napi::CallbackInfo& info);
+    Napi::Value GetSmartPlaylistPreferences(const Napi::CallbackInfo& info);
+    Napi::Value EvaluateSmartPlaylist(const Napi::CallbackInfo& info);
+
     // Device capability operations (database_wrapper.cc)
     Napi::Value GetDeviceCapabilities(const Napi::CallbackInfo& info);
     Napi::Value GetSysInfo(const Napi::CallbackInfo& info);

@@ -16,6 +16,10 @@ import type {
   TrackInput,
   ArtworkCapabilities,
   DeviceCapabilities,
+  SmartPlaylist,
+  SPLRule,
+  SPLPreferences,
+  SPLMatch,
 } from './types';
 
 /**
@@ -67,6 +71,26 @@ export interface NativeDatabase {
   removeTrackFromPlaylist(playlistId: bigint, trackId: number): Playlist;
   playlistContainsTrack(playlistId: bigint, trackId: number): boolean;
   getPlaylistTracks(playlistId: bigint): Track[];
+
+  // Smart playlist operations
+  createSmartPlaylist(
+    name: string,
+    config?: {
+      match?: SPLMatch;
+      rules?: SPLRule[];
+      preferences?: SPLPreferences;
+    }
+  ): SmartPlaylist;
+  getSmartPlaylistRules(playlistId: bigint): SPLRule[];
+  addSmartPlaylistRule(playlistId: bigint, rule: SPLRule): SmartPlaylist;
+  removeSmartPlaylistRule(playlistId: bigint, ruleIndex: number): SmartPlaylist;
+  clearSmartPlaylistRules(playlistId: bigint): SmartPlaylist;
+  setSmartPlaylistPreferences(
+    playlistId: bigint,
+    preferences: Partial<SPLPreferences>
+  ): SmartPlaylist;
+  getSmartPlaylistPreferences(playlistId: bigint): SPLPreferences;
+  evaluateSmartPlaylist(playlistId: bigint): Track[];
 
   // Device capability operations
   getDeviceCapabilities(): DeviceCapabilities;

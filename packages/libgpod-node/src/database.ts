@@ -20,6 +20,10 @@ import type {
   DeviceInfo,
   ArtworkCapabilities,
   DeviceCapabilities,
+  SmartPlaylist,
+  SPLRule,
+  SPLPreferences,
+  SmartPlaylistInput,
 } from './types';
 
 import { LibgpodError, LibgpodErrorCode } from './types';
@@ -1111,6 +1115,321 @@ export class Database {
   getMasterPlaylist(): Playlist | null {
     const playlists = this.getPlaylists();
     return playlists.find((p) => p.isMaster) ?? null;
+  }
+
+  // ============================================================================
+  // Smart playlist operations
+  // ============================================================================
+
+  /**
+   * Create a new smart playlist.
+   *
+   * Smart playlists use rules to automatically include tracks that match
+   * certain criteria (e.g., "all songs by Artist X" or "songs rated 4+ stars").
+   *
+   * Note: The iPod firmware evaluates smart playlist rules at playback time.
+   * The `evaluateSmartPlaylist()` method can be used to preview which tracks
+   * would match the rules.
+   *
+   * @param input Smart playlist configuration
+   * @returns The created smart playlist
+   * @throws LibgpodError if creation fails
+   *
+   * @example
+   * ```typescript
+   * import { SPLField, SPLAction, SPLMatch } from '@podkit/libgpod-node';
+   *
+   * // Create a smart playlist for all rock songs
+   * const rockPlaylist = db.createSmartPlaylist({
+   *   name: 'Rock Music',
+   *   match: SPLMatch.And,
+   *   rules: [
+   *     { field: SPLField.Genre, action: SPLAction.Contains, string: 'Rock' }
+   *   ]
+   * });
+   *
+   * // Create a smart playlist for highly rated songs
+   * const topRated = db.createSmartPlaylist({
+   *   name: 'Top Rated',
+   *   rules: [
+   *     { field: SPLField.Rating, action: SPLAction.IsGreaterThan, fromValue: 80 }
+   *   ],
+   *   preferences: {
+   *     liveUpdate: true,
+   *     checkLimits: true,
+   *     limitType: SPLLimitType.Songs,
+   *     limitValue: 50
+   *   }
+   * });
+   *
+   * await db.save();
+   * ```
+   */
+  createSmartPlaylist(input: SmartPlaylistInput): SmartPlaylist {
+    const native = this.ensureOpen();
+    try {
+      return native.createSmartPlaylist(input.name, {
+        match: input.match,
+        rules: input.rules,
+        preferences: input.preferences,
+      });
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'createSmartPlaylist'
+      );
+    }
+  }
+
+  /**
+   * Get the rules of a smart playlist.
+   *
+   * @param playlistId ID of the smart playlist
+   * @returns Array of rules
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * const playlist = db.getPlaylistByName('Rock Music');
+   * if (playlist && playlist.isSmart) {
+   *   const rules = db.getSmartPlaylistRules(playlist.id);
+   *   console.log(`Playlist has ${rules.length} rules`);
+   * }
+   * ```
+   */
+  getSmartPlaylistRules(playlistId: bigint): SPLRule[] {
+    const native = this.ensureOpen();
+    try {
+      return native.getSmartPlaylistRules(playlistId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'getSmartPlaylistRules'
+      );
+    }
+  }
+
+  /**
+   * Add a rule to a smart playlist.
+   *
+   * @param playlistId ID of the smart playlist
+   * @param rule Rule to add
+   * @returns The updated smart playlist
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * import { SPLField, SPLAction } from '@podkit/libgpod-node';
+   *
+   * const playlist = db.getPlaylistByName('My Smart Playlist');
+   * if (playlist && playlist.isSmart) {
+   *   db.addSmartPlaylistRule(playlist.id, {
+   *     field: SPLField.Artist,
+   *     action: SPLAction.Contains,
+   *     string: 'Beatles'
+   *   });
+   *   await db.save();
+   * }
+   * ```
+   */
+  addSmartPlaylistRule(playlistId: bigint, rule: SPLRule): SmartPlaylist {
+    const native = this.ensureOpen();
+    try {
+      return native.addSmartPlaylistRule(playlistId, rule);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'addSmartPlaylistRule'
+      );
+    }
+  }
+
+  /**
+   * Remove a rule from a smart playlist by index.
+   *
+   * @param playlistId ID of the smart playlist
+   * @param ruleIndex Index of the rule to remove (0-based)
+   * @returns The updated smart playlist
+   * @throws LibgpodError if the playlist is not found, is not a smart playlist,
+   *         or the rule index is out of range
+   *
+   * @example
+   * ```typescript
+   * const playlist = db.getPlaylistByName('My Smart Playlist');
+   * if (playlist && playlist.isSmart) {
+   *   // Remove the first rule
+   *   db.removeSmartPlaylistRule(playlist.id, 0);
+   *   await db.save();
+   * }
+   * ```
+   */
+  removeSmartPlaylistRule(playlistId: bigint, ruleIndex: number): SmartPlaylist {
+    const native = this.ensureOpen();
+    try {
+      return native.removeSmartPlaylistRule(playlistId, ruleIndex);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'removeSmartPlaylistRule'
+      );
+    }
+  }
+
+  /**
+   * Remove all rules from a smart playlist.
+   *
+   * @param playlistId ID of the smart playlist
+   * @returns The updated smart playlist
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * const playlist = db.getPlaylistByName('My Smart Playlist');
+   * if (playlist && playlist.isSmart) {
+   *   db.clearSmartPlaylistRules(playlist.id);
+   *   await db.save();
+   * }
+   * ```
+   */
+  clearSmartPlaylistRules(playlistId: bigint): SmartPlaylist {
+    const native = this.ensureOpen();
+    try {
+      return native.clearSmartPlaylistRules(playlistId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'clearSmartPlaylistRules'
+      );
+    }
+  }
+
+  /**
+   * Get the preferences of a smart playlist.
+   *
+   * @param playlistId ID of the smart playlist
+   * @returns Smart playlist preferences
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * const playlist = db.getPlaylistByName('My Smart Playlist');
+   * if (playlist && playlist.isSmart) {
+   *   const prefs = db.getSmartPlaylistPreferences(playlist.id);
+   *   console.log(`Live update: ${prefs.liveUpdate}`);
+   * }
+   * ```
+   */
+  getSmartPlaylistPreferences(playlistId: bigint): SPLPreferences {
+    const native = this.ensureOpen();
+    try {
+      return native.getSmartPlaylistPreferences(playlistId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'getSmartPlaylistPreferences'
+      );
+    }
+  }
+
+  /**
+   * Set the preferences of a smart playlist.
+   *
+   * @param playlistId ID of the smart playlist
+   * @param preferences Preferences to set (partial update)
+   * @returns The updated smart playlist
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * import { SPLLimitType, SPLLimitSort } from '@podkit/libgpod-node';
+   *
+   * const playlist = db.getPlaylistByName('My Smart Playlist');
+   * if (playlist && playlist.isSmart) {
+   *   db.setSmartPlaylistPreferences(playlist.id, {
+   *     checkLimits: true,
+   *     limitType: SPLLimitType.Songs,
+   *     limitValue: 100,
+   *     limitSort: SPLLimitSort.Random
+   *   });
+   *   await db.save();
+   * }
+   * ```
+   */
+  setSmartPlaylistPreferences(
+    playlistId: bigint,
+    preferences: Partial<SPLPreferences>
+  ): SmartPlaylist {
+    const native = this.ensureOpen();
+    try {
+      return native.setSmartPlaylistPreferences(playlistId, preferences);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'setSmartPlaylistPreferences'
+      );
+    }
+  }
+
+  /**
+   * Evaluate a smart playlist's rules against all tracks in the database.
+   *
+   * This method simulates what the iPod does at playback time by evaluating
+   * the smart playlist rules against all tracks and returning those that match.
+   *
+   * Note: This is a preview/testing feature. On the actual iPod, the firmware
+   * evaluates rules dynamically.
+   *
+   * @param playlistId ID of the smart playlist
+   * @returns Array of tracks that match the rules
+   * @throws LibgpodError if the playlist is not found or is not a smart playlist
+   *
+   * @example
+   * ```typescript
+   * const playlist = db.getPlaylistByName('Rock Music');
+   * if (playlist && playlist.isSmart) {
+   *   const matchingTracks = db.evaluateSmartPlaylist(playlist.id);
+   *   console.log(`${matchingTracks.length} tracks match the rules`);
+   *   for (const track of matchingTracks) {
+   *     console.log(`  - ${track.artist} - ${track.title}`);
+   *   }
+   * }
+   * ```
+   */
+  evaluateSmartPlaylist(playlistId: bigint): Track[] {
+    const native = this.ensureOpen();
+    try {
+      return native.evaluateSmartPlaylist(playlistId);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'evaluateSmartPlaylist'
+      );
+    }
+  }
+
+  /**
+   * Get all smart playlists in the database.
+   *
+   * @returns Array of smart playlists
+   *
+   * @example
+   * ```typescript
+   * const smartPlaylists = db.getSmartPlaylists();
+   * for (const pl of smartPlaylists) {
+   *   console.log(`${pl.name}: ${pl.rules.length} rules`);
+   * }
+   * ```
+   */
+  getSmartPlaylists(): Playlist[] {
+    return this.getPlaylists().filter((p) => p.isSmart);
   }
 
   // ============================================================================

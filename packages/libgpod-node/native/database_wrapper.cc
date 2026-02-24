@@ -48,6 +48,15 @@ Napi::Object DatabaseWrapper::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("removeTrackFromPlaylist", &DatabaseWrapper::RemoveTrackFromPlaylist),
         InstanceMethod("playlistContainsTrack", &DatabaseWrapper::PlaylistContainsTrack),
         InstanceMethod("getPlaylistTracks", &DatabaseWrapper::GetPlaylistTracks),
+        // Smart playlist methods
+        InstanceMethod("createSmartPlaylist", &DatabaseWrapper::CreateSmartPlaylist),
+        InstanceMethod("getSmartPlaylistRules", &DatabaseWrapper::GetSmartPlaylistRules),
+        InstanceMethod("addSmartPlaylistRule", &DatabaseWrapper::AddSmartPlaylistRule),
+        InstanceMethod("removeSmartPlaylistRule", &DatabaseWrapper::RemoveSmartPlaylistRule),
+        InstanceMethod("clearSmartPlaylistRules", &DatabaseWrapper::ClearSmartPlaylistRules),
+        InstanceMethod("setSmartPlaylistPreferences", &DatabaseWrapper::SetSmartPlaylistPreferences),
+        InstanceMethod("getSmartPlaylistPreferences", &DatabaseWrapper::GetSmartPlaylistPreferences),
+        InstanceMethod("evaluateSmartPlaylist", &DatabaseWrapper::EvaluateSmartPlaylist),
         // Device capability methods
         InstanceMethod("getDeviceCapabilities", &DatabaseWrapper::GetDeviceCapabilities),
         InstanceMethod("getSysInfo", &DatabaseWrapper::GetSysInfo),

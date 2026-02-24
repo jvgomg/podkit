@@ -197,3 +197,122 @@ Napi::Object PlaylistToObject(Napi::Env env, const Itdb_Playlist* pl) {
 
     return obj;
 }
+
+Napi::Object SPLRuleToObject(Napi::Env env, const Itdb_SPLRule* rule) {
+    Napi::Object obj = Napi::Object::New(env);
+
+    obj.Set("field", Napi::Number::New(env, rule->field));
+    obj.Set("action", Napi::Number::New(env, rule->action));
+    obj.Set("string", GcharToValue(env, rule->string));
+    obj.Set("fromValue", Napi::Number::New(env, static_cast<double>(rule->fromvalue)));
+    obj.Set("toValue", Napi::Number::New(env, static_cast<double>(rule->tovalue)));
+    obj.Set("fromDate", Napi::Number::New(env, static_cast<double>(rule->fromdate)));
+    obj.Set("toDate", Napi::Number::New(env, static_cast<double>(rule->todate)));
+    obj.Set("fromUnits", Napi::Number::New(env, static_cast<double>(rule->fromunits)));
+    obj.Set("toUnits", Napi::Number::New(env, static_cast<double>(rule->tounits)));
+
+    return obj;
+}
+
+Napi::Object SPLPrefsToObject(Napi::Env env, const Itdb_SPLPref* prefs) {
+    Napi::Object obj = Napi::Object::New(env);
+
+    obj.Set("liveUpdate", Napi::Boolean::New(env, prefs->liveupdate != 0));
+    obj.Set("checkRules", Napi::Boolean::New(env, prefs->checkrules != 0));
+    obj.Set("checkLimits", Napi::Boolean::New(env, prefs->checklimits != 0));
+    obj.Set("limitType", Napi::Number::New(env, prefs->limittype));
+    obj.Set("limitSort", Napi::Number::New(env, prefs->limitsort));
+    obj.Set("limitValue", Napi::Number::New(env, prefs->limitvalue));
+    obj.Set("matchCheckedOnly", Napi::Boolean::New(env, prefs->matchcheckedonly != 0));
+
+    return obj;
+}
+
+Napi::Object SmartPlaylistToObject(Napi::Env env, const Itdb_Playlist* pl) {
+    // Start with the base playlist object
+    Napi::Object obj = PlaylistToObject(env, pl);
+
+    // Add smart playlist specific fields
+    obj.Set("match", Napi::Number::New(env, pl->splrules.match_operator));
+    obj.Set("preferences", SPLPrefsToObject(env, &pl->splpref));
+
+    // Convert rules list
+    Napi::Array rulesArray = Napi::Array::New(env);
+    uint32_t index = 0;
+    for (GList* l = pl->splrules.rules; l != nullptr; l = l->next) {
+        Itdb_SPLRule* rule = static_cast<Itdb_SPLRule*>(l->data);
+        rulesArray.Set(index++, SPLRuleToObject(env, rule));
+    }
+    obj.Set("rules", rulesArray);
+
+    return obj;
+}
+
+void ObjectToSPLRule(Napi::Env env, Napi::Object obj, Itdb_SPLRule* rule) {
+    // Field (required)
+    if (obj.Has("field") && obj.Get("field").IsNumber()) {
+        rule->field = obj.Get("field").As<Napi::Number>().Uint32Value();
+    }
+
+    // Action (required)
+    if (obj.Has("action") && obj.Get("action").IsNumber()) {
+        rule->action = obj.Get("action").As<Napi::Number>().Uint32Value();
+    }
+
+    // String value (for string comparisons)
+    if (obj.Has("string") && obj.Get("string").IsString()) {
+        g_free(rule->string);
+        rule->string = g_strdup(obj.Get("string").As<Napi::String>().Utf8Value().c_str());
+    }
+
+    // Numeric values
+    if (obj.Has("fromValue") && obj.Get("fromValue").IsNumber()) {
+        rule->fromvalue = static_cast<guint64>(obj.Get("fromValue").As<Napi::Number>().DoubleValue());
+    }
+    if (obj.Has("toValue") && obj.Get("toValue").IsNumber()) {
+        rule->tovalue = static_cast<guint64>(obj.Get("toValue").As<Napi::Number>().DoubleValue());
+    }
+
+    // Date values
+    if (obj.Has("fromDate") && obj.Get("fromDate").IsNumber()) {
+        rule->fromdate = static_cast<gint64>(obj.Get("fromDate").As<Napi::Number>().DoubleValue());
+    }
+    if (obj.Has("toDate") && obj.Get("toDate").IsNumber()) {
+        rule->todate = static_cast<gint64>(obj.Get("toDate").As<Napi::Number>().DoubleValue());
+    }
+
+    // Units (for "in the last" comparisons)
+    if (obj.Has("fromUnits") && obj.Get("fromUnits").IsNumber()) {
+        rule->fromunits = static_cast<guint64>(obj.Get("fromUnits").As<Napi::Number>().DoubleValue());
+    }
+    if (obj.Has("toUnits") && obj.Get("toUnits").IsNumber()) {
+        rule->tounits = static_cast<guint64>(obj.Get("toUnits").As<Napi::Number>().DoubleValue());
+    }
+
+    // Validate the rule to ensure consistent state
+    itdb_splr_validate(rule);
+}
+
+void ObjectToSPLPrefs(Napi::Env env, Napi::Object obj, Itdb_SPLPref* prefs) {
+    if (obj.Has("liveUpdate") && obj.Get("liveUpdate").IsBoolean()) {
+        prefs->liveupdate = obj.Get("liveUpdate").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (obj.Has("checkRules") && obj.Get("checkRules").IsBoolean()) {
+        prefs->checkrules = obj.Get("checkRules").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (obj.Has("checkLimits") && obj.Get("checkLimits").IsBoolean()) {
+        prefs->checklimits = obj.Get("checkLimits").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+    if (obj.Has("limitType") && obj.Get("limitType").IsNumber()) {
+        prefs->limittype = obj.Get("limitType").As<Napi::Number>().Uint32Value();
+    }
+    if (obj.Has("limitSort") && obj.Get("limitSort").IsNumber()) {
+        prefs->limitsort = obj.Get("limitSort").As<Napi::Number>().Uint32Value();
+    }
+    if (obj.Has("limitValue") && obj.Get("limitValue").IsNumber()) {
+        prefs->limitvalue = obj.Get("limitValue").As<Napi::Number>().Uint32Value();
+    }
+    if (obj.Has("matchCheckedOnly") && obj.Get("matchCheckedOnly").IsBoolean()) {
+        prefs->matchcheckedonly = obj.Get("matchCheckedOnly").As<Napi::Boolean>().Value() ? 1 : 0;
+    }
+}

@@ -52,6 +52,12 @@ export type {
   ArtworkCapabilities,
   DeviceCapabilities,
 
+  // Smart playlist types
+  SmartPlaylist,
+  SmartPlaylistInput,
+  SPLRule,
+  SPLPreferences,
+
   // Enums and type aliases
   IpodGeneration,
   IpodModel,
@@ -65,6 +71,14 @@ export {
 
   // Constants
   MediaType,
+
+  // Smart playlist enums
+  SPLMatch,
+  SPLLimitType,
+  SPLLimitSort,
+  SPLField,
+  SPLAction,
+  SPLActionLastUnits,
 } from './types';
 
 // Track utilities
