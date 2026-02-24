@@ -1,9 +1,10 @@
 ---
 id: TASK-040.09
 title: Implement photo database APIs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-23 22:38'
+updated_date: '2026-02-24 00:50'
 labels:
   - libgpod-node
   - photos
@@ -28,8 +29,8 @@ This is a separate database from the music database.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PhotoDatabase class for photo operations
-- [ ] #2 Can add/remove photos
-- [ ] #3 Can create/manage photo albums
-- [ ] #4 Integration tests for photo sync
+- [x] #1 PhotoDatabase class for photo operations
+- [x] #2 Can add/remove photos
+- [x] #3 Can create/manage photo albums
+- [x] #4 Integration tests for photo sync
 <!-- AC:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-040.08
 title: Implement chapter data APIs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-23 22:38'
+updated_date: '2026-02-24 00:31'
 labels:
   - libgpod-node
   - podcasts
@@ -26,7 +27,7 @@ Expose libgpod chapter data APIs for podcasts and audiobooks:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Can create chapter markers for tracks
-- [ ] #2 Chapter data persists to iPod database
-- [ ] #3 Integration tests with podcast/audiobook media types
+- [x] #1 Can create chapter markers for tracks
+- [x] #2 Chapter data persists to iPod database
+- [x] #3 Integration tests with podcast/audiobook media types
 <!-- AC:END -->
