@@ -598,6 +598,102 @@ export interface ChapterInput {
 }
 
 // ============================================================================
+// Photo Database Types
+// ============================================================================
+
+/**
+ * Photo metadata structure.
+ * Represents a photo in the PhotoDB (stored as Itdb_Artwork).
+ *
+ * Note: Photos are separate from track artwork. The PhotoDB is a completely
+ * separate database from the iTunesDB (music database).
+ */
+export interface Photo {
+  /** Unique photo ID (assigned automatically when writing) */
+  id: number;
+  /** Database ID */
+  dbid: bigint;
+  /** Rating from iPhoto * 20 (0-100) */
+  rating: number;
+  /** Date the image file was created (Unix timestamp) */
+  creationDate: number;
+  /** Date the image was taken (EXIF data, Unix timestamp) */
+  digitizedDate: number;
+  /** Size in bytes of the original source image */
+  artworkSize: number;
+}
+
+/**
+ * Transition direction for photo album slideshows.
+ */
+export enum PhotoTransitionDirection {
+  None = 0,
+  LeftToRight = 1,
+  RightToLeft = 2,
+  TopToBottom = 3,
+  BottomToTop = 4,
+}
+
+/**
+ * Photo album type identifiers.
+ */
+export enum PhotoAlbumType {
+  /** Photo Library - the master album containing all photos */
+  PhotoLibrary = 1,
+  /** Normal user-created album */
+  Normal = 2,
+}
+
+/**
+ * Photo album structure.
+ * Represents a photo album in the PhotoDB.
+ */
+export interface PhotoAlbum {
+  /** Unique album ID (assigned automatically when writing) */
+  id: number;
+  /** Album name in UTF-8 */
+  name: string | null;
+  /** Album type (1 = Photo Library, 2 = normal album) */
+  albumType: number;
+  /** Whether this is the Photo Library (master album) */
+  isPhotoLibrary: boolean;
+  /** Number of photos in this album */
+  photoCount: number;
+
+  // Slideshow settings
+  /** Play music during slideshow */
+  playMusic: boolean;
+  /** Repeat the slideshow */
+  repeat: boolean;
+  /** Show slides in random order */
+  random: boolean;
+  /** Show slide captions */
+  showTitles: boolean;
+  /** Transition direction (0=none, 1=left-to-right, etc.) */
+  transitionDirection: number;
+  /** Slide duration in seconds */
+  slideDuration: number;
+  /** Transition duration in milliseconds */
+  transitionDuration: number;
+  /** The dbid2 of a track to play during slideshow */
+  songId: bigint;
+}
+
+/**
+ * Photo database information.
+ */
+export interface PhotoDatabaseInfo {
+  /** Mount point path */
+  mountpoint: string | null;
+  /** Number of photos */
+  photoCount: number;
+  /** Number of photo albums */
+  albumCount: number;
+  /** Device information */
+  device: DeviceInfo | null;
+}
+
+// ============================================================================
 // Error Types
 // ============================================================================
 

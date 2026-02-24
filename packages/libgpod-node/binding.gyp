@@ -9,7 +9,8 @@
         "native/database_wrapper.cc",
         "native/track_operations.cc",
         "native/artwork_operations.cc",
-        "native/playlist_operations.cc"
+        "native/playlist_operations.cc",
+        "native/photo_database_wrapper.cc"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"

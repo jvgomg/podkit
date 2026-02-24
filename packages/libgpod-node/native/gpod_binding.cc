@@ -9,6 +9,7 @@
  *   - track_operations.cc: Track CRUD methods
  *   - artwork_operations.cc: Artwork-related methods
  *   - playlist_operations.cc: Playlist methods
+ *   - photo_database_wrapper.cc: Photo database operations
  */
 
 #include <napi.h>
@@ -16,6 +17,7 @@
 #include <string>
 
 #include "database_wrapper.h"
+#include "photo_database_wrapper.h"
 
 /**
  * Parse an iPod database from a mountpoint.
@@ -118,15 +120,74 @@ Napi::Value GetVersion(const Napi::CallbackInfo& info) {
 }
 
 /**
+ * Parse a photo database from a mountpoint.
+ * @param mountpoint Path to iPod mount point
+ * @returns PhotoDatabase object
+ */
+Napi::Value ParsePhotoDb(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "Expected mountpoint path").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string mountpoint = info[0].As<Napi::String>().Utf8Value();
+
+    GError* error = nullptr;
+    Itdb_PhotoDB* db = itdb_photodb_parse(mountpoint.c_str(), &error);
+
+    if (!db) {
+        std::string message = error ? error->message : "Failed to parse photo database";
+        if (error) {
+            g_error_free(error);
+        }
+        Napi::Error::New(env, message).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    return PhotoDatabaseWrapper::NewInstance(env, db, mountpoint);
+}
+
+/**
+ * Create a new empty photo database.
+ * @param mountpoint Optional path to iPod mount point
+ * @returns PhotoDatabase object
+ */
+Napi::Value CreatePhotoDb(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    std::string mp_str;
+
+    if (info.Length() >= 1 && info[0].IsString()) {
+        mp_str = info[0].As<Napi::String>().Utf8Value();
+    }
+
+    Itdb_PhotoDB* db = itdb_photodb_create(mp_str.empty() ? nullptr : mp_str.c_str());
+
+    if (!db) {
+        Napi::Error::New(env, "Failed to create photo database").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    return PhotoDatabaseWrapper::NewInstance(env, db, mp_str);
+}
+
+/**
  * Module initialization.
  */
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     DatabaseWrapper::Init(env, exports);
+    PhotoDatabaseWrapper::Init(env, exports);
 
     exports.Set("parse", Napi::Function::New(env, Parse));
     exports.Set("parseFile", Napi::Function::New(env, ParseFile));
     exports.Set("create", Napi::Function::New(env, Create));
     exports.Set("getVersion", Napi::Function::New(env, GetVersion));
+
+    // Photo database functions
+    exports.Set("parsePhotoDb", Napi::Function::New(env, ParsePhotoDb));
+    exports.Set("createPhotoDb", Napi::Function::New(env, CreatePhotoDb));
 
     return exports;
 }

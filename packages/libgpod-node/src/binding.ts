@@ -22,6 +22,9 @@ import type {
   SPLMatch,
   Chapter,
   ChapterInput,
+  Photo,
+  PhotoAlbum,
+  PhotoDatabaseInfo,
 } from './types';
 
 /**
@@ -117,6 +120,40 @@ export interface NativeVersion {
 }
 
 /**
+ * Native PhotoDatabase class interface.
+ */
+export interface NativePhotoDatabase {
+  getInfo(): PhotoDatabaseInfo;
+  getPhotos(): Photo[];
+  getPhotoAlbums(): PhotoAlbum[];
+  addPhoto(imagePath: string, position?: number, rotation?: number): Photo;
+  addPhotoFromData(
+    imageData: Buffer,
+    position?: number,
+    rotation?: number
+  ): Photo;
+  removePhoto(photoId: number): void;
+  getPhotoById(photoId: number): Photo | null;
+  createPhotoAlbum(name: string, position?: number): PhotoAlbum;
+  removePhotoAlbum(albumId: number, removePhotos?: boolean): void;
+  getPhotoAlbumByName(name: string | null): PhotoAlbum | null;
+  addPhotoToAlbum(
+    albumId: number,
+    photoId: number,
+    position?: number
+  ): PhotoAlbum;
+  removePhotoFromAlbum(albumId: number, photoId: number): PhotoAlbum;
+  getPhotoAlbumPhotos(albumId: number): Photo[];
+  setPhotoAlbumName(albumId: number, newName: string): PhotoAlbum;
+  write(): boolean;
+  close(): void;
+  getMountpoint(): string | null;
+  setMountpoint(mountpoint: string): void;
+  getDeviceCapabilities(): DeviceCapabilities;
+  setSysInfo(field: string, value: string | null): void;
+}
+
+/**
  * Native binding module interface.
  */
 export interface NativeBinding {
@@ -125,6 +162,11 @@ export interface NativeBinding {
   parseFile(filename: string): NativeDatabase;
   create(): NativeDatabase;
   getVersion(): NativeVersion;
+
+  // Photo database
+  PhotoDatabase: new () => NativePhotoDatabase;
+  parsePhotoDb(mountpoint: string): NativePhotoDatabase;
+  createPhotoDb(mountpoint?: string): NativePhotoDatabase;
 }
 
 // Cached binding reference
@@ -323,4 +365,31 @@ export function create(): NativeDatabase {
 export function getVersion(): NativeVersion {
   const binding = loadBinding();
   return binding.getVersion();
+}
+
+/**
+ * Parse an iPod photo database from a mountpoint.
+ *
+ * @param mountpoint Path to the iPod mount point
+ * @returns Native photo database handle
+ * @throws Error if parsing fails
+ */
+export function parsePhotoDb(mountpoint: string): NativePhotoDatabase {
+  const binding = loadBinding();
+  return binding.parsePhotoDb(mountpoint);
+}
+
+/**
+ * Create a new empty iPod photo database.
+ *
+ * Creates a fresh photo database. If mountpoint is provided, the database
+ * is associated with that iPod. Otherwise, use setMountpoint() later.
+ *
+ * @param mountpoint Optional path to the iPod mount point
+ * @returns Native photo database handle
+ * @throws Error if creation fails
+ */
+export function createPhotoDb(mountpoint?: string): NativePhotoDatabase {
+  const binding = loadBinding();
+  return binding.createPhotoDb(mountpoint);
 }

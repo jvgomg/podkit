@@ -41,6 +41,9 @@ export const VERSION = '0.0.0';
 // Main database class
 export { Database } from './database';
 
+// Photo database class
+export { PhotoDatabase } from './photo-database';
+
 // Types
 export type {
   // Core types
@@ -61,6 +64,11 @@ export type {
   // Chapter types (for podcasts and audiobooks)
   Chapter,
   ChapterInput,
+
+  // Photo database types
+  Photo,
+  PhotoAlbum,
+  PhotoDatabaseInfo,
 
   // Enums and type aliases
   IpodGeneration,
@@ -83,6 +91,10 @@ export {
   SPLField,
   SPLAction,
   SPLActionLastUnits,
+
+  // Photo database enums
+  PhotoTransitionDirection,
+  PhotoAlbumType,
 } from './types';
 
 // Track utilities

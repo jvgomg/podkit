@@ -14,6 +14,7 @@ export {
 // Re-export library exports
 export {
   Database,
+  PhotoDatabase,
   isNativeAvailable,
   starsToRating,
   ratingToStars,
@@ -22,6 +23,8 @@ export {
   filePathToIpodPath,
   MediaType,
   LibgpodError,
+  PhotoAlbumType,
+  PhotoTransitionDirection,
 } from '../../index';
 
 // Path to the test MP3 file in libgpod source
