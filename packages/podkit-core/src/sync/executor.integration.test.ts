@@ -287,16 +287,19 @@ describe('SyncExecutor integration', () => {
 
         try {
           // First, add a track manually
-          const addedTrack = db.addTrack({
+          // Note: Track ID is only assigned after save(), so we must re-fetch
+          const pendingTrack = db.addTrack({
             title: 'Track To Remove',
             artist: 'Remove Artist',
             album: 'Remove Album',
           });
-          db.copyTrackToDevice(addedTrack.id, mp3Path);
+          db.copyTrackToDevice(pendingTrack.id, mp3Path);
           await db.save();
 
-          // Verify it was added
+          // Verify it was added and get the track with its real ID
           expect(db.trackCount).toBe(1);
+          const tracks = db.getTracks();
+          const savedTrack = tracks[0];
 
           // Now remove it via executor
           const deps: ExecutorDependencies = {
@@ -309,14 +312,14 @@ describe('SyncExecutor integration', () => {
               {
                 type: 'remove',
                 track: {
-                  id: addedTrack.id,
-                  title: 'Track To Remove',
-                  artist: 'Remove Artist',
-                  album: 'Remove Album',
-                  duration: 1000,
-                  bitrate: 128,
-                  sampleRate: 44100,
-                  filePath: addedTrack.ipodPath ?? '',
+                  id: savedTrack.id,
+                  title: savedTrack.title ?? 'Track To Remove',
+                  artist: savedTrack.artist ?? 'Remove Artist',
+                  album: savedTrack.album ?? 'Remove Album',
+                  duration: savedTrack.duration ?? 1000,
+                  bitrate: savedTrack.bitrate ?? 128,
+                  sampleRate: savedTrack.sampleRate ?? 44100,
+                  filePath: savedTrack.ipodPath ?? '',
                   hasArtwork: false,
                 },
               },
