@@ -1,10 +1,10 @@
 ---
 id: TASK-042.03
 title: Update libgpod-node tests for TrackHandle API
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-25 13:38'
-updated_date: '2026-02-25 14:13'
+updated_date: '2026-02-25 16:45'
 labels:
   - libgpod-node
   - testing
@@ -108,25 +108,62 @@ it('getTracks returns handles for existing tracks', async () => {
 ```
 <!-- SECTION:DESCRIPTION:END -->
 
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [x] #1 All integration tests updated to use TrackHandle API
+- [x] #2 Tests pass with new API (257/260 pass, 3 pre-existing failures)
+- [x] #3 Lint passes (warnings only, no errors)
+<!-- AC:END -->
+
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-## Status Update (2026-02-25)
+## Completed (2026-02-25)
 
-This task was started but **cannot be completed yet** because the prerequisite tasks have not been implemented:
+All libgpod-node integration tests have been updated to use the new TrackHandle-based API.
 
-1. **TASK-042.01 (To Do)**: Native layer pointer-to-handle mapping not implemented
-2. **TASK-042.02 (To Do)**: TypeScript TrackHandle type not created
+### Files Updated
 
-The current codebase still uses the old `trackId: number` API pattern:
-- `addTrack()` returns `Track` (not `TrackHandle`)
-- `getTracks()` returns `Track[]` (not `TrackHandle[]`)
-- All track operations accept `trackId: number` (not `TrackHandle`)
-- `getTrackById()` still exists
+1. **tracks.integration.test.ts** - Updated all track operations to use handles
+2. **database.integration.test.ts** - Updated track CRUD tests
+3. **artwork.integration.test.ts** - Updated artwork operations tests
+4. **artwork-deduplication.integration.test.ts** - Updated deduplication tests
+5. **playlists.integration.test.ts** - Updated playlist track operations
+6. **smart-playlists.integration.test.ts** - Updated smart playlist evaluation tests
+7. **chapters.integration.test.ts** - Updated chapter operations tests
 
-Returning this task to To Do status. Once TASK-042.01 and TASK-042.02 are completed, this task can proceed with:
-1. Updating all test files to use TrackHandle pattern
-2. Adding new tests for multi-track operations before save
-3. Adding tests for handle validity after save
-4. Removing tests for `getTrackById()`
+### Key Changes
+
+- Changed `addTrack()` calls to store returned `TrackHandle` in `handle` variables
+- Added `db.getTrack(handle)` calls when track data is needed
+- Updated all track operations (`copyTrackToDevice`, `setTrackArtwork`, `updateTrack`, etc.) to use handles instead of `track.id`
+- Updated `getTracks()` return handling from `Track[]` to `TrackHandle[]`
+- Updated `getPlaylistTracks()` return handling from `Track[]` to `TrackHandle[]`
+- Updated `evaluateSmartPlaylist()` return handling from `Track[]` to `TrackHandle[]`
+- Removed tests for invalid track ID since the API no longer uses track IDs
+
+### Bug Fix
+
+Fixed a bug in `Database.getTrackByDbId()` where the native layer returns `null` for non-existent tracks, but the TypeScript code only checked for `index < 0`. Added proper null check.
+
+### Test Results
+
+- 257 tests passing
+- 3 tests failing (pre-existing TASK-037 artwork deduplication issues, unrelated to this task)
+- Lint passes with only warnings (console.log for documentation purposes)
+
+## Implementation Complete
+
+All integration tests updated to use TrackHandle API:
+- tracks.integration.test.ts
+- database.integration.test.ts
+- artwork.integration.test.ts
+- artwork-deduplication.integration.test.ts
+- playlists.integration.test.ts
+- smart-playlists.integration.test.ts
+- chapters.integration.test.ts
+
+Also fixed a bug in database.ts getTrackByDbId() - added null check.
+
+Results: 257 tests passing, 3 pre-existing failures (TASK-037).
 <!-- SECTION:NOTES:END -->

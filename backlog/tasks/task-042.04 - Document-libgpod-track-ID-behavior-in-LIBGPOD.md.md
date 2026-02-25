@@ -1,10 +1,10 @@
 ---
 id: TASK-042.04
 title: Document libgpod track ID behavior in LIBGPOD.md
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-25 13:38'
-updated_date: '2026-02-25 13:40'
+updated_date: '2026-02-25 16:55'
 labels:
   - documentation
 dependencies: []
@@ -66,4 +66,14 @@ Document that libgpod-node intentionally does not expose `itdb_track_by_id()` be
 Instead, use:
 - `TrackHandle` for referencing tracks within a session
 - Metadata matching (artist/album/title or `ipod_path`) for finding specific tracks
+
+## Implementation Complete
+
+Added comprehensive 'Track Identification' section to docs/LIBGPOD.md covering:
+- Track IDs (track->id) behavior and instability
+- Database IDs (track->dbid) stability
+- Pointer-based references (Itdb_Track*)
+- Why getTrackById is not exposed
+- How libgpod-node uses TrackHandle
+- Real-world validation from Strawberry codebase analysis
 <!-- SECTION:NOTES:END -->

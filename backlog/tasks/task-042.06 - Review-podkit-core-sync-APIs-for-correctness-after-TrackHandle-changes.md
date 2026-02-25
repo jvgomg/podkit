@@ -1,9 +1,10 @@
 ---
 id: TASK-042.06
 title: Review podkit-core sync APIs for correctness after TrackHandle changes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-25 13:38'
+updated_date: '2026-02-25 16:55'
 labels:
   - podkit-core
   - architecture
@@ -46,3 +47,56 @@ After review, update:
 - Code comments explaining identifier usage
 - Any ADRs if significant decisions are made
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Review Complete
+
+Reviewed sync APIs after TrackHandle migration. Key findings:
+
+1. **RemoveOperation.track.id** - Correctly used within session; executor finds handle by matching ID
+2. **Sync plans not persisted** - Plans are ephemeral, created and executed in same session
+3. **Diff uses metadata matching** - artist/title/album tuples, not IDs
+4. **Track IDs are separate** - CollectionTrack.id (string) vs IPodTrack.id (number) never interact
+
+Conclusion: Architecture is correct. No changes needed.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Review Complete: podkit-core Sync APIs are Correctly Designed
+
+### Key Findings
+
+**1. RemoveOperation.track.id is RELIABLE (within session)**
+- The `IPodTrack.id` corresponds to libgpod's `track->id`
+- It's stable within a single database session before `db.save()` is called
+- The executor correctly looks up handles by iterating tracks and matching on ID
+- Sync plans are created and executed in the same session, so this works correctly
+
+**2. Sync Plans are NOT Persisted (and shouldn't be with current design)**
+- No serialization/persistence code exists
+- Current workflow: open DB → compute diff → create plan → execute → save → close
+- If persistence were needed in the future, `track->dbid` (64-bit, stable across saves) should be used instead of `track->id`
+
+**3. Diff Algorithm Uses Metadata Matching (not IDs)**
+- Tracks are matched by normalized (artist, title, album) tuples
+- `IPodTrack.id` is only used internally to track "already matched" status
+- This is a clean separation: matching by content, operations by reference
+
+**4. Collection Track IDs vs iPod Track IDs are Separate**
+- `CollectionTrack.id`: string, implementation-specific (file path hash)
+- `IPodTrack.id`: number, libgpod session identifier
+- These never interact directly; matching is metadata-based
+
+### Conclusion
+**No code changes needed.** The current design is sound for ephemeral sync plans. The architecture cleanly separates:
+- Matching (metadata-based)
+- Execution (handle-based)  
+- Session tracking (id-based)
+
+### Future Consideration
+If sync plan persistence becomes a requirement, add `dbid: bigint` to `IPodTrack` and use `db.getTrackByDbId()` for lookups.
+<!-- SECTION:FINAL_SUMMARY:END -->
