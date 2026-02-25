@@ -7,31 +7,11 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
+import type { IPodTrack } from '../ipod/types.js';
 
-// Re-export from libgpod-node when available
-// For now, define a placeholder that matches the expected interface
-// TODO: Import from @podkit/libgpod-node once types are implemented (TASK-012)
-
-/**
- * Track as stored on iPod (from libgpod)
- * This will be imported from @podkit/libgpod-node in the future
- */
-export interface IPodTrack {
-  id: number;
-  title: string;
-  artist: string;
-  album: string;
-  albumArtist?: string;
-  genre?: string;
-  year?: number;
-  trackNumber?: number;
-  discNumber?: number;
-  duration: number; // milliseconds
-  bitrate: number;
-  sampleRate: number;
-  filePath: string; // path on iPod
-  hasArtwork: boolean;
-}
+// Re-export IPodTrack from the ipod module
+// This provides the full interface with methods like remove(), update(), etc.
+export type { IPodTrack };
 
 /**
  * A matched pair of collection track and iPod track

@@ -28,6 +28,7 @@ import {
   type ExecutorDependencies,
 } from './executor.js';
 import { FFmpegTranscoder } from '../transcode/ffmpeg.js';
+import { IpodDatabase } from '../ipod/database.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { SyncPlan } from './types.js';
 import { requireAllDeps } from '../__tests__/helpers/test-setup.js';
@@ -151,15 +152,12 @@ function createCollectionTrack(
 // =============================================================================
 
 describe('SyncExecutor integration', () => {
-  let Database: typeof import('@podkit/libgpod-node').Database;
   let createTestIpod: typeof import('@podkit/gpod-testing').createTestIpod;
 
   beforeAll(async () => {
     // Dynamic imports for dependencies
-    const libgpodNode = await import('@podkit/libgpod-node');
     const gpodTesting = await import('@podkit/gpod-testing');
 
-    Database = libgpodNode.Database;
     createTestIpod = gpodTesting.createTestIpod;
 
     // Create test directory and transcoder
@@ -176,19 +174,19 @@ describe('SyncExecutor integration', () => {
   describe('copy operation', () => {
     it('copies an MP3 file to iPod', async () => {
       // Create test iPod
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         // Generate test MP3
         const mp3Path = join(testDir, 'test-copy.mp3');
         await generateTestMP3(mp3Path);
 
-        // Open database
-        const db = await Database.open(ipod.path);
+        // Open database using IpodDatabase
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -210,38 +208,36 @@ describe('SyncExecutor integration', () => {
           expect(result.errors).toHaveLength(0);
 
           // Verify track is in database
-          const info = db.getInfo();
-          expect(info.trackCount).toBe(1);
+          expect(db.trackCount).toBe(1);
 
           // Verify track metadata
-          const handles = db.getTracks();
-          expect(handles).toHaveLength(1);
-          const track = db.getTrack(handles[0]!);
-          expect(track.title).toBe('Test Song');
-          expect(track.artist).toBe('Test Artist');
+          const tracks = db.getTracks();
+          expect(tracks).toHaveLength(1);
+          expect(tracks[0]!.title).toBe('Test Song');
+          expect(tracks[0]!.artist).toBe('Test Artist');
         } finally {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });
 
   describe('transcode operation', () => {
     it('transcodes a WAV file and adds to iPod', async () => {
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         // Generate test WAV
         const wavPath = join(testDir, 'test-transcode.wav');
         await generateTestAudio(wavPath);
 
-        const db = await Database.open(ipod.path);
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -263,49 +259,47 @@ describe('SyncExecutor integration', () => {
           expect(result.failed).toBe(0);
 
           // Verify track is in database
-          const handles = db.getTracks();
-          expect(handles).toHaveLength(1);
-          const track = db.getTrack(handles[0]!);
-          expect(track.title).toBe('Transcode Song');
+          const tracks = db.getTracks();
+          expect(tracks).toHaveLength(1);
+          expect(tracks[0]!.title).toBe('Transcode Song');
         } finally {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });
 
   describe('remove operation', () => {
     it('removes a track from iPod database', async () => {
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         // Generate and add a test MP3 first
         const mp3Path = join(testDir, 'test-remove.mp3');
         await generateTestMP3(mp3Path);
 
-        const db = await Database.open(ipod.path);
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
-          // First, add a track manually
-          // Note: Track ID is only assigned after save(), so we must re-fetch
-          const pendingHandle = db.addTrack({
+          // First, add a track manually using IpodDatabase API
+          const track = db.addTrack({
             title: 'Track To Remove',
             artist: 'Remove Artist',
             album: 'Remove Album',
           });
-          db.copyTrackToDevice(pendingHandle, mp3Path);
+          track.copyFile(mp3Path);
           await db.save();
 
-          // Verify it was added and get the track with its real ID
+          // Verify it was added
           expect(db.trackCount).toBe(1);
-          const handles = db.getTracks();
-          const savedTrack = db.getTrack(handles[0]!);
+          const tracks = db.getTracks();
+          const savedTrack = tracks[0]!;
 
           // Now remove it via executor
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -313,17 +307,8 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'remove',
-                track: {
-                  id: savedTrack.id!,
-                  title: savedTrack.title ?? 'Track To Remove',
-                  artist: savedTrack.artist ?? 'Remove Artist',
-                  album: savedTrack.album ?? 'Remove Album',
-                  duration: savedTrack.duration ?? 1000,
-                  bitrate: savedTrack.bitrate ?? 128,
-                  sampleRate: savedTrack.sampleRate ?? 44100,
-                  filePath: savedTrack.ipodPath ?? '',
-                  hasArtwork: false,
-                },
+                // Use the actual IPodTrack from IpodDatabase - it has the remove() method
+                track: savedTrack,
               },
             ],
             estimatedTime: 0.1,
@@ -341,14 +326,14 @@ describe('SyncExecutor integration', () => {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });
 
   describe('mixed operations', () => {
     it('executes multiple operations in sequence', async () => {
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         // Generate test files
@@ -362,11 +347,11 @@ describe('SyncExecutor integration', () => {
           generateTestAudio(wavPath),
         ]);
 
-        const db = await Database.open(ipod.path);
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -399,24 +384,24 @@ describe('SyncExecutor integration', () => {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });
 
   describe('progress reporting', () => {
     it('emits progress for each operation', async () => {
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         const mp3Path = join(testDir, 'test-progress.mp3');
         await generateTestMP3(mp3Path);
 
-        const db = await Database.open(ipod.path);
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -448,26 +433,26 @@ describe('SyncExecutor integration', () => {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });
 
   describe('dry-run mode', () => {
     it('does not modify database in dry-run mode', async () => {
-      const ipod = await createTestIpod();
+      const testIpod = await createTestIpod();
 
       try {
         const mp3Path = join(testDir, 'test-dryrun.mp3');
         await generateTestMP3(mp3Path);
 
-        const db = await Database.open(ipod.path);
+        const db = await IpodDatabase.open(testIpod.path);
 
         try {
           const initialCount = db.trackCount;
 
           const deps: ExecutorDependencies = {
-            database: db,
+            ipod: db,
             transcoder,
           };
 
@@ -493,7 +478,7 @@ describe('SyncExecutor integration', () => {
           db.close();
         }
       } finally {
-        await ipod.cleanup();
+        await testIpod.cleanup();
       }
     });
   });

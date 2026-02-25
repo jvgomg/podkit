@@ -133,9 +133,10 @@ export function computeDiff(
   // Build index from iPod tracks for O(1) lookup
   const ipodIndex = buildMatchIndex(ipodTracks);
 
-  // Track which iPod track IDs have been matched
-  // We use IDs instead of keys to handle duplicate tracks correctly
-  const matchedIpodIds = new Set<number>();
+  // Track which iPod track file paths have been matched
+  // We use file paths instead of keys to handle duplicate tracks correctly
+  // (filePath is unique per track on the iPod)
+  const matchedIpodPaths = new Set<string>();
 
   // Output arrays
   const toAdd: CollectionTrack[] = [];
@@ -149,7 +150,7 @@ export function computeDiff(
 
     if (ipodMatch) {
       // Track exists on iPod - mark as matched
-      matchedIpodIds.add(ipodMatch.id);
+      matchedIpodPaths.add(ipodMatch.filePath);
 
       // Check for conflicts
       const conflictingFields = findConflictingFields(collectionTrack, ipodMatch);
@@ -178,7 +179,7 @@ export function computeDiff(
   // This includes duplicate tracks that weren't selected from the index
   const toRemove: IPodTrack[] = [];
   for (const ipodTrack of ipodTracks) {
-    if (!matchedIpodIds.has(ipodTrack.id)) {
+    if (!matchedIpodPaths.has(ipodTrack.filePath)) {
       toRemove.push(ipodTrack);
     }
   }

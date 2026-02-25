@@ -21,7 +21,6 @@ import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 
-import type { Database, Track, TrackHandle, TrackInput } from '@podkit/libgpod-node';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
 import { PRESETS, type TranscodePreset } from '../transcode/types.js';
@@ -33,6 +32,7 @@ import type {
   SyncProgress,
   TranscodePresetRef,
 } from './types.js';
+import type { IpodDatabase, IPodTrack as IpodDatabaseTrack, TrackInput } from '../ipod/index.js';
 
 // =============================================================================
 // Extended Types
@@ -140,8 +140,8 @@ export interface ExecuteResult {
  * Dependencies required by the executor
  */
 export interface ExecutorDependencies {
-  /** iPod database connection */
-  database: Database;
+  /** iPod database connection (high-level IpodDatabase API) */
+  ipod: IpodDatabase;
   /** FFmpeg transcoder for audio conversion */
   transcoder: FFmpegTranscoder;
 }
@@ -316,11 +316,11 @@ function sleep(ms: number): Promise<void> {
  * Default sync executor implementation
  */
 export class DefaultSyncExecutor implements SyncExecutor {
-  private database: Database;
+  private ipod: IpodDatabase;
   private transcoder: FFmpegTranscoder;
 
   constructor(deps: ExecutorDependencies) {
-    this.database = deps.database;
+    this.ipod = deps.ipod;
     this.transcoder = deps.transcoder;
   }
 
@@ -526,7 +526,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
           bytesTotal: totalBytes,
         };
 
-        await this.database.save();
+        await this.ipod.save();
       }
 
       // Emit completion
@@ -558,7 +558,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
     operation: SyncOperation,
     transcodeDir: string,
     signal?: AbortSignal
-  ): Promise<{ bytesTransferred: number; track?: Track; handle?: TrackHandle }> {
+  ): Promise<{ bytesTransferred: number; track?: IpodDatabaseTrack }> {
     switch (operation.type) {
       case 'transcode':
         return this.executeTranscode(operation, transcodeDir, signal);
@@ -579,7 +579,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
     operation: Extract<SyncOperation, { type: 'transcode' }>,
     transcodeDir: string,
     signal?: AbortSignal
-  ): Promise<{ bytesTransferred: number; track: Track; handle: TrackHandle }> {
+  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { source, preset: presetRef } = operation;
     const preset = getPreset(presetRef);
 
@@ -595,17 +595,19 @@ export class DefaultSyncExecutor implements SyncExecutor {
       { signal }
     );
 
-    // Add track to iPod database
-    const trackInput = toTrackInput(source);
-    trackInput.bitrate = result.bitrate;
-    trackInput.filetype = 'AAC audio file';
+    // Add track to iPod database using IpodDatabase API
+    const trackInput: TrackInput = {
+      ...toTrackInput(source),
+      bitrate: result.bitrate,
+      filetype: 'AAC audio file',
+    };
 
-    const handle = this.database.addTrack(trackInput);
+    const track = this.ipod.addTrack(trackInput);
 
-    // Copy transcoded file to iPod
-    const track = this.database.copyTrackToDevice(handle, outputPath);
+    // Copy transcoded file to iPod using the fluent IPodTrack API
+    track.copyFile(outputPath);
 
-    return { bytesTransferred: result.size, track, handle };
+    return { bytesTransferred: result.size, track };
   }
 
   /**
@@ -613,40 +615,44 @@ export class DefaultSyncExecutor implements SyncExecutor {
    */
   private async executeCopy(
     operation: Extract<SyncOperation, { type: 'copy' }>
-  ): Promise<{ bytesTransferred: number; track: Track; handle: TrackHandle }> {
+  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { source } = operation;
 
-    // Add track to iPod database
-    const trackInput = toTrackInput(source);
-
-    // Set filetype based on extension
+    // Determine filetype based on extension
     const ext = extname(source.filePath).toLowerCase();
+    let filetype: string;
     switch (ext) {
       case '.mp3':
-        trackInput.filetype = 'MPEG audio file';
+        filetype = 'MPEG audio file';
         break;
       case '.m4a':
       case '.aac':
-        trackInput.filetype = 'AAC audio file';
+        filetype = 'AAC audio file';
         break;
       case '.alac':
-        trackInput.filetype = 'Apple Lossless audio file';
+        filetype = 'Apple Lossless audio file';
         break;
       default:
-        trackInput.filetype = 'Audio file';
+        filetype = 'Audio file';
     }
 
-    const handle = this.database.addTrack(trackInput);
+    // Add track to iPod database using IpodDatabase API
+    const trackInput: TrackInput = {
+      ...toTrackInput(source),
+      filetype,
+    };
 
-    // Copy source file to iPod
-    const track = this.database.copyTrackToDevice(handle, source.filePath);
+    const track = this.ipod.addTrack(trackInput);
+
+    // Copy source file to iPod using the fluent IPodTrack API
+    track.copyFile(source.filePath);
 
     // Estimate bytes transferred (we don't have actual file size)
     const bytesTransferred = source.duration
       ? Math.round((source.duration / 1000) * 32000) // ~256 kbps estimate
       : 5000000; // default 5MB
 
-    return { bytesTransferred, track, handle };
+    return { bytesTransferred, track };
   }
 
   /**
@@ -657,27 +663,24 @@ export class DefaultSyncExecutor implements SyncExecutor {
   ): Promise<{ bytesTransferred: number }> {
     const { track: targetTrack } = operation;
 
-    // Find the track handle by matching on track ID
-    // The IPodTrack.id corresponds to Track.id in libgpod-node
-    const handles = this.database.getTracks();
-    let targetHandle: TrackHandle | null = null;
+    // The SyncOperation uses the old IPodTrack from sync/types.ts (data-only interface)
+    // We need to find the matching track in IpodDatabase and remove it
+    const tracks = this.ipod.getTracks();
+    const foundTrack = tracks.find(
+      (t) =>
+        t.title === targetTrack.title &&
+        t.artist === targetTrack.artist &&
+        t.album === targetTrack.album
+    );
 
-    for (const handle of handles) {
-      const track = this.database.getTrack(handle);
-      if (track.id === targetTrack.id) {
-        targetHandle = handle;
-        break;
-      }
-    }
-
-    if (!targetHandle) {
+    if (!foundTrack) {
       throw new Error(
-        `Track not found in database: ${targetTrack.artist} - ${targetTrack.title} (id: ${targetTrack.id})`
+        `Track not found in database: ${targetTrack.artist} - ${targetTrack.title}`
       );
     }
 
-    // Remove track from database
-    this.database.removeTrack(targetHandle);
+    // Remove using the fluent IPodTrack API
+    foundTrack.remove();
 
     return { bytesTransferred: 0 };
   }

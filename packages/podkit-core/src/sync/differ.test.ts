@@ -48,27 +48,64 @@ function createCollectionTrack(
   };
 }
 
+// Counter for generating unique file paths in tests
+let ipodTrackPathCounter = 0;
+
 /**
- * Create a minimal IPodTrack for testing
+ * Create a minimal IPodTrack for testing.
+ * The new IPodTrack interface from ipod/types.js includes methods and more fields.
+ * Each track gets a unique filePath which serves as its identifier.
  */
 function createIPodTrack(
   artist: string,
   title: string,
   album: string,
-  options: Partial<IPodTrack> = {}
+  options: Partial<Omit<IPodTrack, 'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'>> = {}
 ): IPodTrack {
-  return {
-    id: options.id ?? Math.floor(Math.random() * 10000),
+  // Generate unique filePath if not provided
+  const uniquePath = options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
+  const track: IPodTrack = {
     artist,
     title,
     album,
     duration: options.duration ?? 180000,
     bitrate: options.bitrate ?? 256,
     sampleRate: options.sampleRate ?? 44100,
-    filePath: options.filePath ?? '/iPod_Control/Music/F00/ABCD.m4a',
+    size: options.size ?? 5000000,
+    mediaType: options.mediaType ?? 1, // Audio
+    filePath: uniquePath,
+    timeAdded: options.timeAdded ?? Math.floor(Date.now() / 1000),
+    timeModified: options.timeModified ?? Math.floor(Date.now() / 1000),
+    timePlayed: options.timePlayed ?? 0,
+    timeReleased: options.timeReleased ?? 0,
+    playCount: options.playCount ?? 0,
+    skipCount: options.skipCount ?? 0,
+    rating: options.rating ?? 0,
     hasArtwork: options.hasArtwork ?? false,
-    ...options,
+    hasFile: options.hasFile ?? true,
+    compilation: options.compilation ?? false,
+    // Optional fields
+    albumArtist: options.albumArtist,
+    genre: options.genre,
+    composer: options.composer,
+    comment: options.comment,
+    grouping: options.grouping,
+    trackNumber: options.trackNumber,
+    totalTracks: options.totalTracks,
+    discNumber: options.discNumber,
+    totalDiscs: options.totalDiscs,
+    year: options.year,
+    bpm: options.bpm,
+    filetype: options.filetype,
+    // Methods (stubs for testing)
+    update: () => track,
+    remove: () => {},
+    copyFile: () => track,
+    setArtwork: () => track,
+    setArtworkFromData: () => track,
+    removeArtwork: () => track,
   };
+  return track;
 }
 
 /**
@@ -88,7 +125,7 @@ function generateTracks(
     if (type === 'collection') {
       tracks.push(createCollectionTrack(artist, title, album));
     } else {
-      tracks.push(createIPodTrack(artist, title, album, { id: i }));
+      tracks.push(createIPodTrack(artist, title, album, { filePath: `:iPod_Control:Music:F${String(i % 100).padStart(2, '0')}:${String(i).padStart(4, '0')}.m4a` }));
     }
   }
 
@@ -373,8 +410,7 @@ describe('computeDiff - mixed scenarios', () => {
 
     const ipodTracks = [
       createIPodTrack('Artist A', 'Song A', 'Album A', {
-        id: 123,
-        filePath: '/iPod_Control/Music/F00/123.m4a',
+        filePath: ':iPod_Control:Music:F00:123.m4a',
       }),
     ];
 
@@ -383,8 +419,7 @@ describe('computeDiff - mixed scenarios', () => {
     expect(diff.existing).toHaveLength(1);
     expect(diff.existing[0]!.collection.id).toBe('coll-a');
     expect(diff.existing[0]!.collection.filePath).toBe('/music/a.flac');
-    expect(diff.existing[0]!.ipod.id).toBe(123);
-    expect(diff.existing[0]!.ipod.filePath).toBe('/iPod_Control/Music/F00/123.m4a');
+    expect(diff.existing[0]!.ipod.filePath).toBe(':iPod_Control:Music:F00:123.m4a');
   });
 });
 
@@ -554,7 +589,6 @@ describe('computeDiff - conflict detection', () => {
 
     const ipodTracks = [
       createIPodTrack('Artist', 'Song', 'Album', {
-        id: 100,
         genre: 'Pop',
       }),
     ];
@@ -563,7 +597,7 @@ describe('computeDiff - conflict detection', () => {
 
     expect(diff.conflicts).toHaveLength(1);
     expect(diff.conflicts[0]!.collection.id).toBe('coll-1');
-    expect(diff.conflicts[0]!.ipod.id).toBe(100);
+    expect(diff.conflicts[0]!.ipod.title).toBe('Song');
   });
 });
 
@@ -757,8 +791,8 @@ describe('computeDiff - duplicate handling', () => {
     const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
     const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { id: 1 }),
-      createIPodTrack('Artist', 'Song', 'Album', { id: 2 }),
+      createIPodTrack('Artist', 'Song', 'Album', { filePath: ':iPod_Control:Music:F00:001.m4a' }),
+      createIPodTrack('Artist', 'Song', 'Album', { filePath: ':iPod_Control:Music:F00:002.m4a' }),
     ];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
@@ -767,7 +801,7 @@ describe('computeDiff - duplicate handling', () => {
     // Second iPod track is unmatched (because index keeps first)
     expect(diff.existing).toHaveLength(1);
     expect(diff.toRemove).toHaveLength(1);
-    expect(diff.toRemove[0]!.id).toBe(2);
+    expect(diff.toRemove[0]!.filePath).toBe(':iPod_Control:Music:F00:002.m4a');
   });
 });
 
@@ -818,7 +852,7 @@ describe('computeDiff - performance', () => {
     const uniqueIpod: IPodTrack[] = [];
     for (let i = overlapCount; i < ipodCount; i++) {
       uniqueIpod.push(
-        createIPodTrack(`UniqueIpodArtist${i}`, `Song${i}`, `Album${i}`, { id: i })
+        createIPodTrack(`UniqueIpodArtist${i}`, `Song${i}`, `Album${i}`)
       );
     }
 

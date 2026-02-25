@@ -58,26 +58,51 @@ function createCollectionTrack(
   };
 }
 
+// Counter for generating unique file paths in tests
+let ipodTrackPathCounter = 0;
+
 /**
- * Create a minimal IPodTrack for testing
+ * Create a minimal IPodTrack for testing.
+ * The new IPodTrack interface from ipod/types.js includes methods and more fields.
+ * Each track gets a unique filePath which serves as its identifier.
  */
 function createIPodTrack(
   artist: string,
   title: string,
   album: string,
-  id?: number
+  filePath?: string
 ): IPodTrack {
-  return {
-    id: id ?? Math.floor(Math.random() * 10000),
+  // Generate unique filePath if not provided
+  const uniquePath = filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
+  const track: IPodTrack = {
     artist,
     title,
     album,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,
-    filePath: '/iPod_Control/Music/F00/ABCD.m4a',
+    size: 5000000,
+    mediaType: 1, // Audio
+    filePath: uniquePath,
+    timeAdded: Math.floor(Date.now() / 1000),
+    timeModified: Math.floor(Date.now() / 1000),
+    timePlayed: 0,
+    timeReleased: 0,
+    playCount: 0,
+    skipCount: 0,
+    rating: 0,
     hasArtwork: false,
+    hasFile: true,
+    compilation: false,
+    // Methods (stubs for testing)
+    update: () => track,
+    remove: () => {},
+    copyFile: () => track,
+    setArtwork: () => track,
+    setArtworkFromData: () => track,
+    removeArtwork: () => track,
   };
+  return track;
 }
 
 // =============================================================================

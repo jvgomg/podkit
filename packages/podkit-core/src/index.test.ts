@@ -7,6 +7,7 @@ import {
   EXTERNAL_ARTWORK_NAMES,
   IpodError,
   MediaType,
+  IpodDatabase,
 } from './index';
 import type {
   AudioFileType,
@@ -188,6 +189,11 @@ describe('podkit-core', () => {
   });
 
   describe('iPod database abstraction exports', () => {
+    it('exports IpodDatabase class', () => {
+      expect(IpodDatabase).toBeDefined();
+      expect(typeof IpodDatabase.open).toBe('function');
+    });
+
     it('exports IpodError class', () => {
       const error = new IpodError('test error', 'NOT_FOUND');
       expect(error).toBeInstanceOf(Error);
