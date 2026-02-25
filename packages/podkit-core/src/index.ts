@@ -151,3 +151,21 @@ export {
   cleanupAllTempArtwork,
   extractAndSaveArtwork,
 } from './artwork/extractor.js';
+
+// iPod database abstraction layer
+// Note: IPodTrack from ./ipod/types.js is the new abstraction layer version
+// with methods. The IPodTrack from ./sync/types.js is a simpler data-only
+// interface used by the sync engine. These will be unified in a future migration.
+export type {
+  TrackInput,
+  TrackFields,
+  IPodTrack as IpodTrackInterface,
+  IpodPlaylist,
+  IpodDeviceInfo,
+  IpodInfo,
+  SaveResult,
+} from './ipod/types.js';
+export { IpodError } from './ipod/errors.js';
+export type { IpodErrorCode } from './ipod/errors.js';
+export { MediaType } from './ipod/constants.js';
+export type { MediaTypeValue } from './ipod/constants.js';

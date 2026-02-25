@@ -5,6 +5,8 @@ import {
   PRESETS,
   IPOD_ARTWORK_FORMATS,
   EXTERNAL_ARTWORK_NAMES,
+  IpodError,
+  MediaType,
 } from './index';
 import type {
   AudioFileType,
@@ -12,6 +14,15 @@ import type {
   CollectionTrack,
   SyncOperation,
   ArtworkSource,
+  TrackInput,
+  TrackFields,
+  IpodTrackInterface,
+  IpodPlaylist,
+  IpodDeviceInfo,
+  IpodInfo,
+  SaveResult,
+  IpodErrorCode,
+  MediaTypeValue,
 } from './index';
 
 describe('podkit-core', () => {
@@ -173,6 +184,111 @@ describe('podkit-core', () => {
 
       const buffer: ArtworkSource = { type: 'buffer', data: Buffer.from('test'), mimeType: 'image/jpeg' };
       expect(buffer.type).toBe('buffer');
+    });
+  });
+
+  describe('iPod database abstraction exports', () => {
+    it('exports IpodError class', () => {
+      const error = new IpodError('test error', 'NOT_FOUND');
+      expect(error).toBeInstanceOf(Error);
+      expect(error.code).toBe('NOT_FOUND');
+      expect(error.message).toBe('test error');
+    });
+
+    it('exports MediaType constants', () => {
+      expect(MediaType.Audio).toBe(0x0001);
+      expect(MediaType.Podcast).toBe(0x0004);
+      expect(MediaType.Audiobook).toBe(0x0008);
+      expect(MediaType.MusicVideo).toBe(0x0020);
+      expect(MediaType.TVShow).toBe(0x0040);
+    });
+
+    it('can use IpodErrorCode type', () => {
+      const code: IpodErrorCode = 'DATABASE_CORRUPT';
+      expect(code).toBe('DATABASE_CORRUPT');
+    });
+
+    it('can use MediaTypeValue type', () => {
+      const value: MediaTypeValue = MediaType.Audio;
+      expect(value).toBe(0x0001);
+    });
+
+    it('can construct TrackInput', () => {
+      const input: TrackInput = {
+        title: 'Test Song',
+        artist: 'Test Artist',
+        album: 'Test Album',
+        mediaType: MediaType.Audio,
+      };
+      expect(input.title).toBe('Test Song');
+      expect(input.mediaType).toBe(0x0001);
+    });
+
+    it('can construct TrackFields', () => {
+      const fields: TrackFields = {
+        title: 'Updated Title',
+        rating: 80,
+      };
+      expect(fields.title).toBe('Updated Title');
+      expect(fields.rating).toBe(80);
+    });
+
+    it('can construct IpodDeviceInfo shape', () => {
+      const device: IpodDeviceInfo = {
+        modelName: 'iPod Video (60GB)',
+        modelNumber: 'MA147',
+        generation: 'video_1',
+        capacity: 60,
+        supportsArtwork: true,
+        supportsVideo: true,
+        supportsPhoto: true,
+        supportsPodcast: true,
+      };
+      expect(device.modelName).toBe('iPod Video (60GB)');
+      expect(device.capacity).toBe(60);
+    });
+
+    it('can construct IpodInfo shape', () => {
+      const info: IpodInfo = {
+        mountPoint: '/Volumes/IPOD',
+        trackCount: 100,
+        playlistCount: 5,
+        device: {
+          modelName: 'iPod Classic',
+          modelNumber: null,
+          generation: 'classic_1',
+          capacity: 80,
+          supportsArtwork: true,
+          supportsVideo: true,
+          supportsPhoto: true,
+          supportsPodcast: true,
+        },
+      };
+      expect(info.mountPoint).toBe('/Volumes/IPOD');
+      expect(info.trackCount).toBe(100);
+    });
+
+    it('can construct SaveResult shape', () => {
+      const result: SaveResult = {
+        warnings: ['3 tracks have no audio file'],
+      };
+      expect(result.warnings).toHaveLength(1);
+    });
+
+    // IpodTrackInterface and IpodPlaylist are complex interfaces with methods
+    // They will be implemented by classes in subsequent tasks
+    it('IpodTrackInterface type is exported', () => {
+      // Compile-time check - we can reference the type
+      type TrackType = IpodTrackInterface;
+      const _typeCheck: TrackType | null = null;
+      expect(_typeCheck).toBeNull();
+    });
+
+    it('IpodPlaylist type is exported', () => {
+      // Compile-time check - we can reference the type
+      type PlaylistType = IpodPlaylist;
+      const _typeCheck: PlaylistType | null = null;
+      expect(_typeCheck).toBeNull();
     });
   });
 });
