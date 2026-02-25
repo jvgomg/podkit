@@ -2,14 +2,13 @@
  * Integration tests for FFmpeg transcoder
  *
  * These tests require FFmpeg to be installed and perform real transcoding.
- * Tests are skipped if FFmpeg is not available.
  */
 
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm, writeFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   FFmpegTranscoder,
   isFFmpegAvailable,
@@ -18,20 +17,10 @@ import {
 } from './ffmpeg.js';
 import { PRESETS } from './types.js';
 import type { TranscodeProgress } from './types.js';
+import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
 
-/**
- * Check if FFmpeg is available using execSync (synchronous for skipIf)
- */
-function checkFFmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const ffmpegAvailable = checkFFmpegAvailable();
+// Fail early if FFmpeg is not available
+requireFFmpeg();
 
 let transcoder: FFmpegTranscoder;
 let testDir: string;
@@ -89,7 +78,7 @@ async function generateTestAudio(path: string): Promise<void> {
   });
 }
 
-describe.skipIf(!ffmpegAvailable)('FFmpegTranscoder integration', () => {
+describe('FFmpegTranscoder integration', () => {
   beforeAll(async () => {
     // Create temp directory and test audio file
     transcoder = new FFmpegTranscoder();

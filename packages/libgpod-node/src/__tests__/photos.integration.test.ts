@@ -22,9 +22,11 @@ import {
   isGpodToolAvailable,
 } from '@podkit/gpod-testing';
 
+// Import test-setup to trigger early native binding availability check
+import './helpers/test-setup';
+
 import {
   PhotoDatabase,
-  isNativeAvailable,
   LibgpodError,
   PhotoAlbumType,
   PhotoTransitionDirection,
@@ -155,7 +157,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('basic operations', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'PhotoDatabase.create() creates new empty database',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -176,7 +178,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'PhotoDatabase.create() with mountpoint',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -201,7 +203,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'setMountpoint updates the database mountpoint',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -217,7 +219,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when database is closed',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -229,7 +231,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can get device capabilities',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -250,7 +252,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('photo album operations', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can create and list photo albums',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -280,7 +282,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can get Photo Library album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -294,7 +296,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can find album by name',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -317,7 +319,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can rename photo album',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -351,7 +353,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'cannot delete Photo Library album',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -370,7 +372,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can remove regular photo album',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -412,7 +414,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'album has default slideshow settings',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -438,7 +440,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('photo operations (gdk-pixbuf required)', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'addPhoto returns error when gdk-pixbuf not available',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -470,7 +472,7 @@ describe('PhotoDatabase', () => {
     // Skip these tests if gdk-pixbuf is not available
     // The test itself checks for support
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can add photo from file (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -510,7 +512,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can add photo from data (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -543,7 +545,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can remove photo (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -577,7 +579,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can add photo to album (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -629,7 +631,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can remove photo from album (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -687,7 +689,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can get photo by id (if gdk-pixbuf available)',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -731,7 +733,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('SysInfo operations', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can set and read SysInfo values',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -744,7 +746,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'setSysInfo with null removes the field',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -763,7 +765,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('persistence', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can save photo database',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -784,7 +786,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can use async save',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -806,7 +808,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('error handling', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when removing non-existent photo',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -817,7 +819,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when renaming non-existent album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -828,7 +830,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when getting photos from non-existent album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -839,7 +841,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when setMountpoint is called on closed database',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -849,7 +851,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when getDeviceCapabilities is called on closed database',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -859,7 +861,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when setSysInfo is called on closed database',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -869,7 +871,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when adding photo to non-existent album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -881,7 +883,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when adding non-existent photo to album',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -904,7 +906,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when removing non-existent album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -915,7 +917,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'throws error when removing photo from non-existent album',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -932,7 +934,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('lifecycle', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'double close is safe and does not throw',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -946,7 +948,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'supports Symbol.dispose for using declarations',
       async () => {
         // Test that Symbol.dispose is defined and callable
@@ -958,7 +960,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'photoCount and albumCount getters work correctly',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -972,7 +974,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'device property returns device info or null',
       async () => {
         const photoDb = PhotoDatabase.create();
@@ -991,7 +993,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('album position', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'can create album at specific position',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -1025,7 +1027,7 @@ describe('PhotoDatabase', () => {
   // ============================================================================
 
   describe('photo properties (gdk-pixbuf required)', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'photo has expected properties',
       async () => {
         const hasSupport = await checkPixbufSupport();
@@ -1062,7 +1064,7 @@ describe('PhotoDatabase', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'getPhotos returns all photos in database',
       async () => {
         const hasSupport = await checkPixbufSupport();

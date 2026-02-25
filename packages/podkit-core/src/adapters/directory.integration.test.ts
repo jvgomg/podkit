@@ -8,23 +8,15 @@
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { DirectoryAdapter } from './directory.js';
 import { mkdir, rm } from 'node:fs/promises';
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
 
-// Check if FFmpeg is available for generating test fixtures
-function isFFmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
+// Fail early if FFmpeg is not available
+requireFFmpeg();
 
-const ffmpegAvailable = isFFmpegAvailable();
-
-describe.skipIf(!ffmpegAvailable)('DirectoryAdapter integration', () => {
+describe('DirectoryAdapter integration', () => {
   let testDir: string;
 
   beforeAll(async () => {
@@ -232,7 +224,7 @@ describe.skipIf(!ffmpegAvailable)('DirectoryAdapter integration', () => {
   });
 });
 
-describe.skipIf(!ffmpegAvailable)('DirectoryAdapter performance', () => {
+describe('DirectoryAdapter performance', () => {
   let testDir: string;
 
   // This test generates many files to test performance

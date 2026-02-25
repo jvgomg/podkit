@@ -15,18 +15,14 @@ import { join } from 'node:path';
 import {
   withTestIpod,
   Database,
-  isNativeAvailable,
   ipodPathToFilePath,
   LibgpodError,
   TEST_MP3_PATH,
 } from './helpers/test-setup';
 
-// Check if we have a test MP3 file available
-const hasTestMp3 = existsSync(TEST_MP3_PATH);
-
 // Tests for file copy functionality (itdb_cp_track_to_ipod)
 describe('libgpod-node file copy (copyTrackToDevice)', () => {
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'can copy audio file to iPod storage',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -77,7 +73,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for non-existent source file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -96,7 +92,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid track ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -111,7 +107,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'can copy multiple tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -148,7 +144,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'preserves metadata after file copy',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -194,7 +190,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'async version works correctly',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -214,7 +210,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
 
 // Tests for track update operations
 describe('libgpod-node track updates (updateTrack)', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update track metadata',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -244,7 +240,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update rating and play statistics',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -268,7 +264,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'updates persist after save()',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -297,7 +293,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid track ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -312,7 +308,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update all string fields',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -348,7 +344,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update all numeric fields',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -387,7 +383,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update with empty strings',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -421,7 +417,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update compilation flag',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -444,7 +440,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'updates time_modified automatically',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -469,7 +465,7 @@ describe('libgpod-node track updates (updateTrack)', () => {
 
 // Tests for track file path (itdb_filename_on_ipod)
 describe('libgpod-node track file path (getTrackFilePath)', () => {
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'returns full path for transferred track',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -491,7 +487,7 @@ describe('libgpod-node track file path (getTrackFilePath)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns null for track without file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -508,7 +504,7 @@ describe('libgpod-node track file path (getTrackFilePath)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid track ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -526,7 +522,7 @@ describe('libgpod-node track file path (getTrackFilePath)', () => {
 
 // Tests for track duplication (itdb_track_duplicate)
 describe('libgpod-node track duplication (duplicateTrack)', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can duplicate track metadata',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -575,7 +571,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'duplicate has new dbid',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -616,7 +612,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'can copy file to duplicate after save',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -684,7 +680,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid track ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -699,7 +695,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'duplicates all metadata fields',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -763,7 +759,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'duplicate is added to master playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -796,7 +792,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
 
 // Tests for getTrackByDbId
 describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can find track by dbid',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -826,7 +822,7 @@ describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns null for non-existent dbid',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -840,7 +836,7 @@ describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'dbid is unique across tracks',
     async () => {
       await withTestIpod(async (ipod) => {

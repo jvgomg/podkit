@@ -24,7 +24,7 @@ import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { withTestIpod } from '@podkit/gpod-testing';
-import { Database, isNativeAvailable } from './helpers/test-setup';
+import { Database } from './helpers/test-setup';
 
 import { createMinimalJpeg, createMinimalPng } from './fixtures/images';
 
@@ -65,7 +65,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('single album with identical artwork', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'deduplicates identical artwork - all tracks share same mhii_link',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -116,7 +116,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'persists artwork state after database reopen',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -167,7 +167,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('multiple albums with different artwork', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'creates separate artwork entries for visually distinct images',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -239,7 +239,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('mixed artwork presence', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'new tracks start without artwork',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -266,7 +266,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'setting artwork affects only the target track initially',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -319,7 +319,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('same image across different albums', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'same image on different albums shares artwork entry',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -378,7 +378,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('artwork deduplication with image data buffers', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'deduplicates when same buffer is used for multiple tracks',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -421,7 +421,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'uses real fixture images to verify different artwork behavior',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -475,7 +475,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
   // ============================================================================
 
   describe('getUniqueArtworkIds consistency', () => {
-    it.skipIf(!isNativeAvailable())(
+    it(
       'returns empty array for database with no tracks',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -489,7 +489,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'returns empty array when no tracks have artwork',
       async () => {
         await withTestIpod(async (ipod) => {
@@ -510,7 +510,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       }
     );
 
-    it.skipIf(!isNativeAvailable())(
+    it(
       'returns array of non-zero IDs when tracks have artwork',
       async () => {
         await withTestIpod(async (ipod) => {

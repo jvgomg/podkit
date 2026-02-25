@@ -6,8 +6,6 @@
  * - FFmpeg (for transcoding operations)
  * - libgpod-node native bindings (for iPod database operations)
  *
- * Tests are skipped if dependencies are not available.
- *
  * ## Test Coverage
  *
  * 1. Full sync flow with real iPod database
@@ -21,7 +19,7 @@ import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync, spawn } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 import {
   DefaultSyncExecutor,
@@ -32,53 +30,10 @@ import {
 import { FFmpegTranscoder } from '../transcode/ffmpeg.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { SyncPlan } from './types.js';
+import { requireAllDeps } from '../__tests__/helpers/test-setup.js';
 
-// =============================================================================
-// Dependency Checks
-// =============================================================================
-
-/**
- * Check if FFmpeg is available (synchronous for skipIf)
- */
-function checkFFmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if gpod-tool is available (synchronous for skipIf)
- */
-function checkGpodToolAvailable(): boolean {
-  try {
-    execSync('which gpod-tool', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if libgpod-node is available
- * This is a runtime check since the native bindings may not be built
- */
-function checkLibgpodAvailable(): boolean {
-  try {
-    // Try to require the package - if native bindings aren't built, this will throw
-    require('@podkit/libgpod-node');
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-const ffmpegAvailable = checkFFmpegAvailable();
-const gpodToolAvailable = checkGpodToolAvailable();
-const libgpodAvailable = checkLibgpodAvailable();
-const allDepsAvailable = ffmpegAvailable && gpodToolAvailable && libgpodAvailable;
+// Fail early if dependencies are not available
+requireAllDeps();
 
 // =============================================================================
 // Test Helpers
@@ -195,7 +150,7 @@ function createCollectionTrack(
 // Integration Tests (require all dependencies)
 // =============================================================================
 
-describe.skipIf(!allDepsAvailable)('SyncExecutor integration', () => {
+describe('SyncExecutor integration', () => {
   let Database: typeof import('@podkit/libgpod-node').Database;
   let createTestIpod: typeof import('@podkit/gpod-testing').createTestIpod;
 
@@ -539,21 +494,3 @@ describe.skipIf(!allDepsAvailable)('SyncExecutor integration', () => {
   });
 });
 
-// =============================================================================
-// Skip Message Tests
-// =============================================================================
-
-describe('SyncExecutor integration dependencies', () => {
-  it('reports missing dependencies', () => {
-    const missing: string[] = [];
-    if (!ffmpegAvailable) missing.push('FFmpeg');
-    if (!gpodToolAvailable) missing.push('gpod-tool');
-    if (!libgpodAvailable) missing.push('libgpod-node');
-
-    // Just report what dependencies are missing (test always passes)
-    // Missing dependencies: ${missing.join(', ') || 'none'}
-
-    // This test always passes - it just logs missing deps
-    expect(true).toBe(true);
-  });
-});

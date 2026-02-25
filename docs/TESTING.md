@@ -96,44 +96,79 @@ bun test packages/podkit-core/src/adapter.test.ts
 
 All commands work with turborepo for caching and parallel execution across packages.
 
-## Conditional Skipping
+## Dependency Handling
 
-When external dependencies aren't available, tests should skip gracefully rather than fail. Bun reports skipped tests in the output.
+Integration tests require external dependencies (FFmpeg, gpod-tool, native bindings). Rather than silently skipping tests when dependencies are missing, tests **fail early with clear error messages** explaining what's missing and how to fix it.
 
-### Using `describe.skipIf`
+### Why Fail Early?
+
+- **Immediate feedback:** Developers know right away what's missing
+- **No hidden skips:** Avoids situations where hundreds of tests appear to "pass" but were actually skipped
+- **Clear instructions:** Error messages include the exact commands to fix the issue
+- **Intentional runs:** If you run integration tests, you expect them to actually run
+
+### Package Test Setup Files
+
+Each package with integration tests has a `__tests__/helpers/test-setup.ts` file that provides early-fail checks:
+
+**libgpod-node** (`packages/libgpod-node/src/__tests__/helpers/test-setup.ts`):
+- Checks for native bindings (`requireNativeBinding()`)
+- Checks for test MP3 file (`requireTestMp3()`)
+
+**podkit-core** (`packages/podkit-core/src/__tests__/helpers/test-setup.ts`):
+- `requireFFmpeg()` - Ensures FFmpeg is installed
+- `requireGpodTool()` - Ensures gpod-tool is built and in PATH
+- `requireLibgpod()` - Ensures libgpod-node native bindings are available
+- `requireAllDeps()` - Combines all three checks
+
+### Usage in Test Files
+
+Import and call the requirement function at module load time:
 
 ```typescript
 import { describe, it, expect } from 'bun:test';
-import { isGpodToolAvailable } from '@podkit/gpod-testing';
+import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
 
-const gpodAvailable = await isGpodToolAvailable();
+// Fail early if FFmpeg is not available
+requireFFmpeg();
 
-describe.skipIf(!gpodAvailable)('iPod database operations', () => {
-  it('creates a track', async () => {
-    // Test that requires gpod-tool
+describe('FFmpegTranscoder', () => {
+  it('transcodes audio', async () => {
+    // Test runs only if FFmpeg is available
   });
 });
 ```
 
-### Using `beforeAll` to fail fast
-
-For integration test files where all tests require a dependency:
+For tests requiring multiple dependencies:
 
 ```typescript
-import { describe, it, beforeAll } from 'bun:test';
-import { isGpodToolAvailable } from '@podkit/gpod-testing';
+import { requireAllDeps } from '../__tests__/helpers/test-setup.js';
 
-describe('gpod-testing integration', () => {
-  beforeAll(async () => {
-    if (!(await isGpodToolAvailable())) {
-      throw new Error('gpod-tool not found. Run `mise run tools:build` first.');
-    }
-  });
+// Fail early if any dependency is missing
+requireAllDeps();
 
-  it('does something with iPod', async () => {
-    // ...
-  });
+describe('SyncExecutor integration', () => {
+  // Tests require FFmpeg, gpod-tool, and libgpod-node
 });
+```
+
+### Error Message Example
+
+When a dependency is missing, tests fail immediately with a clear message:
+
+```
+═══════════════════════════════════════════════════════════════════
+ FFmpeg not available!
+═══════════════════════════════════════════════════════════════════
+
+ Integration tests require FFmpeg to be installed.
+
+ Install FFmpeg:
+
+     macOS:   brew install ffmpeg
+     Ubuntu:  sudo apt install ffmpeg
+
+═══════════════════════════════════════════════════════════════════
 ```
 
 ## Testing with iPod Databases
@@ -306,8 +341,15 @@ See `packages/podkit-core/src/adapters/directory.integration.test.ts` for comple
 
 ## CI Considerations
 
-Integration tests may be skipped in CI if dependencies aren't available. The test output will show skipped tests clearly.
+Integration tests will **fail** in CI if dependencies aren't available. This is intentional - it ensures CI runs are meaningful and not silently skipping tests.
 
 For full integration test coverage in CI, ensure:
-- gpod-tool is built as part of CI setup
-- FFmpeg with libfdk_aac is available (or tests skip gracefully)
+- gpod-tool is built as part of CI setup (`mise run tools:build`)
+- libgpod-node native bindings are built (`bun run build` from root)
+- FFmpeg is installed (with libfdk_aac for AAC encoding)
+
+If a CI environment cannot provide all dependencies, run only unit tests:
+
+```bash
+bun run test:unit
+```

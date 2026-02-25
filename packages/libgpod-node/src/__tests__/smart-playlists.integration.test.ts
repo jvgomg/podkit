@@ -13,7 +13,6 @@ import { describe, it, expect } from 'bun:test';
 import {
   withTestIpod,
   Database,
-  isNativeAvailable,
   LibgpodError,
 } from './helpers/test-setup';
 
@@ -30,7 +29,7 @@ import {
 // ============================================================================
 
 describe('libgpod-node smart playlist operations', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create a smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -50,7 +49,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'smart playlist has default preferences',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -70,7 +69,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create smart playlist with rules',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -99,7 +98,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create smart playlist with multiple rules',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -131,7 +130,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create smart playlist with OR match',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -162,7 +161,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create smart playlist with custom preferences',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -190,7 +189,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can save and retrieve smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -229,7 +228,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can add rule to existing smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -258,7 +257,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can remove rule from smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -285,7 +284,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can clear all rules from smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -312,7 +311,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can update smart playlist preferences',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -341,7 +340,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can get smart playlist preferences',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -367,7 +366,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getSmartPlaylists returns only smart playlists',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -392,7 +391,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when getting rules of non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -409,7 +408,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when adding rule to non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -430,7 +429,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid rule index',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -450,7 +449,7 @@ describe('libgpod-node smart playlist operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can delete smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -480,7 +479,7 @@ describe('libgpod-node smart playlist operations', () => {
 // ============================================================================
 
 describe('libgpod-node smart playlist evaluation', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'evaluates empty rules to return all tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -506,7 +505,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'evaluates genre contains rule',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -544,7 +543,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'evaluates artist contains rule',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -577,7 +576,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'evaluates AND rules correctly',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -612,7 +611,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'evaluates OR rules correctly',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -649,7 +648,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'respects checkRules preference',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -684,7 +683,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when evaluating non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -701,7 +700,7 @@ describe('libgpod-node smart playlist evaluation', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when evaluating non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -722,7 +721,7 @@ describe('libgpod-node smart playlist evaluation', () => {
 // ============================================================================
 
 describe('libgpod-node smart playlist rule types', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with numeric comparison',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -749,7 +748,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with year comparison',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -778,7 +777,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with play count',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -802,7 +801,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with negated action',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -826,7 +825,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with starts with action',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -850,7 +849,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with album field',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -874,7 +873,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with range comparison',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -902,7 +901,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with exact string match',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -927,7 +926,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with bitrate field',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -952,7 +951,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create rule with skip count field',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -977,7 +976,7 @@ describe('libgpod-node smart playlist rule types', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set matchCheckedOnly preference',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1003,7 +1002,7 @@ describe('libgpod-node smart playlist rule types', () => {
 // ============================================================================
 
 describe('libgpod-node smart playlist error handling', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when creating smart playlist on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1017,7 +1016,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when getting rules on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1032,7 +1031,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when adding rule on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1051,7 +1050,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when evaluating on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1066,7 +1065,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when setting preferences on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1081,7 +1080,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when getting preferences for non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1097,7 +1096,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when setting preferences for non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1115,7 +1114,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when clearing rules for non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -1131,7 +1130,7 @@ describe('libgpod-node smart playlist error handling', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when removing rule for non-smart playlist',
     async () => {
       await withTestIpod(async (ipod) => {

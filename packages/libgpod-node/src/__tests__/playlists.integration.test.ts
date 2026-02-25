@@ -13,7 +13,6 @@ import { describe, it, expect } from 'bun:test';
 import {
   withTestIpod,
   Database,
-  isNativeAvailable,
   LibgpodError,
 } from './helpers/test-setup';
 
@@ -22,7 +21,7 @@ import {
 // ============================================================================
 
 describe('libgpod-node playlist CRUD operations', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create a new playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -47,7 +46,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can save and retrieve a created playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -73,7 +72,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can find playlist by name',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -97,7 +96,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can find playlist by ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -122,7 +121,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can rename a playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -149,7 +148,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can delete a playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -174,7 +173,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'cannot delete the master playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -195,7 +194,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can add tracks to a playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -225,7 +224,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can get tracks from a playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -266,7 +265,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can remove tracks from a playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -313,7 +312,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'playlistContainsTrack returns false for tracks not in playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -331,7 +330,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create multiple playlists',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -361,7 +360,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'playlist changes persist after save',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -392,7 +391,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getMasterPlaylist returns the master playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -408,7 +407,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'tracks added to database are in master playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -429,7 +428,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for playlist operations when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -452,7 +451,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when adding track to non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -469,7 +468,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when adding non-existent track to playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -486,7 +485,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can add same track to multiple playlists',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -531,7 +530,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'preserves track order in playlist after save',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -569,7 +568,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when removing non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -584,7 +583,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when renaming non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -599,7 +598,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can create playlist with empty string name',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -621,7 +620,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can rename playlist to empty string',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -637,7 +636,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removing track from playlist where track is not present is safe',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -661,7 +660,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when getting tracks from non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -676,7 +675,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when checking if track in non-existent playlist',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -693,7 +692,7 @@ describe('libgpod-node playlist CRUD operations', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when checking if non-existent track in playlist',
     async () => {
       await withTestIpod(async (ipod) => {

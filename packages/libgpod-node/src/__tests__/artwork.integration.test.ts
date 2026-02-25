@@ -9,7 +9,6 @@
  */
 
 import { describe, it, expect, afterEach } from 'bun:test';
-import { existsSync } from 'node:fs';
 import { writeFile, rm, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -18,15 +17,11 @@ import { randomUUID } from 'node:crypto';
 import {
   withTestIpod,
   Database,
-  isNativeAvailable,
   LibgpodError,
   TEST_MP3_PATH,
 } from './helpers/test-setup';
 
 import { createMinimalJpeg, createMinimalPng } from './fixtures/images';
-
-// Check if we have a test MP3 file available
-const hasTestMp3 = existsSync(TEST_MP3_PATH);
 
 // Tests for artwork functionality (setTrackArtwork / setTrackThumbnails)
 describe('libgpod-node artwork (setTrackArtwork)', () => {
@@ -54,7 +49,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   });
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set artwork for a track from JPEG file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -94,7 +89,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set artwork for a track from PNG file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -122,7 +117,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'handles tracks without artwork gracefully',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -150,7 +145,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set artwork for multiple tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -206,7 +201,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for non-existent image file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -223,7 +218,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error for invalid track ID',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -242,7 +237,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'async version works correctly',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -262,7 +257,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable() || !hasTestMp3)(
+  it(
     'can set artwork on track with copied audio file',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -309,7 +304,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
 
 // Tests for getUniqueArtworkIds functionality
 describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns empty array for empty database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -330,7 +325,7 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns empty array when no tracks have artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -352,7 +347,7 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns unique artwork IDs when tracks have artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -398,7 +393,7 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'returns deduplicated artwork IDs',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -444,7 +439,7 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -490,7 +485,7 @@ describe('libgpod-node artwork management APIs', () => {
   // hasTrackArtwork tests
   // -------------------------------------------------------------------------
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'hasTrackArtwork returns false for track without artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -506,7 +501,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'hasTrackArtwork returns true for track with artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -527,7 +522,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'hasTrackArtwork throws for non-existent track',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -540,7 +535,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'hasTrackArtwork throws when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -557,7 +552,7 @@ describe('libgpod-node artwork management APIs', () => {
   // removeTrackArtwork tests
   // -------------------------------------------------------------------------
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removeTrackArtwork removes artwork from track',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -586,7 +581,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removeTrackArtwork is safe for track without artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -605,7 +600,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removeTrackArtwork throws for non-existent track',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -618,7 +613,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removeTrackArtwork persists after save',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -662,7 +657,7 @@ describe('libgpod-node artwork management APIs', () => {
   // setTrackArtworkFromData tests
   // -------------------------------------------------------------------------
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData sets artwork from JPEG buffer',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -682,7 +677,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData sets artwork from PNG buffer',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -701,7 +696,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData throws for non-existent track',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -716,7 +711,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData persists after save',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -739,7 +734,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromDataAsync works correctly',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -757,7 +752,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData replaces existing artwork',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -787,7 +782,7 @@ describe('libgpod-node artwork management APIs', () => {
   // getArtworkCapabilities tests
   // -------------------------------------------------------------------------
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getArtworkCapabilities returns capability information',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -808,7 +803,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getArtworkCapabilities throws when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -824,7 +819,7 @@ describe('libgpod-node artwork management APIs', () => {
   // Combined workflow tests
   // -------------------------------------------------------------------------
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'full artwork workflow: check, set, verify, remove',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -875,7 +870,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtwork throws when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -893,7 +888,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData throws when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -908,7 +903,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'removeTrackArtwork throws when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -921,7 +916,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData accepts empty buffer without throwing',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -943,7 +938,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setTrackArtworkFromData accepts arbitrary data without validation',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -967,7 +962,7 @@ describe('libgpod-node artwork management APIs', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'artwork operations work with multiple tracks',
     async () => {
       await withTestIpod(async (ipod) => {

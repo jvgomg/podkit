@@ -14,7 +14,6 @@ import {
   withTestIpod,
   isGpodToolAvailable,
   Database,
-  isNativeAvailable,
   starsToRating,
   ratingToStars,
   formatDuration,
@@ -32,16 +31,6 @@ describe('libgpod-node', () => {
         'gpod-tool not available. Run `mise run tools:build` to build it.'
       );
     }
-  });
-
-  describe('isNativeAvailable', () => {
-    it('returns true when native binding is loaded', () => {
-      // This test will fail if native module is not built
-      // That's expected - we test conditionally below
-      const available = isNativeAvailable();
-      // Just check it returns a boolean
-      expect(typeof available).toBe('boolean');
-    });
   });
 
   describe('track utilities', () => {
@@ -87,11 +76,8 @@ describe('libgpod-node', () => {
   });
 });
 
-// These tests only run if the native module is available
 describe('libgpod-node with native binding', () => {
-  // Tests are conditionally skipped using .skipIf() below
-
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can open a test iPod database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -111,7 +97,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can read device info',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -126,7 +112,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can add and retrieve tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -166,7 +152,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can save changes to database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -195,7 +181,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can remove tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -221,7 +207,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can list playlists',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -239,7 +225,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when database is closed',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -252,7 +238,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can use async open',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -270,7 +256,7 @@ describe('libgpod-node with native binding', () => {
   // Device capability tests
   // ============================================================================
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can get device capabilities',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -304,7 +290,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can read SysInfo values',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -327,7 +313,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set and read SysInfo values',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -352,7 +338,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'SysInfo changes persist after save and reopen',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -375,7 +361,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when calling getDeviceCapabilities on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -387,7 +373,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when calling getSysInfo on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -399,7 +385,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when calling setSysInfo on closed database',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -413,7 +399,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getSysInfo handles empty string field name',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -428,7 +414,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setSysInfo can overwrite existing values',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -447,7 +433,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getDeviceCapabilities returns consistent types across calls',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -477,7 +463,7 @@ describe('libgpod-node with native binding', () => {
   // Database creation/manipulation tests
   // ============================================================================
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.create() creates new empty database',
     async () => {
       // Create a new empty database
@@ -506,7 +492,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.create() with setMountpoint() can save to iPod',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -540,7 +526,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setMountpoint updates the database mountpoint',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -559,7 +545,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getFilename returns null for databases opened by mountpoint',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -578,7 +564,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.openFile() opens database from file path',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -620,7 +606,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.openFileAsync() opens database from file path asynchronously',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -653,7 +639,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when setMountpoint is called on closed database',
     async () => {
       const db = Database.create();
@@ -663,7 +649,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'throws error when getFilename is called on closed database',
     async () => {
       const db = Database.create();
@@ -673,7 +659,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.openFile() throws error for non-existent file',
     async () => {
       expect(() => Database.openFile('/nonexistent/path/iTunesDB')).toThrow(
@@ -682,7 +668,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.openFileAsync() throws error for non-existent file',
     async () => {
       await expect(
@@ -691,7 +677,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'getFilename() returns null for newly created database',
     async () => {
       const db = Database.create();
@@ -704,7 +690,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'Database.create() database can add multiple tracks',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -745,7 +731,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'setMountpoint with empty string',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -765,7 +751,7 @@ describe('libgpod-node with native binding', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'openFile() then setMountpoint() allows save operations',
     async () => {
       await withTestIpod(async (ipod) => {

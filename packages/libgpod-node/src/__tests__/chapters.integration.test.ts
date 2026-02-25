@@ -13,13 +13,12 @@ import { describe, it, expect } from 'bun:test';
 import {
   withTestIpod,
   Database,
-  isNativeAvailable,
   MediaType,
   LibgpodError,
 } from './helpers/test-setup';
 
 describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () => {
-  it.skipIf(!isNativeAvailable())('can get chapters from a track without chapters', async () => {
+  it('can get chapters from a track without chapters', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -35,7 +34,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('can set chapters on a track', async () => {
+  it('can set chapters on a track', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -67,7 +66,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('can get chapters after setting them', async () => {
+  it('can get chapters after setting them', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -90,7 +89,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('setTrackChapters replaces existing chapters', async () => {
+  it('setTrackChapters replaces existing chapters', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -123,7 +122,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('setTrackChapters with empty array clears chapters', async () => {
+  it('setTrackChapters with empty array clears chapters', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -148,7 +147,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('throws error for invalid track ID', async () => {
+  it('throws error for invalid track ID', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -164,7 +163,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     });
   });
 
-  it.skipIf(!isNativeAvailable())('chapters persist after save and reopen', async () => {
+  it('chapters persist after save and reopen', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -201,7 +200,7 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
 });
 
 describe('libgpod-node chapter data (addTrackChapter)', () => {
-  it.skipIf(!isNativeAvailable())('can add chapters one at a time', async () => {
+  it('can add chapters one at a time', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -224,7 +223,7 @@ describe('libgpod-node chapter data (addTrackChapter)', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('addTrackChapter returns all chapters', async () => {
+  it('addTrackChapter returns all chapters', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -246,7 +245,7 @@ describe('libgpod-node chapter data (addTrackChapter)', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('throws error for invalid track ID', async () => {
+  it('throws error for invalid track ID', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -260,7 +259,7 @@ describe('libgpod-node chapter data (addTrackChapter)', () => {
 });
 
 describe('libgpod-node chapter data (clearTrackChapters)', () => {
-  it.skipIf(!isNativeAvailable())('can clear all chapters from a track', async () => {
+  it('can clear all chapters from a track', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -285,7 +284,7 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'clearTrackChapters is idempotent (works on track without chapters)',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -309,7 +308,7 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())('throws error for invalid track ID', async () => {
+  it('throws error for invalid track ID', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -321,7 +320,7 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('cleared chapters persist after save', async () => {
+  it('cleared chapters persist after save', async () => {
     await withTestIpod(async (ipod) => {
       // First, create a track with chapters and save
       const db = Database.openSync(ipod.path);
@@ -361,7 +360,7 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
 });
 
 describe('libgpod-node chapter data edge cases', () => {
-  it.skipIf(!isNativeAvailable())('can set a single chapter', async () => {
+  it('can set a single chapter', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -383,7 +382,7 @@ describe('libgpod-node chapter data edge cases', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('handles chapter with empty title', async () => {
+  it('handles chapter with empty title', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -406,7 +405,7 @@ describe('libgpod-node chapter data edge cases', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can set chapter with startPos beyond track duration',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -433,7 +432,7 @@ describe('libgpod-node chapter data edge cases', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())('throws error on closed database', async () => {
+  it('throws error on closed database', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -465,7 +464,7 @@ describe('libgpod-node chapter data edge cases', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'chapters added out of order are stored as provided',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -499,7 +498,7 @@ describe('libgpod-node chapter data edge cases', () => {
     }
   );
 
-  it.skipIf(!isNativeAvailable())(
+  it(
     'can add chapter with very large startPos',
     async () => {
       await withTestIpod(async (ipod) => {
@@ -528,7 +527,7 @@ describe('libgpod-node chapter data edge cases', () => {
 });
 
 describe('libgpod-node chapter data with media types', () => {
-  it.skipIf(!isNativeAvailable())('works with podcast media type', async () => {
+  it('works with podcast media type', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -555,7 +554,7 @@ describe('libgpod-node chapter data with media types', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('works with audiobook media type', async () => {
+  it('works with audiobook media type', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
@@ -583,7 +582,7 @@ describe('libgpod-node chapter data with media types', () => {
     });
   });
 
-  it.skipIf(!isNativeAvailable())('chapters work with audio type too', async () => {
+  it('chapters work with audio type too', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
