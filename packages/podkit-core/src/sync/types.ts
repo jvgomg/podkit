@@ -9,8 +9,7 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
 
-// Re-export IPodTrack from the ipod module
-// This provides the full interface with methods like remove(), update(), etc.
+// Re-export for use within sync module
 export type { IPodTrack };
 
 /**

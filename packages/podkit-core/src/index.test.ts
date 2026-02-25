@@ -17,7 +17,7 @@ import type {
   ArtworkSource,
   TrackInput,
   TrackFields,
-  IpodTrackInterface,
+  IPodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
@@ -281,11 +281,10 @@ describe('podkit-core', () => {
       expect(result.warnings).toHaveLength(1);
     });
 
-    // IpodTrackInterface and IpodPlaylist are complex interfaces with methods
-    // They will be implemented by classes in subsequent tasks
-    it('IpodTrackInterface type is exported', () => {
+    // IPodTrack and IpodPlaylist are interfaces with methods
+    it('IPodTrack type is exported', () => {
       // Compile-time check - we can reference the type
-      type TrackType = IpodTrackInterface;
+      type TrackType = IPodTrack;
       const _typeCheck: TrackType | null = null;
       expect(_typeCheck).toBeNull();
     });

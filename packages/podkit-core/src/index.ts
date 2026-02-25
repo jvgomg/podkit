@@ -35,7 +35,6 @@ export type {
 
 // Sync engine
 export type {
-  IPodTrack,
   MatchedTrack,
   ConflictTrack,
   SyncDiff,
@@ -153,13 +152,10 @@ export {
 } from './artwork/extractor.js';
 
 // iPod database abstraction layer
-// Note: IPodTrack from ./ipod/types.js is the new abstraction layer version
-// with methods. The IPodTrack from ./sync/types.js is a simpler data-only
-// interface used by the sync engine. These will be unified in a future migration.
 export type {
   TrackInput,
   TrackFields,
-  IPodTrack as IpodTrackInterface,
+  IPodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
