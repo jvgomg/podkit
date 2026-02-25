@@ -4,7 +4,7 @@ title: Create TrackHandle type and update TypeScript API
 status: To Do
 assignee: []
 created_date: '2026-02-25 13:38'
-updated_date: '2026-02-25 13:40'
+updated_date: '2026-02-25 15:36'
 labels:
   - libgpod-node
   - typescript
@@ -80,4 +80,20 @@ With TrackHandle, the use cases are covered:
 - To find a specific track → iterate handles and match by metadata
 
 Document this exclusion in LIBGPOD.md explaining why the function exists in libgpod but isn't exposed.
+
+## Ready to implement
+
+Native layer is complete (TASK-042.01). TypeScript layer needs:
+
+1. **types.ts**: Add TrackHandle interface, make Track.id optional
+2. **binding.ts**: Update NativeDatabase interface to match native API
+3. **database.ts**: Update all methods to use TrackHandle
+4. **index.ts**: Export TrackHandle type
+
+The native API now:
+- addTrack() returns number (handle index)
+- getTracks() returns number[] (handle indices)
+- getTrackData(handle) returns Track object
+- All operations accept handle instead of trackId
+- getTrackById removed
 <!-- SECTION:NOTES:END -->
