@@ -530,13 +530,14 @@ describe('libgpod-node smart playlist evaluation', () => {
           ],
         });
 
-        const matches = db2.evaluateSmartPlaylist(playlist.id);
+        const matchHandles = db2.evaluateSmartPlaylist(playlist.id);
 
         // Should match "Rock" and "Alternative Rock"
-        expect(matches).toHaveLength(2);
-        expect(matches.map((t) => t.title)).toContain('Rock Song');
-        expect(matches.map((t) => t.title)).toContain('Alt Rock Song');
-        expect(matches.map((t) => t.title)).not.toContain('Jazz Song');
+        expect(matchHandles).toHaveLength(2);
+        const titles = matchHandles.map((h) => db2.getTrack(h).title);
+        expect(titles).toContain('Rock Song');
+        expect(titles).toContain('Alt Rock Song');
+        expect(titles).not.toContain('Jazz Song');
 
         db2.close();
       });
@@ -565,11 +566,12 @@ describe('libgpod-node smart playlist evaluation', () => {
           ],
         });
 
-        const matches = db2.evaluateSmartPlaylist(playlist.id);
+        const matchHandles = db2.evaluateSmartPlaylist(playlist.id);
 
-        expect(matches).toHaveLength(2);
-        expect(matches.map((t) => t.artist)).toContain('The Beatles');
-        expect(matches.map((t) => t.artist)).toContain('Beatles Tribute');
+        expect(matchHandles).toHaveLength(2);
+        const artists = matchHandles.map((h) => db2.getTrack(h).artist);
+        expect(artists).toContain('The Beatles');
+        expect(artists).toContain('Beatles Tribute');
 
         db2.close();
       });
@@ -600,11 +602,11 @@ describe('libgpod-node smart playlist evaluation', () => {
           ],
         });
 
-        const matches = db2.evaluateSmartPlaylist(playlist.id);
+        const matchHandles = db2.evaluateSmartPlaylist(playlist.id);
 
         // Only "Rock Beatles" matches both rules
-        expect(matches).toHaveLength(1);
-        expect(matches[0]!.title).toBe('Rock Beatles');
+        expect(matchHandles).toHaveLength(1);
+        expect(db2.getTrack(matchHandles[0]!).title).toBe('Rock Beatles');
 
         db2.close();
       });
@@ -635,13 +637,14 @@ describe('libgpod-node smart playlist evaluation', () => {
           ],
         });
 
-        const matches = db2.evaluateSmartPlaylist(playlist.id);
+        const matchHandles = db2.evaluateSmartPlaylist(playlist.id);
 
         // Should match Rock and Jazz, not Pop
-        expect(matches).toHaveLength(2);
-        expect(matches.map((t) => t.genre)).toContain('Rock');
-        expect(matches.map((t) => t.genre)).toContain('Jazz');
-        expect(matches.map((t) => t.genre)).not.toContain('Pop');
+        expect(matchHandles).toHaveLength(2);
+        const genres = matchHandles.map((h) => db2.getTrack(h).genre);
+        expect(genres).toContain('Rock');
+        expect(genres).toContain('Jazz');
+        expect(genres).not.toContain('Pop');
 
         db2.close();
       });

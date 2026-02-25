@@ -418,7 +418,7 @@ export class Database {
   getTrackByDbId(dbid: bigint): TrackHandle | null {
     const native = this.ensureOpen();
     const index = native.getTrackByDbId(dbid);
-    if (index < 0) {
+    if (index === null || index < 0) {
       return null;
     }
     return this.createHandle(index);

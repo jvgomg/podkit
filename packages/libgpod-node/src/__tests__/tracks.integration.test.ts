@@ -29,18 +29,19 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add a track (metadata only)
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Tiny Test',
           artist: 'Test Artist',
           album: 'Test Album',
           filetype: 'MPEG audio file',
         });
 
+        const track = db.getTrack(handle);
         expect(track.ipodPath).toBeNull();
         expect(track.transferred).toBe(false);
 
         // Copy the file to the iPod
-        const updated = db.copyTrackToDevice(track.id, TEST_MP3_PATH);
+        const updated = db.copyTrackToDevice(handle, TEST_MP3_PATH);
 
         // Verify the track now has an iPod path
         expect(updated.ipodPath).not.toBeNull();
@@ -64,10 +65,11 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
         db.close();
 
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(1);
-        expect(tracks[0]!.ipodPath).toBe(updated.ipodPath);
-        expect(tracks[0]!.transferred).toBe(true);
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(1);
+        const track2 = db2.getTrack(handles[0]!);
+        expect(track2.ipodPath).toBe(updated.ipodPath);
+        expect(track2.transferred).toBe(true);
         db2.close();
       });
     }
@@ -79,28 +81,13 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Test Track',
         });
 
         expect(() => {
-          db.copyTrackToDevice(track.id, '/nonexistent/path/to/file.mp3');
+          db.copyTrackToDevice(handle, '/nonexistent/path/to/file.mp3');
         }).toThrow(LibgpodError);
-
-        db.close();
-      });
-    }
-  );
-
-  it(
-    'throws error for invalid track ID',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
-
-        expect(() => {
-          db.copyTrackToDevice(99999, TEST_MP3_PATH);
-        }).toThrow();
 
         db.close();
       });
@@ -114,16 +101,15 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add first track and copy immediately
-        // (track IDs are 0 before save, so we need to copy one at a time)
-        const track1 = db.addTrack({ title: 'Song 1', artist: 'Artist 1' });
-        const updated1 = db.copyTrackToDevice(track1.id, TEST_MP3_PATH);
+        const handle1 = db.addTrack({ title: 'Song 1', artist: 'Artist 1' });
+        const updated1 = db.copyTrackToDevice(handle1, TEST_MP3_PATH);
 
         // Save to get proper IDs assigned
         db.saveSync();
 
         // Add second track and copy
-        const track2 = db.addTrack({ title: 'Song 2', artist: 'Artist 2' });
-        const updated2 = db.copyTrackToDevice(track2.id, TEST_MP3_PATH);
+        const handle2 = db.addTrack({ title: 'Song 2', artist: 'Artist 2' });
+        const updated2 = db.copyTrackToDevice(handle2, TEST_MP3_PATH);
 
         // They should have different iPod paths
         expect(updated1.ipodPath).not.toBeNull();
@@ -151,7 +137,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add a track with full metadata
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Metadata Test',
           artist: 'Test Artist',
           album: 'Test Album',
@@ -168,7 +154,7 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
         });
 
         // Copy the file
-        const updated = db.copyTrackToDevice(track.id, TEST_MP3_PATH);
+        const updated = db.copyTrackToDevice(handle, TEST_MP3_PATH);
 
         // Verify all metadata is preserved
         expect(updated.title).toBe('Metadata Test');
@@ -196,8 +182,8 @@ describe('libgpod-node file copy (copyTrackToDevice)', () => {
       await withTestIpod(async (ipod) => {
         const db = await Database.open(ipod.path);
 
-        const track = db.addTrack({ title: 'Async Test' });
-        const updated = await db.copyTrackToDeviceAsync(track.id, TEST_MP3_PATH);
+        const handle = db.addTrack({ title: 'Async Test' });
+        const updated = await db.copyTrackToDeviceAsync(handle, TEST_MP3_PATH);
 
         expect(updated.ipodPath).not.toBeNull();
         expect(updated.transferred).toBe(true);
@@ -217,14 +203,14 @@ describe('libgpod-node track updates (updateTrack)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add a track
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Original Title',
           artist: 'Original Artist',
           album: 'Original Album',
         });
 
         // Update some fields
-        const updated = db.updateTrack(track.id, {
+        const updated = db.updateTrack(handle, {
           title: 'Updated Title',
           artist: 'Updated Artist',
         });
@@ -246,10 +232,10 @@ describe('libgpod-node track updates (updateTrack)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Stats Test' });
+        const handle = db.addTrack({ title: 'Stats Test' });
 
         // Update play statistics
-        const updated = db.updateTrack(track.id, {
+        const updated = db.updateTrack(handle, {
           rating: 80, // 4 stars
           playCount: 10,
           skipCount: 2,
@@ -270,8 +256,8 @@ describe('libgpod-node track updates (updateTrack)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Persistence Test' });
-        db.updateTrack(track.id, {
+        const handle = db.addTrack({ title: 'Persistence Test' });
+        db.updateTrack(handle, {
           title: 'Persisted Title',
           artist: 'Persisted Artist',
           year: 2024,
@@ -282,28 +268,14 @@ describe('libgpod-node track updates (updateTrack)', () => {
         db.close();
 
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(1);
-        expect(tracks[0]!.title).toBe('Persisted Title');
-        expect(tracks[0]!.artist).toBe('Persisted Artist');
-        expect(tracks[0]!.year).toBe(2024);
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(1);
+        const track = db2.getTrack(handles[0]!);
+        expect(track.title).toBe('Persisted Title');
+        expect(track.artist).toBe('Persisted Artist');
+        expect(track.year).toBe(2024);
 
         db2.close();
-      });
-    }
-  );
-
-  it(
-    'throws error for invalid track ID',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
-
-        expect(() => {
-          db.updateTrack(99999, { title: 'Should Fail' });
-        }).toThrow(LibgpodError);
-
-        db.close();
       });
     }
   );
@@ -314,10 +286,10 @@ describe('libgpod-node track updates (updateTrack)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Initial' });
+        const handle = db.addTrack({ title: 'Initial' });
 
         // Update all string fields
-        const updated = db.updateTrack(track.id, {
+        const updated = db.updateTrack(handle, {
           title: 'New Title',
           artist: 'New Artist',
           album: 'New Album',
@@ -350,9 +322,9 @@ describe('libgpod-node track updates (updateTrack)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Numeric Test' });
+        const handle = db.addTrack({ title: 'Numeric Test' });
 
-        const updated = db.updateTrack(track.id, {
+        const updated = db.updateTrack(handle, {
           trackNumber: 7,
           totalTracks: 15,
           discNumber: 2,
@@ -390,18 +362,19 @@ describe('libgpod-node track updates (updateTrack)', () => {
         const db = Database.openSync(ipod.path);
 
         // Create track with values
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Has Values',
           artist: 'Some Artist',
           comment: 'Some Comment',
         });
 
+        const track = db.getTrack(handle);
         expect(track.artist).toBe('Some Artist');
         expect(track.comment).toBe('Some Comment');
 
         // Update with empty strings (should clear the fields)
         // Note: libgpod stores empty strings as empty, not null
-        const updated = db.updateTrack(track.id, {
+        const updated = db.updateTrack(handle, {
           artist: '',
           comment: '',
         });
@@ -424,15 +397,16 @@ describe('libgpod-node track updates (updateTrack)', () => {
         const db = Database.openSync(ipod.path);
 
         // Create track without compilation flag
-        const track = db.addTrack({ title: 'Compilation Test' });
+        const handle = db.addTrack({ title: 'Compilation Test' });
+        const track = db.getTrack(handle);
         expect(track.compilation).toBe(false);
 
         // Set compilation to true
-        const updated1 = db.updateTrack(track.id, { compilation: true });
+        const updated1 = db.updateTrack(handle, { compilation: true });
         expect(updated1.compilation).toBe(true);
 
         // Set compilation back to false
-        const updated2 = db.updateTrack(track.id, { compilation: false });
+        const updated2 = db.updateTrack(handle, { compilation: false });
         expect(updated2.compilation).toBe(false);
 
         db.close();
@@ -446,13 +420,14 @@ describe('libgpod-node track updates (updateTrack)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Time Test' });
+        const handle = db.addTrack({ title: 'Time Test' });
+        const track = db.getTrack(handle);
         const originalModified = track.timeModified;
 
         // Small delay to ensure time difference
         await new Promise((resolve) => setTimeout(resolve, 1100));
 
-        const updated = db.updateTrack(track.id, { title: 'Updated' });
+        const updated = db.updateTrack(handle, { title: 'Updated' });
 
         // timeModified should be updated to a later time
         expect(updated.timeModified).toBeGreaterThanOrEqual(originalModified);
@@ -471,10 +446,10 @@ describe('libgpod-node track file path (getTrackFilePath)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({ title: 'Path Test' });
-        db.copyTrackToDevice(track.id, TEST_MP3_PATH);
+        const handle = db.addTrack({ title: 'Path Test' });
+        db.copyTrackToDevice(handle, TEST_MP3_PATH);
 
-        const filePath = db.getTrackFilePath(track.id);
+        const filePath = db.getTrackFilePath(handle);
 
         expect(filePath).not.toBeNull();
         expect(filePath).toContain(ipod.path);
@@ -494,25 +469,10 @@ describe('libgpod-node track file path (getTrackFilePath)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add track without copying file
-        const track = db.addTrack({ title: 'No File' });
+        const handle = db.addTrack({ title: 'No File' });
 
-        const filePath = db.getTrackFilePath(track.id);
+        const filePath = db.getTrackFilePath(handle);
         expect(filePath).toBeNull();
-
-        db.close();
-      });
-    }
-  );
-
-  it(
-    'throws error for invalid track ID',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
-
-        expect(() => {
-          db.getTrackFilePath(99999);
-        }).toThrow(LibgpodError);
 
         db.close();
       });
@@ -529,7 +489,7 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add original track with full metadata
-        const original = db.addTrack({
+        const originalHandle = db.addTrack({
           title: 'Original Song',
           artist: 'Original Artist',
           album: 'Original Album',
@@ -539,7 +499,8 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         });
 
         // Duplicate it
-        const copy = db.duplicateTrack(original.id);
+        const copyHandle = db.duplicateTrack(originalHandle);
+        const copy = db.getTrack(copyHandle);
 
         // Verify metadata was copied
         expect(copy.title).toBe('Original Song');
@@ -556,15 +517,13 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         // Should now have 2 tracks
         expect(db.getTracks()).toHaveLength(2);
 
-        // Save and verify tracks have different IDs
+        // Save and verify tracks are distinct
         db.saveSync();
         db.close();
 
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(2);
-        // After save, IDs should be assigned and different
-        expect(tracks[0]!.id).not.toBe(tracks[1]!.id);
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(2);
 
         db2.close();
       });
@@ -585,11 +544,12 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         // Reopen to get actual dbid
         db.close();
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks[0]!.dbid).not.toBe(0n);
+        const handles = db2.getTracks();
+        const track = db2.getTrack(handles[0]!);
+        expect(track.dbid).not.toBe(0n);
 
         // Duplicate
-        db2.duplicateTrack(tracks[0]!.id);
+        db2.duplicateTrack(handles[0]!);
 
         // Save to get new dbid assigned
         db2.saveSync();
@@ -597,12 +557,12 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
 
         // Reopen and verify different dbids
         const db3 = Database.openSync(ipod.path);
-        const allTracks = db3.getTracks();
-        expect(allTracks).toHaveLength(2);
+        const allHandles = db3.getTracks();
+        expect(allHandles).toHaveLength(2);
 
         // Both tracks should have non-zero dbids after save
         // and they should be different
-        const dbids = allTracks.map((t) => t.dbid);
+        const dbids = allHandles.map((h) => db3.getTrack(h).dbid);
         expect(dbids[0]!).not.toBe(0n);
         expect(dbids[1]!).not.toBe(0n);
         expect(dbids[0]!).not.toBe(dbids[1]!);
@@ -619,8 +579,8 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         const db = Database.openSync(ipod.path);
 
         // Add original with file
-        const original = db.addTrack({ title: 'With File' });
-        db.copyTrackToDevice(original.id, TEST_MP3_PATH);
+        const originalHandle = db.addTrack({ title: 'With File' });
+        db.copyTrackToDevice(originalHandle, TEST_MP3_PATH);
 
         // Save first to get unique IDs assigned
         db.saveSync();
@@ -628,48 +588,43 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
 
         // Reopen and duplicate
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(1);
-        const originalTrack = tracks[0]!;
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(1);
+        const originalTrack = db2.getTrack(handles[0]!);
 
         // Duplicate
-        const copy = db2.duplicateTrack(originalTrack.id);
+        const copyHandle = db2.duplicateTrack(handles[0]!);
+        const copy = db2.getTrack(copyHandle);
         expect(copy.ipodPath).toBeNull();
 
         // Save so the duplicate gets a unique ID
         db2.saveSync();
 
-        // Get the updated duplicate (now with proper ID)
-        const duplicateTrack = db2
-          .getTracks()
-          .find((t) => t.id !== originalTrack.id);
-        expect(duplicateTrack).toBeDefined();
-
-        // Copy file to duplicate (now with unique ID)
-        const updated = db2.copyTrackToDevice(duplicateTrack!.id, TEST_MP3_PATH);
+        // Copy file to duplicate
+        const updated = db2.copyTrackToDevice(copyHandle, TEST_MP3_PATH);
         expect(updated.ipodPath).not.toBeNull();
         expect(updated.transferred).toBe(true);
 
-        // Paths should be different now that IDs are different
-        expect(updated.ipodPath).not.toBe(originalTrack!.ipodPath);
+        // Paths should be different
+        expect(updated.ipodPath).not.toBe(originalTrack.ipodPath);
 
         db2.saveSync();
         db2.close();
 
         // Reopen and verify both files exist
         const db3 = Database.openSync(ipod.path);
-        const finalTracks = db3.getTracks();
-        expect(finalTracks).toHaveLength(2);
+        const finalHandles = db3.getTracks();
+        expect(finalHandles).toHaveLength(2);
 
         // Both tracks should have different ipod paths
-        const paths = finalTracks.map((t) => t.ipodPath);
+        const paths = finalHandles.map((h) => db3.getTrack(h).ipodPath);
         expect(paths[0]!).not.toBeNull();
         expect(paths[1]!).not.toBeNull();
         expect(paths[0]!).not.toBe(paths[1]!);
 
         // Verify both files exist on disk
-        const filePath1 = db3.getTrackFilePath(finalTracks[0]!.id);
-        const filePath2 = db3.getTrackFilePath(finalTracks[1]!.id);
+        const filePath1 = db3.getTrackFilePath(finalHandles[0]!);
+        const filePath2 = db3.getTrackFilePath(finalHandles[1]!);
         expect(filePath1).not.toBeNull();
         expect(filePath2).not.toBeNull();
         expect(existsSync(filePath1!)).toBe(true);
@@ -681,28 +636,13 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
   );
 
   it(
-    'throws error for invalid track ID',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
-
-        expect(() => {
-          db.duplicateTrack(99999);
-        }).toThrow(LibgpodError);
-
-        db.close();
-      });
-    }
-  );
-
-  it(
     'duplicates all metadata fields',
     async () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
         // Add original track with comprehensive metadata
-        const original = db.addTrack({
+        const originalHandle = db.addTrack({
           title: 'Full Metadata Track',
           artist: 'Test Artist',
           album: 'Test Album',
@@ -726,7 +666,8 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         });
 
         // Duplicate it
-        const copy = db.duplicateTrack(original.id);
+        const copyHandle = db.duplicateTrack(originalHandle);
+        const copy = db.getTrack(copyHandle);
 
         // Verify all metadata was copied
         expect(copy.title).toBe('Full Metadata Track');
@@ -772,8 +713,8 @@ describe('libgpod-node track duplication (duplicateTrack)', () => {
         db.close();
 
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        db2.duplicateTrack(tracks[0]!.id);
+        const handles = db2.getTracks();
+        db2.duplicateTrack(handles[0]!);
 
         db2.saveSync();
         db2.close();
@@ -805,17 +746,19 @@ describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
 
         // Reopen to get actual dbid
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(1);
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(1);
 
-        const dbid = tracks[0]!.dbid;
+        const track = db2.getTrack(handles[0]!);
+        const dbid = track.dbid;
         expect(dbid).not.toBe(0n);
 
         // Look up by dbid
-        const found = db2.getTrackByDbId(dbid);
-        expect(found).not.toBeNull();
-        expect(found!.title).toBe('DBID Lookup Test');
-        expect(found!.dbid).toBe(dbid);
+        const foundHandle = db2.getTrackByDbId(dbid);
+        expect(foundHandle).not.toBeNull();
+        const found = db2.getTrack(foundHandle!);
+        expect(found.title).toBe('DBID Lookup Test');
+        expect(found.dbid).toBe(dbid);
 
         db2.close();
       });
@@ -852,18 +795,18 @@ describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
 
         // Reopen and verify unique dbids
         const db2 = Database.openSync(ipod.path);
-        const tracks = db2.getTracks();
-        expect(tracks).toHaveLength(3);
+        const handles = db2.getTracks();
+        expect(handles).toHaveLength(3);
 
-        const dbids = tracks.map((t) => t.dbid);
+        const dbids = handles.map((h) => db2.getTrack(h).dbid);
         const uniqueDbids = new Set(dbids);
         expect(uniqueDbids.size).toBe(3);
 
         // Each dbid should be able to look up its track
-        for (const track of tracks) {
-          const found = db2.getTrackByDbId(track.dbid);
-          expect(found).not.toBeNull();
-          expect(found!.id).toBe(track.id);
+        for (const handle of handles) {
+          const track = db2.getTrack(handle);
+          const foundHandle = db2.getTrackByDbId(track.dbid);
+          expect(foundHandle).not.toBeNull();
         }
 
         db2.close();

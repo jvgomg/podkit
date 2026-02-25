@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { withTestIpod } from '@podkit/gpod-testing';
 import { Database } from './helpers/test-setup';
 
-import { createMinimalJpeg, createMinimalPng } from './fixtures/images';
+import { createMinimalJpeg } from './fixtures/images';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -77,31 +77,31 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           await writeFile(imagePath, createMinimalJpeg());
 
           // Add 3 tracks from the same album
-          const track1 = db.addTrack({
+          const handle1 = db.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          const track2 = db.addTrack({
+          const handle2 = db.addTrack({
             title: 'Track 2',
             artist: 'Artist',
             album: 'Album A',
           });
-          const track3 = db.addTrack({
+          const handle3 = db.addTrack({
             title: 'Track 3',
             artist: 'Artist',
             album: 'Album A',
           });
 
           // Set the same artwork for all tracks
-          db.setTrackArtwork(track1.id, imagePath);
-          db.setTrackArtwork(track2.id, imagePath);
-          db.setTrackArtwork(track3.id, imagePath);
+          db.setTrackArtwork(handle1, imagePath);
+          db.setTrackArtwork(handle2, imagePath);
+          db.setTrackArtwork(handle3, imagePath);
 
           // Before save, all tracks should report hasArtwork = true
-          expect(db.hasTrackArtwork(track1.id)).toBe(true);
-          expect(db.hasTrackArtwork(track2.id)).toBe(true);
-          expect(db.hasTrackArtwork(track3.id)).toBe(true);
+          expect(db.hasTrackArtwork(handle1)).toBe(true);
+          expect(db.hasTrackArtwork(handle2)).toBe(true);
+          expect(db.hasTrackArtwork(handle3)).toBe(true);
 
           // Save to trigger artwork processing
           db.saveSync();
@@ -128,14 +128,14 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           // First session: add tracks with artwork
           const db1 = Database.openSync(ipod.path);
 
-          const track1 = db1.addTrack({
+          const handle1 = db1.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
 
-          db1.setTrackArtwork(track1.id, imagePath);
-          expect(db1.hasTrackArtwork(track1.id)).toBe(true);
+          db1.setTrackArtwork(handle1, imagePath);
+          expect(db1.hasTrackArtwork(handle1)).toBe(true);
 
           db1.saveSync();
 
@@ -152,9 +152,10 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           expect(artworkIds2.length).toBe(1);
 
           // Track should still have artwork
-          const tracks = db2.getTracks();
-          expect(tracks.length).toBe(1);
-          expect(tracks[0]!.hasArtwork).toBe(true);
+          const handles = db2.getTracks();
+          expect(handles.length).toBe(1);
+          const track = db2.getTrack(handles[0]!);
+          expect(track.hasArtwork).toBe(true);
 
           db2.close();
         });
@@ -177,40 +178,40 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           // These are guaranteed to be visually different
 
           // Add tracks from Album A
-          const trackA1 = db.addTrack({
+          const handleA1 = db.addTrack({
             title: 'Album A - Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          const trackA2 = db.addTrack({
+          const handleA2 = db.addTrack({
             title: 'Album A - Track 2',
             artist: 'Artist',
             album: 'Album A',
           });
 
           // Add tracks from Album B
-          const trackB1 = db.addTrack({
+          const handleB1 = db.addTrack({
             title: 'Album B - Track 1',
             artist: 'Artist',
             album: 'Album B',
           });
-          const trackB2 = db.addTrack({
+          const handleB2 = db.addTrack({
             title: 'Album B - Track 2',
             artist: 'Artist',
             album: 'Album B',
           });
 
           // Set different artwork for each album using real fixture images
-          db.setTrackArtwork(trackA1.id, COVER_ALBUM_A);
-          db.setTrackArtwork(trackA2.id, COVER_ALBUM_A);
-          db.setTrackArtwork(trackB1.id, COVER_ALBUM_B);
-          db.setTrackArtwork(trackB2.id, COVER_ALBUM_B);
+          db.setTrackArtwork(handleA1, COVER_ALBUM_A);
+          db.setTrackArtwork(handleA2, COVER_ALBUM_A);
+          db.setTrackArtwork(handleB1, COVER_ALBUM_B);
+          db.setTrackArtwork(handleB2, COVER_ALBUM_B);
 
           // All tracks should have artwork before save
-          expect(db.hasTrackArtwork(trackA1.id)).toBe(true);
-          expect(db.hasTrackArtwork(trackA2.id)).toBe(true);
-          expect(db.hasTrackArtwork(trackB1.id)).toBe(true);
-          expect(db.hasTrackArtwork(trackB2.id)).toBe(true);
+          expect(db.hasTrackArtwork(handleA1)).toBe(true);
+          expect(db.hasTrackArtwork(handleA2)).toBe(true);
+          expect(db.hasTrackArtwork(handleB1)).toBe(true);
+          expect(db.hasTrackArtwork(handleB2)).toBe(true);
 
           // Save
           db.saveSync();
@@ -246,14 +247,14 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           const db = Database.openSync(ipod.path);
 
           // Add a track without setting any artwork
-          const track = db.addTrack({
+          const handle = db.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
 
           // New track should not have artwork
-          expect(db.hasTrackArtwork(track.id)).toBe(false);
+          expect(db.hasTrackArtwork(handle)).toBe(false);
 
           db.saveSync();
 
@@ -277,26 +278,26 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           await writeFile(imagePath, createMinimalJpeg());
 
           // Add first track and verify no artwork
-          const track1 = db.addTrack({
+          const handle1 = db.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          expect(db.hasTrackArtwork(track1.id)).toBe(false);
+          expect(db.hasTrackArtwork(handle1)).toBe(false);
 
           // Set artwork for track1
-          db.setTrackArtwork(track1.id, imagePath);
-          expect(db.hasTrackArtwork(track1.id)).toBe(true);
+          db.setTrackArtwork(handle1, imagePath);
+          expect(db.hasTrackArtwork(handle1)).toBe(true);
 
           // Now add another track AFTER artwork was set
-          const track2 = db.addTrack({
+          const handle2 = db.addTrack({
             title: 'Track 2',
             artist: 'Artist',
             album: 'Album B',
           });
 
           // Log observed behavior for documentation
-          const track2HasArtwork = db.hasTrackArtwork(track2.id);
+          const track2HasArtwork = db.hasTrackArtwork(handle2);
           console.log(`Track added after artwork set: hasArtwork = ${track2HasArtwork}`);
 
           // Document the observed behavior - track2 may or may not have artwork
@@ -331,32 +332,32 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           await writeFile(imagePath, createMinimalJpeg());
 
           // Add tracks from two different albums
-          const trackA1 = db.addTrack({
+          const handleA1 = db.addTrack({
             title: 'Album A Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          const trackA2 = db.addTrack({
+          const handleA2 = db.addTrack({
             title: 'Album A Track 2',
             artist: 'Artist',
             album: 'Album A',
           });
-          const trackB1 = db.addTrack({
+          const handleB1 = db.addTrack({
             title: 'Album B Track 1',
             artist: 'Artist',
             album: 'Album B',
           });
-          const trackB2 = db.addTrack({
+          const handleB2 = db.addTrack({
             title: 'Album B Track 2',
             artist: 'Artist',
             album: 'Album B',
           });
 
           // Set the SAME image for both albums
-          db.setTrackArtwork(trackA1.id, imagePath);
-          db.setTrackArtwork(trackA2.id, imagePath);
-          db.setTrackArtwork(trackB1.id, imagePath);
-          db.setTrackArtwork(trackB2.id, imagePath);
+          db.setTrackArtwork(handleA1, imagePath);
+          db.setTrackArtwork(handleA2, imagePath);
+          db.setTrackArtwork(handleB1, imagePath);
+          db.setTrackArtwork(handleB2, imagePath);
 
           // Save
           db.saveSync();
@@ -388,26 +389,26 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           const imageData = createMinimalJpeg();
 
           // Add 3 tracks
-          const track1 = db.addTrack({
+          const handle1 = db.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          const track2 = db.addTrack({
+          const handle2 = db.addTrack({
             title: 'Track 2',
             artist: 'Artist',
             album: 'Album A',
           });
-          const track3 = db.addTrack({
+          const handle3 = db.addTrack({
             title: 'Track 3',
             artist: 'Artist',
             album: 'Album A',
           });
 
           // Set artwork using the same buffer
-          db.setTrackArtworkFromData(track1.id, imageData);
-          db.setTrackArtworkFromData(track2.id, imageData);
-          db.setTrackArtworkFromData(track3.id, imageData);
+          db.setTrackArtworkFromData(handle1, imageData);
+          db.setTrackArtworkFromData(handle2, imageData);
+          db.setTrackArtworkFromData(handle3, imageData);
 
           // Save
           db.saveSync();
@@ -435,20 +436,20 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           expect(imageDataA.equals(imageDataB)).toBe(false);
 
           // Add tracks
-          const track1 = db.addTrack({
+          const handle1 = db.addTrack({
             title: 'Track 1',
             artist: 'Artist',
             album: 'Album A',
           });
-          const track2 = db.addTrack({
+          const handle2 = db.addTrack({
             title: 'Track 2',
             artist: 'Artist',
             album: 'Album B',
           });
 
           // Set different artwork using buffers
-          db.setTrackArtworkFromData(track1.id, imageDataA);
-          db.setTrackArtworkFromData(track2.id, imageDataB);
+          db.setTrackArtworkFromData(handle1, imageDataA);
+          db.setTrackArtworkFromData(handle2, imageDataB);
 
           // Save
           db.saveSync();
@@ -520,8 +521,8 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           const imagePath = join(dir, 'cover.jpg');
           await writeFile(imagePath, createMinimalJpeg());
 
-          const track = db.addTrack({ title: 'Track 1' });
-          db.setTrackArtwork(track.id, imagePath);
+          const handle = db.addTrack({ title: 'Track 1' });
+          db.setTrackArtwork(handle, imagePath);
 
           db.saveSync();
 

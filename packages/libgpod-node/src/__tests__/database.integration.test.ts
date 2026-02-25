@@ -119,7 +119,7 @@ describe('libgpod-node with native binding', () => {
         const db = Database.openSync(ipod.path);
 
         // Add a track
-        const newTrack = db.addTrack({
+        const handle = db.addTrack({
           title: 'Test Song',
           artist: 'Test Artist',
           album: 'Test Album',
@@ -128,24 +128,20 @@ describe('libgpod-node with native binding', () => {
           sampleRate: 44100,
         });
 
+        const newTrack = db.getTrack(handle);
         expect(newTrack).toBeDefined();
         expect(newTrack.title).toBe('Test Song');
         expect(newTrack.artist).toBe('Test Artist');
         expect(newTrack.album).toBe('Test Album');
-        // Note: track.id may be 0 before save - libgpod assigns IDs on write
 
         // Verify track count
         expect(db.trackCount).toBe(1);
 
         // Get tracks
-        const tracks = db.getTracks();
-        expect(tracks).toHaveLength(1);
-        expect(tracks[0]!.title).toBe('Test Song');
-
-        // Get track by ID
-        const found = db.getTrackById(newTrack.id);
-        expect(found).not.toBeNull();
-        expect(found!.title).toBe('Test Song');
+        const handles = db.getTracks();
+        expect(handles).toHaveLength(1);
+        const track = db.getTrack(handles[0]!);
+        expect(track.title).toBe('Test Song');
 
         db.close();
       });
@@ -173,8 +169,9 @@ describe('libgpod-node with native binding', () => {
         const db2 = Database.openSync(ipod.path);
         expect(db2.trackCount).toBe(1);
 
-        const tracks = db2.getTracks();
-        expect(tracks[0]!.title).toBe('Saved Song');
+        const handles = db2.getTracks();
+        const track = db2.getTrack(handles[0]!);
+        expect(track.title).toBe('Saved Song');
 
         db2.close();
       });
@@ -188,19 +185,20 @@ describe('libgpod-node with native binding', () => {
         const db = Database.openSync(ipod.path);
 
         // Add two tracks
-        const track1 = db.addTrack({ title: 'Song 1' });
+        const handle1 = db.addTrack({ title: 'Song 1' });
         db.addTrack({ title: 'Song 2' }); // Adding second track for count test
 
         expect(db.trackCount).toBe(2);
 
         // Remove first track
-        db.removeTrack(track1.id);
+        db.removeTrack(handle1);
         expect(db.trackCount).toBe(1);
 
         // Verify correct track remains
-        const tracks = db.getTracks();
-        expect(tracks).toHaveLength(1);
-        expect(tracks[0]!.title).toBe('Song 2');
+        const handles = db.getTracks();
+        expect(handles).toHaveLength(1);
+        const track = db.getTrack(handles[0]!);
+        expect(track.title).toBe('Song 2');
 
         db.close();
       });
@@ -503,10 +501,11 @@ describe('libgpod-node with native binding', () => {
         expect(db.mountpoint).toBe(ipod.path);
 
         // Add a track
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Created Track',
           artist: 'Created Artist',
         });
+        const track = db.getTrack(handle);
         expect(track.title).toBe('Created Track');
 
         // Save should work
@@ -517,9 +516,10 @@ describe('libgpod-node with native binding', () => {
         const db2 = Database.openSync(ipod.path);
         expect(db2.trackCount).toBe(1);
 
-        const tracks = db2.getTracks();
-        expect(tracks[0]!.title).toBe('Created Track');
-        expect(tracks[0]!.artist).toBe('Created Artist');
+        const handles = db2.getTracks();
+        const track2 = db2.getTrack(handles[0]!);
+        expect(track2.title).toBe('Created Track');
+        expect(track2.artist).toBe('Created Artist');
 
         db2.close();
       });
@@ -591,8 +591,9 @@ describe('libgpod-node with native binding', () => {
 
         // Should have the track we saved
         expect(db2.trackCount).toBe(1);
-        const tracks = db2.getTracks();
-        expect(tracks[0]!.title).toBe('File Track');
+        const handles = db2.getTracks();
+        const track = db2.getTrack(handles[0]!);
+        expect(track.title).toBe('File Track');
 
         // Mountpoint should be empty when opened from file
         expect(db2.mountpoint).toBe('');
@@ -631,8 +632,9 @@ describe('libgpod-node with native binding', () => {
         expect(db2).toBeDefined();
         expect(db2.trackCount).toBe(1);
 
-        const tracks = db2.getTracks();
-        expect(tracks[0]!.title).toBe('Async File Track');
+        const handles = db2.getTracks();
+        const track = db2.getTrack(handles[0]!);
+        expect(track.title).toBe('Async File Track');
 
         db2.close();
       });
@@ -698,13 +700,13 @@ describe('libgpod-node with native binding', () => {
         db.setMountpoint(ipod.path);
 
         // Add multiple tracks
-        const track1 = db.addTrack({
+        const handle1 = db.addTrack({
           title: 'Track One',
           artist: 'Artist One',
           album: 'Album',
           trackNumber: 1,
         });
-        const track2 = db.addTrack({
+        const handle2 = db.addTrack({
           title: 'Track Two',
           artist: 'Artist Two',
           album: 'Album',
@@ -712,6 +714,8 @@ describe('libgpod-node with native binding', () => {
         });
 
         expect(db.trackCount).toBe(2);
+        const track1 = db.getTrack(handle1);
+        const track2 = db.getTrack(handle2);
         expect(track1.title).toBe('Track One');
         expect(track2.title).toBe('Track Two');
 
@@ -722,8 +726,8 @@ describe('libgpod-node with native binding', () => {
         const db2 = Database.openSync(ipod.path);
         expect(db2.trackCount).toBe(2);
 
-        const tracks = db2.getTracks();
-        const titles = tracks.map((t) => t.title).sort();
+        const handles = db2.getTracks();
+        const titles = handles.map((h) => db2.getTrack(h).title).sort();
         expect(titles).toEqual(['Track One', 'Track Two']);
 
         db2.close();
@@ -781,7 +785,7 @@ describe('libgpod-node with native binding', () => {
         const db3 = Database.openSync(ipod.path);
         expect(db3.trackCount).toBe(2);
 
-        const titles = db3.getTracks().map((t) => t.title).sort();
+        const titles = db3.getTracks().map((h) => db3.getTrack(h).title).sort();
         expect(titles).toEqual(['New Track', 'Original Track']);
 
         db3.close();

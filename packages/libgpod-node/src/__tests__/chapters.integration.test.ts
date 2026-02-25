@@ -14,7 +14,6 @@ import {
   withTestIpod,
   Database,
   MediaType,
-  LibgpodError,
 } from './helpers/test-setup';
 
 describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () => {
@@ -22,12 +21,12 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'No Chapters',
         mediaType: MediaType.Podcast,
       });
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toEqual([]);
 
       db.close();
@@ -38,13 +37,13 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Podcast Episode',
         mediaType: MediaType.Podcast,
         duration: 3600000, // 1 hour
       });
 
-      const chapters = db.setTrackChapters(track.id, [
+      const chapters = db.setTrackChapters(handle, [
         { startPos: 0, title: 'Introduction' },
         { startPos: 60000, title: 'Topic 1' },
         { startPos: 300000, title: 'Topic 2' },
@@ -70,17 +69,17 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Chapter Test',
         mediaType: MediaType.Audiobook,
       });
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Chapter 1' },
         { startPos: 120000, title: 'Chapter 2' },
       ]);
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(2);
       expect(chapters[0]!.title).toBe('Chapter 1');
       expect(chapters[1]!.title).toBe('Chapter 2');
@@ -93,27 +92,27 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Replace Test',
         mediaType: MediaType.Podcast,
       });
 
       // Set initial chapters
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Old Chapter 1' },
         { startPos: 60000, title: 'Old Chapter 2' },
         { startPos: 120000, title: 'Old Chapter 3' },
       ]);
 
-      expect(db.getTrackChapters(track.id)).toHaveLength(3);
+      expect(db.getTrackChapters(handle)).toHaveLength(3);
 
       // Replace with new chapters
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'New Chapter A' },
         { startPos: 180000, title: 'New Chapter B' },
       ]);
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(2);
       expect(chapters[0]!.title).toBe('New Chapter A');
       expect(chapters[1]!.title).toBe('New Chapter B');
@@ -126,38 +125,22 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Clear Test',
         mediaType: MediaType.Podcast,
       });
 
       // Set initial chapters
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Chapter 1' },
         { startPos: 60000, title: 'Chapter 2' },
       ]);
 
-      expect(db.getTrackChapters(track.id)).toHaveLength(2);
+      expect(db.getTrackChapters(handle)).toHaveLength(2);
 
       // Clear with empty array
-      db.setTrackChapters(track.id, []);
-      expect(db.getTrackChapters(track.id)).toHaveLength(0);
-
-      db.close();
-    });
-  });
-
-  it('throws error for invalid track ID', async () => {
-    await withTestIpod(async (ipod) => {
-      const db = Database.openSync(ipod.path);
-
-      expect(() => {
-        db.getTrackChapters(99999);
-      }).toThrow(LibgpodError);
-
-      expect(() => {
-        db.setTrackChapters(99999, [{ startPos: 0, title: 'Test' }]);
-      }).toThrow(LibgpodError);
+      db.setTrackChapters(handle, []);
+      expect(db.getTrackChapters(handle)).toHaveLength(0);
 
       db.close();
     });
@@ -167,13 +150,13 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Persistence Test',
         mediaType: MediaType.Podcast,
         duration: 600000,
       });
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Intro' },
         { startPos: 120000, title: 'Main Content' },
         { startPos: 480000, title: 'Outro' },
@@ -184,10 +167,10 @@ describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () =>
 
       // Reopen and verify
       const db2 = Database.openSync(ipod.path);
-      const tracks = db2.getTracks();
-      expect(tracks).toHaveLength(1);
+      const handles = db2.getTracks();
+      expect(handles).toHaveLength(1);
 
-      const chapters = db2.getTrackChapters(tracks[0]!.id);
+      const chapters = db2.getTrackChapters(handles[0]!);
       expect(chapters).toHaveLength(3);
       expect(chapters[0]!.title).toBe('Intro');
       expect(chapters[1]!.title).toBe('Main Content');
@@ -204,16 +187,16 @@ describe('libgpod-node chapter data (addTrackChapter)', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Add Chapter Test',
         mediaType: MediaType.Audiobook,
       });
 
-      db.addTrackChapter(track.id, 0, 'Chapter 1');
-      db.addTrackChapter(track.id, 120000, 'Chapter 2');
-      db.addTrackChapter(track.id, 240000, 'Chapter 3');
+      db.addTrackChapter(handle, 0, 'Chapter 1');
+      db.addTrackChapter(handle, 120000, 'Chapter 2');
+      db.addTrackChapter(handle, 240000, 'Chapter 3');
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(3);
       expect(chapters[0]!.title).toBe('Chapter 1');
       expect(chapters[1]!.title).toBe('Chapter 2');
@@ -227,31 +210,19 @@ describe('libgpod-node chapter data (addTrackChapter)', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Return Test',
         mediaType: MediaType.Podcast,
       });
 
-      const result1 = db.addTrackChapter(track.id, 0, 'First');
+      const result1 = db.addTrackChapter(handle, 0, 'First');
       expect(result1).toHaveLength(1);
 
-      const result2 = db.addTrackChapter(track.id, 60000, 'Second');
+      const result2 = db.addTrackChapter(handle, 60000, 'Second');
       expect(result2).toHaveLength(2);
 
-      const result3 = db.addTrackChapter(track.id, 120000, 'Third');
+      const result3 = db.addTrackChapter(handle, 120000, 'Third');
       expect(result3).toHaveLength(3);
-
-      db.close();
-    });
-  });
-
-  it('throws error for invalid track ID', async () => {
-    await withTestIpod(async (ipod) => {
-      const db = Database.openSync(ipod.path);
-
-      expect(() => {
-        db.addTrackChapter(99999, 0, 'Test');
-      }).toThrow(LibgpodError);
 
       db.close();
     });
@@ -263,22 +234,22 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Clear Test',
         mediaType: MediaType.Podcast,
       });
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Chapter 1' },
         { startPos: 60000, title: 'Chapter 2' },
         { startPos: 120000, title: 'Chapter 3' },
       ]);
 
-      expect(db.getTrackChapters(track.id)).toHaveLength(3);
+      expect(db.getTrackChapters(handle)).toHaveLength(3);
 
-      db.clearTrackChapters(track.id);
+      db.clearTrackChapters(handle);
 
-      expect(db.getTrackChapters(track.id)).toHaveLength(0);
+      expect(db.getTrackChapters(handle)).toHaveLength(0);
 
       db.close();
     });
@@ -290,47 +261,35 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'No Chapters',
           mediaType: MediaType.Podcast,
         });
 
         // Should not throw
-        db.clearTrackChapters(track.id);
-        expect(db.getTrackChapters(track.id)).toHaveLength(0);
+        db.clearTrackChapters(handle);
+        expect(db.getTrackChapters(handle)).toHaveLength(0);
 
         // Call again - should still not throw
-        db.clearTrackChapters(track.id);
-        expect(db.getTrackChapters(track.id)).toHaveLength(0);
+        db.clearTrackChapters(handle);
+        expect(db.getTrackChapters(handle)).toHaveLength(0);
 
         db.close();
       });
     }
   );
 
-  it('throws error for invalid track ID', async () => {
-    await withTestIpod(async (ipod) => {
-      const db = Database.openSync(ipod.path);
-
-      expect(() => {
-        db.clearTrackChapters(99999);
-      }).toThrow(LibgpodError);
-
-      db.close();
-    });
-  });
-
   it('cleared chapters persist after save', async () => {
     await withTestIpod(async (ipod) => {
       // First, create a track with chapters and save
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Clear Persist Test',
         mediaType: MediaType.Audiobook,
       });
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Chapter 1' },
         { startPos: 60000, title: 'Chapter 2' },
       ]);
@@ -338,21 +297,21 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
       db.saveSync();
       db.close();
 
-      // Reopen to get valid track ID, verify chapters exist
+      // Reopen to get valid track handle, verify chapters exist
       const db2 = Database.openSync(ipod.path);
-      const tracks = db2.getTracks();
-      expect(tracks).toHaveLength(1);
-      expect(db2.getTrackChapters(tracks[0]!.id)).toHaveLength(2);
+      const handles = db2.getTracks();
+      expect(handles).toHaveLength(1);
+      expect(db2.getTrackChapters(handles[0]!)).toHaveLength(2);
 
       // Clear and save
-      db2.clearTrackChapters(tracks[0]!.id);
+      db2.clearTrackChapters(handles[0]!);
       db2.saveSync();
       db2.close();
 
       // Reopen and verify cleared
       const db3 = Database.openSync(ipod.path);
-      const tracks2 = db3.getTracks();
-      expect(db3.getTrackChapters(tracks2[0]!.id)).toHaveLength(0);
+      const handles2 = db3.getTracks();
+      expect(db3.getTrackChapters(handles2[0]!)).toHaveLength(0);
 
       db3.close();
     });
@@ -364,13 +323,13 @@ describe('libgpod-node chapter data edge cases', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Single Chapter Test',
         mediaType: MediaType.Podcast,
         duration: 300000, // 5 minutes
       });
 
-      const chapters = db.setTrackChapters(track.id, [
+      const chapters = db.setTrackChapters(handle, [
         { startPos: 0, title: 'The Only Chapter' },
       ]);
 
@@ -386,12 +345,12 @@ describe('libgpod-node chapter data edge cases', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'Empty Title Test',
         mediaType: MediaType.Podcast,
       });
 
-      const chapters = db.setTrackChapters(track.id, [
+      const chapters = db.setTrackChapters(handle, [
         { startPos: 0, title: '' },
         { startPos: 60000, title: 'Named Chapter' },
       ]);
@@ -411,7 +370,7 @@ describe('libgpod-node chapter data edge cases', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Duration Test',
           mediaType: MediaType.Podcast,
           duration: 60000, // 1 minute
@@ -419,7 +378,7 @@ describe('libgpod-node chapter data edge cases', () => {
 
         // Set chapter at 2 minutes (past the 1 minute duration)
         // libgpod doesn't validate this - it's up to the caller
-        const chapters = db.setTrackChapters(track.id, [
+        const chapters = db.setTrackChapters(handle, [
           { startPos: 0, title: 'Start' },
           { startPos: 120000, title: 'Beyond Duration' },
         ]);
@@ -432,45 +391,13 @@ describe('libgpod-node chapter data edge cases', () => {
     }
   );
 
-  it('throws error on closed database', async () => {
-    await withTestIpod(async (ipod) => {
-      const db = Database.openSync(ipod.path);
-
-      const track = db.addTrack({
-        title: 'Closed DB Test',
-        mediaType: MediaType.Podcast,
-      });
-
-      const trackId = track.id;
-
-      db.close();
-
-      // All chapter operations should throw on closed database
-      expect(() => {
-        db.getTrackChapters(trackId);
-      }).toThrow(LibgpodError);
-
-      expect(() => {
-        db.setTrackChapters(trackId, [{ startPos: 0, title: 'Test' }]);
-      }).toThrow(LibgpodError);
-
-      expect(() => {
-        db.addTrackChapter(trackId, 0, 'Test');
-      }).toThrow(LibgpodError);
-
-      expect(() => {
-        db.clearTrackChapters(trackId);
-      }).toThrow(LibgpodError);
-    });
-  });
-
   it(
     'chapters added out of order are stored as provided',
     async () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Out of Order Test',
           mediaType: MediaType.Podcast,
           duration: 600000,
@@ -478,7 +405,7 @@ describe('libgpod-node chapter data edge cases', () => {
 
         // Add chapters in reverse chronological order
         // libgpod stores chapters in the order they are added
-        const chapters = db.setTrackChapters(track.id, [
+        const chapters = db.setTrackChapters(handle, [
           { startPos: 300000, title: 'Middle' },
           { startPos: 0, title: 'Start' },
           { startPos: 600000, title: 'End' },
@@ -504,14 +431,14 @@ describe('libgpod-node chapter data edge cases', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const track = db.addTrack({
+        const handle = db.addTrack({
           title: 'Large Time Test',
           mediaType: MediaType.Audiobook,
           duration: 86400000, // 24 hours
         });
 
         // Add a chapter at 12 hours
-        const chapters = db.setTrackChapters(track.id, [
+        const chapters = db.setTrackChapters(handle, [
           { startPos: 0, title: 'Beginning' },
           { startPos: 43200000, title: 'Halfway' }, // 12 hours in ms
         ]);
@@ -531,23 +458,24 @@ describe('libgpod-node chapter data with media types', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'My Podcast',
         artist: 'Podcast Host',
         mediaType: MediaType.Podcast,
         duration: 1800000, // 30 minutes
       });
 
+      const track = db.getTrack(handle);
       expect(track.mediaType).toBe(MediaType.Podcast);
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Welcome' },
         { startPos: 300000, title: 'News' },
         { startPos: 900000, title: 'Main Topic' },
         { startPos: 1500000, title: 'Wrap Up' },
       ]);
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(4);
 
       db.close();
@@ -558,23 +486,24 @@ describe('libgpod-node chapter data with media types', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'My Audiobook - Part 1',
         artist: 'Author Name',
         mediaType: MediaType.Audiobook,
         duration: 7200000, // 2 hours
       });
 
+      const track = db.getTrack(handle);
       expect(track.mediaType).toBe(MediaType.Audiobook);
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Prologue' },
         { startPos: 600000, title: 'Chapter 1: The Beginning' },
         { startPos: 2400000, title: 'Chapter 2: The Journey' },
         { startPos: 4800000, title: 'Chapter 3: The Discovery' },
       ]);
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(4);
       expect(chapters[1]!.title).toBe('Chapter 1: The Beginning');
 
@@ -587,20 +516,20 @@ describe('libgpod-node chapter data with media types', () => {
       const db = Database.openSync(ipod.path);
 
       // Even regular audio tracks can have chapters (e.g., DJ mixes)
-      const track = db.addTrack({
+      const handle = db.addTrack({
         title: 'DJ Mix',
         artist: 'Various',
         mediaType: MediaType.Audio,
         duration: 3600000, // 1 hour
       });
 
-      db.setTrackChapters(track.id, [
+      db.setTrackChapters(handle, [
         { startPos: 0, title: 'Track 1' },
         { startPos: 300000, title: 'Track 2' },
         { startPos: 600000, title: 'Track 3' },
       ]);
 
-      const chapters = db.getTrackChapters(track.id);
+      const chapters = db.getTrackChapters(handle);
       expect(chapters).toHaveLength(3);
 
       db.close();
