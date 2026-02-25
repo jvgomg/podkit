@@ -188,26 +188,26 @@ export const statusCommand = new Command('status')
 
     // Try to open the iPod database
     // Dynamically import to handle native binding errors gracefully
-    let Database: typeof import('@podkit/libgpod-node').Database;
-    let LibgpodError: typeof import('@podkit/libgpod-node').LibgpodError;
+    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+    let IpodError: typeof import('@podkit/core').IpodError;
 
     try {
-      const libgpod = await import('@podkit/libgpod-node');
-      Database = libgpod.Database;
-      LibgpodError = libgpod.LibgpodError;
+      const core = await import('@podkit/core');
+      IpodDatabase = core.IpodDatabase;
+      IpodError = core.IpodError;
     } catch (err) {
       const message =
-        err instanceof Error ? err.message : 'Failed to load libgpod bindings';
+        err instanceof Error ? err.message : 'Failed to load podkit-core';
       if (globalOpts.json) {
         outputJson({
           connected: false,
           error: message,
         });
       } else {
-        console.error('Failed to load libgpod bindings.');
+        console.error('Failed to load podkit-core.');
         console.error('');
-        console.error('Make sure libgpod-node is built:');
-        console.error('  bun run build:native');
+        console.error('Make sure podkit-core is built:');
+        console.error('  bun run build');
         if (globalOpts.verbose) {
           console.error('');
           console.error('Details:', message);
@@ -218,24 +218,24 @@ export const statusCommand = new Command('status')
     }
 
     // Open the database
-    let db;
+    let ipod;
     try {
-      db = await Database.open(devicePath);
+      ipod = await IpodDatabase.open(devicePath);
     } catch (err) {
-      const isLibgpodError = err instanceof LibgpodError;
+      const isIpodError = err instanceof IpodError;
       const message = err instanceof Error ? err.message : String(err);
 
       if (globalOpts.json) {
         outputJson({
           connected: false,
-          error: isLibgpodError
+          error: isIpodError
             ? `Not an iPod or database corrupted: ${message}`
             : message,
         });
       } else {
         console.error(`Cannot read iPod database at: ${devicePath}`);
         console.error('');
-        if (isLibgpodError) {
+        if (isIpodError) {
           console.error('This path does not appear to be a valid iPod:');
           console.error('  - Missing iTunesDB file');
           console.error('  - Database may be corrupted');
@@ -249,7 +249,7 @@ export const statusCommand = new Command('status')
 
     try {
       // Get database and device info
-      const info = db.getInfo();
+      const info = ipod.getInfo();
       const device = info.device;
 
       // Get storage info from filesystem
@@ -264,7 +264,7 @@ export const statusCommand = new Command('status')
           generation: device.generation,
           capacity: device.capacity,
         },
-        mount: info.mountpoint,
+        mount: info.mountPoint,
         tracks: info.trackCount,
         playlists: info.playlistCount,
       };
@@ -289,7 +289,7 @@ export const statusCommand = new Command('status')
         console.log(`${device.modelName}${capacityStr} - ${genStr}`);
 
         // Line 2: Mount point
-        console.log(`Mount: ${info.mountpoint}`);
+        console.log(`Mount: ${info.mountPoint}`);
 
         // Line 3: Storage info (if available)
         if (storage) {
@@ -303,6 +303,6 @@ export const statusCommand = new Command('status')
         console.log(`Tracks: ${formatNumber(info.trackCount)}`);
       }
     } finally {
-      db.close();
+      ipod.close();
     }
   });

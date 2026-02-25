@@ -371,34 +371,7 @@ export const syncCommand = new Command('sync')
     }
 
     // ----- Load dependencies dynamically -----
-    let libgpod: typeof import('@podkit/libgpod-node');
     let core: typeof import('@podkit/core');
-
-    try {
-      libgpod = await import('@podkit/libgpod-node');
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load libgpod bindings';
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          source: sourcePath,
-          device: devicePath,
-          error: message,
-        });
-      } else {
-        console.error('Failed to load libgpod bindings.');
-        console.error('');
-        console.error('Make sure libgpod-node is built:');
-        console.error('  bun run build:native');
-        if (globalOpts.verbose) {
-          console.error('');
-          console.error('Details:', message);
-        }
-      }
-      process.exitCode = 1;
-      return;
-    }
 
     try {
       core = await import('@podkit/core');
@@ -414,7 +387,11 @@ export const syncCommand = new Command('sync')
         });
       } else {
         console.error('Failed to load podkit-core.');
+        console.error('');
+        console.error('Make sure podkit-core is built:');
+        console.error('  bun run build');
         if (globalOpts.verbose) {
+          console.error('');
           console.error('Details:', message);
         }
       }
@@ -503,11 +480,12 @@ export const syncCommand = new Command('sync')
       spinner.start('Opening iPod database...');
     }
 
-    let db: Awaited<ReturnType<typeof libgpod.Database.open>>;
+    let ipod: Awaited<ReturnType<typeof core.IpodDatabase.open>>;
     try {
-      db = await libgpod.Database.open(devicePath);
+      ipod = await core.IpodDatabase.open(devicePath);
     } catch (err) {
       spinner.stop();
+      const isIpodError = err instanceof core.IpodError;
       const message = err instanceof Error ? err.message : 'Failed to open iPod database';
       if (globalOpts.json) {
         outputJson({
@@ -520,9 +498,13 @@ export const syncCommand = new Command('sync')
       } else {
         console.error(`Cannot read iPod database at: ${devicePath}`);
         console.error('');
-        console.error('This path does not appear to be a valid iPod:');
-        console.error('  - Missing iTunesDB file');
-        console.error('  - Database may be corrupted');
+        if (isIpodError) {
+          console.error('This path does not appear to be a valid iPod:');
+          console.error('  - Missing iTunesDB file');
+          console.error('  - Database may be corrupted');
+        } else {
+          console.error('Error:', message);
+        }
         if (globalOpts.verbose) {
           console.error('');
           console.error('Details:', message);
@@ -533,7 +515,7 @@ export const syncCommand = new Command('sync')
     }
 
     try {
-      const ipodTracks = db.getTracks();
+      const ipodTracks = ipod.getTracks();
       if (!globalOpts.json && !globalOpts.quiet) {
         spinner.stop(`iPod has ${formatNumber(ipodTracks.length)} tracks`);
       }
@@ -543,41 +525,8 @@ export const syncCommand = new Command('sync')
         spinner.start('Computing sync diff...');
       }
 
-      // Convert iPod tracks to the expected format
-      type IPodTrackForDiff = {
-        id: number;
-        title: string;
-        artist: string;
-        album: string;
-        albumArtist?: string;
-        genre?: string;
-        year?: number;
-        trackNumber?: number;
-        discNumber?: number;
-        duration: number;
-        bitrate: number;
-        sampleRate: number;
-        filePath: string;
-        hasArtwork: boolean;
-      };
-      const ipodTracksForDiff: IPodTrackForDiff[] = ipodTracks.map((t) => ({
-        id: t.id,
-        title: t.title ?? 'Unknown',
-        artist: t.artist ?? 'Unknown',
-        album: t.album ?? 'Unknown',
-        albumArtist: t.albumArtist ?? undefined,
-        genre: t.genre ?? undefined,
-        year: t.year > 0 ? t.year : undefined,
-        trackNumber: t.trackNumber > 0 ? t.trackNumber : undefined,
-        discNumber: t.discNumber > 0 ? t.discNumber : undefined,
-        duration: t.duration,
-        bitrate: t.bitrate,
-        sampleRate: t.sampleRate,
-        filePath: t.ipodPath ?? '',
-        hasArtwork: t.hasArtwork,
-      }));
-
-      const diff = core.computeDiff(collectionTracks, ipodTracksForDiff);
+      // IPodTrack from IpodDatabase already has the correct shape for diffing
+      const diff = core.computeDiff(collectionTracks, ipodTracks);
 
       if (!globalOpts.json && !globalOpts.quiet) {
         spinner.stop('Diff computed');
@@ -767,7 +716,7 @@ export const syncCommand = new Command('sync')
       let failed = 0;
 
       // Create executor and iterate for progress updates
-      const executor = new core.DefaultSyncExecutor({ database: db, transcoder });
+      const executor = new core.DefaultSyncExecutor({ ipod, transcoder });
 
       for await (const progress of executor.execute(plan, { dryRun: false, continueOnError: true })) {
         // Track operation results for JSON output
@@ -881,7 +830,7 @@ export const syncCommand = new Command('sync')
         process.exitCode = 1;
       }
     } finally {
-      db.close();
+      ipod.close();
       await adapter.disconnect();
     }
   });

@@ -3,13 +3,12 @@ import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestIpod, TestModels } from '@podkit/gpod-testing';
-import { Database } from '@podkit/libgpod-node';
 import {
+  IpodDatabase,
   computeDiff,
   createPlan,
   getPlanSummary,
   createDirectoryAdapter,
-  type IPodTrack,
 } from '@podkit/core';
 
 /**
@@ -55,30 +54,20 @@ describe('sync command integration', () => {
       await adapter.connect();
       const collectionTracks = await adapter.getTracks();
 
-      // Open iPod and get tracks
-      const db = await Database.open(testIpod!.path);
+      // Open iPod and get tracks using IpodDatabase
+      const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        const ipodTracks = db.getTracks();
-        const ipodTracksForDiff: IPodTrack[] = ipodTracks.map((t) => ({
-          id: t.id,
-          title: t.title ?? 'Unknown',
-          artist: t.artist ?? 'Unknown',
-          album: t.album ?? 'Unknown',
-          duration: t.duration,
-          bitrate: t.bitrate,
-          sampleRate: t.sampleRate,
-          filePath: t.ipodPath ?? '',
-          hasArtwork: t.hasArtwork,
-        }));
+        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        const ipodTracks = ipod.getTracks();
 
-        const diff = computeDiff(collectionTracks, ipodTracksForDiff);
+        const diff = computeDiff(collectionTracks, ipodTracks);
 
         expect(diff.toAdd).toHaveLength(0);
         expect(diff.toRemove).toHaveLength(0);
         expect(diff.existing).toHaveLength(0);
         expect(diff.conflicts).toHaveLength(0);
       } finally {
-        db.close();
+        ipod.close();
         await adapter.disconnect();
       }
     });
@@ -93,29 +82,19 @@ describe('sync command integration', () => {
       await adapter.connect();
       const collectionTracks = await adapter.getTracks();
 
-      // Open iPod and get tracks
-      const db = await Database.open(testIpod!.path);
+      // Open iPod and get tracks using IpodDatabase
+      const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        const ipodTracks = db.getTracks();
-        const ipodTracksForDiff: IPodTrack[] = ipodTracks.map((t) => ({
-          id: t.id,
-          title: t.title ?? 'Unknown',
-          artist: t.artist ?? 'Unknown',
-          album: t.album ?? 'Unknown',
-          duration: t.duration,
-          bitrate: t.bitrate,
-          sampleRate: t.sampleRate,
-          filePath: t.ipodPath ?? '',
-          hasArtwork: t.hasArtwork,
-        }));
+        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        const ipodTracks = ipod.getTracks();
 
-        const diff = computeDiff(collectionTracks, ipodTracksForDiff);
+        const diff = computeDiff(collectionTracks, ipodTracks);
 
         expect(diff.toAdd).toHaveLength(0);
         expect(diff.toRemove).toHaveLength(2);
         expect(diff.existing).toHaveLength(0);
       } finally {
-        db.close();
+        ipod.close();
         await adapter.disconnect();
       }
     });
@@ -134,23 +113,13 @@ describe('sync command integration', () => {
       await testIpod!.addTrack({ title: 'Song 1', artist: 'Artist 1', album: 'Album 1' });
       await testIpod!.addTrack({ title: 'Song 2', artist: 'Artist 2', album: 'Album 2' });
 
-      const db = await Database.open(testIpod!.path);
+      const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        const ipodTracks = db.getTracks();
-        const ipodTracksForDiff: IPodTrack[] = ipodTracks.map((t) => ({
-          id: t.id,
-          title: t.title ?? 'Unknown',
-          artist: t.artist ?? 'Unknown',
-          album: t.album ?? 'Unknown',
-          duration: t.duration,
-          bitrate: t.bitrate,
-          sampleRate: t.sampleRate,
-          filePath: t.ipodPath ?? '',
-          hasArtwork: t.hasArtwork,
-        }));
+        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
-        const diff = computeDiff([], ipodTracksForDiff);
+        const diff = computeDiff([], ipodTracks);
 
         // Create plan with removeOrphans
         const plan = createPlan(diff, { removeOrphans: true });
@@ -160,7 +129,7 @@ describe('sync command integration', () => {
         expect(summary.transcodeCount).toBe(0);
         expect(summary.copyCount).toBe(0);
       } finally {
-        db.close();
+        ipod.close();
       }
     });
 
@@ -168,23 +137,13 @@ describe('sync command integration', () => {
       // Add tracks to iPod
       await testIpod!.addTrack({ title: 'Song 1', artist: 'Artist 1', album: 'Album 1' });
 
-      const db = await Database.open(testIpod!.path);
+      const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        const ipodTracks = db.getTracks();
-        const ipodTracksForDiff: IPodTrack[] = ipodTracks.map((t) => ({
-          id: t.id,
-          title: t.title ?? 'Unknown',
-          artist: t.artist ?? 'Unknown',
-          album: t.album ?? 'Unknown',
-          duration: t.duration,
-          bitrate: t.bitrate,
-          sampleRate: t.sampleRate,
-          filePath: t.ipodPath ?? '',
-          hasArtwork: t.hasArtwork,
-        }));
+        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
-        const diff = computeDiff([], ipodTracksForDiff);
+        const diff = computeDiff([], ipodTracks);
 
         // Create plan without removeOrphans
         const plan = createPlan(diff, { removeOrphans: false });
@@ -193,7 +152,7 @@ describe('sync command integration', () => {
         expect(summary.removeCount).toBe(0);
         expect(plan.operations).toHaveLength(0);
       } finally {
-        db.close();
+        ipod.close();
       }
     });
   });
@@ -205,13 +164,13 @@ describe('sync command integration', () => {
         name: 'Test Video 30GB',
       });
 
-      const db = await Database.open(testIpod.path);
+      const ipod = await IpodDatabase.open(testIpod.path);
       try {
-        const info = db.getInfo();
+        const info = ipod.getInfo();
         expect(info.trackCount).toBe(0);
         expect(info.device.capacity).toBe(30);
       } finally {
-        db.close();
+        ipod.close();
       }
     });
 
@@ -221,13 +180,13 @@ describe('sync command integration', () => {
         name: 'Test Nano',
       });
 
-      const db = await Database.open(testIpod.path);
+      const ipod = await IpodDatabase.open(testIpod.path);
       try {
-        const info = db.getInfo();
+        const info = ipod.getInfo();
         expect(info.trackCount).toBe(0);
         expect(info.device.capacity).toBe(2);
       } finally {
-        db.close();
+        ipod.close();
       }
     });
   });

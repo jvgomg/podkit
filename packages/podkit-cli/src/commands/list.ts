@@ -281,8 +281,8 @@ export function formatCsv(tracks: DisplayTrack[], fields: FieldName[]): string {
  * Load tracks from an iPod device
  */
 async function loadIpodTracks(device: string | undefined): Promise<DisplayTrack[]> {
-  // Dynamic import to avoid loading libgpod-node when not needed
-  const { Database } = await import('@podkit/libgpod-node');
+  // Dynamic import to avoid loading podkit-core when not needed
+  const { IpodDatabase } = await import('@podkit/core');
 
   if (!device) {
     throw new Error(
@@ -294,9 +294,9 @@ async function loadIpodTracks(device: string | undefined): Promise<DisplayTrack[
     throw new Error(`iPod not found at path: ${device}`);
   }
 
-  const db = await Database.open(device);
+  const ipod = await IpodDatabase.open(device);
   try {
-    const tracks = db.getTracks();
+    const tracks = ipod.getTracks();
     return tracks.map((t) => ({
       title: t.title || 'Unknown Title',
       artist: t.artist || 'Unknown Artist',
@@ -304,13 +304,13 @@ async function loadIpodTracks(device: string | undefined): Promise<DisplayTrack[
       duration: t.duration,
       albumArtist: t.albumArtist || undefined,
       genre: t.genre || undefined,
-      year: t.year > 0 ? t.year : undefined,
-      trackNumber: t.trackNumber > 0 ? t.trackNumber : undefined,
-      discNumber: t.discNumber > 0 ? t.discNumber : undefined,
-      filePath: t.ipodPath || undefined,
+      year: t.year && t.year > 0 ? t.year : undefined,
+      trackNumber: t.trackNumber && t.trackNumber > 0 ? t.trackNumber : undefined,
+      discNumber: t.discNumber && t.discNumber > 0 ? t.discNumber : undefined,
+      filePath: t.filePath || undefined,
     }));
   } finally {
-    db.close();
+    ipod.close();
   }
 }
 
