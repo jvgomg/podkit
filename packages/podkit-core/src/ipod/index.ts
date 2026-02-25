@@ -52,6 +52,8 @@ export { MediaType } from './constants.js';
 export type { MediaTypeValue } from './constants.js';
 
 // Implementation exports
+export { IpodDatabase } from './database.js';
+
 export { IpodTrackImpl } from './track.js';
 export type { IpodDatabaseInternal } from './track.js';
 

@@ -169,3 +169,4 @@ export { IpodError } from './ipod/errors.js';
 export type { IpodErrorCode } from './ipod/errors.js';
 export { MediaType } from './ipod/constants.js';
 export type { MediaTypeValue } from './ipod/constants.js';
+export { IpodDatabase } from './ipod/database.js';
