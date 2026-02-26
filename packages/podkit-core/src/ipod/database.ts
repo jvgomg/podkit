@@ -323,18 +323,66 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * After calling this, the track object should not be used.
    *
    * @param track - The track to remove
+   * @param options - Optional settings for the removal
+   * @param options.deleteFile - If true, also delete the audio file from the iPod (default: false)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  removeTrack(track: IPodTrack): void {
+  removeTrack(track: IPodTrack, options?: { deleteFile?: boolean }): void {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
+
+    // Delete the audio file if requested
+    if (options?.deleteFile) {
+      const filePath = this.db.getTrackFilePath(handle);
+      if (filePath) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          // eslint-disable-next-line no-console
+          console.error(`Failed to delete track file ${filePath}: ${message}`);
+        }
+      }
+    }
+
     this.db.removeTrack(handle);
     // Mark the track as removed
     if (track instanceof IpodTrackImpl) {
       track._markRemoved();
     }
     // Remove from WeakMap is automatic when track is garbage collected
+  }
+
+  /**
+   * Removes all tracks from the database.
+   *
+   * This is a destructive operation that removes all tracks and their audio files
+   * from the iPod. The database must be saved after calling this method.
+   *
+   * @param options - Optional settings for the removal
+   * @param options.deleteFiles - If true, also delete audio files from the iPod (default: true)
+   * @returns The number of tracks removed
+   * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
+   *
+   * @example
+   * ```typescript
+   * const count = ipod.removeAllTracks();
+   * console.log(`Removed ${count} tracks`);
+   * await ipod.save();
+   * ```
+   */
+  removeAllTracks(options?: { deleteFiles?: boolean }): number {
+    this.assertOpen();
+    const deleteFiles = options?.deleteFiles ?? true;
+    const tracks = this.getTracks();
+    const count = tracks.length;
+
+    for (const track of tracks) {
+      this.removeTrack(track, { deleteFile: deleteFiles });
+    }
+
+    return count;
   }
 
   /**

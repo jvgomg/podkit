@@ -456,6 +456,101 @@ describe('IpodDatabase integration', () => {
     });
   });
 
+  describe('removeAllTracks()', () => {
+    it('removes all tracks from the database', async () => {
+      await withTestIpod(async (testIpod) => {
+        const ipod = await IpodDatabase.open(testIpod.path);
+        try {
+          // Add some tracks
+          ipod.addTrack({ title: 'Track 1', artist: 'Artist' });
+          ipod.addTrack({ title: 'Track 2', artist: 'Artist' });
+          ipod.addTrack({ title: 'Track 3', artist: 'Artist' });
+          expect(ipod.trackCount).toBe(3);
+
+          // Remove all tracks
+          const removedCount = ipod.removeAllTracks({ deleteFiles: false });
+          expect(removedCount).toBe(3);
+          expect(ipod.trackCount).toBe(0);
+        } finally {
+          ipod.close();
+        }
+      });
+    });
+
+    it('returns 0 for empty database', async () => {
+      await withTestIpod(async (testIpod) => {
+        const ipod = await IpodDatabase.open(testIpod.path);
+        try {
+          expect(ipod.trackCount).toBe(0);
+
+          const removedCount = ipod.removeAllTracks();
+          expect(removedCount).toBe(0);
+        } finally {
+          ipod.close();
+        }
+      });
+    });
+
+    it('attempts to delete audio files when deleteFiles is true', async () => {
+      await withTestIpod(async (testIpod) => {
+        const ipod = await IpodDatabase.open(testIpod.path);
+        const tempDir = await mkdtemp(join(tmpdir(), 'ipod-test-'));
+        const audioPath = join(tempDir, 'test.mp3');
+
+        try {
+          // Create a minimal MP3-like file
+          const mp3Header = Buffer.from([0xff, 0xfb, 0x90, 0x00, 0x00, 0x00, 0x00, 0x00]);
+          await writeFile(audioPath, mp3Header);
+
+          // Add track and copy file
+          const track = ipod.addTrack({
+            title: 'With File',
+            artist: 'Artist',
+            filetype: 'MPEG audio file',
+            size: mp3Header.length,
+          });
+          const updatedTrack = track.copyFile(audioPath);
+          expect(updatedTrack.hasFile).toBe(true);
+
+          // Remove all tracks with deleteFiles: true - should not throw
+          // even if the file doesn't exist at the expected path
+          const removedCount = ipod.removeAllTracks({ deleteFiles: true });
+          expect(removedCount).toBe(1);
+          expect(ipod.trackCount).toBe(0);
+        } finally {
+          ipod.close();
+          await rm(tempDir, { recursive: true });
+        }
+      });
+    });
+
+    it('persists empty database after save', async () => {
+      await withTestIpod(async (testIpod) => {
+        // Session 1: Add tracks, save, then remove all and save
+        let ipod = await IpodDatabase.open(testIpod.path);
+        try {
+          ipod.addTrack({ title: 'Track 1', artist: 'Artist' });
+          ipod.addTrack({ title: 'Track 2', artist: 'Artist' });
+          await ipod.save();
+
+          ipod.removeAllTracks({ deleteFiles: false });
+          await ipod.save();
+        } finally {
+          ipod.close();
+        }
+
+        // Session 2: Verify database is empty
+        ipod = await IpodDatabase.open(testIpod.path);
+        try {
+          expect(ipod.trackCount).toBe(0);
+          expect(ipod.getTracks()).toHaveLength(0);
+        } finally {
+          ipod.close();
+        }
+      });
+    });
+  });
+
   describe('save()', () => {
     it('saves changes to database', async () => {
       await withTestIpod(async (testIpod) => {
