@@ -1,9 +1,10 @@
 ---
 id: TASK-059
 title: Fix sync progress display text leak
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-26 11:37'
+updated_date: '2026-02-26 12:29'
 labels:
   - bug
   - cli
@@ -33,6 +34,12 @@ The "one" is remnant text from the progress bar not being fully cleared. Likely 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sync complete message displays cleanly
-- [ ] #2 No remnant text from progress bar
+- [x] #1 Sync complete message displays cleanly
+- [x] #2 No remnant text from progress bar
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Fix applied:** Changed line 752 in `packages/podkit-cli/src/commands/sync.ts` from space padding (`' '.repeat(80)`) to ANSI escape code (`\x1b[2K\r`) which clears the entire line regardless of terminal width or previous content length.
+<!-- SECTION:NOTES:END -->

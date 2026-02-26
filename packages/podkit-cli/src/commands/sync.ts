@@ -749,7 +749,7 @@ export const syncCommand = new Command('sync')
         // Update progress display
         if (!globalOpts.json && !globalOpts.quiet) {
           if (progress.phase === 'complete') {
-            process.stdout.write('\r' + ' '.repeat(80) + '\r');
+            process.stdout.write('\x1b[2K\r');
             console.log('Sync complete!');
           } else if (progress.phase === 'updating-db') {
             process.stdout.write('\rSaving iPod database...' + ' '.repeat(40));
