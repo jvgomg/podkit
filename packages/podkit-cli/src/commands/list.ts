@@ -434,8 +434,9 @@ export const listCommand = new Command('list')
   .action(async (options) => {
     const { config, globalOpts } = getContext();
 
-    // Use config.source as default if --source not specified
-    const source = options.source ?? config.source;
+    // Only use source if --source is explicitly provided
+    // Default behavior (no flags) lists iPod tracks
+    const source = options.source;
     const format = globalOpts.json ? 'json' : options.format;
     const fields = parseFields(options.fields);
 

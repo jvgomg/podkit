@@ -49,7 +49,14 @@ describe('podkit sync', () => {
   describe('validation', () => {
     it('fails when no source specified', async () => {
       await withTarget(async (target) => {
-        const result = await runCli(['sync', '--device', target.path]);
+        // Use non-existent config to ensure we don't pick up user's source config
+        const result = await runCli([
+          '--config',
+          '/nonexistent/config.toml',
+          'sync',
+          '--device',
+          target.path,
+        ]);
 
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('No source');
@@ -62,8 +69,15 @@ describe('podkit sync', () => {
         return;
       }
 
+      // Use non-existent config to ensure we don't pick up user's device config
       const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
-      const result = await runCli(['sync', '--source', sourcePath]);
+      const result = await runCli([
+        '--config',
+        '/nonexistent/config.toml',
+        'sync',
+        '--source',
+        sourcePath,
+      ]);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No iPod device specified');

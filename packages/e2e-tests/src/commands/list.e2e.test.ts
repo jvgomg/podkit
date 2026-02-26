@@ -149,7 +149,8 @@ describe('podkit list', () => {
 
   describe('error handling', () => {
     it('fails when neither device nor source specified', async () => {
-      const result = await runCli(['list']);
+      // Use non-existent config to ensure we don't pick up user's config file
+      const result = await runCli(['--config', '/nonexistent/config.toml', 'list']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No iPod device specified');

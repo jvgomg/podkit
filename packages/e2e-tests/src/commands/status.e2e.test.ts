@@ -80,14 +80,21 @@ describe('podkit status', () => {
 
   describe('error handling', () => {
     it('fails when no device specified', async () => {
-      const result = await runCli(['status']);
+      // Use non-existent config to ensure we don't pick up user's config file
+      const result = await runCli(['--config', '/nonexistent/config.toml', 'status']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No iPod device specified');
     });
 
     it('outputs error in JSON when no device specified', async () => {
-      const { result, json } = await runCliJson<StatusOutput>(['status', '--json']);
+      // Use non-existent config to ensure we don't pick up user's config file
+      const { result, json } = await runCliJson<StatusOutput>([
+        '--config',
+        '/nonexistent/config.toml',
+        'status',
+        '--json',
+      ]);
 
       expect(result.exitCode).toBe(1);
       expect(json?.connected).toBe(false);
