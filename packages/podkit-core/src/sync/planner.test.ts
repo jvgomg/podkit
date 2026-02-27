@@ -386,13 +386,30 @@ describe('createPlan - operation types', () => {
     expect(plan.operations[0]!.type).toBe('copy');
   });
 
-  it('creates copy operation for ALAC files', () => {
+  it('transcodes ALAC files to AAC by default (for space efficiency)', () => {
+    // ALAC is lossless, so with default quality='high', it gets transcoded to AAC
+    // This is intentional - ALAC takes more space, and most users want smaller files
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'alac')],
     };
 
     const plan = createPlan(diff);
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('transcode');
+  });
+
+  it('copies ALAC files when quality=alac and source is ALAC', () => {
+    // When user wants lossless output and source is already ALAC, just copy it
+    const track = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
+    track.codec = 'alac'; // Mark as ALAC codec
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [track],
+    };
+
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'alac' } });
 
     expect(plan.operations).toHaveLength(1);
     expect(plan.operations[0]!.type).toBe('copy');
@@ -419,7 +436,7 @@ describe('createPlan - operation types', () => {
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
 
-    const plan = createPlan(diff, { transcodePreset: { name: 'low' } });
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'low' } });
 
     expect(plan.operations[0]!.type).toBe('transcode');
     if (plan.operations[0]!.type === 'transcode') {
@@ -1076,10 +1093,10 @@ describe('DefaultSyncPlanner', () => {
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
 
-    const planHigh = planner.plan(diff, { transcodePreset: { name: 'high' } });
-    const planLow = planner.plan(diff, { transcodePreset: { name: 'low' } });
+    const planHigh = planner.plan(diff, { transcodeConfig: { quality: 'high' } });
+    const planLow = planner.plan(diff, { transcodeConfig: { quality: 'low' } });
 
-    // High preset should produce larger estimated size
+    // High preset should produce larger estimated size (256 vs 128 kbps target)
     expect(planHigh.estimatedSize).toBeGreaterThan(planLow.estimatedSize);
   });
 });

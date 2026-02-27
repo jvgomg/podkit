@@ -2,9 +2,9 @@
  * FFmpeg Transcoder - Audio transcoding using FFmpeg
  *
  * Implements the Transcoder interface using FFmpeg for converting audio files
- * to iPod-compatible AAC/M4A format.
+ * to iPod-compatible AAC/M4A or ALAC format.
  *
- * Encoder priority: aac_at (macOS) > libfdk_aac (custom build) > aac (native)
+ * Encoder priority for AAC: aac_at (macOS) > libfdk_aac (custom build) > aac (native)
  */
 
 import { spawn } from 'node:child_process';
@@ -12,12 +12,13 @@ import { stat } from 'node:fs/promises';
 import type {
   Transcoder,
   TranscoderCapabilities,
-  TranscodePreset,
   TranscodeResult,
   TranscodeOptions,
   TranscodeProgress,
   AudioMetadata,
+  QualityPreset,
 } from './types.js';
+import { AAC_PRESETS, ALAC_PRESET } from './types.js';
 
 /**
  * Error thrown when FFmpeg is not available
@@ -94,16 +95,23 @@ export function buildVbrArgs(encoder: string, quality: number): string[] {
  *
  * @param input - Input file path
  * @param output - Output file path
- * @param encoder - AAC encoder to use
- * @param preset - Quality preset
+ * @param encoder - AAC encoder to use (ignored for ALAC)
+ * @param preset - Quality preset name
  * @returns Array of FFmpeg arguments
  */
 export function buildTranscodeArgs(
   input: string,
   output: string,
   encoder: string,
-  preset: TranscodePreset
+  preset: QualityPreset
 ): string[] {
+  // Handle ALAC encoding
+  if (preset === 'alac') {
+    return buildAlacArgs(input, output);
+  }
+
+  const aacPreset = AAC_PRESETS[preset];
+
   const args: string[] = [
     // Input
     '-i',
@@ -115,21 +123,16 @@ export function buildTranscodeArgs(
   ];
 
   // Apply quality settings based on mode (VBR vs CBR)
-  if (preset.quality !== undefined) {
+  if (aacPreset.mode === 'vbr' && aacPreset.quality !== undefined) {
     // VBR mode
-    args.push(...buildVbrArgs(encoder, preset.quality));
-  } else if (preset.bitrate !== undefined) {
+    args.push(...buildVbrArgs(encoder, aacPreset.quality));
+  } else {
     // CBR mode
-    args.push('-b:a', `${preset.bitrate}k`);
+    args.push('-b:a', `${aacPreset.targetKbps}k`);
   }
 
-  // Sample rate (default to 44100 if not specified)
-  args.push('-ar', String(preset.sampleRate ?? 44100));
-
-  // Channels (stereo by default)
-  if (preset.channels !== undefined) {
-    args.push('-ac', String(preset.channels));
-  }
+  // Sample rate (44100 Hz standard)
+  args.push('-ar', '44100');
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
@@ -140,10 +143,50 @@ export function buildTranscodeArgs(
   // No video stream (only copy artwork)
   args.push('-vn');
 
-  // Custom arguments if any
-  if (preset.customArgs) {
-    args.push(...preset.customArgs);
-  }
+  // Output format (M4A container optimized for iPod)
+  args.push('-f', 'ipod');
+
+  // Overwrite output file
+  args.push('-y');
+
+  // Progress output for parsing
+  args.push('-progress', 'pipe:1');
+
+  // Output file
+  args.push(output);
+
+  return args;
+}
+
+/**
+ * Build FFmpeg command arguments for ALAC encoding (lossless)
+ *
+ * @param input - Input file path
+ * @param output - Output file path
+ * @returns Array of FFmpeg arguments
+ */
+export function buildAlacArgs(input: string, output: string): string[] {
+  const args: string[] = [
+    // Input
+    '-i',
+    input,
+
+    // ALAC audio codec
+    '-c:a',
+    'alac',
+  ];
+
+  // Sample rate (44100 Hz standard)
+  args.push('-ar', '44100');
+
+  // Preserve metadata from source
+  args.push('-map_metadata', '0');
+
+  // Copy embedded artwork if present
+  args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
+
+  // No video stream (only copy artwork)
+  args.push('-vn');
 
   // Output format (M4A container optimized for iPod)
   args.push('-f', 'ipod');
@@ -307,7 +350,7 @@ export class FFmpegTranscoder implements Transcoder {
   async transcode(
     input: string,
     output: string,
-    preset: TranscodePreset,
+    preset: QualityPreset,
     options: TranscodeOptions = {}
   ): Promise<TranscodeResult> {
     // Check if already aborted

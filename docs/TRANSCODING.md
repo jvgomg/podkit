@@ -2,22 +2,35 @@
 
 ## Overview
 
-podkit uses FFmpeg for audio transcoding. This document covers AAC encoding configuration, quality settings, and platform-specific considerations.
+podkit uses FFmpeg for audio transcoding. This document covers AAC encoding configuration, quality settings, ALAC (lossless) support, and platform-specific considerations.
 
 ## Quick Reference
 
-### Recommended Presets
+### Quality Presets
 
-| Preset | Mode | Target | Description |
+| Preset | Type | Target | Description |
 |--------|------|--------|-------------|
-| `high` | VBR | ~256 kbps | Transparent quality, recommended for most users |
-| `medium` | VBR | ~192 kbps | Excellent quality, good balance |
+| `alac` | Lossless | N/A | Apple Lossless (only from lossless sources) |
+| `max` | VBR | ~320 kbps | Highest VBR quality level |
+| `max-cbr` | CBR | 320 kbps | Guaranteed 320 kbps |
+| `high` | VBR | ~256 kbps | Transparent quality (default) |
+| `high-cbr` | CBR | 256 kbps | Predictable file sizes |
+| `medium` | VBR | ~192 kbps | Excellent quality |
+| `medium-cbr` | CBR | 192 kbps | |
 | `low` | VBR | ~128 kbps | Good quality, space-efficient |
-| `cbr-256` | CBR | 256 kbps | Constant bitrate, predictable file sizes |
-| `cbr-192` | CBR | 192 kbps | Constant bitrate |
-| `cbr-128` | CBR | 128 kbps | Constant bitrate |
+| `low-cbr` | CBR | 128 kbps | |
 
 **Default:** `high` (VBR ~256 kbps)
+
+### Source File Categories
+
+| Category | Formats | Behavior |
+|----------|---------|----------|
+| **Lossless** | FLAC, WAV, AIFF, ALAC | Transcode to target preset |
+| **Compatible Lossy** | MP3, M4A (AAC) | Copy as-is (no re-encoding) |
+| **Incompatible Lossy** | OGG, Opus | Transcode + lossy-to-lossy warning |
+
+**Key insight:** M4A files can be either AAC (lossy) or ALAC (lossless). podkit uses codec detection, not just file extension.
 
 ### VBR vs CBR
 
@@ -27,6 +40,111 @@ podkit uses FFmpeg for audio transcoding. This document covers AAC encoding conf
 | **CBR** | Predictable file sizes, simpler | May waste bits on simple passages |
 
 **Note:** VBR AAC works correctly for seeking on iPods (unlike VBR MP3). podkit defaults to VBR for better quality efficiency.
+
+## Configuration
+
+### CLI Usage
+
+```bash
+# Default: VBR ~256 kbps
+podkit sync --source ~/Music
+
+# Lossless (ALAC) with fallback for lossy sources
+podkit sync --quality alac --fallback max
+
+# Guaranteed 320 kbps CBR
+podkit sync --quality max-cbr
+
+# Space-efficient
+podkit sync --quality low
+```
+
+### Config File
+
+```toml
+# ~/.config/podkit/config.toml
+
+[transcode]
+quality = "high"      # alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
+fallback = "max"      # Fallback for lossy sources when quality=alac (default: max)
+```
+
+### Environment Variables
+
+```bash
+export PODKIT_QUALITY=high
+export PODKIT_FALLBACK=max
+```
+
+## Decision Logic
+
+### How podkit Chooses Operations
+
+| Source | Target: ALAC | Target: AAC preset |
+|--------|--------------|-------------------|
+| Lossless | Convert to ALAC | Transcode to AAC |
+| Compatible Lossy | **Copy as-is** | Copy as-is |
+| Incompatible Lossy | **Fallback** + warn | Transcode + warn |
+
+**Why copy compatible lossy?** Re-encoding MP3→AAC only loses quality. Even "upconverting" 128kbps→256kbps wastes space without improving audio.
+
+**Lossy-to-lossy warning:** During `--dry-run`, podkit flags incompatible lossy files (OGG, Opus) that will undergo lossy-to-lossy conversion. This informs users of unavoidable quality loss.
+
+### Example Scenarios
+
+#### Scenario 1: Audiophile with mixed collection
+```toml
+quality = "alac"
+fallback = "max"
+```
+| Source | Result |
+|--------|--------|
+| FLAC → | ALAC (lossless preserved) |
+| MP3 320 → | Copy as-is |
+| OGG 192 → | AAC ~320 VBR (fallback) + warning |
+
+#### Scenario 2: Space-conscious user
+```toml
+quality = "medium"
+```
+| Source | Result |
+|--------|--------|
+| FLAC → | AAC ~192 kbps VBR |
+| MP3 128 → | Copy as-is |
+| Opus 128 → | AAC ~192 kbps VBR + warning |
+
+#### Scenario 3: Predictable file sizes
+```toml
+quality = "high-cbr"
+```
+| Source | Result |
+|--------|--------|
+| FLAC → | AAC 256 kbps CBR |
+| MP3 320 → | Copy as-is |
+| OGG 192 → | AAC 256 kbps CBR + warning |
+
+#### Scenario 4: Maximum quality guarantee
+```toml
+quality = "max-cbr"
+```
+| Source | Result |
+|--------|--------|
+| FLAC → | AAC 320 kbps CBR |
+| WAV → | AAC 320 kbps CBR |
+| MP3 → | Copy as-is |
+
+## Supported Input Formats
+
+| Format | Extension(s) | Category | Notes |
+|--------|--------------|----------|-------|
+| FLAC | `.flac` | Lossless | Free Lossless Audio Codec |
+| WAV | `.wav` | Lossless | Uncompressed PCM |
+| AIFF | `.aiff`, `.aif` | Lossless | Apple's PCM format |
+| ALAC | `.m4a` | Lossless | Detected by codec, not extension |
+| MP3 | `.mp3` | Compatible Lossy | MPEG Audio Layer 3 |
+| AAC | `.m4a`, `.aac` | Compatible Lossy | Advanced Audio Coding |
+| OGG | `.ogg` | Incompatible Lossy | Ogg Vorbis |
+| Opus | `.opus` | Incompatible Lossy | Opus codec in Ogg container |
 
 ## Why FFmpeg?
 
@@ -112,61 +230,76 @@ Per [FFmpeg Wiki](https://trac.ffmpeg.org/wiki/Encode/AAC), for transparent audi
 
 The native AAC encoder is **very good** for most use cases and doesn't require special builds. macOS users get the best encoder (`aac_at`) automatically via Homebrew.
 
-## Quality Presets
+## Preset Definitions
 
-### Preset Definitions
+### Internal Implementation
 
 ```typescript
-type BitrateMode = 'vbr' | 'cbr';
+type QualityPreset =
+  | 'alac'
+  | 'max' | 'max-cbr'
+  | 'high' | 'high-cbr'
+  | 'medium' | 'medium-cbr'
+  | 'low' | 'low-cbr';
 
-interface TranscodePreset {
-  name: string;
-  mode: BitrateMode;
-  // For VBR: quality level (0-5 scale, higher = better)
-  // For CBR: target bitrate in kbps
-  value: number;
-  description: string;
-}
+const AAC_PRESETS = {
+  // VBR presets (variable bitrate, better quality-per-byte)
+  'max':        { mode: 'vbr', quality: 5, targetKbps: 320 },
+  'high':       { mode: 'vbr', quality: 5, targetKbps: 256 },
+  'medium':     { mode: 'vbr', quality: 4, targetKbps: 192 },
+  'low':        { mode: 'vbr', quality: 2, targetKbps: 128 },
 
-const PRESETS: Record<string, TranscodePreset> = {
-  // VBR presets (recommended - better quality per MB)
-  'high':   { name: 'high',   mode: 'vbr', value: 5, description: '~256 kbps, transparent' },
-  'medium': { name: 'medium', mode: 'vbr', value: 4, description: '~192 kbps, excellent' },
-  'low':    { name: 'low',    mode: 'vbr', value: 2, description: '~128 kbps, good' },
-
-  // CBR presets (predictable file sizes)
-  'cbr-256': { name: 'cbr-256', mode: 'cbr', value: 256, description: '256 kbps constant' },
-  'cbr-192': { name: 'cbr-192', mode: 'cbr', value: 192, description: '192 kbps constant' },
-  'cbr-128': { name: 'cbr-128', mode: 'cbr', value: 128, description: '128 kbps constant' },
+  // CBR presets (constant bitrate, predictable sizes)
+  'max-cbr':    { mode: 'cbr', targetKbps: 320 },
+  'high-cbr':   { mode: 'cbr', targetKbps: 256 },
+  'medium-cbr': { mode: 'cbr', targetKbps: 192 },
+  'low-cbr':    { mode: 'cbr', targetKbps: 128 },
 };
+
+const ALAC_PRESET = { codec: 'alac', container: 'm4a', estimatedKbps: 900 };
 ```
 
 ### VBR Quality Mapping
 
 VBR quality levels map differently per encoder:
 
-| Preset | Native AAC (`-q:a`) | libfdk_aac (`-vbr`) | Approx Bitrate |
-|--------|---------------------|---------------------|----------------|
-| high | 5 | 5 | ~256 kbps |
-| medium | 4 | 4 | ~192 kbps |
-| low | 2 | 3 | ~128 kbps |
+| Preset | Native AAC (`-q:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) | Approx Bitrate |
+|--------|---------------------|---------------------|-----------------|----------------|
+| max/high | 5 | 5 | 14 | ~256-320 kbps |
+| medium | 4 | 4 | 11 | ~192 kbps |
+| low | 2 | 3 | 6 | ~128 kbps |
+
+**Note:** FFmpeg's native AAC VBR tops out around ~256 kbps, so `max` VBR may produce similar bitrates to `high`. Use `max-cbr` for guaranteed 320 kbps.
 
 ### File Size Guidelines
 
 | Preset | Mode | Approx Bitrate | File Size (4 min song) |
 |--------|------|----------------|------------------------|
+| **alac** | Lossless | ~900 kbps | ~26 MB |
+| **max** | VBR | ~320 kbps | ~9.4 MB |
 | **high** | VBR | ~256 kbps | ~7.5 MB |
 | **medium** | VBR | ~192 kbps | ~5.6 MB |
 | **low** | VBR | ~128 kbps | ~3.8 MB |
-| **cbr-256** | CBR | 256 kbps | 7.5 MB |
-| **cbr-192** | CBR | 192 kbps | 5.6 MB |
-| **cbr-128** | CBR | 128 kbps | 3.8 MB |
+| **max-cbr** | CBR | 320 kbps | 9.4 MB |
+| **high-cbr** | CBR | 256 kbps | 7.5 MB |
+| **medium-cbr** | CBR | 192 kbps | 5.6 MB |
+| **low-cbr** | CBR | 128 kbps | 3.8 MB |
 
 **Note:** VBR file sizes vary based on content complexity. CBR sizes are exact.
 
 **Note:** For critical listening or archival, keep lossless source files and only transcode to the device.
 
 ## FFmpeg Commands
+
+### ALAC Encoding (Lossless)
+
+```bash
+# Convert FLAC to ALAC
+ffmpeg -i input.flac -c:a alac -ar 44100 -map_metadata 0 -f ipod output.m4a
+
+# Preserve artwork
+ffmpeg -i input.flac -c:a alac -c:v copy -disposition:v attached_pic -map_metadata 0 -f ipod output.m4a
+```
 
 ### VBR Encoding (Recommended)
 
@@ -184,6 +317,9 @@ ffmpeg -i input.flac -c:a aac -q:a 2 -ar 44100 -map_metadata 0 output.m4a
 ### CBR Encoding
 
 ```bash
+# 320 kbps CBR
+ffmpeg -i input.flac -c:a aac -b:a 320k -ar 44100 -map_metadata 0 output.m4a
+
 # 256 kbps CBR
 ffmpeg -i input.flac -c:a aac -b:a 256k -ar 44100 -map_metadata 0 output.m4a
 
@@ -351,47 +487,45 @@ RUN ffmpeg -encoders 2>/dev/null | grep aac
 
 ## Implementation in podkit
 
-### Transcoder Interface
+### TranscodeConfig Interface
 
 ```typescript
-interface TranscoderConfig {
-  ffmpegPath?: string;  // Auto-detect if not specified
-  tempDir: string;
+interface TranscodeConfig {
+  /** Primary quality target (applies to lossless sources) */
+  quality: QualityPreset;
+
+  /**
+   * Fallback for lossy sources when quality='alac' or for incompatible formats.
+   * Default: 'max' if quality='alac', otherwise inherits from quality
+   */
+  fallback?: Exclude<QualityPreset, 'alac'>;
 }
+```
 
-interface TranscodeOptions {
-  preset: 'high' | 'medium' | 'low' | TranscodePreset;
-  preserveMetadata: boolean;
-  preserveArtwork: boolean;
-}
+### Source Categorization
 
-interface TranscodeResult {
-  outputPath: string;
-  duration: number;
-  bitrate: number;
-  encoder: string;
-}
+```typescript
+type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-lossy';
 
-class Transcoder {
-  constructor(config: TranscoderConfig);
-
-  // Detect FFmpeg and available encoders
-  async detect(): Promise<{
-    available: boolean;
-    version: string;
-    encoders: string[];
-    preferredEncoder: string;
-  }>;
-
-  // Transcode a file
-  async transcode(
-    inputPath: string,
-    outputPath: string,
-    options: TranscodeOptions
-  ): Promise<TranscodeResult>;
-
-  // Get audio metadata
-  async probe(filePath: string): Promise<AudioMetadata>;
+function categorizeSource(track: CollectionTrack): SourceCategory {
+  // Unambiguously lossless by extension
+  if (['flac', 'wav', 'aiff'].includes(track.fileType)) {
+    return 'lossless';
+  }
+  // Incompatible lossy (requires transcoding)
+  if (['ogg', 'opus'].includes(track.fileType)) {
+    return 'incompatible-lossy';
+  }
+  // MP3 is always compatible lossy
+  if (track.fileType === 'mp3') {
+    return 'compatible-lossy';
+  }
+  // M4A/AAC requires codec detection (could be AAC or ALAC)
+  if (track.fileType === 'm4a' || track.fileType === 'aac') {
+    return track.codec === 'alac' ? 'lossless' : 'compatible-lossy';
+  }
+  // Unknown formats: treat as incompatible (safe default, triggers warning)
+  return 'incompatible-lossy';
 }
 ```
 
@@ -399,7 +533,7 @@ class Transcoder {
 
 ```typescript
 function selectEncoder(available: string[]): string {
-  // Prefer in order: aac_at ≥ libfdk_aac > aac
+  // Prefer in order: aac_at >= libfdk_aac > aac
   const priority = ['aac_at', 'libfdk_aac', 'aac'];
 
   for (const encoder of priority) {
@@ -419,30 +553,34 @@ function buildCommand(
   input: string,
   output: string,
   encoder: string,
-  preset: TranscodePreset,
-  options: TranscodeOptions
+  preset: QualityPreset
 ): string[] {
+  // Handle ALAC
+  if (preset === 'alac') {
+    return [
+      '-i', input,
+      '-c:a', 'alac',
+      '-ar', '44100',
+      '-map_metadata', '0',
+      '-c:v', 'copy', '-disposition:v', 'attached_pic',
+      '-f', 'ipod', '-y', output
+    ];
+  }
+
+  const aacPreset = AAC_PRESETS[preset];
   const args = ['-i', input, '-c:a', encoder];
 
   // Apply quality settings based on mode
-  if (preset.mode === 'vbr') {
-    args.push(...getVbrArgs(encoder, preset.value));
+  if (aacPreset.mode === 'vbr') {
+    args.push(...getVbrArgs(encoder, aacPreset.quality));
   } else {
-    args.push('-b:a', `${preset.value}k`);
+    args.push('-b:a', `${aacPreset.targetKbps}k`);
   }
 
   // Common settings
-  args.push('-ar', '44100', '-ac', '2');
-
-  if (options.preserveMetadata) {
-    args.push('-map_metadata', '0');
-  }
-
-  if (options.preserveArtwork) {
-    args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
-  }
-
-  // Output format (M4A container optimized for iPod)
+  args.push('-ar', '44100');
+  args.push('-map_metadata', '0');
+  args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   args.push('-f', 'ipod', '-y', output);
 
   return args;
@@ -451,17 +589,12 @@ function buildCommand(
 function getVbrArgs(encoder: string, quality: number): string[] {
   switch (encoder) {
     case 'libfdk_aac':
-      // libfdk_aac uses -vbr 1-5 scale
-      // Also set cutoff to preserve high frequencies
       return ['-vbr', String(quality), '-cutoff', '18000'];
     case 'aac_at':
-      // aac_at uses -q:a 0-14 scale (14 = highest)
-      // Map our 1-5 to aac_at's scale
       const aacAtQuality = Math.round(quality * 2.8);
       return ['-q:a', String(aacAtQuality)];
     case 'aac':
     default:
-      // Native AAC uses -q:a 0.1-5 scale
       return ['-q:a', String(quality)];
   }
 }
@@ -518,26 +651,6 @@ ffprobe -v error -show_streams input.flac
 # Check for codec issues
 ffmpeg -v error -i input.flac -f null -
 ```
-
-## Future Considerations
-
-### Opus Codec
-
-If iPod compatibility weren't required, Opus would be ideal:
-- Better quality at lower bitrates
-- Open, royalty-free
-- Native FFmpeg support
-
-However, iPods don't support Opus, so AAC remains the best choice.
-
-### ALAC (Apple Lossless)
-
-For users who prioritize quality over space:
-```bash
-ffmpeg -i input.flac -c:a alac output.m4a
-```
-
-iPods support ALAC natively, so no transcoding losses. Consider offering this as a "lossless" preset.
 
 ## References
 

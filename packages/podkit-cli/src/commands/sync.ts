@@ -27,12 +27,18 @@ import type { QualityPreset } from '../config/index.js';
 // =============================================================================
 
 /**
+ * AAC-only quality presets (for fallback)
+ */
+type AacQualityPreset = Exclude<QualityPreset, 'alac'>;
+
+/**
  * Sync command options
  */
 interface SyncOptions {
   source?: string;
   dryRun?: boolean;
   quality?: QualityPreset;
+  fallback?: AacQualityPreset;
   filter?: string;
   artwork?: boolean;
   delete?: boolean;
@@ -48,6 +54,16 @@ interface ErrorInfo {
   retryAttempts: number;
   wasRetried: boolean;
   stack?: string;
+}
+
+/**
+ * Warning info for JSON output
+ */
+interface WarningInfo {
+  type: string;
+  message: string;
+  trackCount: number;
+  tracks?: string[];
 }
 
 /**
@@ -79,6 +95,7 @@ interface SyncOutput {
     bytesTransferred: number;
     duration: number;
   };
+  warnings?: WarningInfo[];
   errors?: ErrorInfo[];
   error?: string;
 }
@@ -272,7 +289,15 @@ export const syncCommand = new Command('sync')
   .description('sync music collection to iPod')
   .option('-s, --source <path>', 'source directory to sync from')
   .option('-n, --dry-run', 'show what would be synced without making changes')
-  .option('--quality <preset>', 'transcoding quality: high, medium, low', 'high')
+  .option(
+    '--quality <preset>',
+    'transcoding quality: alac, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr',
+    'high'
+  )
+  .option(
+    '--fallback <preset>',
+    'fallback quality for lossy sources when quality=alac (default: max)'
+  )
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--delete', 'remove tracks from iPod not in source')
@@ -284,9 +309,16 @@ export const syncCommand = new Command('sync')
     const sourcePath = options.source ?? config.source;
     const devicePath = config.device;
     const quality = (options.quality ?? config.quality) as QualityPreset;
+    const fallback = options.fallback ?? config.fallback;
     const dryRun = options.dryRun ?? false;
     const removeOrphans = options.delete ?? false;
     const artwork = options.artwork ?? config.artwork;
+
+    // Build transcode config for planner
+    const transcodeConfig = {
+      quality,
+      fallback,
+    };
 
     // JSON output helper
     const outputJson = (data: SyncOutput) => {
@@ -536,7 +568,7 @@ export const syncCommand = new Command('sync')
       // ----- Create sync plan -----
       const plan = core.createPlan(diff, {
         removeOrphans,
-        transcodePreset: { name: quality },
+        transcodeConfig,
       });
 
       const summary = core.getPlanSummary(plan);
@@ -556,6 +588,16 @@ export const syncCommand = new Command('sync')
             status: 'pending' as const,
           }));
 
+          // Convert warnings to JSON format
+          const warningInfos: WarningInfo[] = plan.warnings.map((warning) => ({
+            type: warning.type,
+            message: warning.message,
+            trackCount: warning.tracks.length,
+            tracks: globalOpts.verbose
+              ? warning.tracks.map((t) => `${t.artist} - ${t.title}`)
+              : undefined,
+          }));
+
           outputJson({
             success: true,
             dryRun: true,
@@ -570,6 +612,7 @@ export const syncCommand = new Command('sync')
               estimatedTime: plan.estimatedTime,
             },
             operations,
+            warnings: warningInfos.length > 0 ? warningInfos : undefined,
           });
         } else {
           console.log('');
@@ -577,7 +620,8 @@ export const syncCommand = new Command('sync')
           console.log('');
           console.log(`Source: ${sourcePath}`);
           console.log(`Device: ${devicePath}`);
-          console.log(`Quality: ${quality}`);
+          const qualityDisplay = fallback ? `${quality} (fallback: ${fallback})` : quality;
+          console.log(`Quality: ${qualityDisplay}`);
           console.log('');
 
           // Summary
@@ -624,6 +668,29 @@ export const syncCommand = new Command('sync')
           } else if (plan.operations.length > 20) {
             console.log(`Operations: ${plan.operations.length} total (use --verbose to list all)`);
             console.log('');
+          }
+
+          // Show warnings (lossy-to-lossy conversions)
+          if (plan.warnings.length > 0) {
+            for (const warning of plan.warnings) {
+              if (warning.type === 'lossy-to-lossy') {
+                console.log(`\u26A0\uFE0F  ${warning.tracks.length} track${warning.tracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion:`);
+                console.log('   These files (OGG, Opus) are not iPod-compatible and will be');
+                console.log('   transcoded to AAC. This is unavoidable but results in quality loss.');
+                console.log('');
+                // Show up to 5 track names in verbose mode
+                if (globalOpts.verbose) {
+                  const displayTracks = warning.tracks.slice(0, 5);
+                  for (const track of displayTracks) {
+                    console.log(`   - ${track.artist} - ${track.title}`);
+                  }
+                  if (warning.tracks.length > 5) {
+                    console.log(`   ... and ${warning.tracks.length - 5} more`);
+                  }
+                  console.log('');
+                }
+              }
+            }
           }
 
           console.log('Run without --dry-run to execute this plan.');

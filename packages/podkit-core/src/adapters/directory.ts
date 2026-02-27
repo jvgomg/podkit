@@ -38,7 +38,7 @@ export interface ScanProgress {
 }
 
 /** Default audio file extensions to scan */
-const DEFAULT_EXTENSIONS = ['flac', 'mp3', 'm4a', 'ogg', 'opus'];
+const DEFAULT_EXTENSIONS = ['flac', 'mp3', 'm4a', 'ogg', 'opus', 'wav', 'aiff', 'aif'];
 
 /** Map of file extensions to AudioFileType */
 const EXTENSION_TO_TYPE: Record<string, AudioFileType> = {
@@ -49,7 +49,51 @@ const EXTENSION_TO_TYPE: Record<string, AudioFileType> = {
   '.ogg': 'ogg',
   '.opus': 'opus',
   '.wav': 'wav',
+  '.aiff': 'aiff',
+  '.aif': 'aiff',
 };
+
+/** Codecs that are considered lossless */
+const LOSSLESS_CODECS = new Set([
+  'flac',
+  'alac',
+  'pcm_s16le',
+  'pcm_s16be',
+  'pcm_s24le',
+  'pcm_s24be',
+  'pcm_s32le',
+  'pcm_s32be',
+  'pcm_f32le',
+  'pcm_f32be',
+  'pcm_alaw',
+  'pcm_mulaw',
+  'aiff',
+  'wav',
+]);
+
+/**
+ * Determine if a codec is lossless
+ */
+function isLosslessCodec(codec: string | undefined, fileType: AudioFileType): boolean {
+  // Unambiguously lossless by file type
+  if (['flac', 'wav', 'aiff'].includes(fileType)) {
+    return true;
+  }
+
+  // Check codec name
+  if (codec) {
+    const normalizedCodec = codec.toLowerCase();
+    if (LOSSLESS_CODECS.has(normalizedCodec)) {
+      return true;
+    }
+    // ALAC detection from codec name
+    if (normalizedCodec.includes('alac')) {
+      return true;
+    }
+  }
+
+  return false;
+}
 
 /**
  * DirectoryAdapter implementation
@@ -161,6 +205,17 @@ export class DirectoryAdapter implements CollectionAdapter {
     // Note: We could get file stats for size and mtime here if needed
     // Currently not used but reserved for future use
 
+    // Extract file type and codec information
+    const fileType = this.getFileType(filePath);
+    const codec = format.codec?.toLowerCase();
+    const lossless = isLosslessCodec(codec, fileType);
+
+    // Calculate bitrate in kbps
+    let bitrate: number | undefined;
+    if (format.bitrate) {
+      bitrate = Math.round(format.bitrate / 1000);
+    }
+
     // Build track object
     const track: CollectionTrack = {
       // Use file path as unique ID
@@ -181,7 +236,12 @@ export class DirectoryAdapter implements CollectionAdapter {
 
       // File info
       filePath,
-      fileType: this.getFileType(filePath),
+      fileType,
+
+      // Audio format details (for transcoding decisions)
+      codec,
+      lossless,
+      bitrate,
 
       // External identifiers
       musicBrainzRecordingId: common.musicbrainz_recordingid,

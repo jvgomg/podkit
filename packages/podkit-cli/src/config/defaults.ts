@@ -40,5 +40,6 @@ export const ENV_KEYS = {
   source: `${ENV_PREFIX}SOURCE`,
   device: `${ENV_PREFIX}DEVICE`,
   quality: `${ENV_PREFIX}QUALITY`,
+  fallback: `${ENV_PREFIX}FALLBACK`,
   artwork: `${ENV_PREFIX}ARTWORK`,
 } as const;

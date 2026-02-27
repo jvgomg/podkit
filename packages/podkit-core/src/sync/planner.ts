@@ -6,32 +6,42 @@
  * transcoding or can be copied directly, estimates output sizes, and checks
  * available space on the iPod.
  *
- * ## Planning Logic
+ * ## Source File Categories
  *
- * 1. For each track in `toAdd`:
- *    - Check if format is iPod-compatible (MP3, AAC/M4A, ALAC)
- *    - If compatible: operation = 'copy'
- *    - If needs conversion (FLAC, OGG, OPUS, WAV): operation = 'transcode'
- *    - Estimate output size based on duration and target bitrate
+ * | Category | Formats | Behavior |
+ * |----------|---------|----------|
+ * | **Lossless** | FLAC, WAV, AIFF, ALAC | Transcode to target preset |
+ * | **Compatible Lossy** | MP3, M4A (AAC) | Copy as-is (no re-encoding) |
+ * | **Incompatible Lossy** | OGG, Opus | Transcode + lossy→lossy warning |
  *
- * 2. For each track in `toRemove`:
- *    - If removeOrphans is enabled: operation = 'remove'
+ * ## Decision Matrix
  *
- * 3. Calculate total required space and validate against available space
+ * | Source | Target: ALAC | Target: AAC preset |
+ * |--------|--------------|-------------------|
+ * | Lossless | Convert to ALAC | Transcode to AAC |
+ * | Compatible Lossy | Copy as-is | Copy as-is |
+ * | Incompatible Lossy | Transcode + warn | Transcode + warn |
  *
  * @module
  */
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
-import { PRESETS, type TranscodePreset } from '../transcode/types.js';
+import {
+  type QualityPreset,
+  type TranscodeConfig,
+  getPresetBitrate,
+  resolveFallback,
+} from '../transcode/types.js';
 import type {
   IPodTrack,
   PlanOptions,
+  SourceCategory,
   SyncDiff,
   SyncOperation,
   SyncPlan,
   SyncPlanner,
+  SyncWarning,
   TranscodePresetRef,
 } from './types.js';
 
@@ -61,18 +71,43 @@ const IPOD_COMPATIBLE_FORMATS: Set<AudioFileType> = new Set([
  * - ogg: Ogg Vorbis - needs transcoding
  * - opus: Opus codec - needs transcoding
  * - wav: Uncompressed PCM - needs transcoding (and would waste space)
+ * - aiff: Audio Interchange File Format - needs transcoding
  */
 const TRANSCODE_REQUIRED_FORMATS: Set<AudioFileType> = new Set([
   'flac',
   'ogg',
   'opus',
   'wav',
+  'aiff',
+]);
+
+/**
+ * Lossy formats that are NOT iPod-compatible (require lossy→lossy conversion)
+ */
+const INCOMPATIBLE_LOSSY_FORMATS: Set<AudioFileType> = new Set([
+  'ogg',
+  'opus',
+]);
+
+/**
+ * Lossless formats (can be transcoded to any target without quality warning)
+ */
+const LOSSLESS_FORMATS: Set<AudioFileType> = new Set([
+  'flac',
+  'wav',
+  'aiff',
+  'alac',
 ]);
 
 /**
  * Default transcode preset if none specified
  */
 const DEFAULT_PRESET: TranscodePresetRef = { name: 'high' };
+
+/**
+ * Default transcode configuration
+ */
+const DEFAULT_CONFIG: TranscodeConfig = { quality: 'high' };
 
 /**
  * Average overhead for M4A container (headers, atoms, etc.)
@@ -110,15 +145,104 @@ export function requiresTranscoding(fileType: AudioFileType): boolean {
   return TRANSCODE_REQUIRED_FORMATS.has(fileType);
 }
 
+// =============================================================================
+// Source Categorization
+// =============================================================================
+
 /**
- * Get the transcode preset configuration from a preset reference
+ * Categorize a track's source format for transcoding decisions
+ *
+ * Categories:
+ * - lossless: FLAC, WAV, AIFF, ALAC - can convert to any target
+ * - compatible-lossy: MP3, AAC/M4A - already iPod-playable, copy as-is
+ * - incompatible-lossy: OGG, Opus - must transcode (lossy→lossy warning)
+ *
+ * Note: M4A files can be either AAC (lossy) or ALAC (lossless).
+ * Uses the codec field for accurate detection.
  */
-function getPresetConfig(ref: TranscodePresetRef): TranscodePreset {
-  if (ref.name === 'custom') {
-    // For custom presets, use medium as fallback for size estimation
-    return PRESETS.medium;
+export function categorizeSource(track: CollectionTrack): SourceCategory {
+  // Check if explicitly marked as lossless
+  if (track.lossless === true) {
+    return 'lossless';
   }
-  return PRESETS[ref.name];
+
+  // Unambiguously lossless by file extension
+  if (['flac', 'wav', 'aiff'].includes(track.fileType)) {
+    return 'lossless';
+  }
+
+  // Incompatible lossy (requires transcoding)
+  if (INCOMPATIBLE_LOSSY_FORMATS.has(track.fileType)) {
+    return 'incompatible-lossy';
+  }
+
+  // MP3 is always compatible lossy
+  if (track.fileType === 'mp3') {
+    return 'compatible-lossy';
+  }
+
+  // M4A/AAC requires codec detection (could be AAC or ALAC)
+  if (track.fileType === 'm4a' || track.fileType === 'aac') {
+    // Check codec if available
+    if (track.codec?.toLowerCase() === 'alac') {
+      return 'lossless';
+    }
+    // Assume AAC (lossy) if no codec info or codec is aac
+    return 'compatible-lossy';
+  }
+
+  // ALAC extension is unambiguously lossless
+  if (track.fileType === 'alac') {
+    return 'lossless';
+  }
+
+  // Unknown formats: treat as incompatible (safe default, triggers warning)
+  return 'incompatible-lossy';
+}
+
+/**
+ * Check if a source category is lossless
+ */
+export function isLosslessSource(category: SourceCategory): boolean {
+  return category === 'lossless';
+}
+
+/**
+ * Check if a source will produce a lossy-to-lossy warning
+ */
+export function willWarnLossyToLossy(category: SourceCategory): boolean {
+  return category === 'incompatible-lossy';
+}
+
+/**
+ * Resolve the effective quality preset for a track based on its source category
+ *
+ * @param config - Transcode configuration
+ * @param category - Source file category
+ * @returns The effective quality preset to use
+ */
+function resolveEffectivePreset(
+  config: TranscodeConfig,
+  category: SourceCategory
+): QualityPreset {
+  // ALAC only valid for lossless sources
+  if (config.quality === 'alac') {
+    if (category === 'lossless') {
+      return 'alac';
+    }
+    // Fallback for lossy sources
+    return resolveFallback(config);
+  }
+
+  // Non-ALAC presets use quality directly
+  return config.quality;
+}
+
+/**
+ * Convert PlanOptions to TranscodeConfig
+ */
+function getTranscodeConfig(options: PlanOptions): TranscodeConfig {
+  return options.transcodeConfig ?? DEFAULT_CONFIG;
 }
 
 /**
@@ -238,7 +362,15 @@ function createRemoveOperation(track: IPodTrack): SyncOperation {
 }
 
 /**
- * Plan operations for tracks to be added
+ * Result of planning add operations, including warnings
+ */
+interface PlanAddResult {
+  operations: SyncOperation[];
+  lossyToLossyTracks: CollectionTrack[];
+}
+
+/**
+ * Plan operations for tracks to be added (legacy version using preset ref)
  */
 function planAddOperations(
   tracks: CollectionTrack[],
@@ -251,6 +383,59 @@ function planAddOperations(
       return createTranscodeOperation(track, preset);
     }
   });
+}
+
+/**
+ * Plan operations for tracks to be added with new categorization logic
+ *
+ * This version uses source categorization to determine the appropriate
+ * operation for each track and collects lossy-to-lossy warnings.
+ */
+function planAddOperationsV2(
+  tracks: CollectionTrack[],
+  config: TranscodeConfig
+): PlanAddResult {
+  const operations: SyncOperation[] = [];
+  const lossyToLossyTracks: CollectionTrack[] = [];
+
+  for (const track of tracks) {
+    const category = categorizeSource(track);
+    const effectivePreset = resolveEffectivePreset(config, category);
+
+    // Track lossy-to-lossy conversions for warnings
+    if (willWarnLossyToLossy(category)) {
+      lossyToLossyTracks.push(track);
+    }
+
+    switch (category) {
+      case 'lossless':
+        if (effectivePreset === 'alac') {
+          // Check if source is already ALAC - can copy directly
+          if (track.codec?.toLowerCase() === 'alac') {
+            operations.push(createCopyOperation(track));
+          } else {
+            // Transcode to ALAC
+            operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+          }
+        } else {
+          // Transcode lossless to AAC
+          operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+        }
+        break;
+
+      case 'compatible-lossy':
+        // MP3/AAC: always copy (no benefit to re-encoding)
+        operations.push(createCopyOperation(track));
+        break;
+
+      case 'incompatible-lossy':
+        // OGG/Opus: must transcode (warning already collected)
+        operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+        break;
+    }
+  }
+
+  return { operations, lossyToLossyTracks };
 }
 
 /**
@@ -274,9 +459,9 @@ export function calculateOperationSize(
 ): number {
   switch (operation.type) {
     case 'transcode': {
-      const preset = getPresetConfig(operation.preset);
       const duration = operation.source.duration ?? 240000; // default 4 min
-      const bitrate = preset.bitrate ?? 192;
+      // Use getPresetBitrate for new presets, fall back to legacy behavior
+      const bitrate = getPresetBitrate(operation.preset.name);
       return estimateTranscodedSize(duration, bitrate);
     }
     case 'copy': {
@@ -357,13 +542,16 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  *
  * @param diff - The diff from the diff engine
  * @param options - Planning options
- * @returns The sync plan with operations, estimated time, and size
+ * @returns The sync plan with operations, estimated time, size, and warnings
  *
  * @example
  * const diff = computeDiff(collectionTracks, ipodTracks);
  * const plan = createPlan(diff, { removeOrphans: true });
  * console.log(`${plan.operations.length} operations to execute`);
  * console.log(`Estimated size: ${plan.estimatedSize} bytes`);
+ * if (plan.warnings.length > 0) {
+ *   console.log(`Warnings: ${plan.warnings.length}`);
+ * }
  */
 export function createPlan(
   diff: SyncDiff,
@@ -371,17 +559,19 @@ export function createPlan(
 ): SyncPlan {
   const {
     removeOrphans = false,
-    transcodePreset = DEFAULT_PRESET,
   } = options;
 
-  // Plan add operations (copy or transcode)
-  const addOperations = planAddOperations(diff.toAdd, transcodePreset);
+  // Get transcode config (handles both legacy and new formats)
+  const config = getTranscodeConfig(options);
+
+  // Plan add operations using new categorization logic
+  const addResult = planAddOperationsV2(diff.toAdd, config);
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
 
   // Combine and order operations
-  const allOperations = [...addOperations, ...removeOperations];
+  const allOperations = [...addResult.operations, ...removeOperations];
   const orderedOperations = orderOperations(allOperations);
 
   // Calculate totals
@@ -393,10 +583,22 @@ export function createPlan(
     estimatedTime += calculateOperationTime(op);
   }
 
+  // Build warnings
+  const warnings: SyncWarning[] = [];
+
+  if (addResult.lossyToLossyTracks.length > 0) {
+    warnings.push({
+      type: 'lossy-to-lossy',
+      message: `${addResult.lossyToLossyTracks.length} track${addResult.lossyToLossyTracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion (OGG, Opus). This is unavoidable but results in quality loss.`,
+      tracks: addResult.lossyToLossyTracks,
+    });
+  }
+
   return {
     operations: orderedOperations,
     estimatedTime,
     estimatedSize,
+    warnings,
   };
 }
 

@@ -47,6 +47,9 @@ export type {
   SyncPlanner,
   PlanOptions,
   TranscodePresetRef,
+  SourceCategory,
+  SyncWarning,
+  SyncWarningType,
 } from './sync/types.js';
 
 // Differ
@@ -68,6 +71,9 @@ export {
   calculateOperationSize,
   willFitInSpace,
   getPlanSummary,
+  categorizeSource,
+  isLosslessSource,
+  willWarnLossyToLossy,
 } from './sync/planner.js';
 
 // Track matching
@@ -107,15 +113,29 @@ export {
 
 // Transcoding
 export type {
-  TranscodePreset,
   TranscoderCapabilities,
   TranscodeResult,
   AudioMetadata,
   Transcoder,
   TranscodeProgress,
   TranscodeOptions,
+  QualityPreset,
+  AacQualityPreset,
+  TranscodeConfig,
+  AacPreset,
 } from './transcode/types.js';
-export { PRESETS } from './transcode/types.js';
+export {
+  QUALITY_PRESETS,
+  AAC_QUALITY_PRESETS,
+  AAC_PRESETS,
+  ALAC_PRESET,
+  isValidQualityPreset,
+  isValidAacPreset,
+  getPresetBitrate,
+  isLosslessPreset,
+  isVbrPreset,
+  resolveFallback,
+} from './transcode/types.js';
 
 export {
   FFmpegTranscoder,
@@ -124,6 +144,7 @@ export {
   FFmpegNotFoundError,
   TranscodeError,
   buildTranscodeArgs,
+  buildAlacArgs,
   buildVbrArgs,
   parseProgressLine,
 } from './transcode/ffmpeg.js';

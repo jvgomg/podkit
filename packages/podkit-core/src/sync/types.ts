@@ -8,6 +8,7 @@
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
+import type { QualityPreset, TranscodeConfig } from '../transcode/types.js';
 
 // Re-export for use within sync module
 export type { IPodTrack };
@@ -46,9 +47,44 @@ export interface SyncDiff {
 
 /**
  * Transcode preset reference for sync operations
+ *
+ * Uses QualityPreset type which includes ALAC and CBR variants.
  */
 export interface TranscodePresetRef {
-  name: 'high' | 'medium' | 'low' | 'custom';
+  name: QualityPreset;
+}
+
+// =============================================================================
+// Source Categorization
+// =============================================================================
+
+/**
+ * Source file category for transcoding decisions
+ *
+ * - lossless: Can convert to any target (FLAC, WAV, AIFF, ALAC)
+ * - compatible-lossy: Already iPod-playable, copy as-is (MP3, AAC/M4A)
+ * - incompatible-lossy: Must be transcoded, lossy→lossy warning (OGG, Opus)
+ */
+export type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-lossy';
+
+// =============================================================================
+// Sync Warnings
+// =============================================================================
+
+/**
+ * Warning types that can occur during sync planning
+ */
+export type SyncWarningType = 'lossy-to-lossy';
+
+/**
+ * A warning generated during sync planning
+ */
+export interface SyncWarning {
+  type: SyncWarningType;
+  /** Human-readable description of the warning */
+  message: string;
+  /** Tracks affected by this warning */
+  tracks: CollectionTrack[];
 }
 
 /**
@@ -84,6 +120,8 @@ export interface SyncPlan {
   estimatedTime: number;
   /** Estimated total size in bytes */
   estimatedSize: number;
+  /** Warnings generated during planning (e.g., lossy-to-lossy conversions) */
+  warnings: SyncWarning[];
 }
 
 /**
@@ -155,8 +193,12 @@ export interface SyncPlanner {
 export interface PlanOptions {
   /** Whether to remove tracks not in collection */
   removeOrphans?: boolean;
-  /** Transcode preset to use */
-  transcodePreset?: TranscodePresetRef;
+
+  /**
+   * Transcode configuration with quality and fallback
+   */
+  transcodeConfig?: TranscodeConfig;
+
   /** Maximum size in bytes (for space-constrained syncs) */
   maxSize?: number;
 }

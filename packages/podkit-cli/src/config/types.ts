@@ -2,10 +2,12 @@
  * Configuration types for podkit CLI
  */
 
-/**
- * Quality presets for transcoding
- */
-export type QualityPreset = 'high' | 'medium' | 'low';
+// Import quality preset types from core
+export type { QualityPreset, AacQualityPreset } from '@podkit/core';
+export { QUALITY_PRESETS, AAC_QUALITY_PRESETS } from '@podkit/core';
+
+// Import type for local use
+import type { QualityPreset, AacQualityPreset } from '@podkit/core';
 
 /**
  * Configuration that can be set via config file, env vars, or CLI
@@ -17,6 +19,11 @@ export interface PodkitConfig {
   device?: string;
   /** Transcoding quality preset */
   quality: QualityPreset;
+  /**
+   * Fallback preset for lossy sources when quality='alac'
+   * Default: 'max' if quality='alac', otherwise inherits from quality
+   */
+  fallback?: AacQualityPreset;
   /** Include artwork in sync */
   artwork: boolean;
 }
@@ -51,5 +58,6 @@ export interface ConfigFileContent {
   source?: string;
   device?: string;
   quality?: string;
+  fallback?: string;
   artwork?: boolean;
 }

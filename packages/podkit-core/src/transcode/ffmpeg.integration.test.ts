@@ -15,8 +15,7 @@ import {
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
-import { PRESETS } from './types.js';
-import type { TranscodeProgress } from './types.js';
+import type { TranscodeProgress, QualityPreset } from './types.js';
 import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
 
 // Fail early if FFmpeg is not available
@@ -156,7 +155,7 @@ describe('FFmpegTranscoder integration', () => {
     it('transcodes WAV to M4A with high preset', async () => {
       const outputPath = join(testDir, 'output-high.m4a');
 
-      const result = await transcoder.transcode(testAudioPath, outputPath, PRESETS.high);
+      const result = await transcoder.transcode(testAudioPath, outputPath, 'high');
 
       expect(result.outputPath).toBe(outputPath);
       expect(result.size).toBeGreaterThan(0);
@@ -171,7 +170,7 @@ describe('FFmpegTranscoder integration', () => {
     it('transcodes with medium preset', async () => {
       const outputPath = join(testDir, 'output-medium.m4a');
 
-      const result = await transcoder.transcode(testAudioPath, outputPath, PRESETS.medium);
+      const result = await transcoder.transcode(testAudioPath, outputPath, 'medium');
 
       expect(result.outputPath).toBe(outputPath);
       expect(result.size).toBeGreaterThan(0);
@@ -183,7 +182,7 @@ describe('FFmpegTranscoder integration', () => {
     it('transcodes with low preset', async () => {
       const outputPath = join(testDir, 'output-low.m4a');
 
-      const result = await transcoder.transcode(testAudioPath, outputPath, PRESETS.low);
+      const result = await transcoder.transcode(testAudioPath, outputPath, 'low');
 
       expect(result.outputPath).toBe(outputPath);
       expect(result.size).toBeGreaterThan(0);
@@ -196,8 +195,8 @@ describe('FFmpegTranscoder integration', () => {
       const outputHigh = join(testDir, 'size-high.m4a');
       const outputLow = join(testDir, 'size-low.m4a');
 
-      const resultHigh = await transcoder.transcode(testAudioPath, outputHigh, PRESETS.high);
-      const resultLow = await transcoder.transcode(testAudioPath, outputLow, PRESETS.low);
+      const resultHigh = await transcoder.transcode(testAudioPath, outputHigh, 'high');
+      const resultLow = await transcoder.transcode(testAudioPath, outputLow, 'low');
 
       // Both should produce valid output
       expect(resultHigh.size).toBeGreaterThan(0);
@@ -208,7 +207,7 @@ describe('FFmpegTranscoder integration', () => {
       const outputPath = join(testDir, 'output-progress.m4a');
       const progressUpdates: TranscodeProgress[] = [];
 
-      await transcoder.transcode(testAudioPath, outputPath, PRESETS.high, {
+      await transcoder.transcode(testAudioPath, outputPath, 'high', {
         onProgress: (progress) => {
           progressUpdates.push({ ...progress });
         },
@@ -227,7 +226,7 @@ describe('FFmpegTranscoder integration', () => {
       controller.abort();
 
       await expect(
-        transcoder.transcode(testAudioPath, outputPath, PRESETS.high, {
+        transcoder.transcode(testAudioPath, outputPath, 'high', {
           signal: controller.signal,
         })
       ).rejects.toThrow('aborted');
@@ -238,7 +237,7 @@ describe('FFmpegTranscoder integration', () => {
       const invalidInput = join(testDir, 'nonexistent.wav');
 
       await expect(
-        transcoder.transcode(invalidInput, outputPath, PRESETS.high)
+        transcoder.transcode(invalidInput, outputPath, 'high')
       ).rejects.toThrow(TranscodeError);
     });
 
@@ -249,7 +248,7 @@ describe('FFmpegTranscoder integration', () => {
       });
 
       await expect(
-        badTranscoder.transcode(testAudioPath, outputPath, PRESETS.high)
+        badTranscoder.transcode(testAudioPath, outputPath, 'high')
       ).rejects.toThrow(FFmpegNotFoundError);
     });
 
@@ -257,11 +256,11 @@ describe('FFmpegTranscoder integration', () => {
       const outputPath = join(testDir, 'output-overwrite.m4a');
 
       // Create first output
-      await transcoder.transcode(testAudioPath, outputPath, PRESETS.high);
+      await transcoder.transcode(testAudioPath, outputPath, 'high');
       const firstSize = (await stat(outputPath)).size;
 
       // Transcode again (should overwrite)
-      await transcoder.transcode(testAudioPath, outputPath, PRESETS.low);
+      await transcoder.transcode(testAudioPath, outputPath, 'low');
       const secondSize = (await stat(outputPath)).size;
 
       // File should still exist and be valid
@@ -276,7 +275,7 @@ describe('FFmpegTranscoder integration', () => {
     it('preserves title metadata', async () => {
       const outputPath = join(testDir, 'output-metadata.m4a');
 
-      await transcoder.transcode(testAudioPath, outputPath, PRESETS.high);
+      await transcoder.transcode(testAudioPath, outputPath, 'high');
 
       // Use ffprobe to check metadata
       const result = await new Promise<string>((resolve, reject) => {
@@ -311,21 +310,27 @@ describe('FFmpegTranscoder integration', () => {
     });
   });
 
-  describe('custom VBR preset', () => {
-    it('transcodes with custom VBR quality', async () => {
-      const outputPath = join(testDir, 'output-vbr.m4a');
+  describe('all presets', () => {
+    it('transcodes with max-cbr preset (CBR 320)', async () => {
+      const outputPath = join(testDir, 'output-max-cbr.m4a');
 
-      const result = await transcoder.transcode(testAudioPath, outputPath, {
-        name: 'custom',
-        codec: 'aac',
-        container: 'm4a',
-        quality: 3, // VBR quality
-      });
+      const result = await transcoder.transcode(testAudioPath, outputPath, 'max-cbr');
 
       expect(result.outputPath).toBe(outputPath);
 
       const meta = await transcoder.probe(outputPath);
       expect(meta.codec).toBe('aac');
+    });
+
+    it('transcodes with ALAC preset (lossless)', async () => {
+      const outputPath = join(testDir, 'output-alac.m4a');
+
+      const result = await transcoder.transcode(testAudioPath, outputPath, 'alac');
+
+      expect(result.outputPath).toBe(outputPath);
+
+      const meta = await transcoder.probe(outputPath);
+      expect(meta.codec).toBe('alac');
     });
   });
 

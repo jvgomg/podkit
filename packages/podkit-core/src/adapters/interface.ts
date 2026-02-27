@@ -34,6 +34,24 @@ export interface CollectionTrack {
   filePath: string;
   fileType: AudioFileType;
 
+  // Audio format details (optional, for transcoding decisions)
+  /**
+   * Audio codec name (e.g., 'flac', 'mp3', 'aac', 'alac', 'vorbis', 'opus', 'pcm_s16le')
+   * Used to detect ALAC vs AAC in M4A containers
+   */
+  codec?: string;
+
+  /**
+   * Whether the source is lossless (true for flac, alac, wav, aiff, pcm codecs)
+   * Derived from codec or fileType
+   */
+  lossless?: boolean;
+
+  /**
+   * Source bitrate in kbps (for logging/display purposes)
+   */
+  bitrate?: number;
+
   // Identifiers (optional, for advanced matching)
   musicBrainzRecordingId?: string;
   musicBrainzReleaseId?: string;

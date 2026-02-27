@@ -23,7 +23,7 @@ import { rm } from 'node:fs/promises';
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
-import { PRESETS, type TranscodePreset } from '../transcode/types.js';
+import type { QualityPreset } from '../transcode/types.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -150,16 +150,6 @@ export interface ExecutorDependencies {
 // =============================================================================
 // Helper Functions
 // =============================================================================
-
-/**
- * Get the preset configuration from a preset reference
- */
-function getPreset(ref: TranscodePresetRef): TranscodePreset {
-  if (ref.name === 'custom') {
-    return PRESETS.medium;
-  }
-  return PRESETS[ref.name];
-}
 
 /**
  * Convert CollectionTrack to TrackInput for libgpod
@@ -591,14 +581,15 @@ export class DefaultSyncExecutor implements SyncExecutor {
     artworkEnabled?: boolean
   ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { source, preset: presetRef } = operation;
-    const preset = getPreset(presetRef);
 
     // Generate output path in temp directory
     const baseName = basename(source.filePath, extname(source.filePath));
     const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}.m4a`);
 
-    // Transcode the file
-    const result = await this.transcoder.transcode(source.filePath, outputPath, preset, { signal });
+    // Transcode the file (using the quality preset name directly)
+    const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
+      signal,
+    });
 
     // Add track to iPod database using IpodDatabase API
     const trackInput: TrackInput = {

@@ -4,6 +4,14 @@
 
 /**
  * Supported audio file types for collection sources
+ *
+ * Categories:
+ * - Lossless: flac, wav, aiff, alac
+ * - Compatible lossy (iPod-playable): mp3, m4a, aac
+ * - Incompatible lossy (requires transcoding): ogg, opus
+ *
+ * Note: M4A files can be either AAC (lossy) or ALAC (lossless).
+ * Use the codec field on CollectionTrack for accurate detection.
  */
 export type AudioFileType =
   | 'flac'
@@ -13,6 +21,7 @@ export type AudioFileType =
   | 'ogg'
   | 'opus'
   | 'wav'
+  | 'aiff'
   | 'alac';
 
 /**

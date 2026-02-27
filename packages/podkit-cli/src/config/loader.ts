@@ -15,25 +15,25 @@ import type {
   PodkitConfig,
   PartialConfig,
   QualityPreset,
+  AacQualityPreset,
   ConfigFileContent,
   GlobalOptions,
 } from './types.js';
+import { QUALITY_PRESETS, AAC_QUALITY_PRESETS } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
-
-/**
- * Valid quality preset values
- */
-const VALID_QUALITY_PRESETS: readonly QualityPreset[] = [
-  'high',
-  'medium',
-  'low',
-];
 
 /**
  * Check if a string is a valid quality preset
  */
 function isValidQuality(value: string): value is QualityPreset {
-  return VALID_QUALITY_PRESETS.includes(value as QualityPreset);
+  return QUALITY_PRESETS.includes(value as QualityPreset);
+}
+
+/**
+ * Check if a string is a valid AAC quality preset (for fallback)
+ */
+function isValidAacQuality(value: string): value is AacQualityPreset {
+  return AAC_QUALITY_PRESETS.includes(value as AacQualityPreset);
 }
 
 /**
@@ -67,7 +67,18 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     } else {
       throw new Error(
         `Invalid quality value "${parsed.quality}" in config. ` +
-          `Valid values: ${VALID_QUALITY_PRESETS.join(', ')}`
+          `Valid values: ${QUALITY_PRESETS.join(', ')}`
+      );
+    }
+  }
+
+  if (typeof parsed.fallback === 'string') {
+    if (isValidAacQuality(parsed.fallback)) {
+      config.fallback = parsed.fallback;
+    } else {
+      throw new Error(
+        `Invalid fallback value "${parsed.fallback}" in config. ` +
+          `Valid values: ${AAC_QUALITY_PRESETS.join(', ')}`
       );
     }
   }
@@ -106,6 +117,14 @@ export function loadEnvConfig(): PartialConfig {
     // (could log a warning in verbose mode)
   }
 
+  const fallback = process.env[ENV_KEYS.fallback];
+  if (fallback !== undefined) {
+    if (isValidAacQuality(fallback)) {
+      config.fallback = fallback;
+    }
+    // Silently ignore invalid fallback values from env
+  }
+
   const artwork = process.env[ENV_KEYS.artwork];
   if (artwork !== undefined) {
     // Accept 'true', '1', 'yes' as truthy
@@ -125,6 +144,7 @@ export function loadCliConfig(
   commandOpts?: {
     source?: string;
     quality?: string;
+    fallback?: string;
     artwork?: boolean;
   }
 ): PartialConfig {
@@ -144,6 +164,12 @@ export function loadCliConfig(
     if (commandOpts.quality !== undefined) {
       if (isValidQuality(commandOpts.quality)) {
         config.quality = commandOpts.quality;
+      }
+    }
+
+    if (commandOpts.fallback !== undefined) {
+      if (isValidAacQuality(commandOpts.fallback)) {
+        config.fallback = commandOpts.fallback;
       }
     }
 
@@ -170,6 +196,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.quality !== undefined) {
       merged.quality = config.quality;
+    }
+    if (config.fallback !== undefined) {
+      merged.fallback = config.fallback;
     }
     if (config.artwork !== undefined) {
       merged.artwork = config.artwork;

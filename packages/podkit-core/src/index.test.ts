@@ -2,7 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import {
   VERSION,
   createError,
-  PRESETS,
+  AAC_PRESETS,
+  QUALITY_PRESETS,
   IPOD_ARTWORK_FORMATS,
   EXTERNAL_ARTWORK_NAMES,
   IpodError,
@@ -53,35 +54,51 @@ describe('podkit-core', () => {
     });
   });
 
-  describe('PRESETS constant', () => {
-    it('exports high preset with correct defaults', () => {
-      expect(PRESETS.high).toEqual({
-        name: 'high',
-        codec: 'aac',
-        container: 'm4a',
-        bitrate: 256,
-        sampleRate: 44100,
+  describe('AAC_PRESETS constant', () => {
+    it('exports high preset with VBR mode', () => {
+      expect(AAC_PRESETS.high).toEqual({
+        mode: 'vbr',
+        quality: 5,
+        targetKbps: 256,
       });
     });
 
-    it('exports medium preset with correct defaults', () => {
-      expect(PRESETS.medium).toEqual({
-        name: 'medium',
-        codec: 'aac',
-        container: 'm4a',
-        bitrate: 192,
-        sampleRate: 44100,
+    it('exports medium preset with VBR mode', () => {
+      expect(AAC_PRESETS.medium).toEqual({
+        mode: 'vbr',
+        quality: 4,
+        targetKbps: 192,
       });
     });
 
-    it('exports low preset with correct defaults', () => {
-      expect(PRESETS.low).toEqual({
-        name: 'low',
-        codec: 'aac',
-        container: 'm4a',
-        bitrate: 128,
-        sampleRate: 44100,
+    it('exports low preset with VBR mode', () => {
+      expect(AAC_PRESETS.low).toEqual({
+        mode: 'vbr',
+        quality: 2,
+        targetKbps: 128,
       });
+    });
+
+    it('exports CBR variants', () => {
+      expect(AAC_PRESETS['high-cbr']).toEqual({
+        mode: 'cbr',
+        targetKbps: 256,
+      });
+    });
+  });
+
+  describe('QUALITY_PRESETS constant', () => {
+    it('includes all preset names', () => {
+      expect(QUALITY_PRESETS).toContain('alac');
+      expect(QUALITY_PRESETS).toContain('max');
+      expect(QUALITY_PRESETS).toContain('high');
+      expect(QUALITY_PRESETS).toContain('medium');
+      expect(QUALITY_PRESETS).toContain('low');
+      expect(QUALITY_PRESETS).toContain('high-cbr');
+    });
+
+    it('has correct length', () => {
+      expect(QUALITY_PRESETS.length).toBe(9);
     });
   });
 
