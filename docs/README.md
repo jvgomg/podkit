@@ -22,6 +22,12 @@ If you're new to the project, read in this order:
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development environment setup (macOS, Linux, Windows) |
 | [TESTING.md](TESTING.md) | Testing strategy, conventions, unit vs integration tests |
 
+### Features
+
+| Document | Purpose |
+|----------|---------|
+| [TRANSFORMS.md](TRANSFORMS.md) | Metadata transforms (ftintitle, etc.), pipeline architecture |
+
 ### Research & Reference
 
 | Document | Purpose |

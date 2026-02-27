@@ -1,10 +1,10 @@
 ---
 id: TASK-065
 title: Design "feat. artist" transformation (like beets ftintitle)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-26 14:38'
-updated_date: '2026-02-26 14:38'
+updated_date: '2026-02-27 14:42'
 labels:
   - design
   - feature
@@ -116,9 +116,42 @@ This depends on self-healing sync (detecting config-driven changes).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Beets ftintitle plugin reviewed for patterns and config
-- [ ] #2 Transform interface designed (extensible)
-- [ ] #3 Per-device config structure defined
-- [ ] #4 Diffing integration approach documented
-- [ ] #5 Self-healing behavior on config change defined
+- [x] #1 Beets ftintitle plugin reviewed for patterns and config
+- [x] #2 Transform interface designed (extensible)
+- [x] #3 Per-device config structure defined
+- [x] #4 Diffing integration approach documented
+- [x] #5 Self-healing behavior on config change defined
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Design Complete
+
+Comprehensive design discussion completed for the ftintitle transform feature. Key decisions:
+
+### Architecture
+- **Transform pipeline**: Transforms applied before diffing, creating both original and transformed versions of each track
+- **Dual-key matching**: Differ checks iPod tracks against both original and transformed match keys to handle config changes gracefully
+- **In-place updates**: Use `updateTrack()` to modify metadata without re-adding tracks (preserves play counts, ratings)
+
+### Config Schema
+- Global config now: `[transforms.ftintitle]` with `enabled`, `drop`, `format` options
+- Per-device config later (when TASK-062 complete)
+- Matches beets ftintitle plugin API
+
+### Implementation Approach
+- Port beets ftintitle regex patterns and logic with attribution
+- Handle edge cases: title already has feat, bracket positioning (before Remix/Edit), Various Artists compilations
+- New `toUpdate` category in SyncDiff for transform apply/remove operations
+
+### CLI Output
+- Dry-run shows transform stats: "Apply ftintitle: 145"
+- Shows before/after for transformed tracks
+
+### Documentation
+- Created docs/TRANSFORMS.md documenting the transform system architecture and ftintitle feature
+
+### Next Steps
+- TASK-066 created for implementation
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -72,6 +72,7 @@ Read these documents based on what you're working on:
 | [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
 | [docs/MACOS-IPOD-MOUNTING.md](docs/MACOS-IPOD-MOUNTING.md) | Troubleshooting large iFlash iPods not mounting on macOS |
 | [docs/TESTING.md](docs/TESTING.md) | Understanding testing strategy and conventions |
+| [docs/TRANSFORMS.md](docs/TRANSFORMS.md) | Working on metadata transforms (ftintitle, etc.) |
 | [packages/gpod-testing/README.md](packages/gpod-testing/README.md) | Writing tests that need iPod databases |
 | [packages/e2e-tests/README.md](packages/e2e-tests/README.md) | Writing E2E tests for the CLI |
 
