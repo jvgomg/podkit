@@ -24,6 +24,9 @@ export const Albums = {
 
   /** Test Tones - 3 tracks including one without artwork */
   SYNTHETIC_TESTS: 'synthetic-tests',
+
+  /** Multi-Format - 8 tracks in various formats for testing mixed collections */
+  MULTI_FORMAT: 'multi-format',
 } as const;
 
 export type AlbumDir = (typeof Albums)[keyof typeof Albums];
@@ -99,6 +102,67 @@ export const Tracks = {
     filename: '03-dual-tone.flac',
     hasArtwork: false, // This track intentionally has no artwork
   },
+
+  // Multi-Format (mixed format collection)
+  // Lossless formats
+  WAV_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '01-wav-track.wav',
+    hasArtwork: false,
+    format: 'wav' as const,
+    category: 'lossless' as const,
+  },
+  AIFF_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '02-aiff-track.aiff',
+    hasArtwork: false,
+    format: 'aiff' as const,
+    category: 'lossless' as const,
+  },
+  FLAC_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '03-flac-track.flac',
+    hasArtwork: false,
+    format: 'flac' as const,
+    category: 'lossless' as const,
+  },
+  ALAC_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '04-alac-track.m4a',
+    hasArtwork: false,
+    format: 'm4a' as const,
+    category: 'lossless' as const,
+  },
+  // Compatible lossy formats (will be copied)
+  MP3_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '05-mp3-track.mp3',
+    hasArtwork: false,
+    format: 'mp3' as const,
+    category: 'compatible-lossy' as const,
+  },
+  AAC_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '06-aac-track.m4a',
+    hasArtwork: false,
+    format: 'm4a' as const,
+    category: 'compatible-lossy' as const,
+  },
+  // Incompatible lossy formats (will trigger warning)
+  OGG_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '07-ogg-track.ogg',
+    hasArtwork: false,
+    format: 'ogg' as const,
+    category: 'incompatible-lossy' as const,
+  },
+  OPUS_TRACK: {
+    album: Albums.MULTI_FORMAT,
+    filename: '08-opus-track.opus',
+    hasArtwork: false,
+    format: 'opus' as const,
+    category: 'incompatible-lossy' as const,
+  },
 } as const;
 
 /**
@@ -116,6 +180,11 @@ export function getTrack(
 }
 
 /**
+ * Supported audio file extensions.
+ */
+const AUDIO_EXTENSIONS = ['.flac', '.wav', '.aiff', '.m4a', '.mp3', '.ogg', '.opus', '.aac'];
+
+/**
  * Get all track info for an album.
  */
 export async function getAlbumTracks(album: AlbumDir): Promise<TestTrack[]> {
@@ -131,7 +200,7 @@ export async function getAlbumTracks(album: AlbumDir): Promise<TestTrack[]> {
   }
 
   return files
-    .filter((f) => f.endsWith('.flac'))
+    .filter((f) => AUDIO_EXTENSIONS.some((ext) => f.endsWith(ext)))
     .sort()
     .map((filename) => ({
       path: join(albumDir, filename),
@@ -147,7 +216,8 @@ export async function getAlbumTracks(album: AlbumDir): Promise<TestTrack[]> {
 export async function getAllTracks(): Promise<TestTrack[]> {
   const goldberg = await getAlbumTracks(Albums.GOLDBERG_SELECTIONS);
   const synthetic = await getAlbumTracks(Albums.SYNTHETIC_TESTS);
-  return [...goldberg, ...synthetic];
+  const multiFormat = await getAlbumTracks(Albums.MULTI_FORMAT);
+  return [...goldberg, ...synthetic, ...multiFormat];
 }
 
 /**

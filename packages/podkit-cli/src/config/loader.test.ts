@@ -85,6 +85,55 @@ quality = "invalid"
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid quality value/);
     });
 
+    // Quality preset tests
+    const validPresets = ['alac', 'max', 'max-cbr', 'high', 'high-cbr', 'medium', 'medium-cbr', 'low', 'low-cbr'];
+    for (const preset of validPresets) {
+      it(`accepts quality = "${preset}"`, () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, `quality = "${preset}"`);
+
+        const result = loadConfigFile(configPath);
+        expect(result?.quality).toBe(preset);
+      });
+    }
+
+    // Fallback tests
+    it('parses fallback option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `
+quality = "alac"
+fallback = "high"
+`);
+
+      const result = loadConfigFile(configPath);
+      expect(result?.quality).toBe('alac');
+      expect(result?.fallback).toBe('high');
+    });
+
+    it('throws on alac as fallback (alac is not valid AAC preset)', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `
+quality = "alac"
+fallback = "alac"
+`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid fallback value/);
+    });
+
+    const validFallbacks = ['max', 'max-cbr', 'high', 'high-cbr', 'medium', 'medium-cbr', 'low', 'low-cbr'];
+    for (const fallback of validFallbacks) {
+      it(`accepts fallback = "${fallback}"`, () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(configPath, `
+quality = "alac"
+fallback = "${fallback}"
+`);
+
+        const result = loadConfigFile(configPath);
+        expect(result?.fallback).toBe(fallback);
+      });
+    }
+
     it('handles empty config file', () => {
       const configPath = path.join(tempDir, 'config.toml');
       fs.writeFileSync(configPath, '# Empty config\n');
@@ -185,6 +234,16 @@ device = "/media/iPod Nano"
       const result = loadEnvConfig();
       expect(result.quality).toBeUndefined();
     });
+
+    // All quality presets via env
+    const envPresets = ['alac', 'max', 'max-cbr', 'high', 'high-cbr', 'medium', 'medium-cbr', 'low', 'low-cbr'];
+    for (const preset of envPresets) {
+      it(`reads PODKIT_QUALITY=${preset}`, () => {
+        process.env[ENV_KEYS.quality] = preset;
+        const result = loadEnvConfig();
+        expect(result.quality).toBe(preset);
+      });
+    }
 
     it('reads PODKIT_ARTWORK=true', () => {
       process.env[ENV_KEYS.artwork] = 'true';
@@ -296,6 +355,49 @@ device = "/media/iPod Nano"
       const commandOpts = { quality: 'invalid' };
       const result = loadCliConfig(globalOpts, commandOpts);
       expect(result.quality).toBeUndefined();
+    });
+
+    // All quality presets via CLI
+    const cliPresets = ['alac', 'max', 'max-cbr', 'high', 'high-cbr', 'medium', 'medium-cbr', 'low', 'low-cbr'];
+    for (const preset of cliPresets) {
+      it(`extracts quality = "${preset}" from command options`, () => {
+        const globalOpts: GlobalOptions = {
+          verbose: 0,
+          quiet: false,
+          json: false,
+          color: true,
+        };
+        const commandOpts = { quality: preset };
+        const result = loadCliConfig(globalOpts, commandOpts);
+        expect(result.quality).toBe(preset);
+      });
+    }
+
+    // Fallback option via CLI
+    it('extracts fallback from command options', () => {
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+      };
+      const commandOpts = { quality: 'alac', fallback: 'high' };
+      const result = loadCliConfig(globalOpts, commandOpts);
+      expect(result.quality).toBe('alac');
+      expect(result.fallback).toBe('high');
+    });
+
+    // Invalid fallback via CLI (alac is not valid AAC preset)
+    it('ignores invalid fallback in command options', () => {
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+      };
+      const commandOpts = { fallback: 'invalid' };
+      const result = loadCliConfig(globalOpts, commandOpts);
+      expect(result.fallback).toBeUndefined();
     });
   });
 
