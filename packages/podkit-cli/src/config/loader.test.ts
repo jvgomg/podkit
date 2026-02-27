@@ -431,6 +431,8 @@ device = "/file/device"
         quiet: false,
         json: false,
         color: true,
+        // Use a non-existent config path to avoid loading real user config
+        config: '/nonexistent/path/to/config.toml',
       };
 
       // Should not throw, should use defaults

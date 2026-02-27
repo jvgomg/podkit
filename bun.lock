@@ -17,6 +17,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@podkit/gpod-testing": "workspace:*",
+        "podkit": "workspace:*",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -49,7 +50,6 @@
       },
       "dependencies": {
         "@podkit/core": "workspace:*",
-        "@podkit/libgpod-node": "workspace:*",
         "commander": "^14.0.3",
         "smol-toml": "^1.6.0",
       },

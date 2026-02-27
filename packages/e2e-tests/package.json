@@ -13,7 +13,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@podkit/gpod-testing": "workspace:*"
+    "@podkit/gpod-testing": "workspace:*",
+    "podkit": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"
