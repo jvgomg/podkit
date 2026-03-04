@@ -45,7 +45,7 @@ interface SyncOutput {
     bytesTransferred: number;
     duration: number;
   };
-  warnings?: WarningInfo[];
+  planWarnings?: WarningInfo[];
   error?: string;
 }
 
@@ -110,10 +110,10 @@ describe('mixed format collection sync', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
-        expect(json?.warnings).toBeDefined();
+        expect(json?.planWarnings).toBeDefined();
 
         // Should have a lossy-to-lossy warning
-        const lossyWarning = json?.warnings?.find((w) => w.type === 'lossy-to-lossy');
+        const lossyWarning = json?.planWarnings?.find((w) => w.type === 'lossy-to-lossy');
         expect(lossyWarning).toBeDefined();
         expect(lossyWarning?.trackCount).toBe(2); // OGG and Opus
       });
