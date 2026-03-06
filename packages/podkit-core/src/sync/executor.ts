@@ -15,11 +15,13 @@
  * @module
  */
 
-import { mkdir } from 'node:fs/promises';
+import { mkdir, stat } from 'node:fs/promises';
 import { join, basename, extname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
+
+import { AsyncQueue } from './async-queue.js';
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
@@ -166,6 +168,32 @@ export interface ExecutorDependencies {
   /** FFmpeg transcoder for audio conversion */
   transcoder: FFmpegTranscoder;
 }
+
+/**
+ * A file that has been prepared for transfer to iPod.
+ *
+ * For transcode operations, this contains the path to the transcoded temp file.
+ * For copy operations, this contains the path to the original source file.
+ */
+export interface PreparedFile {
+  /** The sync operation this file is for */
+  operation: Extract<SyncOperation, { type: 'transcode' | 'copy' }>;
+  /** Path to the file to transfer (temp file for transcode, source for copy) */
+  sourcePath: string;
+  /** Whether this is a temp file that should be deleted after transfer */
+  isTemp: boolean;
+  /** Size of the file in bytes */
+  size: number;
+  /** Bitrate for transcoded files (used for database entry) */
+  bitrate?: number;
+  /** Filetype string for database entry */
+  filetype: string;
+  /** Number of retry attempts during prepare phase (0 = first try succeeded) */
+  prepareAttempts?: number;
+}
+
+/** Default pipeline buffer size (number of prepared files to buffer) */
+const PIPELINE_BUFFER_SIZE = 3;
 
 // =============================================================================
 // Helper Functions
@@ -356,10 +384,15 @@ export class DefaultSyncExecutor implements SyncExecutor {
   }
 
   /**
-   * Execute a sync plan
+   * Execute a sync plan using a pipeline architecture.
    *
-   * Yields progress updates for each operation. In dry-run mode,
-   * operations are simulated without making actual changes.
+   * Transcoding and USB transfer happen in parallel:
+   * - Producer: prepares files (transcode to temp, or identify copy source)
+   * - Consumer: transfers files to iPod (USB I/O bound)
+   *
+   * This keeps the USB bus saturated during transcoding.
+   *
+   * In dry-run mode, operations are simulated without making actual changes.
    *
    * Retry behavior:
    * - Transcode failures: retry once (might be transient)
@@ -377,7 +410,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
       signal,
       tempDir = tmpdir(),
       retryConfig = {},
-      artwork = true, // Enable artwork transfer by default
+      artwork = true,
     } = options;
 
     // Clear warnings from previous execution
@@ -391,11 +424,6 @@ export class DefaultSyncExecutor implements SyncExecutor {
 
     const total = plan.operations.length;
     const totalBytes = calculateTotalBytes(plan);
-    let bytesProcessed = 0;
-    let completed = 0;
-    let failed = 0;
-    // Track skipped operations for dry-run mode
-    let _skipped = 0;
 
     // Create temp directory for transcoded files if needed
     const transcodeDir = join(tempDir, `podkit-transcode-${randomUUID()}`);
@@ -405,152 +433,63 @@ export class DefaultSyncExecutor implements SyncExecutor {
     }
 
     try {
-      for (let index = 0; index < plan.operations.length; index++) {
-        const operation = plan.operations[index]!;
-
-        // Check for abort signal
-        if (signal?.aborted) {
-          throw new Error('Sync aborted');
-        }
-
-        // Determine phase based on operation type
-        const phase = getPhaseForOperation(operation);
-
-        // Emit preparing progress
-        yield {
-          phase: 'preparing',
-          operation,
-          index,
-          current: index,
-          total,
-          currentTrack: getOperationDisplayName(operation),
-          bytesProcessed,
-          bytesTotal: totalBytes,
-        };
-
-        if (dryRun) {
-          // Dry-run: simulate the operation
-          yield {
-            phase,
-            operation,
-            index,
-            current: index,
-            total,
-            currentTrack: getOperationDisplayName(operation),
-            bytesProcessed,
-            bytesTotal: totalBytes,
-            skipped: true,
-          };
-          _skipped++;
-        } else {
-          // Execute with retry logic
-          let lastError: Error | undefined;
-          let retryAttempt = 0;
-          let success = false;
-
-          // Determine max retries based on operation type
-          const category = categorizeError(new Error('placeholder'), operation.type);
-          // Override category for known operation types
-          const effectiveCategory =
-            operation.type === 'transcode'
-              ? 'transcode'
-              : operation.type === 'copy'
-                ? 'copy'
-                : category;
-          const maxRetries = getRetriesForCategory(effectiveCategory, mergedRetryConfig);
-
-          while (!success && retryAttempt <= maxRetries) {
-            // Check abort signal before each attempt
-            if (signal?.aborted) {
-              throw new Error('Sync aborted');
-            }
-
-            try {
-              const result = await this.executeOperation(operation, transcodeDir, signal, artwork);
-
-              bytesProcessed += result.bytesTransferred;
-              completed++;
-              success = true;
-
-              yield {
-                phase,
-                operation,
-                index,
-                current: index,
-                total,
-                currentTrack: getOperationDisplayName(operation),
-                bytesProcessed,
-                bytesTotal: totalBytes,
-                retryAttempt: retryAttempt > 0 ? retryAttempt : undefined,
-              };
-            } catch (error) {
-              lastError = error instanceof Error ? error : new Error(String(error));
-              const errorCategory = categorizeError(lastError, operation.type);
-              const retriesForThisError = getRetriesForCategory(errorCategory, mergedRetryConfig);
-
-              // Check if we should retry this specific error
-              if (retryAttempt < retriesForThisError) {
-                retryAttempt++;
-                // Wait before retry
-                if (mergedRetryConfig.retryDelayMs > 0) {
-                  await sleep(mergedRetryConfig.retryDelayMs);
-                }
-                // Continue to next iteration (retry)
-              } else {
-                // No more retries available
-                break;
-              }
-            }
-          }
-
-          // If we exhausted retries and still failed
-          if (!success && lastError) {
-            failed++;
-            const categorizedError = createCategorizedError(
-              lastError,
-              operation,
-              retryAttempt,
-              retryAttempt > 0
-            );
-
-            yield {
-              phase,
-              operation,
-              index,
-              current: index,
-              total,
-              currentTrack: getOperationDisplayName(operation),
-              bytesProcessed,
-              bytesTotal: totalBytes,
-              error: lastError,
-              categorizedError,
-              retryAttempt,
-            };
-
-            if (!continueOnError) {
-              throw lastError;
-            }
-          }
-        }
+      // In dry-run mode, use sequential execution (no actual work to pipeline)
+      if (dryRun) {
+        yield* this.executeDryRun(plan, totalBytes);
+        return;
       }
 
-      // Save database after all operations (unless dry-run)
-      if (!dryRun && (completed > 0 || failed > 0)) {
-        yield {
-          phase: 'updating-db',
-          operation: plan.operations[plan.operations.length - 1]!,
-          index: plan.operations.length - 1,
-          current: plan.operations.length - 1,
-          total,
-          currentTrack: 'Saving iPod database',
-          bytesProcessed,
-          bytesTotal: totalBytes,
-        };
-
-        await this.ipod.save();
+      // Pipeline execution for real sync
+      yield* this.executePipeline(
+        plan,
+        totalBytes,
+        transcodeDir,
+        mergedRetryConfig,
+        continueOnError,
+        artwork,
+        signal
+      );
+    } finally {
+      // Cleanup temp directory
+      if (hasTranscodes && !dryRun) {
+        try {
+          await rm(transcodeDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
       }
+    }
+  }
 
-      // Emit completion
+  /**
+   * Execute sync plan in dry-run mode (sequential, no actual work)
+   */
+  private async *executeDryRun(
+    plan: SyncPlan,
+    totalBytes: number
+  ): AsyncIterable<ExecutorProgress> {
+    const total = plan.operations.length;
+    let bytesProcessed = 0;
+
+    for (let index = 0; index < plan.operations.length; index++) {
+      const operation = plan.operations[index]!;
+      const phase = getPhaseForOperation(operation);
+
+      yield {
+        phase,
+        operation,
+        index,
+        current: index,
+        total,
+        currentTrack: getOperationDisplayName(operation),
+        bytesProcessed,
+        bytesTotal: totalBytes,
+        skipped: true,
+      };
+    }
+
+    // Emit completion
+    if (plan.operations.length > 0) {
       yield {
         phase: 'complete',
         operation: plan.operations[plan.operations.length - 1]!,
@@ -560,13 +499,328 @@ export class DefaultSyncExecutor implements SyncExecutor {
         bytesProcessed,
         bytesTotal: totalBytes,
       };
-    } finally {
-      // Cleanup temp directory
-      if (hasTranscodes && !dryRun) {
+    }
+  }
+
+  /**
+   * Execute sync plan using pipeline architecture.
+   *
+   * Producer prepares files (transcode/copy) and pushes to transfer queue.
+   * Consumer transfers files to iPod and yields progress.
+   * Remove/update-metadata operations execute inline in producer.
+   */
+  private async *executePipeline(
+    plan: SyncPlan,
+    totalBytes: number,
+    transcodeDir: string,
+    retryConfig: Required<RetryConfig>,
+    continueOnError: boolean,
+    artworkEnabled: boolean,
+    signal?: AbortSignal
+  ): AsyncIterable<ExecutorProgress> {
+    const total = plan.operations.length;
+    const transferQueue = new AsyncQueue<PreparedFile>(PIPELINE_BUFFER_SIZE);
+
+    // Shared state between producer and consumer
+    let bytesProcessed = 0;
+    let completed = 0;
+    let failed = 0;
+    let inlineCompleted = 0;
+    let producerError: Error | undefined;
+    let abortRequested = false;
+
+    // Track errors for yielding
+    interface FailedOperation {
+      operation: SyncOperation;
+      error: Error;
+      attempts: number;
+    }
+    const producerFailures: FailedOperation[] = [];
+
+    // Producer: prepare files and handle inline operations
+    const producer = async () => {
+      for (const operation of plan.operations) {
+        // Check for abort
+        if (signal?.aborted || abortRequested) {
+          break;
+        }
+
         try {
-          await rm(transcodeDir, { recursive: true, force: true });
-        } catch {
-          // Ignore cleanup errors
+          if (operation.type === 'transcode') {
+            const result = await this.prepareWithRetry(
+              () => this.prepareTranscode(operation, transcodeDir, signal),
+              operation,
+              retryConfig
+            );
+            if (result.value) {
+              await transferQueue.push(result.value);
+            } else {
+              // Prepare failed after retries
+              producerFailures.push({ operation, error: result.error, attempts: result.attempts });
+              failed++;
+              if (!continueOnError) {
+                producerError = result.error;
+                abortRequested = true;
+                break;
+              }
+            }
+          } else if (operation.type === 'copy') {
+            const result = await this.prepareWithRetry(
+              () => this.prepareCopy(operation),
+              operation,
+              retryConfig
+            );
+            if (result.value) {
+              await transferQueue.push(result.value);
+            } else {
+              producerFailures.push({ operation, error: result.error, attempts: result.attempts });
+              failed++;
+              if (!continueOnError) {
+                producerError = result.error;
+                abortRequested = true;
+                break;
+              }
+            }
+          } else if (operation.type === 'remove') {
+            await this.executeRemove(operation);
+            inlineCompleted++;
+          } else if (operation.type === 'update-metadata') {
+            await this.executeUpdateMetadata(operation);
+            inlineCompleted++;
+          }
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+          producerFailures.push({ operation, error: err, attempts: 0 });
+          failed++;
+          if (!continueOnError) {
+            producerError = err;
+            abortRequested = true;
+            break;
+          }
+        }
+      }
+      transferQueue.close();
+    };
+
+    // Start producer in background
+    const producerPromise = producer();
+
+    // Consumer: transfer files and yield progress
+    for await (const prepared of transferQueue) {
+      // Check for abort - but drain queue on abort (don't waste transcoded files)
+      if (signal?.aborted) {
+        // On abort, still transfer remaining items in queue (drain)
+        // but stop after this batch
+        abortRequested = true;
+      }
+
+      try {
+        const result = await this.transferWithRetry(
+          prepared,
+          artworkEnabled,
+          retryConfig
+        );
+
+        if (result.value) {
+          bytesProcessed += result.value.bytesTransferred;
+          completed++;
+
+          // Total retry attempts = prepare phase + transfer phase
+          const totalRetries = (prepared.prepareAttempts ?? 0) + (result.attempts ?? 0);
+
+          yield {
+            phase: prepared.operation.type === 'transcode' ? 'transcoding' : 'copying',
+            operation: prepared.operation,
+            index: completed + failed + inlineCompleted - 1,
+            current: completed + failed + inlineCompleted,
+            total,
+            currentTrack: getOperationDisplayName(prepared.operation),
+            bytesProcessed,
+            bytesTotal: totalBytes,
+            // Include retry attempt if there were retries
+            ...(totalRetries > 0 ? { retryAttempt: totalRetries } : {}),
+          };
+        } else {
+          // Transfer failed after retries
+          failed++;
+          const categorizedError = createCategorizedError(
+            result.error,
+            prepared.operation,
+            result.attempts,
+            result.attempts > 0
+          );
+
+          yield {
+            phase: prepared.operation.type === 'transcode' ? 'transcoding' : 'copying',
+            operation: prepared.operation,
+            index: completed + failed + inlineCompleted - 1,
+            current: completed + failed + inlineCompleted,
+            total,
+            currentTrack: getOperationDisplayName(prepared.operation),
+            bytesProcessed,
+            bytesTotal: totalBytes,
+            error: result.error,
+            categorizedError,
+          };
+
+          if (!continueOnError) {
+            abortRequested = true;
+            // Don't process remaining items
+            await this.cleanupPreparedFile(prepared);
+            break;
+          }
+        }
+      } finally {
+        await this.cleanupPreparedFile(prepared);
+      }
+    }
+
+    // Yield progress for producer failures (errors that happened during prepare phase)
+    for (const failure of producerFailures) {
+      const categorizedError = createCategorizedError(
+        failure.error,
+        failure.operation,
+        failure.attempts,
+        failure.attempts > 0
+      );
+
+      yield {
+        phase: failure.operation.type === 'transcode' ? 'transcoding' : 'copying',
+        operation: failure.operation,
+        index: completed + failed + inlineCompleted - 1,
+        current: completed + failed + inlineCompleted,
+        total,
+        currentTrack: getOperationDisplayName(failure.operation),
+        bytesProcessed,
+        bytesTotal: totalBytes,
+        error: failure.error,
+        categorizedError,
+      };
+    }
+
+    // Wait for producer to finish
+    await producerPromise;
+
+    // If aborted, throw after draining (we finished transferring queued files)
+    if (signal?.aborted) {
+      throw new Error('Sync aborted');
+    }
+
+    // If producer had a fatal error, throw it
+    if (producerError && !continueOnError) {
+      throw producerError;
+    }
+
+    // Save database after all operations
+    if (completed > 0 || inlineCompleted > 0 || failed > 0) {
+      const lastOp = plan.operations[plan.operations.length - 1]!;
+      yield {
+        phase: 'updating-db',
+        operation: lastOp,
+        index: plan.operations.length - 1,
+        current: plan.operations.length - 1,
+        total,
+        currentTrack: 'Saving iPod database',
+        bytesProcessed,
+        bytesTotal: totalBytes,
+      };
+
+      await this.ipod.save();
+    }
+
+    // Emit completion
+    if (plan.operations.length > 0) {
+      yield {
+        phase: 'complete',
+        operation: plan.operations[plan.operations.length - 1]!,
+        index: plan.operations.length - 1,
+        current: plan.operations.length - 1,
+        total,
+        bytesProcessed,
+        bytesTotal: totalBytes,
+      };
+    }
+  }
+
+  /**
+   * Result from a retry operation, including success/failure and error details
+   */
+  private prepareWithRetryResult<T>(
+    value: T | null,
+    error: Error | undefined,
+    attempts: number
+  ): { value: T; error?: undefined } | { value: null; error: Error; attempts: number } {
+    if (value !== null) {
+      return { value };
+    }
+    return { value: null, error: error!, attempts };
+  }
+
+  /**
+   * Prepare a file with retry logic
+   */
+  private async prepareWithRetry(
+    prepareFn: () => Promise<PreparedFile>,
+    operation: SyncOperation,
+    retryConfig: Required<RetryConfig>
+  ): Promise<{ value: PreparedFile; error?: undefined; attempts: number } | { value: null; error: Error; attempts: number }> {
+    const maxRetries =
+      operation.type === 'transcode'
+        ? retryConfig.transcodeRetries
+        : retryConfig.copyRetries;
+
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await prepareFn();
+        // Include prepare attempts in the result
+        result.prepareAttempts = attempt;
+        return { value: result, attempts: attempt };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        if (attempt < maxRetries && retryConfig.retryDelayMs > 0) {
+          await sleep(retryConfig.retryDelayMs);
+        }
+      }
+    }
+
+    return { value: null, error: lastError!, attempts: maxRetries };
+  }
+
+  /**
+   * Transfer a prepared file with retry logic.
+   *
+   * Respects error categorization - database errors are not retried.
+   */
+  private async transferWithRetry(
+    prepared: PreparedFile,
+    artworkEnabled: boolean,
+    retryConfig: Required<RetryConfig>
+  ): Promise<{ value: { bytesTransferred: number }; error?: undefined; attempts?: number } | { value: null; error: Error; attempts: number }> {
+    let lastError: Error | undefined;
+    let attempt = 0;
+
+    while (true) {
+      try {
+        const result = await this.transferToIpod(prepared, artworkEnabled);
+        return { value: result, attempts: attempt };
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Check if this error type should be retried
+        const errorCategory = categorizeError(lastError, prepared.operation.type);
+        const maxRetries = getRetriesForCategory(errorCategory, retryConfig);
+
+        if (attempt < maxRetries) {
+          attempt++;
+          if (retryConfig.retryDelayMs > 0) {
+            await sleep(retryConfig.retryDelayMs);
+          }
+          // Continue to retry
+        } else {
+          // No more retries
+          return { value: null, error: lastError, attempts: attempt };
         }
       }
     }
@@ -810,6 +1064,137 @@ export class DefaultSyncExecutor implements SyncExecutor {
 
     // No bytes transferred for metadata-only updates
     return { bytesTransferred: 0 };
+  }
+
+  // ===========================================================================
+  // Pipeline Methods (prepare/transfer separation)
+  // ===========================================================================
+
+  /**
+   * Prepare a transcode operation by transcoding to a temp file.
+   *
+   * This is the CPU-bound part of the operation that can run in parallel
+   * with USB transfers.
+   */
+  private async prepareTranscode(
+    operation: Extract<SyncOperation, { type: 'transcode' }>,
+    transcodeDir: string,
+    signal?: AbortSignal
+  ): Promise<PreparedFile> {
+    const { source, preset: presetRef } = operation;
+
+    // Generate output path in temp directory
+    const baseName = basename(source.filePath, extname(source.filePath));
+    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}.m4a`);
+
+    // Transcode the file
+    const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
+      signal,
+    });
+
+    return {
+      operation,
+      sourcePath: outputPath,
+      isTemp: true,
+      size: result.size,
+      bitrate: result.bitrate,
+      filetype: 'AAC audio file',
+    };
+  }
+
+  /**
+   * Prepare a copy operation by getting file info.
+   *
+   * Copy operations don't need CPU work, so this just returns the source info.
+   */
+  private async prepareCopy(
+    operation: Extract<SyncOperation, { type: 'copy' }>
+  ): Promise<PreparedFile> {
+    const { source } = operation;
+
+    // Get actual file size, or estimate if file doesn't exist (e.g., in tests)
+    let size: number;
+    try {
+      const stats = await stat(source.filePath);
+      size = stats.size;
+    } catch {
+      // Estimate size based on duration (fallback for tests or missing files)
+      size = source.duration
+        ? Math.round((source.duration / 1000) * 32000) // ~256 kbps estimate
+        : 5000000; // default 5MB
+    }
+
+    // Determine filetype based on extension
+    const ext = extname(source.filePath).toLowerCase();
+    let filetype: string;
+    switch (ext) {
+      case '.mp3':
+        filetype = 'MPEG audio file';
+        break;
+      case '.m4a':
+      case '.aac':
+        filetype = 'AAC audio file';
+        break;
+      case '.alac':
+        filetype = 'Apple Lossless audio file';
+        break;
+      default:
+        filetype = 'Audio file';
+    }
+
+    return {
+      operation,
+      sourcePath: source.filePath,
+      isTemp: false,
+      size,
+      filetype,
+    };
+  }
+
+  /**
+   * Transfer a prepared file to the iPod.
+   *
+   * This is the USB I/O-bound part of the operation. It adds the track to
+   * the database, copies the file, and transfers artwork.
+   */
+  private async transferToIpod(
+    prepared: PreparedFile,
+    artworkEnabled: boolean
+  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
+    const { operation, sourcePath, size, bitrate, filetype } = prepared;
+    const source = operation.source;
+
+    // Add track to iPod database
+    const trackInput: TrackInput = {
+      ...toTrackInput(source),
+      filetype,
+      ...(bitrate !== undefined && { bitrate }),
+    };
+
+    const track = this.ipod.addTrack(trackInput);
+
+    // Copy file to iPod
+    track.copyFile(sourcePath);
+
+    // Extract and transfer artwork if enabled
+    if (artworkEnabled) {
+      await this.transferArtwork(track, source.filePath);
+    }
+
+    return { bytesTransferred: size, track };
+  }
+
+  /**
+   * Clean up a prepared file if it's a temp file.
+   */
+  private async cleanupPreparedFile(prepared: PreparedFile): Promise<void> {
+    if (prepared.isTemp) {
+      try {
+        await rm(prepared.sourcePath, { force: true });
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
   }
 }
 

@@ -403,7 +403,9 @@ describe('DefaultSyncExecutor - progress reporting', () => {
     deps = createDependencies(mockDb, mockTranscoder);
   });
 
-  it('emits preparing phase before each operation', async () => {
+  it('emits progress when operations complete (pipeline model)', async () => {
+    // Note: In the pipeline model, progress is emitted when transfers complete,
+    // not when operations start. This replaces the old "preparing" phase behavior.
     const executor = new DefaultSyncExecutor(deps);
     const plan: SyncPlan = {
       operations: [
@@ -422,9 +424,10 @@ describe('DefaultSyncExecutor - progress reporting', () => {
       progress.push(p);
     }
 
-    // First progress should be preparing
-    const preparingEvents = progress.filter((p) => p.phase === 'preparing');
-    expect(preparingEvents.length).toBeGreaterThan(0);
+    // Should have progress events (copying, updating-db, complete)
+    expect(progress.length).toBeGreaterThan(0);
+    const copyingEvents = progress.filter((p) => p.phase === 'copying');
+    expect(copyingEvents.length).toBe(1);
   });
 
   it('includes operation index and total', async () => {

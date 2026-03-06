@@ -104,16 +104,15 @@ const DEFAULT_CONFIG: TranscodeConfig = { quality: 'high' };
 const M4A_CONTAINER_OVERHEAD_BYTES = 2048;
 
 /**
- * Estimated transcoding speed (duration processed per second)
- * Used for time estimation. Conservative estimate for older hardware.
+ * Estimated USB transfer speed in bytes per second.
+ *
+ * With pipeline execution, transcoding happens in parallel with USB transfer,
+ * so USB transfer is the bottleneck. Based on observed real-world throughput
+ * of ~2.7 MB/s during E2E testing with USB 2.0 iPod.
+ *
+ * Using 2.5 MB/s as a conservative estimate.
  */
-const TRANSCODE_SPEED_RATIO = 10; // 10x realtime
-
-/**
- * Estimated copy speed in bytes per second
- * Conservative estimate for USB 2.0 iPod transfer
- */
-const COPY_SPEED_BYTES_PER_SEC = 5 * 1024 * 1024; // 5 MB/s
+const USB_TRANSFER_SPEED_BYTES_PER_SEC = 2.5 * 1024 * 1024; // 2.5 MB/s observed
 
 // =============================================================================
 // Helper Functions
@@ -291,24 +290,16 @@ export function estimateCopySize(track: CollectionTrack): number {
 }
 
 /**
- * Estimate time to transcode a track
+ * Estimate time to transfer a file to iPod.
  *
- * @param durationMs - Track duration in milliseconds
- * @returns Estimated transcode time in seconds
- */
-function estimateTranscodeTime(durationMs: number): number {
-  // Transcode at TRANSCODE_SPEED_RATIO times realtime
-  return (durationMs / 1000) / TRANSCODE_SPEED_RATIO;
-}
-
-/**
- * Estimate time to copy a file
+ * With pipeline execution, transcoding happens in parallel with USB transfer,
+ * so all time estimates are based on USB transfer speed (the bottleneck).
  *
  * @param sizeBytes - File size in bytes
- * @returns Estimated copy time in seconds
+ * @returns Estimated transfer time in seconds
  */
-function estimateCopyTime(sizeBytes: number): number {
-  return sizeBytes / COPY_SPEED_BYTES_PER_SEC;
+function estimateTransferTime(sizeBytes: number): number {
+  return sizeBytes / USB_TRANSFER_SPEED_BYTES_PER_SEC;
 }
 
 // =============================================================================
@@ -496,17 +487,21 @@ export function calculateOperationSize(
 }
 
 /**
- * Calculate estimated time for an operation
+ * Calculate estimated time for an operation.
+ *
+ * With pipeline execution, all file transfer operations are bottlenecked
+ * by USB transfer speed. Transcoding happens in parallel and is hidden.
  */
 function calculateOperationTime(operation: SyncOperation): number {
   switch (operation.type) {
     case 'transcode': {
-      const duration = operation.source.duration ?? 240000;
-      return estimateTranscodeTime(duration);
+      // Time is based on transfer size, not transcode time (pipeline hides transcode)
+      const size = calculateOperationSize(operation);
+      return estimateTransferTime(size);
     }
     case 'copy': {
-      const size = estimateCopySize(operation.source);
-      return estimateCopyTime(size);
+      const size = calculateOperationSize(operation);
+      return estimateTransferTime(size);
     }
     case 'remove':
       // Removal is nearly instant (database update)

@@ -778,7 +778,9 @@ describe('createPlan - size calculation', () => {
 });
 
 describe('createPlan - time calculation', () => {
-  it('estimates time for transcode operations', () => {
+  it('estimates time for transcode operations based on transfer speed', () => {
+    // With pipeline execution, time is based on USB transfer speed (2.5 MB/s),
+    // not transcode time (since transcode happens in parallel)
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [
@@ -790,9 +792,10 @@ describe('createPlan - time calculation', () => {
 
     const plan = createPlan(diff);
 
-    // 3 minutes at 10x realtime = 18 seconds
-    expect(plan.estimatedTime).toBeGreaterThan(15);
-    expect(plan.estimatedTime).toBeLessThan(25);
+    // 3 minutes at 256kbps AAC = ~5.6 MB, transfer at 2.5 MB/s = ~2.2 seconds
+    // Allow some tolerance for estimation variance
+    expect(plan.estimatedTime).toBeGreaterThan(1);
+    expect(plan.estimatedTime).toBeLessThan(5);
   });
 
   it('estimates time for copy operations', () => {
