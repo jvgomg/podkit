@@ -261,9 +261,36 @@ export type { VideoProbeConfig } from './video/probe.js';
 export { probeVideo, VideoProbeError } from './video/probe.js';
 
 // Video compatibility
+export type { PassthroughResult } from './video/compatibility.js';
 export {
   checkVideoCompatibility,
   isCompatibleVideoCodec,
   isCompatibleAudioCodec,
   isCompatibleContainer,
+  canPassthrough,
 } from './video/compatibility.js';
+
+// Video quality capping
+export type { TargetDimensions, QualityWarning } from './video/quality.js';
+export {
+  calculateTargetDimensions,
+  calculateEffectiveSettings,
+  generateQualityWarnings,
+  isSourceQualityLimiting,
+  getQualityLimitationSummary,
+} from './video/quality.js';
+
+// Video transcoding
+export type {
+  VideoTranscodeProgress,
+  VideoTranscodeOptions,
+  HardwareAccelerationInfo,
+} from './video/transcode.js';
+export {
+  transcodeVideo,
+  buildVideoTranscodeArgs,
+  buildScaleFilter,
+  parseVideoProgress,
+  detectHardwareAcceleration,
+  VideoTranscodeError,
+} from './video/transcode.js';

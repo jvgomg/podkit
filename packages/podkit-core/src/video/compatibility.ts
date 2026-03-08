@@ -13,6 +13,23 @@ import type {
 } from './types.js';
 
 // =============================================================================
+// Types
+// =============================================================================
+
+/**
+ * Result of passthrough check
+ *
+ * Provides a simple boolean for passthrough decision along with reasons
+ * explaining why passthrough is not possible (if applicable).
+ */
+export interface PassthroughResult {
+  /** Whether the video can be copied directly without transcoding */
+  canPassthrough: boolean;
+  /** Reasons why passthrough is not possible (empty if canPassthrough is true) */
+  reasons: string[];
+}
+
+// =============================================================================
 // Constants
 // =============================================================================
 
@@ -293,5 +310,43 @@ export function checkVideoCompatibility(
     status,
     reasons,
     warnings,
+  };
+}
+
+// =============================================================================
+// Passthrough Helper
+// =============================================================================
+
+/**
+ * Check if a video can be passed through directly without transcoding
+ *
+ * This is a convenience wrapper around checkVideoCompatibility() that provides
+ * a simpler API focused on the passthrough decision.
+ *
+ * @param analysis - Analysis result from probing the video file
+ * @param device - Target device profile
+ * @returns PassthroughResult with canPassthrough boolean and reasons
+ *
+ * @example
+ * ```typescript
+ * const analysis = await probeVideo('/path/to/video.mp4');
+ * const device = getDeviceProfile('ipod-classic');
+ * const result = canPassthrough(analysis, device);
+ *
+ * if (result.canPassthrough) {
+ *   // Copy directly
+ * } else {
+ *   console.log('Needs transcoding:', result.reasons.join(', '));
+ * }
+ * ```
+ */
+export function canPassthrough(
+  analysis: VideoSourceAnalysis,
+  device: VideoDeviceProfile
+): PassthroughResult {
+  const compatibility = checkVideoCompatibility(analysis, device);
+  return {
+    canPassthrough: compatibility.status === 'passthrough',
+    reasons: compatibility.reasons,
   };
 }

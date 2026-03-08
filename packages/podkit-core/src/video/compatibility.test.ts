@@ -4,8 +4,9 @@ import {
   isCompatibleVideoCodec,
   isCompatibleAudioCodec,
   isCompatibleContainer,
+  canPassthrough,
 } from './compatibility.js';
-import type { VideoSourceAnalysis, VideoDeviceProfile } from './types.js';
+import type { VideoSourceAnalysis } from './types.js';
 import { DEVICE_PROFILES } from './types.js';
 
 // =============================================================================
@@ -618,5 +619,117 @@ describe('video/compatibility edge cases', () => {
     expect(result.reasons).toContain('Incompatible container: webm');
     expect(result.reasons).toContain('Incompatible video codec: vp9');
     expect(result.reasons).toContain('Incompatible audio codec: opus');
+  });
+});
+
+// =============================================================================
+// canPassthrough Tests
+// =============================================================================
+
+describe('video/compatibility canPassthrough', () => {
+  it('returns true for compatible H.264 MP4 files', () => {
+    const analysis = createAnalysis({
+      container: 'mp4',
+      videoCodec: 'h264',
+      videoProfile: 'main',
+      width: 640,
+      height: 480,
+      videoBitrate: 2000,
+      frameRate: 24,
+      audioCodec: 'aac',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(true);
+    expect(result.reasons).toHaveLength(0);
+  });
+
+  it('returns false with reasons for MKV container', () => {
+    const analysis = createAnalysis({
+      container: 'mkv',
+      videoCodec: 'h264',
+      videoProfile: 'main',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons).toContain('Incompatible container: mkv');
+  });
+
+  it('returns false with reasons for incompatible audio', () => {
+    const analysis = createAnalysis({
+      container: 'mp4',
+      videoCodec: 'h264',
+      videoProfile: 'main',
+      audioCodec: 'ac3',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons).toContain('Incompatible audio codec: ac3');
+  });
+
+  it('returns false with reasons for over-resolution', () => {
+    const analysis = createAnalysis({
+      container: 'mp4',
+      videoCodec: 'h264',
+      videoProfile: 'main',
+      width: 1920,
+      height: 1080,
+      audioCodec: 'aac',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons).toContain(
+      'Resolution exceeds device maximum: 1920x1080 > 640x480'
+    );
+  });
+
+  it('returns false with reasons for unsupported codec', () => {
+    const analysis = createAnalysis({
+      container: 'mp4',
+      videoCodec: 'hevc',
+      videoProfile: null,
+      audioCodec: 'aac',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons).toContain('Incompatible video codec: hevc');
+  });
+
+  it('returns false for unsupported files (no video stream)', () => {
+    const analysis = createAnalysis({
+      hasVideoStream: false,
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons).toContain('No video stream');
+  });
+
+  it('returns false with multiple reasons when multiple issues exist', () => {
+    const analysis = createAnalysis({
+      container: 'mkv',
+      videoCodec: 'hevc',
+      width: 1920,
+      height: 1080,
+      audioCodec: 'ac3',
+    });
+
+    const result = canPassthrough(analysis, ipodClassic);
+
+    expect(result.canPassthrough).toBe(false);
+    expect(result.reasons.length).toBeGreaterThan(1);
+    expect(result.reasons).toContain('Incompatible container: mkv');
+    expect(result.reasons).toContain('Incompatible video codec: hevc');
+    expect(result.reasons).toContain('Incompatible audio codec: ac3');
   });
 });
