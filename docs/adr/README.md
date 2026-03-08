@@ -13,6 +13,7 @@ This directory contains Architecture Decision Records (ADRs) documenting signifi
 | [ADR-005](ADR-005-test-ipod-environment.md) | iPod Test Environment | Accepted | 2026-02-22 |
 | [ADR-006](ADR-006-video-transcoding.md) | Video Transcoding | Proposed | 2026-03-XX |
 | [ADR-007](ADR-007-subsonic-collection-source.md) | Subsonic Collection Source | Proposed | 2026-03-08 |
+| [ADR-008](ADR-008-multi-collection-device-config.md) | Multi-Collection and Multi-Device Configuration | Proposed | 2026-03-08 |
 
 ## ADR Workflow
 
