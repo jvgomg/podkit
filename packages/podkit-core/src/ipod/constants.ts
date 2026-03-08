@@ -25,6 +25,8 @@
 export const MediaType = {
   /** Standard audio track (music) */
   Audio: 0x0001,
+  /** Movie */
+  Movie: 0x0002,
   /** Podcast episode */
   Podcast: 0x0004,
   /** Audiobook */

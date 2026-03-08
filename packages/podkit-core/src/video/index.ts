@@ -96,3 +96,16 @@ export {
   detectHardwareAcceleration,
   VideoTranscodeError,
 } from './transcode.js';
+
+// Video directory adapter
+export type {
+  CollectionVideo,
+  VideoScanProgress,
+  VideoScanWarning,
+  VideoFilter,
+  VideoDirectoryAdapterConfig,
+} from './directory-adapter.js';
+export {
+  VideoDirectoryAdapter,
+  createVideoDirectoryAdapter,
+} from './directory-adapter.js';

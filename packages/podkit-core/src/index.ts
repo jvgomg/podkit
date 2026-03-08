@@ -310,3 +310,63 @@ export {
   detectHardwareAcceleration,
   VideoTranscodeError,
 } from './video/transcode.js';
+
+// Video directory adapter
+export type {
+  CollectionVideo,
+  VideoScanProgress,
+  VideoScanWarning,
+  VideoFilter,
+  VideoDirectoryAdapterConfig,
+} from './video/directory-adapter.js';
+export {
+  VideoDirectoryAdapter,
+  createVideoDirectoryAdapter,
+} from './video/directory-adapter.js';
+
+// Video sync differ
+export type {
+  IPodVideo,
+  MatchedVideo,
+  VideoSyncDiff,
+  VideoDiffOptions,
+  VideoSyncDiffer,
+} from './sync/video-differ.js';
+export {
+  diffVideos,
+  generateVideoMatchKey,
+  createVideoDiffer,
+  DefaultVideoSyncDiffer,
+} from './sync/video-differ.js';
+
+// Video sync planner
+export type {
+  VideoSyncPlanOptions,
+  VideoSyncPlan,
+  VideoSyncWarning,
+  VideoSyncWarningType,
+  VideoPlanSummary,
+  VideoSyncPlanner,
+} from './sync/video-planner.js';
+export {
+  planVideoSync,
+  willVideoPlanFit,
+  getVideoPlanSummary,
+  createVideoPlanner,
+  DefaultVideoSyncPlanner,
+  estimateTranscodedSize as estimateVideoTranscodedSize,
+  estimatePassthroughSize,
+} from './sync/video-planner.js';
+
+// Video sync executor
+export type {
+  VideoExecutorProgress,
+  VideoExecuteOptions,
+  VideoExecuteResult,
+  VideoSyncExecutor,
+} from './sync/video-executor.js';
+export {
+  PlaceholderVideoSyncExecutor,
+  getVideoOperationDisplayName,
+  createVideoExecutor,
+} from './sync/video-executor.js';

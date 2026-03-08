@@ -7,6 +7,10 @@ describe('MediaType', () => {
       expect(MediaType.Audio).toBe(0x0001);
     });
 
+    it('Movie is 0x0002', () => {
+      expect(MediaType.Movie).toBe(0x0002);
+    });
+
     it('Podcast is 0x0004', () => {
       expect(MediaType.Podcast).toBe(0x0004);
     });
@@ -29,11 +33,12 @@ describe('MediaType', () => {
       // TypeScript should prevent mutation, verify object is frozen-like
       const keys = Object.keys(MediaType);
       expect(keys).toContain('Audio');
+      expect(keys).toContain('Movie');
       expect(keys).toContain('Podcast');
       expect(keys).toContain('Audiobook');
       expect(keys).toContain('MusicVideo');
       expect(keys).toContain('TVShow');
-      expect(keys.length).toBe(5);
+      expect(keys.length).toBe(6);
     });
 
     it('all values are unique', () => {
@@ -47,12 +52,14 @@ describe('MediaType', () => {
     it('accepts valid media type values', () => {
       // This is a compile-time check, but we can verify the values work
       const audio: MediaTypeValue = MediaType.Audio;
+      const movie: MediaTypeValue = MediaType.Movie;
       const podcast: MediaTypeValue = MediaType.Podcast;
       const audiobook: MediaTypeValue = MediaType.Audiobook;
       const musicVideo: MediaTypeValue = MediaType.MusicVideo;
       const tvShow: MediaTypeValue = MediaType.TVShow;
 
       expect(audio).toBe(0x0001);
+      expect(movie).toBe(0x0002);
       expect(podcast).toBe(0x0004);
       expect(audiobook).toBe(0x0008);
       expect(musicVideo).toBe(0x0020);

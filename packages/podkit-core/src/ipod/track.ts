@@ -134,6 +134,14 @@ export class IpodTrackImpl implements IPodTrack {
   readonly hasFile: boolean;
   readonly compilation: boolean;
 
+  // Video-specific fields
+  readonly tvShow?: string;
+  readonly tvEpisode?: string;
+  readonly sortTvShow?: string;
+  readonly seasonNumber?: number;
+  readonly episodeNumber?: number;
+  readonly movieFlag?: boolean;
+
   /**
    * Creates a new IpodTrackImpl instance.
    *
@@ -189,6 +197,14 @@ export class IpodTrackImpl implements IPodTrack {
     this.hasArtwork = data.hasArtwork ?? false;
     this.hasFile = data.transferred ?? false;
     this.compilation = data.compilation ?? false;
+
+    // Video-specific fields
+    this.tvShow = data.tvShow ?? undefined;
+    this.tvEpisode = data.tvEpisode ?? undefined;
+    this.sortTvShow = data.sortTvShow ?? undefined;
+    this.seasonNumber = data.seasonNumber || undefined;
+    this.episodeNumber = data.episodeNumber || undefined;
+    this.movieFlag = data.movieFlag ?? undefined;
   }
 
   /**
