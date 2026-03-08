@@ -483,6 +483,19 @@ export function calculateOperationSize(
     case 'update-metadata':
       // These operations free space rather than consume it
       return 0;
+    case 'video-transcode': {
+      // Estimate video size based on duration and bitrate
+      const duration = operation.source.duration ?? 3600; // default 1 hour in seconds
+      const videoBitrate = operation.settings.targetVideoBitrate ?? 1500; // kbps
+      const audioBitrate = operation.settings.targetAudioBitrate ?? 128; // kbps
+      const totalBitrate = videoBitrate + audioBitrate; // kbps
+      return Math.round((duration * totalBitrate * 1000) / 8); // bytes
+    }
+    case 'video-copy': {
+      // For passthrough, estimate based on source duration and typical bitrate
+      const duration = operation.source.duration ?? 3600;
+      return Math.round((duration * 2000 * 1000) / 8); // ~2 Mbps estimate
+    }
   }
 }
 
@@ -509,6 +522,17 @@ function calculateOperationTime(operation: SyncOperation): number {
     case 'update-metadata':
       // Metadata update is instant
       return 0.01;
+    case 'video-transcode': {
+      // Video transcoding is slow - estimate based on duration
+      const duration = operation.source.duration ?? 3600;
+      // Assume ~0.5x realtime for video transcoding + transfer
+      return duration * 2;
+    }
+    case 'video-copy': {
+      // Video copy is transfer-limited
+      const size = calculateOperationSize(operation);
+      return estimateTransferTime(size);
+    }
   }
 }
 

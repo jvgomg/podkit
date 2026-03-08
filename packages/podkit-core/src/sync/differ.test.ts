@@ -1072,11 +1072,11 @@ describe('computeDiff - edge cases', () => {
 
 describe('computeDiff - transform-aware matching', () => {
   const TRANSFORMS_ENABLED = {
-    ftintitle: { enabled: true, drop: false, format: 'feat. {}' },
+    ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
   };
 
   const TRANSFORMS_DISABLED = {
-    ftintitle: { enabled: false, drop: false, format: 'feat. {}' },
+    ftintitle: { enabled: false, drop: false, format: 'feat. {}', ignore: [] },
   };
 
   // -------------------------------------------------------------------------
@@ -1405,7 +1405,7 @@ describe('computeDiff - transform-aware matching', () => {
   describe('format string variations', () => {
     it('respects custom format string in transform config', () => {
       const customTransforms = {
-        ftintitle: { enabled: true, drop: false, format: 'with {}' },
+        ftintitle: { enabled: true, drop: false, format: 'with {}', ignore: [] },
       };
 
       const collectionTracks = [
@@ -1429,7 +1429,7 @@ describe('computeDiff - transform-aware matching', () => {
 
     it('handles drop mode (featured info removed, not moved to title)', () => {
       const dropTransforms = {
-        ftintitle: { enabled: true, drop: true, format: 'feat. {}' },
+        ftintitle: { enabled: true, drop: true, format: 'feat. {}', ignore: [] },
       };
 
       const collectionTracks = [

@@ -80,6 +80,14 @@ Napi::Value DatabaseWrapper::AddTrack(const Napi::CallbackInfo& info) {
 
     track->compilation = GetOptionalBool(input, "compilation", false) ? 1 : 0;
 
+    // Video-specific fields
+    track->tvshow = GetOptionalString(input, "tvShow");
+    track->tvepisode = GetOptionalString(input, "tvEpisode");
+    track->sort_tvshow = GetOptionalString(input, "sortTvShow");
+    track->season_nr = GetOptionalInt32(input, "seasonNumber", 0);
+    track->episode_nr = GetOptionalInt32(input, "episodeNumber", 0);
+    track->movie_flag = GetOptionalBool(input, "movieFlag", false) ? 1 : 0;
+
     // Set time added to now
     track->time_added = time(nullptr);
     track->time_modified = track->time_added;
@@ -320,6 +328,29 @@ Napi::Value DatabaseWrapper::UpdateTrack(const Napi::CallbackInfo& info) {
     if (fields.Has("filetype")) {
         g_free(track->filetype);
         track->filetype = ValueToGchar(fields.Get("filetype"));
+    }
+
+    // Video-specific fields
+    if (fields.Has("tvShow")) {
+        g_free(track->tvshow);
+        track->tvshow = ValueToGchar(fields.Get("tvShow"));
+    }
+    if (fields.Has("tvEpisode")) {
+        g_free(track->tvepisode);
+        track->tvepisode = ValueToGchar(fields.Get("tvEpisode"));
+    }
+    if (fields.Has("sortTvShow")) {
+        g_free(track->sort_tvshow);
+        track->sort_tvshow = ValueToGchar(fields.Get("sortTvShow"));
+    }
+    if (fields.Has("seasonNumber") && fields.Get("seasonNumber").IsNumber()) {
+        track->season_nr = fields.Get("seasonNumber").As<Napi::Number>().Int32Value();
+    }
+    if (fields.Has("episodeNumber") && fields.Get("episodeNumber").IsNumber()) {
+        track->episode_nr = fields.Get("episodeNumber").As<Napi::Number>().Int32Value();
+    }
+    if (fields.Has("movieFlag") && fields.Get("movieFlag").IsBoolean()) {
+        track->movie_flag = fields.Get("movieFlag").As<Napi::Boolean>().Value() ? 1 : 0;
     }
 
     // Update time_modified to now

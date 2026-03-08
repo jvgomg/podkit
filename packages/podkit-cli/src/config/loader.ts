@@ -19,8 +19,9 @@ import type {
   ConfigFileContent,
   GlobalOptions,
   TransformsConfig,
+  VideoQualityPreset,
 } from './types.js';
-import { QUALITY_PRESETS, AAC_QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG } from './types.js';
+import { QUALITY_PRESETS, AAC_QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 
 /**
@@ -35,6 +36,13 @@ function isValidQuality(value: string): value is QualityPreset {
  */
 function isValidAacQuality(value: string): value is AacQualityPreset {
   return AAC_QUALITY_PRESETS.includes(value as AacQualityPreset);
+}
+
+/**
+ * Check if a string is a valid video quality preset
+ */
+function isValidVideoQuality(value: string): value is VideoQualityPreset {
+  return VIDEO_QUALITY_PRESETS.includes(value as VideoQualityPreset);
 }
 
 /**
@@ -91,6 +99,26 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
   // Parse transforms section
   if (parsed.transforms !== undefined) {
     config.transforms = parseTransformsConfig(parsed.transforms);
+  }
+
+  // Parse video settings
+  // Support both flat (videoSource, videoQuality) and nested ([video]) formats
+  const videoSource = parsed.videoSource ?? parsed.video?.source;
+  const videoQuality = parsed.videoQuality ?? parsed.video?.quality;
+
+  if (typeof videoSource === 'string') {
+    config.videoSource = videoSource;
+  }
+
+  if (typeof videoQuality === 'string') {
+    if (isValidVideoQuality(videoQuality)) {
+      config.videoQuality = videoQuality;
+    } else {
+      throw new Error(
+        `Invalid videoQuality value "${videoQuality}" in config. ` +
+          `Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`
+      );
+    }
   }
 
   return config;
@@ -293,6 +321,13 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
           ...config.transforms.ftintitle,
         },
       };
+    }
+    // Video settings
+    if (config.videoSource !== undefined) {
+      merged.videoSource = config.videoSource;
+    }
+    if (config.videoQuality !== undefined) {
+      merged.videoQuality = config.videoQuality;
     }
   }
 

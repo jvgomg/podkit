@@ -151,6 +151,7 @@ These decisions are documented in ADRs — read the full ADR for context:
 | Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/adr/ADR-003-transcoding.md) |
 | Collection sources | Adapter pattern | [ADR-004](docs/adr/ADR-004-collection-sources.md) |
 | Test environments | gpod-tool + temp directories | [ADR-005](docs/adr/ADR-005-test-ipod-environment.md) |
+| Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](docs/adr/ADR-006-video-transcoding.md) |
 
 ## Testing
 

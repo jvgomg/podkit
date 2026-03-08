@@ -229,6 +229,9 @@ export function getOperationDisplayName(operation: SyncOperation): string {
       return `${operation.track.artist} - ${operation.track.title}`;
     case 'update-metadata':
       return `${operation.track.artist} - ${operation.track.title}`;
+    case 'video-transcode':
+    case 'video-copy':
+      return operation.source.title;
   }
 }
 
@@ -863,6 +866,10 @@ export class DefaultSyncExecutor implements SyncExecutor {
         return this.executeRemove(operation);
       case 'update-metadata':
         return this.executeUpdateMetadata(operation);
+      case 'video-transcode':
+      case 'video-copy':
+        // Video operations are handled by VideoSyncExecutor, not this executor
+        throw new Error(`Video operations (${operation.type}) should be handled by VideoSyncExecutor`);
     }
   }
 
@@ -1230,6 +1237,10 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
       return 'removing';
     case 'update-metadata':
       return 'updating-metadata';
+    case 'video-transcode':
+      return 'video-transcoding';
+    case 'video-copy':
+      return 'video-copying';
   }
 }
 

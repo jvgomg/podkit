@@ -297,6 +297,20 @@ export interface Track {
   // Transfer status
   /** Whether track file has been transferred to iPod */
   transferred: boolean;
+
+  // Video-specific fields
+  /** TV show name (for TV show episodes) */
+  tvShow: string | null;
+  /** Episode name/title (for TV show episodes, as a string) */
+  tvEpisode: string | null;
+  /** TV show name for sorting */
+  sortTvShow: string | null;
+  /** Season number (0 if not set) */
+  seasonNumber: number;
+  /** Episode number (0 if not set) */
+  episodeNumber: number;
+  /** Whether this track is a movie */
+  movieFlag: boolean;
 }
 
 /**
@@ -357,6 +371,20 @@ export interface TrackInput {
   playCount?: number;
   /** Skip count - for updates */
   skipCount?: number;
+
+  // Video-specific fields
+  /** TV show name (for TV show episodes) */
+  tvShow?: string;
+  /** Episode name/title (for TV show episodes, as a string) */
+  tvEpisode?: string;
+  /** TV show name for sorting (optional, defaults to tvShow) */
+  sortTvShow?: string;
+  /** Season number (1-99) */
+  seasonNumber?: number;
+  /** Episode number (1-999) */
+  episodeNumber?: number;
+  /** Whether this track is a movie */
+  movieFlag?: boolean;
 }
 
 /**

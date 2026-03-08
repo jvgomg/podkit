@@ -55,23 +55,76 @@ podkit supports syncing movies and TV shows to iPod devices. This document cover
 | Max Video Bitrate | ~768 kbps |
 | Audio | AAC-LC, up to 128 kbps |
 
-## Configuration
+## CLI Usage
 
-### CLI Usage
+Video sync uses a dedicated `video-sync` command, separate from audio sync.
+
+### Basic Usage
 
 ```bash
 # Sync videos with default quality (high)
-podkit sync --source ~/Movies --device /Volumes/iPod --type video
+podkit video-sync --source ~/Movies
 
 # Specify quality preset
-podkit sync --source ~/Movies --quality medium --type video
+podkit video-sync --source ~/Movies --quality medium
 
-# Dry run to check compatibility
-podkit sync --source ~/Movies --dry-run --type video
+# Dry run to preview changes
+podkit video-sync --source ~/Movies --dry-run
 
-# TV shows from a series folder
-podkit sync --source "~/TV Shows/Breaking Bad" --type tvshow
+# Remove videos from iPod that are no longer in source
+podkit video-sync --source ~/Movies --delete
 ```
+
+### Command Options
+
+| Option | Description |
+|--------|-------------|
+| `-s, --source <path>` | Video source directory |
+| `-n, --dry-run` | Preview changes without syncing |
+| `--quality <preset>` | Quality preset: max, high, medium, low (default: high) |
+| `--no-artwork` | Skip poster artwork transfer |
+| `--delete` | Remove videos from iPod not in source |
+
+### Examples
+
+**Sync movies from a folder:**
+```bash
+podkit video-sync --source ~/Movies
+```
+
+**Preview what would be synced (dry run):**
+```bash
+podkit video-sync --source ~/Movies --dry-run
+```
+
+**Sync with lower quality to save space:**
+```bash
+podkit video-sync --source ~/Movies --quality low
+```
+
+**Sync TV shows:**
+```bash
+podkit video-sync --source "~/TV Shows/Breaking Bad"
+```
+
+**Full sync with orphan removal:**
+```bash
+podkit video-sync --source ~/Videos --delete
+```
+
+### Global Options
+
+The `video-sync` command supports all global podkit options:
+
+| Option | Description |
+|--------|-------------|
+| `--device <path>` | iPod mount point (auto-detect if omitted) |
+| `-v, --verbose` | Increase verbosity (stackable: -v, -vv, -vvv) |
+| `-q, --quiet` | Suppress non-essential output |
+| `--json` | Output in JSON format |
+| `--config <path>` | Config file path |
+
+## Configuration
 
 ### Config File
 
@@ -128,42 +181,60 @@ If a video is already iPod-compatible, podkit copies it directly:
 
 **Compatible criteria:**
 - H.264 video (Baseline or Main profile)
-- Resolution ≤ device maximum
-- Bitrate ≤ device maximum
+- Resolution <= device maximum
+- Bitrate <= device maximum
 - AAC audio
 - MP4/M4V container
 
 ```bash
 # Dry run shows which files will passthrough
-podkit sync --source ~/Videos --dry-run --type video
+podkit video-sync --source ~/Videos --dry-run
 
-# Output:
-# ✓ Movie.m4v - compatible (passthrough)
-# → Movie.mkv - will transcode (MKV → M4V)
-# ⚠ LowRes.avi - will transcode (low quality source)
+# Output shows operations with type:
+#   + [transcode    ] Movie.mkv
+#   + [passthrough  ] Compatible.m4v
+#   - [remove       ] OldVideo.m4v
 ```
 
 ## Validation and Dry Run
 
 ### Early Compatibility Check
 
-During `--dry-run`, podkit validates all files and reports:
+During `--dry-run`, podkit validates all files and reports a sync plan:
 
-| Status | Meaning |
-|--------|---------|
-| ✓ Compatible | Already iPod-ready, will copy |
-| → Transcodable | Will be transcoded successfully |
-| ⚠ Warning | Transcodable with caveats (low quality, etc.) |
-| ✗ Unsupported | Cannot be processed |
+```
+=== Video Sync Plan (Dry Run) ===
+
+Source: /Users/you/Movies
+Device: /Volumes/iPod
+Quality: high
+
+Collection:
+  Total videos: 42
+    - Movies: 35
+    - TV Shows: 7
+
+Changes:
+  Videos to add: 5
+    - Transcode: 4
+    - Passthrough: 1
+  Already synced: 37
+
+Estimates:
+  Size: 2.3 GB
+  Time: ~45m 30s
+  Available space: 48.2 GB
+```
 
 ### Warning Types
 
+podkit detects and reports quality warnings:
+
 | Warning | Meaning |
 |---------|---------|
-| Low quality source | Source quality below target preset |
-| Unusual aspect ratio | Will be letterboxed/pillarboxed |
-| Long duration | File will be large |
-| Missing metadata | Title/info not detected |
+| Low quality source | Source bitrate/resolution below target preset |
+| Aspect ratio mismatch | Will be letterboxed (16:9 on 4:3) or pillarboxed |
+| Missing metadata | Title or other info not detected from file |
 
 ## Metadata Handling
 
@@ -308,8 +379,8 @@ ffprobe -v error -show_format -show_streams input.mkv
 # Test transcode with verbose output
 ffmpeg -v verbose -i input.mkv -t 60 -c:v libx264 test.m4v
 
-# Check podkit analysis
-podkit info --file input.mkv
+# Run video sync with verbose output
+podkit video-sync --source ~/Movies --dry-run -vvv
 ```
 
 ## Future Enhancements

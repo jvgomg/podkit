@@ -180,6 +180,14 @@ Napi::Object TrackToObject(Napi::Env env, const Itdb_Track* track) {
     // Transfer status
     obj.Set("transferred", Napi::Boolean::New(env, track->transferred));
 
+    // Video-specific fields
+    obj.Set("tvShow", GcharToValue(env, track->tvshow));
+    obj.Set("tvEpisode", GcharToValue(env, track->tvepisode));
+    obj.Set("sortTvShow", GcharToValue(env, track->sort_tvshow));
+    obj.Set("seasonNumber", Napi::Number::New(env, track->season_nr));
+    obj.Set("episodeNumber", Napi::Number::New(env, track->episode_nr));
+    obj.Set("movieFlag", Napi::Boolean::New(env, track->movie_flag != 0));
+
     return obj;
 }
 

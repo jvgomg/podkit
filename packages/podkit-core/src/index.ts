@@ -230,3 +230,143 @@ export {
   insertFeatIntoTitle,
   titleContainsFeat,
 } from './transforms/ftintitle/index.js';
+
+// Video transcoding
+export type {
+  VideoQualityPreset,
+  VideoCodec,
+  VideoProfile,
+  VideoAudioCodec,
+  VideoDeviceProfile,
+  VideoSourceAnalysis,
+  VideoTranscodeSettings,
+  VideoCompatibilityStatus,
+  VideoCompatibility,
+  VideoPresetSettings,
+} from './video/types.js';
+export {
+  VIDEO_QUALITY_PRESETS,
+  DEVICE_PROFILES,
+  VIDEO_PRESET_SETTINGS,
+  isValidVideoQualityPreset,
+  getDeviceProfile,
+  getDefaultDeviceProfile,
+  getDeviceProfileNames,
+  getPresetSettings,
+  getPresetSettingsWithFallback,
+} from './video/types.js';
+
+// Video metadata
+export type {
+  ContentType,
+  VideoMetadata,
+  VideoMetadataBase,
+  MovieMetadata,
+  TVShowMetadata,
+  VideoMetadataAdapter,
+} from './video/metadata.js';
+export {
+  isMovieMetadata,
+  isTVShowMetadata,
+  formatEpisodeId,
+  parseEpisodeId,
+} from './video/metadata.js';
+
+// Video probe
+export type { VideoProbeConfig } from './video/probe.js';
+export { probeVideo, VideoProbeError } from './video/probe.js';
+
+// Video compatibility
+export type { PassthroughResult } from './video/compatibility.js';
+export {
+  checkVideoCompatibility,
+  isCompatibleVideoCodec,
+  isCompatibleAudioCodec,
+  isCompatibleContainer,
+  canPassthrough,
+} from './video/compatibility.js';
+
+// Video quality capping
+export type { TargetDimensions, QualityWarning } from './video/quality.js';
+export {
+  calculateTargetDimensions,
+  calculateEffectiveSettings,
+  generateQualityWarnings,
+  isSourceQualityLimiting,
+  getQualityLimitationSummary,
+} from './video/quality.js';
+
+// Video transcoding
+export type {
+  VideoTranscodeProgress,
+  VideoTranscodeOptions,
+  HardwareAccelerationInfo,
+} from './video/transcode.js';
+export {
+  transcodeVideo,
+  buildVideoTranscodeArgs,
+  buildScaleFilter,
+  parseVideoProgress,
+  detectHardwareAcceleration,
+  VideoTranscodeError,
+} from './video/transcode.js';
+
+// Video directory adapter
+export type {
+  CollectionVideo,
+  VideoScanProgress,
+  VideoScanWarning,
+  VideoFilter,
+  VideoDirectoryAdapterConfig,
+} from './video/directory-adapter.js';
+export {
+  VideoDirectoryAdapter,
+  createVideoDirectoryAdapter,
+} from './video/directory-adapter.js';
+
+// Video sync differ
+export type {
+  IPodVideo,
+  MatchedVideo,
+  VideoSyncDiff,
+  VideoDiffOptions,
+  VideoSyncDiffer,
+} from './sync/video-differ.js';
+export {
+  diffVideos,
+  generateVideoMatchKey,
+  createVideoDiffer,
+  DefaultVideoSyncDiffer,
+} from './sync/video-differ.js';
+
+// Video sync planner
+export type {
+  VideoSyncPlanOptions,
+  VideoSyncPlan,
+  VideoSyncWarning,
+  VideoSyncWarningType,
+  VideoPlanSummary,
+  VideoSyncPlanner,
+} from './sync/video-planner.js';
+export {
+  planVideoSync,
+  willVideoPlanFit,
+  getVideoPlanSummary,
+  createVideoPlanner,
+  DefaultVideoSyncPlanner,
+  estimateTranscodedSize as estimateVideoTranscodedSize,
+  estimatePassthroughSize,
+} from './sync/video-planner.js';
+
+// Video sync executor
+export type {
+  VideoExecutorProgress,
+  VideoExecuteOptions,
+  VideoExecuteResult,
+  VideoSyncExecutor,
+} from './sync/video-executor.js';
+export {
+  PlaceholderVideoSyncExecutor,
+  getVideoOperationDisplayName,
+  createVideoExecutor,
+} from './sync/video-executor.js';

@@ -83,6 +83,20 @@ export interface TrackInput {
   playCount?: number;
   /** Number of times the track has been skipped */
   skipCount?: number;
+
+  // Video-specific fields
+  /** TV show name (for TV show episodes) */
+  tvShow?: string;
+  /** Episode name/title (for TV show episodes, as a string) */
+  tvEpisode?: string;
+  /** TV show name for sorting (optional, defaults to tvShow) */
+  sortTvShow?: string;
+  /** Season number (1-99) */
+  seasonNumber?: number;
+  /** Episode number (1-999) */
+  episodeNumber?: number;
+  /** Whether this track is a movie */
+  movieFlag?: boolean;
 }
 
 /**
@@ -142,6 +156,20 @@ export interface TrackFields {
   playCount?: number;
   /** Skip count */
   skipCount?: number;
+
+  // Video-specific fields
+  /** TV show name (for TV show episodes) */
+  tvShow?: string;
+  /** Episode name/title (for TV show episodes, as a string) */
+  tvEpisode?: string;
+  /** TV show name for sorting (optional, defaults to tvShow) */
+  sortTvShow?: string;
+  /** Season number (1-99) */
+  seasonNumber?: number;
+  /** Episode number (1-999) */
+  episodeNumber?: number;
+  /** Whether this track is a movie */
+  movieFlag?: boolean;
 }
 
 /**
@@ -249,6 +277,20 @@ export interface IPodTrack {
   readonly hasFile: boolean;
   /** Whether the track is part of a compilation album */
   readonly compilation: boolean;
+
+  // Video-specific fields
+  /** TV show name (for TV show episodes) */
+  readonly tvShow?: string;
+  /** Episode name/title (for TV show episodes, as a string) */
+  readonly tvEpisode?: string;
+  /** TV show name for sorting */
+  readonly sortTvShow?: string;
+  /** Season number (0 if not set) */
+  readonly seasonNumber?: number;
+  /** Episode number (0 if not set) */
+  readonly episodeNumber?: number;
+  /** Whether this track is a movie */
+  readonly movieFlag?: boolean;
 
   // Operations
 

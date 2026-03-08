@@ -53,6 +53,13 @@ function createMockTrack(overrides: Partial<Track> = {}): Track {
     hasArtwork: true,
     compilation: false,
     transferred: true,
+    // Video fields
+    tvShow: null,
+    tvEpisode: null,
+    sortTvShow: null,
+    seasonNumber: 0,
+    episodeNumber: 0,
+    movieFlag: false,
     ...overrides,
   };
 }

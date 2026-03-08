@@ -23,8 +23,9 @@ export type {
   GlobalOptions,
   ConfigFileContent,
   TransformsConfig,
+  VideoQualityPreset,
 } from './types.js';
-export { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
+export { DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
 
 // Defaults
 export { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_PREFIX, ENV_KEYS } from './defaults.js';

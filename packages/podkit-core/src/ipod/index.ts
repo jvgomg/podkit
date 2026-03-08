@@ -61,3 +61,13 @@ export type { IpodDatabaseInternal } from './track.js';
 
 export { IpodPlaylistImpl } from './playlist.js';
 export type { PlaylistDatabaseInternal } from './playlist.js';
+
+// Video utilities
+export {
+  createVideoTrackInput,
+  createMovieTrackInput,
+  createTVShowTrackInput,
+  isVideoMediaType,
+  getVideoTypeName,
+} from './video.js';
+export type { CreateVideoTrackOptions } from './video.js';

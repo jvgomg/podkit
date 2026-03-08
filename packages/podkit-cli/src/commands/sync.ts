@@ -121,7 +121,7 @@ interface SyncOutput {
     estimatedTime: number;
   };
   operations?: Array<{
-    type: 'transcode' | 'copy' | 'remove' | 'update-metadata';
+    type: 'transcode' | 'copy' | 'remove' | 'update-metadata' | 'video-transcode' | 'video-copy';
     track: string;
     status?: 'pending' | 'completed' | 'failed' | 'skipped';
     error?: string;

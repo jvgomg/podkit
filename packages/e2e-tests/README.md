@@ -62,13 +62,15 @@ src/
 ├── helpers/           # Test utilities
 │   ├── cli-runner.ts  # Spawn CLI process, capture output
 │   ├── fixtures.ts    # Path to test/fixtures/audio
+│   ├── video-fixtures.ts  # Path to test/fixtures/video
 │   └── preflight.ts   # Pre-flight checks for real iPod
 │
 ├── commands/          # Per-command tests
 │   ├── init.e2e.test.ts
 │   ├── status.e2e.test.ts
 │   ├── list.e2e.test.ts
-│   └── sync.e2e.test.ts
+│   ├── sync.e2e.test.ts
+│   └── video-sync.e2e.test.ts
 │
 └── workflows/         # Multi-step workflow tests
     ├── fresh-sync.e2e.test.ts
@@ -166,6 +168,7 @@ IPOD_MOUNT=/Volumes/iPod bun run preflight  # Include real iPod checks
 | `status` | Device info, JSON output, error handling |
 | `list` | Table/JSON/CSV formats, field selection, from iPod vs source |
 | `sync` | Dry-run, actual sync, quality presets, errors |
+| `video-sync` | Dry-run video analysis, movie/TV show categorization, quality presets, device video support |
 
 ### Workflow Tests
 
@@ -188,3 +191,52 @@ IPOD_MOUNT=/Volumes/iPod bun run preflight  # Include real iPod checks
 - Uses `@podkit/gpod-testing` to create temporary iPod directories
 - Automatically cleaned up after each test
 - Safe to run in CI environments
+
+## Video Fixtures
+
+Video E2E tests use pre-built video files from `test/fixtures/video/`:
+
+| File | Purpose |
+|------|---------|
+| `compatible-h264.mp4` | iPod-compatible (640x480 H.264, AAC) - passthrough |
+| `low-quality.mp4` | Low quality but compatible - passthrough |
+| `high-res-h264.mkv` | 1080p H.264 - needs resolution downscale + remux |
+| `incompatible-vp9.webm` | VP9 codec - needs full transcode |
+| `movie-with-metadata.mp4` | Movie with embedded metadata (title, director) |
+| `tvshow-episode.mp4` | TV show with S01E01 metadata |
+
+### Using Video Fixtures in Tests
+
+```typescript
+import {
+  withVideoSourceDir,
+  getVideo,
+  Videos,
+  areVideoFixturesAvailable,
+} from '../helpers/video-fixtures';
+
+it('analyzes video collection', async () => {
+  if (!await areVideoFixturesAvailable()) {
+    console.log('Skipping: video fixtures not available');
+    return;
+  }
+
+  await withVideoSourceDir(async (sourceDir) => {
+    // sourceDir contains copies of video fixtures
+    const result = await runCli(['video-sync', '--source', sourceDir, ...]);
+    expect(result.exitCode).toBe(0);
+  });
+  // Cleanup happens automatically
+});
+
+// Use specific videos
+await withVideoSourceDir(async (sourceDir) => {
+  // ...
+}, [getVideo(Videos.COMPATIBLE_H264), getVideo(Videos.MOVIE_WITH_METADATA)]);
+```
+
+### Video Test Considerations
+
+- Full video transcoding is slow - focus on dry-run tests
+- Dummy iPods may not have video support enabled
+- Tests gracefully skip when device doesn't support video

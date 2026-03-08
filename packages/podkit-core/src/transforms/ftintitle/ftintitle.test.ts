@@ -471,7 +471,7 @@ describe('ftintitleTransform', () => {
   describe('enabled state', () => {
     it('transforms track when enabled', () => {
       const track = createTrack('Artist A feat. Artist B', 'Song Name');
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}' };
+      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
 
       const result = ftintitleTransform.apply(track, config);
 
@@ -483,7 +483,7 @@ describe('ftintitleTransform', () => {
 
     it('returns same object when no change needed', () => {
       const track = createTrack('Artist A', 'Song Name');
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}' };
+      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
 
       const result = ftintitleTransform.apply(track, config);
 
@@ -497,7 +497,7 @@ describe('ftintitleTransform', () => {
         album: 'Test Album',
         albumArtist: 'Artist A',
       };
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}' };
+      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
 
       const result = ftintitleTransform.apply(track, config);
 

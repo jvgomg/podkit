@@ -8,6 +8,7 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { syncCommand } from './commands/sync.js';
+import { videoSyncCommand } from './commands/video-sync.js';
 import { statusCommand } from './commands/status.js';
 import { listCommand } from './commands/list.js';
 import { resetCommand } from './commands/reset.js';
@@ -68,6 +69,7 @@ program.hook('preAction', (thisCommand, actionCommand) => {
 // Register commands
 program.addCommand(initCommand);
 program.addCommand(syncCommand);
+program.addCommand(videoSyncCommand);
 program.addCommand(statusCommand);
 program.addCommand(listCommand);
 program.addCommand(resetCommand);

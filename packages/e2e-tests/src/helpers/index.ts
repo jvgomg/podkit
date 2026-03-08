@@ -31,3 +31,25 @@ export {
   printResults,
   type CheckResult,
 } from './preflight';
+
+export {
+  getVideoFixturesDir,
+  getVideoPath,
+  getVideo,
+  getAllVideos,
+  getVideosByCategory,
+  getTranscodeVideos,
+  getPassthroughVideos,
+  getMovies,
+  getTVShows,
+  areVideoFixturesAvailable,
+  createVideoSourceDir,
+  createOrganizedVideoSourceDir,
+  cleanupVideoSourceDir,
+  withVideoSourceDir,
+  withOrganizedVideoSourceDir,
+  Videos,
+  VideoCategories,
+  type TestVideo,
+  type VideoCategory,
+} from './video-fixtures';

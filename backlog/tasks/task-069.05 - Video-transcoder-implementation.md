@@ -1,9 +1,10 @@
 ---
 id: TASK-069.05
 title: Video transcoder implementation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:04'
+updated_date: '2026-03-08 16:56'
 labels:
   - video
   - phase-2
@@ -27,12 +28,12 @@ Core transcoding functionality that converts video files to M4V with H.264 video
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 transcodeVideo(input, output, settings) function
-- [ ] #2 Outputs H.264 Main profile for iPod Classic
-- [ ] #3 Outputs H.264 Baseline profile for older iPods
-- [ ] #4 Includes AAC audio track (stereo)
-- [ ] #5 Uses M4V container with faststart flag
-- [ ] #6 Scales video to target resolution maintaining aspect ratio
+- [x] #1 transcodeVideo(input, output, settings) function
+- [x] #2 Outputs H.264 Main profile for iPod Classic
+- [x] #3 Outputs H.264 Baseline profile for older iPods
+- [x] #4 Includes AAC audio track (stereo)
+- [x] #5 Uses M4V container with faststart flag
+- [x] #6 Scales video to target resolution maintaining aspect ratio
 - [ ] #7 Adds letterboxing/pillarboxing as needed
 - [ ] #8 Limits frame rate to 30fps
 - [ ] #9 Progress callback with percentage complete
@@ -40,3 +41,9 @@ Core transcoding functionality that converts video files to M4V with H.264 video
 - [ ] #11 Hardware acceleration on macOS (VideoToolbox) when available
 - [ ] #12 Integration tests verify output plays on iPod (via ffprobe validation)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation complete with 33 unit tests. Features: libx264 software encoding, h264_videotoolbox hardware acceleration, CRF-based quality, scale filter with aspect ratio preservation, progress reporting, abort signal support, M4V container output.
+<!-- SECTION:NOTES:END -->

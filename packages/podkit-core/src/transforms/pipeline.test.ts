@@ -28,7 +28,7 @@ describe('applyTransforms', () => {
     it('returns original track unchanged', () => {
       const track = createTrack('Artist A feat. Artist B', 'Song Name');
       const config: TransformsConfig = {
-        ftintitle: { enabled: false, drop: false, format: 'feat. {}' },
+        ftintitle: { enabled: false, drop: false, format: 'feat. {}', ignore: [] },
       };
 
       const result = applyTransforms(track, config);
@@ -51,7 +51,7 @@ describe('applyTransforms', () => {
 
   describe('with ftintitle enabled', () => {
     const enabledConfig: TransformsConfig = {
-      ftintitle: { enabled: true, drop: false, format: 'feat. {}' },
+      ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
     };
 
     it('transforms track with featuring info', () => {
@@ -85,7 +85,7 @@ describe('applyTransforms', () => {
 
   describe('with drop mode', () => {
     const dropConfig: TransformsConfig = {
-      ftintitle: { enabled: true, drop: true, format: 'feat. {}' },
+      ftintitle: { enabled: true, drop: true, format: 'feat. {}', ignore: [] },
     };
 
     it('drops featuring info without adding to title', () => {
@@ -115,7 +115,7 @@ describe('applyTransforms', () => {
       };
 
       const config: TransformsConfig = {
-        ftintitle: { enabled: true, drop: false, format: 'feat. {}' },
+        ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
       };
 
       const result = applyTransforms(track, config);
@@ -134,7 +134,7 @@ describe('applyTransforms', () => {
 describe('hasEnabledTransforms', () => {
   it('returns false when no transforms enabled', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: false, drop: false, format: 'feat. {}' },
+      ftintitle: { enabled: false, drop: false, format: 'feat. {}', ignore: [] },
     };
 
     expect(hasEnabledTransforms(config)).toBe(false);
@@ -142,7 +142,7 @@ describe('hasEnabledTransforms', () => {
 
   it('returns true when ftintitle enabled', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: true, drop: false, format: 'feat. {}' },
+      ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
     };
 
     expect(hasEnabledTransforms(config)).toBe(true);
@@ -160,7 +160,7 @@ describe('hasEnabledTransforms', () => {
 describe('getEnabledTransformsSummary', () => {
   it('returns empty array when no transforms enabled', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: false, drop: false, format: 'feat. {}' },
+      ftintitle: { enabled: false, drop: false, format: 'feat. {}', ignore: [] },
     };
 
     const summary = getEnabledTransformsSummary(config);
@@ -170,7 +170,7 @@ describe('getEnabledTransformsSummary', () => {
 
   it('returns ftintitle summary when enabled', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: true, drop: false, format: 'feat. {}' },
+      ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
     };
 
     const summary = getEnabledTransformsSummary(config);
@@ -183,7 +183,7 @@ describe('getEnabledTransformsSummary', () => {
 
   it('describes drop mode', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: true, drop: true, format: 'feat. {}' },
+      ftintitle: { enabled: true, drop: true, format: 'feat. {}', ignore: [] },
     };
 
     const summary = getEnabledTransformsSummary(config);
@@ -194,7 +194,7 @@ describe('getEnabledTransformsSummary', () => {
 
   it('shows custom format in description', () => {
     const config: TransformsConfig = {
-      ftintitle: { enabled: true, drop: false, format: 'with {}' },
+      ftintitle: { enabled: true, drop: false, format: 'with {}', ignore: [] },
     };
 
     const summary = getEnabledTransformsSummary(config);

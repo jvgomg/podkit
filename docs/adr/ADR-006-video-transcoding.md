@@ -2,7 +2,24 @@
 
 ## Status
 
-**Proposed** (2026-03-08)
+**Accepted** (2026-03-08)
+
+## Implementation Notes
+
+The video sync feature was implemented as proposed with the following details:
+
+- **CLI command:** Implemented as `podkit video-sync` (separate command, not a `--type` flag on `sync`)
+- **Quality presets:** Implemented exactly as specified (max/high/medium/low)
+- **Device profiles:** iPod Classic, iPod Video 5G, and iPod Nano 3G-5G supported
+- **Source quality capping:** Implemented to prevent upscaling low-quality content
+- **Hardware acceleration:** VideoToolbox on macOS supported
+- **Metadata adapter:** EmbeddedMetadataAdapter implemented using ffprobe
+- **Passthrough detection:** Compatible files (H.264/AAC in M4V) are copied without transcoding
+
+**Current limitations (as of initial implementation):**
+- Full sync execution requires iPod database video support (libgpod video track support)
+- Currently only dry-run mode is fully functional
+- Plex, NFO, and TMDB adapters planned for future releases
 
 ## Context
 

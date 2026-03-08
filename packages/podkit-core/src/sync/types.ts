@@ -9,6 +9,8 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
 import type { QualityPreset, TranscodeConfig } from '../transcode/types.js';
+import type { CollectionVideo } from '../video/directory-adapter.js';
+import type { VideoTranscodeSettings } from '../video/types.js';
 
 // Re-export for use within sync module
 export type { IPodTrack };
@@ -149,6 +151,15 @@ export type SyncOperation =
       type: 'update-metadata';
       track: IPodTrack;
       metadata: Partial<TrackMetadata>;
+    }
+  | {
+      type: 'video-transcode';
+      source: CollectionVideo;
+      settings: VideoTranscodeSettings;
+    }
+  | {
+      type: 'video-copy';
+      source: CollectionVideo;
     };
 
 /**
@@ -183,7 +194,16 @@ export interface ExecuteOptions {
  * Progress update during sync execution
  */
 export interface SyncProgress {
-  phase: 'preparing' | 'transcoding' | 'copying' | 'removing' | 'updating-metadata' | 'updating-db' | 'complete';
+  phase:
+    | 'preparing'
+    | 'transcoding'
+    | 'copying'
+    | 'removing'
+    | 'updating-metadata'
+    | 'video-transcoding'
+    | 'video-copying'
+    | 'updating-db'
+    | 'complete';
   current: number;
   total: number;
   currentTrack?: string;

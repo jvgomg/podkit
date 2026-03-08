@@ -1,9 +1,10 @@
 ---
 id: TASK-069.04
 title: Video probe with ffprobe
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:04'
+updated_date: '2026-03-08 16:49'
 labels:
   - video
   - phase-1
@@ -26,13 +27,19 @@ Extends the existing FFmpeg integration pattern used for audio.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 probeVideo(filePath) function returns VideoSourceAnalysis
-- [ ] #2 Extracts video codec, profile, level
-- [ ] #3 Extracts resolution (width x height)
-- [ ] #4 Extracts video bitrate
-- [ ] #5 Extracts audio codec and bitrate
-- [ ] #6 Extracts duration
-- [ ] #7 Extracts container format
-- [ ] #8 Handles missing/corrupt files gracefully with clear errors
+- [x] #1 probeVideo(filePath) function returns VideoSourceAnalysis
+- [x] #2 Extracts video codec, profile, level
+- [x] #3 Extracts resolution (width x height)
+- [x] #4 Extracts video bitrate
+- [x] #5 Extracts audio codec and bitrate
+- [x] #6 Extracts duration
+- [x] #7 Extracts container format
+- [x] #8 Handles missing/corrupt files gracefully with clear errors
 - [ ] #9 Integration tests with video fixtures
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented probeVideo() using ffprobe with dependency injection for testing. 22 unit tests pass. Note: AC#9 (integration tests with fixtures) will be verified in TASK-069.16 E2E tests.
+<!-- SECTION:NOTES:END -->

@@ -3,11 +3,11 @@
  */
 
 // Import quality preset types from core
-export type { QualityPreset, AacQualityPreset, TransformsConfig } from '@podkit/core';
-export { QUALITY_PRESETS, AAC_QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG } from '@podkit/core';
+export type { QualityPreset, AacQualityPreset, TransformsConfig, VideoQualityPreset } from '@podkit/core';
+export { QUALITY_PRESETS, AAC_QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from '@podkit/core';
 
 // Import type for local use
-import type { QualityPreset, AacQualityPreset, TransformsConfig } from '@podkit/core';
+import type { QualityPreset, AacQualityPreset, TransformsConfig, VideoQualityPreset } from '@podkit/core';
 
 /**
  * Configuration that can be set via config file, env vars, or CLI
@@ -28,6 +28,12 @@ export interface PodkitConfig {
   artwork: boolean;
   /** Transform configuration */
   transforms: TransformsConfig;
+
+  // Video settings
+  /** Source directory for video collection */
+  videoSource?: string;
+  /** Video transcoding quality preset */
+  videoQuality?: VideoQualityPreset;
 }
 
 /**
@@ -67,6 +73,10 @@ export type PartialConfig = Partial<PodkitConfig>;
  * enabled = true
  * drop = false
  * format = "feat. {}"
+ *
+ * [video]
+ * source = "/path/to/videos"
+ * quality = "high"
  * ```
  */
 export interface ConfigFileContent {
@@ -82,5 +92,13 @@ export interface ConfigFileContent {
       format?: string;
       ignore?: string[];
     };
+  };
+  // Video settings
+  videoSource?: string;
+  videoQuality?: string;
+  // Alternative nested structure
+  video?: {
+    source?: string;
+    quality?: string;
   };
 }

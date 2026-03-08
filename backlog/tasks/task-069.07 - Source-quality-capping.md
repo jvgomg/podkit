@@ -1,9 +1,10 @@
 ---
 id: TASK-069.07
 title: Source quality capping
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:04'
+updated_date: '2026-03-08 16:56'
 labels:
   - video
   - phase-2
@@ -24,11 +25,17 @@ Formula: effective = min(preset_target, source_actual)
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 calculateEffectiveSettings(source, preset, device) function
-- [ ] #2 Video bitrate capped at source bitrate
-- [ ] #3 Resolution capped at source resolution
-- [ ] #4 Aspect ratio preserved when downscaling
+- [x] #1 calculateEffectiveSettings(source, preset, device) function
+- [x] #2 Video bitrate capped at source bitrate
+- [x] #3 Resolution capped at source resolution
+- [x] #4 Aspect ratio preserved when downscaling
 - [ ] #5 Low quality sources produce appropriately sized outputs
 - [ ] #6 Warning generated when source limits output quality
 - [ ] #7 Unit tests for various source/preset combinations
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implementation complete with 47 unit tests. Features: calculateEffectiveSettings(), calculateTargetDimensions(), generateQualityWarnings(), isSourceQualityLimiting(), getQualityLimitationSummary().
+<!-- SECTION:NOTES:END -->
