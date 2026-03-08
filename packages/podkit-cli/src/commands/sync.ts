@@ -847,6 +847,17 @@ export const syncCommand = new Command('sync')
           }
           if (diff.conflicts.length > 0) {
             console.log(`  Metadata conflicts: ${formatNumber(diff.conflicts.length)}`);
+            if (globalOpts.verbose) {
+              for (const conflict of diff.conflicts) {
+                const track = conflict.collection;
+                console.log(`    - ${track.artist} - ${track.title}`);
+                for (const field of conflict.conflicts) {
+                  const sourceValue = track[field as keyof typeof track] ?? '(empty)';
+                  const ipodValue = conflict.ipod[field as keyof typeof conflict.ipod] ?? '(empty)';
+                  console.log(`        ${field}: "${sourceValue}" vs "${ipodValue}"`);
+                }
+              }
+            }
           }
           console.log('');
 

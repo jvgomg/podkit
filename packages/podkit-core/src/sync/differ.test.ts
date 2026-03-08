@@ -564,6 +564,21 @@ describe('computeDiff - conflict detection', () => {
     expect(diff.existing).toHaveLength(1);
   });
 
+  it('handles empty string vs undefined as equivalent', () => {
+    const collectionTracks = [
+      createCollectionTrack('Artist', 'Song', 'Album', { genre: '' }),
+    ];
+
+    const ipodTracks = [
+      createIPodTrack('Artist', 'Song', 'Album', { genre: undefined }),
+    ];
+
+    const diff = computeDiff(collectionTracks, ipodTracks);
+
+    expect(diff.conflicts).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+  });
+
   it('detects conflict when one has value and other is undefined', () => {
     const collectionTracks = [
       createCollectionTrack('Artist', 'Song', 'Album', { genre: 'Rock' }),

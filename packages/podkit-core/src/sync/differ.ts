@@ -58,25 +58,26 @@ const CONFLICT_FIELDS: (keyof TrackMetadata)[] = [
 ];
 
 /**
- * Check if a value is null or undefined
+ * Check if a value represents "no value" (null, undefined, or empty string)
+ * All these are treated as equivalent for metadata comparison.
  */
-function isNullish(value: unknown): value is null | undefined {
-  return value === null || value === undefined;
+function isEmpty(value: unknown): boolean {
+  return value === null || value === undefined || value === '';
 }
 
 /**
- * Check if two values are different (handling undefined)
+ * Check if two values are different (handling undefined/null/empty)
  */
 function valuesDiffer(
   collectionValue: unknown,
   ipodValue: unknown
 ): boolean {
-  // Both undefined/null -> no difference
-  if (isNullish(collectionValue) && isNullish(ipodValue)) {
+  // Both empty -> no difference
+  if (isEmpty(collectionValue) && isEmpty(ipodValue)) {
     return false;
   }
-  // One undefined, one not -> difference
-  if (isNullish(collectionValue) || isNullish(ipodValue)) {
+  // One empty, one not -> difference
+  if (isEmpty(collectionValue) || isEmpty(ipodValue)) {
     return true;
   }
   // For strings, do case-insensitive comparison (metadata often has case variations)
