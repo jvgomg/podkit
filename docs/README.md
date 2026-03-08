@@ -27,6 +27,7 @@ If you're new to the project, read in this order:
 | Document | Purpose |
 |----------|---------|
 | [TRANSFORMS.md](TRANSFORMS.md) | Metadata transforms (ftintitle, etc.), pipeline architecture |
+| [VIDEO-TRANSCODING.md](VIDEO-TRANSCODING.md) | Video sync support, quality presets, device profiles |
 
 ### Research & Reference
 
@@ -46,6 +47,7 @@ If you're new to the project, read in this order:
 | [ADR-002](adr/ADR-002-libgpod-binding.md) | libgpod Binding Approach | Proposed |
 | [ADR-003](adr/ADR-003-transcoding.md) | Transcoding Backend | Proposed |
 | [ADR-004](adr/ADR-004-collection-sources.md) | Collection Source Abstraction | Accepted |
+| [ADR-006](adr/ADR-006-video-transcoding.md) | Video Transcoding | Proposed |
 
 See [adr/README.md](adr/README.md) for ADR workflow and how to create new ADRs.
 

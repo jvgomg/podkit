@@ -68,6 +68,7 @@ Read these documents based on what you're working on:
 | [docs/adr/README.md](docs/adr/README.md) | Understanding or making architectural decisions |
 | [docs/LIBGPOD.md](docs/LIBGPOD.md) | Working on iPod database integration |
 | [docs/TRANSCODING.md](docs/TRANSCODING.md) | Working on audio conversion |
+| [docs/VIDEO-TRANSCODING.md](docs/VIDEO-TRANSCODING.md) | Working on video sync (movies, TV shows) |
 | [docs/COLLECTION-SOURCES.md](docs/COLLECTION-SOURCES.md) | Working on collection scanning and metadata parsing |
 | [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
 | [docs/MACOS-IPOD-MOUNTING.md](docs/MACOS-IPOD-MOUNTING.md) | Troubleshooting large iFlash iPods not mounting on macOS |
