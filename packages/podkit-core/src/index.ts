@@ -251,6 +251,7 @@ export {
   isValidVideoQualityPreset,
   getDeviceProfile,
   getDefaultDeviceProfile,
+  getDeviceProfileByGeneration,
   getDeviceProfileNames,
   getPresetSettings,
   getPresetSettingsWithFallback,
@@ -364,8 +365,10 @@ export type {
   VideoExecuteOptions,
   VideoExecuteResult,
   VideoSyncExecutor,
+  VideoExecutorDependencies,
 } from './sync/video-executor.js';
 export {
+  DefaultVideoSyncExecutor,
   PlaceholderVideoSyncExecutor,
   getVideoOperationDisplayName,
   createVideoExecutor,

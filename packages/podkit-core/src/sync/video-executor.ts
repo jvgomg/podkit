@@ -1,16 +1,17 @@
 /**
- * Video sync executor interface
+ * Video sync executor - executes video sync plans
  *
- * This module defines the interface for executing video sync plans.
- * The full implementation depends on iPod database video support (TASK-069.14).
+ * This module implements video sync execution including:
+ * - Video transcoding to iPod-compatible format
+ * - File transfer to iPod
+ * - Adding video tracks to iPod database
  *
  * ## Execution Pipeline
  *
- * Video transcoding follows the same pipelined approach as audio:
- * - Producer: transcodes video to temp file (CPU bound)
- * - Consumer: transfers file to iPod (USB I/O bound)
- *
- * This keeps the USB bus saturated during transcoding.
+ * Video transcoding follows a sequential approach (videos are large):
+ * - Transcode video to temp file
+ * - Transfer file to iPod
+ * - Add track to database
  *
  * ## Progress Reporting
  *
@@ -21,9 +22,19 @@
  * @module
  */
 
+import { mkdir, stat, copyFile } from 'node:fs/promises';
+import { join, basename } from 'node:path';
+import { tmpdir } from 'node:os';
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+
 import type { SyncProgress, SyncOperation, ExecuteOptions } from './types.js';
 import type { VideoSyncPlan } from './video-planner.js';
 import type { VideoTranscodeProgress } from '../video/transcode.js';
+import type { IpodDatabase } from '../ipod/index.js';
+import { transcodeVideo } from '../video/transcode.js';
+import { probeVideo } from '../video/probe.js';
+import { createVideoTrackInput } from '../ipod/video.js';
 
 // =============================================================================
 // Types
@@ -83,15 +94,20 @@ export interface VideoExecuteResult {
   bytesTransferred: number;
 }
 
+/**
+ * Dependencies required for video executor
+ */
+export interface VideoExecutorDependencies {
+  /** iPod database instance */
+  ipod: IpodDatabase;
+}
+
 // =============================================================================
 // Interface
 // =============================================================================
 
 /**
  * Interface for executing video sync plans
- *
- * This interface defines the contract for video sync executors.
- * Full implementation depends on iPod database video support.
  */
 export interface VideoSyncExecutor {
   /**
@@ -106,7 +122,7 @@ export interface VideoSyncExecutor {
    *
    * @example
    * ```typescript
-   * const executor = createVideoExecutor(deps);
+   * const executor = createVideoExecutor({ ipod });
    * const plan = planVideoSync(diff);
    *
    * for await (const progress of executor.execute(plan)) {
@@ -124,50 +140,163 @@ export interface VideoSyncExecutor {
 }
 
 // =============================================================================
-// Placeholder Implementation
+// Implementation
 // =============================================================================
 
 /**
- * Placeholder video sync executor
- *
- * This is a minimal implementation that will be replaced when
- * iPod database video support is complete (TASK-069.14).
- *
- * Currently only supports dry-run mode.
+ * Default video sync executor implementation
  */
-export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
+export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
+  private ipod: IpodDatabase;
+
+  constructor(deps: VideoExecutorDependencies) {
+    this.ipod = deps.ipod;
+  }
+
   /**
-   * Execute a video sync plan (dry-run only)
+   * Execute a video sync plan
    */
   async *execute(
     plan: VideoSyncPlan,
     options: VideoExecuteOptions = {}
   ): AsyncIterable<VideoExecutorProgress> {
-    const { dryRun = true } = options;
+    const {
+      dryRun = false,
+      continueOnError = false,
+      tempDir = tmpdir(),
+      signal,
+      onTranscodeProgress,
+    } = options;
 
-    if (!dryRun) {
-      throw new Error(
-        'Video sync execution not yet implemented. ' +
-        'iPod database video support required (TASK-069.14). ' +
-        'Use dryRun: true for planning only.'
-      );
+    const total = plan.operations.length;
+    let bytesProcessed = 0;
+
+    // Create temp directory for transcoded files
+    const transcodeDir = join(tempDir, `podkit-video-${randomUUID()}`);
+    const hasTranscodes = plan.operations.some((op) => op.type === 'video-transcode');
+
+    if (hasTranscodes && !dryRun) {
+      await mkdir(transcodeDir, { recursive: true });
     }
 
+    try {
+      // Dry-run mode - just simulate
+      if (dryRun) {
+        yield* this.executeDryRun(plan);
+        return;
+      }
+
+      // Real execution
+      for (let index = 0; index < plan.operations.length; index++) {
+        const operation = plan.operations[index]!;
+
+        // Check for abort
+        if (signal?.aborted) {
+          throw new Error('Video sync aborted');
+        }
+
+        try {
+          if (operation.type === 'video-transcode') {
+            // Track bytes through yielded progress
+            let lastProgress: VideoExecutorProgress | undefined;
+            for await (const progress of this.executeTranscode(
+              operation,
+              index,
+              total,
+              bytesProcessed,
+              plan.estimatedSize,
+              transcodeDir,
+              onTranscodeProgress,
+              signal
+            )) {
+              yield progress;
+              lastProgress = progress;
+            }
+            // Update bytes from final progress
+            if (lastProgress) {
+              bytesProcessed = lastProgress.bytesProcessed;
+            }
+          } else if (operation.type === 'video-copy') {
+            // Track bytes through yielded progress
+            let lastProgress: VideoExecutorProgress | undefined;
+            for await (const progress of this.executeCopy(
+              operation,
+              index,
+              total,
+              bytesProcessed,
+              plan.estimatedSize
+            )) {
+              yield progress;
+              lastProgress = progress;
+            }
+            // Update bytes from final progress
+            if (lastProgress) {
+              bytesProcessed = lastProgress.bytesProcessed;
+            }
+          }
+        } catch (error) {
+          const err = error instanceof Error ? error : new Error(String(error));
+
+          yield {
+            phase: 'video-transcoding',
+            operation,
+            index,
+            current: index,
+            total,
+            currentTrack: getVideoOperationDisplayName(operation),
+            bytesProcessed,
+            bytesTotal: plan.estimatedSize,
+            error: err,
+          };
+
+          if (!continueOnError) {
+            throw err;
+          }
+        }
+      }
+
+      // Emit completion
+      if (plan.operations.length > 0) {
+        yield {
+          phase: 'complete',
+          operation: plan.operations[plan.operations.length - 1]!,
+          index: plan.operations.length - 1,
+          current: plan.operations.length - 1,
+          total,
+          currentTrack: getVideoOperationDisplayName(plan.operations[plan.operations.length - 1]!),
+          bytesProcessed,
+          bytesTotal: plan.estimatedSize,
+        };
+      }
+    } finally {
+      // Cleanup temp directory
+      if (hasTranscodes && !dryRun) {
+        try {
+          await rm(transcodeDir, { recursive: true, force: true });
+        } catch {
+          // Ignore cleanup errors
+        }
+      }
+    }
+  }
+
+  /**
+   * Execute in dry-run mode
+   */
+  private async *executeDryRun(
+    plan: VideoSyncPlan
+  ): AsyncIterable<VideoExecutorProgress> {
     const total = plan.operations.length;
     let bytesProcessed = 0;
 
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;
 
-      // Get phase name based on operation type
       const phase = operation.type === 'video-transcode'
         ? 'video-transcoding'
         : operation.type === 'video-copy'
           ? 'video-copying'
           : 'preparing';
-
-      // Get display name for the operation
-      const currentTrack = getVideoOperationDisplayName(operation);
 
       yield {
         phase,
@@ -175,7 +304,7 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
         index,
         current: index,
         total,
-        currentTrack,
+        currentTrack: getVideoOperationDisplayName(operation),
         bytesProcessed,
         bytesTotal: plan.estimatedSize,
         skipped: true,
@@ -190,6 +319,214 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
         index: plan.operations.length - 1,
         current: plan.operations.length - 1,
         total,
+        currentTrack: getVideoOperationDisplayName(plan.operations[plan.operations.length - 1]!),
+        bytesProcessed,
+        bytesTotal: plan.estimatedSize,
+      };
+    }
+  }
+
+  /**
+   * Execute a video transcode operation
+   */
+  private async *executeTranscode(
+    operation: Extract<SyncOperation, { type: 'video-transcode' }>,
+    index: number,
+    total: number,
+    bytesProcessed: number,
+    bytesTotal: number,
+    transcodeDir: string,
+    onTranscodeProgress?: (progress: VideoTranscodeProgress) => void,
+    signal?: AbortSignal
+  ): AsyncIterable<VideoExecutorProgress> {
+    const { source, settings } = operation;
+
+    // Generate output filename
+    const outputFilename = `${randomUUID()}.m4v`;
+    const tempOutputPath = join(transcodeDir, outputFilename);
+
+    // Track latest progress for yielding
+    let latestTranscodeProgress: VideoTranscodeProgress | undefined;
+    let transcodeComplete = false;
+    let transcodeError: Error | undefined;
+
+    // Start transcoding in background
+    const transcodePromise = transcodeVideo(source.filePath, tempOutputPath, settings, {
+      onProgress: (progress) => {
+        latestTranscodeProgress = progress;
+        onTranscodeProgress?.(progress);
+      },
+      signal,
+    }).then(() => {
+      transcodeComplete = true;
+    }).catch((err) => {
+      transcodeError = err instanceof Error ? err : new Error(String(err));
+      transcodeComplete = true;
+    });
+
+    // Yield progress updates while transcoding
+    while (!transcodeComplete) {
+      yield {
+        phase: 'video-transcoding',
+        operation,
+        index,
+        current: index,
+        total,
+        currentTrack: source.title,
+        bytesProcessed,
+        bytesTotal,
+        transcodeProgress: latestTranscodeProgress,
+      };
+
+      // Wait a bit before next update (100ms)
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    // Check for errors
+    if (transcodeError) {
+      throw transcodeError;
+    }
+
+    // Wait for promise to fully resolve
+    await transcodePromise;
+
+    // Get transcoded file size
+    const outputStats = await stat(tempOutputPath);
+
+    // Probe the source video for metadata
+    const analysis = await probeVideo(source.filePath);
+
+    // Create track input for iPod database
+    const trackInput = createVideoTrackInput(source, analysis, {
+      size: outputStats.size,
+    });
+
+    // Add track to iPod and copy file
+    const track = this.ipod.addTrack(trackInput);
+    track.copyFile(tempOutputPath);
+
+    // Yield completion progress
+    yield {
+      phase: 'video-transcoding',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: source.title,
+      bytesProcessed: bytesProcessed + outputStats.size,
+      bytesTotal,
+    };
+  }
+
+  /**
+   * Execute a video copy operation (passthrough)
+   */
+  private async *executeCopy(
+    operation: Extract<SyncOperation, { type: 'video-copy' }>,
+    index: number,
+    total: number,
+    bytesProcessed: number,
+    bytesTotal: number
+  ): AsyncIterable<VideoExecutorProgress> {
+    const { source } = operation;
+
+    // Yield start progress
+    yield {
+      phase: 'video-copying',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: source.title,
+      bytesProcessed,
+      bytesTotal,
+    };
+
+    // Get file stats
+    const fileStats = await stat(source.filePath);
+
+    // Probe the source video for metadata
+    const analysis = await probeVideo(source.filePath);
+
+    // Create track input for iPod database
+    const trackInput = createVideoTrackInput(source, analysis, {
+      size: fileStats.size,
+    });
+
+    // Add track to iPod and copy file
+    const track = this.ipod.addTrack(trackInput);
+    track.copyFile(source.filePath);
+
+    // Yield completion progress
+    yield {
+      phase: 'video-copying',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: source.title,
+      bytesProcessed: bytesProcessed + fileStats.size,
+      bytesTotal,
+    };
+  }
+}
+
+/**
+ * Placeholder video sync executor (dry-run only, no dependencies)
+ *
+ * Use this when you don't have an iPod connection but want to preview plans.
+ */
+export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
+  /**
+   * Execute a video sync plan (dry-run only)
+   */
+  async *execute(
+    plan: VideoSyncPlan,
+    options: VideoExecuteOptions = {}
+  ): AsyncIterable<VideoExecutorProgress> {
+    const { dryRun = false } = options;
+
+    if (!dryRun) {
+      throw new Error(
+        'PlaceholderVideoSyncExecutor only supports dry-run mode. ' +
+        'Use createVideoExecutor({ ipod }) for real execution.'
+      );
+    }
+
+    const total = plan.operations.length;
+    let bytesProcessed = 0;
+
+    for (let index = 0; index < plan.operations.length; index++) {
+      const operation = plan.operations[index]!;
+
+      const phase = operation.type === 'video-transcode'
+        ? 'video-transcoding'
+        : operation.type === 'video-copy'
+          ? 'video-copying'
+          : 'preparing';
+
+      yield {
+        phase,
+        operation,
+        index,
+        current: index,
+        total,
+        currentTrack: getVideoOperationDisplayName(operation),
+        bytesProcessed,
+        bytesTotal: plan.estimatedSize,
+        skipped: true,
+      };
+    }
+
+    // Emit completion
+    if (plan.operations.length > 0) {
+      yield {
+        phase: 'complete',
+        operation: plan.operations[plan.operations.length - 1]!,
+        index: plan.operations.length - 1,
+        current: plan.operations.length - 1,
+        total,
+        currentTrack: getVideoOperationDisplayName(plan.operations[plan.operations.length - 1]!),
         bytesProcessed,
         bytesTotal: plan.estimatedSize,
       };
@@ -211,12 +548,28 @@ export function getVideoOperationDisplayName(operation: SyncOperation): string {
 }
 
 /**
- * Create a placeholder video sync executor
+ * Create a video sync executor
  *
- * This returns a placeholder implementation that only supports dry-run mode.
- * Full implementation will be available when iPod database video support
- * is complete (TASK-069.14).
+ * @param deps - Dependencies including iPod database instance
+ * @returns A video sync executor that can execute plans
+ *
+ * @example
+ * ```typescript
+ * const ipod = await IpodDatabase.open('/Volumes/iPod');
+ * const executor = createVideoExecutor({ ipod });
+ *
+ * for await (const progress of executor.execute(plan)) {
+ *   console.log(`${progress.phase}: ${progress.currentTrack}`);
+ * }
+ *
+ * ipod.save();
+ * ipod.close();
+ * ```
  */
-export function createVideoExecutor(): VideoSyncExecutor {
+export function createVideoExecutor(deps?: VideoExecutorDependencies): VideoSyncExecutor {
+  if (deps?.ipod) {
+    return new DefaultVideoSyncExecutor(deps);
+  }
+  // Return placeholder for dry-run only usage
   return new PlaceholderVideoSyncExecutor();
 }

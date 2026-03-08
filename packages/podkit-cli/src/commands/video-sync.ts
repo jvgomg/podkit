@@ -20,6 +20,8 @@ import { existsSync, statfsSync } from 'node:fs';
 import { Command } from 'commander';
 import { getContext } from '../context.js';
 import type { VideoQualityPreset } from '../config/index.js';
+import type { IPodVideo } from '@podkit/core';
+import { MediaType } from '@podkit/core';
 
 // =============================================================================
 // Types
@@ -476,13 +478,26 @@ export const videoSyncCommand = new Command('video-sync')
       }
 
       // ----- Get iPod video tracks -----
-      // For now, we assume no videos on iPod (full implementation needs TASK-069.14)
-      // When libgpod video support is complete, we would:
-      // const ipodTracks = ipod.getTracks().filter(t =>
-      //   t.mediaType === core.MediaType.Movie || t.mediaType === core.MediaType.TVShow
-      // );
-      type IPodVideo = Awaited<ReturnType<typeof core.diffVideos>>['existing'][0]['ipod'];
-      const ipodVideos: IPodVideo[] = []; // Placeholder
+      const allTracks = ipod.getTracks();
+      const ipodVideos: IPodVideo[] = allTracks
+        .filter(t =>
+          (t.mediaType & MediaType.Movie) !== 0 ||
+          (t.mediaType & MediaType.TVShow) !== 0
+        )
+        .map(t => {
+          const isMovie = (t.mediaType & MediaType.Movie) !== 0;
+          return {
+            id: t.filePath, // Use file path as unique ID
+            filePath: t.filePath,
+            contentType: (isMovie ? 'movie' : 'tvshow') as 'movie' | 'tvshow',
+            title: t.title,
+            year: t.year,
+            seriesTitle: t.tvShow,
+            seasonNumber: t.seasonNumber,
+            episodeNumber: t.episodeNumber,
+            duration: t.duration ? Math.floor(t.duration / 1000) : undefined, // Convert ms to seconds
+          };
+        });
 
       // ----- Compute diff -----
       if (!globalOpts.json && !globalOpts.quiet) {
@@ -496,7 +511,9 @@ export const videoSyncCommand = new Command('video-sync')
       }
 
       // ----- Create sync plan -----
-      const deviceProfile = core.getDefaultDeviceProfile();
+      // Select device profile based on iPod generation
+      const ipodDevice = ipod.getInfo().device;
+      const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
       const plan = core.planVideoSync(diff, {
         deviceProfile,
         qualityPreset: quality,
@@ -621,10 +638,6 @@ export const videoSyncCommand = new Command('video-sync')
             }
             console.log('');
           }
-
-          // Note about execution limitation
-          console.log('Note: Video sync execution requires iPod database video support.');
-          console.log('      Currently only dry-run mode is available.');
         }
 
         await adapter.disconnect();
@@ -701,27 +714,20 @@ export const videoSyncCommand = new Command('video-sync')
       }
 
       // ----- Execute sync plan -----
-      // Full execution requires iPod database video support (TASK-069.14)
-      // For now, we only support dry-run mode
       if (!globalOpts.json && !globalOpts.quiet) {
         console.log('');
         console.log('=== Video Sync ===');
         console.log('');
-        console.log('Note: Video sync execution is not yet implemented.');
-        console.log('      iPod database video support required (TASK-069.14).');
-        console.log('      Use --dry-run to preview changes.');
-        console.log('');
       }
 
-      const executor = core.createVideoExecutor();
+      const executor = core.createVideoExecutor({ ipod });
 
-      // Execute in dry-run mode only for now
       const duration = (Date.now() - startTime) / 1000;
       let completed = 0;
       let skipped = 0;
 
       try {
-        for await (const progress of executor.execute(plan, { dryRun: true })) {
+        for await (const progress of executor.execute(plan, { dryRun })) {
           if (progress.skipped) {
             skipped++;
           } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
@@ -731,8 +737,17 @@ export const videoSyncCommand = new Command('video-sync')
           // Update progress display
           if (!globalOpts.json && !globalOpts.quiet) {
             if (progress.phase === 'complete') {
-              console.log('Plan preview complete.');
+              console.log('\nSync complete.');
+            } else if (progress.transcodeProgress) {
+              // Show transcode progress percentage
+              const percent = progress.transcodeProgress.percent;
+              const bar = renderProgressBar(Math.round(percent), 100);
+              const speed = progress.transcodeProgress.speed
+                ? ` (${progress.transcodeProgress.speed.toFixed(1)}x)`
+                : '';
+              process.stdout.write(`\r\x1b[K${bar} transcoding${speed}: ${progress.currentTrack}`);
             } else {
+              // Show operation progress for non-transcode operations
               const bar = renderProgressBar(progress.current + 1, progress.total);
               const phaseStr = progress.phase.replace('video-', '');
               process.stdout.write(`\r\x1b[K${bar} ${phaseStr}: ${progress.currentTrack}`);
@@ -782,6 +797,11 @@ export const videoSyncCommand = new Command('video-sync')
             duration,
           },
         });
+      }
+
+      // Save database if we made changes
+      if (!dryRun && plan.operations.length > 0) {
+        ipod.save();
       }
 
       await adapter.disconnect();

@@ -187,6 +187,43 @@ export function getDefaultDeviceProfile(): VideoDeviceProfile {
 }
 
 /**
+ * Get device profile by iPod generation string from libgpod
+ *
+ * Maps the generation identifier from ipod.getInfo().device.generation
+ * to the appropriate video device profile.
+ *
+ * @param generation - Generation string from libgpod (e.g., 'video_1', 'classic_1')
+ * @returns The matching device profile, or default profile if not matched
+ */
+export function getDeviceProfileByGeneration(generation: string): VideoDeviceProfile {
+  // Map libgpod generation identifiers to our device profiles
+  // See: https://www.libgpod.org/api/model_id.html
+  const generationMap: Record<string, string> = {
+    // iPod Video 5th gen (video_1)
+    'video_1': 'ipod-video-5g',
+    'video_2': 'ipod-video-5g', // Enhanced variant
+
+    // iPod Classic 6th/7th gen (classic_1, classic_2, classic_3)
+    'classic_1': 'ipod-classic',
+    'classic_2': 'ipod-classic',
+    'classic_3': 'ipod-classic',
+
+    // iPod Nano with video support
+    'nano_3': 'ipod-nano-3g',
+    'nano_4': 'ipod-nano-3g',
+    'nano_5': 'ipod-nano-3g',
+  };
+
+  const profileName = generationMap[generation];
+  if (profileName) {
+    return DEVICE_PROFILES[profileName]!;
+  }
+
+  // Default to ipod-classic for unknown generations
+  return DEVICE_PROFILES['ipod-classic']!;
+}
+
+/**
  * Get all device profile names
  */
 export function getDeviceProfileNames(): string[] {

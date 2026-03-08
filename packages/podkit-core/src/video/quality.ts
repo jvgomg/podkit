@@ -216,11 +216,10 @@ export function calculateEffectiveSettings(
   );
 
   // Cap video bitrate: min(preset, source, device max)
-  const targetVideoBitrate = Math.min(
-    presetSettings.videoBitrate,
-    source.videoBitrate,
-    device.maxVideoBitrate
-  );
+  // If source bitrate is 0 (unknown), use preset/device limits
+  const targetVideoBitrate = source.videoBitrate > 0
+    ? Math.min(presetSettings.videoBitrate, source.videoBitrate, device.maxVideoBitrate)
+    : Math.min(presetSettings.videoBitrate, device.maxVideoBitrate);
 
   // Cap audio bitrate: min(preset, source, device max)
   // Note: we don't downgrade audio if source is lower since re-encoding
@@ -231,7 +230,10 @@ export function calculateEffectiveSettings(
   );
 
   // Cap frame rate: min(source, device max)
-  const frameRate = Math.min(source.frameRate, device.maxFrameRate);
+  // If source frame rate is 0 (unknown), use device max
+  const frameRate = source.frameRate > 0
+    ? Math.min(source.frameRate, device.maxFrameRate)
+    : device.maxFrameRate;
 
   return {
     targetWidth: dimensions.width,

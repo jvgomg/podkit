@@ -188,6 +188,9 @@ export function buildVideoTranscodeArgs(
     '-i', input,
   ];
 
+  // Force 8-bit output (required for iPod compatibility and HDR/10-bit sources)
+  args.push('-pix_fmt', 'yuv420p');
+
   // Video codec selection
   if (settings.useHardwareAcceleration) {
     // VideoToolbox hardware encoder (macOS)
@@ -225,20 +228,23 @@ export function buildVideoTranscodeArgs(
 
   // Output optimizations
   args.push(
+    // Hide banner
+    '-hide_banner',
+    // Overwrite output
+    '-y',
     // Fast start for progressive playback
     '-movflags', '+faststart',
     // iPod-compatible container
     '-f', 'ipod',
-    // Overwrite output
-    '-y',
-    // Progress to stderr (we parse it)
-    '-progress', 'pipe:2',
-    // Hide banner
-    '-hide_banner',
   );
 
-  // Output file
+  // Output file (must come last)
   args.push(output);
+
+  // Progress to stderr - must come after output file in FFmpeg 8.0+
+  // Actually, -progress is a global option and should come early
+  // Let's prepend it to be safe
+  args.unshift('-progress', 'pipe:2');
 
   return args;
 }
