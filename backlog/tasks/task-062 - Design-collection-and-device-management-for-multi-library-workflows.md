@@ -4,6 +4,7 @@ title: Design collection and device management for multi-library workflows
 status: To Do
 assignee: []
 created_date: '2026-02-26 14:26'
+updated_date: '2026-03-08 16:17'
 labels:
   - design
   - ux
@@ -115,3 +116,15 @@ This task is for **design discussion**, not implementation. Output should be:
 - [ ] #4 CLI command structure proposed
 - [ ] #5 ADR created documenting decisions
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Related Work
+
+TASK-070 adds Subsonic collection source support. When implementing multi-source support, consider that sources can now be:
+- Local directories (DirectoryAdapter)
+- Remote Subsonic servers (SubsonicAdapter)
+
+The config structure should accommodate both source types.
+<!-- SECTION:NOTES:END -->
