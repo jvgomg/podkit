@@ -15,6 +15,8 @@
 #include <napi.h>
 #include <gpod/itdb.h>
 #include <string>
+#include <cerrno>
+#include <cstring>
 
 #include "database_wrapper.h"
 #include "photo_database_wrapper.h"
@@ -117,6 +119,78 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
 }
 
 /**
+ * Initialize a new iPod database on a mountpoint.
+ * Creates the iPod_Control directory structure, SysInfo file,
+ * and an empty iTunesDB ready for use.
+ *
+ * @param mountpoint Path to the iPod mount point (directory will be created if needed)
+ * @param model Optional model number (e.g., "MA147" for iPod Video 60GB)
+ * @param name Optional iPod name (default: "iPod")
+ * @returns Database object for the newly initialized iPod
+ */
+Napi::Value InitIpod(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 1 || !info[0].IsString()) {
+        Napi::TypeError::New(env, "Expected mountpoint path").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string mountpoint = info[0].As<Napi::String>().Utf8Value();
+
+    // Default model: iPod Video 60GB (MA147) - good for testing with artwork/video support
+    std::string model = "MA147";
+    if (info.Length() >= 2 && info[1].IsString()) {
+        model = info[1].As<Napi::String>().Utf8Value();
+    }
+
+    // Default name: "iPod"
+    std::string name = "iPod";
+    if (info.Length() >= 3 && info[2].IsString()) {
+        name = info[2].As<Napi::String>().Utf8Value();
+    }
+
+    // Create directory if it doesn't exist
+    if (g_mkdir_with_parents(mountpoint.c_str(), 0755) != 0) {
+        std::string errmsg = "Failed to create mountpoint directory: ";
+        errmsg += mountpoint;
+        errmsg += " (";
+        errmsg += std::strerror(errno);
+        errmsg += ")";
+        Napi::Error::New(env, errmsg).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Initialize the iPod structure
+    GError* error = nullptr;
+    gboolean success = itdb_init_ipod(mountpoint.c_str(), model.c_str(), name.c_str(), &error);
+
+    if (!success) {
+        std::string message = error ? error->message : "Failed to initialize iPod";
+        if (error) {
+            g_error_free(error);
+        }
+        Napi::Error::New(env, message).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Parse the newly created database
+    error = nullptr;
+    Itdb_iTunesDB* db = itdb_parse(mountpoint.c_str(), &error);
+
+    if (!db) {
+        std::string message = error ? error->message : "Failed to parse newly created database";
+        if (error) {
+            g_error_free(error);
+        }
+        Napi::Error::New(env, message).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    return DatabaseWrapper::NewInstance(env, db);
+}
+
+/**
  * Get libgpod version information.
  */
 Napi::Value GetVersion(const Napi::CallbackInfo& info) {
@@ -196,6 +270,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     exports.Set("parse", Napi::Function::New(env, Parse));
     exports.Set("parseFile", Napi::Function::New(env, ParseFile));
     exports.Set("create", Napi::Function::New(env, Create));
+    exports.Set("initIpod", Napi::Function::New(env, InitIpod));
     exports.Set("getVersion", Napi::Function::New(env, GetVersion));
 
     // Photo database functions

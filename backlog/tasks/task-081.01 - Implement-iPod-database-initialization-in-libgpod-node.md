@@ -1,9 +1,10 @@
 ---
 id: TASK-081.01
 title: Implement iPod database initialization in libgpod-node
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-09 22:18'
+updated_date: '2026-03-09 22:29'
 labels:
   - libgpod-node
   - native
@@ -65,10 +66,42 @@ const ipod = await createIpodDatabase('/Volumes/IPOD');
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 IpodDatabase.create() method implemented
-- [ ] #2 Creates valid iTunesDB structure
-- [ ] #3 Creates required folder structure (iPod_Control, etc.)
-- [ ] #4 Handles model detection appropriately
-- [ ] #5 Integration tests verify database creation
-- [ ] #6 Documented in libgpod-node README
+- [x] #1 IpodDatabase.create() method implemented
+- [x] #2 Creates valid iTunesDB structure
+- [x] #3 Creates required folder structure (iPod_Control, etc.)
+- [x] #4 Handles model detection appropriately
+- [x] #5 Integration tests verify database creation
+- [x] #6 Documented in libgpod-node README
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation Complete
+
+Added `Database.initializeIpod()` method that:
+
+1. **Native binding** (`gpod_binding.cc`): Added `InitIpod()` function that:
+   - Creates mountpoint directory with `g_mkdir_with_parents()`
+   - Calls `itdb_init_ipod()` to create iPod structure
+   - Parses the created database and returns it
+
+2. **TypeScript API** (`database.ts`):
+   - `Database.initializeIpod(mountpoint, options?)` - async
+   - `Database.initializeIpodSync(mountpoint, options?)` - sync
+   - `Database.IpodModels` - constants for common models
+
+3. **Testing**: 7 new integration tests covering:
+   - Basic initialization
+   - Directory structure creation
+   - Adding tracks and saving
+   - Custom model and name
+   - Synchronous API
+   - Auto-creation of directories
+   - Model constants validation
+
+4. **Documentation**: Updated README with:
+   - API usage examples
+   - Model constants reference
+   - When to use guidance
+<!-- SECTION:NOTES:END -->

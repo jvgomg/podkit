@@ -792,4 +792,212 @@ describe('libgpod-node with native binding', () => {
       });
     }
   );
+
+  // ============================================================================
+  // Database.initializeIpod() tests
+  // ============================================================================
+
+  it(
+    'Database.initializeIpod() creates a new iPod database',
+    async () => {
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      // Create a fresh temp directory for the iPod
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'ipod-init-test-'));
+
+      try {
+        // Initialize a new iPod database
+        const db = await Database.initializeIpod(tempDir);
+
+        expect(db).toBeDefined();
+        expect(db.closed).toBe(false);
+        expect(db.mountpoint).toBe(tempDir);
+
+        // Should have 0 tracks
+        expect(db.trackCount).toBe(0);
+
+        // Should have at least one playlist (master)
+        expect(db.playlistCount).toBeGreaterThanOrEqual(1);
+
+        // Should have a master playlist
+        const mpl = db.getMasterPlaylist();
+        expect(mpl).not.toBeNull();
+
+        db.close();
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.initializeIpod() creates valid directory structure',
+    async () => {
+      const { mkdtemp, rm, stat } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'ipod-struct-test-'));
+
+      try {
+        const db = await Database.initializeIpod(tempDir);
+        db.close();
+
+        // Verify directory structure was created
+        const ipodControl = path.join(tempDir, 'iPod_Control');
+        const ipodControlStat = await stat(ipodControl);
+        expect(ipodControlStat.isDirectory()).toBe(true);
+
+        const itunesDir = path.join(ipodControl, 'iTunes');
+        const itunesDirStat = await stat(itunesDir);
+        expect(itunesDirStat.isDirectory()).toBe(true);
+
+        const itunesDb = path.join(itunesDir, 'iTunesDB');
+        const itunesDbStat = await stat(itunesDb);
+        expect(itunesDbStat.isFile()).toBe(true);
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.initializeIpod() can add tracks and save',
+    async () => {
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'ipod-tracks-test-'));
+
+      try {
+        // Initialize and add a track
+        const db = await Database.initializeIpod(tempDir);
+        const handle = db.addTrack({
+          title: 'Initialized Track',
+          artist: 'Test Artist',
+          album: 'Test Album',
+        });
+
+        const track = db.getTrack(handle);
+        expect(track.title).toBe('Initialized Track');
+
+        // Save changes
+        db.saveSync();
+        db.close();
+
+        // Reopen and verify
+        const db2 = Database.openSync(tempDir);
+        expect(db2.trackCount).toBe(1);
+
+        const handles = db2.getTracks();
+        const savedTrack = db2.getTrack(handles[0]!);
+        expect(savedTrack.title).toBe('Initialized Track');
+        expect(savedTrack.artist).toBe('Test Artist');
+
+        db2.close();
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.initializeIpod() with custom model and name',
+    async () => {
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      const tempDir = await mkdtemp(path.join(tmpdir(), 'ipod-model-test-'));
+
+      try {
+        // Use VIDEO_60GB model which is the default and known to work
+        const db = await Database.initializeIpod(tempDir, {
+          model: Database.IpodModels.VIDEO_60GB,
+          name: 'My Video iPod',
+        });
+
+        expect(db).toBeDefined();
+        expect(db.closed).toBe(false);
+
+        // Check device capabilities are set based on model
+        const caps = db.getDeviceCapabilities();
+        expect(typeof caps.supportsArtwork).toBe('boolean');
+        expect(typeof caps.supportsVideo).toBe('boolean');
+
+        // Video iPod should support both artwork and video
+        expect(caps.supportsArtwork).toBe(true);
+        expect(caps.supportsVideo).toBe(true);
+
+        db.close();
+      } finally {
+        await rm(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.initializeIpodSync() works synchronously',
+    async () => {
+      const { mkdtempSync, rmSync } = await import('fs');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      const tempDir = mkdtempSync(path.join(tmpdir(), 'ipod-sync-test-'));
+
+      try {
+        // Use synchronous version
+        const db = Database.initializeIpodSync(tempDir);
+
+        expect(db).toBeDefined();
+        expect(db.mountpoint).toBe(tempDir);
+        expect(db.trackCount).toBe(0);
+
+        db.close();
+      } finally {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.initializeIpod() creates directory if it does not exist',
+    async () => {
+      const { mkdtemp, rm, stat } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const path = await import('path');
+
+      // Create a temp dir, then specify a subdirectory that doesn't exist yet
+      const baseDir = await mkdtemp(path.join(tmpdir(), 'ipod-mkdir-test-'));
+      const ipodDir = path.join(baseDir, 'nested', 'ipod');
+
+      try {
+        // The nested directory should not exist
+        await expect(stat(ipodDir)).rejects.toThrow();
+
+        // Initialize should create it
+        const db = await Database.initializeIpod(ipodDir);
+        expect(db).toBeDefined();
+        db.close();
+
+        // Now it should exist
+        const dirStat = await stat(ipodDir);
+        expect(dirStat.isDirectory()).toBe(true);
+      } finally {
+        await rm(baseDir, { recursive: true, force: true });
+      }
+    }
+  );
+
+  it(
+    'Database.IpodModels has expected values',
+    () => {
+      expect(Database.IpodModels.VIDEO_60GB).toBe('MA147');
+      expect(Database.IpodModels.CLASSIC_120GB).toBe('MB565');
+      expect(Database.IpodModels.NANO_2GB).toBe('MA477');
+    }
+  );
 });

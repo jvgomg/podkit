@@ -9,6 +9,7 @@
  *
  * - `NOT_FOUND` - iPod not found at the specified mount point
  * - `DATABASE_CORRUPT` - Database is corrupt or unreadable
+ * - `INIT_FAILED` - Failed to initialize a new iPod database
  * - `TRACK_REMOVED` - Operating on a track that has been removed
  * - `PLAYLIST_REMOVED` - Operating on a playlist that has been removed
  * - `FILE_NOT_FOUND` - Source file not found when copying to iPod
@@ -20,6 +21,7 @@
 export type IpodErrorCode =
   | 'NOT_FOUND'
   | 'DATABASE_CORRUPT'
+  | 'INIT_FAILED'
   | 'TRACK_REMOVED'
   | 'PLAYLIST_REMOVED'
   | 'FILE_NOT_FOUND'

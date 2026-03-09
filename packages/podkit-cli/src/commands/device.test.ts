@@ -61,7 +61,7 @@ describe('device command', () => {
     it('has reset subcommand', () => {
       const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
       expect(resetCmd).toBeDefined();
-      expect(resetCmd?.description()).toContain('tracks');
+      expect(resetCmd?.description()).toContain('database');
     });
 
     it('has eject subcommand', () => {
@@ -141,10 +141,10 @@ describe('device command', () => {
       expect(nameArg?.required).toBe(false);
     });
 
-    it('reset subcommand has --confirm option', () => {
+    it('reset subcommand has --yes option', () => {
       const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
-      const confirmOption = resetCmd?.options.find((opt) => opt.long === '--confirm');
-      expect(confirmOption).toBeDefined();
+      const yesOption = resetCmd?.options.find((opt) => opt.long === '--yes');
+      expect(yesOption).toBeDefined();
     });
 
     it('reset subcommand has --dry-run option', () => {

@@ -57,7 +57,25 @@ itdb_playlist_add(db, mpl, -1);
 
 **Why:** This mirrors what `itdb_init_ipod()` does internally. Without a master playlist, the database is effectively unusable for most operations.
 
-### 3. Chapter Data: NULL Prevention
+### 3. iPod Initialization: Directory Auto-Creation
+
+**libgpod behavior:** `itdb_init_ipod()` expects the mountpoint directory to already exist. If the directory doesn't exist, initialization fails.
+
+**Our behavior:** `Database.initializeIpod()` creates the mountpoint directory (and any necessary parent directories) if it doesn't exist, using `g_mkdir_with_parents()`.
+
+```cpp
+// native/gpod_binding.cc - InitIpod()
+if (!g_file_test(mountpoint, G_FILE_TEST_IS_DIR)) {
+    if (g_mkdir_with_parents(mountpoint, 0755) != 0) {
+        // Handle error
+    }
+}
+itdb_init_ipod(mountpoint, model, name, &error);
+```
+
+**Why:** When initializing an iPod that hasn't been set up yet (e.g., after reformatting), the mount point may not exist. Requiring callers to create the directory first is an unnecessary friction that leads to confusing errors. This matches the behavior users expect from a high-level initialization function.
+
+### 4. Chapter Data: NULL Prevention
 
 **libgpod behavior:** `itdb_track_free()` calls `itdb_chapterdata_free(track->chapterdata)` without checking for NULL first, causing:
 - `itdb_chapterdata_free: assertion 'chapterdata' failed` on database close
@@ -84,8 +102,17 @@ import { Database } from '@podkit/libgpod-node';
 // Open existing iPod database
 const db = Database.openSync('/Volumes/IPOD');
 
-// Create new in-memory database
+// Create new in-memory database (use setMountpoint before save)
 const newDb = Database.create();
+newDb.setMountpoint('/Volumes/IPOD');
+
+// Initialize a new iPod (creates directory structure and empty database)
+const freshDb = await Database.initializeIpod('/Volumes/IPOD');
+// Or with options:
+const customDb = await Database.initializeIpod('/Volumes/IPOD', {
+  model: Database.IpodModels.VIDEO_60GB,  // iPod Video 60GB
+  name: 'My iPod',
+});
 
 // Save changes
 db.saveSync();
@@ -93,6 +120,39 @@ db.saveSync();
 // Close database
 db.close();
 ```
+
+### iPod Initialization
+
+Use `Database.initializeIpod()` to set up an iPod that has no existing database:
+
+```typescript
+import { Database } from '@podkit/libgpod-node';
+
+// Initialize a new iPod with default settings
+const db = await Database.initializeIpod('/Volumes/IPOD');
+
+// Initialize with a specific model for correct capability support
+const db = await Database.initializeIpod('/Volumes/IPOD', {
+  model: Database.IpodModels.CLASSIC_120GB,
+  name: 'My Classic',
+});
+
+// Available model constants
+Database.IpodModels.VIDEO_60GB     // 'MA147' - iPod Video 60GB (default)
+Database.IpodModels.CLASSIC_120GB  // 'MB565' - iPod Classic 120GB
+Database.IpodModels.NANO_2GB       // 'MA477' - iPod Nano 2GB
+```
+
+**What it creates:**
+- `iPod_Control/` directory structure
+- `iPod_Control/iTunes/iTunesDB` with empty track database
+- `iPod_Control/Device/SysInfo` with model information
+- Master playlist
+
+**When to use:**
+- Fresh/reformatted iPod with no iTunes database
+- iPod with corrupted database (use `device reset` in CLI)
+- Setting up test environments
 
 ### Track Operations
 

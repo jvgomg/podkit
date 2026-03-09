@@ -107,6 +107,76 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   }
 
   /**
+   * Common iPod model numbers for initialization.
+   */
+  static readonly IpodModels = Database.IpodModels;
+
+  /**
+   * Initializes a new iPod database on a mount point.
+   *
+   * Creates the full iPod directory structure (iPod_Control/iTunes, etc.),
+   * SysInfo file with device model information, and an empty iTunesDB.
+   * Use this to set up an iPod that has no existing database.
+   *
+   * @param mountPoint - Path to the iPod mount point (directory will be created if needed)
+   * @param options - Optional initialization options
+   * @param options.model - iPod model number (e.g., "MA147"). See IpodDatabase.IpodModels
+   * @param options.name - Name for the iPod (default: "iPod")
+   * @returns Promise resolving to an IpodDatabase instance ready for use
+   * @throws {IpodError} If initialization fails
+   *
+   * @example
+   * ```typescript
+   * // Initialize a new iPod with default settings
+   * const ipod = await IpodDatabase.initializeIpod('/Volumes/IPOD');
+   *
+   * // Initialize with specific model
+   * const ipod = await IpodDatabase.initializeIpod('/Volumes/IPOD', {
+   *   model: IpodDatabase.IpodModels.CLASSIC_120GB,
+   *   name: 'My iPod Classic'
+   * });
+   *
+   * // Add tracks and save
+   * ipod.addTrack({ title: 'First Song', artist: 'Artist' });
+   * await ipod.save();
+   * ipod.close();
+   * ```
+   */
+  static async initializeIpod(
+    mountPoint: string,
+    options?: {
+      /** iPod model number (e.g., "MA147"). See IpodDatabase.IpodModels for common values. */
+      model?: string;
+      /** Name for the iPod (default: "iPod") */
+      name?: string;
+    }
+  ): Promise<IpodDatabase> {
+    try {
+      const db = await Database.initializeIpod(mountPoint, options);
+      return new IpodDatabase(db, mountPoint);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new IpodError(`Failed to initialize iPod: ${message}`, 'INIT_FAILED');
+    }
+  }
+
+  /**
+   * Checks if an iPod database exists at the given mount point.
+   *
+   * @param mountPoint - Path to check for iPod database
+   * @returns true if an iTunesDB exists at the path
+   */
+  static async hasDatabase(mountPoint: string): Promise<boolean> {
+    try {
+      const itunesDbPath = `${mountPoint}/iPod_Control/iTunes/iTunesDB`;
+      await fs.promises.access(itunesDbPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Asserts that the database is open.
    *
    * @throws {IpodError} If the database has been closed (code: DATABASE_CLOSED)

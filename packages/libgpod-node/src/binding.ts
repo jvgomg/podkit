@@ -190,6 +190,7 @@ export interface NativeBinding {
   parse(mountpoint: string): NativeDatabase;
   parseFile(filename: string): NativeDatabase;
   create(): NativeDatabase;
+  initIpod(mountpoint: string, model?: string, name?: string): NativeDatabase;
   getVersion(): NativeVersion;
 
   // Photo database
@@ -386,6 +387,28 @@ export function parseFile(filename: string): NativeDatabase {
 export function create(): NativeDatabase {
   const binding = loadBinding();
   return binding.create();
+}
+
+/**
+ * Initialize a new iPod database on a mountpoint.
+ *
+ * Creates the iPod_Control directory structure, SysInfo file,
+ * and an empty iTunesDB ready for use. This is what you use to
+ * set up an iPod that has no existing database (e.g., after reformatting).
+ *
+ * @param mountpoint Path to the iPod mount point (directory will be created if needed)
+ * @param model Optional model number (e.g., "MA147" for iPod Video 60GB)
+ * @param name Optional iPod name (default: "iPod")
+ * @returns Native database handle
+ * @throws Error if initialization fails
+ */
+export function initIpod(
+  mountpoint: string,
+  model?: string,
+  name?: string
+): NativeDatabase {
+  const binding = loadBinding();
+  return binding.initIpod(mountpoint, model, name);
 }
 
 /**

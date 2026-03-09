@@ -9,6 +9,7 @@ import {
   parse as nativeParse,
   parseFile as nativeParseFile,
   create as nativeCreate,
+  initIpod as nativeInitIpod,
   type NativeDatabase,
 } from './binding';
 
@@ -136,6 +137,123 @@ export class Database {
         error instanceof Error ? error.message : String(error),
         LibgpodErrorCode.Unknown,
         'create'
+      );
+    }
+  }
+
+  /**
+   * Options for initializing an iPod database.
+   */
+  static readonly IpodModels = {
+    // iPod Video (5th gen)
+    /** iPod Video 30GB (5th gen) - supports artwork and video */
+    VIDEO_30GB: 'MA002',
+    /** iPod Video 60GB (5th gen) - default, supports artwork and video */
+    VIDEO_60GB: 'MA147',
+
+    // iPod Classic
+    /** iPod Classic 80GB (6th gen, 1st Classic) */
+    CLASSIC_80GB: 'MB029',
+    /** iPod Classic 120GB (6th gen, 2nd Classic) */
+    CLASSIC_120GB: 'MB565',
+    /** iPod Classic 160GB (6th gen, 3rd Classic) - largest capacity */
+    CLASSIC_160GB: 'MC293',
+
+    // iPod Nano
+    /** iPod Nano 2GB (2nd gen) */
+    NANO_2GB: 'MA477',
+    /** iPod Nano 4GB (3rd gen) - first video-capable nano */
+    NANO_4GB_3G: 'MA978',
+    /** iPod Nano 8GB (4th gen) - vertical form factor */
+    NANO_8GB_4G: 'MB598',
+    /** iPod Nano 8GB (5th gen) - with camera */
+    NANO_8GB_5G: 'MC027',
+    /** iPod Nano 8GB (6th gen) - multi-touch, clip form */
+    NANO_8GB_6G: 'MC525',
+
+    // iPod Touch (note: requires additional signing for sync)
+    /** iPod Touch 8GB (1st gen) */
+    TOUCH_8GB_1G: 'MA623',
+    /** iPod Touch 32GB (1st gen) */
+    TOUCH_32GB_1G: 'MB376',
+  } as const;
+
+  /**
+   * Initialize a new iPod database on a mountpoint.
+   *
+   * Creates the full iPod directory structure (iPod_Control/iTunes, etc.),
+   * SysInfo file with device model information, and an empty iTunesDB.
+   * This is what you use to set up an iPod that has no existing database
+   * (e.g., a freshly formatted device or one with a corrupted database).
+   *
+   * The directory will be created if it doesn't exist.
+   *
+   * @param mountpoint Path to the iPod mount point
+   * @param options Optional initialization options
+   * @returns Database instance ready for use
+   * @throws LibgpodError if initialization fails
+   *
+   * @example
+   * ```typescript
+   * // Initialize a new iPod with default settings (iPod Video 60GB)
+   * const db = await Database.initializeIpod('/Volumes/IPOD');
+   *
+   * // Initialize with specific model
+   * const db = await Database.initializeIpod('/Volumes/IPOD', {
+   *   model: Database.IpodModels.CLASSIC_120GB,
+   *   name: 'My iPod Classic'
+   * });
+   *
+   * // Add tracks and save
+   * db.addTrack({ title: 'First Song', artist: 'Artist' });
+   * await db.save();
+   * db.close();
+   * ```
+   */
+  static async initializeIpod(
+    mountpoint: string,
+    options?: {
+      /** iPod model number (e.g., "MA147"). See Database.IpodModels for common values. */
+      model?: string;
+      /** Name for the iPod (default: "iPod") */
+      name?: string;
+    }
+  ): Promise<Database> {
+    try {
+      const native = nativeInitIpod(mountpoint, options?.model, options?.name);
+      return new Database(native, mountpoint);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'initializeIpod'
+      );
+    }
+  }
+
+  /**
+   * Synchronous version of initializeIpod().
+   *
+   * @param mountpoint Path to the iPod mount point
+   * @param options Optional initialization options
+   * @returns Database instance ready for use
+   * @throws LibgpodError if initialization fails
+   */
+  static initializeIpodSync(
+    mountpoint: string,
+    options?: {
+      model?: string;
+      name?: string;
+    }
+  ): Database {
+    try {
+      const native = nativeInitIpod(mountpoint, options?.model, options?.name);
+      return new Database(native, mountpoint);
+    } catch (error) {
+      throw new LibgpodError(
+        error instanceof Error ? error.message : String(error),
+        LibgpodErrorCode.Unknown,
+        'initializeIpod'
       );
     }
   }

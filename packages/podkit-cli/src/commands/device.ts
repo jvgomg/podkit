@@ -189,7 +189,10 @@ export interface DeviceAddOutput {
     size: number;
     isMounted: boolean;
     mountPoint?: string;
+    trackCount?: number;
+    modelName?: string;
   };
+  initialized?: boolean;
   saved?: boolean;
   configPath?: string;
   isDefault?: boolean;
@@ -263,10 +266,11 @@ export interface DeviceClearOutput {
 
 export interface DeviceResetOutput {
   success: boolean;
+  mountPoint?: string;
+  modelName?: string;
   tracksRemoved?: number;
   dryRun?: boolean;
   error?: string;
-  fileDeleteErrors?: string[];
 }
 
 export interface DeviceEjectOutput {
@@ -404,11 +408,18 @@ const listSubcommand = new Command('list')
 // Add subcommand
 // =============================================================================
 
+interface AddOptions {
+  yes?: boolean;
+}
+
 const addSubcommand = new Command('add')
   .description('detect connected iPod and add to config')
   .argument('<name>', 'name for this device configuration')
-  .action(async (name: string) => {
+  .argument('[path]', 'explicit path to iPod mount point')
+  .option('-y, --yes', 'skip confirmation prompts')
+  .action(async (name: string, explicitPath: string | undefined, options: AddOptions) => {
     const { globalOpts, configResult } = getContext();
+    const autoConfirm = options.yes ?? false;
 
     const outputJson = (data: DeviceAddOutput) => {
       console.log(JSON.stringify(data, null, 2));
@@ -439,10 +450,12 @@ const addSubcommand = new Command('add')
     }
 
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
 
     try {
       const core = await import('@podkit/core');
       getDeviceManager = core.getDeviceManager;
+      IpodDatabase = core.IpodDatabase;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
       if (globalOpts.json) {
@@ -459,14 +472,206 @@ const addSubcommand = new Command('add')
 
     const manager = getDeviceManager();
 
+    // If explicit path provided, use it directly
+    if (explicitPath) {
+      if (!existsSync(explicitPath)) {
+        const error = `Path not found: ${explicitPath}`;
+        if (globalOpts.json) {
+          outputJson({ success: false, error });
+        } else {
+          console.error(error);
+        }
+        process.exitCode = 1;
+        return;
+      }
+
+      // Check if database exists
+      const hasDb = await IpodDatabase.hasDatabase(explicitPath);
+      let trackCount = 0;
+      let modelName = 'Unknown';
+      let initialized = false;
+
+      if (!hasDb) {
+        if (!globalOpts.json && !globalOpts.quiet) {
+          console.log('');
+          console.log('This iPod needs to be initialized (no iTunesDB found).');
+        }
+
+        const shouldInit = autoConfirm || globalOpts.json || await confirm('Initialize iPod database now? [Y/n] ');
+
+        if (!shouldInit) {
+          console.log('Cancelled. iPod not initialized.');
+          return;
+        }
+
+        try {
+          if (!globalOpts.quiet && !globalOpts.json) {
+            console.log('Initializing iPod database...');
+          }
+          const ipod = await IpodDatabase.initializeIpod(explicitPath);
+          modelName = ipod.device.modelName;
+          ipod.close();
+          initialized = true;
+          if (!globalOpts.quiet && !globalOpts.json) {
+            console.log(`Initialized as ${modelName}.`);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (globalOpts.json) {
+            outputJson({ success: false, error: `Failed to initialize: ${message}` });
+          } else {
+            console.error(`Failed to initialize iPod: ${message}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        // Database exists, read info
+        try {
+          const ipod = await IpodDatabase.open(explicitPath);
+          try {
+            trackCount = ipod.trackCount;
+            modelName = ipod.device.modelName;
+          } finally {
+            ipod.close();
+          }
+        } catch (err) {
+          // Couldn't read database info, continue anyway
+          if (globalOpts.verbose && !globalOpts.json) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.warn(`Warning: Could not read database: ${message}`);
+          }
+        }
+      }
+
+      // Get volume UUID if possible (for macOS)
+      let volumeUuid = '';
+      let volumeName = explicitPath.split('/').pop() || 'iPod';
+
+      if (manager.isSupported) {
+        const ipods = await manager.findIpodDevices();
+        const matchingDevice = ipods.find((d) => d.mountPoint === explicitPath);
+        if (matchingDevice) {
+          volumeUuid = matchingDevice.volumeUuid;
+          volumeName = matchingDevice.volumeName;
+        }
+      }
+
+      // If no UUID found, generate a stable one from the path
+      if (!volumeUuid) {
+        // Use a simple hash of the path as fallback UUID
+        volumeUuid = `manual-${Buffer.from(explicitPath).toString('base64').replace(/[/+=]/g, '').slice(0, 16)}`;
+      }
+
+      const deviceInfo = {
+        name,
+        identifier: 'unknown',
+        volumeName,
+        volumeUuid,
+        size: 0,
+        isMounted: true,
+        mountPoint: explicitPath,
+        trackCount,
+        modelName,
+      };
+
+      const deviceCount = Object.keys(existingDevices).length;
+      const isFirstDevice = deviceCount === 0;
+
+      if (globalOpts.json) {
+        const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+        const deviceConfig: DeviceConfig = {
+          volumeUuid,
+          volumeName,
+        };
+
+        const result = addDevice(name, deviceConfig, { configPath });
+
+        if (result.success && isFirstDevice) {
+          setDefaultDevice(name, { configPath });
+        }
+
+        outputJson({
+          success: result.success,
+          device: deviceInfo,
+          initialized,
+          saved: result.success,
+          configPath: result.configPath,
+          isDefault: isFirstDevice,
+          error: result.error,
+        });
+
+        if (!result.success) {
+          process.exitCode = 1;
+        }
+        return;
+      }
+
+      if (!autoConfirm) {
+        console.log('');
+        console.log('iPod at path:');
+        console.log(`  Path:        ${explicitPath}`);
+        console.log(`  Model:       ${modelName}`);
+        console.log(`  Tracks:      ${formatNumber(trackCount)}`);
+        console.log('');
+
+        const shouldSave = await confirm(`Add this iPod as "${name}"? [Y/n] `);
+
+        if (!shouldSave) {
+          console.log('Cancelled. No changes made.');
+          return;
+        }
+      }
+
+      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+      const deviceConfig: DeviceConfig = {
+        volumeUuid,
+        volumeName,
+      };
+
+      const result = addDevice(name, deviceConfig, { configPath });
+
+      if (!result.success) {
+        console.error(`Failed to save config: ${result.error}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      if (isFirstDevice) {
+        setDefaultDevice(name, { configPath });
+      }
+
+      console.log('');
+      if (result.created) {
+        console.log(`Created config file: ${result.configPath}`);
+      } else {
+        console.log(`Updated config file: ${result.configPath}`);
+      }
+      console.log('');
+      console.log(`Device "${name}" added to config.`);
+      if (isFirstDevice) {
+        console.log(`Set as default device.`);
+      }
+      if (initialized) {
+        console.log(`Database initialized (${modelName}).`);
+      }
+      console.log('');
+      console.log('Next steps:');
+      console.log('  podkit collection add <path>   # Add your music library');
+      console.log(`  podkit sync                    # Sync to this device`);
+      return;
+    }
+
+    // No explicit path - scan for devices
     if (!manager.isSupported) {
-      const error = `Device scanning is not supported on ${manager.platform}.`;
+      const error = `Device scanning is not supported on ${manager.platform}. Specify a path explicitly.`;
       if (globalOpts.json) {
         outputJson({ success: false, error });
       } else {
         console.error(error);
         console.error('');
-        console.error(manager.getManualInstructions('mount'));
+        console.error('Usage: podkit device add <name> <path>');
+        console.error('Example: podkit device add myipod /Volumes/IPOD');
       }
       process.exitCode = 1;
       return;
@@ -491,12 +696,93 @@ const addSubcommand = new Command('add')
         console.error(
           'If using an iFlash adapter, the iPod may need to be mounted manually first.'
         );
+        console.error('');
+        console.error('Or specify a path explicitly:');
+        console.error('  podkit device add <name> /path/to/ipod');
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    // Multiple iPods found - error with guidance
+    if (ipods.length > 1) {
+      if (globalOpts.json) {
+        outputJson({
+          success: false,
+          error: `Multiple iPod devices found (${ipods.length}). Specify a path explicitly.`,
+        });
+      } else {
+        console.error(`Found ${ipods.length} iPod devices. Specify which one to add:`);
+        console.error('');
+        for (const ipod of ipods) {
+          console.error(`  podkit device add ${name} ${ipod.mountPoint}`);
+          console.error(`    ${ipod.volumeName || '(unnamed)'} - ${formatBytes(ipod.size)}`);
+          console.error('');
+        }
       }
       process.exitCode = 1;
       return;
     }
 
     const ipod = ipods[0]!;
+
+    // Check if the iPod has a database
+    let trackCount = 0;
+    let modelName = 'Unknown';
+    let initialized = false;
+
+    if (ipod.mountPoint) {
+      const hasDb = await IpodDatabase.hasDatabase(ipod.mountPoint);
+
+      if (!hasDb) {
+        if (!globalOpts.json && !globalOpts.quiet) {
+          console.log('');
+          console.log('This iPod needs to be initialized (no iTunesDB found).');
+        }
+
+        const shouldInit = autoConfirm || globalOpts.json || await confirm('Initialize iPod database now? [Y/n] ');
+
+        if (!shouldInit) {
+          console.log('Cancelled. iPod not initialized.');
+          return;
+        }
+
+        try {
+          if (!globalOpts.quiet && !globalOpts.json) {
+            console.log('Initializing iPod database...');
+          }
+          const db = await IpodDatabase.initializeIpod(ipod.mountPoint);
+          modelName = db.device.modelName;
+          db.close();
+          initialized = true;
+          if (!globalOpts.quiet && !globalOpts.json) {
+            console.log(`Initialized as ${modelName}.`);
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          if (globalOpts.json) {
+            outputJson({ success: false, error: `Failed to initialize: ${message}` });
+          } else {
+            console.error(`Failed to initialize iPod: ${message}`);
+          }
+          process.exitCode = 1;
+          return;
+        }
+      } else {
+        // Database exists, read info
+        try {
+          const db = await IpodDatabase.open(ipod.mountPoint);
+          try {
+            trackCount = db.trackCount;
+            modelName = db.device.modelName;
+          } finally {
+            db.close();
+          }
+        } catch {
+          // Couldn't read database info, continue anyway
+        }
+      }
+    }
 
     const deviceInfo = {
       name,
@@ -506,6 +792,8 @@ const addSubcommand = new Command('add')
       size: ipod.size,
       isMounted: ipod.isMounted,
       mountPoint: ipod.mountPoint,
+      trackCount,
+      modelName,
     };
 
     const deviceCount = Object.keys(existingDevices).length;
@@ -527,6 +815,7 @@ const addSubcommand = new Command('add')
       outputJson({
         success: result.success,
         device: deviceInfo,
+        initialized,
         saved: result.success,
         configPath: result.configPath,
         isDefault: isFirstDevice,
@@ -542,7 +831,9 @@ const addSubcommand = new Command('add')
     console.log('');
     console.log('Found attached iPod:');
     console.log(`  Name:        ${ipod.volumeName || '(unnamed)'}`);
+    console.log(`  Model:       ${modelName}`);
     console.log(`  Size:        ${formatBytes(ipod.size)}`);
+    console.log(`  Tracks:      ${formatNumber(trackCount)}`);
     console.log(`  Volume UUID: ${ipod.volumeUuid}`);
     console.log(`  Mounted:     ${ipod.isMounted ? 'Yes' : 'No'}`);
     if (ipod.mountPoint) {
@@ -551,7 +842,7 @@ const addSubcommand = new Command('add')
     console.log(`  Device:      /dev/${ipod.identifier}`);
     console.log('');
 
-    const shouldSave = await confirm(`Add this iPod as "${name}"? [Y/n] `);
+    const shouldSave = autoConfirm || await confirm(`Add this iPod as "${name}"? [Y/n] `);
 
     if (!shouldSave) {
       console.log('Cancelled. No changes made.');
@@ -587,10 +878,13 @@ const addSubcommand = new Command('add')
     if (isFirstDevice) {
       console.log(`Set as default device.`);
     }
+    if (initialized) {
+      console.log(`Database initialized (${modelName}).`);
+    }
     console.log('');
-    console.log('You can now use:');
-    console.log(`  podkit sync -d ${name}     # Sync to this device`);
-    console.log('  podkit device info ' + name + '  # View device details');
+    console.log('Next steps:');
+    console.log('  podkit collection add <path>   # Add your music library');
+    console.log(`  podkit sync                    # Sync to this device`);
   });
 
 // =============================================================================
@@ -1349,13 +1643,21 @@ const clearSubcommand = new Command('clear')
 // Reset subcommand (from reset.ts)
 // =============================================================================
 
+interface ResetOptions {
+  yes?: boolean;
+  dryRun?: boolean;
+}
+
 const resetSubcommand = new Command('reset')
-  .description('remove all tracks from the iPod database')
+  .description(
+    'recreate iPod database from scratch (note: does not delete orphaned audio files in iPod_Control/Music/; use "device clear --type all" first to remove all content)'
+  )
   .argument('[name]', 'device name (uses default if omitted)')
-  .option('--confirm', 'skip confirmation prompt (for scripts)')
-  .option('--dry-run', 'show what would be removed without removing')
-  .action(async (name: string | undefined, options: ClearOptions) => {
+  .option('-y, --yes', 'skip confirmation prompt')
+  .option('--dry-run', 'show what would happen without making changes')
+  .action(async (name: string | undefined, options: ResetOptions) => {
     const { globalOpts } = getContext();
+    const autoConfirm = options.yes ?? false;
 
     const outputJson = (data: DeviceResetOutput) => {
       console.log(JSON.stringify(data, null, 2));
@@ -1375,13 +1677,11 @@ const resetSubcommand = new Command('reset')
     const { resolvedDevice } = resolved;
 
     let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
-    let IpodError: typeof import('@podkit/core').IpodError;
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
     try {
       const core = await import('@podkit/core');
       IpodDatabase = core.IpodDatabase;
-      IpodError = core.IpodError;
       getDeviceManager = core.getDeviceManager;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
@@ -1439,120 +1739,119 @@ const resetSubcommand = new Command('reset')
       return;
     }
 
-    let ipod;
-    try {
-      ipod = await IpodDatabase.open(devicePath);
-    } catch (err) {
-      const isIpodError = err instanceof IpodError;
-      const message = err instanceof Error ? err.message : String(err);
+    // Check if database exists and get current track count
+    const hasDb = await IpodDatabase.hasDatabase(devicePath);
+    let currentTrackCount = 0;
 
+    if (hasDb) {
+      try {
+        const ipod = await IpodDatabase.open(devicePath);
+        try {
+          currentTrackCount = ipod.trackCount;
+        } finally {
+          ipod.close();
+        }
+      } catch {
+        // Database exists but couldn't be read - that's fine, we're resetting anyway
+      }
+    }
+
+    // Determine action verb based on whether database exists
+    const actionVerb = hasDb ? 'recreate' : 'create';
+    const actionVerbPast = hasDb ? 'recreated' : 'created';
+    const actionVerbIng = hasDb ? 'Recreating' : 'Creating';
+
+    if (options.dryRun) {
       if (globalOpts.json) {
         outputJson({
-          success: false,
-          error: isIpodError
-            ? `Not an iPod or database corrupted: ${message}`
-            : message,
+          success: true,
+          mountPoint: devicePath,
+          tracksRemoved: currentTrackCount,
+          dryRun: true,
         });
       } else {
-        console.error(`Cannot read iPod database at: ${devicePath}`);
-        console.error('');
-        if (isIpodError) {
-          console.error('This path does not appear to be a valid iPod:');
-          console.error('  - Missing iTunesDB file');
-          console.error('  - Database may be corrupted');
+        console.log('Dry run - would perform the following:');
+        console.log('');
+        if (hasDb) {
+          console.log(`  1. Remove existing database (${formatNumber(currentTrackCount)} tracks)`);
+          console.log('  2. Create fresh iTunesDB');
         } else {
-          console.error('Error:', message);
+          console.log('  1. Create new iTunesDB (no existing database found)');
         }
+        console.log(`  ${hasDb ? '3' : '2'}. Preserve filesystem and volume UUID`);
+        console.log('');
+        console.log('No changes made.');
       }
-      process.exitCode = 1;
       return;
     }
 
-    try {
-      const trackCount = ipod.trackCount;
-
-      if (trackCount === 0) {
-        if (globalOpts.json) {
-          outputJson({
-            success: true,
-            tracksRemoved: 0,
-            dryRun: options.dryRun,
-          });
-        } else {
-          console.log('iPod has no tracks to remove.');
+    // Strong confirmation (defaults to No) - only needed if there's content to lose
+    if (!autoConfirm && !globalOpts.json) {
+      console.log('');
+      if (hasDb) {
+        console.log('WARNING: This will recreate the iPod database from scratch.');
+        console.log('All tracks, playlists, and play counts will be lost.');
+        if (currentTrackCount > 0) {
+          console.log(`Currently: ${formatNumber(currentTrackCount)} tracks`);
         }
-        return;
-      }
+        console.log('');
+        console.log('Your device configuration in podkit will remain valid.');
+        console.log('');
 
-      if (options.dryRun) {
-        if (globalOpts.json) {
-          outputJson({
-            success: true,
-            tracksRemoved: trackCount,
-            dryRun: true,
-          });
-        } else {
-          console.log(
-            `iPod has ${formatNumber(trackCount)} track${trackCount === 1 ? '' : 's'}.`
-          );
-          console.log('');
-          console.log('Dry run: would remove all tracks and audio files.');
-        }
-        return;
-      }
-
-      if (!options.confirm) {
-        if (!globalOpts.json) {
-          console.log(
-            `iPod has ${formatNumber(trackCount)} track${trackCount === 1 ? '' : 's'}.`
-          );
-          console.log('');
-          console.log(
-            'This will remove ALL tracks from the iPod. Audio files will be deleted.'
-          );
-          console.log('This action cannot be undone.');
-          console.log('');
-        }
-
-        const confirmed = await confirmNo('Continue?');
+        const confirmed = await confirmNo('Continue? [y/N] ');
         if (!confirmed) {
-          if (globalOpts.json) {
-            outputJson({ success: false, error: 'Operation cancelled by user' });
-          } else {
-            console.log('Operation cancelled.');
-          }
-          process.exitCode = 1;
+          console.log('Cancelled. No changes made.');
           return;
         }
+      } else {
+        console.log('No existing database found. A fresh database will be created.');
+        console.log('');
       }
+    }
 
-      if (!globalOpts.json && !globalOpts.quiet) {
-        console.log('Removing tracks...');
-      }
+    if (!globalOpts.quiet && !globalOpts.json) {
+      console.log(`${actionVerbIng} database...`);
+    }
 
-      const result = ipod.removeAllTracks({ deleteFiles: true });
-      await ipod.save();
-
-      if (result.fileDeleteErrors.length > 0 && !globalOpts.quiet) {
-        for (const error of result.fileDeleteErrors) {
-          console.warn(`Warning: ${error}`);
-        }
-      }
+    try {
+      // Initialize a fresh database (this will overwrite the existing one if present)
+      const ipod = await IpodDatabase.initializeIpod(devicePath);
+      const modelName = ipod.device.modelName;
+      ipod.close();
 
       if (globalOpts.json) {
         outputJson({
           success: true,
-          tracksRemoved: result.removedCount,
-          fileDeleteErrors:
-            result.fileDeleteErrors.length > 0 ? result.fileDeleteErrors : undefined,
+          mountPoint: devicePath,
+          modelName,
+          tracksRemoved: currentTrackCount,
         });
       } else {
-        console.log(
-          `Removed ${formatNumber(result.removedCount)} track${result.removedCount === 1 ? '' : 's'}.`
-        );
+        console.log('');
+        console.log(`Database ${actionVerbPast}.`);
+        console.log(`  Model:  ${modelName}`);
+        console.log(`  Tracks: 0`);
+        console.log(`  Path:   ${devicePath}`);
+        if (currentTrackCount > 0) {
+          console.log('');
+          console.log(`Removed ${formatNumber(currentTrackCount)} tracks.`);
+        }
+        console.log('');
+        console.log('You can now sync fresh content:');
+        console.log('  podkit sync');
       }
-    } finally {
-      ipod.close();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (globalOpts.json) {
+        outputJson({
+          success: false,
+          mountPoint: devicePath,
+          error: message,
+        });
+      } else {
+        console.error(`Failed to ${actionVerb} iPod database: ${message}`);
+      }
+      process.exitCode = 1;
     }
   });
 
@@ -1937,40 +2236,172 @@ export interface DeviceInitOutput {
   success: boolean;
   device?: string;
   mountPoint?: string;
+  modelName?: string;
   error?: string;
 }
 
 interface InitOptions {
   force?: boolean;
+  yes?: boolean;
 }
 
 const initSubcommand = new Command('init')
   .description('initialize iPod database on a device')
   .argument('[name]', 'device name (uses default if omitted)')
   .option('-f, --force', 'overwrite existing database')
-  .action(async (_name: string | undefined, _options: InitOptions) => {
+  .option('-y, --yes', 'skip confirmation prompt')
+  .action(async (name: string | undefined, options: InitOptions) => {
     const { globalOpts } = getContext();
+    const autoConfirm = options.yes ?? false;
 
     const outputJson = (data: DeviceInitOutput) => {
       console.log(JSON.stringify(data, null, 2));
     };
 
-    // TODO: Implement iPod database initialization
-    // This requires either:
-    // 1. Using gpod-tool CLI to initialize the iPod
-    // 2. Adding a create() method to IpodDatabase in podkit-core
-    // For now, output a not-implemented message
-
-    const error =
-      'Device initialization is not yet implemented. ' +
-      'Please use iTunes or a compatible tool to initialize the iPod database.';
-
-    if (globalOpts.json) {
-      outputJson({ success: false, error });
-    } else {
-      console.error(error);
+    const resolved = resolveDeviceArg(name);
+    if ('error' in resolved) {
+      if (globalOpts.json) {
+        outputJson({ success: false, error: resolved.error });
+      } else {
+        console.error(resolved.error);
+      }
+      process.exitCode = 1;
+      return;
     }
-    process.exitCode = 1;
+
+    const { resolvedDevice } = resolved;
+
+    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+
+    try {
+      const core = await import('@podkit/core');
+      IpodDatabase = core.IpodDatabase;
+      getDeviceManager = core.getDeviceManager;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+      if (globalOpts.json) {
+        outputJson({ success: false, error: message });
+      } else {
+        console.error('Failed to load podkit-core.');
+        if (globalOpts.verbose) {
+          console.error('Details:', message);
+        }
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    const manager = getDeviceManager();
+    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+    if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
+      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+    }
+
+    const resolveResult = await resolveDevicePath({
+      cliDevice: globalOpts.device,
+      deviceIdentity,
+      manager,
+      requireMounted: true,
+      quiet: globalOpts.quiet,
+    });
+
+    if (!resolveResult.path) {
+      if (globalOpts.json) {
+        outputJson({
+          success: false,
+          error: resolveResult.error ?? formatDeviceError(resolveResult),
+        });
+      } else {
+        console.error(resolveResult.error ?? formatDeviceError(resolveResult));
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    const devicePath = resolveResult.path;
+
+    if (!existsSync(devicePath)) {
+      if (globalOpts.json) {
+        outputJson({ success: false, error: `Device path not found: ${devicePath}` });
+      } else {
+        console.error(`iPod not found at: ${devicePath}`);
+        console.error('');
+        console.error('Make sure the iPod is connected and mounted.');
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    // Check if database already exists
+    const hasDb = await IpodDatabase.hasDatabase(devicePath);
+
+    if (hasDb && !options.force) {
+      if (globalOpts.json) {
+        outputJson({
+          success: false,
+          error: 'Database already exists. Use --force to overwrite.',
+        });
+      } else {
+        console.error('iPod already has a database. Use --force to reinitialize.');
+        console.error('');
+        console.error('Warning: This will delete all tracks and playlists!');
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (hasDb && options.force && !autoConfirm && !globalOpts.json) {
+      console.log('');
+      console.log('WARNING: This will delete all existing tracks and playlists!');
+      console.log('');
+      const confirmed = await confirmNo('Reinitialize the iPod database? [y/N] ');
+      if (!confirmed) {
+        console.log('Cancelled. No changes made.');
+        return;
+      }
+    }
+
+    if (!globalOpts.quiet && !globalOpts.json) {
+      console.log('Initializing iPod database...');
+    }
+
+    try {
+      const ipod = await IpodDatabase.initializeIpod(devicePath);
+      const modelName = ipod.device.modelName;
+      ipod.close();
+
+      if (globalOpts.json) {
+        outputJson({
+          success: true,
+          device: resolvedDevice?.name,
+          mountPoint: devicePath,
+          modelName,
+        });
+      } else {
+        console.log('');
+        console.log(`iPod database initialized successfully.`);
+        console.log(`  Model: ${modelName}`);
+        console.log(`  Path:  ${devicePath}`);
+        console.log('');
+        console.log('You can now use:');
+        console.log('  podkit sync    # Sync content to this device');
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (globalOpts.json) {
+        outputJson({
+          success: false,
+          device: resolvedDevice?.name,
+          mountPoint: devicePath,
+          error: message,
+        });
+      } else {
+        console.error(`Failed to initialize iPod database: ${message}`);
+      }
+      process.exitCode = 1;
+    }
   });
 
 // =============================================================================

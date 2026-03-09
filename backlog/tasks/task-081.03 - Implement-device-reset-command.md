@@ -1,9 +1,10 @@
 ---
 id: TASK-081.03
 title: Implement device reset command
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-09 22:18'
+updated_date: '2026-03-09 22:44'
 labels:
   - cli
   - ipod
@@ -69,13 +70,31 @@ The current `device reset` behavior (remove all tracks, keep database) should be
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Recreates iTunesDB from scratch (not just clearing tracks)
-- [ ] #2 Strong confirmation prompt (defaults to No)
-- [ ] #3 Preserves filesystem and volume UUID
-- [ ] #4 Config remains valid after reset
-- [ ] #5 Supports --confirm/--yes for scripting
-- [ ] #6 Supports --json for structured output
-- [ ] #7 Graceful error handling for edge cases
-- [ ] #8 Unit tests cover confirmation and error paths
-- [ ] #9 E2E tests verify database recreation
+- [x] #1 Recreates iTunesDB from scratch (not just clearing tracks)
+- [x] #2 Strong confirmation prompt (defaults to No)
+- [x] #3 Preserves filesystem and volume UUID
+- [x] #4 Config remains valid after reset
+- [x] #5 Supports --confirm/--yes for scripting
+- [x] #6 Supports --json for structured output
+- [x] #7 Graceful error handling for edge cases
+- [x] #8 Unit tests cover confirmation and error paths
+- [x] #9 E2E tests verify database recreation
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation Complete
+
+Rewrote `device reset` command to recreate the database from scratch:
+
+1. **Strong confirmation**: Defaults to No (`[y/N]`), requires explicit 'y' or 'yes'
+2. **Database recreation**: Uses `IpodDatabase.initializeIpod()` to create fresh database
+3. **Filesystem preserved**: Volume UUID and config remain valid
+4. **--yes flag**: Skip confirmation for scripting
+5. **--dry-run flag**: Show what would happen without making changes
+6. **JSON output**: Structured output for all operations
+7. **Clear messaging**: Shows model, track count removed, next steps
+
+The old behavior (remove tracks but keep database) is now available via `device clear --type all`.
+<!-- SECTION:NOTES:END -->
