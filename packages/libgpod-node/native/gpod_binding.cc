@@ -99,6 +99,19 @@ Napi::Value Create(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
+    // IMPORTANT: Create a master playlist for the new database.
+    // libgpod requires a master playlist for many operations (save, track add, etc.)
+    // Without it, operations will fail with CRITICAL assertions like:
+    //   - itdb_playlist_mpl: assertion 'pl' failed
+    //   - prepare_itdb_for_write: assertion 'mpl' failed
+    //   - mk_mhla: assertion 'fexp->albums' failed
+    //   - mk_mhli: assertion 'fexp->artists' failed
+    Itdb_Playlist* mpl = itdb_playlist_new("iPod", FALSE);
+    if (mpl) {
+        itdb_playlist_set_mpl(mpl);
+        itdb_playlist_add(db, mpl, -1);
+    }
+
     // Create a new DatabaseWrapper and set its internal pointer
     return DatabaseWrapper::NewInstance(env, db);
 }

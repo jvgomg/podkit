@@ -127,6 +127,17 @@ Napi::Value DatabaseWrapper::RemoveTrack(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
+    // IMPORTANT: Remove track from ALL playlists before removing from database.
+    // libgpod's itdb_track_remove() does NOT remove the track from playlists,
+    // leaving stale references that cause CRITICAL assertions during save
+    // and "Track ID not found" warnings when reopening the database.
+    for (GList* pl = db_->playlists; pl != nullptr; pl = pl->next) {
+        Itdb_Playlist* playlist = static_cast<Itdb_Playlist*>(pl->data);
+        if (playlist) {
+            itdb_playlist_remove_track(playlist, track);
+        }
+    }
+
     // Invalidate handle before removing track
     InvalidateHandle(handle);
     itdb_track_remove(track);
@@ -511,19 +522,21 @@ Napi::Value DatabaseWrapper::SetTrackChapters(const Napi::CallbackInfo& info) {
         return env.Undefined();
     }
 
-    // Free existing chapter data
+    // Free existing chapter data and create a fresh one.
+    // IMPORTANT: We always create a new chapterdata even when clearing,
+    // because libgpod's itdb_track_free() calls itdb_chapterdata_free()
+    // without checking for NULL, causing CRITICAL assertions.
     if (track->chapterdata) {
         itdb_chapterdata_free(track->chapterdata);
-        track->chapterdata = nullptr;
     }
+    track->chapterdata = itdb_chapterdata_new();
 
     // If empty array, just return empty chapters
     if (chaptersArray.Length() == 0) {
         return ChaptersToArray(env, track->chapterdata);
     }
 
-    // Create new chapter data
-    track->chapterdata = itdb_chapterdata_new();
+    // chapterdata already created above, verify it's valid
     if (!track->chapterdata) {
         Napi::Error::New(env, "Failed to create chapter data").ThrowAsJavaScriptException();
         return env.Undefined();
@@ -639,11 +652,14 @@ Napi::Value DatabaseWrapper::ClearTrackChapters(const Napi::CallbackInfo& info) 
         return env.Undefined();
     }
 
-    // Free existing chapter data (only if it exists)
+    // Free existing chapter data and create a fresh empty one.
+    // IMPORTANT: We always create a new chapterdata even when clearing,
+    // because libgpod's itdb_track_free() calls itdb_chapterdata_free()
+    // without checking for NULL, causing CRITICAL assertions.
     if (track->chapterdata != nullptr) {
         itdb_chapterdata_free(track->chapterdata);
-        track->chapterdata = nullptr;
     }
+    track->chapterdata = itdb_chapterdata_new();
 
     return env.Undefined();
 }

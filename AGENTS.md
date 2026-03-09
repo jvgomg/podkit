@@ -74,6 +74,7 @@ Read these documents based on what you're working on:
 | [docs/MACOS-IPOD-MOUNTING.md](docs/MACOS-IPOD-MOUNTING.md) | Troubleshooting large iFlash iPods not mounting on macOS |
 | [docs/TESTING.md](docs/TESTING.md) | Understanding testing strategy and conventions |
 | [docs/TRANSFORMS.md](docs/TRANSFORMS.md) | Working on metadata transforms (ftintitle, etc.) |
+| [packages/libgpod-node/README.md](packages/libgpod-node/README.md) | Working on libgpod bindings, understanding deviations |
 | [packages/gpod-testing/README.md](packages/gpod-testing/README.md) | Writing tests that need iPod databases |
 | [packages/e2e-tests/README.md](packages/e2e-tests/README.md) | Writing E2E tests for the CLI |
 
@@ -222,6 +223,45 @@ it('syncs tracks to iPod', async () => {
 ```
 
 See [packages/e2e-tests/README.md](packages/e2e-tests/README.md) for full documentation.
+
+## libgpod-node: Native Bindings
+
+The `@podkit/libgpod-node` package provides N-API bindings to libgpod. While it aims to closely follow libgpod's API, **some operations have enhanced behavior** to handle edge cases that libgpod doesn't address automatically.
+
+### Documentation Requirement
+
+**When modifying libgpod-node native code:**
+
+1. **Document behavioral deviations** - If the binding behaves differently from raw libgpod, document it in:
+   - `packages/libgpod-node/README.md` under "Behavioral Deviations from libgpod"
+   - Inline comments in the native C++ code explaining the deviation
+
+2. **Explain the "why"** - Include:
+   - What libgpod does (or doesn't do)
+   - What problems this causes (assertion failures, data corruption, etc.)
+   - How our implementation differs
+   - Why we can't just use libgpod's default behavior
+
+3. **Add test coverage** - Create integration tests that verify the edge case is handled correctly
+
+### Current Deviations
+
+See `packages/libgpod-node/README.md` for the full list. Key deviations:
+
+| Operation | libgpod Issue | Our Fix |
+|-----------|---------------|---------|
+| `removeTrack()` | Doesn't remove from playlists | Remove from all playlists first |
+| `create()` | No master playlist | Create master playlist |
+| `clearTrackChapters()` | NULL chapterdata crashes | Create empty chapterdata |
+
+### Investigating New Issues
+
+When encountering libgpod CRITICAL assertions or unexpected behavior:
+
+1. **Reproduce with a test** - Create an integration test that triggers the issue
+2. **Check libgpod source** - Look at `tools/libgpod-macos/build/libgpod-0.8.3/src/`
+3. **Understand the expectation** - What does libgpod expect vs. what we're providing?
+4. **Fix and document** - Apply the fix and document the deviation
 
 ## Code Conventions
 

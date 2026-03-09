@@ -30,6 +30,7 @@ export {
   LibgpodError,
   PhotoAlbumType,
   PhotoTransitionDirection,
+  type TrackHandle,
 } from '../../index';
 
 import { isNativeAvailable } from '../../index';
