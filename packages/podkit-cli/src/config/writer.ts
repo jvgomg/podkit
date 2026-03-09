@@ -420,6 +420,9 @@ export function addMusicCollection(
   if (collection.username) {
     section += `username = "${escapeTomlString(collection.username)}"\n`;
   }
+  if (collection.password) {
+    section += `password = "${escapeTomlString(collection.password)}"\n`;
+  }
 
   // Check if section already exists
   const sectionRegex = new RegExp(`\\[music\\.${escapeRegExp(name)}\\]`);

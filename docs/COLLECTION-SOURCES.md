@@ -169,6 +169,65 @@ Currently, podkit syncs all tracks found in the source directory. Future version
 
 See TASK-031 for implementation details.
 
+## Subsonic Adapter
+
+podkit supports syncing from Subsonic-compatible servers including Navidrome, Airsonic, Gonic, and the original Subsonic server.
+
+### Configuration
+
+Add a Subsonic collection to your config file (`~/.config/podkit/config.toml`):
+
+```toml
+[music.navidrome]
+type = "subsonic"
+url = "https://your-server.example.com"
+username = "your-username"
+password = "your-password"
+path = "/path/to/download/cache"
+```
+
+### Password Options
+
+The password can be provided in several ways (checked in this order):
+
+1. **Config file** (simplest): Add `password = "..."` to the collection config
+2. **Environment variable**: Set `PODKIT_MUSIC_{NAME}_PASSWORD` where `{NAME}` is the collection name in uppercase
+3. **Fallback env var**: Set `SUBSONIC_PASSWORD` for any Subsonic collection
+
+**Example with environment variable:**
+```bash
+# For a collection named "navidrome"
+export PODKIT_MUSIC_NAVIDROME_PASSWORD="your-password"
+podkit collection music navidrome
+```
+
+> **Note:** Storing passwords in config files is convenient but less secure than environment variables. A future version will support system keychain integration for better security.
+
+### How It Works
+
+1. Connect to the Subsonic server using the API
+2. Fetch the complete catalog (paginating through albums)
+3. Extract track metadata from the API response
+4. During sync, stream audio directly from the server
+5. Transcode as needed and copy to iPod
+
+### Supported Servers
+
+| Server | Tested | Notes |
+|--------|--------|-------|
+| Navidrome | Yes | Full support |
+| Airsonic | Untested | Should work (uses same API) |
+| Gonic | Untested | Should work (uses same API) |
+| Subsonic | Untested | Should work (original API) |
+
+### Limitations
+
+- **No playlist sync** (yet) - only tracks are synced
+- **Fresh fetch each sync** - no local catalog caching
+- **Single server per collection** - create multiple collections for multiple servers
+
+See [ADR-007](adr/ADR-007-subsonic-collection-source.md) for full design details.
+
 ## Future Adapters
 
 Additional adapters may be added if users request them:
@@ -177,7 +236,6 @@ Additional adapters may be added if users request them:
 |--------|------|-------|
 | **Strawberry** | SQLite | Direct database access |
 | **beets** | SQLite | Direct database access |
-| **Navidrome** | API | Self-hosted streaming server |
 | **Jellyfin** | API | Media server |
 | **iTunes XML** | File | Legacy library.xml |
 

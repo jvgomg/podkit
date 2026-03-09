@@ -46,7 +46,8 @@ export interface MusicCollectionConfig {
   url?: string;
   /** Subsonic username (required when type='subsonic') */
   username?: string;
-  // Note: Password comes from env var PODKIT_MUSIC_{NAME}_PASSWORD
+  /** Subsonic password (optional - can also use env var PODKIT_MUSIC_{NAME}_PASSWORD) */
+  password?: string;
 }
 
 /**
@@ -208,6 +209,7 @@ export interface ConfigFileMusicCollection {
   type?: string;
   url?: string;
   username?: string;
+  password?: string;
 }
 
 /**

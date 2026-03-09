@@ -103,9 +103,10 @@ export function createMusicAdapter(options: CreateMusicAdapterOptions): core.Col
 /**
  * Create a SubsonicAdapter from collection config
  *
- * Password is resolved from:
- * 1. Environment variable PODKIT_MUSIC_{NAME}_PASSWORD
- * 2. Environment variable SUBSONIC_PASSWORD (fallback)
+ * Password is resolved from (in order):
+ * 1. Config file password field
+ * 2. Environment variable PODKIT_MUSIC_{NAME}_PASSWORD
+ * 3. Environment variable SUBSONIC_PASSWORD (fallback)
  *
  * @throws Error if URL, username, or password is missing
  */
@@ -125,15 +126,15 @@ function createSubsonicAdapterFromConfig(
     );
   }
 
-  // Look up password from environment
+  // Look up password: config file first, then environment variables
   const envVarName = getSubsonicPasswordEnvVar(collectionName);
-  const password = process.env[envVarName] ?? process.env.SUBSONIC_PASSWORD;
+  const password =
+    config.password ?? process.env[envVarName] ?? process.env.SUBSONIC_PASSWORD;
 
   if (!password) {
     throw new Error(
       `Subsonic collection '${collectionName}' requires password.\n` +
-        `Set environment variable: ${envVarName}\n` +
-        `Or set: SUBSONIC_PASSWORD`
+        `Add 'password' to config, or set environment variable: ${envVarName}`
     );
   }
 

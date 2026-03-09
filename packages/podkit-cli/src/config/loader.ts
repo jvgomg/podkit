@@ -272,6 +272,7 @@ function parseMusicCollections(
         type: 'subsonic',
         url: rawCollection.url,
         username: rawCollection.username,
+        password: rawCollection.password, // Optional - can also use env var
       };
     }
     hasAnyCollection = true;
