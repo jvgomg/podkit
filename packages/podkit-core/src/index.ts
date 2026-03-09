@@ -166,7 +166,6 @@ export {
   buildTranscodeArgs,
   buildAlacArgs,
   buildVbrArgs,
-  parseProgressLine,
 } from './transcode/ffmpeg.js';
 export type { FFmpegTranscoderConfig } from './transcode/ffmpeg.js';
 

@@ -14,7 +14,6 @@ import type {
   TranscoderCapabilities,
   TranscodeResult,
   TranscodeOptions,
-  TranscodeProgress,
   AudioMetadata,
   QualityPreset,
 } from './types.js';
@@ -205,19 +204,6 @@ export function buildAlacArgs(input: string, output: string): string[] {
 }
 
 /**
- * Parse FFmpeg progress output
- *
- * FFmpeg outputs progress info line by line in key=value format when
- * using -progress pipe:1
- *
- * @deprecated Use parseFFmpegProgressLine from './progress.js' instead
- */
-export function parseProgressLine(line: string): Partial<TranscodeProgress> | null {
-  // Re-export the shared implementation for backward compatibility
-  return parseFFmpegProgressLine(line);
-}
-
-/**
  * FFmpeg-based transcoder implementation
  */
 export class FFmpegTranscoder implements Transcoder {
@@ -376,7 +362,7 @@ export class FFmpegTranscoder implements Transcoder {
       proc.stdout.on('data', (data: Buffer) => {
         const lines = data.toString().split('\n');
         for (const line of lines) {
-          const progress = parseProgressLine(line);
+          const progress = parseFFmpegProgressLine(line);
           if (progress?.time !== undefined && options.onProgress) {
             const percent =
               inputDuration !== undefined && inputDuration > 0

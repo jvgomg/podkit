@@ -12,11 +12,11 @@ import {
   buildTranscodeArgs,
   buildAlacArgs,
   buildVbrArgs,
-  parseProgressLine,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
 import { AAC_PRESETS } from './types.js';
+import { parseFFmpegProgressLine } from './progress.js';
 
 describe('buildVbrArgs', () => {
   describe('native aac encoder', () => {
@@ -240,57 +240,69 @@ describe('buildAlacArgs', () => {
   });
 });
 
-describe('parseProgressLine', () => {
+describe('parseFFmpegProgressLine', () => {
   it('parses out_time_ms to seconds', () => {
-    const result = parseProgressLine('out_time_ms=5000000');
+    const result = parseFFmpegProgressLine('out_time_ms=5000000');
 
     expect(result).toEqual({ time: 5 });
   });
 
   it('handles zero time', () => {
-    const result = parseProgressLine('out_time_ms=0');
+    const result = parseFFmpegProgressLine('out_time_ms=0');
 
     expect(result).toEqual({ time: 0 });
   });
 
   it('handles large time values', () => {
-    const result = parseProgressLine('out_time_ms=180000000');
+    const result = parseFFmpegProgressLine('out_time_ms=180000000');
 
     expect(result).toEqual({ time: 180 }); // 3 minutes
   });
 
   it('returns null for progress=continue', () => {
-    const result = parseProgressLine('progress=continue');
+    const result = parseFFmpegProgressLine('progress=continue');
 
     expect(result).toBeNull();
   });
 
   it('returns null for progress=end', () => {
-    const result = parseProgressLine('progress=end');
+    const result = parseFFmpegProgressLine('progress=end');
 
     expect(result).toBeNull();
   });
 
+  it('parses bitrate to kbps', () => {
+    const result = parseFFmpegProgressLine('bitrate=256.0kbits/s');
+
+    expect(result).toEqual({ bitrate: 256 });
+  });
+
+  it('parses bitrate with rounding', () => {
+    const result = parseFFmpegProgressLine('bitrate=128.7kbits/s');
+
+    expect(result).toEqual({ bitrate: 129 });
+  });
+
   it('returns null for unrecognized keys', () => {
-    const result = parseProgressLine('bitrate=256.0kbits/s');
+    const result = parseFFmpegProgressLine('unknown_key=some_value');
 
     expect(result).toBeNull();
   });
 
   it('returns null for invalid format', () => {
-    const result = parseProgressLine('not a valid line');
+    const result = parseFFmpegProgressLine('not a valid line');
 
     expect(result).toBeNull();
   });
 
   it('returns null for empty string', () => {
-    const result = parseProgressLine('');
+    const result = parseFFmpegProgressLine('');
 
     expect(result).toBeNull();
   });
 
   it('handles invalid out_time_ms value', () => {
-    const result = parseProgressLine('out_time_ms=invalid');
+    const result = parseFFmpegProgressLine('out_time_ms=invalid');
 
     expect(result).toBeNull();
   });

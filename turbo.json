@@ -13,12 +13,12 @@
     },
     "test:unit": {
       "dependsOn": ["build"],
-      "inputs": ["src/**/*.test.ts", "!src/**/*.integration.test.ts"],
+      "inputs": ["src/**", "!src/**/*.integration.test.ts"],
       "outputs": []
     },
     "test:integration": {
       "dependsOn": ["build"],
-      "inputs": ["src/**/*.integration.test.ts"],
+      "inputs": ["src/**"],
       "outputs": []
     },
     "typecheck": {
