@@ -1,10 +1,10 @@
 ---
 id: TASK-069
 title: Video sync support (movies and TV shows)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 15:52'
-updated_date: '2026-03-08 16:03'
+updated_date: '2026-03-09 14:41'
 labels:
   - epic
   - video
@@ -34,16 +34,16 @@ Key requirements:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Video files (MKV, MP4, AVI, MOV, WebM) can be transcoded to iPod-compatible M4V
-- [ ] #2 Quality presets (max/high/medium/low) produce appropriate bitrates for target device
-- [ ] #3 Source quality detection prevents upscaling low-quality content
-- [ ] #4 Compatible files pass through without re-encoding
-- [ ] #5 Dry-run validates video files and reports compatibility issues
-- [ ] #6 Movies and TV shows are distinguished and have appropriate metadata
-- [ ] #7 Embedded metadata is extracted from video files
-- [ ] #8 Video transcoding has progress reporting
-- [ ] #9 Documentation covers usage and technical details
-- [ ] #10 Tests cover format detection, quality calculation, and transcoding
+- [x] #1 Video files (MKV, MP4, AVI, MOV, WebM) can be transcoded to iPod-compatible M4V
+- [x] #2 Quality presets (max/high/medium/low) produce appropriate bitrates for target device
+- [x] #3 Source quality detection prevents upscaling low-quality content
+- [x] #4 Compatible files pass through without re-encoding
+- [x] #5 Dry-run validates video files and reports compatibility issues
+- [x] #6 Movies and TV shows are distinguished and have appropriate metadata
+- [x] #7 Embedded metadata is extracted from video files
+- [x] #8 Video transcoding has progress reporting
+- [x] #9 Documentation covers usage and technical details
+- [x] #10 Tests cover format detection, quality calculation, and transcoding
 <!-- AC:END -->
 
 ## Implementation Plan
@@ -77,3 +77,44 @@ Key requirements:
 - E2E test suite
 - Documentation finalization
 <!-- SECTION:PLAN:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Video Sync Implementation Complete
+
+All 17 subtasks completed implementing full video sync support for movies and TV shows.
+
+### Features Implemented
+
+**Transcoding:**
+- FFmpeg-based H.264/AAC transcoding to iPod-compatible M4V
+- Quality presets (max/high/medium/low) with device-appropriate bitrates
+- Source quality detection prevents upscaling low-quality content
+- Passthrough for already-compatible files (no re-encoding)
+- Hardware acceleration support (VideoToolbox on macOS)
+
+**Metadata:**
+- Embedded metadata extraction via ffprobe
+- Content type detection (movie vs TV show) from filenames and paths
+- VideoMetadataAdapter interface for extensibility
+
+**Device Support:**
+- Device profiles for iPod Classic, Video, Nano generations
+- Resolution and bitrate limits per device
+- Video support detection (skips sync on non-video iPods)
+
+**CLI:**
+- `podkit sync video` command with `--video-quality` option
+- Dry-run shows video analysis and compatibility
+- Progress reporting during transcoding
+
+**Testing:**
+- 25 E2E tests covering full workflow
+- Unit tests for all components
+- Test video fixtures
+
+### Documentation
+- docs/VIDEO-TRANSCODING.md - User guide
+- docs/adr/ADR-006-video-transcoding.md - Architecture decision (Accepted)
+<!-- SECTION:FINAL_SUMMARY:END -->
