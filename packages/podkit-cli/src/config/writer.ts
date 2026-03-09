@@ -277,17 +277,17 @@ export function setDefaultDevice(
       // Clear the default device - remove the device line from [defaults]
       // Find the [defaults] section and remove just the device = ... line
       content = content.replace(
-        /(\[defaults\][^\[]*?)^device\s*=\s*["']?[^"'\n]*["']?\s*\n?/m,
+        /(\[defaults\][^[]*?)^device\s*=\s*["']?[^"'\n]*["']?\s*\n?/m,
         '$1'
       );
     } else {
       // Check if device = ... line exists in [defaults]
       // We need to find the line within the [defaults] section
-      const defaultsMatch = content.match(/\[defaults\]([^\[]*)/);
+      const defaultsMatch = content.match(/\[defaults\]([^[]*)/);
       if (defaultsMatch?.[1] && deviceLineRegex.test(defaultsMatch[1])) {
         // Replace existing device line within [defaults] section
         content = content.replace(
-          /(\[defaults\][^\[]*?)^device\s*=\s*["']?[^"'\n]*["']?\s*$/m,
+          /(\[defaults\][^[]*?)^device\s*=\s*["']?[^"'\n]*["']?\s*$/m,
           `$1device = "${name}"`
         );
       } else {

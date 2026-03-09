@@ -29,7 +29,7 @@ import type {
   VideoTranscodeSettings,
   VideoSourceAnalysis,
 } from '../video/types.js';
-import { getDefaultDeviceProfile, getPresetSettingsWithFallback } from '../video/types.js';
+import { getDefaultDeviceProfile } from '../video/types.js';
 import { checkVideoCompatibility } from '../video/compatibility.js';
 import { calculateEffectiveSettings } from '../video/quality.js';
 import type { SyncOperation, SyncWarning } from './types.js';

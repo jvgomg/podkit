@@ -425,7 +425,6 @@ export class DefaultSyncExecutor implements SyncExecutor {
       ...retryConfig,
     };
 
-    const total = plan.operations.length;
     const totalBytes = calculateTotalBytes(plan);
 
     // Create temp directory for transcoded files if needed
@@ -472,7 +471,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
     totalBytes: number
   ): AsyncIterable<ExecutorProgress> {
     const total = plan.operations.length;
-    let bytesProcessed = 0;
+    const bytesProcessed = 0;
 
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;

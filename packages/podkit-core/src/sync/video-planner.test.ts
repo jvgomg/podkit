@@ -63,18 +63,6 @@ function createVideo(
 }
 
 /**
- * Create an iPod video for testing
- */
-function createIPodVideo(title: string): IPodVideo {
-  return {
-    id: `ipod-${title}`,
-    filePath: `:iPod_Control:Videos:${title}.m4v`,
-    contentType: 'movie',
-    title,
-  };
-}
-
-/**
  * Create a VideoSyncDiff for testing
  */
 function createDiff(

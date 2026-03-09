@@ -41,7 +41,7 @@ export interface AddDeviceOutput {
 export const addDeviceCommand = new Command('add-device')
   .description('(deprecated) use "podkit device add <name>" instead')
   .argument('[name]', 'device name (required for new usage)')
-  .action(async (name?: string) => {
+  .action(async (_name?: string) => {
     const { globalOpts } = getContext();
 
     const deprecationMessage =

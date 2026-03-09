@@ -225,7 +225,7 @@ describe('libgpod-node video track operations', () => {
           mediaType: MediaType.Audio,
         });
 
-        let track = db.getTrack(handle);
+        const track = db.getTrack(handle);
         expect(track.mediaType).toBe(MediaType.Audio);
         expect(track.movieFlag).toBe(false);
 
@@ -253,7 +253,7 @@ describe('libgpod-node video track operations', () => {
           episodeNumber: 1,
         });
 
-        let track = db.getTrack(handle);
+        const track = db.getTrack(handle);
         expect(track.tvShow).toBe('My Show');
 
         // Clear the TV show field by setting it to empty string

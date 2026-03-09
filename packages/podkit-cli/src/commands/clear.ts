@@ -74,7 +74,7 @@ export const clearCommand = new Command('clear')
   .option('--confirm', 'skip confirmation prompt (for scripts)')
   .option('--dry-run', 'show what would be removed without removing')
   .action(async (type: string, options: ClearOptions) => {
-    const { config, globalOpts, configResult } = getContext();
+    const { config, globalOpts } = getContext();
 
     // Validate content type
     if (type !== 'music' && type !== 'video') {

@@ -43,7 +43,7 @@ export const mountCommand = new Command('mount')
   .option('--device <identifier>', 'device identifier (e.g., /dev/disk4s2)')
   .option('--dry-run', 'show mount command without executing')
   .action(async (options: MountOptions) => {
-    const { config, globalOpts, configResult } = getContext();
+    const { config, globalOpts } = getContext();
     const explicitDevice = options.device;
     const dryRun = options.dryRun ?? false;
 

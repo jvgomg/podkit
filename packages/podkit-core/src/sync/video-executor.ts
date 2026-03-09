@@ -22,8 +22,8 @@
  * @module
  */
 
-import { mkdir, stat, copyFile } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { mkdir, stat } from 'node:fs/promises';
+import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
@@ -287,7 +287,7 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
     plan: VideoSyncPlan
   ): AsyncIterable<VideoExecutorProgress> {
     const total = plan.operations.length;
-    let bytesProcessed = 0;
+    const bytesProcessed = 0;
 
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;
@@ -494,7 +494,7 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
     }
 
     const total = plan.operations.length;
-    let bytesProcessed = 0;
+    const bytesProcessed = 0;
 
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;

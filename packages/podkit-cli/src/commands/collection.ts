@@ -271,7 +271,7 @@ const addSubcommand = new Command('add')
   .argument('<name>', 'collection name (used as identifier)')
   .argument('<path>', 'path to the collection directory')
   .action(async (type: string, name: string, collectionPath: string) => {
-    const { globalOpts, configResult } = getContext();
+    const { globalOpts } = getContext();
 
     const outputJson = (data: CollectionModifyOutput) => {
       console.log(JSON.stringify(data, null, 2));
@@ -401,7 +401,7 @@ const removeSubcommand = new Command('remove')
   .argument('<name>', 'collection name to remove')
   .option('-y, --yes', 'skip confirmation prompt')
   .action(async (name: string, options: { yes?: boolean }) => {
-    const { globalOpts, configResult, config } = getContext();
+    const { globalOpts, config } = getContext();
 
     const outputJson = (data: CollectionModifyOutput) => {
       console.log(JSON.stringify(data, null, 2));
@@ -614,7 +614,7 @@ export const collectionCommand = new Command('collection')
   .addCommand(addSubcommand)
   .addCommand(removeSubcommand)
   .addCommand(showSubcommand)
-  .action((options, command) => {
+  .action((_options, _command) => {
     // Default action: list all collections
     // We need to manually invoke the list action
     const { globalOpts } = getContext();

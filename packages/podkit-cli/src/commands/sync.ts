@@ -349,52 +349,6 @@ function formatErrors(errors: CollectedError[], verbosity: number): string[] {
   return lines;
 }
 
-/**
- * Format execution warnings (artwork failures, etc.)
- *
- * By default, shows a summary count. With verbose, shows details.
- */
-function formatExecutionWarnings(
-  warnings: Array<{ type: string; track: { artist: string; title: string; album?: string }; message: string }>,
-  verbosity: number
-): string[] {
-  const lines: string[] = [];
-
-  if (warnings.length === 0) {
-    return lines;
-  }
-
-  // Group warnings by type
-  const byType = new Map<string, typeof warnings>();
-  for (const warning of warnings) {
-    const existing = byType.get(warning.type) ?? [];
-    existing.push(warning);
-    byType.set(warning.type, existing);
-  }
-
-  lines.push('');
-  lines.push(`Warnings: ${warnings.length}`);
-
-  if (verbosity >= 1) {
-    lines.push('');
-    for (const [type, typeWarnings] of byType) {
-      const typeLabel = type === 'artwork' ? 'Artwork' : type.charAt(0).toUpperCase() + type.slice(1);
-      lines.push(`  ${typeLabel} issues (${typeWarnings.length}):`);
-      for (const warning of typeWarnings) {
-        const trackName = `${warning.track.artist} - ${warning.track.title}`;
-        if (verbosity >= 2) {
-          lines.push(`    - ${trackName}`);
-          lines.push(`      ${warning.message}`);
-        } else {
-          lines.push(`    - ${trackName}`);
-        }
-      }
-    }
-  }
-
-  return lines;
-}
-
 // =============================================================================
 // Transform Display Helpers
 // =============================================================================
@@ -1533,12 +1487,11 @@ export const syncCommand = new Command('sync')
 
             const videoExecutor = core.createVideoExecutor({ ipod });
             let videoCompleted = 0;
-            let videoSkipped = 0;
 
             try {
               for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false })) {
                 if (progress.skipped) {
-                  videoSkipped++;
+                  // Skip tracking for skipped operations
                 } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
                   videoCompleted++;
                 }
@@ -1605,7 +1558,7 @@ export const syncCommand = new Command('sync')
             try {
               await videoAdapter.connect();
               collectionVideos = await videoAdapter.getVideos();
-            } catch (err) {
+            } catch {
               spinner.stop();
               continue;
             }
