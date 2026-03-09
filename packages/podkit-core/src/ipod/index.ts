@@ -72,3 +72,12 @@ export {
   getVideoTypeName,
 } from './video.js';
 export type { CreateVideoTrackOptions } from './video.js';
+
+// Generation utilities
+export {
+  IPOD_GENERATIONS,
+  formatGeneration,
+  getVideoProfile,
+  supportsVideo,
+} from './generation.js';
+export type { IpodGenerationMetadata } from './generation.js';

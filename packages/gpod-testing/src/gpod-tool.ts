@@ -9,7 +9,7 @@
 
 import { $ } from 'bun';
 import type {
-  IpodModel,
+  IpodModelNumber,
   DatabaseInfo,
   TrackInfo,
   TrackInput,
@@ -99,7 +99,7 @@ export async function getGpodToolVersion(): Promise<string> {
  */
 export async function init(
   path: string,
-  options: { model?: IpodModel; name?: string } = {}
+  options: { model?: IpodModelNumber; name?: string } = {}
 ): Promise<{ path: string; model: string; name: string }> {
   const args: string[] = ['init', path, '--json'];
 

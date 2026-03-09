@@ -28,7 +28,7 @@ import { join } from 'node:path';
 import type {
   CreateTestIpodOptions,
   TestIpod,
-  IpodModel,
+  IpodModelNumber,
   TrackInput,
   DatabaseInfo,
   TrackInfo,
@@ -185,7 +185,7 @@ export async function withTestIpod<T>(
  * ```
  */
 export async function createTestIpodsForModels(
-  models: IpodModel[]
+  models: IpodModelNumber[]
 ): Promise<(TestIpod & TestIpodHelpers)[]> {
   return Promise.all(
     models.map((model) => createTestIpod({ model, name: `Test ${model}` }))
@@ -201,19 +201,19 @@ export async function createTestIpodsForModels(
  */
 export const TestModels = {
   /** iPod Video 60GB (5th gen) - Primary test target, full features */
-  VIDEO_60GB: 'MA147' as IpodModel,
+  VIDEO_60GB: 'MA147' as IpodModelNumber,
 
   /** iPod Video 30GB (5th gen) - Same features, smaller capacity */
-  VIDEO_30GB: 'MA002' as IpodModel,
+  VIDEO_30GB: 'MA002' as IpodModelNumber,
 
   /** iPod Video 30GB Black (5th gen) - Alternative Video model */
-  VIDEO_30GB_BLACK: 'MA146' as IpodModel,
+  VIDEO_30GB_BLACK: 'MA146' as IpodModelNumber,
 
   /**
    * iPod Nano 2GB (2nd gen) - Nano-specific behavior
    * Note: May have limited artwork support
    */
-  NANO_2GB: 'MA477' as IpodModel,
+  NANO_2GB: 'MA477' as IpodModelNumber,
 
   // Note: iPod Classic models (MB565, MC297) require FirewireID in SysInfo
   // and are not supported for test environment creation without additional setup

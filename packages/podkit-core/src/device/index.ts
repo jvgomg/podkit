@@ -28,7 +28,7 @@
 
 // Types
 export type {
-  DeviceInfo,
+  PlatformDeviceInfo,
   DeviceManager,
   EjectResult,
   MountResult,

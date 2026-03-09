@@ -10,7 +10,7 @@ import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   DeviceManager,
-  DeviceInfo,
+  PlatformDeviceInfo,
   EjectResult,
   MountResult,
   EjectOptions,
@@ -128,7 +128,7 @@ export class MacOSDeviceManager implements DeviceManager {
 
   async mount(deviceId: string, options?: MountOptions): Promise<MountResult> {
     // Get device info to determine volume name
-    const device = await this.getDeviceInfo(deviceId);
+    const device = await this.getPlatformDeviceInfo(deviceId);
     if (!device) {
       return {
         success: false,
@@ -204,7 +204,7 @@ export class MacOSDeviceManager implements DeviceManager {
     };
   }
 
-  async listDevices(): Promise<DeviceInfo[]> {
+  async listDevices(): Promise<PlatformDeviceInfo[]> {
     const { stdout, code } = await execCommand('diskutil', ['list', '-plist']);
 
     if (code !== 0) {
@@ -215,10 +215,10 @@ export class MacOSDeviceManager implements DeviceManager {
     const diskIds = this.parseDiskIdentifiers(stdout);
 
     // Get detailed info for each disk
-    const devices: DeviceInfo[] = [];
+    const devices: PlatformDeviceInfo[] = [];
 
     for (const diskId of diskIds) {
-      const device = await this.getDeviceInfo(diskId);
+      const device = await this.getPlatformDeviceInfo(diskId);
       if (device) {
         devices.push(device);
       }
@@ -227,9 +227,9 @@ export class MacOSDeviceManager implements DeviceManager {
     return devices;
   }
 
-  async findIpodDevices(): Promise<DeviceInfo[]> {
+  async findIpodDevices(): Promise<PlatformDeviceInfo[]> {
     const devices = await this.listDevices();
-    const ipods: DeviceInfo[] = [];
+    const ipods: PlatformDeviceInfo[] = [];
 
     for (const device of devices) {
       // Check if media type is iPod
@@ -261,7 +261,7 @@ export class MacOSDeviceManager implements DeviceManager {
     return ipods;
   }
 
-  async findByVolumeUuid(uuid: string): Promise<DeviceInfo | null> {
+  async findByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null> {
     const devices = await this.listDevices();
     const normalizedUuid = uuid.toUpperCase();
 
@@ -304,7 +304,7 @@ Replace diskXsY with your actual device identifier`;
   /**
    * Get detailed information about a specific device
    */
-  private async getDeviceInfo(identifier: string): Promise<DeviceInfo | null> {
+  private async getPlatformDeviceInfo(identifier: string): Promise<PlatformDeviceInfo | null> {
     // Normalize identifier
     const diskId = identifier.replace('/dev/', '');
 

@@ -133,6 +133,13 @@ export type IpodModel =
 
 /**
  * Media type flags for tracks.
+ *
+ * Complete set of media type flags from libgpod.
+ * For most applications, use the curated MediaType from @podkit/core
+ * which includes only the commonly-used types with better documentation.
+ *
+ * Note: This includes all libgpod media types, including less common ones
+ * like Ringtone, ITunesU, and EpubBook that are rarely used with iPods.
  */
 export const MediaType = {
   Audio: 0x0001,

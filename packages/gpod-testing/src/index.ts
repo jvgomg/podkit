@@ -25,10 +25,10 @@
 
 // Types
 export type {
-  IpodModel,
+  IpodModelNumber,
   CreateTestIpodOptions,
   TestIpod,
-  DeviceInfo,
+  TestDeviceInfo,
   DatabaseInfo,
   TrackInput,
   TrackInfo,

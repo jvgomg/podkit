@@ -1,9 +1,13 @@
 /**
- * iPod model identifiers for test environments.
+ * iPod model numbers for test environments.
+ *
+ * Model numbers like "MA147" identify specific iPod hardware variants,
+ * distinct from the IpodModel enum in libgpod-node which represents
+ * color variants like 'color', 'mini_blue', etc.
  *
  * @see docs/IPOD-INTERNALS.md for full model list
  */
-export type IpodModel =
+export type IpodModelNumber =
   | 'MA147' // iPod Video 60GB (5th gen) - default
   | 'MA002' // iPod Video 30GB (5th gen)
   | 'MB565' // iPod Classic 120GB (6th gen)
@@ -18,7 +22,7 @@ export interface CreateTestIpodOptions {
    * iPod model number.
    * @default 'MA147' (iPod Video 60GB)
    */
-  model?: IpodModel;
+  model?: IpodModelNumber;
 
   /**
    * Display name for the iPod.
@@ -40,7 +44,7 @@ export interface TestIpod {
   readonly path: string;
 
   /** Model number used */
-  readonly model: IpodModel;
+  readonly model: IpodModelNumber;
 
   /** iPod display name */
   readonly name: string;
@@ -55,7 +59,7 @@ export interface TestIpod {
 /**
  * Device information returned by gpod-tool info.
  */
-export interface DeviceInfo {
+export interface TestDeviceInfo {
   modelNumber: string | null;
   modelName: string;
   supportsArtwork: boolean;
@@ -67,7 +71,7 @@ export interface DeviceInfo {
  */
 export interface DatabaseInfo {
   path: string;
-  device: DeviceInfo;
+  device: TestDeviceInfo;
   trackCount: number;
   playlistCount: number;
 }

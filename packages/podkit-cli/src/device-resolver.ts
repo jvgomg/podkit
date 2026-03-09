@@ -10,7 +10,7 @@
  */
 
 import type { PodkitConfig, DeviceConfig } from './config/index.js';
-import type { DeviceManager, DeviceInfo } from '@podkit/core';
+import type { DeviceManager, PlatformDeviceInfo } from '@podkit/core';
 
 /**
  * Device identity for resolution
@@ -31,7 +31,7 @@ export interface ResolveDeviceResult {
   /** How the device was found */
   source: 'cli' | 'uuid' | 'config' | 'none';
   /** Device info if found via UUID */
-  deviceInfo?: DeviceInfo;
+  deviceInfo?: PlatformDeviceInfo;
   /** Error message if resolution failed */
   error?: string;
 }

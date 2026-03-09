@@ -7,7 +7,7 @@
 
 import type {
   DeviceManager,
-  DeviceInfo,
+  PlatformDeviceInfo,
   EjectResult,
   MountResult,
   EjectOptions,
@@ -44,15 +44,15 @@ export class UnsupportedDeviceManager implements DeviceManager {
     };
   }
 
-  async listDevices(): Promise<DeviceInfo[]> {
+  async listDevices(): Promise<PlatformDeviceInfo[]> {
     return [];
   }
 
-  async findIpodDevices(): Promise<DeviceInfo[]> {
+  async findIpodDevices(): Promise<PlatformDeviceInfo[]> {
     return [];
   }
 
-  async findByVolumeUuid(_uuid: string): Promise<DeviceInfo | null> {
+  async findByVolumeUuid(_uuid: string): Promise<PlatformDeviceInfo | null> {
     return null;
   }
 

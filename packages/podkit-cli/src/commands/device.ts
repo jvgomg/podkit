@@ -48,56 +48,15 @@ import {
   formatBytes,
   formatNumber,
 } from './display-utils.js';
+import { formatGeneration } from '@podkit/core';
 
 // =============================================================================
 // Shared utilities
 // =============================================================================
 
-// Re-export formatting utilities from display-utils for backward compatibility
+// Re-export formatting utilities for backward compatibility
 export { formatBytes, formatNumber } from './display-utils.js';
-
-/**
- * Get generation display name from generation identifier.
- */
-export function formatGeneration(generation: string): string {
-  const generationMap: Record<string, string> = {
-    unknown: 'Unknown Generation',
-    first: '1st Generation',
-    second: '2nd Generation',
-    third: '3rd Generation',
-    fourth: '4th Generation',
-    photo: 'Photo',
-    mobile: 'Mobile',
-    mini_1: 'Mini (1st Generation)',
-    mini_2: 'Mini (2nd Generation)',
-    shuffle_1: 'Shuffle (1st Generation)',
-    shuffle_2: 'Shuffle (2nd Generation)',
-    shuffle_3: 'Shuffle (3rd Generation)',
-    shuffle_4: 'Shuffle (4th Generation)',
-    nano_1: 'Nano (1st Generation)',
-    nano_2: 'Nano (2nd Generation)',
-    nano_3: 'Nano (3rd Generation)',
-    nano_4: 'Nano (4th Generation)',
-    nano_5: 'Nano (5th Generation)',
-    nano_6: 'Nano (6th Generation)',
-    video_1: 'Video (5th Generation)',
-    video_2: 'Video (5.5th Generation)',
-    classic_1: 'Classic (6th Generation)',
-    classic_2: 'Classic (6.5th Generation)',
-    classic_3: 'Classic (7th Generation)',
-    touch_1: 'Touch (1st Generation)',
-    touch_2: 'Touch (2nd Generation)',
-    touch_3: 'Touch (3rd Generation)',
-    touch_4: 'Touch (4th Generation)',
-    iphone_1: 'iPhone (1st Generation)',
-    iphone_2: 'iPhone 3G',
-    iphone_3: 'iPhone 3GS',
-    iphone_4: 'iPhone 4',
-    ipad_1: 'iPad (1st Generation)',
-  };
-
-  return generationMap[generation] ?? generation;
-}
+export { formatGeneration } from '@podkit/core';
 
 /**
  * Get storage information for a mount point.

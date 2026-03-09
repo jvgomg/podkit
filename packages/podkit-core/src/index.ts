@@ -207,6 +207,13 @@ export { MediaType, isMusicMediaType } from './ipod/constants.js';
 export type { MediaTypeValue, ContentType as MediaContentType } from './ipod/constants.js';
 export { IpodDatabase } from './ipod/database.js';
 export { isVideoMediaType } from './ipod/video.js';
+export {
+  IPOD_GENERATIONS,
+  formatGeneration,
+  getVideoProfile,
+  supportsVideo,
+} from './ipod/generation.js';
+export type { IpodGenerationMetadata } from './ipod/generation.js';
 
 // Transforms
 export type {
@@ -378,7 +385,7 @@ export {
 
 // Device management
 export type {
-  DeviceInfo,
+  PlatformDeviceInfo,
   DeviceManager,
   EjectResult,
   MountResult,

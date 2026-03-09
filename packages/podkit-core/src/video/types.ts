@@ -27,6 +27,8 @@
  * | iPod Nano 3G-5G | 320x240 | Baseline 3.0 |
  */
 
+import { getVideoProfile } from '../ipod/generation.js';
+
 // =============================================================================
 // Quality Presets
 // =============================================================================
@@ -196,25 +198,9 @@ export function getDefaultDeviceProfile(): VideoDeviceProfile {
  * @returns The matching device profile, or default profile if not matched
  */
 export function getDeviceProfileByGeneration(generation: string): VideoDeviceProfile {
-  // Map libgpod generation identifiers to our device profiles
+  // Use centralized generation metadata to map to device profiles
   // See: https://www.libgpod.org/api/model_id.html
-  const generationMap: Record<string, string> = {
-    // iPod Video 5th gen (video_1)
-    'video_1': 'ipod-video-5g',
-    'video_2': 'ipod-video-5g', // Enhanced variant
-
-    // iPod Classic 6th/7th gen (classic_1, classic_2, classic_3)
-    'classic_1': 'ipod-classic',
-    'classic_2': 'ipod-classic',
-    'classic_3': 'ipod-classic',
-
-    // iPod Nano with video support
-    'nano_3': 'ipod-nano-3g',
-    'nano_4': 'ipod-nano-3g',
-    'nano_5': 'ipod-nano-3g',
-  };
-
-  const profileName = generationMap[generation];
+  const profileName = getVideoProfile(generation);
   if (profileName) {
     return DEVICE_PROFILES[profileName]!;
   }

@@ -6,9 +6,12 @@
  */
 
 /**
- * Information about an attached disk device
+ * Information about an attached disk device from the platform
+ *
+ * Represents physical disk/volume information from the operating system,
+ * distinct from iPod-specific metadata.
  */
-export interface DeviceInfo {
+export interface PlatformDeviceInfo {
   /** Device identifier (e.g., "disk6s2" on macOS) */
   identifier: string;
   /** Volume name (e.g., "TERAPOD") */
@@ -112,7 +115,7 @@ export interface DeviceManager {
    *
    * @returns Array of device information
    */
-  listDevices(): Promise<DeviceInfo[]>;
+  listDevices(): Promise<PlatformDeviceInfo[]>;
 
   /**
    * Find iPod devices among attached disks
@@ -122,7 +125,7 @@ export interface DeviceManager {
    *
    * @returns Array of iPod device information
    */
-  findIpodDevices(): Promise<DeviceInfo[]>;
+  findIpodDevices(): Promise<PlatformDeviceInfo[]>;
 
   /**
    * Find a device by its Volume UUID
@@ -130,7 +133,7 @@ export interface DeviceManager {
    * @param uuid - Volume UUID to search for
    * @returns Device info if found, null otherwise
    */
-  findByVolumeUuid(uuid: string): Promise<DeviceInfo | null>;
+  findByVolumeUuid(uuid: string): Promise<PlatformDeviceInfo | null>;
 
   /**
    * Get manual instructions for unsupported operations

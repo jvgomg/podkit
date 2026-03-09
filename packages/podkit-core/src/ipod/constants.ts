@@ -5,6 +5,14 @@
 /**
  * Media type flags for tracks.
  *
+ * Curated subset of commonly-used media types for iPod content.
+ * This is intentionally different from the complete MediaType in @podkit/libgpod-node,
+ * which includes all libgpod types (Ringtone, ITunesU, EpubBook, etc.).
+ *
+ * Design rationale:
+ * - @podkit/libgpod-node: Complete low-level bindings (all types)
+ * - @podkit/core: User-facing API (common types with documentation)
+ *
  * These flags indicate the type of media content. Multiple flags can be
  * combined using bitwise OR for tracks that fit multiple categories.
  *
