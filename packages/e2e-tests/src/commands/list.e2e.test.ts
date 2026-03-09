@@ -1,87 +1,51 @@
 /**
- * E2E tests for the `podkit list` command.
+ * E2E tests for the `podkit device music` command.
  *
- * Tests listing tracks on iPod in different formats.
+ * Tests listing music tracks on iPod in different formats.
+ *
+ * Note: Previously tested `podkit list`, now uses `podkit device music`.
+ * This command lists music tracks on a configured device.
  */
 
 import { describe, it, expect } from 'bun:test';
 import { runCli, runCliJson } from '../helpers/cli-runner';
-import { withTarget } from '../targets';
 
-interface ListTrack {
-  title: string;
-  artist: string;
-  album: string;
-  duration?: number;
-  durationFormatted?: string;
-}
-
-describe('podkit list', () => {
-  describe('from iPod', () => {
-    it('lists tracks in table format', async () => {
-      await withTarget(async (target) => {
-        // Empty iPod should show "No tracks found"
-        const result = await runCli(['list', '--device', target.path]);
-
-        expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('No tracks found');
-      });
-    });
-
-    it('outputs JSON with --json flag', async () => {
-      await withTarget(async (target) => {
-        const { result, json } = await runCliJson<ListTrack[]>([
-          'list',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        expect(Array.isArray(json)).toBe(true);
-        expect(json?.length).toBe(0);
-      });
-    });
-
-    it('outputs JSON with --format json', async () => {
-      await withTarget(async (target) => {
-        const { result, json } = await runCliJson<ListTrack[]>([
-          'list',
-          '--device',
-          target.path,
-          '--format',
-          'json',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        expect(Array.isArray(json)).toBe(true);
-      });
-    });
-
-    it('outputs CSV with --format csv', async () => {
-      await withTarget(async (target) => {
-        const result = await runCli([
-          'list',
-          '--device',
-          target.path,
-          '--format',
-          'csv',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        // CSV header should be present
-        expect(result.stdout).toContain('Title,Artist,Album,Duration');
-      });
-    });
-  });
-
+describe('podkit device music', () => {
   describe('error handling', () => {
     it('fails when no device configured', async () => {
       // Use non-existent config to ensure we don't pick up user's config file
-      const result = await runCli(['--config', '/nonexistent/config.toml', 'list']);
+      const result = await runCli(['--config', '/nonexistent/config.toml', 'device', 'music']);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('No iPod configured');
+      expect(result.stderr).toContain('No devices configured');
+    });
+
+    it('outputs error in JSON when no device configured', async () => {
+      // Use non-existent config to ensure we don't pick up user's config file
+      const { result, json } = await runCliJson<{ error: boolean; message: string }>([
+        '--config',
+        '/nonexistent/config.toml',
+        'device',
+        'music',
+        '--json',
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      expect(json?.error).toBe(true);
+      expect(json?.message).toContain('No devices configured');
+    });
+
+    it('fails when specified device not found in config', async () => {
+      const result = await runCli([
+        '--config',
+        '/nonexistent/config.toml',
+        'device',
+        'music',
+        'nonexistent-device',
+      ]);
+
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain('not found in config');
     });
   });
 });

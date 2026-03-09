@@ -4,8 +4,7 @@
  * Tests the complete user journey:
  * 1. Initialize config
  * 2. Sync music to empty iPod
- * 3. Verify with status command
- * 4. List synced tracks
+ * 3. Verify synced tracks via iPod database
  *
  * This validates the entire sync pipeline works end-to-end.
  */
@@ -18,22 +17,11 @@ import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
 
-interface StatusOutput {
-  connected: boolean;
-  tracks?: number;
-}
-
 interface SyncOutput {
   success: boolean;
   result?: {
     completed: number;
   };
-}
-
-interface ListTrack {
-  title: string;
-  artist: string;
-  album: string;
 }
 
 /**
@@ -61,7 +49,7 @@ describe('workflow: fresh sync', () => {
     fixturesAvailable = await areFixturesAvailable();
   });
 
-  it('completes full sync workflow: init -> sync -> status -> list', async () => {
+  it('completes full sync workflow: init -> sync -> verify', async () => {
     if (!fixturesAvailable) {
       console.log('Skipping: fixtures not available');
       return;
@@ -74,16 +62,10 @@ describe('workflow: fresh sync', () => {
       const configPath = await createTempConfig(sourcePath);
 
       try {
-        // Step 1: Verify initial status (empty iPod)
-        console.log('Step 1: Verify initial status');
-        const { json: statusBefore } = await runCliJson<StatusOutput>([
-          'status',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-        expect(statusBefore?.connected).toBe(true);
-        expect(statusBefore?.tracks).toBe(0);
+        // Step 1: Verify initial empty iPod
+        console.log('Step 1: Verify initial empty iPod');
+        const initialCount = await target.getTrackCount();
+        expect(initialCount).toBe(0);
 
         // Step 2: Dry-run sync to preview changes
         console.log('Step 2: Dry-run sync');
@@ -113,37 +95,13 @@ describe('workflow: fresh sync', () => {
         expect(syncJson?.success).toBe(true);
         expect(syncJson?.result?.completed).toBe(3);
 
-        // Step 4: Verify status after sync
-        console.log('Step 4: Verify status after sync');
-        const { json: statusAfter } = await runCliJson<StatusOutput>([
-          'status',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-        expect(statusAfter?.connected).toBe(true);
-        expect(statusAfter?.tracks).toBe(3);
+        // Step 4: Verify iPod database has the tracks
+        console.log('Step 4: Verify tracks were synced');
+        const trackCount = await target.getTrackCount();
+        expect(trackCount).toBe(3);
 
-        // Step 5: List synced tracks
-        console.log('Step 5: List synced tracks');
-        const { json: tracks } = await runCliJson<ListTrack[]>([
-          'list',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-        expect(tracks?.length).toBe(3);
-
-        // Verify track metadata was preserved
-        const titles = tracks?.map((t) => t.title).sort() ?? [];
-        expect(titles).toEqual(['Harmony', 'Tremolo', 'Vibrato']);
-
-        const artists = new Set(tracks?.map((t) => t.artist) ?? []);
-        expect(artists.size).toBe(1);
-        expect(artists.has('Podkit Test Generator')).toBe(true);
-
-        // Step 6: Verify iPod database integrity
-        console.log('Step 6: Verify database integrity');
+        // Step 5: Verify iPod database integrity
+        console.log('Step 5: Verify database integrity');
         const verifyResult = await target.verify();
         expect(verifyResult.valid).toBe(true);
         expect(verifyResult.trackCount).toBe(3);

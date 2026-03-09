@@ -34,10 +34,52 @@ describe('device command', () => {
       expect(removeCmd?.description()).toContain('remove');
     });
 
-    it('has show subcommand', () => {
-      const showCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'show');
-      expect(showCmd).toBeDefined();
-      expect(showCmd?.description()).toContain('display');
+    it('has info subcommand', () => {
+      const infoCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'info');
+      expect(infoCmd).toBeDefined();
+      expect(infoCmd?.description()).toContain('display');
+    });
+
+    it('has music subcommand', () => {
+      const musicCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'music');
+      expect(musicCmd).toBeDefined();
+      expect(musicCmd?.description()).toContain('music');
+    });
+
+    it('has video subcommand', () => {
+      const videoCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'video');
+      expect(videoCmd).toBeDefined();
+      expect(videoCmd?.description()).toContain('video');
+    });
+
+    it('has clear subcommand', () => {
+      const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
+      expect(clearCmd).toBeDefined();
+      expect(clearCmd?.description()).toContain('content');
+    });
+
+    it('has reset subcommand', () => {
+      const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
+      expect(resetCmd).toBeDefined();
+      expect(resetCmd?.description()).toContain('tracks');
+    });
+
+    it('has eject subcommand', () => {
+      const ejectCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'eject');
+      expect(ejectCmd).toBeDefined();
+      expect(ejectCmd?.description()).toContain('unmount');
+    });
+
+    it('has mount subcommand', () => {
+      const mountCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'mount');
+      expect(mountCmd).toBeDefined();
+      expect(mountCmd?.description()).toContain('mount');
+    });
+
+    it('has init subcommand', () => {
+      const initCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'init');
+      expect(initCmd).toBeDefined();
+      expect(initCmd?.description()).toContain('initialize');
     });
 
     it('add subcommand requires name argument', () => {
@@ -60,11 +102,55 @@ describe('device command', () => {
       expect(confirmOption).toBeDefined();
     });
 
-    it('show subcommand requires name argument', () => {
-      const showCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'show');
-      const nameArg = showCmd?.registeredArguments.find((arg) => arg.name() === 'name');
+    it('info subcommand has optional name argument', () => {
+      const infoCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'info');
+      const nameArg = infoCmd?.registeredArguments.find((arg) => arg.name() === 'name');
       expect(nameArg).toBeDefined();
-      expect(nameArg?.required).toBe(true);
+      expect(nameArg?.required).toBe(false);
+    });
+
+    it('clear subcommand has optional name argument', () => {
+      const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
+      const nameArg = clearCmd?.registeredArguments.find((arg) => arg.name() === 'name');
+      expect(nameArg).toBeDefined();
+      expect(nameArg?.required).toBe(false);
+    });
+
+    it('clear subcommand has --confirm option', () => {
+      const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
+      const confirmOption = clearCmd?.options.find((opt) => opt.long === '--confirm');
+      expect(confirmOption).toBeDefined();
+    });
+
+    it('clear subcommand has --dry-run option', () => {
+      const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
+      const dryRunOption = clearCmd?.options.find((opt) => opt.long === '--dry-run');
+      expect(dryRunOption).toBeDefined();
+    });
+
+    it('clear subcommand has --type option', () => {
+      const clearCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'clear');
+      const typeOption = clearCmd?.options.find((opt) => opt.long === '--type');
+      expect(typeOption).toBeDefined();
+    });
+
+    it('reset subcommand has optional name argument', () => {
+      const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
+      const nameArg = resetCmd?.registeredArguments.find((arg) => arg.name() === 'name');
+      expect(nameArg).toBeDefined();
+      expect(nameArg?.required).toBe(false);
+    });
+
+    it('reset subcommand has --confirm option', () => {
+      const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
+      const confirmOption = resetCmd?.options.find((opt) => opt.long === '--confirm');
+      expect(confirmOption).toBeDefined();
+    });
+
+    it('reset subcommand has --dry-run option', () => {
+      const resetCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'reset');
+      const dryRunOption = resetCmd?.options.find((opt) => opt.long === '--dry-run');
+      expect(dryRunOption).toBeDefined();
     });
   });
 });

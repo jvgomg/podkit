@@ -98,25 +98,67 @@ describe('collection command', () => {
       expect(yesOption).toBeDefined();
     });
 
-    it('has show subcommand', () => {
-      const showCmd = collectionCommand.commands.find(
-        (cmd) => cmd.name() === 'show'
+    it('has info subcommand', () => {
+      const infoCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'info'
       );
-      expect(showCmd).toBeDefined();
-      expect(showCmd?.description()).toContain('detail');
+      expect(infoCmd).toBeDefined();
+      expect(infoCmd?.description()).toContain('detail');
     });
 
-    it('show subcommand requires name argument', () => {
-      const showCmd = collectionCommand.commands.find(
-        (cmd) => cmd.name() === 'show'
+    it('info subcommand requires name argument', () => {
+      const infoCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'info'
       );
-      expect(showCmd).toBeDefined();
+      expect(infoCmd).toBeDefined();
 
-      const nameArg = showCmd?.registeredArguments.find(
+      const nameArg = infoCmd?.registeredArguments.find(
         (arg) => arg.name() === 'name'
       );
       expect(nameArg).toBeDefined();
       expect(nameArg?.required).toBe(true);
+    });
+
+    it('has music subcommand', () => {
+      const musicCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'music'
+      );
+      expect(musicCmd).toBeDefined();
+      expect(musicCmd?.description()).toContain('tracks');
+    });
+
+    it('music subcommand has optional name argument', () => {
+      const musicCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'music'
+      );
+      expect(musicCmd).toBeDefined();
+
+      const nameArg = musicCmd?.registeredArguments.find(
+        (arg) => arg.name() === 'name'
+      );
+      expect(nameArg).toBeDefined();
+      expect(nameArg?.required).toBe(false);
+    });
+
+    it('has video subcommand', () => {
+      const videoCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'video'
+      );
+      expect(videoCmd).toBeDefined();
+      expect(videoCmd?.description()).toContain('video');
+    });
+
+    it('video subcommand has optional name argument', () => {
+      const videoCmd = collectionCommand.commands.find(
+        (cmd) => cmd.name() === 'video'
+      );
+      expect(videoCmd).toBeDefined();
+
+      const nameArg = videoCmd?.registeredArguments.find(
+        (arg) => arg.name() === 'name'
+      );
+      expect(nameArg).toBeDefined();
+      expect(nameArg?.required).toBe(false);
     });
   });
 });

@@ -1,136 +1,83 @@
 /**
- * E2E tests for the `podkit status` command.
+ * E2E tests for the `podkit device info` command.
  *
  * Tests device info display, JSON output, and error handling.
+ *
+ * Note: `device info` shows configured device info + live status.
+ * It requires a device to be registered in config first.
  */
 
 import { describe, it, expect } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { runCli, runCliJson } from '../helpers/cli-runner';
-import { withTarget } from '../targets';
 
-interface StatusOutput {
-  connected: boolean;
+interface DeviceInfoOutput {
+  success: boolean;
   device?: {
-    modelName: string;
-    modelNumber: string | null;
-    generation: string;
-    capacity: number;
+    name: string;
+    volumeUuid: string;
+    volumeName: string;
+    quality?: string;
+    artwork?: boolean;
+    isDefault: boolean;
   };
-  mount?: string;
-  storage?: {
-    used: number;
-    total: number;
-    free: number;
-    percentUsed: number;
+  status?: {
+    mounted: boolean;
+    mountPoint?: string;
+    model?: {
+      name: string;
+      number: string | null;
+      generation: string;
+      capacity: number;
+    };
+    storage?: {
+      used: number;
+      total: number;
+      free: number;
+      percentUsed: number;
+    };
+    musicCount?: number;
+    videoCount?: number;
   };
-  tracks?: number;
-  playlists?: number;
   error?: string;
 }
 
-describe('podkit status', () => {
-  describe('with valid iPod', () => {
-    it('displays device information', async () => {
-      await withTarget(async (target) => {
-        const result = await runCli(['status', '--device', target.path]);
-
-        expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('Mount:');
-        expect(result.stdout).toContain(target.path);
-        expect(result.stdout).toContain('Tracks:');
-      });
-    });
-
-    it('outputs JSON with --json flag', async () => {
-      await withTarget(async (target) => {
-        const { result, json } = await runCliJson<StatusOutput>([
-          'status',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        expect(json).not.toBeNull();
-        expect(json?.connected).toBe(true);
-        expect(json?.device).toBeDefined();
-        expect(json?.device?.modelName).toBeDefined();
-        expect(json?.mount).toBe(target.path);
-        expect(typeof json?.tracks).toBe('number');
-      });
-    });
-
-    it('shows zero tracks on empty iPod', async () => {
-      await withTarget(async (target) => {
-        const { result, json } = await runCliJson<StatusOutput>([
-          'status',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-
-        expect(result.exitCode).toBe(0);
-        expect(json?.tracks).toBe(0);
-      });
-    });
-  });
-
+describe('podkit device info', () => {
   describe('error handling', () => {
-    it('fails when no device specified', async () => {
+    it('fails when no device specified and none configured', async () => {
       // Use non-existent config to ensure we don't pick up user's config file
-      const result = await runCli(['--config', '/nonexistent/config.toml', 'status']);
+      const result = await runCli(['--config', '/nonexistent/config.toml', 'device', 'info']);
 
       expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('No iPod configured');
+      expect(result.stderr).toContain('No devices configured');
     });
 
     it('outputs error in JSON when no device specified', async () => {
       // Use non-existent config to ensure we don't pick up user's config file
-      const { result, json } = await runCliJson<StatusOutput>([
+      const { result, json } = await runCliJson<DeviceInfoOutput>([
         '--config',
         '/nonexistent/config.toml',
-        'status',
+        'device',
+        'info',
         '--json',
       ]);
 
       expect(result.exitCode).toBe(1);
-      expect(json?.connected).toBe(false);
-      expect(json?.error).toContain('No iPod configured');
+      expect(json?.success).toBe(false);
+      expect(json?.error).toContain('No devices configured');
     });
 
-    it('fails when device path does not exist', async () => {
-      const result = await runCli(['status', '--device', '/nonexistent/path']);
-
-      expect(result.exitCode).toBe(1);
-      expect(result.stderr).toContain('iPod not found');
-    });
-
-    it('outputs error in JSON when device path does not exist', async () => {
-      const { result, json } = await runCliJson<StatusOutput>([
-        'status',
-        '--device',
-        '/nonexistent/path',
-        '--json',
+    it('fails when specified device not found in config', async () => {
+      // Use non-existent config
+      const result = await runCli([
+        '--config',
+        '/nonexistent/config.toml',
+        'device',
+        'info',
+        'nonexistent-device',
       ]);
 
       expect(result.exitCode).toBe(1);
-      expect(json?.connected).toBe(false);
-      expect(json?.error).toContain('not found');
-    });
-
-    it('fails when path is not a valid iPod', async () => {
-      const tempDir = await mkdtemp(join(tmpdir(), 'podkit-status-test-'));
-      try {
-        const result = await runCli(['status', '--device', tempDir]);
-
-        expect(result.exitCode).toBe(1);
-        expect(result.stderr).toContain('Cannot read iPod database');
-      } finally {
-        await rm(tempDir, { recursive: true, force: true });
-      }
+      expect(result.stderr).toContain('not found in config');
     });
   });
 });

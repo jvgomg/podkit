@@ -13,7 +13,9 @@
  * podkit collection add music <name> <path>   # add a music collection
  * podkit collection add video <name> <path>   # add a video collection
  * podkit collection remove <name>         # remove collection
- * podkit collection show <name>           # display collection details
+ * podkit collection info <name>           # display collection details
+ * podkit collection music [name]          # list tracks in music collection
+ * podkit collection video [name]          # list videos in video collection
  * ```
  */
 
@@ -33,12 +35,21 @@ import type {
   MusicCollectionConfig,
   VideoCollectionConfig,
 } from '../config/types.js';
+import {
+  type DisplayTrack,
+  parseFields,
+  formatTable,
+  formatJson,
+  formatCsv,
+} from './display-utils.js';
+import type { CollectionTrack, CollectionVideo } from '@podkit/core';
+
+// =============================================================================
+// Shared utilities
+// =============================================================================
 
 /**
  * Get the config path to use for writing
- *
- * Uses the --config CLI option if provided, otherwise defaults to DEFAULT_CONFIG_PATH.
- * This ensures we write to the correct path even if the file doesn't exist yet.
  */
 function getConfigPath(): string {
   const { globalOpts, configResult } = getContext();
@@ -118,19 +129,11 @@ function formatCollectionTable(collections: CollectionInfo[]): string {
   const lines: string[] = ['Collections:', ''];
 
   // Calculate column widths
-  const typeWidth = Math.max(
-    4,
-    ...collections.map((c) => c.type.length)
-  );
-  const nameWidth = Math.max(
-    4,
-    ...collections.map((c) => c.name.length)
-  );
+  const typeWidth = Math.max(4, ...collections.map((c) => c.type.length));
+  const nameWidth = Math.max(4, ...collections.map((c) => c.name.length));
 
   // Header
-  lines.push(
-    `  ${'TYPE'.padEnd(typeWidth)}  ${'NAME'.padEnd(nameWidth)}  PATH`
-  );
+  lines.push(`  ${'TYPE'.padEnd(typeWidth)}  ${'NAME'.padEnd(nameWidth)}  PATH`);
 
   // Data rows
   for (const col of collections) {
@@ -150,9 +153,7 @@ function formatCollectionTable(collections: CollectionInfo[]): string {
 /**
  * Get all collections from config
  */
-function getCollections(
-  filterType?: CollectionType
-): CollectionInfo[] {
+function getCollections(filterType?: CollectionType): CollectionInfo[] {
   const { config } = getContext();
   const collections: CollectionInfo[] = [];
 
@@ -222,9 +223,107 @@ function findCollection(name: string): {
   return result;
 }
 
-// ============================================================================
+/**
+ * Resolve collection from positional argument or default
+ */
+function resolveMusicCollectionArg(
+  collectionName?: string
+):
+  | { error: string }
+  | {
+      collection: MusicCollectionConfig;
+      name: string;
+      config: ReturnType<typeof getContext>['config'];
+      globalOpts: ReturnType<typeof getContext>['globalOpts'];
+    } {
+  const { config, globalOpts } = getContext();
+
+  if (collectionName) {
+    const col = config.music?.[collectionName];
+    if (!col) {
+      const available = config.music ? Object.keys(config.music).join(', ') : '(none)';
+      return {
+        error: `Music collection "${collectionName}" not found. Available: ${available}`,
+      };
+    }
+    return { collection: col, name: collectionName, config, globalOpts };
+  }
+
+  // Use default
+  const defaultName = config.defaults?.music;
+  if (defaultName && config.music?.[defaultName]) {
+    return {
+      collection: config.music[defaultName],
+      name: defaultName,
+      config,
+      globalOpts,
+    };
+  }
+
+  const hasCollections = config.music && Object.keys(config.music).length > 0;
+  if (hasCollections) {
+    return {
+      error:
+        'No default music collection set. Specify a collection name or set a default.',
+    };
+  }
+  return {
+    error: "No music collections configured. Run 'podkit collection add music <name> <path>' to add one.",
+  };
+}
+
+/**
+ * Resolve video collection from positional argument or default
+ */
+function resolveVideoCollectionArg(
+  collectionName?: string
+):
+  | { error: string }
+  | {
+      collection: VideoCollectionConfig;
+      name: string;
+      config: ReturnType<typeof getContext>['config'];
+      globalOpts: ReturnType<typeof getContext>['globalOpts'];
+    } {
+  const { config, globalOpts } = getContext();
+
+  if (collectionName) {
+    const col = config.video?.[collectionName];
+    if (!col) {
+      const available = config.video ? Object.keys(config.video).join(', ') : '(none)';
+      return {
+        error: `Video collection "${collectionName}" not found. Available: ${available}`,
+      };
+    }
+    return { collection: col, name: collectionName, config, globalOpts };
+  }
+
+  // Use default
+  const defaultName = config.defaults?.video;
+  if (defaultName && config.video?.[defaultName]) {
+    return {
+      collection: config.video[defaultName],
+      name: defaultName,
+      config,
+      globalOpts,
+    };
+  }
+
+  const hasCollections = config.video && Object.keys(config.video).length > 0;
+  if (hasCollections) {
+    return {
+      error:
+        'No default video collection set. Specify a collection name or set a default.',
+    };
+  }
+  return {
+    error: "No video collections configured. Run 'podkit collection add video <name> <path>' to add one.",
+  };
+}
+
+// =============================================================================
 // List subcommand
-// ============================================================================
+// =============================================================================
 
 const listSubcommand = new Command('list')
   .description('list configured collections')
@@ -261,9 +360,9 @@ const listSubcommand = new Command('list')
     }
   });
 
-// ============================================================================
+// =============================================================================
 // Add subcommand
-// ============================================================================
+// =============================================================================
 
 const addSubcommand = new Command('add')
   .description('add a new collection')
@@ -392,9 +491,9 @@ const addSubcommand = new Command('add')
     }
   });
 
-// ============================================================================
+// =============================================================================
 // Remove subcommand
-// ============================================================================
+// =============================================================================
 
 const removeSubcommand = new Command('remove')
   .description('remove a collection')
@@ -510,11 +609,11 @@ const removeSubcommand = new Command('remove')
     }
   });
 
-// ============================================================================
-// Show subcommand
-// ============================================================================
+// =============================================================================
+// Info subcommand (renamed from show)
+// =============================================================================
 
-const showSubcommand = new Command('show')
+const infoSubcommand = new Command('info')
   .description('display collection details')
   .argument('<name>', 'collection name')
   .action((name: string) => {
@@ -604,19 +703,196 @@ const showSubcommand = new Command('show')
     }
   });
 
-// ============================================================================
+// =============================================================================
+// Music subcommand (list tracks in a music collection)
+// =============================================================================
+
+interface ContentListOptions {
+  format?: string;
+  fields?: string;
+}
+
+const musicSubcommand = new Command('music')
+  .description('list tracks in a music collection')
+  .argument('[name]', 'collection name (uses default if omitted)')
+  .option('--format <fmt>', 'output format: table, json, csv', 'table')
+  .option('--fields <list>', 'fields to show (comma-separated)')
+  .action(async (name: string | undefined, options: ContentListOptions) => {
+    const { globalOpts } = getContext();
+    const format = globalOpts.json ? 'json' : options.format;
+    const fields = parseFields(options.fields);
+
+    const outputError = (error: string) => {
+      if (format === 'json') {
+        console.log(JSON.stringify({ error: true, message: error }, null, 2));
+      } else {
+        console.error(`Error: ${error}`);
+      }
+      process.exitCode = 1;
+    };
+
+    const resolved = resolveMusicCollectionArg(name);
+    if ('error' in resolved) {
+      outputError(resolved.error);
+      return;
+    }
+
+    const { collection } = resolved;
+
+    // Check if path exists
+    if (!fs.existsSync(collection.path)) {
+      outputError(`Collection path does not exist: ${collection.path}`);
+      return;
+    }
+
+    try {
+      // Dynamically import podkit-core to scan the collection
+      const core = await import('@podkit/core');
+      const adapter = core.createDirectoryAdapter({
+        path: collection.path,
+      });
+
+      if (!globalOpts.quiet && format !== 'json') {
+        console.error(`Scanning ${collection.path}...`);
+      }
+
+      const tracks = await adapter.getTracks();
+
+      const displayTracks: DisplayTrack[] = tracks.map((t: CollectionTrack) => ({
+        title: t.title || 'Unknown Title',
+        artist: t.artist || 'Unknown Artist',
+        album: t.album || 'Unknown Album',
+        duration: t.duration,
+        albumArtist: t.albumArtist || undefined,
+        genre: t.genre || undefined,
+        year: t.year && t.year > 0 ? t.year : undefined,
+        trackNumber: t.trackNumber && t.trackNumber > 0 ? t.trackNumber : undefined,
+        discNumber: t.discNumber && t.discNumber > 0 ? t.discNumber : undefined,
+        filePath: t.filePath || undefined,
+        artwork: undefined, // Not available from collection adapter
+        format: t.fileType || undefined,
+        bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
+      }));
+
+      let output: string;
+      switch (format) {
+        case 'json':
+          output = formatJson(displayTracks, fields);
+          break;
+        case 'csv':
+          output = formatCsv(displayTracks, fields);
+          break;
+        case 'table':
+        default:
+          output = formatTable(displayTracks, fields);
+          break;
+      }
+
+      console.log(output);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      outputError(message);
+    }
+  });
+
+// =============================================================================
+// Video subcommand (list videos in a video collection)
+// =============================================================================
+
+const videoSubcommand = new Command('video')
+  .description('list videos in a video collection')
+  .argument('[name]', 'collection name (uses default if omitted)')
+  .option('--format <fmt>', 'output format: table, json, csv', 'table')
+  .option('--fields <list>', 'fields to show (comma-separated)')
+  .action(async (name: string | undefined, options: ContentListOptions) => {
+    const { globalOpts } = getContext();
+    const format = globalOpts.json ? 'json' : options.format;
+    const fields = parseFields(options.fields);
+
+    const outputError = (error: string) => {
+      if (format === 'json') {
+        console.log(JSON.stringify({ error: true, message: error }, null, 2));
+      } else {
+        console.error(`Error: ${error}`);
+      }
+      process.exitCode = 1;
+    };
+
+    const resolved = resolveVideoCollectionArg(name);
+    if ('error' in resolved) {
+      outputError(resolved.error);
+      return;
+    }
+
+    const { collection } = resolved;
+
+    // Check if path exists
+    if (!fs.existsSync(collection.path)) {
+      outputError(`Collection path does not exist: ${collection.path}`);
+      return;
+    }
+
+    try {
+      // Dynamically import podkit-core to scan the collection
+      const core = await import('@podkit/core');
+
+      // For video collections, we scan for video files
+      const adapter = core.createVideoDirectoryAdapter({
+        path: collection.path,
+      });
+
+      if (!globalOpts.quiet && format !== 'json') {
+        console.error(`Scanning ${collection.path}...`);
+      }
+
+      const videos = await adapter.getVideos();
+
+      const displayTracks: DisplayTrack[] = videos.map((v: CollectionVideo) => ({
+        title: v.title || 'Unknown Title',
+        artist: v.seriesTitle || '', // Use series title for TV shows
+        album: '',
+        duration: v.duration * 1000, // Convert seconds to milliseconds
+        year: v.year && v.year > 0 ? v.year : undefined,
+        filePath: v.filePath || undefined,
+        format: v.container || undefined,
+        bitrate: undefined,
+      }));
+
+      let output: string;
+      switch (format) {
+        case 'json':
+          output = formatJson(displayTracks, fields);
+          break;
+        case 'csv':
+          output = formatCsv(displayTracks, fields);
+          break;
+        case 'table':
+        default:
+          output = formatTable(displayTracks, fields);
+          break;
+      }
+
+      console.log(output);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      outputError(message);
+    }
+  });
+
+// =============================================================================
 // Main collection command
-// ============================================================================
+// =============================================================================
 
 export const collectionCommand = new Command('collection')
   .description('manage music and video collections')
   .addCommand(listSubcommand)
   .addCommand(addSubcommand)
   .addCommand(removeSubcommand)
-  .addCommand(showSubcommand)
-  .action((_options, _command) => {
+  .addCommand(infoSubcommand)
+  .addCommand(musicSubcommand)
+  .addCommand(videoSubcommand)
+  .action(() => {
     // Default action: list all collections
-    // We need to manually invoke the list action
     const { globalOpts } = getContext();
     const collections = getCollections();
 

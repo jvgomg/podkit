@@ -1,27 +1,20 @@
 /**
- * Mount command - mount an iPod device
+ * Mount command - root shortcut for `podkit device mount`
  *
- * This command mounts an iPod device, either by explicit device identifier
- * or by auto-detecting using the stored Volume UUID from config.
+ * This is a convenience command that delegates to `podkit device mount`.
  *
  * @example
  * ```bash
- * podkit mount                        # Auto-detect using stored Volume UUID
- * podkit mount -d terapod             # Use named device from config
+ * podkit mount                     # Mount default device
+ * podkit mount terapod             # Mount named device
  * podkit mount --device /dev/disk4s2  # Explicit device identifier
- * podkit mount --dry-run              # Show command without executing
+ * podkit mount --dry-run           # Show mount command without executing
  * ```
  */
 import { Command } from 'commander';
 import { getContext } from '../context.js';
-import {
-  resolveDeviceFromConfig,
-  formatDeviceNotFoundError,
-} from '../device-resolver.js';
+import { resolveDeviceFromConfig, formatDeviceNotFoundError } from '../device-resolver.js';
 
-/**
- * Output structure for JSON format
- */
 export interface MountOutput {
   success: boolean;
   device?: string;
@@ -34,15 +27,14 @@ export interface MountOutput {
 interface MountOptions {
   device?: string;
   dryRun?: boolean;
-  deviceName?: string;
 }
 
 export const mountCommand = new Command('mount')
-  .description('mount an iPod device')
-  .option('-d, --device-name <name>', 'device name from config')
+  .description('mount an iPod device (shortcut for "device mount")')
+  .argument('[name]', 'device name (uses default if omitted)')
   .option('--device <identifier>', 'device identifier (e.g., /dev/disk4s2)')
   .option('--dry-run', 'show mount command without executing')
-  .action(async (options: MountOptions) => {
+  .action(async (name: string | undefined, options: MountOptions) => {
     const { config, globalOpts } = getContext();
     const explicitDevice = options.device;
     const dryRun = options.dryRun ?? false;
@@ -51,15 +43,43 @@ export const mountCommand = new Command('mount')
       console.log(JSON.stringify(data, null, 2));
     };
 
-    // Dynamically import to handle platform-specific errors
+    // Resolve device from positional argument or default
+    const resolvedDevice = name
+      ? resolveDeviceFromConfig(config, name)
+      : resolveDeviceFromConfig(config);
+
+    if (name && !resolvedDevice && !explicitDevice) {
+      const error = formatDeviceNotFoundError(name, config);
+      if (globalOpts.json) {
+        outputJson({ success: false, error });
+      } else {
+        console.error(error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!name && !resolvedDevice && !explicitDevice) {
+      const hasDevices = config.devices && Object.keys(config.devices).length > 0;
+      const error = hasDevices
+        ? 'No default device set. Specify a device name or set a default with: podkit device default <name>'
+        : "No devices configured. Run 'podkit device add <name>' to add one.";
+      if (globalOpts.json) {
+        outputJson({ success: false, error });
+      } else {
+        console.error(error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
     try {
       const core = await import('@podkit/core');
       getDeviceManager = core.getDeviceManager;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to load podkit-core';
+      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
       if (globalOpts.json) {
         outputJson({ success: false, error: message });
       } else {
@@ -74,7 +94,6 @@ export const mountCommand = new Command('mount')
 
     const manager = getDeviceManager();
 
-    // Check platform support
     if (!manager.isSupported) {
       if (globalOpts.json) {
         outputJson({
@@ -90,39 +109,15 @@ export const mountCommand = new Command('mount')
       return;
     }
 
-    // Resolve named device (if -d flag used)
-    const resolvedDevice = options.deviceName
-      ? resolveDeviceFromConfig(config, options.deviceName)
-      : resolveDeviceFromConfig(config); // Try default device
-
-    // Check if named device was requested but not found
-    if (options.deviceName && !resolvedDevice) {
-      const errorMsg = formatDeviceNotFoundError(options.deviceName, config);
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          error: errorMsg,
-        });
-      } else {
-        console.error(errorMsg);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    // Determine device identifier
     let deviceId: string | undefined;
     let volumeName: string | undefined;
 
     if (explicitDevice) {
-      // Use explicit device from CLI
       deviceId = explicitDevice;
     } else {
-      // Get volumeUuid from named device
       const volumeUuid = resolvedDevice?.config.volumeUuid;
 
       if (volumeUuid) {
-        // Auto-detect using stored Volume UUID
         if (!globalOpts.quiet && !globalOpts.json) {
           console.log(`Looking for iPod with UUID: ${volumeUuid}...`);
         }
@@ -136,9 +131,7 @@ export const mountCommand = new Command('mount')
               error: `iPod not found with UUID: ${volumeUuid}`,
             });
           } else {
-            console.error(
-              `iPod not found with UUID: ${volumeUuid}`
-            );
+            console.error(`iPod not found with UUID: ${volumeUuid}`);
             console.error('');
             console.error('Make sure the iPod is connected.');
             console.error('');
@@ -149,7 +142,6 @@ export const mountCommand = new Command('mount')
           return;
         }
 
-        // Check if already mounted
         if (device.isMounted && device.mountPoint) {
           if (globalOpts.json) {
             outputJson({
@@ -166,7 +158,6 @@ export const mountCommand = new Command('mount')
         deviceId = device.identifier;
         volumeName = device.volumeName;
       } else {
-        // No device specified and no UUID in config
         if (globalOpts.json) {
           outputJson({
             success: false,
@@ -179,20 +170,18 @@ export const mountCommand = new Command('mount')
           console.error('  podkit mount --device /dev/disk4s2');
           console.error('');
           console.error('Or register an iPod first:');
-          console.error('  podkit add-device');
+          console.error('  podkit device add <name>');
         }
         process.exitCode = 1;
         return;
       }
     }
 
-    // Show progress message
     if (!globalOpts.quiet && !globalOpts.json && !dryRun) {
       const displayName = volumeName || deviceId;
       console.log(`Mounting iPod: ${displayName}...`);
     }
 
-    // Perform mount
     const result = await manager.mount(deviceId, {
       target: volumeName ? `/tmp/podkit-${volumeName}` : undefined,
       dryRun,
@@ -246,8 +235,8 @@ export const mountCommand = new Command('mount')
         console.log(`iPod mounted at: ${result.mountPoint}`);
         console.log('');
         console.log('You can now use:');
-        console.log(`  podkit status --device ${result.mountPoint}`);
-        console.log(`  podkit sync --device ${result.mountPoint}`);
+        console.log(`  podkit device info`);
+        console.log(`  podkit sync`);
       }
     } else {
       if (globalOpts.json) {

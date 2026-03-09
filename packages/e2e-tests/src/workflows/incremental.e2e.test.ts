@@ -32,11 +32,6 @@ interface SyncOutput {
   };
 }
 
-interface ListTrack {
-  title: string;
-  artist: string;
-  album: string;
-}
 
 /**
  * Create a temp config file with the given music collection path
@@ -150,22 +145,8 @@ describe('workflow: incremental sync', () => {
         expect(sync3Json?.success).toBe(true);
         expect(sync3Json?.result?.completed).toBe(0); // Nothing new to sync
 
-        // Step 6: List all tracks and verify both albums present
-        console.log('Step 6: Verify track listing');
-        const { json: tracks } = await runCliJson<ListTrack[]>([
-          'list',
-          '--device',
-          target.path,
-          '--json',
-        ]);
-        expect(tracks?.length).toBe(6);
-
-        // Check for tracks from both albums
-        const albums = new Set(tracks?.map((t) => t.album) ?? []);
-        expect(albums.has('Synthetic Classics')).toBe(true);
-        expect(albums.has('Test Tones')).toBe(true);
-
-        // Verify database integrity
+        // Step 6: Verify database integrity and final track count
+        console.log('Step 6: Verify database integrity');
         const verifyResult = await target.verify();
         expect(verifyResult.valid).toBe(true);
         expect(verifyResult.trackCount).toBe(6);

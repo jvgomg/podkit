@@ -1,20 +1,20 @@
 /**
- * Eject command - safely unmount an iPod device
+ * Eject command - root shortcut for `podkit device eject`
  *
- * This command safely unmounts the iPod device, flushing all pending
- * writes and making it safe to disconnect.
+ * This is a convenience command that delegates to `podkit device eject`.
  *
  * @example
  * ```bash
- * podkit eject                        # Auto-detects via Volume UUID
- * podkit eject -d terapod             # Use named device from config
- * podkit eject --device /Volumes/iPod # Explicit device
- * podkit eject --force                # Force unmount if busy
- * podkit eject --json                 # JSON output
+ * podkit eject                    # Eject default device
+ * podkit eject terapod            # Eject named device
+ * podkit eject --force            # Force unmount if busy
  * ```
  */
-import { existsSync } from 'node:fs';
 import { Command } from 'commander';
+
+// Import the device command to access the eject subcommand
+// We re-export the subcommand action implementation
+import { existsSync } from 'node:fs';
 import { getContext } from '../context.js';
 import {
   resolveDevicePath,
@@ -24,9 +24,6 @@ import {
   formatDeviceNotFoundError,
 } from '../device-resolver.js';
 
-/**
- * Output structure for JSON format
- */
 export interface EjectOutput {
   success: boolean;
   device?: string;
@@ -36,14 +33,13 @@ export interface EjectOutput {
 
 interface EjectOptions {
   force?: boolean;
-  deviceName?: string;
 }
 
 export const ejectCommand = new Command('eject')
-  .description('safely unmount an iPod device')
-  .option('-d, --device-name <name>', 'device name from config')
+  .description('safely unmount an iPod device (shortcut for "device eject")')
+  .argument('[name]', 'device name (uses default if omitted)')
   .option('-f, --force', 'force unmount even if device is busy')
-  .action(async (options: EjectOptions) => {
+  .action(async (name: string | undefined, options: EjectOptions) => {
     const { config, globalOpts } = getContext();
     const force = options.force ?? false;
 
@@ -51,15 +47,43 @@ export const ejectCommand = new Command('eject')
       console.log(JSON.stringify(data, null, 2));
     };
 
-    // Dynamically import to handle platform-specific errors
+    // Resolve device from positional argument or default
+    const resolvedDevice = name
+      ? resolveDeviceFromConfig(config, name)
+      : resolveDeviceFromConfig(config);
+
+    if (name && !resolvedDevice) {
+      const error = formatDeviceNotFoundError(name, config);
+      if (globalOpts.json) {
+        outputJson({ success: false, error });
+      } else {
+        console.error(error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
+    if (!name && !resolvedDevice) {
+      const hasDevices = config.devices && Object.keys(config.devices).length > 0;
+      const error = hasDevices
+        ? 'No default device set. Specify a device name or set a default with: podkit device default <name>'
+        : "No devices configured. Run 'podkit device add <name>' to add one.";
+      if (globalOpts.json) {
+        outputJson({ success: false, error });
+      } else {
+        console.error(error);
+      }
+      process.exitCode = 1;
+      return;
+    }
+
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
     try {
       const core = await import('@podkit/core');
       getDeviceManager = core.getDeviceManager;
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Failed to load podkit-core';
+      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
       if (globalOpts.json) {
         outputJson({ success: false, error: message });
       } else {
@@ -74,7 +98,6 @@ export const ejectCommand = new Command('eject')
 
     const manager = getDeviceManager();
 
-    // Check platform support
     if (!manager.isSupported) {
       if (globalOpts.json) {
         outputJson({
@@ -90,34 +113,13 @@ export const ejectCommand = new Command('eject')
       return;
     }
 
-    // Resolve named device (if -d flag used)
-    const resolvedDevice = options.deviceName
-      ? resolveDeviceFromConfig(config, options.deviceName)
-      : resolveDeviceFromConfig(config); // Try default device
-
-    // Check if named device was requested but not found
-    if (options.deviceName && !resolvedDevice) {
-      const errorMsg = formatDeviceNotFoundError(options.deviceName, config);
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          error: errorMsg,
-        });
-      } else {
-        console.error(errorMsg);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    // Resolve device path (CLI flag > named device UUID)
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
       console.log(`Looking for iPod...`);
     }
 
-    const resolved = await resolveDevicePath({
+    const resolveResult = await resolveDevicePath({
       cliDevice: globalOpts.device,
       deviceIdentity,
       manager,
@@ -125,22 +127,21 @@ export const ejectCommand = new Command('eject')
       quiet: globalOpts.quiet,
     });
 
-    if (!resolved.path) {
+    if (!resolveResult.path) {
       if (globalOpts.json) {
         outputJson({
           success: false,
-          error: resolved.error ?? formatDeviceError(resolved),
+          error: resolveResult.error ?? formatDeviceError(resolveResult),
         });
       } else {
-        console.error(resolved.error ?? formatDeviceError(resolved));
+        console.error(resolveResult.error ?? formatDeviceError(resolveResult));
       }
       process.exitCode = 1;
       return;
     }
 
-    const devicePath = resolved.path;
+    const devicePath = resolveResult.path;
 
-    // Verify path exists
     if (!existsSync(devicePath)) {
       if (globalOpts.json) {
         outputJson({
@@ -157,12 +158,10 @@ export const ejectCommand = new Command('eject')
       return;
     }
 
-    // Show progress message
     if (!globalOpts.quiet && !globalOpts.json) {
       console.log(`Ejecting iPod at ${devicePath}...`);
     }
 
-    // Perform eject
     const result = await manager.eject(devicePath, { force });
 
     if (result.success) {

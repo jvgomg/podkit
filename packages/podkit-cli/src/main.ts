@@ -8,11 +8,6 @@
 import { Command } from 'commander';
 import { initCommand } from './commands/init.js';
 import { syncCommand } from './commands/sync.js';
-import { statusCommand } from './commands/status.js';
-import { listCommand } from './commands/list.js';
-import { resetCommand } from './commands/reset.js';
-import { clearCommand } from './commands/clear.js';
-import { addDeviceCommand } from './commands/add-device.js';
 import { deviceCommand } from './commands/device.js';
 import { collectionCommand } from './commands/collection.js';
 import { ejectCommand } from './commands/eject.js';
@@ -71,15 +66,15 @@ program.hook('preAction', (thisCommand, actionCommand) => {
 });
 
 // Register commands
+// Core workflow commands
 program.addCommand(initCommand);
 program.addCommand(syncCommand);
-program.addCommand(statusCommand);
-program.addCommand(listCommand);
-program.addCommand(resetCommand);
-program.addCommand(clearCommand);
-program.addCommand(addDeviceCommand);
+
+// Entity management commands
 program.addCommand(deviceCommand);
 program.addCommand(collectionCommand);
+
+// Root shortcuts (delegate to device subcommands)
 program.addCommand(ejectCommand);
 program.addCommand(mountCommand);
 

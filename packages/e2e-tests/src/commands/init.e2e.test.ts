@@ -86,7 +86,7 @@ describe('podkit init', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('Next steps');
     expect(result.stdout).toContain('Edit');
-    expect(result.stdout).toContain('podkit status');
+    expect(result.stdout).toContain('podkit device info');
     expect(result.stdout).toContain('podkit sync');
   });
 });

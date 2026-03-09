@@ -59,8 +59,8 @@ interface SyncOutput {
 
 interface ListTrack {
   title: string;
-  artist: string;
-  album: string;
+  artist: string | null;
+  album: string | null;
 }
 
 // =============================================================================
@@ -263,28 +263,23 @@ describe('transforms: ftintitle', () => {
           expect(json?.result?.completed).toBe(3);
 
           // Verify tracks on iPod have transformed metadata
-          const { json: tracks } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracks: ListTrack[] = await target.getTracks();
 
-          expect(tracks?.length).toBe(3);
+          expect(tracks.length).toBe(3);
 
           // Check that "feat." was moved to title for tracks with featured artists
-          const harmony = tracks?.find((t) => t.title.includes('Harmony'));
+          const harmony = tracks.find((t) => t.title.includes('Harmony'));
           expect(harmony).toBeDefined();
           expect(harmony?.artist).toBe('Main Artist');
           expect(harmony?.title).toBe('Harmony (feat. Guest Singer)');
 
-          const vibrato = tracks?.find((t) => t.title.includes('Vibrato'));
+          const vibrato = tracks.find((t) => t.title.includes('Vibrato'));
           expect(vibrato).toBeDefined();
           expect(vibrato?.artist).toBe('Band Name');
           expect(vibrato?.title).toBe('Vibrato (feat. Rapper)');
 
           // Track without "feat." should be unchanged
-          const tremolo = tracks?.find((t) => t.title === 'Tremolo');
+          const tremolo = tracks.find((t) => t.title === 'Tremolo');
           expect(tremolo).toBeDefined();
           expect(tremolo?.artist).toBe('Solo Artist');
           expect(tremolo?.title).toBe('Tremolo');
@@ -324,15 +319,10 @@ describe('transforms: ftintitle', () => {
           expect(json?.success).toBe(true);
 
           // Verify tracks keep original metadata
-          const { json: tracks } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracks: ListTrack[] = await target.getTracks();
 
           // Artist should still include "feat."
-          const harmony = tracks?.find((t) => t.title === 'Harmony');
+          const harmony = tracks.find((t) => t.title === 'Harmony');
           expect(harmony).toBeDefined();
           expect(harmony?.artist).toBe('Main Artist feat. Guest Singer');
           expect(harmony?.title).toBe('Harmony');
@@ -448,13 +438,8 @@ describe('transforms: ftintitle', () => {
           expect(result1.exitCode).toBe(0);
 
           // Verify original metadata
-          const { json: tracksBeforeToggle } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
-          const harmonyBefore = tracksBeforeToggle?.find((t) => t.title === 'Harmony');
+          const tracksBeforeToggle: ListTrack[] = await target.getTracks();
+          const harmonyBefore = tracksBeforeToggle.find((t) => t.title === 'Harmony');
           expect(harmonyBefore?.artist).toBe('Main Artist feat. Guest Singer');
 
           // Step 2: Enable ftintitle and sync again
@@ -495,21 +480,16 @@ describe('transforms: ftintitle', () => {
           expect(syncJson?.success).toBe(true);
 
           // Verify transformed metadata
-          const { json: tracksAfterToggle } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracksAfterToggle: ListTrack[] = await target.getTracks();
 
-          const harmonyAfter = tracksAfterToggle?.find((t) =>
+          const harmonyAfter = tracksAfterToggle.find((t) =>
             t.title.includes('Harmony')
           );
           expect(harmonyAfter?.artist).toBe('Main Artist');
           expect(harmonyAfter?.title).toBe('Harmony (feat. Guest Singer)');
 
           // Track count should remain the same
-          expect(tracksAfterToggle?.length).toBe(3);
+          expect(tracksAfterToggle.length).toBe(3);
         } finally {
           await rm(collectionDir, { recursive: true, force: true });
           await rm(configDir, { recursive: true, force: true });
@@ -543,13 +523,8 @@ describe('transforms: ftintitle', () => {
           expect(result1.exitCode).toBe(0);
 
           // Verify transformed metadata
-          const { json: tracksTransformed } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
-          const harmonyTransformed = tracksTransformed?.find((t) =>
+          const tracksTransformed: ListTrack[] = await target.getTracks();
+          const harmonyTransformed = tracksTransformed.find((t) =>
             t.title.includes('Harmony')
           );
           expect(harmonyTransformed?.artist).toBe('Main Artist');
@@ -588,14 +563,9 @@ describe('transforms: ftintitle', () => {
           ]);
 
           // Verify reverted metadata
-          const { json: tracksReverted } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracksReverted: ListTrack[] = await target.getTracks();
 
-          const harmonyReverted = tracksReverted?.find((t) => t.title === 'Harmony');
+          const harmonyReverted = tracksReverted.find((t) => t.title === 'Harmony');
           expect(harmonyReverted?.artist).toBe('Main Artist feat. Guest Singer');
           expect(harmonyReverted?.title).toBe('Harmony');
         } finally {
@@ -634,14 +604,9 @@ describe('transforms: ftintitle', () => {
           ]);
 
           // Verify custom format was used
-          const { json: tracks } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracks: ListTrack[] = await target.getTracks();
 
-          const harmony = tracks?.find((t) => t.title.includes('Harmony'));
+          const harmony = tracks.find((t) => t.title.includes('Harmony'));
           expect(harmony?.title).toBe('Harmony (ft. Guest Singer)');
         } finally {
           await rm(collectionDir, { recursive: true, force: true });
@@ -692,14 +657,9 @@ describe('transforms: ftintitle', () => {
           ]);
 
           // Verify featuring info was dropped
-          const { json: tracks } = await runCliJson<ListTrack[]>([
-            'list',
-            '--device',
-            target.path,
-            '--json',
-          ]);
+          const tracks: ListTrack[] = await target.getTracks();
 
-          const harmony = tracks?.find((t) => t.title === 'Harmony');
+          const harmony = tracks.find((t) => t.title === 'Harmony');
           expect(harmony).toBeDefined();
           expect(harmony?.artist).toBe('Main Artist');
           expect(harmony?.title).toBe('Harmony'); // No feat. added

@@ -240,10 +240,10 @@ describe('init command', () => {
       expect(message).toContain('Connect your iPod');
     });
 
-    it('includes instruction to run status', () => {
+    it('includes instruction to run device info', () => {
       const message = formatSuccessMessage('/any/path');
 
-      expect(message).toContain('podkit status');
+      expect(message).toContain('podkit device info');
     });
 
     it('includes instruction to run sync --dry-run', () => {
