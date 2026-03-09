@@ -1,10 +1,10 @@
 ---
 id: TASK-070.05
 title: Add Subsonic CLI support with URL scheme detection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:16'
-updated_date: '2026-03-08 16:21'
+updated_date: '2026-03-09 20:13'
 labels:
   - cli
   - subsonic
@@ -115,11 +115,11 @@ Document the new URL scheme in `--source` help.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 subsonic:// URL scheme parsed correctly
-- [ ] #2 Username/password extracted from URL
-- [ ] #3 SUBSONIC_PASSWORD env var used when password not in URL
-- [ ] #4 Clear error messages for missing credentials
-- [ ] #5 Help text documents new source format
+- [x] #1 subsonic:// URL scheme parsed correctly
+- [x] #2 Username/password extracted from URL
+- [x] #3 SUBSONIC_PASSWORD env var used when password not in URL
+- [x] #4 Clear error messages for missing credentials
+- [x] #5 Help text documents new source format
 <!-- AC:END -->
 
 ## Implementation Notes

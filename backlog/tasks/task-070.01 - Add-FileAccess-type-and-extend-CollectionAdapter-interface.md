@@ -1,10 +1,10 @@
 ---
 id: TASK-070.01
 title: Add FileAccess type and extend CollectionAdapter interface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:15'
-updated_date: '2026-03-08 16:21'
+updated_date: '2026-03-09 20:01'
 labels:
   - core
   - interface
@@ -67,10 +67,10 @@ Add JSDoc deprecation notice but keep for backward compatibility.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 FileAccess type defined and exported
-- [ ] #2 getFileAccess() added to CollectionAdapter interface
-- [ ] #3 getFilePath() has @deprecated JSDoc tag
-- [ ] #4 TypeScript compiles without errors
+- [x] #1 FileAccess type defined and exported
+- [x] #2 getFileAccess() added to CollectionAdapter interface
+- [x] #3 getFilePath() removed from interface (no deprecated code per user requirement)
+- [x] #4 TypeScript compiles without errors
 <!-- AC:END -->
 
 ## Implementation Notes

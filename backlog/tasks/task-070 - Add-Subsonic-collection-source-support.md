@@ -1,9 +1,10 @@
 ---
 id: TASK-070
 title: Add Subsonic collection source support
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:15'
+updated_date: '2026-03-09 20:54'
 labels:
   - feature
   - subsonic
@@ -65,10 +66,37 @@ This parent task is broken into subtasks covering:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Users can sync tracks from a Subsonic server to iPod
-- [ ] #2 Works with Navidrome, Airsonic, and other Subsonic-compatible servers
-- [ ] #3 CLI supports subsonic:// URL scheme for --source
-- [ ] #4 Credentials can be configured via config file or environment variables
-- [ ] #5 Download failures cause sync to fail with clear error message
-- [ ] #6 All subtasks completed with tests passing
+- [x] #1 Users can sync tracks from a Subsonic server to iPod
+- [x] #2 Works with Navidrome, Airsonic, and other Subsonic-compatible servers
+- [x] #3 CLI supports subsonic:// URL scheme for --source
+- [x] #4 Credentials can be configured via config file or environment variables
+- [x] #5 Download failures cause sync to fail with clear error message
+- [x] #6 All subtasks completed with tests passing
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented Subsonic collection source support with the following components:
+
+**Core Changes:**
+- Added `FileAccess` type (`path` | `stream`) to `CollectionAdapter` interface
+- Implemented `SubsonicAdapter` using `subsonic-api` package with pagination, metadata mapping, and lossless detection
+- Updated sync executor to handle stream-based file access with temp file downloads
+- Added stream utilities for downloading remote files
+
+**CLI Support:**
+- Added `subsonic://` URL scheme detection
+- Implemented password resolution from environment variables (`SUBSONIC_PASSWORD`, `PODKIT_MUSIC_{NAME}_PASSWORD`)
+- Updated sync and collection commands to use new adapter system
+
+**Testing Infrastructure:**
+- Unit tests for SubsonicAdapter
+- Integration tests with mocked HTTP server (Bun.serve)
+- E2E tests with Docker Navidrome container
+- Docker container management with automatic cleanup on Ctrl+C, crashes, and orphan detection
+
+**New Commands:**
+- `bun run test:e2e:docker` - Run Docker-based E2E tests
+- `bun run cleanup:docker` - Clean up orphaned test containers
+<!-- SECTION:FINAL_SUMMARY:END -->

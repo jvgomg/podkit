@@ -1,10 +1,10 @@
 ---
 id: TASK-070.02
 title: Update DirectoryAdapter to implement getFileAccess()
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:15'
-updated_date: '2026-03-08 16:21'
+updated_date: '2026-03-09 20:01'
 labels:
   - core
   - adapter
@@ -46,10 +46,10 @@ getFileAccess(track: CollectionTrack): FileAccess {
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 DirectoryAdapter implements getFileAccess()
-- [ ] #2 Returns { type: 'path', path: string }
-- [ ] #3 Unit test verifies return type
-- [ ] #4 Existing tests pass
+- [x] #1 DirectoryAdapter implements getFileAccess()
+- [x] #2 Returns { type: 'path', path: string }
+- [x] #3 Unit test verifies return type
+- [x] #4 Existing tests pass
 <!-- AC:END -->
 
 ## Implementation Notes

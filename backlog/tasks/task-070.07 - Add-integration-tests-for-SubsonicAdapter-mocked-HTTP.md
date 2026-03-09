@@ -1,10 +1,10 @@
 ---
 id: TASK-070.07
 title: Add integration tests for SubsonicAdapter (mocked HTTP)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:16'
-updated_date: '2026-03-08 16:21'
+updated_date: '2026-03-09 20:16'
 labels:
   - test
   - integration
@@ -88,10 +88,10 @@ Unit tests (070.06) mock the `subsonic-api` library itself. These integration te
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Mock HTTP server setup for Subsonic API
-- [ ] #2 Tests verify correct URL/parameter construction
-- [ ] #3 Tests verify pagination handling
-- [ ] #4 Tests verify error handling (HTTP errors, timeouts)
-- [ ] #5 Tests verify download stream handling
-- [ ] #6 Tests run without Docker in CI
+- [x] #1 Mock HTTP server setup for Subsonic API
+- [x] #2 Tests verify correct URL/parameter construction
+- [x] #3 Tests verify pagination handling
+- [x] #4 Tests verify error handling (HTTP errors, timeouts)
+- [x] #5 Tests verify download stream handling
+- [x] #6 Tests run without Docker in CI
 <!-- AC:END -->

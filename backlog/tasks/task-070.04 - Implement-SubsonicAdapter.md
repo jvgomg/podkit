@@ -1,10 +1,10 @@
 ---
 id: TASK-070.04
 title: Implement SubsonicAdapter
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-08 16:16'
-updated_date: '2026-03-08 16:21'
+updated_date: '2026-03-09 20:09'
 labels:
   - core
   - adapter
@@ -153,12 +153,12 @@ Covered by separate test subtasks.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 SubsonicAdapter class implemented
-- [ ] #2 connect() validates server connection via ping
-- [ ] #3 getTracks() paginates through all albums and extracts songs
-- [ ] #4 getFileAccess() returns stream from download endpoint
-- [ ] #5 Metadata correctly mapped (duration in ms, lossless detection)
-- [ ] #6 Exported from podkit-core
+- [x] #1 SubsonicAdapter class implemented
+- [x] #2 connect() validates server connection via ping
+- [x] #3 getTracks() paginates through all albums and extracts songs
+- [x] #4 getFileAccess() returns stream from download endpoint
+- [x] #5 Metadata correctly mapped (duration in ms, lossless detection)
+- [x] #6 Exported from podkit-core
 <!-- AC:END -->
 
 ## Implementation Notes
