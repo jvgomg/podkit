@@ -47,6 +47,11 @@ import type {
   UpdateTrack,
 } from './types.js';
 import type { TrackMetadata } from '../types.js';
+import { estimateTransferTime } from './estimation.js';
+import {
+  calculateVideoOperationSize,
+  calculateVideoOperationTime,
+} from './video-planner.js';
 
 // =============================================================================
 // Constants
@@ -102,17 +107,6 @@ const DEFAULT_CONFIG: TranscodeConfig = { quality: 'high' };
  * This is added to the calculated audio data size
  */
 const M4A_CONTAINER_OVERHEAD_BYTES = 2048;
-
-/**
- * Estimated USB transfer speed in bytes per second.
- *
- * With pipeline execution, transcoding happens in parallel with USB transfer,
- * so USB transfer is the bottleneck. Based on observed real-world throughput
- * of ~2.7 MB/s during E2E testing with USB 2.0 iPod.
- *
- * Using 2.5 MB/s as a conservative estimate.
- */
-const USB_TRANSFER_SPEED_BYTES_PER_SEC = 2.5 * 1024 * 1024; // 2.5 MB/s observed
 
 // =============================================================================
 // Helper Functions
@@ -289,19 +283,6 @@ export function estimateCopySize(track: CollectionTrack): number {
   return estimateTranscodedSize(240000, 256);
 }
 
-/**
- * Estimate time to transfer a file to iPod.
- *
- * With pipeline execution, transcoding happens in parallel with USB transfer,
- * so all time estimates are based on USB transfer speed (the bottleneck).
- *
- * @param sizeBytes - File size in bytes
- * @returns Estimated transfer time in seconds
- */
-function estimateTransferTime(sizeBytes: number): number {
-  return sizeBytes / USB_TRANSFER_SPEED_BYTES_PER_SEC;
-}
-
 // =============================================================================
 // Planning Functions
 // =============================================================================
@@ -390,10 +371,10 @@ interface PlanAddResult {
 /**
  * Plan operations for tracks to be added with source categorization
  *
- * This version uses source categorization to determine the appropriate
- * operation for each track and collects lossy-to-lossy warnings.
+ * Uses source categorization to determine the appropriate operation for each
+ * track and collects lossy-to-lossy warnings.
  */
-function planAddOperationsV2(
+function planAddOperations(
   tracks: CollectionTrack[],
   config: TranscodeConfig
 ): PlanAddResult {
@@ -472,7 +453,6 @@ export function calculateOperationSize(
   switch (operation.type) {
     case 'transcode': {
       const duration = operation.source.duration ?? 240000; // default 4 min
-      // Use getPresetBitrate for new presets, fall back to legacy behavior
       const bitrate = getPresetBitrate(operation.preset.name);
       return estimateTranscodedSize(duration, bitrate);
     }
@@ -483,19 +463,10 @@ export function calculateOperationSize(
     case 'update-metadata':
       // These operations free space rather than consume it
       return 0;
-    case 'video-transcode': {
-      // Estimate video size based on duration and bitrate
-      const duration = operation.source.duration ?? 3600; // default 1 hour in seconds
-      const videoBitrate = operation.settings.targetVideoBitrate ?? 1500; // kbps
-      const audioBitrate = operation.settings.targetAudioBitrate ?? 128; // kbps
-      const totalBitrate = videoBitrate + audioBitrate; // kbps
-      return Math.round((duration * totalBitrate * 1000) / 8); // bytes
-    }
-    case 'video-copy': {
-      // For passthrough, estimate based on source duration and typical bitrate
-      const duration = operation.source.duration ?? 3600;
-      return Math.round((duration * 2000 * 1000) / 8); // ~2 Mbps estimate
-    }
+    case 'video-transcode':
+    case 'video-copy':
+    case 'video-remove':
+      return calculateVideoOperationSize(operation);
   }
 }
 
@@ -522,17 +493,10 @@ function calculateOperationTime(operation: SyncOperation): number {
     case 'update-metadata':
       // Metadata update is instant
       return 0.01;
-    case 'video-transcode': {
-      // Video transcoding is slow - estimate based on duration
-      const duration = operation.source.duration ?? 3600;
-      // Assume ~0.5x realtime for video transcoding + transfer
-      return duration * 2;
-    }
-    case 'video-copy': {
-      // Video copy is transfer-limited
-      const size = calculateOperationSize(operation);
-      return estimateTransferTime(size);
-    }
+    case 'video-transcode':
+    case 'video-copy':
+    case 'video-remove':
+      return calculateVideoOperationTime(operation);
   }
 }
 
@@ -604,8 +568,8 @@ export function createPlan(
   // Get transcode config (handles both legacy and new formats)
   const config = getTranscodeConfig(options);
 
-  // Plan add operations using new categorization logic
-  const addResult = planAddOperationsV2(diff.toAdd, config);
+  // Plan add operations using source categorization logic
+  const addResult = planAddOperations(diff.toAdd, config);
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);

@@ -70,5 +70,5 @@ export const ftintitleTransform: TrackTransform<FtInTitleConfig> = {
 
 // Re-export extraction utilities for direct use
 export { applyFtInTitle, extractFeaturedArtist, insertFeatIntoTitle } from './extract.js';
-export { titleContainsFeat, artistContainsFeat } from './extract.js';
+export { titleContainsFeat } from './extract.js';
 export { findInsertPosition } from './patterns.js';

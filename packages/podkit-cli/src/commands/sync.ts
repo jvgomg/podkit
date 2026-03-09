@@ -38,6 +38,7 @@ import type {
 import { resolveDevicePath, formatDeviceError, getDeviceIdentity } from '../device-resolver.js';
 import type { IPodVideo, CollectionVideo } from '@podkit/core';
 import { MediaType } from '@podkit/core';
+import { formatBytes, formatNumber } from './display-utils.js';
 
 // =============================================================================
 // Types
@@ -147,7 +148,7 @@ interface SyncOutput {
     estimatedTime: number;
   };
   operations?: Array<{
-    type: 'transcode' | 'copy' | 'remove' | 'update-metadata' | 'video-transcode' | 'video-copy';
+    type: 'transcode' | 'copy' | 'remove' | 'update-metadata' | 'video-transcode' | 'video-copy' | 'video-remove';
     track: string;
     status?: 'pending' | 'completed' | 'failed' | 'skipped';
     error?: string;
@@ -177,20 +178,6 @@ interface SyncOutput {
 // =============================================================================
 
 /**
- * Format bytes as human-readable size
- */
-export function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return '0 B';
-
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = bytes / Math.pow(k, i);
-
-  return `${value.toFixed(decimals)} ${sizes[i]}`;
-}
-
-/**
  * Format duration in seconds as human-readable time
  */
 export function formatDuration(seconds: number): string {
@@ -205,13 +192,6 @@ export function formatDuration(seconds: number): string {
   const hours = Math.floor(minutes / 60);
   const remainingMinutes = minutes % 60;
   return `${hours}h ${remainingMinutes}m`;
-}
-
-/**
- * Format a number with thousands separators
- */
-function formatNumber(num: number): string {
-  return num.toLocaleString('en-US');
 }
 
 /**

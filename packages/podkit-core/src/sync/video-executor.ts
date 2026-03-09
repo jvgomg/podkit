@@ -233,6 +233,14 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
             if (lastProgress) {
               bytesProcessed = lastProgress.bytesProcessed;
             }
+          } else if (operation.type === 'video-remove') {
+            yield* this.executeRemove(
+              operation,
+              index,
+              total,
+              bytesProcessed,
+              plan.estimatedSize
+            );
           }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -296,7 +304,9 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
         ? 'video-transcoding'
         : operation.type === 'video-copy'
           ? 'video-copying'
-          : 'preparing';
+          : operation.type === 'video-remove'
+            ? 'removing'
+            : 'preparing';
 
       yield {
         phase,
@@ -469,6 +479,58 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       bytesTotal,
     };
   }
+
+  /**
+   * Execute a video remove operation
+   */
+  private async *executeRemove(
+    operation: Extract<SyncOperation, { type: 'video-remove' }>,
+    index: number,
+    total: number,
+    bytesProcessed: number,
+    bytesTotal: number
+  ): AsyncIterable<VideoExecutorProgress> {
+    const { video } = operation;
+
+    // Yield start progress
+    yield {
+      phase: 'removing',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: video.title,
+      bytesProcessed,
+      bytesTotal,
+    };
+
+    // Find the matching track in the database by file path or metadata
+    const tracks = this.ipod.getTracks();
+    const foundTrack = tracks.find(
+      (t) =>
+        t.filePath === video.filePath ||
+        (t.title === video.title && t.tvShow === video.seriesTitle)
+    );
+
+    if (!foundTrack) {
+      throw new Error(`Video track not found in database: ${video.title}`);
+    }
+
+    // Remove the track (this also removes the file)
+    foundTrack.remove();
+
+    // Yield completion progress
+    yield {
+      phase: 'removing',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: video.title,
+      bytesProcessed,
+      bytesTotal,
+    };
+  }
 }
 
 /**
@@ -503,7 +565,9 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
         ? 'video-transcoding'
         : operation.type === 'video-copy'
           ? 'video-copying'
-          : 'preparing';
+          : operation.type === 'video-remove'
+            ? 'removing'
+            : 'preparing';
 
       yield {
         phase,
@@ -550,6 +614,15 @@ export function getVideoOperationDisplayName(operation: SyncOperation): string {
       // For movies, just use the title (with year if available)
       if (video.year) {
         return `${video.title} (${video.year})`;
+      }
+      return video.title;
+    }
+    case 'video-remove': {
+      const video = operation.video;
+      if (video.contentType === 'tvshow' && video.seasonNumber !== undefined && video.episodeNumber !== undefined) {
+        const showName = video.seriesTitle || video.title;
+        const episodeId = `S${String(video.seasonNumber).padStart(2, '0')}E${String(video.episodeNumber).padStart(2, '0')}`;
+        return `${showName} - ${episodeId}`;
       }
       return video.title;
     }

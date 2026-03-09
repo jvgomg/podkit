@@ -34,6 +34,7 @@ import { checkVideoCompatibility } from '../video/compatibility.js';
 import { calculateEffectiveSettings } from '../video/quality.js';
 import type { SyncOperation, SyncWarning } from './types.js';
 import type { VideoSyncDiff, IPodVideo } from './video-differ.js';
+import { estimateTransferTime } from './estimation.js';
 
 // =============================================================================
 // Types
@@ -123,13 +124,6 @@ const DEFAULT_QUALITY_PRESET: VideoQualityPreset = 'high';
  */
 const TRANSCODE_SPEED_FACTOR_SOFTWARE = 0.5;
 const TRANSCODE_SPEED_FACTOR_HARDWARE = 1.5;
-
-/**
- * Estimated USB transfer speed in bytes per second
- *
- * Conservative estimate for USB 2.0 iPod connection.
- */
-const USB_TRANSFER_SPEED_BYTES_PER_SEC = 2.5 * 1024 * 1024; // 2.5 MB/s
 
 /**
  * M4V container overhead in bytes
@@ -249,10 +243,57 @@ function estimateTranscodeTime(
 }
 
 /**
- * Estimate transfer time for a file
+ * Calculate estimated size for a video operation.
+ *
+ * Used by the audio planner to handle video operations in mixed plans.
  */
-function estimateTransferTime(sizeBytes: number): number {
-  return sizeBytes / USB_TRANSFER_SPEED_BYTES_PER_SEC;
+export function calculateVideoOperationSize(
+  operation: Extract<SyncOperation, { type: 'video-transcode' | 'video-copy' | 'video-remove' }>
+): number {
+  switch (operation.type) {
+    case 'video-transcode': {
+      // Estimate video size based on duration and bitrate
+      const duration = operation.source.duration ?? 3600; // default 1 hour in seconds
+      const videoBitrate = operation.settings.targetVideoBitrate ?? 1500; // kbps
+      const audioBitrate = operation.settings.targetAudioBitrate ?? 128; // kbps
+      const totalBitrate = videoBitrate + audioBitrate; // kbps
+      return Math.round((duration * totalBitrate * 1000) / 8); // bytes
+    }
+    case 'video-copy': {
+      // For passthrough, estimate based on source duration and typical bitrate
+      const duration = operation.source.duration ?? 3600;
+      return Math.round((duration * 2000 * 1000) / 8); // ~2 Mbps estimate
+    }
+    case 'video-remove':
+      // Removal frees space rather than consuming it
+      return 0;
+  }
+}
+
+/**
+ * Calculate estimated time for a video operation.
+ *
+ * Used by the audio planner to handle video operations in mixed plans.
+ */
+export function calculateVideoOperationTime(
+  operation: Extract<SyncOperation, { type: 'video-transcode' | 'video-copy' | 'video-remove' }>
+): number {
+  switch (operation.type) {
+    case 'video-transcode': {
+      // Video transcoding is slow - estimate based on duration
+      const duration = operation.source.duration ?? 3600;
+      // Assume ~0.5x realtime for video transcoding + transfer
+      return duration * 2;
+    }
+    case 'video-copy': {
+      // Video copy is transfer-limited
+      const size = calculateVideoOperationSize(operation);
+      return estimateTransferTime(size);
+    }
+    case 'video-remove':
+      // Removal is nearly instant
+      return 0.1;
+  }
 }
 
 // =============================================================================
@@ -318,13 +359,16 @@ function planAddOperations(
  * Plan operations for videos to be removed
  */
 function planRemoveOperations(
-  _videos: IPodVideo[],
-  _removeOrphans: boolean
+  videos: IPodVideo[],
+  removeOrphans: boolean
 ): SyncOperation[] {
-  // Video remove operations depend on libgpod video support (TASK-069.14)
-  // For now, we return an empty array - removal will be implemented later
-  // when IPodVideo removal is supported in the executor
-  return [];
+  if (!removeOrphans) {
+    return [];
+  }
+  return videos.map((video) => ({
+    type: 'video-remove' as const,
+    video,
+  }));
 }
 
 /**
@@ -358,6 +402,10 @@ function calculateOperationEstimates(
       return { size, time };
     }
 
+    case 'video-remove':
+      // Removal is nearly instant (database update + file delete)
+      return { size: 0, time: 0.1 };
+
     default:
       return { size: 0, time: 0 };
   }
@@ -367,29 +415,30 @@ function calculateOperationEstimates(
  * Order operations for efficient execution
  *
  * Strategy:
- * 1. Remove operations first (free up space) - when implemented
+ * 1. Remove operations first (free up space)
  * 2. Copy operations next (faster, no CPU intensive work)
  * 3. Transcode operations last (can be pipelined with transfer)
  */
 function orderOperations(operations: SyncOperation[]): SyncOperation[] {
+  const removes: SyncOperation[] = [];
   const copies: SyncOperation[] = [];
   const transcodes: SyncOperation[] = [];
-  const others: SyncOperation[] = [];
 
   for (const op of operations) {
     switch (op.type) {
+      case 'video-remove':
+        removes.push(op);
+        break;
       case 'video-copy':
         copies.push(op);
         break;
       case 'video-transcode':
         transcodes.push(op);
         break;
-      default:
-        others.push(op);
     }
   }
 
-  return [...others, ...copies, ...transcodes];
+  return [...removes, ...copies, ...transcodes];
 }
 
 // =============================================================================
@@ -496,7 +545,7 @@ export function getVideoPlanSummary(plan: VideoSyncPlan): VideoPlanSummary {
       case 'video-copy':
         copyCount++;
         break;
-      case 'remove':
+      case 'video-remove':
         removeCount++;
         break;
     }

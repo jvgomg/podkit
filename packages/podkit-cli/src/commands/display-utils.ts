@@ -98,6 +98,27 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
 // =============================================================================
 
 /**
+ * Format bytes as human-readable size with appropriate unit.
+ */
+export function formatBytes(bytes: number, decimals = 1): string {
+  if (bytes === 0) return '0 B';
+
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  const value = bytes / Math.pow(k, i);
+
+  return `${value.toFixed(decimals)} ${sizes[i]}`;
+}
+
+/**
+ * Format a number with thousands separators.
+ */
+export function formatNumber(num: number): string {
+  return num.toLocaleString('en-US');
+}
+
+/**
  * Format duration in milliseconds as MM:SS.
  */
 export function formatDuration(ms: number | undefined): string {

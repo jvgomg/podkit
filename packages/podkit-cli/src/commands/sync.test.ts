@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import {
-  formatBytes,
   formatDuration,
   renderProgressBar,
   syncCommand,
 } from './sync.js';
+import { formatBytes } from './display-utils.js';
 
 describe('sync command', () => {
   describe('command options', () => {

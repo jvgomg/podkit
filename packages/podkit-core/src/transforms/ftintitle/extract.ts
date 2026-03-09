@@ -266,16 +266,5 @@ export function applyFtInTitle(
   };
 }
 
-/**
- * Check if an artist string contains featuring info
- *
- * @param artist - The artist string to check
- * @returns True if artist contains feat/ft/featuring/etc.
- */
-export function artistContainsFeat(artist: string): boolean {
-  const pattern = createFeatSplitPattern(false);
-  return pattern.test(artist);
-}
-
 // Re-export from patterns for convenience
 export { titleContainsFeat } from './patterns.js';

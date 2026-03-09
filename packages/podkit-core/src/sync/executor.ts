@@ -200,6 +200,27 @@ const PIPELINE_BUFFER_SIZE = 3;
 // =============================================================================
 
 /**
+ * Get a human-readable filetype label based on file extension.
+ *
+ * Used for the iPod database `filetype` field which displays the format
+ * in iTunes and on the device.
+ */
+function getFileTypeLabel(filePath: string): string {
+  const ext = extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.mp3':
+      return 'MPEG audio file';
+    case '.m4a':
+    case '.aac':
+      return 'AAC audio file';
+    case '.alac':
+      return 'Apple Lossless audio file';
+    default:
+      return 'Audio file';
+  }
+}
+
+/**
  * Convert CollectionTrack to TrackInput for libgpod
  */
 function toTrackInput(track: CollectionTrack): TrackInput {
@@ -232,6 +253,8 @@ export function getOperationDisplayName(operation: SyncOperation): string {
     case 'video-transcode':
     case 'video-copy':
       return operation.source.title;
+    case 'video-remove':
+      return operation.video.title;
   }
 }
 
@@ -867,6 +890,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
         return this.executeUpdateMetadata(operation);
       case 'video-transcode':
       case 'video-copy':
+      case 'video-remove':
         // Video operations are handled by VideoSyncExecutor, not this executor
         throw new Error(`Video operations (${operation.type}) should be handled by VideoSyncExecutor`);
     }
@@ -949,28 +973,10 @@ export class DefaultSyncExecutor implements SyncExecutor {
   ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { source } = operation;
 
-    // Determine filetype based on extension
-    const ext = extname(source.filePath).toLowerCase();
-    let filetype: string;
-    switch (ext) {
-      case '.mp3':
-        filetype = 'MPEG audio file';
-        break;
-      case '.m4a':
-      case '.aac':
-        filetype = 'AAC audio file';
-        break;
-      case '.alac':
-        filetype = 'Apple Lossless audio file';
-        break;
-      default:
-        filetype = 'Audio file';
-    }
-
     // Add track to iPod database using IpodDatabase API
     const trackInput: TrackInput = {
       ...toTrackInput(source),
-      filetype,
+      filetype: getFileTypeLabel(source.filePath),
     };
 
     const track = this.ipod.addTrack(trackInput);
@@ -1149,30 +1155,12 @@ export class DefaultSyncExecutor implements SyncExecutor {
         : 5000000; // default 5MB
     }
 
-    // Determine filetype based on extension
-    const ext = extname(source.filePath).toLowerCase();
-    let filetype: string;
-    switch (ext) {
-      case '.mp3':
-        filetype = 'MPEG audio file';
-        break;
-      case '.m4a':
-      case '.aac':
-        filetype = 'AAC audio file';
-        break;
-      case '.alac':
-        filetype = 'Apple Lossless audio file';
-        break;
-      default:
-        filetype = 'Audio file';
-    }
-
     return {
       operation,
       sourcePath: source.filePath,
       isTemp: false,
       size,
-      filetype,
+      filetype: getFileTypeLabel(source.filePath),
     };
   }
 
@@ -1240,6 +1228,8 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
       return 'video-transcoding';
     case 'video-copy':
       return 'video-copying';
+    case 'video-remove':
+      return 'removing';
   }
 }
 

@@ -11,6 +11,7 @@ import type { IPodTrack } from '../ipod/types.js';
 import type { QualityPreset, TranscodeConfig } from '../transcode/types.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../video/types.js';
+import type { IPodVideo } from './video-differ.js';
 
 // Re-export for use within sync module
 export type { IPodTrack };
@@ -160,6 +161,10 @@ export type SyncOperation =
   | {
       type: 'video-copy';
       source: CollectionVideo;
+    }
+  | {
+      type: 'video-remove';
+      video: IPodVideo;
     };
 
 /**

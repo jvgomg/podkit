@@ -15,7 +15,7 @@
  * These are used for both artist and title matching. They clearly indicate
  * a featuring credit rather than being part of the artist name.
  */
-export const FEAT_WORDS_EXPLICIT = [
+const FEAT_WORDS_EXPLICIT = [
   'ft',
   'ft.',
   'feat',
@@ -32,7 +32,7 @@ export const FEAT_WORDS_EXPLICIT = [
  * Note: We're conservative here - "and" and "&" can be part of band names
  * (e.g., "Simon & Garfunkel"), so we require whitespace boundaries.
  */
-export const FEAT_WORDS_ARTIST_EXTRA = [
+const FEAT_WORDS_ARTIST_EXTRA = [
   'with',
   'vs',
   'vs.',
@@ -57,7 +57,7 @@ export const FEAT_WORDS_ARTIST = [
  *
  * Example: "Song (Radio Edit)" → "Song (feat. B) (Radio Edit)"
  */
-export const BRACKET_KEYWORDS = [
+const BRACKET_KEYWORDS = [
   'abridged',
   'acapella',
   'a capella', // alternate spelling
@@ -86,29 +86,6 @@ export const BRACKET_KEYWORDS = [
  */
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Create a regex pattern that matches featuring tokens in a string
- *
- * The pattern matches featuring words that are:
- * - Preceded by whitespace or opening bracket
- * - Followed by whitespace
- *
- * This prevents matching "feat" inside words like "feature" or "defeat".
- *
- * @param forArtist - If true, include ambiguous separators like "&"
- * @returns RegExp that matches featuring tokens
- */
-export function createFeatPattern(forArtist: boolean): RegExp {
-  const words = forArtist ? FEAT_WORDS_ARTIST : FEAT_WORDS_EXPLICIT;
-  const escaped = words.map(escapeRegex);
-  // Match: (whitespace or bracket) + feat word + whitespace
-  // Using word boundary and lookahead/lookbehind for accurate matching
-  return new RegExp(
-    `(?<=\\s|[(\\[])(?:${escaped.join('|')})(?=\\s)`,
-    'i'
-  );
 }
 
 /**
@@ -145,7 +122,7 @@ export function createFeatSplitPattern(forArtist: boolean): RegExp {
  * - "Feature" (word contains "feat" but isn't a featuring token)
  * - "defeat" (embedded within word)
  */
-export const TITLE_FEAT_PATTERN = new RegExp(
+const TITLE_FEAT_PATTERN = new RegExp(
   `(?:^|\\s|[([\\[])(?:${FEAT_WORDS_EXPLICIT.map(escapeRegex).join('|')})(?:\\s|[)\\]]|$)`,
   'i'
 );
@@ -156,7 +133,7 @@ export const TITLE_FEAT_PATTERN = new RegExp(
  * Matches: (Remix), [Radio Edit], (Extended Mix), etc.
  * Used to determine where to insert featuring info in the title.
  */
-export const BRACKET_KEYWORD_PATTERN = new RegExp(
+const BRACKET_KEYWORD_PATTERN = new RegExp(
   `[([\\[]\\s*(?:[^)\\]]*\\b(?:${BRACKET_KEYWORDS.join('|')})\\b[^)\\]]*)[)\\]]`,
   'i'
 );

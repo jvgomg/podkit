@@ -45,32 +45,16 @@ import {
   formatTable,
   formatJson,
   formatCsv,
+  formatBytes,
+  formatNumber,
 } from './display-utils.js';
 
 // =============================================================================
 // Shared utilities
 // =============================================================================
 
-/**
- * Format bytes as human-readable size with appropriate unit.
- */
-export function formatBytes(bytes: number, decimals = 1): string {
-  if (bytes === 0) return '0 B';
-
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  const value = bytes / Math.pow(k, i);
-
-  return `${value.toFixed(decimals)} ${sizes[i]}`;
-}
-
-/**
- * Format a number with thousands separators.
- */
-export function formatNumber(num: number): string {
-  return num.toLocaleString('en-US');
-}
+// Re-export formatting utilities from display-utils for backward compatibility
+export { formatBytes, formatNumber } from './display-utils.js';
 
 /**
  * Get generation display name from generation identifier.
