@@ -223,7 +223,13 @@ fi
 # ---------------------------------------------------------------------------
 log "Verifying static dependencies..."
 MISSING=""
-for lib in libgpod.a libglib-2.0.a libgobject-2.0.a libgdk_pixbuf-2.0.a; do
+if [ "$OS" = "Darwin" ]; then
+  REQUIRED="libgpod.a libglib-2.0.a libgobject-2.0.a libgdk_pixbuf-2.0.a"
+else
+  # Linux: only libgpod and gdk-pixbuf are statically linked (glib is dynamic)
+  REQUIRED="libgpod.a libgdk_pixbuf-2.0.a"
+fi
+for lib in $REQUIRED; do
   if [ ! -f "$STATIC_DEPS_DIR/lib/$lib" ]; then
     MISSING="$MISSING $lib"
   fi
