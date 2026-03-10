@@ -67,18 +67,9 @@ build_gdk_pixbuf_static() {
   # Manual install since `ninja install` would try to build everything
   cp _build/gdk-pixbuf/libgdk_pixbuf-2.0.a "$STATIC_DEPS_DIR/lib/"
   mkdir -p "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf"
-  cp gdk-pixbuf/gdk-pixbuf.h \
-     gdk-pixbuf/gdk-pixbuf-core.h \
-     gdk-pixbuf/gdk-pixbuf-transform.h \
-     gdk-pixbuf/gdk-pixbuf-io.h \
-     gdk-pixbuf/gdk-pixbuf-animation.h \
-     gdk-pixbuf/gdk-pixbuf-simple-anim.h \
-     gdk-pixbuf/gdk-pixbuf-loader.h \
-     gdk-pixbuf/gdk-pixdata.h \
-     gdk-pixbuf/gdk-pixbuf-autocleanups.h \
-     _build/gdk-pixbuf/gdk-pixbuf-enum-types.h \
-     _build/gdk-pixbuf/gdk-pixbuf-features.h \
-     "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
+  # Copy all public headers (avoid listing individually — easy to miss one like gdk-pixbuf-macros.h)
+  cp gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
+  cp _build/gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
   cp _build/meson-private/gdk-pixbuf-2.0.pc "$STATIC_DEPS_DIR/lib/pkgconfig/" 2>/dev/null || true
   cd "$WORK_DIR"
 }

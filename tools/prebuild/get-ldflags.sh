@@ -12,30 +12,42 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
   # Order matters for static linking — dependents before dependencies.
   LIBS=""
 
+  # Helper: add .a if it exists, otherwise try dynamic -l flag, or skip
+  add_static() {
+    local path="$1"
+    local fallback_flag="$2"  # e.g. "-lplist-2.0" or "" to skip
+    if [ -f "$path" ]; then
+      LIBS="$LIBS $path"
+    elif [ -n "$fallback_flag" ]; then
+      LIBS="$LIBS $fallback_flag"
+    fi
+  }
+
   # libgpod (core)
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libgpod.a"
+  add_static "${STATIC_DEPS_DIR}/lib/libgpod.a" "-lgpod"
 
   # GLib stack
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libgio-2.0.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libgobject-2.0.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libgmodule-2.0.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libglib-2.0.a"
+  add_static "${STATIC_DEPS_DIR}/lib/libgio-2.0.a" "-lgio-2.0"
+  add_static "${STATIC_DEPS_DIR}/lib/libgobject-2.0.a" "-lgobject-2.0"
+  add_static "${STATIC_DEPS_DIR}/lib/libgmodule-2.0.a" "-lgmodule-2.0"
+  add_static "${STATIC_DEPS_DIR}/lib/libglib-2.0.a" "-lglib-2.0"
 
   # gdk-pixbuf (for artwork)
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libgdk_pixbuf-2.0.a"
+  add_static "${STATIC_DEPS_DIR}/lib/libgdk_pixbuf-2.0.a" "-lgdk_pixbuf-2.0"
 
-  # libplist (for iPhone/iPod Touch support)
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libplist-2.0.a"
+  # libplist (for iPhone/iPod Touch support) — optional, may not have .a on Linux
+  add_static "${STATIC_DEPS_DIR}/lib/libplist-2.0.a" "-lplist-2.0"
 
   # GLib/GObject transitive deps
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libffi.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libpcre2-8.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libintl.a"
+  add_static "${STATIC_DEPS_DIR}/lib/libffi.a" "-lffi"
+  add_static "${STATIC_DEPS_DIR}/lib/libpcre2-8.a" "-lpcre2-8"
+  # libintl: on Linux/glibc, gettext is built into libc — no separate lib needed
+  add_static "${STATIC_DEPS_DIR}/lib/libintl.a" ""
 
   # Image format libs (gdk-pixbuf dependencies)
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libpng16.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libjpeg.a"
-  LIBS="$LIBS ${STATIC_DEPS_DIR}/lib/libtiff.a"
+  add_static "${STATIC_DEPS_DIR}/lib/libpng16.a" "-lpng16"
+  add_static "${STATIC_DEPS_DIR}/lib/libjpeg.a" "-ljpeg"
+  add_static "${STATIC_DEPS_DIR}/lib/libtiff.a" "-ltiff"
 
   # System libraries
   if [ "$(uname)" = "Darwin" ]; then
