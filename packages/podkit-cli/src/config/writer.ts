@@ -170,6 +170,117 @@ export function addDevice(
 }
 
 /**
+ * Update settings on an existing device in the config file
+ *
+ * Modifies individual fields within the [devices.<name>] section.
+ * Only provided fields are updated; others are left unchanged.
+ */
+export function updateDevice(
+  name: string,
+  updates: {
+    quality?: string | null;
+    audioQuality?: string | null;
+    videoQuality?: string | null;
+    artwork?: boolean | null;
+  },
+  options?: UpdateConfigOptions
+): UpdateConfigResult {
+  const configPath = options?.configPath ?? DEFAULT_CONFIG_PATH;
+
+  if (!fs.existsSync(configPath)) {
+    return {
+      success: false,
+      configPath,
+      created: false,
+      error: `Config file not found: ${configPath}`,
+    };
+  }
+
+  let content = fs.readFileSync(configPath, 'utf-8');
+
+  // Check if device exists
+  const deviceSectionRegex = new RegExp(`\\[devices\\.${escapeRegExp(name)}\\]`);
+  if (!deviceSectionRegex.test(content)) {
+    return {
+      success: false,
+      configPath,
+      created: false,
+      error: `Device "${name}" not found in config`,
+    };
+  }
+
+  // Find the device section boundaries
+  // The section runs from [devices.<name>] to the next top-level section (not [devices.<name>.*])
+  const sectionStartRegex = new RegExp(`(\\[devices\\.${escapeRegExp(name)}\\])`);
+  const sectionMatch = content.match(sectionStartRegex);
+  if (!sectionMatch || sectionMatch.index === undefined) {
+    return {
+      success: false,
+      configPath,
+      created: false,
+      error: `Could not locate device section for "${name}"`,
+    };
+  }
+
+  const sectionStart = sectionMatch.index + sectionMatch[0].length;
+
+  // Find where this device section ends (next section that isn't a nested device section)
+  const afterSection = content.slice(sectionStart);
+  const nextSectionMatch = afterSection.match(
+    new RegExp(`\\n\\[(?!devices\\.${escapeRegExp(name)}\\.)`)
+  );
+  const sectionEnd = nextSectionMatch?.index !== undefined
+    ? sectionStart + nextSectionMatch.index
+    : content.length;
+
+  let sectionContent = content.slice(sectionStart, sectionEnd);
+
+  for (const [key, value] of Object.entries(updates)) {
+    if (value === undefined) continue;
+
+    // Convert camelCase to TOML key format (camelCase stays as-is in our config)
+    const tomlKey = key;
+    const lineRegex = new RegExp(`^${escapeRegExp(tomlKey)}\\s*=\\s*.*$`, 'm');
+
+    if (value === null) {
+      // Remove the line
+      sectionContent = sectionContent.replace(lineRegex, '');
+      // Clean up double blank lines from removal
+      sectionContent = sectionContent.replace(/\n\n\n+/g, '\n\n');
+    } else if (lineRegex.test(sectionContent)) {
+      // Update existing line
+      const formattedValue = typeof value === 'boolean' ? String(value) : `"${value}"`;
+      sectionContent = sectionContent.replace(lineRegex, `${tomlKey} = ${formattedValue}`);
+    } else {
+      // Add new line after the section header (first line)
+      const formattedValue = typeof value === 'boolean' ? String(value) : `"${value}"`;
+      sectionContent = `\n${tomlKey} = ${formattedValue}` + sectionContent;
+    }
+  }
+
+  content = content.slice(0, sectionStart) + sectionContent + content.slice(sectionEnd);
+
+  // Clean up multiple blank lines
+  content = content.replace(/\n{3,}/g, '\n\n');
+
+  try {
+    fs.writeFileSync(configPath, content);
+    return {
+      success: true,
+      configPath,
+      created: false,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      configPath,
+      created: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
  * Remove a device from the config file
  *
  * Removes the [devices.<name>] section and any nested sections.
@@ -643,7 +754,15 @@ export function setDefaultCollection(
   const hasExistingDefault = defaultKeyRegex.test(content);
 
   if (hasDefaultsSection) {
-    if (hasExistingDefault) {
+    if (name === '') {
+      // Clear the default - remove the key line from [defaults]
+      if (hasExistingDefault) {
+        content = content.replace(
+          new RegExp(`^\\s*${type}\\s*=\\s*["'][^"']*["']\\s*\\n?`, 'gm'),
+          ''
+        );
+      }
+    } else if (hasExistingDefault) {
       // Replace existing default
       content = content.replace(
         new RegExp(`^(\\s*)${type}\\s*=\\s*["'][^"']*["']`, 'gm'),
@@ -653,7 +772,7 @@ export function setDefaultCollection(
       // Add to existing [defaults] section
       content = content.replace(/(\[defaults\])/, `$1\n${type} = "${escapeTomlString(name)}"`);
     }
-  } else {
+  } else if (name !== '') {
     // Create [defaults] section
     const defaultsSection = `\n[defaults]\n${type} = "${escapeTomlString(name)}"\n`;
     if (content.length > 0 && !content.endsWith('\n')) {

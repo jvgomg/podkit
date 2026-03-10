@@ -22,7 +22,8 @@ import { Command } from 'commander';
 import { existsSync, statfsSync } from 'node:fs';
 import * as readline from 'node:readline';
 import { getContext } from '../context.js';
-import { addDevice, removeDevice, setDefaultDevice, DEFAULT_CONFIG_PATH } from '../config/index.js';
+import { addDevice, updateDevice, removeDevice, setDefaultDevice, DEFAULT_CONFIG_PATH } from '../config/index.js';
+import { QUALITY_PRESETS, VIDEO_QUALITY_PRESETS } from '../config/index.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -292,6 +293,20 @@ export interface DeviceInitOutput {
   error?: string;
 }
 
+export interface DeviceSetOutput {
+  success: boolean;
+  device?: string;
+  updated?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface DeviceDefaultOutput {
+  success: boolean;
+  device?: string;
+  cleared?: boolean;
+  error?: string;
+}
+
 // =============================================================================
 // Re-export display utilities for backward compatibility
 // =============================================================================
@@ -403,6 +418,10 @@ const listSubcommand = new Command('list')
 
 interface AddOptions {
   yes?: boolean;
+  quality?: string;
+  audioQuality?: string;
+  videoQuality?: string;
+  artwork?: boolean;
 }
 
 const addSubcommand = new Command('add')
@@ -410,6 +429,11 @@ const addSubcommand = new Command('add')
   .argument('<name>', 'name for this device configuration')
   .argument('[path]', 'explicit path to iPod mount point')
   .option('-y, --yes', 'skip confirmation prompts')
+  .option('--quality <preset>', 'transcoding quality preset: lossless, max, high, medium, low (and CBR variants)')
+  .option('--audio-quality <preset>', 'audio quality (overrides --quality): lossless, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr')
+  .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
+  .option('--artwork', 'sync artwork to this device')
+  .option('--no-artwork', 'do not sync artwork to this device')
   .action(async (name: string, explicitPath: string | undefined, options: AddOptions) => {
     const { globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -427,6 +451,26 @@ const addSubcommand = new Command('add')
     const existingDevices = configResult.config.devices || {};
     if (name in existingDevices) {
       const error = `Device "${name}" already exists in config. Use a different name or remove it first.`;
+      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+
+    // Validate quality options
+    if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
+      const error = `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+    if (options.audioQuality !== undefined && !QUALITY_PRESETS.includes(options.audioQuality as any)) {
+      const error = `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+    if (options.videoQuality !== undefined && !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)) {
+      const error = `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`;
       out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;
@@ -544,6 +588,10 @@ const addSubcommand = new Command('add')
       const isFirstDevice = deviceCount === 0;
       const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
       const deviceConfig: DeviceConfig = { volumeUuid, volumeName };
+      if (options.quality) deviceConfig.quality = options.quality as any;
+      if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
+      if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
+      if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
       // Interactive confirmation (skip if auto-confirm or JSON mode)
       if (!autoConfirm && out.isText) {
@@ -731,6 +779,10 @@ const addSubcommand = new Command('add')
       volumeUuid: ipod.volumeUuid,
       volumeName: ipod.volumeName,
     };
+    if (options.quality) deviceConfig.quality = options.quality as any;
+    if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
+    if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
+    if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
     // Interactive mode (skip if auto-confirm or JSON mode)
     if (!autoConfirm && out.isText) {
@@ -2143,6 +2195,218 @@ const initSubcommand = new Command('init')
   });
 
 // =============================================================================
+// Set subcommand
+// =============================================================================
+
+interface SetOptions {
+  quality?: string;
+  audioQuality?: string;
+  videoQuality?: string;
+  artwork?: boolean;
+  clearQuality?: boolean;
+  clearAudioQuality?: boolean;
+  clearVideoQuality?: boolean;
+  clearArtwork?: boolean;
+}
+
+const setSubcommand = new Command('set')
+  .description('update device settings (quality, artwork)')
+  .argument('<name>', 'device name')
+  .option('--quality <preset>', 'transcoding quality preset: lossless, max, high, medium, low (and CBR variants)')
+  .option('--audio-quality <preset>', 'audio quality (overrides --quality): lossless, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr')
+  .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
+  .option('--artwork', 'sync artwork to this device')
+  .option('--no-artwork', 'do not sync artwork to this device')
+  .option('--clear-quality', 'remove quality setting (use global default)')
+  .option('--clear-audio-quality', 'remove audio quality setting (use global default)')
+  .option('--clear-video-quality', 'remove video quality setting (use global default)')
+  .option('--clear-artwork', 'remove artwork setting (use global default)')
+  .action(async (name: string, options: SetOptions) => {
+    const { config, globalOpts, configResult } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts);
+
+    const devices = config.devices || {};
+    if (!(name in devices)) {
+      const error = `Device "${name}" not found in config.`;
+      out.result<DeviceSetOutput>({ success: false, error }, () => {
+        out.error(error);
+        const available = Object.keys(devices);
+        if (available.length > 0) {
+          out.error(`Available devices: ${available.join(', ')}`);
+        }
+      });
+      process.exitCode = 1;
+      return;
+    }
+
+    // Validate quality options
+    if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
+      const error = `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+    if (options.audioQuality !== undefined && !QUALITY_PRESETS.includes(options.audioQuality as any)) {
+      const error = `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+    if (options.videoQuality !== undefined && !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)) {
+      const error = `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+
+    // Build updates object (null means remove the setting)
+    const updates: Record<string, string | boolean | null> = {};
+
+    if (options.clearQuality) {
+      updates.quality = null;
+    } else if (options.quality !== undefined) {
+      updates.quality = options.quality;
+    }
+
+    if (options.clearAudioQuality) {
+      updates.audioQuality = null;
+    } else if (options.audioQuality !== undefined) {
+      updates.audioQuality = options.audioQuality;
+    }
+
+    if (options.clearVideoQuality) {
+      updates.videoQuality = null;
+    } else if (options.videoQuality !== undefined) {
+      updates.videoQuality = options.videoQuality;
+    }
+
+    if (options.clearArtwork) {
+      updates.artwork = null;
+    } else if (options.artwork !== undefined) {
+      updates.artwork = options.artwork;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      const error = 'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --artwork, or --clear-* variants).';
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+
+    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+    const result = updateDevice(name, updates, { configPath });
+
+    if (!result.success) {
+      out.result<DeviceSetOutput>(
+        { success: false, error: result.error },
+        () => out.error(`Failed to update device: ${result.error}`)
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    out.result<DeviceSetOutput>(
+      { success: true, device: name, updated: updates },
+      () => {
+        const changes: string[] = [];
+        for (const [key, value] of Object.entries(updates)) {
+          if (value === null) {
+            changes.push(`  ${key}: cleared (will use global default)`);
+          } else {
+            changes.push(`  ${key}: ${value}`);
+          }
+        }
+        out.print(`Updated device "${name}":`);
+        for (const change of changes) {
+          out.print(change);
+        }
+      }
+    );
+  });
+
+// =============================================================================
+// Default subcommand
+// =============================================================================
+
+const defaultSubcommand = new Command('default')
+  .description('set or clear the default device')
+  .argument('[name]', 'device name (omit to show current default, use --clear to unset)')
+  .option('--clear', 'clear the default device')
+  .action(async (name: string | undefined, options: { clear?: boolean }) => {
+    const { config, globalOpts, configResult } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts);
+
+    if (options.clear) {
+      // Clear the default
+      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+      const result = setDefaultDevice('', { configPath });
+
+      if (!result.success) {
+        out.result<DeviceDefaultOutput>(
+          { success: false, error: result.error },
+          () => out.error(`Failed to clear default device: ${result.error}`)
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      out.result<DeviceDefaultOutput>(
+        { success: true, cleared: true },
+        () => out.print('Cleared default device.')
+      );
+      return;
+    }
+
+    if (!name) {
+      // Show current default
+      const defaultDevice = config.defaults?.device;
+      out.result<DeviceDefaultOutput>(
+        { success: true, device: defaultDevice },
+        () => {
+          if (defaultDevice) {
+            out.print(`Default device: ${defaultDevice}`);
+          } else {
+            out.print('No default device set.');
+          }
+        }
+      );
+      return;
+    }
+
+    // Set default
+    const devices = config.devices || {};
+    if (!(name in devices)) {
+      const error = `Device "${name}" not found in config.`;
+      out.result<DeviceDefaultOutput>({ success: false, error }, () => {
+        out.error(error);
+        const available = Object.keys(devices);
+        if (available.length > 0) {
+          out.error(`Available devices: ${available.join(', ')}`);
+        }
+      });
+      process.exitCode = 1;
+      return;
+    }
+
+    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+    const result = setDefaultDevice(name, { configPath });
+
+    if (!result.success) {
+      out.result<DeviceDefaultOutput>(
+        { success: false, error: result.error },
+        () => out.error(`Failed to set default device: ${result.error}`)
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    out.result<DeviceDefaultOutput>(
+      { success: true, device: name },
+      () => out.print(`Set "${name}" as the default device.`)
+    );
+  });
+
+// =============================================================================
 // Main device command
 // =============================================================================
 
@@ -2151,6 +2415,8 @@ export const deviceCommand = new Command('device')
   .addCommand(listSubcommand)
   .addCommand(addSubcommand)
   .addCommand(removeSubcommand)
+  .addCommand(setSubcommand)
+  .addCommand(defaultSubcommand)
   .addCommand(infoSubcommand)
   .addCommand(musicSubcommand)
   .addCommand(videoSubcommand)

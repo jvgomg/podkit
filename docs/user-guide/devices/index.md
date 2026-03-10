@@ -31,14 +31,25 @@ In this example, `classic` is a high-capacity iPod that gets the best quality au
 
 ## Setting a Default Device
 
-The `[defaults]` section lets you specify which device to use when you don't pass `--device`:
+Set the default device via the CLI:
+
+```bash
+podkit device default classic
+```
+
+Or in your config file's `[defaults]` section:
 
 ```toml
 [defaults]
 device = "classic"
 ```
 
-With a default set, `podkit sync` targets the default device automatically.
+With a default set, `podkit sync` targets the default device automatically. To show the current default or clear it:
+
+```bash
+podkit device default          # Show current default
+podkit device default --clear  # Clear the default
+```
 
 ## Referencing Devices on the CLI
 

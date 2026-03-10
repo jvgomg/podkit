@@ -84,9 +84,25 @@ artwork = false
 
 The Classic gets lossless audio and high-quality video, while the Nano uses medium audio, low-quality video, and skips artwork to save space.
 
-## CLI Overrides
+## Setting Quality via CLI
 
-You can override quality on the command line for a single sync. Reference devices by their config name or mount path:
+You can set quality on a device when adding it or at any time afterward:
+
+```bash
+# Set quality when adding a device
+podkit device add classic --audio-quality lossless --video-quality high
+
+# Change quality on an existing device
+podkit device set classic --quality lossless
+podkit device set nano --audio-quality medium --video-quality low
+
+# Clear a setting (reverts to global default)
+podkit device set classic --clear-audio-quality
+```
+
+## Sync-Time Overrides
+
+You can also override quality for a single sync without changing device settings:
 
 ```bash
 podkit sync --quality medium

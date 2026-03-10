@@ -159,6 +159,10 @@ podkit device add <name> [path]
 | Option | Description |
 |--------|-------------|
 | `-y, --yes` | Skip confirmation prompts |
+| `--quality <preset>` | Set transcoding quality: `lossless`, `max`, `high`, `medium`, `low` (and CBR variants) |
+| `--audio-quality <preset>` | Set audio quality (overrides `--quality`) |
+| `--video-quality <preset>` | Set video quality: `max`, `high`, `medium`, `low` |
+| `--artwork` / `--no-artwork` | Enable or disable artwork sync for this device |
 
 ```bash
 # Auto-detect connected iPod
@@ -166,6 +170,12 @@ podkit device add classic
 
 # Specify mount point explicitly
 podkit device add classic /Volumes/IPOD
+
+# Add with quality settings
+podkit device add nano --quality medium --no-artwork
+
+# Add with specific audio quality
+podkit device add classic --audio-quality lossless --video-quality high
 ```
 
 ### `podkit device remove`
@@ -179,6 +189,62 @@ podkit device remove <name>
 | Option | Description |
 |--------|-------------|
 | `--confirm` | Skip confirmation prompt |
+
+### `podkit device set`
+
+Update settings on an existing device.
+
+```bash
+podkit device set <name> [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--quality <preset>` | Set transcoding quality: `lossless`, `max`, `high`, `medium`, `low` (and CBR variants) |
+| `--audio-quality <preset>` | Set audio quality (overrides `--quality`) |
+| `--video-quality <preset>` | Set video quality: `max`, `high`, `medium`, `low` |
+| `--artwork` / `--no-artwork` | Enable or disable artwork sync |
+| `--clear-quality` | Remove quality setting (use global default) |
+| `--clear-audio-quality` | Remove audio quality setting |
+| `--clear-video-quality` | Remove video quality setting |
+| `--clear-artwork` | Remove artwork setting (use global default) |
+
+```bash
+# Set quality on a device
+podkit device set classic --quality lossless
+
+# Set audio and video quality separately
+podkit device set nano --audio-quality medium --video-quality low
+
+# Disable artwork
+podkit device set nano --no-artwork
+
+# Reset to global defaults
+podkit device set classic --clear-quality --clear-artwork
+```
+
+### `podkit device default`
+
+Set or show the default device.
+
+```bash
+podkit device default [name]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--clear` | Clear the default device |
+
+```bash
+# Show current default
+podkit device default
+
+# Set default device
+podkit device default classic
+
+# Clear the default
+podkit device default --clear
+```
 
 ### `podkit device info`
 
@@ -388,6 +454,37 @@ podkit collection remove <name>
 | Option | Description |
 |--------|-------------|
 | `-y, --yes` | Skip confirmation prompt |
+
+### `podkit collection default`
+
+Set or show the default collection for a type.
+
+```bash
+podkit collection default <type> [name]
+```
+
+| Argument | Description |
+|----------|-------------|
+| `<type>` | Collection type: `music` or `video` |
+| `[name]` | Collection name (omit to show current default) |
+
+| Option | Description |
+|--------|-------------|
+| `--clear` | Clear the default for this type |
+
+```bash
+# Show default music collection
+podkit collection default music
+
+# Set default music collection
+podkit collection default music main
+
+# Set default video collection
+podkit collection default video movies
+
+# Clear default
+podkit collection default music --clear
+```
 
 ### `podkit collection info`
 

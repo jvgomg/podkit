@@ -717,6 +717,106 @@ const videoSubcommand = new Command('video')
   });
 
 // =============================================================================
+// Default subcommand
+// =============================================================================
+
+export interface CollectionDefaultOutput {
+  success: boolean;
+  type?: CollectionType;
+  name?: string;
+  cleared?: boolean;
+  error?: string;
+}
+
+const defaultSubcommand = new Command('default')
+  .description('set or show the default collection')
+  .argument('<type>', 'collection type: music or video')
+  .argument('[name]', 'collection name (omit to show current default, use --clear to unset)')
+  .option('--clear', 'clear the default collection for this type')
+  .action(async (type: string, name: string | undefined, options: { clear?: boolean }) => {
+    const { globalOpts, config, configResult } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts);
+
+    // Validate type
+    if (type !== 'music' && type !== 'video') {
+      const error = `Invalid type '${type}'. Must be 'music' or 'video'.`;
+      out.result<CollectionDefaultOutput>({ success: false, error }, () => out.error(`Error: ${error}`));
+      process.exitCode = 1;
+      return;
+    }
+
+    const collType = type as CollectionType;
+
+    if (options.clear) {
+      const configPath = getConfigPath();
+      const result = setDefaultCollection(collType, '', { configPath });
+
+      if (!result.success) {
+        out.result<CollectionDefaultOutput>(
+          { success: false, error: result.error },
+          () => out.error(`Error: ${result.error}`)
+        );
+        process.exitCode = 1;
+        return;
+      }
+
+      out.result<CollectionDefaultOutput>(
+        { success: true, type: collType, cleared: true },
+        () => out.print(`Cleared default ${type} collection.`)
+      );
+      return;
+    }
+
+    if (!name) {
+      // Show current default
+      const defaultName = type === 'music' ? config.defaults?.music : config.defaults?.video;
+      out.result<CollectionDefaultOutput>(
+        { success: true, type: collType, name: defaultName },
+        () => {
+          if (defaultName) {
+            out.print(`Default ${type} collection: ${defaultName}`);
+          } else {
+            out.print(`No default ${type} collection set.`);
+          }
+        }
+      );
+      return;
+    }
+
+    // Validate that the collection exists
+    const collections = type === 'music' ? config.music : config.video;
+    if (!collections || !(name in collections)) {
+      const error = `${type.charAt(0).toUpperCase() + type.slice(1)} collection '${name}' not found.`;
+      out.result<CollectionDefaultOutput>({ success: false, error }, () => {
+        out.error(`Error: ${error}`);
+        const available = collections ? Object.keys(collections) : [];
+        if (available.length > 0) {
+          out.error(`Available ${type} collections: ${available.join(', ')}`);
+        }
+      });
+      process.exitCode = 1;
+      return;
+    }
+
+    const configPath = getConfigPath();
+    const result = setDefaultCollection(collType, name, { configPath });
+
+    if (!result.success) {
+      out.result<CollectionDefaultOutput>(
+        { success: false, error: result.error },
+        () => out.error(`Error: ${result.error}`)
+      );
+      process.exitCode = 1;
+      return;
+    }
+
+    out.result<CollectionDefaultOutput>(
+      { success: true, type: collType, name },
+      () => out.print(`Set '${name}' as the default ${type} collection.`)
+    );
+  });
+
+// =============================================================================
 // Main collection command
 // =============================================================================
 
@@ -725,6 +825,7 @@ export const collectionCommand = new Command('collection')
   .addCommand(listSubcommand)
   .addCommand(addSubcommand)
   .addCommand(removeSubcommand)
+  .addCommand(defaultSubcommand)
   .addCommand(infoSubcommand)
   .addCommand(musicSubcommand)
   .addCommand(videoSubcommand)

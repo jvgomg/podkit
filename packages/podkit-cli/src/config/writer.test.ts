@@ -7,6 +7,8 @@ import {
   addVideoCollection,
   removeCollection,
   setDefaultCollection,
+  addDevice,
+  updateDevice,
 } from './writer.js';
 
 describe('config writer - collection functions', () => {
@@ -312,5 +314,183 @@ music = "old"
       expect(result.success).toBe(false);
       expect(result.error).toContain('not found');
     });
+
+    it('clears default when name is empty string', () => {
+      fs.writeFileSync(
+        configPath,
+        `[defaults]
+music = "main"
+device = "ipod"
+`
+      );
+
+      const result = setDefaultCollection('music', '', { configPath });
+
+      expect(result.success).toBe(true);
+      const content = fs.readFileSync(configPath, 'utf-8');
+      expect(content).not.toContain('music = "main"');
+      expect(content).toContain('device = "ipod"');
+    });
+
+    it('does nothing when clearing non-existent default', () => {
+      fs.writeFileSync(
+        configPath,
+        `[defaults]
+device = "ipod"
+`
+      );
+
+      const result = setDefaultCollection('music', '', { configPath });
+
+      expect(result.success).toBe(true);
+      const content = fs.readFileSync(configPath, 'utf-8');
+      expect(content).toContain('device = "ipod"');
+    });
+  });
+});
+
+describe('config writer - updateDevice', () => {
+  let tempDir: string;
+  let configPath: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-writer-test-'));
+    configPath = path.join(tempDir, 'config.toml');
+  });
+
+  afterEach(() => {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true });
+    }
+  });
+
+  it('adds quality to device that has none', () => {
+    addDevice('myipod', { volumeUuid: 'ABC-123', volumeName: 'IPOD' }, { configPath });
+
+    const result = updateDevice('myipod', { quality: 'high' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('quality = "high"');
+  });
+
+  it('updates existing quality setting', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.myipod]
+volumeUuid = "ABC-123"
+volumeName = "IPOD"
+quality = "high"
+`
+    );
+
+    const result = updateDevice('myipod', { quality: 'medium' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('quality = "medium"');
+    expect(content).not.toContain('quality = "high"');
+  });
+
+  it('removes setting when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.myipod]
+volumeUuid = "ABC-123"
+volumeName = "IPOD"
+quality = "high"
+`
+    );
+
+    const result = updateDevice('myipod', { quality: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('quality');
+    expect(content).toContain('volumeUuid');
+  });
+
+  it('updates multiple settings at once', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.myipod]
+volumeUuid = "ABC-123"
+volumeName = "IPOD"
+quality = "high"
+`
+    );
+
+    const result = updateDevice(
+      'myipod',
+      { audioQuality: 'lossless', videoQuality: 'medium', artwork: true },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('audioQuality = "lossless"');
+    expect(content).toContain('videoQuality = "medium"');
+    expect(content).toContain('artwork = true');
+  });
+
+  it('updates artwork boolean setting', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.myipod]
+volumeUuid = "ABC-123"
+volumeName = "IPOD"
+artwork = true
+`
+    );
+
+    const result = updateDevice('myipod', { artwork: false }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('artwork = false');
+    expect(content).not.toContain('artwork = true');
+  });
+
+  it('fails if device does not exist', () => {
+    fs.writeFileSync(configPath, '');
+
+    const result = updateDevice('myipod', { quality: 'high' }, { configPath });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found');
+  });
+
+  it('fails if config file does not exist', () => {
+    const result = updateDevice('myipod', { quality: 'high' }, { configPath });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('not found');
+  });
+
+  it('does not affect other devices', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.ipod1]
+volumeUuid = "ABC-123"
+volumeName = "IPOD1"
+quality = "high"
+
+[devices.ipod2]
+volumeUuid = "DEF-456"
+volumeName = "IPOD2"
+quality = "low"
+`
+    );
+
+    const result = updateDevice('ipod1', { quality: 'medium' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('[devices.ipod1]');
+    expect(content).toContain('[devices.ipod2]');
+    expect(content).toContain('quality = "low"');
+    // ipod1 should have medium
+    const ipod1Section = content.split('[devices.ipod2]')[0];
+    expect(ipod1Section).toContain('quality = "medium"');
   });
 });

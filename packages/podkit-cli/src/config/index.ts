@@ -37,7 +37,7 @@ export type {
   ConfigFileDevice,
   ConfigFileDefaults,
 } from './types.js';
-export { DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
+export { QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
 
 // Defaults
 export { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_PREFIX, ENV_KEYS } from './defaults.js';
@@ -56,6 +56,7 @@ export {
 export {
   // Device management functions
   addDevice,
+  updateDevice,
   removeDevice,
   setDefaultDevice,
   // Collection management functions

@@ -12,7 +12,17 @@ Now that you've completed your [first sync](/getting-started/quick-start), here 
 podkit transcodes lossless files (FLAC, WAV, ALAC) to AAC. The default is `high` (~192 kbps VBR), but you can change it:
 
 ```bash
+# Override quality for a single sync
 podkit sync --quality medium
+
+# Set quality when adding a device
+podkit device add nano --quality medium --no-artwork
+
+# Change quality on an existing device
+podkit device set classic --audio-quality lossless --video-quality high
+
+# Clear device quality (use global default instead)
+podkit device set classic --clear-quality
 ```
 
 | Preset | Bitrate | Best for |
@@ -68,6 +78,21 @@ If you have multiple collections, you can sync them selectively:
 podkit sync music                # Sync only music (skip video)
 podkit sync video                # Sync only video (skip music)
 podkit sync music -c main        # Sync a specific collection
+```
+
+## Setting Defaults
+
+Set the default device and collections so you don't need to specify them every time:
+
+```bash
+# Set default device
+podkit device default classic
+
+# Set default music collection
+podkit collection default music main
+
+# Set default video collection
+podkit collection default video movies
 ```
 
 ## Syncing to Different Devices
