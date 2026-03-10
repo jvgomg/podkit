@@ -1,9 +1,10 @@
 ---
 id: TASK-088
 title: Scaffold docs-site package with Astro + Starlight
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-10 10:26'
+updated_date: '2026-03-10 13:25'
 labels:
   - docs-site
   - setup
@@ -53,3 +54,9 @@ This task can be done in parallel with TASK-087 (design exploration). The design
 - [ ] #3 Dev server runs and renders existing docs
 - [ ] #4 Configured for GitHub Pages base URL
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**2026-03-10**: Starting scaffold implementation based on TASK-086 research findings.
+<!-- SECTION:NOTES:END -->

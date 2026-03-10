@@ -56,33 +56,46 @@ podkit device music --format json       # List music on device
 | FFmpeg | `ffmpeg` | `brew install ffmpeg` |
 | GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) |
 
-See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for full setup instructions.
+See [docs/developers/development.md](docs/developers/development.md) for full setup instructions.
 
-## Documentation Map
+## Documentation Structure
+
+The `docs/` directory is organized for web publication (Starlight-compatible):
+
+```
+docs/
+├── index.md                    # Introduction
+├── getting-started/            # Installation, quick start, first sync
+├── user-guide/                 # Configuration, sources, transcoding, video
+├── devices/                    # Supported devices, iPod internals
+├── reference/                  # CLI commands, config file, quality presets
+├── troubleshooting/            # Common issues, macOS mounting
+└── developers/                 # Architecture, development, testing, ADRs
+    └── adr/                    # Architecture Decision Records
+```
+
+### Documentation Map
 
 Read these documents based on what you're working on:
 
-| Document | When to Read |
-|----------|--------------|
-| [docs/README.md](docs/README.md) | First time in repo, need orientation |
-| [docs/GETTING-STARTED.md](docs/GETTING-STARTED.md) | User-facing install and first sync guide |
-| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setting up development environment |
-| [docs/SUPPORTED-DEVICES.md](docs/SUPPORTED-DEVICES.md) | Checking iPod model compatibility |
-| [docs/PRD.md](docs/PRD.md) | Understanding requirements, user stories, scope |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Understanding component design, interfaces, data flow |
-| [docs/adr/README.md](docs/adr/README.md) | Understanding or making architectural decisions |
-| [docs/LIBGPOD.md](docs/LIBGPOD.md) | Working on iPod database integration |
-| [docs/TRANSCODING.md](docs/TRANSCODING.md) | Working on audio conversion |
-| [docs/VIDEO-TRANSCODING.md](docs/VIDEO-TRANSCODING.md) | Working on video sync (movies, TV shows) |
-| [docs/COLLECTION-SOURCES.md](docs/COLLECTION-SOURCES.md) | Working on collection scanning and metadata parsing |
-| [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
-| [docs/MACOS-IPOD-MOUNTING.md](docs/MACOS-IPOD-MOUNTING.md) | Troubleshooting large iFlash iPods not mounting on macOS |
-| [docs/TESTING.md](docs/TESTING.md) | Understanding testing strategy and conventions |
-| [docs/DEVICE-TESTING.md](docs/DEVICE-TESTING.md) | Adding device compatibility tests, verifying new models |
-| [docs/TRANSFORMS.md](docs/TRANSFORMS.md) | Working on metadata transforms (ftintitle, etc.) |
-| [packages/libgpod-node/README.md](packages/libgpod-node/README.md) | Working on libgpod bindings, understanding deviations |
-| [packages/gpod-testing/README.md](packages/gpod-testing/README.md) | Writing tests that need iPod databases |
-| [packages/e2e-tests/README.md](packages/e2e-tests/README.md) | Writing E2E tests for the CLI |
+| Topic | Document |
+|-------|----------|
+| First time in repo | [docs/index.md](docs/index.md) |
+| User install and first sync | [docs/getting-started/](docs/getting-started/) |
+| Configuration options | [docs/user-guide/configuration.md](docs/user-guide/configuration.md) |
+| iPod model compatibility | [docs/devices/supported-devices.md](docs/devices/supported-devices.md) |
+| Architecture and design | [docs/developers/architecture.md](docs/developers/architecture.md) |
+| Development environment | [docs/developers/development.md](docs/developers/development.md) |
+| Testing strategy | [docs/developers/testing.md](docs/developers/testing.md) |
+| ADRs | [docs/developers/adr/](docs/developers/adr/) |
+| libgpod integration | [docs/developers/libgpod.md](docs/developers/libgpod.md) |
+| Transcoding (audio) | [docs/user-guide/transcoding.md](docs/user-guide/transcoding.md) |
+| Video sync | [docs/user-guide/video-sync.md](docs/user-guide/video-sync.md) |
+| Music sources | [docs/user-guide/music-sources.md](docs/user-guide/music-sources.md) |
+| iPod internals | [docs/devices/ipod-internals.md](docs/devices/ipod-internals.md) |
+| Troubleshooting | [docs/troubleshooting/](docs/troubleshooting/) |
+| Transforms | [docs/reference/transforms.md](docs/reference/transforms.md) |
+| Package READMEs | `packages/*/README.md` |
 
 ## Task Management (Backlog.md)
 
@@ -113,7 +126,7 @@ Documents:  document_list, document_view, document_create, document_update
 
 ## Architecture Decision Records (ADRs)
 
-ADRs document significant technical decisions. See [docs/adr/README.md](docs/adr/README.md) for the full workflow.
+ADRs document significant technical decisions. See [docs/developers/adr/](docs/developers/adr/) for the full workflow.
 
 ### When to Create ADRs
 
@@ -141,11 +154,42 @@ ADRs document significant technical decisions. See [docs/adr/README.md](docs/adr
 3. **Clarify ambiguity:** If you had to guess or ask for clarification, improve the docs
 4. **Update status:** Keep ADR statuses, feature flags, and roadmaps current
 
+### Documentation File Conventions
+
+All markdown files in `docs/` must have Starlight-compatible frontmatter:
+
+```yaml
+---
+title: Page Title
+description: Brief SEO description (1-2 sentences)
+sidebar:
+  order: N  # Lower numbers appear higher in navigation
+---
+```
+
 **When creating new docs:**
-- Place in `docs/` with a clear, descriptive filename
-- Add to the Documentation Map above
-- Add to `docs/README.md` index
+- Place in the appropriate subdirectory (`getting-started/`, `user-guide/`, `devices/`, `reference/`, `troubleshooting/`, or `developers/`)
+- Use lowercase filenames with hyphens (e.g., `my-new-guide.md`)
+- Add frontmatter with title, description, and sidebar order
+- Update the Documentation Map in this file
 - Keep docs focused and modular (one topic per file)
+
+**When editing existing docs:**
+- Preserve frontmatter format
+- Keep sidebar order consistent within a section
+- Update links if you rename or move files
+
+### Directory Structure
+
+| Directory | Purpose | Audience |
+|-----------|---------|----------|
+| `getting-started/` | Installation, quick start, first sync | New users |
+| `user-guide/` | Configuration, sources, transcoding, video | All users |
+| `devices/` | Supported devices, iPod internals | Users + developers |
+| `reference/` | CLI commands, config file, quality presets | All users |
+| `troubleshooting/` | Common issues, macOS mounting | Users with problems |
+| `developers/` | Architecture, development, testing, ADRs | Contributors |
+| `developers/adr/` | Architecture Decision Records | Contributors |
 
 ## Key Technical Decisions
 
@@ -153,16 +197,16 @@ These decisions are documented in ADRs — read the full ADR for context:
 
 | Decision | Summary | ADR |
 |----------|---------|-----|
-| Runtime | Bun for dev, Node.js for distribution | [ADR-001](docs/adr/ADR-001-runtime.md) |
-| libgpod bindings | N-API (node-addon-api) directly | [ADR-002](docs/adr/ADR-002-libgpod-binding.md) |
-| Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/adr/ADR-003-transcoding.md) |
-| Collection sources | Adapter pattern | [ADR-004](docs/adr/ADR-004-collection-sources.md) |
-| Test environments | gpod-tool + temp directories | [ADR-005](docs/adr/ADR-005-test-ipod-environment.md) |
-| Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](docs/adr/ADR-006-video-transcoding.md) |
+| Runtime | Bun for dev, Node.js for distribution | [ADR-001](docs/developers/adr/adr-001-runtime.md) |
+| libgpod bindings | N-API (node-addon-api) directly | [ADR-002](docs/developers/adr/adr-002-libgpod-binding.md) |
+| Transcoding | FFmpeg with AAC encoder | [ADR-003](docs/developers/adr/adr-003-transcoding.md) |
+| Collection sources | Adapter pattern | [ADR-004](docs/developers/adr/adr-004-collection-sources.md) |
+| Test environments | gpod-tool + temp directories | [ADR-005](docs/developers/adr/adr-005-test-ipod-environment.md) |
+| Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](docs/developers/adr/adr-006-video-transcoding.md) |
 
 ## Testing
 
-See [docs/TESTING.md](docs/TESTING.md) for full testing strategy and conventions.
+See [docs/developers/testing.md](docs/developers/testing.md) for full testing strategy and conventions.
 
 ### Quick Reference
 
