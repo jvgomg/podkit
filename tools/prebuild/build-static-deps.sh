@@ -59,8 +59,27 @@ build_gdk_pixbuf_static() {
     -Dman=false -Dgtk_doc=false -Dintrospection=disabled \
     -Dinstalled_tests=false -Dbuiltin_loaders=all \
     -Dgio_sniffing=false -Dtests=false
-  ninja -C _build -j"$NPROC"
-  ninja -C _build install
+
+  # Only build the static library — skip utility executables (gdk-pixbuf-pixdata etc.)
+  # which fail linking due to libtiff's many transitive deps (zstd, lzma, jbig, etc.)
+  ninja -C _build -j"$NPROC" gdk-pixbuf/libgdk_pixbuf-2.0.a
+
+  # Manual install since `ninja install` would try to build everything
+  cp _build/gdk-pixbuf/libgdk_pixbuf-2.0.a "$STATIC_DEPS_DIR/lib/"
+  mkdir -p "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf"
+  cp gdk-pixbuf/gdk-pixbuf.h \
+     gdk-pixbuf/gdk-pixbuf-core.h \
+     gdk-pixbuf/gdk-pixbuf-transform.h \
+     gdk-pixbuf/gdk-pixbuf-io.h \
+     gdk-pixbuf/gdk-pixbuf-animation.h \
+     gdk-pixbuf/gdk-pixbuf-simple-anim.h \
+     gdk-pixbuf/gdk-pixbuf-loader.h \
+     gdk-pixbuf/gdk-pixdata.h \
+     gdk-pixbuf/gdk-pixbuf-autocleanups.h \
+     _build/gdk-pixbuf/gdk-pixbuf-enum-types.h \
+     _build/gdk-pixbuf/gdk-pixbuf-features.h \
+     "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
+  cp _build/meson-private/gdk-pixbuf-2.0.pc "$STATIC_DEPS_DIR/lib/pkgconfig/" 2>/dev/null || true
   cd "$WORK_DIR"
 }
 
