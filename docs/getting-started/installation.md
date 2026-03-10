@@ -11,41 +11,47 @@ This guide covers installing podkit and its dependencies on macOS and Linux.
 
 Before installing podkit, you need:
 
-- **Node.js 20+** - JavaScript runtime ([nodejs.org](https://nodejs.org/))
+- **Node.js 20+** or **Bun** - JavaScript runtime ([nodejs.org](https://nodejs.org/) or [bun.sh](https://bun.sh/))
 - **FFmpeg** - Audio transcoding (FLAC to AAC)
 - **libgpod** - iPod database library
 - **A supported iPod** - See [Supported Devices](/devices/supported-devices)
 
 > **Note:** iOS devices (iPod Touch, iPhone, iPad) are not supported. podkit works with classic iPods that use USB Mass Storage mode.
 
-## Step 1: Install Node.js
+## Step 1: Install Node.js or Bun
 
-If you don't have Node.js installed:
+podkit runs on Node.js 20+ or Bun. Install whichever you prefer:
 
-### macOS
+### Node.js
+
+#### macOS
 
 ```bash
 brew install node
 ```
 
-### Ubuntu/Debian
+#### Ubuntu/Debian
 
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 ```
 
-### Fedora
+#### Fedora
 
 ```bash
 sudo dnf install nodejs
 ```
 
-Verify installation:
+Verify: `node --version` (should show v20.x or higher)
+
+### Bun
 
 ```bash
-node --version  # Should show v20.x or higher
+curl -fsSL https://bun.sh/install | bash
 ```
+
+Verify: `bun --version`
 
 ## Step 2: Install System Dependencies
 
@@ -102,6 +108,8 @@ sudo pacman -S libgpod ffmpeg
 
 ```bash
 npm install -g podkit
+# or
+bun install -g podkit
 ```
 
 Verify installation:

@@ -3,8 +3,8 @@ title: podkit
 description: Scriptable CLI for iPod sync with automatic transcoding, full metadata preservation, and intelligent duplicate detection.
 template: splash
 hero:
-  title: Sync your music collection to iPod.
-  tagline: The way it should work.
+  title: Modern sync for classic iPods.
+  tagline: Keep the stock firmware and ditch the old software. A CLI that makes syncing your iPod a breeze.
   actions:
     - text: Get Started
       link: /podkit/getting-started/installation
@@ -21,20 +21,23 @@ import { Card, CardGrid } from '@astrojs/starlight/components';
 ## Features
 
 <CardGrid>
-  <Card title="Fast Incremental Sync" icon="rocket">
-    Only syncs what's new. Smart duplicate detection across formats means no wasted time or storage.
+  <Card title="Clean Artist Browsing" icon="star">
+    No more dozens of "Artist feat. X" cluttering your iPod. The ftintitle transform tidies up artist names on the fly — your source files stay untouched.
   </Card>
-  <Card title="Lossless Metadata & Artwork" icon="document">
-    All tags and album artwork preserved through transcoding. What you tagged is what you get on your iPod.
+  <Card title="Automatic Transcoding" icon="setting">
+    Music and video transcoded on the fly with device-aware quality presets. Keep your high-quality collection — podkit optimises for your iPod.
   </Card>
-  <Card title="Scriptable & Automated" icon="setting">
-    CLI-first design — no GUI required. Works with cron jobs and shell scripts for fully automated sync workflows.
+  <Card title="Non-Destructive" icon="approve-check-circle">
+    Your music collection is never modified. Transforms, transcoding, and format conversion only affect what lands on the iPod.
   </Card>
-  <Card title="High-Quality Transcoding" icon="star">
-    FLAC to AAC via FFmpeg with configurable quality presets. Keep your lossless library, sync optimized files.
+  <Card title="Incremental Sync" icon="rocket">
+    Only new, changed, or removed tracks are touched. Re-syncing a large library takes seconds, not hours.
   </Card>
-  <Card title="Classic iPod Support" icon="approve-check-circle">
-    iPod Classic, Video, Nano, Mini, and Shuffle — including modded iPods with iFlash SD card upgrades.
+  <Card title="Multiple Sources" icon="document">
+    Sync from local directories or a Subsonic-compatible server like Navidrome. Define multiple collections and sync independently.
+  </Card>
+  <Card title="Every Classic iPod" icon="open-book">
+    Stock firmware on all classic iPod models, including modded iPods with iFlash adapters.
   </Card>
 </CardGrid>
 
