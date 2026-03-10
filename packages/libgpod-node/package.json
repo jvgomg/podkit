@@ -24,7 +24,6 @@
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "prebuildify": "prebuildify --napi --strip",
     "clean": "rm -rf dist build",
-    "install": "node-gyp rebuild || echo 'Native build failed - prebuilt binaries will be used if available'",
     "test": "bun test",
     "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No unit tests found'",
     "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No integration tests found'",
@@ -43,5 +42,5 @@
   "engines": {
     "node": ">=18.0.0"
   },
-  "gypfile": true
+  "gypfile": false
 }
