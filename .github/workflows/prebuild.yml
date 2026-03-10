@@ -119,7 +119,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD"
-          if ldd "$PREBUILD" | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi

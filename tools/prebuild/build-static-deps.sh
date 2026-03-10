@@ -166,14 +166,10 @@ if [ "$OS" = "Darwin" ]; then
 # Linux: build libgpod + gdk-pixbuf from source with -fPIC, use system glib
 # ---------------------------------------------------------------------------
 elif [ "$OS" = "Linux" ]; then
-  log "Collecting system static libraries..."
-
-  # Copy system .a files — glib/gmodule/gio/gobject are built with -fPIC on Ubuntu
-  for lib in libglib-2.0.a libgobject-2.0.a libgio-2.0.a libgmodule-2.0.a \
-             libffi.a libpcre2-8.a; do
-    found=$(find /usr/lib /usr/lib64 /usr/local/lib -name "$lib" 2>/dev/null | head -1)
-    [ -n "$found" ] && cp "$found" "$STATIC_DEPS_DIR/lib/"
-  done
+  # On Linux, system .a files lack -fPIC so can't be statically linked into
+  # a .node shared object. Only build libgpod and gdk-pixbuf from source
+  # with -fPIC. Everything else (glib, libffi, etc.) links dynamically —
+  # they're standard system libs present on any Linux install.
 
   # Build gdk-pixbuf .a from source with -fPIC (Ubuntu doesn't ship it)
   SYS_PKG_PATH=$(pkg-config --variable pc_path pkg-config 2>/dev/null || echo "/usr/lib/pkgconfig:/usr/share/pkgconfig")
