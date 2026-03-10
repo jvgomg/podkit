@@ -65,8 +65,9 @@ Each device section supports the following options:
 |--------|-------------|---------|
 | `volumeUuid` | Filesystem UUID for auto-detection | Required |
 | `volumeName` | Volume label (used in mount paths) | Required |
-| `quality` | Audio transcoding quality preset | Global setting |
-| `videoQuality` | Video transcoding quality preset | `high` |
+| `quality` | Unified quality preset (audio + video) | Global setting |
+| `audioQuality` | Audio-specific quality override | Global setting |
+| `videoQuality` | Video-specific quality override | Global setting |
 | `artwork` | Whether to sync album artwork | `true` |
 
 Per-device settings override global settings. This lets you use lossless audio on a high-capacity Classic while using compressed audio on a space-constrained Nano. See [Quality Settings](./quality) for a detailed guide.

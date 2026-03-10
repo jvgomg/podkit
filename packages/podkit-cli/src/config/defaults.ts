@@ -33,6 +33,8 @@ export const ENV_PREFIX = 'PODKIT_';
  */
 export const ENV_KEYS = {
   quality: `${ENV_PREFIX}QUALITY`,
-  fallback: `${ENV_PREFIX}FALLBACK`,
+  audioQuality: `${ENV_PREFIX}AUDIO_QUALITY`,
+  videoQuality: `${ENV_PREFIX}VIDEO_QUALITY`,
+  lossyQuality: `${ENV_PREFIX}LOSSY_QUALITY`,
   artwork: `${ENV_PREFIX}ARTWORK`,
 } as const;

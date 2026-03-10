@@ -9,9 +9,18 @@ This guide covers video transcoding quality settings, device profiles, and outpu
 
 ## Quality Settings
 
+Video quality can be set globally or per device. Use `videoQuality` for a video-specific override, or set `quality` to apply to both audio and video:
+
 ```toml
-[video]
-quality = "high"           # max | high | medium | low
+# Global video quality override
+videoQuality = "high"         # max | high | medium | low
+
+# Or use unified quality (applies to both audio and video)
+quality = "high"
+
+# Per-device video quality
+[devices.classic]
+videoQuality = "high"
 ```
 
 | Preset | Description | Recommended For |

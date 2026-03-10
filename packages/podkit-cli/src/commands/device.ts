@@ -165,6 +165,7 @@ export interface DeviceListOutput {
     volumeUuid: string;
     volumeName: string;
     quality?: string;
+    audioQuality?: string;
     videoQuality?: string;
     artwork?: boolean;
   }>;
@@ -206,6 +207,7 @@ export interface DeviceInfoOutput {
     volumeUuid: string;
     volumeName: string;
     quality?: string;
+    audioQuality?: string;
     videoQuality?: string;
     artwork?: boolean;
     transforms?: Record<string, unknown>;
@@ -345,6 +347,7 @@ const listSubcommand = new Command('list')
         volumeUuid: device.volumeUuid,
         volumeName: device.volumeName,
         quality: device.quality,
+        audioQuality: device.audioQuality,
         videoQuality: device.videoQuality,
         artwork: device.artwork,
       };
@@ -356,10 +359,11 @@ const listSubcommand = new Command('list')
         out.print('Configured devices:');
         out.newline();
 
-        const headers = ['NAME', 'VOLUME', 'QUALITY', 'VIDEO', 'ARTWORK'];
+        const headers = ['NAME', 'VOLUME', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
         const widths = [
           Math.max(6, ...deviceNames.map((n) => n.length + 2)),
           Math.max(8, ...deviceNames.map((n) => (devices[n]?.volumeName || '').length)),
+          8,
           8,
           6,
           7,
@@ -377,6 +381,7 @@ const listSubcommand = new Command('list')
               name,
               device.volumeName || '-',
               device.quality || '-',
+              device.audioQuality || '-',
               device.videoQuality || '-',
               device.artwork === true ? 'yes' : device.artwork === false ? 'no' : '-',
             ],
@@ -965,6 +970,7 @@ const infoSubcommand = new Command('info')
               volumeUuid: device.volumeUuid,
               volumeName: device.volumeName,
               quality: device.quality,
+              audioQuality: device.audioQuality,
               videoQuality: device.videoQuality,
               artwork: device.artwork,
               transforms: device.transforms as unknown as Record<string, unknown> | undefined,
@@ -1012,6 +1018,9 @@ const infoSubcommand = new Command('info')
 
         if (device) {
           out.print(`  Quality:       ${device.quality || '(not set)'}`);
+          if (device.audioQuality) {
+            out.print(`  Audio Quality: ${device.audioQuality}`);
+          }
           if (device.videoQuality) {
             out.print(`  Video Quality: ${device.videoQuality}`);
           }

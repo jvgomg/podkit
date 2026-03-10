@@ -27,6 +27,9 @@ describe('config loader', () => {
 
     // Clear environment variables
     delete process.env[ENV_KEYS.quality];
+    delete process.env[ENV_KEYS.audioQuality];
+    delete process.env[ENV_KEYS.videoQuality];
+    delete process.env[ENV_KEYS.lossyQuality];
     delete process.env[ENV_KEYS.artwork];
   });
 
@@ -94,36 +97,36 @@ quality = "invalid"
       });
     }
 
-    // Fallback tests
-    it('parses fallback option', () => {
+    // lossyQuality tests
+    it('parses lossyQuality option', () => {
       const configPath = path.join(tempDir, 'config.toml');
       fs.writeFileSync(
         configPath,
         `
 quality = "alac"
-fallback = "high"
+lossyQuality = "high"
 `
       );
 
       const result = loadConfigFile(configPath);
       expect(result?.quality).toBe('alac');
-      expect(result?.fallback).toBe('high');
+      expect(result?.lossyQuality).toBe('high');
     });
 
-    it('throws on alac as fallback (alac is not valid AAC preset)', () => {
+    it('throws on alac as lossyQuality (alac is not valid AAC preset)', () => {
       const configPath = path.join(tempDir, 'config.toml');
       fs.writeFileSync(
         configPath,
         `
 quality = "alac"
-fallback = "alac"
+lossyQuality = "alac"
 `
       );
 
-      expect(() => loadConfigFile(configPath)).toThrow(/Invalid fallback value/);
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid lossyQuality value/);
     });
 
-    const validFallbacks = [
+    const validLossyQualities = [
       'max',
       'max-cbr',
       'high',
@@ -133,21 +136,73 @@ fallback = "alac"
       'low',
       'low-cbr',
     ] as const;
-    for (const fallback of validFallbacks) {
-      it(`accepts fallback = "${fallback}"`, () => {
+    for (const lossyQuality of validLossyQualities) {
+      it(`accepts lossyQuality = "${lossyQuality}"`, () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
           `
 quality = "alac"
-fallback = "${fallback}"
+lossyQuality = "${lossyQuality}"
 `
         );
 
         const result = loadConfigFile(configPath);
-        expect(result?.fallback).toBe(fallback);
+        expect(result?.lossyQuality).toBe(lossyQuality);
       });
     }
+
+    // audioQuality tests
+    it('parses audioQuality option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        `
+audioQuality = "alac"
+`
+      );
+
+      const result = loadConfigFile(configPath);
+      expect(result?.audioQuality).toBe('alac');
+    });
+
+    it('throws on invalid audioQuality', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        `
+audioQuality = "invalid"
+`
+      );
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioQuality value/);
+    });
+
+    // root-level videoQuality tests
+    it('parses root-level videoQuality option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        `
+videoQuality = "medium"
+`
+      );
+
+      const result = loadConfigFile(configPath);
+      expect(result?.videoQuality).toBe('medium');
+    });
+
+    it('throws on invalid root-level videoQuality', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(
+        configPath,
+        `
+videoQuality = "invalid"
+`
+      );
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid videoQuality value/);
+    });
 
     it('handles empty config file', () => {
       const configPath = path.join(tempDir, 'config.toml');
@@ -536,7 +591,8 @@ volumeName = "TERAPOD"
 volumeUuid = "ABC-123"
 volumeName = "TERAPOD"
 quality = "high"
-videoQuality = "high"
+audioQuality = "alac"
+videoQuality = "medium"
 artwork = true
 `
         );
@@ -546,7 +602,8 @@ artwork = true
           volumeUuid: 'ABC-123',
           volumeName: 'TERAPOD',
           quality: 'high',
-          videoQuality: 'high',
+          audioQuality: 'alac',
+          videoQuality: 'medium',
           artwork: true,
         });
       });
@@ -851,6 +908,42 @@ device = "terapod"
       const result = loadEnvConfig();
       expect(result.artwork).toBe(true);
     });
+
+    it('reads PODKIT_AUDIO_QUALITY with valid value', () => {
+      process.env[ENV_KEYS.audioQuality] = 'alac';
+      const result = loadEnvConfig();
+      expect(result.audioQuality).toBe('alac');
+    });
+
+    it('ignores PODKIT_AUDIO_QUALITY with invalid value', () => {
+      process.env[ENV_KEYS.audioQuality] = 'invalid';
+      const result = loadEnvConfig();
+      expect(result.audioQuality).toBeUndefined();
+    });
+
+    it('reads PODKIT_VIDEO_QUALITY with valid value', () => {
+      process.env[ENV_KEYS.videoQuality] = 'medium';
+      const result = loadEnvConfig();
+      expect(result.videoQuality).toBe('medium');
+    });
+
+    it('ignores PODKIT_VIDEO_QUALITY with invalid value', () => {
+      process.env[ENV_KEYS.videoQuality] = 'invalid';
+      const result = loadEnvConfig();
+      expect(result.videoQuality).toBeUndefined();
+    });
+
+    it('reads PODKIT_LOSSY_QUALITY with valid value', () => {
+      process.env[ENV_KEYS.lossyQuality] = 'high';
+      const result = loadEnvConfig();
+      expect(result.lossyQuality).toBe('high');
+    });
+
+    it('ignores PODKIT_LOSSY_QUALITY with invalid value', () => {
+      process.env[ENV_KEYS.lossyQuality] = 'alac';
+      const result = loadEnvConfig();
+      expect(result.lossyQuality).toBeUndefined();
+    });
   });
 
   describe('loadCliConfig', () => {
@@ -927,31 +1020,57 @@ device = "terapod"
       });
     }
 
-    // Fallback option via CLI
-    it('extracts fallback from command options', () => {
+    // lossyQuality option via CLI
+    it('extracts lossyQuality from command options', () => {
       const globalOpts: GlobalOptions = {
         verbose: 0,
         quiet: false,
         json: false,
         color: true,
       };
-      const commandOpts = { quality: 'alac', fallback: 'high' };
+      const commandOpts = { audioQuality: 'alac', lossyQuality: 'high' };
       const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.quality).toBe('alac');
-      expect(result.fallback).toBe('high');
+      expect(result.audioQuality).toBe('alac');
+      expect(result.lossyQuality).toBe('high');
     });
 
-    // Invalid fallback via CLI (alac is not valid AAC preset)
-    it('ignores invalid fallback in command options', () => {
+    // Invalid lossyQuality via CLI (alac is not valid AAC preset)
+    it('ignores invalid lossyQuality in command options', () => {
       const globalOpts: GlobalOptions = {
         verbose: 0,
         quiet: false,
         json: false,
         color: true,
       };
-      const commandOpts = { fallback: 'invalid' };
+      const commandOpts = { lossyQuality: 'invalid' };
       const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.fallback).toBeUndefined();
+      expect(result.lossyQuality).toBeUndefined();
+    });
+
+    // audioQuality option via CLI
+    it('extracts audioQuality from command options', () => {
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+      };
+      const commandOpts = { audioQuality: 'max-cbr' };
+      const result = loadCliConfig(globalOpts, commandOpts);
+      expect(result.audioQuality).toBe('max-cbr');
+    });
+
+    // videoQuality option via CLI
+    it('extracts videoQuality from command options', () => {
+      const globalOpts: GlobalOptions = {
+        verbose: 0,
+        quiet: false,
+        json: false,
+        color: true,
+      };
+      const commandOpts = { videoQuality: 'medium' };
+      const result = loadCliConfig(globalOpts, commandOpts);
+      expect(result.videoQuality).toBe('medium');
     });
   });
 

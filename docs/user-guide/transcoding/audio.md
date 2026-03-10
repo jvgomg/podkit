@@ -31,22 +31,26 @@ This guide covers audio quality presets, encoder options, and file size estimate
 # Default: VBR ~256 kbps
 podkit sync
 
-# Lossless (ALAC) with fallback for lossy sources
-podkit sync --quality alac --fallback max
+# Lossless (ALAC) with lossy quality fallback
+podkit sync --audio-quality alac --lossy-quality max
 
 # Guaranteed 320 kbps CBR
-podkit sync --quality max-cbr
+podkit sync --audio-quality max-cbr
 
 # Space-efficient
 podkit sync --quality low
+
+# Set unified quality, but override audio specifically
+podkit sync --quality medium --audio-quality high
 ```
 
 ### Config File
 
 ```toml
 # Top-level settings in config.toml
-quality = "high"      # alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
-fallback = "max"      # Fallback for lossy sources when quality=alac
+quality = "high"          # Unified quality for audio and video
+audioQuality = "high"     # Audio-specific override: alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
+lossyQuality = "max"     # Quality for lossy sources when audioQuality = "alac"
 ```
 
 ## Example Scenarios
@@ -54,15 +58,15 @@ fallback = "max"      # Fallback for lossy sources when quality=alac
 **Scenario 1: Audiophile with mixed collection**
 
 ```toml
-quality = "alac"
-fallback = "max"
+audioQuality = "alac"
+lossyQuality = "max"
 ```
 
 | Source | Result |
 |--------|--------|
 | FLAC | ALAC (lossless preserved) |
 | MP3 320 | Copy as-is |
-| OGG 192 | AAC ~320 VBR (fallback) + warning |
+| OGG 192 | AAC ~320 VBR (lossy quality) + warning |
 
 **Scenario 2: Space-conscious user**
 

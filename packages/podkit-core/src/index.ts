@@ -135,7 +135,7 @@ export {
   getPresetBitrate,
   isLosslessPreset,
   isVbrPreset,
-  resolveFallback,
+  resolveLossyQuality,
 } from './transcode/types.js';
 
 export {

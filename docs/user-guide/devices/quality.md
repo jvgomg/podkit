@@ -7,19 +7,29 @@ sidebar:
 
 Different iPods have different storage capacities and use cases. podkit lets you set audio and video quality independently for each device, so you can use lossless audio on a high-capacity Classic while using compressed audio on a space-constrained Nano.
 
+## Unified Quality
+
+The simplest approach is to set `quality` on a device, which applies to both audio and video:
+
+```toml
+[devices.nano]
+quality = "medium"            # Both audio and video use medium
+```
+
 ## Audio Quality
 
-Set the audio quality preset per device with `quality`:
+For audio-specific control, use `audioQuality` on a device. This overrides `quality` for audio:
 
 ```toml
 [devices.classic]
-quality = "alac"
+quality = "high"              # Video uses high
+audioQuality = "alac"         # Audio uses lossless (overrides quality)
 
 [devices.nano]
-quality = "medium"
+audioQuality = "medium"
 ```
 
-This overrides the global `quality` setting in your [config file](/user-guide/configuration). Available presets:
+This overrides the global `audioQuality` and `quality` settings in your [config file](/user-guide/configuration). Available presets:
 
 | Preset | Bitrate | Best for |
 |--------|---------|----------|
@@ -61,18 +71,18 @@ quality = "high"
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-quality = "alac"
+audioQuality = "alac"         # Lossless audio
 videoQuality = "high"
 
 [devices.nano]
 volumeUuid = "EFGH-5678"
 volumeName = "NANO"
-quality = "medium"
-videoQuality = "low"
+quality = "medium"            # Both audio and video use medium
+videoQuality = "low"          # Override: low video quality
 artwork = false
 ```
 
-The Classic gets lossless audio and high-quality video, while the Nano uses compressed audio, low-quality video, and skips artwork to save space.
+The Classic gets lossless audio and high-quality video, while the Nano uses medium audio, low-quality video, and skips artwork to save space.
 
 ## CLI Overrides
 
@@ -80,9 +90,10 @@ You can override quality on the command line for a single sync. Reference device
 
 ```bash
 podkit sync --quality medium
+podkit sync --audio-quality alac --lossy-quality max
 podkit sync --video-quality low
 podkit sync --device nano --quality medium --video-quality low
-podkit sync --device /Volumes/NANO --quality medium
+podkit sync --device /Volumes/NANO --audio-quality high
 ```
 
 ## See Also

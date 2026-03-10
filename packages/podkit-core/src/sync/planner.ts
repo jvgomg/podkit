@@ -31,7 +31,7 @@ import {
   type QualityPreset,
   type TranscodeConfig,
   getPresetBitrate,
-  resolveFallback,
+  resolveLossyQuality,
 } from '../transcode/types.js';
 import type {
   IPodTrack,
@@ -197,8 +197,8 @@ function resolveEffectivePreset(config: TranscodeConfig, category: SourceCategor
     if (category === 'lossless') {
       return 'alac';
     }
-    // Fallback for lossy sources
-    return resolveFallback(config);
+    // Lossy quality for lossy sources
+    return resolveLossyQuality(config);
   }
 
   // Non-ALAC presets use quality directly

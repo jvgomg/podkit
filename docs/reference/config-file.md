@@ -17,8 +17,10 @@ Override with `--config <path>` or the `PODKIT_CONFIG` environment variable.
 
 ```toml
 # Global defaults
-quality = "high"             # alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
-fallback = "max"             # Fallback for lossy sources when quality = "alac"
+quality = "high"             # Unified quality: max | high | medium | low
+audioQuality = "high"        # Audio override: alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
+videoQuality = "high"        # Video override: max | high | medium | low
+lossyQuality = "max"         # Quality for lossy sources when audioQuality = "alac"
 artwork = true               # Include album artwork
 
 # Global transforms
@@ -41,8 +43,9 @@ path = "/path/to/videos"
 [devices.<name>]
 volumeUuid = "..."
 volumeName = "..."
-quality = "high"
-videoQuality = "high"
+quality = "high"             # Unified quality for this device
+audioQuality = "high"        # Audio override for this device
+videoQuality = "high"        # Video override for this device
 artwork = true
 
 # Per-device transforms
@@ -62,8 +65,10 @@ These apply to all devices unless overridden at the device level.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `quality` | string | `"high"` | Audio transcoding quality preset |
-| `fallback` | string | `"max"` | Fallback preset for lossy sources when `quality = "alac"` |
+| `quality` | string | `"high"` | Unified quality preset for both audio and video. Values common to both: `max`, `high`, `medium`, `low`. Audio-only values (`alac`, `*-cbr`) are accepted but only affect audio. |
+| `audioQuality` | string | - | Audio-specific quality override. Accepts all audio presets: `alac`, `max`, `max-cbr`, `high`, `high-cbr`, `medium`, `medium-cbr`, `low`, `low-cbr`. Overrides `quality` for audio. |
+| `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
+| `lossyQuality` | string | `"max"` | Quality preset for lossy sources when `audioQuality` resolves to `alac` |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 
 ## Music Collections
@@ -124,8 +129,9 @@ Each device is defined under `[devices.<name>]`. Use `podkit device add <name>` 
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "IPOD"
-quality = "high"
-videoQuality = "high"
+quality = "high"              # Unified quality (audio + video)
+audioQuality = "alac"         # Override: lossless audio
+videoQuality = "high"         # Override: high video quality
 artwork = true
 ```
 
@@ -133,8 +139,9 @@ artwork = true
 |-----|------|----------|---------|-------------|
 | `volumeUuid` | string | yes | - | Volume UUID for device auto-detection |
 | `volumeName` | string | no | - | Volume name for display |
-| `quality` | string | no | global `quality` | Audio quality preset override |
-| `videoQuality` | string | no | `"high"` | Video quality preset override |
+| `quality` | string | no | global `quality` | Unified quality preset override for this device |
+| `audioQuality` | string | no | global `audioQuality` | Audio-specific quality override for this device |
+| `videoQuality` | string | no | global `videoQuality` | Video-specific quality override for this device |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 
 ### Per-Device Transforms
@@ -192,8 +199,10 @@ video = "movies"
 | Variable | Description |
 |----------|-------------|
 | `PODKIT_CONFIG` | Path to config file (overrides default location) |
-| `PODKIT_QUALITY` | Default quality preset (overrides config file `quality`) |
-| `PODKIT_FALLBACK` | Default fallback preset (overrides config file `fallback`) |
+| `PODKIT_QUALITY` | Unified quality preset (overrides config file `quality`) |
+| `PODKIT_AUDIO_QUALITY` | Audio-specific quality (overrides config file `audioQuality`) |
+| `PODKIT_VIDEO_QUALITY` | Video-specific quality (overrides config file `videoQuality`) |
+| `PODKIT_LOSSY_QUALITY` | Lossy source quality (overrides config file `lossyQuality`) |
 | `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
 | `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for collection `<NAME>` (uppercase, hyphens become underscores) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
@@ -213,15 +222,42 @@ Settings are merged from multiple sources in this order (later sources override 
 1. **Hardcoded defaults** - `quality = "high"`, `artwork = true`
 2. **Config file** - `~/.config/podkit/config.toml`
 3. **Environment variables** - `PODKIT_*`
-4. **CLI arguments** - `--quality`, `--no-artwork`, etc.
+4. **CLI arguments** - `--quality`, `--audio-quality`, `--video-quality`, `--no-artwork`, etc.
 
 Device-specific settings (`[devices.<name>]`) override global settings when that device is being used.
+
+### Quality Resolution Order
+
+Audio and video quality each have their own resolution chain. More specific settings always win over less specific ones.
+
+**Audio quality** (first match wins):
+
+1. CLI `--audio-quality`
+2. CLI `--quality`
+3. Device `audioQuality`
+4. Device `quality`
+5. Global `audioQuality`
+6. Global `quality`
+7. Default: `"high"`
+
+**Video quality** (first match wins):
+
+1. CLI `--video-quality`
+2. CLI `--quality` (only if the value is video-compatible: `max`, `high`, `medium`, `low`)
+3. Device `videoQuality`
+4. Device `quality` (only if the value is video-compatible)
+5. Global `videoQuality`
+6. Global `quality` (only if the value is video-compatible)
+7. Default: `"high"`
 
 ## Full Example
 
 ```toml
 # Global defaults
-quality = "high"
+quality = "high"              # Unified quality for audio and video
+audioQuality = "high"         # Override quality for audio only
+videoQuality = "high"         # Override quality for video only
+lossyQuality = "max"         # Quality for lossy sources when audioQuality = "alac"
 artwork = true
 
 # Global transforms
@@ -254,14 +290,15 @@ path = "/Volumes/Media/tv-shows"
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-quality = "high"
+quality = "high"              # Unified quality for this device
+audioQuality = "alac"         # Lossless audio on Classic (overrides quality)
 videoQuality = "high"
 artwork = true
 
 [devices.nano]
 volumeUuid = "EFGH-5678"
 volumeName = "NANO"
-quality = "medium"
+quality = "medium"            # Both audio and video use medium
 artwork = false
 
 # Defaults

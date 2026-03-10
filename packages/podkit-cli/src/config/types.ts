@@ -94,7 +94,8 @@ export interface VideoCollectionConfig {
  * volumeUuid = "ABC-123"
  * volumeName = "TERAPOD"
  * quality = "high"
- * videoQuality = "high"
+ * audioQuality = "alac"
+ * videoQuality = "medium"
  * artwork = true
  *
  * [devices.terapod.transforms.ftintitle]
@@ -105,11 +106,13 @@ export interface VideoCollectionConfig {
 export interface DeviceConfig {
   /** Volume UUID for device auto-detection */
   volumeUuid: string;
-  /** Volume name for display and fallback detection */
+  /** Volume name for display and detection */
   volumeName: string;
-  /** Music transcoding quality preset */
+  /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
-  /** Video transcoding quality preset */
+  /** Audio transcoding quality preset (overrides quality) */
+  audioQuality?: QualityPreset;
+  /** Video transcoding quality preset (overrides quality) */
   videoQuality?: VideoQualityPreset;
   /** Whether to sync artwork to this device */
   artwork?: boolean;
@@ -151,13 +154,17 @@ export interface PodkitConfig {
   // Global defaults (can be overridden per-device)
   // ===========================================================================
 
-  /** Transcoding quality preset (global default, can be overridden per-device) */
+  /** Unified quality preset (sets both audio and video, can be overridden per-device) */
   quality: QualityPreset;
+  /** Audio transcoding quality preset (overrides quality for audio) */
+  audioQuality?: QualityPreset;
+  /** Video transcoding quality preset (overrides quality for video) */
+  videoQuality?: VideoQualityPreset;
   /**
-   * Fallback preset for lossy sources when quality='alac'
-   * Default: 'max' if quality='alac', otherwise inherits from quality
+   * Quality preset for lossy sources when audioQuality='alac'.
+   * Default: 'max' if audioQuality='alac', otherwise inherits from audioQuality
    */
-  fallback?: AacQualityPreset;
+  lossyQuality?: AacQualityPreset;
   /** Include artwork in sync (global default, can be overridden per-device) */
   artwork: boolean;
   /** Transform configuration (global default, can be overridden per-device) */
@@ -241,6 +248,7 @@ export interface ConfigFileDevice {
   volumeUuid?: string;
   volumeName?: string;
   quality?: string;
+  audioQuality?: string;
   videoQuality?: string;
   artwork?: boolean;
   transforms?: ConfigFileTransforms;
@@ -263,6 +271,9 @@ export interface ConfigFileDefaults {
  * @example Multi-collection/device format (ADR-008)
  * ```toml
  * quality = "high"
+ * audioQuality = "alac"
+ * videoQuality = "medium"
+ * lossyQuality = "max"
  * artwork = true
  *
  * [transforms.ftintitle]
@@ -294,7 +305,9 @@ export interface ConfigFileContent {
   // ===========================================================================
 
   quality?: string;
-  fallback?: string;
+  audioQuality?: string;
+  videoQuality?: string;
+  lossyQuality?: string;
   artwork?: boolean;
   transforms?: ConfigFileTransforms;
 

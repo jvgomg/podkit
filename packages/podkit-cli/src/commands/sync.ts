@@ -65,7 +65,7 @@ import { createMusicAdapter } from '../utils/source-adapter.js';
 // =============================================================================
 
 /**
- * AAC-only quality presets (for fallback)
+ * AAC-only quality presets (for lossyQuality)
  */
 type AacQualityPreset = Exclude<QualityPreset, 'alac'>;
 
@@ -80,12 +80,13 @@ type SyncType = 'music' | 'video';
 interface SyncOptions {
   dryRun?: boolean;
   quality?: QualityPreset;
-  fallback?: AacQualityPreset;
+  audioQuality?: QualityPreset;
+  videoQuality?: VideoQualityPreset;
+  lossyQuality?: AacQualityPreset;
   filter?: string;
   artwork?: boolean;
   delete?: boolean;
   collection?: string;
-  videoQuality?: VideoQualityPreset;
   eject?: boolean;
 }
 
@@ -356,23 +357,42 @@ function getEffectiveTransforms(
 }
 
 /**
- * Get effective quality preset for a device
+ * Get effective audio quality preset
+ *
+ * Resolution order: device audioQuality > device quality > global audioQuality > global quality
  */
-function getEffectiveQuality(
-  globalQuality: QualityPreset,
+function getEffectiveAudioQuality(
+  config: { quality: QualityPreset; audioQuality?: QualityPreset },
   deviceConfig?: DeviceConfig
 ): QualityPreset {
-  return deviceConfig?.quality ?? globalQuality;
+  return (
+    deviceConfig?.audioQuality ?? deviceConfig?.quality ?? config.audioQuality ?? config.quality
+  );
 }
 
 /**
- * Get effective video quality preset for a device
+ * Get effective video quality preset
+ *
+ * Resolution order: device videoQuality > device quality (if valid for video) > global videoQuality > global quality (if valid for video) > 'high'
  */
 function getEffectiveVideoQuality(
-  globalVideoQuality: VideoQualityPreset | undefined,
+  config: { quality: QualityPreset; videoQuality?: VideoQualityPreset },
   deviceConfig?: DeviceConfig
 ): VideoQualityPreset {
-  return deviceConfig?.videoQuality ?? globalVideoQuality ?? 'high';
+  if (deviceConfig?.videoQuality) return deviceConfig.videoQuality;
+  if (deviceConfig?.quality && isVideoQualityCompatible(deviceConfig.quality))
+    return deviceConfig.quality as VideoQualityPreset;
+  if (config.videoQuality) return config.videoQuality;
+  if (isVideoQualityCompatible(config.quality)) return config.quality as VideoQualityPreset;
+  return 'high';
+}
+
+/**
+ * Check if an audio quality preset is also valid as a video quality preset
+ * (i.e., max, high, medium, low — not alac or *-cbr variants)
+ */
+function isVideoQualityCompatible(quality: QualityPreset): boolean {
+  return ['max', 'high', 'medium', 'low'].includes(quality);
 }
 
 /**
@@ -395,7 +415,7 @@ interface MusicSyncContext {
   removeOrphans: boolean;
   effectiveTransforms: TransformsConfig;
   effectiveQuality: QualityPreset;
-  fallback: AacQualityPreset | undefined;
+  lossyQuality: AacQualityPreset | undefined;
   effectiveArtwork: boolean;
   ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
@@ -422,7 +442,7 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
     removeOrphans,
     effectiveTransforms,
     effectiveQuality,
-    fallback,
+    lossyQuality,
     effectiveArtwork,
     ipod,
     transcoder,
@@ -524,7 +544,7 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
   diffSpinner.stop('Diff computed');
 
   // Create sync plan
-  const transcodeConfig = { quality: effectiveQuality, fallback };
+  const transcodeConfig = { quality: effectiveQuality, lossyQuality };
   const plan = core.createPlan(diff, { removeOrphans, transcodeConfig });
   const summary = core.getPlanSummary(plan);
   const storage = getStorageInfo(devicePath);
@@ -537,7 +557,7 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
       sourcePath,
       devicePath,
       effectiveQuality,
-      fallback,
+      lossyQuality,
       effectiveTransforms,
       diff,
       plan,
@@ -669,7 +689,7 @@ interface MusicDryRunContext {
   sourcePath: string;
   devicePath: string;
   effectiveQuality: QualityPreset;
-  fallback: AacQualityPreset | undefined;
+  lossyQuality: AacQualityPreset | undefined;
   effectiveTransforms: TransformsConfig;
   diff: ReturnType<typeof import('@podkit/core').computeDiff>;
   plan: ReturnType<typeof import('@podkit/core').createPlan>;
@@ -687,7 +707,7 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
     sourcePath,
     devicePath,
     effectiveQuality,
-    fallback,
+    lossyQuality,
     effectiveTransforms,
     diff,
     plan,
@@ -775,7 +795,7 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
     out.newline();
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
-    const qualityDisplay = fallback ? `${effectiveQuality} (fallback: ${fallback})` : effectiveQuality;
+    const qualityDisplay = lossyQuality ? `${effectiveQuality} (lossy: ${lossyQuality})` : effectiveQuality;
     out.print(`Quality: ${qualityDisplay}`);
     const transformsDisplay = formatTransformsConfig(effectiveTransforms);
     if (transformsDisplay) {
@@ -1167,12 +1187,16 @@ export const syncCommand = new Command('sync')
   .option('-n, --dry-run', 'show what would be synced without making changes')
   .option(
     '--quality <preset>',
-    'music transcoding quality: alac, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr'
+    'unified quality preset for audio and video: max, high, medium, low'
   )
-  .option('--video-quality <preset>', 'video transcoding quality: max, high, medium, low')
   .option(
-    '--fallback <preset>',
-    'fallback quality for lossy sources when quality=alac (default: max)'
+    '--audio-quality <preset>',
+    'audio transcoding quality (overrides --quality): alac, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr'
+  )
+  .option('--video-quality <preset>', 'video transcoding quality (overrides --quality): max, high, medium, low')
+  .option(
+    '--lossy-quality <preset>',
+    'quality for lossy sources when audio quality is alac (default: max)'
   )
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
@@ -1228,17 +1252,26 @@ export const syncCommand = new Command('sync')
     // Get effective settings from device config
     const deviceConfig = resolvedDevice?.config;
     const effectiveTransforms = getEffectiveTransforms(config.transforms, deviceConfig);
-    const effectiveQuality = options.quality
-      ? (options.quality as QualityPreset)
-      : getEffectiveQuality(config.quality, deviceConfig);
+
+    // Audio quality: CLI --audio-quality > CLI --quality > device/global resolution
+    const effectiveQuality = options.audioQuality
+      ? (options.audioQuality as QualityPreset)
+      : options.quality
+        ? (options.quality as QualityPreset)
+        : getEffectiveAudioQuality(config, deviceConfig);
+
+    // Video quality: CLI --video-quality > CLI --quality (if video-compatible) > device/global resolution
     const effectiveVideoQuality = options.videoQuality
       ? (options.videoQuality as VideoQualityPreset)
-      : getEffectiveVideoQuality(undefined, deviceConfig);
+      : options.quality && isVideoQualityCompatible(options.quality as QualityPreset)
+        ? (options.quality as VideoQualityPreset)
+        : getEffectiveVideoQuality(config, deviceConfig);
+
     const effectiveArtwork =
       options.artwork !== undefined
         ? options.artwork
         : getEffectiveArtwork(config.artwork, deviceConfig);
-    const fallback = options.fallback ?? config.fallback;
+    const lossyQuality = options.lossyQuality ?? config.lossyQuality;
 
     // ----- Resolve collections -----
     const allCollections = resolveCollections(config, options.collection, syncType);
@@ -1445,7 +1478,7 @@ export const syncCommand = new Command('sync')
             removeOrphans,
             effectiveTransforms,
             effectiveQuality,
-            fallback,
+            lossyQuality,
             effectiveArtwork,
             ipod,
             transcoder,

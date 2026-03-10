@@ -86,12 +86,34 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     }
   }
 
-  if (typeof parsed.fallback === 'string') {
-    if (isValidAacQuality(parsed.fallback)) {
-      config.fallback = parsed.fallback;
+  if (typeof parsed.audioQuality === 'string') {
+    if (isValidQuality(parsed.audioQuality)) {
+      config.audioQuality = parsed.audioQuality;
     } else {
       throw new Error(
-        `Invalid fallback value "${parsed.fallback}" in config. ` +
+        `Invalid audioQuality value "${parsed.audioQuality}" in config. ` +
+          `Valid values: ${QUALITY_PRESETS.join(', ')}`
+      );
+    }
+  }
+
+  if (typeof parsed.videoQuality === 'string') {
+    if (isValidVideoQuality(parsed.videoQuality)) {
+      config.videoQuality = parsed.videoQuality;
+    } else {
+      throw new Error(
+        `Invalid videoQuality value "${parsed.videoQuality}" in config. ` +
+          `Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`
+      );
+    }
+  }
+
+  if (typeof parsed.lossyQuality === 'string') {
+    if (isValidAacQuality(parsed.lossyQuality)) {
+      config.lossyQuality = parsed.lossyQuality;
+    } else {
+      throw new Error(
+        `Invalid lossyQuality value "${parsed.lossyQuality}" in config. ` +
           `Valid values: ${AAC_QUALITY_PRESETS.join(', ')}`
       );
     }
@@ -380,6 +402,23 @@ function parseDevices(
       device.quality = rawDevice.quality;
     }
 
+    // Parse optional audioQuality
+    if (rawDevice.audioQuality !== undefined) {
+      if (typeof rawDevice.audioQuality !== 'string') {
+        throw new Error(
+          `Invalid type for "audioQuality" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.audioQuality}.`
+        );
+      }
+      if (!isValidQuality(rawDevice.audioQuality)) {
+        throw new Error(
+          `Invalid audioQuality value "${rawDevice.audioQuality}" in [devices.${name}]. ` +
+            `Valid values: ${QUALITY_PRESETS.join(', ')}`
+        );
+      }
+      device.audioQuality = rawDevice.audioQuality;
+    }
+
     // Parse optional videoQuality
     if (rawDevice.videoQuality !== undefined) {
       if (typeof rawDevice.videoQuality !== 'string') {
@@ -498,7 +537,7 @@ function validateDefaultReferences(config: PartialConfig): void {
 /**
  * Read configuration from environment variables
  *
- * Reads PODKIT_QUALITY, PODKIT_FALLBACK, PODKIT_ARTWORK
+ * Reads PODKIT_QUALITY, PODKIT_AUDIO_QUALITY, PODKIT_VIDEO_QUALITY, PODKIT_LOSSY_QUALITY, PODKIT_ARTWORK
  */
 export function loadEnvConfig(): PartialConfig {
   const config: PartialConfig = {};
@@ -512,12 +551,25 @@ export function loadEnvConfig(): PartialConfig {
     // (could log a warning in verbose mode)
   }
 
-  const fallback = process.env[ENV_KEYS.fallback];
-  if (fallback !== undefined) {
-    if (isValidAacQuality(fallback)) {
-      config.fallback = fallback;
+  const audioQuality = process.env[ENV_KEYS.audioQuality];
+  if (audioQuality !== undefined) {
+    if (isValidQuality(audioQuality)) {
+      config.audioQuality = audioQuality;
     }
-    // Silently ignore invalid fallback values from env
+  }
+
+  const videoQuality = process.env[ENV_KEYS.videoQuality];
+  if (videoQuality !== undefined) {
+    if (isValidVideoQuality(videoQuality)) {
+      config.videoQuality = videoQuality;
+    }
+  }
+
+  const lossyQuality = process.env[ENV_KEYS.lossyQuality];
+  if (lossyQuality !== undefined) {
+    if (isValidAacQuality(lossyQuality)) {
+      config.lossyQuality = lossyQuality;
+    }
   }
 
   const artwork = process.env[ENV_KEYS.artwork];
@@ -541,7 +593,9 @@ export function loadCliConfig(
   globalOpts: GlobalOptions,
   commandOpts?: {
     quality?: string;
-    fallback?: string;
+    audioQuality?: string;
+    videoQuality?: string;
+    lossyQuality?: string;
     artwork?: boolean;
   }
 ): PartialConfig {
@@ -555,9 +609,21 @@ export function loadCliConfig(
       }
     }
 
-    if (commandOpts.fallback !== undefined) {
-      if (isValidAacQuality(commandOpts.fallback)) {
-        config.fallback = commandOpts.fallback;
+    if (commandOpts.audioQuality !== undefined) {
+      if (isValidQuality(commandOpts.audioQuality)) {
+        config.audioQuality = commandOpts.audioQuality;
+      }
+    }
+
+    if (commandOpts.videoQuality !== undefined) {
+      if (isValidVideoQuality(commandOpts.videoQuality)) {
+        config.videoQuality = commandOpts.videoQuality;
+      }
+    }
+
+    if (commandOpts.lossyQuality !== undefined) {
+      if (isValidAacQuality(commandOpts.lossyQuality)) {
+        config.lossyQuality = commandOpts.lossyQuality;
       }
     }
 
@@ -587,8 +653,14 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     if (config.quality !== undefined) {
       merged.quality = config.quality;
     }
-    if (config.fallback !== undefined) {
-      merged.fallback = config.fallback;
+    if (config.audioQuality !== undefined) {
+      merged.audioQuality = config.audioQuality;
+    }
+    if (config.videoQuality !== undefined) {
+      merged.videoQuality = config.videoQuality;
+    }
+    if (config.lossyQuality !== undefined) {
+      merged.lossyQuality = config.lossyQuality;
     }
     if (config.artwork !== undefined) {
       merged.artwork = config.artwork;
@@ -696,6 +768,9 @@ export function loadConfig(
   commandOpts?: {
     source?: string;
     quality?: string;
+    audioQuality?: string;
+    videoQuality?: string;
+    lossyQuality?: string;
     artwork?: boolean;
   }
 ): LoadConfigResult {

@@ -105,6 +105,9 @@ export function addDevice(
   if (device.quality !== undefined) {
     lines.push(`quality = "${device.quality}"`);
   }
+  if (device.audioQuality !== undefined) {
+    lines.push(`audioQuality = "${device.audioQuality}"`);
+  }
   if (device.videoQuality !== undefined) {
     lines.push(`videoQuality = "${device.videoQuality}"`);
   }

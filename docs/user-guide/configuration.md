@@ -111,24 +111,35 @@ Configure per-device options:
 [devices.classic]
 volumeUuid = "ABC-123"
 volumeName = "CLASSIC"
-quality = "high"          # Transcoding quality
+quality = "high"          # Unified quality (audio + video)
+audioQuality = "alac"     # Override: lossless audio
+videoQuality = "high"     # Override: high video quality
 artwork = true            # Include album artwork
 
 [devices.nano]
 volumeUuid = "DEF-456"
 volumeName = "NANO"
-quality = "medium"        # Lower quality for less storage
+quality = "medium"        # Both audio and video use medium
 artwork = false           # Skip artwork for faster sync
 ```
 
 ## Quality Presets
 
-Configure transcoding quality as top-level settings:
+podkit uses a unified quality system. The `quality` field sets both audio and video quality, while `audioQuality` and `videoQuality` let you override each independently.
 
 ```toml
-quality = "high"          # alac | max | high | medium | low
-fallback = "max"          # Fallback for lossy sources when using ALAC
+# Set a single quality for everything
+quality = "high"              # max | high | medium | low (applies to audio and video)
+
+# Or override audio and video separately
+audioQuality = "alac"         # alac | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
+videoQuality = "medium"       # max | high | medium | low
+
+# Quality for lossy sources when audioQuality = "alac"
+lossyQuality = "max"
 ```
+
+### Audio Presets
 
 | Preset | Type | Target Bitrate | Description |
 |--------|------|----------------|-------------|
@@ -140,7 +151,22 @@ fallback = "max"          # Fallback for lossy sources when using ALAC
 
 CBR variants are also available: `max-cbr`, `high-cbr`, `medium-cbr`, `low-cbr`.
 
-See [Audio Transcoding](/user-guide/transcoding/audio) for detailed quality settings.
+### Video Presets
+
+| Preset | Description |
+|--------|-------------|
+| `max` | Highest quality, largest files |
+| `high` | Excellent quality (default) |
+| `medium` | Good quality, smaller files |
+| `low` | Space-efficient |
+
+### How Quality Resolves
+
+More specific settings always override less specific ones. For example, if you set `quality = "medium"` and `audioQuality = "alac"`, audio uses ALAC while video uses medium.
+
+Audio-only values like `alac` and CBR variants can be used with `quality`, but they only affect audio -- video falls through to the next applicable setting or the default (`"high"`).
+
+See [Audio Transcoding](/user-guide/transcoding/audio) and [Video Transcoding](/user-guide/transcoding/video) for detailed quality settings.
 
 ## Video Collections
 
@@ -210,8 +236,10 @@ Some settings can be set via environment variables:
 | Variable | Description |
 |----------|-------------|
 | `PODKIT_CONFIG` | Path to config file |
-| `PODKIT_QUALITY` | Default quality preset |
-| `PODKIT_FALLBACK` | Default fallback preset |
+| `PODKIT_QUALITY` | Unified quality preset |
+| `PODKIT_AUDIO_QUALITY` | Audio-specific quality override |
+| `PODKIT_VIDEO_QUALITY` | Video-specific quality override |
+| `PODKIT_LOSSY_QUALITY` | Quality for lossy sources when audio quality is `alac` |
 | `PODKIT_ARTWORK` | Default artwork setting |
 | `PODKIT_MUSIC_{NAME}_PASSWORD` | Password for Subsonic collection (NAME is uppercased, hyphens become underscores) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
@@ -240,20 +268,22 @@ path = "/Volumes/Media/movies"
 path = "/Volumes/Media/tv-shows"
 
 # Global transcoding settings
-quality = "high"
-fallback = "max"
+quality = "high"              # Unified quality for audio and video
+lossyQuality = "max"         # Quality for lossy sources when audioQuality = "alac"
 
 # Devices
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
 quality = "high"
+audioQuality = "alac"         # Lossless audio on Classic
+videoQuality = "high"
 artwork = true
 
 [devices.nano]
 volumeUuid = "EFGH-5678"
 volumeName = "NANO"
-quality = "medium"
+quality = "medium"            # Both audio and video use medium
 artwork = false
 
 # Transforms

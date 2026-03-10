@@ -189,7 +189,7 @@ describe('mixed format collection sync', () => {
   });
 
   describe('quality presets', () => {
-    it('uses ALAC preset with fallback for mixed collection', async () => {
+    it('uses ALAC preset with lossyQuality for mixed collection', async () => {
       if (!fixturesAvailable) {
         console.log('Skipping: fixtures not available');
         return;
@@ -205,9 +205,9 @@ describe('mixed format collection sync', () => {
           'sync',
           '--device',
           target.path,
-          '--quality',
+          '--audio-quality',
           'alac',
-          '--fallback',
+          '--lossy-quality',
           'high',
           '--dry-run',
           '--json',
@@ -302,9 +302,9 @@ describe('mixed format collection sync', () => {
           'sync',
           '--device',
           target.path,
-          '--quality',
+          '--audio-quality',
           'alac',
-          '--fallback',
+          '--lossy-quality',
           'max',
           '--json',
         ]);

@@ -89,21 +89,25 @@ export interface TranscodeConfig {
   quality: QualityPreset;
 
   /**
-   * Fallback preset for lossy sources when quality='alac' or for incompatible formats.
+   * Quality preset for lossy sources when quality='alac'.
+   *
+   * When the primary quality is set to 'alac' (lossless), lossy source files
+   * (MP3, OGG, etc.) cannot be converted to lossless. This preset determines
+   * the AAC quality used for those files instead.
    *
    * Default: 'max' if quality='alac', otherwise inherits from quality
    */
-  fallback?: Exclude<QualityPreset, 'alac'>;
+  lossyQuality?: Exclude<QualityPreset, 'alac'>;
 }
 
 /**
- * Resolve the effective fallback preset
+ * Resolve the effective lossy quality preset
  */
-export function resolveFallback(config: TranscodeConfig): Exclude<QualityPreset, 'alac'> {
-  if (config.fallback) {
-    return config.fallback;
+export function resolveLossyQuality(config: TranscodeConfig): Exclude<QualityPreset, 'alac'> {
+  if (config.lossyQuality) {
+    return config.lossyQuality;
   }
-  // Default fallback is 'max' if quality is 'alac', otherwise use quality
+  // Default is 'max' if quality is 'alac', otherwise use quality
   return config.quality === 'alac' ? 'max' : config.quality;
 }
 

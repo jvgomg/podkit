@@ -1470,7 +1470,7 @@ describe('createPlan - lossy-to-lossy warnings', () => {
 // ALAC Preset with Fallback Tests
 // =============================================================================
 
-describe('createPlan - ALAC preset with fallback', () => {
+describe('createPlan - ALAC preset with lossyQuality', () => {
   it('uses ALAC for lossless sources with quality=alac', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
@@ -1500,7 +1500,7 @@ describe('createPlan - ALAC preset with fallback', () => {
     }
   });
 
-  it('uses default fallback (max) for lossy sources with quality=alac', () => {
+  it('uses default lossyQuality (max) for lossy sources with quality=alac', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'OGG', 'Album', 'ogg')],
@@ -1514,14 +1514,14 @@ describe('createPlan - ALAC preset with fallback', () => {
     }
   });
 
-  it('uses custom fallback for lossy sources with quality=alac', () => {
+  it('uses custom lossyQuality for lossy sources with quality=alac', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'OGG', 'Album', 'ogg')],
     };
 
     const plan = createPlan(diff, {
-      transcodeConfig: { quality: 'alac', fallback: 'high' },
+      transcodeConfig: { quality: 'alac', lossyQuality: 'high' },
     });
 
     expect(plan.operations[0]!.type).toBe('transcode');
@@ -1572,12 +1572,12 @@ describe('createPlan - ALAC preset with fallback', () => {
     };
 
     const plan = createPlan(diff, {
-      transcodeConfig: { quality: 'alac', fallback: 'high' },
+      transcodeConfig: { quality: 'alac', lossyQuality: 'high' },
     });
     const summary = getPlanSummary(plan);
 
     // FLAC, WAV -> transcode to ALAC (2 transcodes)
-    // OGG -> transcode to fallback high (1 transcode)
+    // OGG -> transcode to lossyQuality high (1 transcode)
     // Existing ALAC, MP3 -> copy (2 copies)
     expect(summary.transcodeCount).toBe(3);
     expect(summary.copyCount).toBe(2);

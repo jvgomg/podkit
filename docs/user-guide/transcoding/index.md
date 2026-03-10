@@ -59,28 +59,35 @@ podkit preserves metadata through transcoding:
 
 ## Quality Configuration
 
-Audio and video quality are configured independently. Audio quality can be set globally or per device. Video quality is set per device or on the command line:
+Audio and video quality use a unified system. The `quality` field sets both audio and video quality, while `audioQuality` and `videoQuality` let you override each independently:
 
 ```toml
-# Global audio quality
+# Global unified quality (audio + video)
 quality = "high"
 
-# Per-device overrides for audio and video
+# Or override audio and video separately
+audioQuality = "alac"
+videoQuality = "medium"
+
+# Per-device overrides
 [devices.classic]
-quality = "max"
+quality = "high"
+audioQuality = "alac"         # Lossless audio on Classic
 videoQuality = "high"
 
 [devices.nano]
-quality = "medium"
-videoQuality = "low"
+quality = "medium"            # Both audio and video use medium
 ```
 
 ```bash
-# Environment variable (audio quality only)
+# Environment variables
 export PODKIT_QUALITY=medium
+export PODKIT_AUDIO_QUALITY=high
+export PODKIT_VIDEO_QUALITY=low
 
 # Command-line overrides
 podkit sync --quality medium
+podkit sync --audio-quality alac --lossy-quality max
 podkit sync --video-quality low
 ```
 

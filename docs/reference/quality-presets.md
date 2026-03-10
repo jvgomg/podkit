@@ -7,6 +7,16 @@ sidebar:
 
 Detailed specifications for podkit's audio and video transcoding presets.
 
+## Unified vs Specific Quality
+
+podkit uses a layered quality system:
+
+- **`quality`** sets a baseline for both audio and video. Values common to both (`max`, `high`, `medium`, `low`) apply to everything. Audio-only values like `alac` and CBR variants are accepted but only affect audio.
+- **`audioQuality`** overrides `quality` for audio specifically. Accepts all audio presets.
+- **`videoQuality`** overrides `quality` for video specifically. Accepts `max`, `high`, `medium`, `low`.
+
+This lets you use a single `quality` setting for simplicity, or fine-tune audio and video independently. See [Config File Reference](/reference/config-file#quality-resolution-order) for the full resolution chain.
+
 ## Audio Presets
 
 ### Preset Summary
@@ -53,7 +63,7 @@ The `alac` preset produces Apple Lossless (ALAC) files:
 - **Lossless** - No quality loss from original
 - **Larger files** - Approximately 50-60% of original lossless size
 - **Source requirement** - Only applies to lossless sources (FLAC, WAV, AIFF, ALAC)
-- **Fallback** - Lossy sources use the `fallback` preset (default: `max`)
+- **Lossy quality** - Lossy sources use the `lossyQuality` preset (default: `max`)
 
 ### Encoder Mapping
 
@@ -112,7 +122,7 @@ Video quality is capped to source quality:
 
 | Use Case | Recommended Preset |
 |----------|-------------------|
-| Audiophile, large storage | `alac` with `fallback = "max"` |
+| Audiophile, large storage | `alac` with `lossyQuality = "max"` |
 | Best quality, reasonable size | `high` (default) |
 | Limited storage | `medium` |
 | Minimum storage | `low` |
