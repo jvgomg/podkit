@@ -47,8 +47,8 @@ jobs:
       - name: Install macOS build deps
         if: matrix.platform == 'darwin' && steps.cache.outputs.cache-hit != 'true'
         run: |
-          brew install libplist gdk-pixbuf intltool autoconf automake libtool \
-            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja
+          brew install --quiet libplist gdk-pixbuf intltool autoconf automake libtool \
+            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja 2>/dev/null
           sudo cpan -T XML::Parser
 
       - name: Install Linux build deps
@@ -71,7 +71,7 @@ jobs:
 
       - name: Install macOS prebuild deps
         if: matrix.platform == 'darwin' && steps.cache.outputs.cache-hit == 'true'
-        run: brew install libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff
+        run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff 2>/dev/null
 
       - name: Install Linux prebuild deps
         if: matrix.platform == 'linux' && steps.cache.outputs.cache-hit == 'true'
