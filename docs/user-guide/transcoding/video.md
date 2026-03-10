@@ -5,7 +5,9 @@ sidebar:
   order: 2
 ---
 
-podkit supports syncing movies and TV shows to video-capable iPods. This guide covers video configuration, quality settings, and supported formats.
+podkit aims to get your videos onto your iPod at the best possible quality for the device. It matches output to each device's capabilities, passes through files that are already compatible without re-encoding, and caps output quality to the source — so low-resolution files won't be wastefully upscaled.
+
+This guide covers video configuration, quality settings, and supported formats.
 
 ## Supported Devices
 

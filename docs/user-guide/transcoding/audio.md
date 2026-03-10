@@ -5,7 +5,9 @@ sidebar:
   order: 1
 ---
 
-podkit uses FFmpeg to transcode audio files to iPod-compatible formats. This guide covers quality settings, encoder options, and how podkit decides what to transcode.
+podkit aims to get your music onto your iPod at the best possible quality. It only transcodes what it needs to — lossless files are converted to your chosen format, but lossy files that are already iPod-compatible (MP3, AAC) are copied as-is to avoid any generation loss. When lossy-to-lossy conversion is unavoidable (e.g. OGG or Opus sources), podkit warns you so there are no surprises.
+
+This guide covers quality settings, encoder options, and how podkit decides what to transcode.
 
 ## Quick Reference
 

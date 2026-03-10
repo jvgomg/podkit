@@ -1,11 +1,15 @@
 ---
 title: Installation
-description: Install podkit and its system dependencies on macOS, Linux, or Windows.
+description: Install podkit and its system dependencies on macOS or Linux.
 sidebar:
   order: 1
 ---
 
-This guide covers installing podkit and its dependencies on macOS and Linux.
+podkit supports **macOS** and **Linux**.
+
+:::note[Windows support]
+Windows is not currently supported. If you'd like to see Windows support, please [open an issue on GitHub](https://github.com/jvgomg/podkit/issues) to let us know.
+:::
 
 ## Prerequisites
 
