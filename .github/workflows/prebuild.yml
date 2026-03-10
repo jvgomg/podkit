@@ -18,13 +18,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14       # Apple Silicon (arm64)
+          - os: macos-15        # Apple Silicon (arm64)
             arch: arm64
             platform: darwin
-          - os: macos-26-intel  # Intel (x64)
+          - os: macos-15-intel  # Intel (x64)
             arch: x64
             platform: darwin
-          - os: ubuntu-24.04   # Linux x64
+          - os: ubuntu-24.04    # Linux x64
             arch: x64
             platform: linux
 
@@ -42,7 +42,6 @@ jobs:
         with:
           bun-version: latest
 
-      # Set STATIC_DEPS_DIR for all subsequent steps
       - name: Set environment
         run: |
           echo "STATIC_DEPS_DIR=${GITHUB_WORKSPACE}/static-deps" >> "$GITHUB_ENV"
@@ -55,18 +54,17 @@ jobs:
           brew install libplist gdk-pixbuf intltool autoconf automake libtool \
             gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja
 
-      # Linux: install system -dev packages
+      # Linux: install system -dev packages (including libgpod-dev)
       - name: Install Linux build deps
         if: matrix.platform == 'linux'
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            build-essential pkg-config \
-            libglib2.0-dev libgdk-pixbuf-2.0-dev \
+            build-essential pkg-config python3-pip \
+            libgpod-dev libglib2.0-dev libgdk-pixbuf-2.0-dev \
             libplist-dev libffi-dev libsqlite3-dev \
             libpng-dev libjpeg-dev libtiff-dev \
-            autoconf automake libtool intltool gtk-doc-tools \
-            curl meson ninja-build
+            meson ninja-build curl
 
       # Build all native dependencies as static libraries
       - name: Build static dependencies
@@ -89,7 +87,6 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           otool -L "$PREBUILD"
-          # Fail if libgpod or glib are dynamically linked
           if otool -L "$PREBUILD" | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
@@ -102,18 +99,15 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD"
-          # Fail if libgpod or glib are dynamically linked
           if ldd "$PREBUILD" | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
 
-      # Run tests against the prebuild
       - name: Run tests
         working-directory: packages/libgpod-node
         run: bun run test:unit
 
-      # Upload prebuilds as artifact
       - name: Upload prebuild
         uses: actions/upload-artifact@v4
         with:
