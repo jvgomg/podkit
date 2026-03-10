@@ -1,101 +1,74 @@
 ---
 title: Configuration
-description: Configure podkit with collections, devices, quality presets, and sync options.
+description: Understand podkit's configuration concepts — collections, devices, quality, and defaults.
 sidebar:
   order: 1
 ---
 
-podkit uses a TOML configuration file located at `~/.config/podkit/config.toml`. This guide covers all configuration options.
+podkit uses a TOML configuration file to define where your music lives, which devices to sync to, and how to transcode. This guide introduces the core concepts — see the [Config File Reference](/reference/config-file) for the complete schema.
 
 ## Creating the Config File
 
-Generate a default configuration:
+The config file lives at `~/.config/podkit/config.toml`. Generate one with:
 
 ```bash
 podkit init
 ```
 
-Or create manually:
+Or create it manually:
 
 ```bash
 mkdir -p ~/.config/podkit
 touch ~/.config/podkit/config.toml
 ```
 
-## Basic Configuration
+You can override the config file location with `--config <path>` or the `PODKIT_CONFIG` environment variable.
 
-A minimal configuration with one music collection and one device:
+## Core Concepts
 
-```toml
-# Music collection
-[music.main]
-path = "/path/to/your/music"
+A podkit config has three main parts:
 
-# Device
-[devices.myipod]
-volumeUuid = "ABC-123"      # Auto-detected by 'podkit device add'
-volumeName = "IPOD"
+1. **Collections** — where your music (and video) lives
+2. **Devices** — the iPods you sync to
+3. **Defaults** — what happens when you just run `podkit sync`
 
-# Defaults
-[defaults]
-device = "myipod"
-music = "main"
-```
+### Collections
 
-## Music Collections
-
-Define multiple music sources:
+Collections are named music sources. Each one points to either a local directory or a Subsonic-compatible server:
 
 ```toml
+# A local music library
 [music.main]
 path = "/Volumes/Media/music/library"
 
-[music.vinyl-rips]
-path = "/Volumes/Media/vinyl-rips"
-
-[music.work]
-path = "/Users/me/Music/work-playlist"
-```
-
-Sync a specific collection:
-
-```bash
-podkit sync -c vinyl-rips
-```
-
-### Subsonic Collections
-
-Connect to Subsonic-compatible servers (Navidrome, Airsonic, Gonic):
-
-```toml
+# A Subsonic server (Navidrome, Airsonic, etc.)
 [music.navidrome]
 type = "subsonic"
-url = "https://your-server.example.com"
-username = "your-username"
-password = "your-password"           # Or use environment variable
-path = "/path/to/download/cache"     # Local cache for streaming
+url = "https://music.example.com"
+username = "user"
+path = "/tmp/navidrome-cache"
 ```
 
-For passwords, you can also use environment variables:
+You can define as many collections as you need and sync them independently:
 
 ```bash
-# For collection named "navidrome"
-export PODKIT_MUSIC_NAVIDROME_PASSWORD="your-password"
+podkit sync -c main          # Sync just the "main" collection
+podkit sync -c navidrome     # Sync just the Subsonic collection
 ```
 
-See [Subsonic Source](/user-guide/collections/subsonic) for full Subsonic configuration.
+For details on each source type, see:
+- [Directory Source](/user-guide/collections/directory)
+- [Subsonic Source](/user-guide/collections/subsonic)
 
-## Devices
+### Devices
 
-### Adding Devices
-
-Register a connected iPod:
+Devices are named iPods registered in your config. The easiest way to add one is with a connected iPod:
 
 ```bash
 podkit device add myipod
 ```
 
-This auto-detects the device and adds it to your config:
+This auto-detects the device and writes the config entry:
 
 ```toml
 [devices.myipod]
@@ -103,206 +76,89 @@ volumeUuid = "ABC-123-DEF-456"
 volumeName = "IPOD"
 ```
 
-### Device Settings
-
-Configure per-device options:
+Each device can have its own quality and artwork settings, so a high-capacity Classic can use lossless audio while a Nano uses compressed:
 
 ```toml
-[devices.classic]
-volumeUuid = "ABC-123"
-volumeName = "CLASSIC"
-quality = "high"          # Unified quality (audio + video)
-audioQuality = "lossless" # Override: lossless audio
-videoQuality = "high"     # Override: high video quality
-artwork = true            # Include album artwork
-
-[devices.nano]
-volumeUuid = "DEF-456"
-volumeName = "NANO"
-quality = "medium"        # Both audio and video use medium
-artwork = false           # Skip artwork for faster sync
-```
-
-## Quality Presets
-
-podkit uses a unified quality system. The `quality` field sets both audio and video quality, while `audioQuality` and `videoQuality` let you override each independently.
-
-```toml
-# Set a single quality for everything
-quality = "high"              # max | high | medium | low (applies to audio and video)
-
-# Or override audio and video separately
-audioQuality = "lossless"     # lossless | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
-videoQuality = "medium"       # max | high | medium | low
-
-# Quality for lossy sources when audioQuality = "lossless"
-lossyQuality = "max"
-```
-
-### Audio Presets
-
-| Preset | Type | Target Bitrate | Description |
-|--------|------|----------------|-------------|
-| `lossless` | Lossless | N/A | Apple Lossless (from lossless sources only) |
-| `max` | VBR | ~320 kbps | Highest VBR quality |
-| `high` | VBR | ~256 kbps | Transparent quality (default) |
-| `medium` | VBR | ~192 kbps | Excellent quality |
-| `low` | VBR | ~128 kbps | Good quality, space-efficient |
-
-CBR variants are also available: `max-cbr`, `high-cbr`, `medium-cbr`, `low-cbr`.
-
-### Video Presets
-
-| Preset | Description |
-|--------|-------------|
-| `max` | Highest quality, largest files |
-| `high` | Excellent quality (default) |
-| `medium` | Good quality, smaller files |
-| `low` | Space-efficient |
-
-### How Quality Resolves
-
-More specific settings always override less specific ones. For example, if you set `quality = "medium"` and `audioQuality = "lossless"`, audio uses ALAC while video uses medium.
-
-Audio-only values like `lossless` and CBR variants can be used with `quality`, but they only affect audio -- video falls through to the next applicable setting or the default (`"high"`).
-
-See [Audio Transcoding](/user-guide/transcoding/audio) and [Video Transcoding](/user-guide/transcoding/video) for detailed quality settings.
-
-## Video Collections
-
-Configure video sources for iPods that support video:
-
-```toml
-[video.movies]
-path = "/path/to/movies"
-
-[video.shows]
-path = "/path/to/tv-shows"
-
-[defaults]
-video = "movies"
-```
-
-See [Video Transcoding](/user-guide/transcoding/video) for video configuration.
-
-## Defaults
-
-Set default values for CLI commands:
-
-```toml
-[defaults]
-device = "myipod"         # Default device name
-music = "main"            # Default music collection
-video = "movies"          # Default video collection
-```
-
-Override defaults on the command line:
-
-```bash
-podkit sync --device nano --quality medium -c vinyl-rips
-```
-
-## Transforms
-
-Transforms modify track metadata during sync. They are configured globally and can be overridden per-device.
-
-### ftintitle
-
-Extracts featured artist information from the artist field and appends it to the title. This is useful when your music library stores "Artist feat. Other Artist" in the artist field but you want the iPod to show "Artist" as the artist and "Song (feat. Other Artist)" as the title.
-
-```toml
-[transforms.ftintitle]
-enabled = true            # Move "feat." from artist to title
-drop = false              # If true, drop featuring info entirely
-format = "feat. {}"       # Format string for title
-ignore = ["Simon & Garfunkel"]  # Don't split these artist names
-```
-
-The `ignore` list prevents artist names containing ambiguous separators (`&`, `and`, `with`) from being incorrectly split.
-
-To override transforms for a specific device:
-
-```toml
-[devices.nano.transforms.ftintitle]
-enabled = false           # Disable for this device
-```
-
-See [Artist Transforms](/user-guide/devices/artist-transforms) for a setup guide and [Album Artist Transform Reference](/reference/transforms) for the full configuration reference.
-
-## Environment Variables
-
-Some settings can be set via environment variables:
-
-| Variable | Description |
-|----------|-------------|
-| `PODKIT_CONFIG` | Path to config file |
-| `PODKIT_QUALITY` | Unified quality preset |
-| `PODKIT_AUDIO_QUALITY` | Audio-specific quality override |
-| `PODKIT_VIDEO_QUALITY` | Video-specific quality override |
-| `PODKIT_LOSSY_QUALITY` | Quality for lossy sources when audio quality is `lossless` |
-| `PODKIT_ARTWORK` | Default artwork setting |
-| `PODKIT_MUSIC_{NAME}_PASSWORD` | Password for Subsonic collection (NAME is uppercased, hyphens become underscores) |
-| `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
-
-## Full Example
-
-```toml
-# Music collections
-[music.main]
-path = "/Volumes/Media/music/library"
-
-[music.vinyl-rips]
-path = "/Volumes/Media/vinyl-rips"
-
-[music.navidrome]
-type = "subsonic"
-url = "https://music.example.com"
-username = "user"
-path = "/tmp/navidrome-cache"
-
-# Video collections
-[video.movies]
-path = "/Volumes/Media/movies"
-
-[video.shows]
-path = "/Volumes/Media/tv-shows"
-
-# Global transcoding settings
-quality = "high"              # Unified quality for audio and video
-lossyQuality = "max"         # Quality for lossy sources when audioQuality = "lossless"
-
-# Devices
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-quality = "high"
-audioQuality = "lossless"     # Lossless audio on Classic
-videoQuality = "high"
-artwork = true
+audioQuality = "lossless"
 
 [devices.nano]
 volumeUuid = "EFGH-5678"
 volumeName = "NANO"
-quality = "medium"            # Both audio and video use medium
+quality = "medium"
 artwork = false
+```
 
-# Transforms
-[transforms.ftintitle]
-enabled = true
-format = "feat. {}"
+See [Managing Devices](/user-guide/devices) for the full device setup guide.
 
-# Defaults
+### Defaults
+
+The `[defaults]` section sets which collection and device to use when you don't specify them on the command line:
+
+```toml
 [defaults]
 device = "classic"
 music = "main"
 video = "movies"
 ```
 
+With these defaults, `podkit sync` is equivalent to `podkit sync --device classic -c main`. You can always override on the command line:
+
+```bash
+podkit sync --device nano -c vinyl-rips
+```
+
+## Quality
+
+Quality controls how podkit transcodes audio and video. The simplest approach is a single `quality` setting — either globally or per device:
+
+```toml
+quality = "high"              # Global default for audio and video
+```
+
+For finer control, `audioQuality` and `videoQuality` override `quality` independently. This is useful when you want lossless audio but compressed video:
+
+```toml
+[devices.classic]
+audioQuality = "lossless"
+videoQuality = "high"
+```
+
+See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
+
+## Transforms
+
+Transforms modify track metadata during sync. Currently, the `ftintitle` transform moves featured artist credits from the Artist field into the Title field — useful for cleaner artist browsing on iPods:
+
+```toml
+[transforms.ftintitle]
+enabled = true
+```
+
+Transforms can be overridden per device. See [Artist Transforms](/user-guide/devices/artist-transforms) for a setup guide and the [Transform Reference](/reference/transforms) for all options.
+
+## Minimal Example
+
+Here's a complete working config with one collection, one device, and sensible defaults:
+
+```toml
+[music.main]
+path = "/path/to/your/music"
+
+[devices.myipod]
+volumeUuid = "ABC-123"
+volumeName = "IPOD"
+
+[defaults]
+device = "myipod"
+music = "main"
+```
+
 ## See Also
 
-- [Directory Source](/user-guide/collections/directory) - Local directory source configuration
-- [Subsonic Source](/user-guide/collections/subsonic) - Subsonic server source configuration
-- [Audio Transcoding](/user-guide/transcoding/audio) - Quality presets and encoder settings
-- [Video Transcoding](/user-guide/transcoding/video) - Video collection configuration
-- [CLI Commands](/reference/cli-commands) - Command-line options
-- [Config File Reference](/reference/config-file) - Complete config schema
+- [Config File Reference](/reference/config-file) — Complete schema with all options
+- [Environment Variables](/reference/environment-variables) — Override settings via environment
+- [Quality Presets](/reference/quality-presets) — Audio and video quality specifications
+- [CLI Commands](/reference/cli-commands) — Command-line options

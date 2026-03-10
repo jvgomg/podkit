@@ -85,7 +85,9 @@ Read these documents based on what you're working on:
 |-------|----------|
 | First time in repo | [docs/index.md](docs/index.md) |
 | User install and first sync | [docs/getting-started/](docs/getting-started/) |
-| Configuration options | [docs/user-guide/configuration.md](docs/user-guide/configuration.md) |
+| Configuration concepts | [docs/user-guide/configuration.md](docs/user-guide/configuration.md) |
+| Config file reference | [docs/reference/config-file.md](docs/reference/config-file.md) |
+| Environment variables | [docs/reference/environment-variables.md](docs/reference/environment-variables.md) |
 | iPod model compatibility | [docs/devices/supported-devices.md](docs/devices/supported-devices.md) |
 | Architecture and design | [docs/developers/architecture.md](docs/developers/architecture.md) |
 | Development environment | [docs/developers/development.md](docs/developers/development.md) |

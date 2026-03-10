@@ -194,39 +194,7 @@ video = "movies"
 | `music` | string | Default music collection name |
 | `video` | string | Default video collection name |
 
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `PODKIT_CONFIG` | Path to config file (overrides default location) |
-| `PODKIT_QUALITY` | Unified quality preset (overrides config file `quality`) |
-| `PODKIT_AUDIO_QUALITY` | Audio-specific quality (overrides config file `audioQuality`) |
-| `PODKIT_VIDEO_QUALITY` | Video-specific quality (overrides config file `videoQuality`) |
-| `PODKIT_LOSSY_QUALITY` | Lossy source quality (overrides config file `lossyQuality`) |
-| `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
-| `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for collection `<NAME>` (uppercase, hyphens become underscores) |
-| `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
-
-### Password Resolution Order
-
-For a Subsonic collection named `navidrome`, the password is resolved in this order:
-
-1. `password` field in config file
-2. `PODKIT_MUSIC_NAVIDROME_PASSWORD` environment variable
-3. `SUBSONIC_PASSWORD` environment variable
-
-## Configuration Priority
-
-Settings are merged from multiple sources in this order (later sources override earlier ones):
-
-1. **Hardcoded defaults** - `quality = "high"`, `artwork = true`
-2. **Config file** - `~/.config/podkit/config.toml`
-3. **Environment variables** - `PODKIT_*`
-4. **CLI arguments** - `--quality`, `--audio-quality`, `--video-quality`, `--no-artwork`, etc.
-
-Device-specific settings (`[devices.<name>]`) override global settings when that device is being used.
-
-### Quality Resolution Order
+## Quality Resolution Order
 
 Audio and video quality each have their own resolution chain. More specific settings always win over less specific ones.
 
@@ -310,6 +278,7 @@ video = "movies"
 
 ## See Also
 
-- [Configuration Guide](/user-guide/configuration) - Practical configuration walkthrough
+- [Configuration Guide](/user-guide/configuration) - Conceptual overview
+- [Environment Variables](/reference/environment-variables) - Env var overrides and config priority
 - [CLI Commands](/reference/cli-commands) - Command-line options
 - [Quality Presets](/reference/quality-presets) - Audio and video quality details
