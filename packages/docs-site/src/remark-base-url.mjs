@@ -5,7 +5,10 @@
  * This plugin rewrites absolute links (starting with `/`) so they work
  * correctly when the site is served from a subpath (e.g. `/podkit`).
  */
-import { visit } from 'unist-util-visit';
+function visit(node, fn) {
+  fn(node);
+  if (node.children) node.children.forEach((c) => visit(c, fn));
+}
 
 export function remarkBaseUrl({ base = '/' } = {}) {
   const prefix = base.endsWith('/') ? base.slice(0, -1) : base;
