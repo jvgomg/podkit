@@ -1,15 +1,20 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightLlmsTxt from 'starlight-llms-txt';
+import { remarkBaseUrl } from './src/remark-base-url.mjs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const base = '/podkit';
 
 // https://astro.build/config
 export default defineConfig({
   site: 'https://jvgomg.github.io',
-  base: '/podkit',
+  base,
+  markdown: {
+    remarkPlugins: [remarkBaseUrl({ base })],
+  },
   vite: {
     resolve: {
       // Allow MDX files in symlinked docs/ to resolve Starlight components

@@ -1,9 +1,10 @@
 ---
 id: TASK-095
 title: Polish and launch documentation site
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-10 10:26'
+updated_date: '2026-03-10 14:13'
 labels:
   - docs-site
   - launch
