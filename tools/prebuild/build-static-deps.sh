@@ -168,21 +168,23 @@ if [ "$OS" = "Darwin" ]; then
 elif [ "$OS" = "Linux" ]; then
   log "Collecting system static libraries..."
 
-  # Copy system .a files to our prefix (skip missing ones silently)
+  # Copy system .a files to our prefix (skip missing ones silently).
+  # Note: image libs (libpng, libjpeg, libtiff) are NOT copied — Ubuntu's .a
+  # files aren't built with -fPIC so can't be linked into a .node shared object.
+  # They'll be linked dynamically via get-ldflags.sh fallback.
   for lib in libgpod.a \
              libglib-2.0.a libgobject-2.0.a libgio-2.0.a libgmodule-2.0.a \
-             libffi.a libpcre2-8.a libplist-2.0.a \
-             libpng16.a libpng.a libjpeg.a libtiff.a libz.a \
-             libsqlite3.a libintl.a; do
+             libffi.a libpcre2-8.a; do
     found=$(find /usr/lib /usr/lib64 /usr/local/lib -name "$lib" 2>/dev/null | head -1)
     [ -n "$found" ] && cp "$found" "$STATIC_DEPS_DIR/lib/"
   done
 
   # Build gdk-pixbuf .a from source (Ubuntu doesn't ship it)
+  # Use -fPIC so the .a can be linked into a .node shared object
   SYS_PKG_PATH=$(pkg-config --variable pc_path pkg-config 2>/dev/null || echo "/usr/lib/pkgconfig:/usr/share/pkgconfig")
   build_gdk_pixbuf_static \
     "$SYS_PKG_PATH" \
-    "" \
+    "-fPIC" \
     "-lpng16 -ljpeg -ltiff -lz"
 
   log "Linux static dependencies built to $STATIC_DEPS_DIR"

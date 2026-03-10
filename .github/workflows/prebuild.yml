@@ -89,7 +89,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           otool -L "$PREBUILD"
-          if otool -L "$PREBUILD" | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+          if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
