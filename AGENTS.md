@@ -66,6 +66,7 @@ Read these documents based on what you're working on:
 |----------|--------------|
 | [docs/README.md](docs/README.md) | First time in repo, need orientation |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Setting up development environment |
+| [docs/SUPPORTED-DEVICES.md](docs/SUPPORTED-DEVICES.md) | Checking iPod model compatibility |
 | [docs/PRD.md](docs/PRD.md) | Understanding requirements, user stories, scope |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Understanding component design, interfaces, data flow |
 | [docs/adr/README.md](docs/adr/README.md) | Understanding or making architectural decisions |
@@ -76,6 +77,7 @@ Read these documents based on what you're working on:
 | [docs/IPOD-INTERNALS.md](docs/IPOD-INTERNALS.md) | Debugging iPod-specific issues |
 | [docs/MACOS-IPOD-MOUNTING.md](docs/MACOS-IPOD-MOUNTING.md) | Troubleshooting large iFlash iPods not mounting on macOS |
 | [docs/TESTING.md](docs/TESTING.md) | Understanding testing strategy and conventions |
+| [docs/DEVICE-TESTING.md](docs/DEVICE-TESTING.md) | Adding device compatibility tests, verifying new models |
 | [docs/TRANSFORMS.md](docs/TRANSFORMS.md) | Working on metadata transforms (ftintitle, etc.) |
 | [packages/libgpod-node/README.md](packages/libgpod-node/README.md) | Working on libgpod bindings, understanding deviations |
 | [packages/gpod-testing/README.md](packages/gpod-testing/README.md) | Writing tests that need iPod databases |

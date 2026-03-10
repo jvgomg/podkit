@@ -17,10 +17,12 @@ If you're new to the project, read in this order:
 
 | Document | Purpose |
 |----------|---------|
+| [SUPPORTED-DEVICES.md](SUPPORTED-DEVICES.md) | iPod model compatibility, verification status, feature support |
 | [PRD.md](PRD.md) | Product requirements, user stories, functional requirements, milestones |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Component design, interfaces, data flow, error handling |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development environment setup (macOS, Linux, Windows) |
 | [TESTING.md](TESTING.md) | Testing strategy, conventions, unit vs integration tests |
+| [DEVICE-TESTING.md](DEVICE-TESTING.md) | Device verification strategy, adding model tests |
 
 ### Features
 

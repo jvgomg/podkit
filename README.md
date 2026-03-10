@@ -12,6 +12,12 @@ podkit is a CLI tool and library that synchronizes music from various collection
 - **Album artwork** - Transfers embedded artwork to iPod
 - **Duplicate detection** - Prevents re-syncing existing tracks
 
+## Supported Devices
+
+podkit supports iPod Classic, Video, Nano (1st-5th gen), Mini, and Shuffle (1st-2nd gen). iOS devices (iPod Touch, iPhone, iPad) are **not supported**.
+
+**[View full device compatibility list](docs/SUPPORTED-DEVICES.md)**
+
 ## Project Structure
 
 ```
@@ -33,18 +39,20 @@ podkit/
 
 ## Status
 
-**Pre-development** - This repository contains research and planning documentation. Implementation has not started.
+**Active development** - Core functionality is implemented. See [SUPPORTED-DEVICES.md](docs/SUPPORTED-DEVICES.md) for device compatibility.
 
 ## Documentation
 
 | Document | Description |
 |----------|-------------|
+| [Supported Devices](docs/SUPPORTED-DEVICES.md) | iPod model compatibility and verification status |
 | [PRD](docs/PRD.md) | Product requirements and user stories |
 | [Architecture](docs/ARCHITECTURE.md) | Technical design and component overview |
 | [libgpod Research](docs/LIBGPOD.md) | libgpod API, binding approaches |
 | [Transcoding](docs/TRANSCODING.md) | FFmpeg AAC encoding configuration |
 | [Collection Sources](docs/COLLECTION-SOURCES.md) | Strawberry, beets, file adapters |
 | [iPod Internals](docs/IPOD-INTERNALS.md) | iTunesDB format, artwork, device quirks |
+| [Device Testing](docs/DEVICE-TESTING.md) | How device compatibility is verified |
 
 ### Architecture Decision Records
 

@@ -285,7 +285,9 @@ const Itdb_IpodInfo *itdb_device_get_ipod_info(const Itdb_Device *device);
 
 ## Compatibility Notes
 
-### Supported iPods
+For the complete device compatibility list, see [SUPPORTED-DEVICES.md](SUPPORTED-DEVICES.md).
+
+### Quick Reference
 
 | Device | Generation | Support Level |
 |--------|------------|---------------|
@@ -293,16 +295,17 @@ const Itdb_IpodInfo *itdb_device_get_ipod_info(const Itdb_Device *device);
 | iPod Video | 5th, 5.5th | Full |
 | iPod Nano | 1st-5th | Full |
 | iPod Mini | 1st, 2nd | Full |
-| iPod Shuffle | 1st-4th | Limited (no artwork) |
+| iPod Shuffle | 1st-2nd | Music only (no artwork, no screen) |
 
 ### Unsupported Devices
 
 | Device | Reason |
 |--------|--------|
-| iPod Touch | Uses iOS protocols, not USB Mass Storage |
-| iPhone | Uses iOS protocols |
-| iPad | Uses iOS protocols |
-| iPod Nano 6th/7th | Different database format |
+| iPod Touch (all) | Uses iOS protocols; iTunesDB requires cryptographic signing |
+| iPhone (all) | Uses iOS protocols |
+| iPad (all) | Uses iOS protocols |
+| iPod Nano 6th/7th | Different database format (not iTunesDB) |
+| iPod Shuffle 3rd/4th | Buttonless design; requires iTunes authentication hash |
 
 ### Rockbox Compatibility
 
