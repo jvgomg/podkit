@@ -45,7 +45,18 @@ import {
 } from '../device-resolver.js';
 import type { IPodVideo, CollectionVideo, CollectionAdapter } from '@podkit/core';
 import { MediaType } from '@podkit/core';
-import { formatBytes, formatNumber } from './display-utils.js';
+import {
+  OutputContext,
+  formatBytes,
+  formatNumber,
+  formatDurationSeconds,
+  formatCollectionLabel,
+  renderProgressBar,
+  formatErrors,
+  formatUpdateReason,
+  buildTransformPreview,
+} from '../output/index.js';
+import type { CollectedError } from '../output/index.js';
 import { formatProgressLine } from '../utils/progress.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 
@@ -57,33 +68,6 @@ import { createMusicAdapter } from '../utils/source-adapter.js';
  * AAC-only quality presets (for fallback)
  */
 type AacQualityPreset = Exclude<QualityPreset, 'alac'>;
-
-/**
- * Format a collection label for display
- *
- * @param collectionName - Name of the collection
- * @param sourcePath - Path to the collection
- * @param verbose - Whether to show path details
- * @returns Formatted collection label
- *
- * @example Non-verbose
- * formatCollectionLabel('main', '/Volumes/Media/music', false)
- * // => " 'main'"
- *
- * @example Verbose
- * formatCollectionLabel('main', '/Volumes/Media/music', true)
- * // => " 'main' (/Volumes/Media/music)"
- */
-function formatCollectionLabel(
-  collectionName: string,
-  sourcePath: string,
-  verbose: boolean
-): string {
-  if (verbose) {
-    return ` '${collectionName}' (${sourcePath})`;
-  }
-  return ` '${collectionName}'`;
-}
 
 /**
  * Valid sync types
@@ -237,19 +221,10 @@ interface SyncOutput {
 
 /**
  * Format duration in seconds as human-readable time
+ * Exported for use by tests
  */
 export function formatDuration(seconds: number): string {
-  if (seconds < 60) {
-    return `${Math.round(seconds)}s`;
-  }
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = Math.round(seconds % 60);
-  if (minutes < 60) {
-    return `${minutes}m ${remainingSeconds}s`;
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainingMinutes = minutes % 60;
-  return `${hours}h ${remainingMinutes}m`;
+  return formatDurationSeconds(seconds);
 }
 
 /**
@@ -267,130 +242,8 @@ function getStorageInfo(mountpoint: string): { total: number; free: number; used
   }
 }
 
-/**
- * Simple spinner for CLI progress
- */
-class Spinner {
-  private frames = ['|', '/', '-', '\\'];
-  private current = 0;
-  private interval: ReturnType<typeof setInterval> | null = null;
-  private message = '';
-
-  start(message: string): void {
-    this.message = message;
-    this.interval = setInterval(() => {
-      // \x1b[K clears from cursor to end of line to prevent remnant characters
-      process.stdout.write(`\r\x1b[K${this.frames[this.current]} ${this.message}`);
-      this.current = (this.current + 1) % this.frames.length;
-    }, 100);
-  }
-
-  update(message: string): void {
-    this.message = message;
-  }
-
-  stop(finalMessage?: string): void {
-    if (this.interval) {
-      clearInterval(this.interval);
-      this.interval = null;
-    }
-    // \x1b[K clears from cursor to end of line to prevent remnant characters
-    if (finalMessage) {
-      process.stdout.write(`\r\x1b[K${finalMessage}\n`);
-    } else {
-      process.stdout.write('\r\x1b[K');
-    }
-  }
-}
-
-/**
- * Progress bar for CLI
- */
-export function renderProgressBar(current: number, total: number, width = 30): string {
-  const percent = total > 0 ? current / total : 0;
-  const filled = Math.round(width * percent);
-  const empty = width - filled;
-  const bar = '='.repeat(filled) + (filled < width ? '>' : '') + ' '.repeat(Math.max(0, empty - 1));
-  const percentStr = `${Math.round(percent * 100)}%`.padStart(4);
-  return `[${bar}] ${percentStr}`;
-}
-
-/**
- * Collected error for reporting
- */
-interface CollectedError {
-  trackName: string;
-  category: string;
-  message: string;
-  retryAttempts: number;
-  wasRetried: boolean;
-  stack?: string;
-}
-
-/**
- * Format errors based on verbosity level
- *
- * Verbosity levels:
- * - 0 (normal): summary only ("5 tracks failed")
- * - 1 (-v): list failed track names
- * - 2 (-vv): show error type/category for each failure
- * - 3 (-vvv): full error details including stack traces
- */
-function formatErrors(errors: CollectedError[], verbosity: number): string[] {
-  const lines: string[] = [];
-
-  if (errors.length === 0) {
-    return lines;
-  }
-
-  // Always show summary
-  lines.push('');
-  lines.push(`Failed: ${errors.length} track${errors.length === 1 ? '' : 's'}`);
-
-  if (verbosity === 0) {
-    // Normal: just the summary count
-    return lines;
-  }
-
-  lines.push('');
-
-  if (verbosity === 1) {
-    // -v: list track names
-    for (const err of errors) {
-      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
-      lines.push(`  - ${err.trackName}${retryInfo}`);
-    }
-  } else if (verbosity === 2) {
-    // -vv: show error type for each
-    for (const err of errors) {
-      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
-      lines.push(`  - ${err.trackName}${retryInfo}`);
-      lines.push(`    [${err.category}] ${err.message}`);
-    }
-  } else {
-    // -vvv: full details including stack
-    for (const err of errors) {
-      const retryInfo = err.wasRetried ? ` (retried ${err.retryAttempts}x)` : '';
-      lines.push(`  - ${err.trackName}${retryInfo}`);
-      lines.push(`    Category: ${err.category}`);
-      lines.push(`    Error: ${err.message}`);
-      if (err.stack) {
-        lines.push('    Stack trace:');
-        const stackLines = err.stack.split('\n').slice(1); // Skip first line (error message)
-        for (const stackLine of stackLines.slice(0, 5)) {
-          // Limit to 5 lines
-          lines.push(`      ${stackLine.trim()}`);
-        }
-        if (stackLines.length > 5) {
-          lines.push(`      ... (${stackLines.length - 5} more)`);
-        }
-      }
-      lines.push('');
-    }
-  }
-
-  return lines;
-}
+// Re-export renderProgressBar for tests
+export { renderProgressBar };
 
 // =============================================================================
 // Transform Display Helpers
@@ -416,73 +269,6 @@ function formatTransformsConfig(transforms: TransformsConfig): string | null {
   return parts.length > 0 ? parts.join(', ') : null;
 }
 
-/**
- * Format update reason for display
- */
-function formatUpdateReason(
-  reason: 'transform-apply' | 'transform-remove' | 'metadata-changed'
-): string {
-  switch (reason) {
-    case 'transform-apply':
-      return 'Apply ftintitle';
-    case 'transform-remove':
-      return 'Revert ftintitle';
-    case 'metadata-changed':
-      return 'Metadata changed';
-  }
-}
-
-/**
- * A grouped artist transform for the preview
- */
-interface TransformPreviewEntry {
-  originalArtist: string;
-  transformedArtist: string;
-  count: number;
-}
-
-/**
- * Build a transform preview from tracks that will have transforms applied
- *
- * Groups tracks by their unique artist transformation pattern and counts occurrences.
- * Used to show users a summary of how artists will be transformed before syncing.
- */
-function buildTransformPreview(
-  tracks: Array<{ artist: string; title: string; album: string }>,
-  config: TransformsConfig,
-  applyTransformsFn: (
-    track: { artist: string; title: string; album: string },
-    config: TransformsConfig
-  ) => { original: { artist: string }; transformed: { artist: string }; applied: boolean }
-): TransformPreviewEntry[] {
-  // Map of "original → transformed" to count
-  const transformMap = new Map<string, TransformPreviewEntry>();
-
-  for (const track of tracks) {
-    const result = applyTransformsFn(track, config);
-
-    if (result.applied && result.original.artist !== result.transformed.artist) {
-      const key = `${result.original.artist} → ${result.transformed.artist}`;
-      const existing = transformMap.get(key);
-      if (existing) {
-        existing.count++;
-      } else {
-        transformMap.set(key, {
-          originalArtist: result.original.artist,
-          transformedArtist: result.transformed.artist,
-          count: 1,
-        });
-      }
-    }
-  }
-
-  // Sort by count descending, then by original artist name
-  return Array.from(transformMap.values()).sort((a, b) => {
-    if (b.count !== a.count) return b.count - a.count;
-    return a.originalArtist.localeCompare(b.originalArtist);
-  });
-}
-
 // =============================================================================
 // Collection Resolution
 // =============================================================================
@@ -498,15 +284,6 @@ interface ResolvedCollection {
 
 /**
  * Resolve collections to sync based on CLI flags and config
- *
- * If collectionName is specified, searches both music and video namespaces.
- * If type is specified, filters to just that type.
- * If neither, uses defaults from config.
- *
- * @param config - The merged config
- * @param collectionName - Optional collection name from -c flag
- * @param type - Optional type filter ('music' or 'video')
- * @returns Array of resolved collections to sync
  */
 function resolveCollections(
   config: PodkitConfig,
@@ -515,9 +292,7 @@ function resolveCollections(
 ): ResolvedCollection[] {
   const collections: ResolvedCollection[] = [];
 
-  // If a specific collection name is given, search for it
   if (collectionName) {
-    // Search music namespace
     if ((!type || type === 'music') && config.music?.[collectionName]) {
       collections.push({
         name: collectionName,
@@ -525,8 +300,6 @@ function resolveCollections(
         config: config.music[collectionName],
       });
     }
-
-    // Search video namespace
     if ((!type || type === 'video') && config.video?.[collectionName]) {
       collections.push({
         name: collectionName,
@@ -534,7 +307,6 @@ function resolveCollections(
         config: config.video[collectionName],
       });
     }
-
     return collections;
   }
 
@@ -565,14 +337,7 @@ function resolveCollections(
 }
 
 /**
- * Resolved device information
- */
-// ResolvedDevice type is imported from device-resolver
-
-/**
  * Get effective transforms config for a device
- *
- * Device-specific transforms override global transforms.
  */
 function getEffectiveTransforms(
   globalTransforms: TransformsConfig,
@@ -618,7 +383,781 @@ function getEffectiveArtwork(globalArtwork: boolean, deviceConfig?: DeviceConfig
 }
 
 // =============================================================================
-// Sync Command
+// Music Sync Helpers
+// =============================================================================
+
+interface MusicSyncContext {
+  out: OutputContext;
+  collection: ResolvedCollection;
+  sourcePath: string;
+  devicePath: string;
+  dryRun: boolean;
+  removeOrphans: boolean;
+  effectiveTransforms: TransformsConfig;
+  effectiveQuality: QualityPreset;
+  fallback: AacQualityPreset | undefined;
+  effectiveArtwork: boolean;
+  ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
+  transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
+  core: typeof import('@podkit/core');
+}
+
+interface MusicSyncResult {
+  success: boolean;
+  completed: number;
+  failed: number;
+  jsonOutput?: SyncOutput;
+}
+
+/**
+ * Sync a single music collection
+ */
+async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResult> {
+  const {
+    out,
+    collection,
+    sourcePath,
+    devicePath,
+    dryRun,
+    removeOrphans,
+    effectiveTransforms,
+    effectiveQuality,
+    fallback,
+    effectiveArtwork,
+    ipod,
+    transcoder,
+    core,
+  } = ctx;
+
+  const collectionLabel = formatCollectionLabel(collection.name, sourcePath, out.isVerbose);
+
+  // Scan source directory
+  const spinner = out.spinner(`Scanning music collection${collectionLabel}...`);
+
+  const scanWarnings: Array<{ file: string; message: string }> = [];
+  const collectionConfig = collection.config as MusicCollectionConfig;
+  let adapter: CollectionAdapter;
+
+  try {
+    adapter = createMusicAdapter({
+      config: collectionConfig,
+      name: collection.name,
+      onProgress: (progress) => {
+        if (progress.phase === 'discovering') {
+          spinner.update(`Discovering audio files from${collectionLabel}...`);
+        } else {
+          spinner.update(
+            `Parsing metadata from${collectionLabel}: ${progress.processed}/${progress.total} files`
+          );
+        }
+      },
+      onWarning: (warning) => {
+        scanWarnings.push(warning);
+      },
+    });
+  } catch (err) {
+    spinner.stop();
+    const message = err instanceof Error ? err.message : String(err);
+    if (out.isJson) {
+      return {
+        success: false,
+        completed: 0,
+        failed: 0,
+        jsonOutput: {
+          success: false,
+          dryRun,
+          source: sourcePath,
+          device: devicePath,
+          error: `Failed to create adapter: ${message}`,
+        },
+      };
+    }
+    out.error(`Failed to create adapter for collection '${collection.name}':`);
+    out.error(`  ${message}`);
+    return { success: false, completed: 0, failed: 0 };
+  }
+
+  let collectionTracks: Awaited<ReturnType<typeof adapter.getTracks>>;
+  try {
+    await adapter.connect();
+    collectionTracks = await adapter.getTracks();
+  } catch (err) {
+    spinner.stop();
+    const message = err instanceof Error ? err.message : 'Failed to scan source';
+    if (out.isJson) {
+      return {
+        success: false,
+        completed: 0,
+        failed: 0,
+        jsonOutput: {
+          success: false,
+          dryRun,
+          source: sourcePath,
+          device: devicePath,
+          error: `Failed to scan source: ${message}`,
+        },
+      };
+    }
+    out.error(`Failed to scan source directory: ${message}`);
+    return { success: false, completed: 0, failed: 0 };
+  }
+
+  spinner.stop(`Found ${formatNumber(collectionTracks.length)} tracks in source`);
+
+  if (scanWarnings.length > 0) {
+    out.print(
+      `  ${scanWarnings.length} file${scanWarnings.length === 1 ? '' : 's'} could not be parsed`
+    );
+    if (out.isVerbose) {
+      for (const warning of scanWarnings) {
+        out.print(`    - ${warning.file}: ${warning.message}`);
+      }
+    }
+  }
+
+  // Compute diff
+  const diffSpinner = out.spinner('Computing sync diff...');
+  const ipodTracks = ipod.getTracks();
+  const diff = core.computeDiff(collectionTracks, ipodTracks, {
+    transforms: effectiveTransforms,
+  });
+  diffSpinner.stop('Diff computed');
+
+  // Create sync plan
+  const transcodeConfig = { quality: effectiveQuality, fallback };
+  const plan = core.createPlan(diff, { removeOrphans, transcodeConfig });
+  const summary = core.getPlanSummary(plan);
+  const storage = getStorageInfo(devicePath);
+  const hasEnoughSpace = storage ? core.willFitInSpace(plan, storage.free) : true;
+
+  // Handle dry-run
+  if (dryRun) {
+    const result = buildMusicDryRunOutput({
+      out,
+      sourcePath,
+      devicePath,
+      effectiveQuality,
+      fallback,
+      effectiveTransforms,
+      diff,
+      plan,
+      summary,
+      storage,
+      hasEnoughSpace,
+      removeOrphans,
+      scanWarnings,
+      core,
+    });
+    await adapter.disconnect();
+    return { success: true, completed: 0, failed: 0, jsonOutput: out.isJson ? result : undefined };
+  }
+
+  // Check space
+  if (!hasEnoughSpace) {
+    if (out.isJson) {
+      return {
+        success: false,
+        completed: 0,
+        failed: 0,
+        jsonOutput: {
+          success: false,
+          dryRun: false,
+          source: sourcePath,
+          device: devicePath,
+          plan: {
+            tracksToAdd: diff.toAdd.length,
+            tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
+            tracksToUpdate: diff.toUpdate.length,
+            tracksToTranscode: summary.transcodeCount,
+            tracksToCopy: summary.copyCount,
+            tracksExisting: diff.existing.length,
+            tracksWithConflicts: diff.conflicts.length,
+            estimatedSize: plan.estimatedSize,
+            estimatedTime: plan.estimatedTime,
+          },
+          error: `Not enough space. Need ${formatBytes(plan.estimatedSize)}, have ${formatBytes(storage?.free ?? 0)}`,
+        },
+      };
+    }
+    out.error('Not enough space on iPod.');
+    out.error(`  Need: ${formatBytes(plan.estimatedSize)}`);
+    out.error(`  Have: ${formatBytes(storage?.free ?? 0)}`);
+    await adapter.disconnect();
+    return { success: false, completed: 0, failed: 0 };
+  }
+
+  // Nothing to do
+  if (plan.operations.length === 0) {
+    out.newline();
+    out.print('Music already in sync! No changes needed.');
+    out.print(`  Source tracks: ${formatNumber(collectionTracks.length)}`);
+    out.print(`  iPod tracks: ${formatNumber(ipodTracks.length)}`);
+    await adapter.disconnect();
+    return { success: true, completed: 0, failed: 0 };
+  }
+
+  // Execute sync
+  out.newline();
+  out.print('=== Syncing Music ===');
+  out.newline();
+  out.print(`Tracks to process: ${formatNumber(plan.operations.length)}`);
+  out.print(`Estimated size: ${formatBytes(plan.estimatedSize)}`);
+  out.print(`Estimated time: ~${formatDuration(plan.estimatedTime)}`);
+  out.newline();
+
+  const collectedErrors: CollectedError[] = [];
+  let completed = 0;
+  let failed = 0;
+
+  const executor = new core.DefaultSyncExecutor({ ipod, transcoder });
+
+  for await (const progress of executor.execute(plan, {
+    dryRun: false,
+    continueOnError: true,
+    artwork: effectiveArtwork,
+    adapter,
+  })) {
+    if (progress.error) {
+      const categorized = progress.categorizedError;
+      collectedErrors.push({
+        trackName: categorized?.trackName ?? core.getOperationDisplayName(progress.operation),
+        category: categorized?.category ?? 'unknown',
+        message: progress.error.message,
+        retryAttempts: categorized?.retryAttempts ?? 0,
+        wasRetried: categorized?.wasRetried ?? false,
+        stack: progress.error.stack,
+      });
+      failed++;
+    } else if (
+      progress.phase !== 'preparing' &&
+      progress.phase !== 'updating-db' &&
+      progress.phase !== 'complete'
+    ) {
+      completed++;
+    }
+
+    if (progress.phase === 'complete') {
+      out.clearLine();
+      out.print('Music sync complete!');
+    } else if (progress.phase === 'updating-db') {
+      out.raw('\r\x1b[KSaving iPod database...');
+    } else if (progress.phase !== 'preparing') {
+      const bar = renderProgressBar(progress.current + 1, progress.total);
+      const phaseStr = progress.phase.charAt(0).toUpperCase() + progress.phase.slice(1);
+      const line = formatProgressLine({
+        bar,
+        phase: phaseStr,
+        trackName: progress.currentTrack,
+      });
+      out.raw(line);
+    }
+  }
+
+  if (collectedErrors.length > 0) {
+    const errorLines = formatErrors(collectedErrors, out.verbosity);
+    for (const line of errorLines) {
+      out.print(line);
+    }
+  }
+
+  await adapter.disconnect();
+  return { success: failed === 0, completed, failed };
+}
+
+interface MusicDryRunContext {
+  out: OutputContext;
+  sourcePath: string;
+  devicePath: string;
+  effectiveQuality: QualityPreset;
+  fallback: AacQualityPreset | undefined;
+  effectiveTransforms: TransformsConfig;
+  diff: ReturnType<typeof import('@podkit/core').computeDiff>;
+  plan: ReturnType<typeof import('@podkit/core').createPlan>;
+  summary: ReturnType<typeof import('@podkit/core').getPlanSummary>;
+  storage: { total: number; free: number; used: number } | null;
+  hasEnoughSpace: boolean;
+  removeOrphans: boolean;
+  scanWarnings: Array<{ file: string; message: string }>;
+  core: typeof import('@podkit/core');
+}
+
+function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
+  const {
+    out,
+    sourcePath,
+    devicePath,
+    effectiveQuality,
+    fallback,
+    effectiveTransforms,
+    diff,
+    plan,
+    summary,
+    storage,
+    hasEnoughSpace,
+    removeOrphans,
+    scanWarnings,
+    core,
+  } = ctx;
+
+  // Build JSON output structure
+  const operations: SyncOutput['operations'] = plan.operations.map((op) => {
+    const base = {
+      type: op.type,
+      track: core.getOperationDisplayName(op),
+      status: 'pending' as const,
+    };
+    if (op.type === 'update-metadata') {
+      const updateInfo = diff.toUpdate.find(
+        (u) => u.ipod.title === op.track.title && u.ipod.artist === op.track.artist
+      );
+      if (updateInfo) {
+        return {
+          ...base,
+          changes: updateInfo.changes.map((c) => ({
+            field: c.field,
+            from: c.from,
+            to: c.to,
+          })),
+        };
+      }
+    }
+    return base;
+  });
+
+  const planWarningInfos: PlanWarningInfo[] = plan.warnings.map((warning) => ({
+    type: warning.type,
+    message: warning.message,
+    trackCount: warning.tracks.length,
+    tracks: out.isVerbose ? warning.tracks.map((t) => `${t.artist} - ${t.title}`) : undefined,
+  }));
+
+  const scanWarningInfos: ScanWarningInfo[] = scanWarnings.map((warning) => ({
+    file: warning.file,
+    message: warning.message,
+  }));
+
+  const transformsInfo: TransformInfo[] = [];
+  if (effectiveTransforms.ftintitle.enabled) {
+    transformsInfo.push({
+      name: 'ftintitle',
+      enabled: true,
+      mode: effectiveTransforms.ftintitle.drop ? 'drop' : 'move',
+      format: effectiveTransforms.ftintitle.drop ? undefined : effectiveTransforms.ftintitle.format,
+    });
+  }
+
+  const updateBreakdown: UpdateBreakdown = {};
+  for (const update of diff.toUpdate) {
+    const count = updateBreakdown[update.reason] ?? 0;
+    updateBreakdown[update.reason] = count + 1;
+  }
+
+  const conflictDetails: ConflictInfo[] = diff.conflicts.map((conflict) => ({
+    track: `${conflict.collection.artist} - ${conflict.collection.title}`,
+    fields: conflict.conflicts,
+    details: conflict.conflicts.map((field) => ({
+      field,
+      collection: (conflict.collection as unknown as Record<string, unknown>)[field] as
+        | string
+        | number
+        | undefined,
+      ipod: (conflict.ipod as unknown as Record<string, unknown>)[field] as
+        | string
+        | number
+        | undefined,
+    })),
+  }));
+
+  // Text output for dry-run
+  if (out.isText) {
+    out.newline();
+    out.print('=== Music Sync Plan (Dry Run) ===');
+    out.newline();
+    out.print(`Source: ${sourcePath}`);
+    out.print(`Device: ${devicePath}`);
+    const qualityDisplay = fallback ? `${effectiveQuality} (fallback: ${fallback})` : effectiveQuality;
+    out.print(`Quality: ${qualityDisplay}`);
+    const transformsDisplay = formatTransformsConfig(effectiveTransforms);
+    if (transformsDisplay) {
+      out.print(`Transforms: ${transformsDisplay}`);
+    }
+    out.newline();
+
+    out.print('Changes:');
+    out.print(`  Tracks to add: ${formatNumber(diff.toAdd.length)}`);
+    if (summary.transcodeCount > 0) {
+      out.print(`    - Transcode: ${formatNumber(summary.transcodeCount)}`);
+    }
+    if (summary.copyCount > 0) {
+      out.print(`    - Copy: ${formatNumber(summary.copyCount)}`);
+    }
+    if (removeOrphans && diff.toRemove.length > 0) {
+      out.print(`  Tracks to remove: ${formatNumber(diff.toRemove.length)}`);
+    }
+    out.print(`  Already synced: ${formatNumber(diff.existing.length)}`);
+
+    if (diff.conflicts.length > 0) {
+      out.print(
+        `  Metadata conflicts: ${formatNumber(diff.conflicts.length)} (no action will be taken)`
+      );
+      const fieldCounts = new Map<string, number>();
+      for (const conflict of diff.conflicts) {
+        for (const field of conflict.conflicts) {
+          fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
+        }
+      }
+      const fieldParts = [...fieldCounts.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([field, count]) => `${field}: ${count}`);
+      out.print(`    Fields: ${fieldParts.join(', ')}`);
+
+      if (out.isVerbose) {
+        const examples = diff.conflicts.slice(0, 3);
+        out.print('    Examples:');
+        for (const conflict of examples) {
+          out.print(`      ${conflict.collection.artist} - ${conflict.collection.title}`);
+          for (const field of conflict.conflicts) {
+            const colVal = (conflict.collection as unknown as Record<string, unknown>)[field];
+            const ipodVal = (conflict.ipod as unknown as Record<string, unknown>)[field];
+            out.print(`        ${field}: "${colVal ?? ''}" vs iPod "${ipodVal ?? ''}"`);
+          }
+        }
+        if (diff.conflicts.length > 3) {
+          out.print(`      ... and ${diff.conflicts.length - 3} more`);
+        }
+      }
+    }
+
+    if (diff.toUpdate.length > 0) {
+      const updatesByReason = new Map<string, number>();
+      for (const update of diff.toUpdate) {
+        const count = updatesByReason.get(update.reason) ?? 0;
+        updatesByReason.set(update.reason, count + 1);
+      }
+      const reasonParts: string[] = [];
+      for (const [reason, count] of updatesByReason) {
+        reasonParts.push(
+          `${formatUpdateReason(reason as 'transform-apply' | 'transform-remove' | 'metadata-changed')}: ${count}`
+        );
+      }
+      out.print(
+        `  Tracks to update: ${formatNumber(diff.toUpdate.length)} (${reasonParts.join(', ')})`
+      );
+    }
+    out.newline();
+
+    out.print('Estimates:');
+    out.print(`  Size: ${formatBytes(plan.estimatedSize)}`);
+    out.print(`  Time: ~${formatDuration(plan.estimatedTime)}`);
+    if (storage) {
+      out.print(`  Available space: ${formatBytes(storage.free)}`);
+      if (!hasEnoughSpace) {
+        out.print('  WARNING: May not have enough space!');
+      }
+    }
+    out.newline();
+
+    // Transform preview
+    if (effectiveTransforms.ftintitle.enabled) {
+      const tracksToTransform = [
+        ...diff.toAdd,
+        ...diff.toUpdate.filter((u) => u.reason === 'transform-apply').map((u) => u.source),
+      ];
+      if (tracksToTransform.length > 0) {
+        const preview = buildTransformPreview(tracksToTransform, effectiveTransforms, core.applyTransforms);
+        if (preview.length > 0) {
+          out.print('Artist transforms:');
+          for (const entry of preview) {
+            const countStr = entry.count > 1 ? `  [${entry.count} tracks]` : '';
+            out.print(`  "${entry.originalArtist}" \u2192 "${entry.transformedArtist}"${countStr}`);
+          }
+          out.newline();
+        }
+      }
+    }
+
+    // Operations list
+    if (out.isVerbose || plan.operations.length <= 20) {
+      if (plan.operations.length > 0) {
+        out.print('Operations:');
+        for (const op of plan.operations) {
+          let symbol: string;
+          switch (op.type) {
+            case 'remove':
+              symbol = '-';
+              break;
+            case 'update-metadata':
+              symbol = '~';
+              break;
+            default:
+              symbol = '+';
+          }
+          const typeStr = op.type.padEnd(15);
+          out.print(`  ${symbol} [${typeStr}] ${core.getOperationDisplayName(op)}`);
+        }
+        out.newline();
+      }
+    } else if (plan.operations.length > 20) {
+      out.print(`Operations: ${plan.operations.length} total (use --verbose to list all)`);
+      out.newline();
+    }
+
+    // Warnings
+    if (plan.warnings.length > 0) {
+      for (const warning of plan.warnings) {
+        if (warning.type === 'lossy-to-lossy') {
+          out.print(
+            `Warning: ${warning.tracks.length} track${warning.tracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion`
+          );
+        }
+      }
+      out.newline();
+    }
+  }
+
+  return {
+    success: true,
+    dryRun: true,
+    source: sourcePath,
+    device: devicePath,
+    transforms: transformsInfo.length > 0 ? transformsInfo : undefined,
+    plan: {
+      tracksToAdd: diff.toAdd.length,
+      tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
+      tracksToUpdate: diff.toUpdate.length,
+      updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
+      tracksToTranscode: summary.transcodeCount,
+      tracksToCopy: summary.copyCount,
+      tracksExisting: diff.existing.length,
+      tracksWithConflicts: diff.conflicts.length,
+      estimatedSize: plan.estimatedSize,
+      estimatedTime: plan.estimatedTime,
+    },
+    operations,
+    conflictDetails: conflictDetails.length > 0 ? conflictDetails : undefined,
+    planWarnings: planWarningInfos.length > 0 ? planWarningInfos : undefined,
+    scanWarnings: scanWarningInfos.length > 0 ? scanWarningInfos : undefined,
+  };
+}
+
+// =============================================================================
+// Video Sync Helpers
+// =============================================================================
+
+interface VideoSyncContext {
+  out: OutputContext;
+  collection: ResolvedCollection;
+  sourcePath: string;
+  devicePath: string;
+  dryRun: boolean;
+  removeOrphans: boolean;
+  effectiveVideoQuality: VideoQualityPreset;
+  ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
+  core: typeof import('@podkit/core');
+}
+
+interface VideoSyncResult {
+  success: boolean;
+  completed: number;
+  failed: number;
+  jsonOutput?: SyncOutput;
+}
+
+/**
+ * Sync a single video collection (handles both dry-run and execution)
+ */
+async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResult> {
+  const { out, collection, sourcePath, devicePath, dryRun, removeOrphans, effectiveVideoQuality, ipod, core } =
+    ctx;
+
+  const collectionLabel = formatCollectionLabel(collection.name, sourcePath, out.isVerbose);
+
+  // Scan video source
+  const spinner = out.spinner(`Scanning video collection${collectionLabel}...`);
+
+  const scanWarnings: Array<{ file: string; message: string }> = [];
+  const videoAdapter = core.createVideoDirectoryAdapter({
+    path: sourcePath,
+    onProgress: (progress) => {
+      if (progress.phase === 'discovering') {
+        spinner.update(`Discovering video files from${collectionLabel}...`);
+      } else {
+        spinner.update(
+          `Analyzing videos from${collectionLabel}: ${progress.processed}/${progress.total} files`
+        );
+      }
+    },
+    onWarning: (warning) => {
+      scanWarnings.push(warning);
+    },
+  });
+
+  let collectionVideos: CollectionVideo[];
+  try {
+    await videoAdapter.connect();
+    collectionVideos = await videoAdapter.getVideos();
+  } catch (err) {
+    spinner.stop();
+    const message = err instanceof Error ? err.message : 'Failed to scan source';
+    out.error(`Failed to scan video source: ${message}`);
+    return { success: false, completed: 0, failed: 0 };
+  }
+
+  const movieCount = collectionVideos.filter((v) => v.contentType === 'movie').length;
+  const tvShowCount = collectionVideos.filter((v) => v.contentType === 'tvshow').length;
+
+  spinner.stop(
+    `Found ${formatNumber(collectionVideos.length)} videos (${movieCount} movies, ${tvShowCount} TV episodes)`
+  );
+
+  // Get iPod video tracks
+  const allTracks = ipod.getTracks();
+  const ipodVideos: IPodVideo[] = allTracks
+    .filter(
+      (t) => (t.mediaType & MediaType.Movie) !== 0 || (t.mediaType & MediaType.TVShow) !== 0
+    )
+    .map((t) => {
+      const isMovie = (t.mediaType & MediaType.Movie) !== 0;
+      return {
+        id: t.filePath,
+        filePath: t.filePath,
+        contentType: (isMovie ? 'movie' : 'tvshow') as 'movie' | 'tvshow',
+        title: t.title,
+        year: t.year,
+        seriesTitle: t.tvShow,
+        seasonNumber: t.seasonNumber,
+        episodeNumber: t.episodeNumber,
+        duration: t.duration ? Math.floor(t.duration / 1000) : undefined,
+      };
+    });
+
+  // Compute video diff
+  const diffSpinner = out.spinner('Computing video sync diff...');
+  const videoDiff = core.diffVideos(collectionVideos, ipodVideos);
+  diffSpinner.stop('Video diff computed');
+
+  // Create video plan
+  const ipodDevice = ipod.getInfo().device;
+  const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
+  const videoPlan = core.planVideoSync(videoDiff, {
+    deviceProfile,
+    qualityPreset: effectiveVideoQuality,
+    removeOrphans,
+    useHardwareAcceleration: true,
+  });
+
+  const videoSummary = core.getVideoPlanSummary(videoPlan);
+  const storage = getStorageInfo(devicePath);
+  const hasEnoughSpace = storage ? core.willVideoPlanFit(videoPlan, storage.free) : true;
+
+  // Handle dry-run output
+  if (dryRun) {
+    out.newline();
+    out.print('=== Video Sync Plan (Dry Run) ===');
+    out.newline();
+    out.print(`Source: ${sourcePath}`);
+    out.print(`Device: ${devicePath}`);
+    out.print(`Quality: ${effectiveVideoQuality}`);
+    out.newline();
+    out.print('Collection:');
+    out.print(`  Total videos: ${formatNumber(collectionVideos.length)}`);
+    out.print(`    - Movies: ${formatNumber(movieCount)}`);
+    out.print(`    - TV Shows: ${formatNumber(tvShowCount)}`);
+    out.newline();
+    out.print('Changes:');
+    out.print(`  Videos to add: ${formatNumber(videoDiff.toAdd.length)}`);
+    if (videoSummary.transcodeCount > 0) {
+      out.print(`    - Transcode: ${formatNumber(videoSummary.transcodeCount)}`);
+    }
+    if (videoSummary.copyCount > 0) {
+      out.print(`    - Passthrough: ${formatNumber(videoSummary.copyCount)}`);
+    }
+    if (removeOrphans && videoDiff.toRemove.length > 0) {
+      out.print(`  Videos to remove: ${formatNumber(videoDiff.toRemove.length)}`);
+    }
+    out.print(`  Already synced: ${formatNumber(videoDiff.existing.length)}`);
+    out.newline();
+    out.print('Estimates:');
+    out.print(`  Size: ${formatBytes(videoPlan.estimatedSize)}`);
+    out.print(`  Time: ~${formatDuration(videoPlan.estimatedTime)}`);
+    out.newline();
+
+    await videoAdapter.disconnect();
+    return { success: true, completed: 0, failed: 0 };
+  }
+
+  // Check space (execution path)
+  if (!hasEnoughSpace) {
+    out.error('Not enough space for video sync.');
+    out.error(`  Need: ${formatBytes(videoPlan.estimatedSize)}`);
+    out.error(`  Have: ${formatBytes(storage?.free ?? 0)}`);
+    await videoAdapter.disconnect();
+    return { success: false, completed: 0, failed: 0 };
+  }
+
+  // Nothing to do
+  if (videoPlan.operations.length === 0) {
+    out.print('Videos already in sync! No changes needed.');
+    await videoAdapter.disconnect();
+    return { success: true, completed: 0, failed: 0 };
+  }
+
+  // Execute video sync
+  out.newline();
+  out.print(`Videos to process: ${formatNumber(videoPlan.operations.length)}`);
+  out.print(`  - Transcode: ${formatNumber(videoSummary.transcodeCount)}`);
+  out.print(`  - Passthrough: ${formatNumber(videoSummary.copyCount)}`);
+  out.print(`Estimated size: ${formatBytes(videoPlan.estimatedSize)}`);
+  out.newline();
+
+  const videoExecutor = core.createVideoExecutor({ ipod });
+  let videoCompleted = 0;
+
+  try {
+    for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false })) {
+      if (progress.skipped) {
+        // Skip tracking for skipped operations
+      } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
+        videoCompleted++;
+      }
+
+      if (progress.phase === 'complete') {
+        out.print('\nVideo sync complete.');
+      } else if (progress.transcodeProgress) {
+        const percent = progress.transcodeProgress.percent;
+        const bar = renderProgressBar(Math.round(percent), 100);
+        const line = formatProgressLine({
+          bar,
+          phase: 'Transcoding',
+          trackName: progress.currentTrack,
+          speed: progress.transcodeProgress.speed,
+        });
+        out.raw(line);
+      } else {
+        const bar = renderProgressBar(progress.current + 1, progress.total);
+        const phaseStr = progress.phase.replace('video-', '');
+        const phaseFormatted = phaseStr.charAt(0).toUpperCase() + phaseStr.slice(1);
+        const line = formatProgressLine({
+          bar,
+          phase: phaseFormatted,
+          trackName: progress.currentTrack,
+        });
+        out.raw(line);
+      }
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Video execution failed';
+    out.error(`\nVideo sync error: ${message}`);
+    await videoAdapter.disconnect();
+    return { success: false, completed: videoCompleted, failed: 1 };
+  }
+
+  await videoAdapter.disconnect();
+  return { success: true, completed: videoCompleted, failed: 0 };
+}
+
+// =============================================================================
+// Main Sync Command
 // =============================================================================
 
 export const syncCommand = new Command('sync')
@@ -642,14 +1181,17 @@ export const syncCommand = new Command('sync')
   .action(async (typeArg: string | undefined, options: SyncOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const startTime = Date.now();
-
-    // JSON output helper
-    const outputJson = (data: SyncOutput) => {
-      console.log(JSON.stringify(data, null, 2));
-    };
+    const out = OutputContext.fromGlobalOpts(globalOpts);
 
     const dryRun = options.dryRun ?? false;
     const removeOrphans = options.delete ?? false;
+
+    // Helper for JSON error output
+    const errorOutput = (error: string): SyncOutput => ({
+      success: false,
+      dryRun,
+      error,
+    });
 
     // ----- Validate type argument -----
     let syncType: SyncType | undefined;
@@ -658,37 +1200,24 @@ export const syncCommand = new Command('sync')
       if (normalizedType === 'music' || normalizedType === 'video') {
         syncType = normalizedType;
       } else if (normalizedType !== 'all') {
-        if (globalOpts.json) {
-          outputJson({
-            success: false,
-            dryRun,
-            error: `Invalid sync type: ${typeArg}. Valid values: music, video, all`,
-          });
-        } else {
-          console.error(`Invalid sync type: ${typeArg}`);
-          console.error('Valid values: music, video, all');
-        }
+        out.result(
+          errorOutput(`Invalid sync type: ${typeArg}. Valid values: music, video, all`),
+          () => {
+            out.error(`Invalid sync type: ${typeArg}`);
+            out.error('Valid values: music, video, all');
+          }
+        );
         process.exitCode = 1;
         return;
       }
-      // 'all' leaves syncType undefined, which means sync both
     }
 
-    // ----- Resolve device (--device flag or default) -----
-    // --device accepts either a path (/Volumes/IPOD) or named device (terapod)
+    // ----- Resolve device -----
     const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
     const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
 
     if (!deviceResult.success) {
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          error: deviceResult.error,
-        });
-      } else {
-        console.error(deviceResult.error);
-      }
+      out.result(errorOutput(deviceResult.error), () => out.error(deviceResult.error));
       process.exitCode = 1;
       return;
     }
@@ -711,88 +1240,67 @@ export const syncCommand = new Command('sync')
         : getEffectiveArtwork(config.artwork, deviceConfig);
     const fallback = options.fallback ?? config.fallback;
 
-    // Build transcode config for music planner
-    const transcodeConfig = {
-      quality: effectiveQuality,
-      fallback,
-    };
-
     // ----- Resolve collections -----
     const allCollections = resolveCollections(config, options.collection, syncType);
+    const musicCollections = allCollections.filter((c) => c.type === 'music');
+    const videoCollections = allCollections.filter((c) => c.type === 'video');
 
-    // Separate into music and video
-    const musicCollections: ResolvedCollection[] = [];
-    const videoCollections: ResolvedCollection[] = [];
-
-    for (const collection of allCollections) {
-      if (collection.type === 'music') {
-        musicCollections.push(collection);
-      } else {
-        videoCollections.push(collection);
-      }
-    }
-
-    // Check if we have any collections to sync
     const hasMusicToSync = musicCollections.length > 0;
     const hasVideoToSync = videoCollections.length > 0;
 
     if (!hasMusicToSync && !hasVideoToSync) {
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          error: options.collection
-            ? `Collection "${options.collection}" not found in config`
-            : 'No collections configured to sync',
-        });
-      } else {
+      const errorMsg = options.collection
+        ? `Collection "${options.collection}" not found in config`
+        : 'No collections configured to sync';
+
+      out.result(errorOutput(errorMsg), () => {
         if (options.collection) {
-          console.error(`Collection "${options.collection}" not found in config.`);
+          out.error(`Collection "${options.collection}" not found in config.`);
           const musicNames = config.music ? Object.keys(config.music) : [];
           const videoNames = config.video ? Object.keys(config.video) : [];
           if (musicNames.length > 0) {
-            console.error(`Available music collections: ${musicNames.join(', ')}`);
+            out.error(`Available music collections: ${musicNames.join(', ')}`);
           }
           if (videoNames.length > 0) {
-            console.error(`Available video collections: ${videoNames.join(', ')}`);
+            out.error(`Available video collections: ${videoNames.join(', ')}`);
           }
           if (musicNames.length === 0 && videoNames.length === 0) {
-            console.error('No collections configured. Add collections to your config file.');
+            out.error('No collections configured. Add collections to your config file.');
           }
         } else {
-          console.error('No collections configured to sync.');
-          console.error('');
-          console.error('Add collections to your config file:');
+          out.error('No collections configured to sync.');
+          out.error('');
+          out.error('Add collections to your config file:');
           if (configResult.configPath) {
-            console.error(`  ${configResult.configPath}`);
+            out.error(`  ${configResult.configPath}`);
           }
-          console.error('');
-          console.error('Example:');
-          console.error('  [music.main]');
-          console.error('  path = "/path/to/music"');
+          out.error('');
+          out.error('Example:');
+          out.error('  [music.main]');
+          out.error('  path = "/path/to/music"');
         }
-      }
+      });
       process.exitCode = 1;
       return;
     }
 
-    // Validate collection paths exist (only for directory-type collections)
+    // Validate collection paths exist
     for (const collection of [...musicCollections, ...videoCollections]) {
       const collConfig = collection.config as MusicCollectionConfig | VideoCollectionConfig;
-      // Skip path validation for Subsonic collections (they use url, not path)
       const isSubsonic = 'type' in collConfig && collConfig.type === 'subsonic';
       if (!isSubsonic && collConfig.path && !existsSync(collConfig.path)) {
-        if (globalOpts.json) {
-          outputJson({
+        out.result(
+          {
             success: false,
             dryRun,
             source: collConfig.path,
             error: `Source directory not found: ${collConfig.path}`,
-          });
-        } else {
-          console.error(`Source directory not found: ${collConfig.path}`);
-          console.error(`  Collection: ${collection.name} (${collection.type})`);
-        }
+          },
+          () => {
+            out.error(`Source directory not found: ${collConfig.path}`);
+            out.error(`  Collection: ${collection.name} (${collection.type})`);
+          }
+        );
         process.exitCode = 1;
         return;
       }
@@ -805,33 +1313,22 @@ export const syncCommand = new Command('sync')
       core = await import('@podkit/core');
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          error: message,
-        });
-      } else {
-        console.error('Failed to load podkit-core.');
-        if (globalOpts.verbose) {
-          console.error('Details:', message);
+      out.result(errorOutput(message), () => {
+        out.error('Failed to load podkit-core.');
+        if (out.isVerbose) {
+          out.error(`Details: ${message}`);
         }
-      }
+      });
       process.exitCode = 1;
       return;
     }
 
     // ----- Resolve device path -----
-    // Priority: CLI --device flag > named device -d > UUID auto-detect
     const manager = core.getDeviceManager();
-
-    // Get device identity for UUID-based auto-detection
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
-    if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(
-        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
-      );
+    if (deviceIdentity?.volumeUuid) {
+      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
     }
 
     const resolved = await resolveDevicePath({
@@ -843,15 +1340,9 @@ export const syncCommand = new Command('sync')
     });
 
     if (!resolved.path) {
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          error: resolved.error ?? formatDeviceError(resolved),
-        });
-      } else {
-        console.error(resolved.error ?? formatDeviceError(resolved));
-      }
+      out.result(errorOutput(resolved.error ?? formatDeviceError(resolved)), () =>
+        out.error(resolved.error ?? formatDeviceError(resolved))
+      );
       process.exitCode = 1;
       return;
     }
@@ -859,18 +1350,14 @@ export const syncCommand = new Command('sync')
     const devicePath = resolved.path;
 
     if (!existsSync(devicePath)) {
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          device: devicePath,
-          error: `Device path not found: ${devicePath}`,
-        });
-      } else {
-        console.error(`iPod not found at: ${devicePath}`);
-        console.error('');
-        console.error('Make sure the iPod is connected and mounted.');
-      }
+      out.result(
+        { success: false, dryRun, device: devicePath, error: `Device path not found: ${devicePath}` },
+        () => {
+          out.error(`iPod not found at: ${devicePath}`);
+          out.error('');
+          out.error('Make sure the iPod is connected and mounted.');
+        }
+      );
       process.exitCode = 1;
       return;
     }
@@ -881,70 +1368,57 @@ export const syncCommand = new Command('sync')
       await transcoder.detect();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'FFmpeg not found';
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          device: devicePath,
-          error: `FFmpeg not available: ${message}`,
-        });
-      } else {
-        console.error('FFmpeg not found or not functional.');
-        console.error('');
-        console.error('Install FFmpeg:');
-        console.error('  macOS: brew install ffmpeg');
-        console.error('  Ubuntu: apt install ffmpeg');
-        if (globalOpts.verbose) {
-          console.error('');
-          console.error('Details:', message);
+      out.result(
+        { success: false, dryRun, device: devicePath, error: `FFmpeg not available: ${message}` },
+        () => {
+          out.error('FFmpeg not found or not functional.');
+          out.error('');
+          out.error('Install FFmpeg:');
+          out.error('  macOS: brew install ffmpeg');
+          out.error('  Ubuntu: apt install ffmpeg');
+          if (out.isVerbose) {
+            out.error('');
+            out.error(`Details: ${message}`);
+          }
         }
-      }
+      );
       process.exitCode = 1;
       return;
     }
 
     // ----- Open iPod database -----
-    const spinner = new Spinner();
-    if (!globalOpts.json && !globalOpts.quiet) {
-      spinner.start('Opening iPod database...');
-    }
+    const dbSpinner = out.spinner('Opening iPod database...');
 
     let ipod: Awaited<ReturnType<typeof core.IpodDatabase.open>>;
     try {
       ipod = await core.IpodDatabase.open(devicePath);
     } catch (err) {
-      spinner.stop();
+      dbSpinner.stop();
       const isIpodError = err instanceof core.IpodError;
       const message = err instanceof Error ? err.message : 'Failed to open iPod database';
-      if (globalOpts.json) {
-        outputJson({
-          success: false,
-          dryRun,
-          device: devicePath,
-          error: `Failed to open iPod: ${message}`,
-        });
-      } else {
-        console.error(`Cannot read iPod database at: ${devicePath}`);
-        console.error('');
-        if (isIpodError) {
-          console.error('This path does not appear to be a valid iPod:');
-          console.error('  - Missing iTunesDB file');
-          console.error('  - Database may be corrupted');
-        } else {
-          console.error('Error:', message);
+      out.result(
+        { success: false, dryRun, device: devicePath, error: `Failed to open iPod: ${message}` },
+        () => {
+          out.error(`Cannot read iPod database at: ${devicePath}`);
+          out.error('');
+          if (isIpodError) {
+            out.error('This path does not appear to be a valid iPod:');
+            out.error('  - Missing iTunesDB file');
+            out.error('  - Database may be corrupted');
+          } else {
+            out.error(`Error: ${message}`);
+          }
+          if (out.isVerbose) {
+            out.error('');
+            out.error(`Details: ${message}`);
+          }
         }
-        if (globalOpts.verbose) {
-          console.error('');
-          console.error('Details:', message);
-        }
-      }
+      );
       process.exitCode = 1;
       return;
     }
 
-    if (!globalOpts.json && !globalOpts.quiet) {
-      spinner.stop('iPod database opened');
-    }
+    dbSpinner.stop('iPod database opened');
 
     // Track overall results
     let totalCompleted = 0;
@@ -956,815 +1430,82 @@ export const syncCommand = new Command('sync')
       if (hasMusicToSync) {
         for (const collection of musicCollections) {
           const sourcePath = (collection.config as MusicCollectionConfig).path;
-          const collectionLabel = formatCollectionLabel(
-            collection.name,
+
+          if (musicCollections.length > 1) {
+            out.newline();
+            out.print(`=== Music: ${collection.name} ===`);
+          }
+
+          const result = await syncMusicCollection({
+            out,
+            collection,
             sourcePath,
-            globalOpts.verbose > 0
-          );
-
-          if (!globalOpts.json && !globalOpts.quiet && musicCollections.length > 1) {
-            console.log('');
-            console.log(`=== Music: ${collection.name} ===`);
-          }
-
-          // Scan source directory
-          if (!globalOpts.json && !globalOpts.quiet) {
-            spinner.start(`Scanning music collection${collectionLabel}...`);
-          }
-
-          const scanWarnings: Array<{ file: string; message: string }> = [];
-          const collectionConfig = collection.config as MusicCollectionConfig;
-          let adapter: CollectionAdapter;
-
-          try {
-            adapter = createMusicAdapter({
-              config: collectionConfig,
-              name: collection.name,
-              onProgress: (progress) => {
-                if (!globalOpts.json && !globalOpts.quiet) {
-                  if (progress.phase === 'discovering') {
-                    spinner.update(`Discovering audio files from${collectionLabel}...`);
-                  } else {
-                    spinner.update(
-                      `Parsing metadata from${collectionLabel}: ${progress.processed}/${progress.total} files`
-                    );
-                  }
-                }
-              },
-              onWarning: (warning) => {
-                scanWarnings.push(warning);
-              },
-            });
-          } catch (err) {
-            spinner.stop();
-            const message = err instanceof Error ? err.message : String(err);
-            if (globalOpts.json) {
-              outputJson({
-                success: false,
-                dryRun,
-                source: sourcePath,
-                device: devicePath,
-                error: `Failed to create adapter: ${message}`,
-              });
-            } else {
-              console.error(`Failed to create adapter for collection '${collection.name}':`);
-              console.error(`  ${message}`);
-            }
-            process.exitCode = 1;
-            anyError = true;
-            continue;
-          }
-
-          let collectionTracks: Awaited<ReturnType<typeof adapter.getTracks>>;
-          try {
-            await adapter.connect();
-            collectionTracks = await adapter.getTracks();
-          } catch (err) {
-            spinner.stop();
-            const message = err instanceof Error ? err.message : 'Failed to scan source';
-            if (globalOpts.json) {
-              outputJson({
-                success: false,
-                dryRun,
-                source: sourcePath,
-                device: devicePath,
-                error: `Failed to scan source: ${message}`,
-              });
-            } else {
-              console.error(`Failed to scan source directory: ${message}`);
-            }
-            process.exitCode = 1;
-            anyError = true;
-            continue;
-          }
-
-          if (!globalOpts.json && !globalOpts.quiet) {
-            spinner.stop(`Found ${formatNumber(collectionTracks.length)} tracks in source`);
-            if (scanWarnings.length > 0) {
-              console.log(
-                `  ${scanWarnings.length} file${scanWarnings.length === 1 ? '' : 's'} could not be parsed`
-              );
-              if (globalOpts.verbose) {
-                for (const warning of scanWarnings) {
-                  console.log(`    - ${warning.file}: ${warning.message}`);
-                }
-              }
-            }
-          }
-
-          // Compute diff
-          if (!globalOpts.json && !globalOpts.quiet) {
-            spinner.start('Computing sync diff...');
-          }
-
-          const ipodTracks = ipod.getTracks();
-          const diff = core.computeDiff(collectionTracks, ipodTracks, {
-            transforms: effectiveTransforms,
-          });
-
-          if (!globalOpts.json && !globalOpts.quiet) {
-            spinner.stop('Diff computed');
-          }
-
-          // Create sync plan
-          const plan = core.createPlan(diff, {
+            devicePath,
+            dryRun,
             removeOrphans,
-            transcodeConfig,
+            effectiveTransforms,
+            effectiveQuality,
+            fallback,
+            effectiveArtwork,
+            ipod,
+            transcoder,
+            core,
           });
 
-          const summary = core.getPlanSummary(plan);
-          const storage = getStorageInfo(devicePath);
-          const hasEnoughSpace = storage ? core.willFitInSpace(plan, storage.free) : true;
-
-          // Dry-run output
-          if (dryRun) {
-            if (globalOpts.json) {
-              const operations: SyncOutput['operations'] = plan.operations.map((op) => {
-                const base = {
-                  type: op.type,
-                  track: core.getOperationDisplayName(op),
-                  status: 'pending' as const,
-                };
-                if (op.type === 'update-metadata') {
-                  const updateInfo = diff.toUpdate.find(
-                    (u) => u.ipod.title === op.track.title && u.ipod.artist === op.track.artist
-                  );
-                  if (updateInfo) {
-                    return {
-                      ...base,
-                      changes: updateInfo.changes.map((c) => ({
-                        field: c.field,
-                        from: c.from,
-                        to: c.to,
-                      })),
-                    };
-                  }
-                }
-                return base;
-              });
-
-              const planWarningInfos: PlanWarningInfo[] = plan.warnings.map((warning) => ({
-                type: warning.type,
-                message: warning.message,
-                trackCount: warning.tracks.length,
-                tracks: globalOpts.verbose
-                  ? warning.tracks.map((t) => `${t.artist} - ${t.title}`)
-                  : undefined,
-              }));
-
-              const scanWarningInfos: ScanWarningInfo[] = scanWarnings.map((warning) => ({
-                file: warning.file,
-                message: warning.message,
-              }));
-
-              const transformsInfo: TransformInfo[] = [];
-              if (effectiveTransforms.ftintitle.enabled) {
-                transformsInfo.push({
-                  name: 'ftintitle',
-                  enabled: true,
-                  mode: effectiveTransforms.ftintitle.drop ? 'drop' : 'move',
-                  format: effectiveTransforms.ftintitle.drop
-                    ? undefined
-                    : effectiveTransforms.ftintitle.format,
-                });
-              }
-
-              const updateBreakdown: UpdateBreakdown = {};
-              for (const update of diff.toUpdate) {
-                const count = updateBreakdown[update.reason] ?? 0;
-                updateBreakdown[update.reason] = count + 1;
-              }
-
-              // Build conflict details for JSON output
-              const conflictDetails: ConflictInfo[] = diff.conflicts.map((conflict) => ({
-                track: `${conflict.collection.artist} - ${conflict.collection.title}`,
-                fields: conflict.conflicts,
-                details: conflict.conflicts.map((field) => ({
-                  field,
-                  collection: (conflict.collection as unknown as Record<string, unknown>)[field] as
-                    | string
-                    | number
-                    | undefined,
-                  ipod: (conflict.ipod as unknown as Record<string, unknown>)[field] as
-                    | string
-                    | number
-                    | undefined,
-                })),
-              }));
-
-              outputJson({
-                success: true,
-                dryRun: true,
-                source: sourcePath,
-                device: devicePath,
-                transforms: transformsInfo.length > 0 ? transformsInfo : undefined,
-                plan: {
-                  tracksToAdd: diff.toAdd.length,
-                  tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
-                  tracksToUpdate: diff.toUpdate.length,
-                  updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
-                  tracksToTranscode: summary.transcodeCount,
-                  tracksToCopy: summary.copyCount,
-                  tracksExisting: diff.existing.length,
-                  tracksWithConflicts: diff.conflicts.length,
-                  estimatedSize: plan.estimatedSize,
-                  estimatedTime: plan.estimatedTime,
-                },
-                operations,
-                conflictDetails: conflictDetails.length > 0 ? conflictDetails : undefined,
-                planWarnings: planWarningInfos.length > 0 ? planWarningInfos : undefined,
-                scanWarnings: scanWarningInfos.length > 0 ? scanWarningInfos : undefined,
-              });
-            } else {
-              console.log('');
-              console.log('=== Music Sync Plan (Dry Run) ===');
-              console.log('');
-              console.log(`Source: ${sourcePath}`);
-              console.log(`Device: ${devicePath}`);
-              const qualityDisplay = fallback
-                ? `${effectiveQuality} (fallback: ${fallback})`
-                : effectiveQuality;
-              console.log(`Quality: ${qualityDisplay}`);
-              const transformsDisplay = formatTransformsConfig(effectiveTransforms);
-              if (transformsDisplay) {
-                console.log(`Transforms: ${transformsDisplay}`);
-              }
-              console.log('');
-
-              console.log('Changes:');
-              console.log(`  Tracks to add: ${formatNumber(diff.toAdd.length)}`);
-              if (summary.transcodeCount > 0) {
-                console.log(`    - Transcode: ${formatNumber(summary.transcodeCount)}`);
-              }
-              if (summary.copyCount > 0) {
-                console.log(`    - Copy: ${formatNumber(summary.copyCount)}`);
-              }
-              if (removeOrphans && diff.toRemove.length > 0) {
-                console.log(`  Tracks to remove: ${formatNumber(diff.toRemove.length)}`);
-              }
-              console.log(`  Already synced: ${formatNumber(diff.existing.length)}`);
-              if (diff.conflicts.length > 0) {
-                console.log(
-                  `  Metadata conflicts: ${formatNumber(diff.conflicts.length)} (no action will be taken)`
-                );
-                // Group conflicts by field - always show this
-                const fieldCounts = new Map<string, number>();
-                for (const conflict of diff.conflicts) {
-                  for (const field of conflict.conflicts) {
-                    fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
-                  }
-                }
-                const fieldParts = [...fieldCounts.entries()]
-                  .sort((a, b) => b[1] - a[1])
-                  .map(([field, count]) => `${field}: ${count}`);
-                console.log(`    Fields: ${fieldParts.join(', ')}`);
-                // Show examples only in verbose mode
-                if (globalOpts.verbose) {
-                  const examples = diff.conflicts.slice(0, 3);
-                  console.log('    Examples:');
-                  for (const conflict of examples) {
-                    console.log(
-                      `      ${conflict.collection.artist} - ${conflict.collection.title}`
-                    );
-                    for (const field of conflict.conflicts) {
-                      const colVal = (conflict.collection as unknown as Record<string, unknown>)[
-                        field
-                      ];
-                      const ipodVal = (conflict.ipod as unknown as Record<string, unknown>)[field];
-                      console.log(`        ${field}: "${colVal ?? ''}" vs iPod "${ipodVal ?? ''}"`);
-                    }
-                  }
-                  if (diff.conflicts.length > 3) {
-                    console.log(`      ... and ${diff.conflicts.length - 3} more`);
-                  }
-                }
-              }
-              if (diff.toUpdate.length > 0) {
-                const updatesByReason = new Map<string, number>();
-                for (const update of diff.toUpdate) {
-                  const count = updatesByReason.get(update.reason) ?? 0;
-                  updatesByReason.set(update.reason, count + 1);
-                }
-                const reasonParts: string[] = [];
-                for (const [reason, count] of updatesByReason) {
-                  reasonParts.push(
-                    `${formatUpdateReason(reason as 'transform-apply' | 'transform-remove' | 'metadata-changed')}: ${count}`
-                  );
-                }
-                console.log(
-                  `  Tracks to update: ${formatNumber(diff.toUpdate.length)} (${reasonParts.join(', ')})`
-                );
-              }
-              console.log('');
-
-              console.log('Estimates:');
-              console.log(`  Size: ${formatBytes(plan.estimatedSize)}`);
-              console.log(`  Time: ~${formatDuration(plan.estimatedTime)}`);
-              if (storage) {
-                console.log(`  Available space: ${formatBytes(storage.free)}`);
-                if (!hasEnoughSpace) {
-                  console.log('  WARNING: May not have enough space!');
-                }
-              }
-              console.log('');
-
-              if (effectiveTransforms.ftintitle.enabled) {
-                const tracksToTransform = [
-                  ...diff.toAdd,
-                  ...diff.toUpdate
-                    .filter((u) => u.reason === 'transform-apply')
-                    .map((u) => u.source),
-                ];
-                if (tracksToTransform.length > 0) {
-                  const preview = buildTransformPreview(
-                    tracksToTransform,
-                    effectiveTransforms,
-                    core.applyTransforms
-                  );
-                  if (preview.length > 0) {
-                    console.log('Artist transforms:');
-                    for (const entry of preview) {
-                      const countStr = entry.count > 1 ? `  [${entry.count} tracks]` : '';
-                      console.log(
-                        `  "${entry.originalArtist}" → "${entry.transformedArtist}"${countStr}`
-                      );
-                    }
-                    console.log('');
-                  }
-                }
-              }
-
-              if (globalOpts.verbose || plan.operations.length <= 20) {
-                if (plan.operations.length > 0) {
-                  console.log('Operations:');
-                  for (const op of plan.operations) {
-                    let symbol: string;
-                    switch (op.type) {
-                      case 'remove':
-                        symbol = '-';
-                        break;
-                      case 'update-metadata':
-                        symbol = '~';
-                        break;
-                      default:
-                        symbol = '+';
-                    }
-                    const typeStr = op.type.padEnd(15);
-                    console.log(`  ${symbol} [${typeStr}] ${core.getOperationDisplayName(op)}`);
-                  }
-                  console.log('');
-                }
-              } else if (plan.operations.length > 20) {
-                console.log(
-                  `Operations: ${plan.operations.length} total (use --verbose to list all)`
-                );
-                console.log('');
-              }
-
-              if (plan.warnings.length > 0) {
-                for (const warning of plan.warnings) {
-                  if (warning.type === 'lossy-to-lossy') {
-                    console.log(
-                      `Warning: ${warning.tracks.length} track${warning.tracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion`
-                    );
-                  }
-                }
-                console.log('');
-              }
-            }
-
-            await adapter.disconnect();
-            continue;
+          if (result.jsonOutput && out.isJson) {
+            out.json(result.jsonOutput);
           }
 
-          // Check space
-          if (!hasEnoughSpace) {
-            if (globalOpts.json) {
-              outputJson({
-                success: false,
-                dryRun: false,
-                source: sourcePath,
-                device: devicePath,
-                plan: {
-                  tracksToAdd: diff.toAdd.length,
-                  tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
-                  tracksToUpdate: diff.toUpdate.length,
-                  tracksToTranscode: summary.transcodeCount,
-                  tracksToCopy: summary.copyCount,
-                  tracksExisting: diff.existing.length,
-                  tracksWithConflicts: diff.conflicts.length,
-                  estimatedSize: plan.estimatedSize,
-                  estimatedTime: plan.estimatedTime,
-                },
-                error: `Not enough space. Need ${formatBytes(plan.estimatedSize)}, have ${formatBytes(storage?.free ?? 0)}`,
-              });
-            } else {
-              console.error('Not enough space on iPod.');
-              console.error(`  Need: ${formatBytes(plan.estimatedSize)}`);
-              console.error(`  Have: ${formatBytes(storage?.free ?? 0)}`);
-            }
-            process.exitCode = 1;
-            await adapter.disconnect();
+          totalCompleted += result.completed;
+          totalFailed += result.failed;
+          if (!result.success) {
             anyError = true;
-            continue;
           }
-
-          // Nothing to do
-          if (plan.operations.length === 0) {
-            if (!globalOpts.json && !globalOpts.quiet) {
-              console.log('');
-              console.log('Music already in sync! No changes needed.');
-              console.log(`  Source tracks: ${formatNumber(collectionTracks.length)}`);
-              console.log(`  iPod tracks: ${formatNumber(ipodTracks.length)}`);
-            }
-            await adapter.disconnect();
-            continue;
-          }
-
-          // Execute sync
-          if (!globalOpts.json && !globalOpts.quiet) {
-            console.log('');
-            console.log('=== Syncing Music ===');
-            console.log('');
-            console.log(`Tracks to process: ${formatNumber(plan.operations.length)}`);
-            console.log(`Estimated size: ${formatBytes(plan.estimatedSize)}`);
-            console.log(`Estimated time: ~${formatDuration(plan.estimatedTime)}`);
-            console.log('');
-          }
-
-          const collectedErrors: CollectedError[] = [];
-          let completed = 0;
-          let failed = 0;
-
-          const executor = new core.DefaultSyncExecutor({ ipod, transcoder });
-
-          for await (const progress of executor.execute(plan, {
-            dryRun: false,
-            continueOnError: true,
-            artwork: effectiveArtwork,
-            adapter,
-          })) {
-            if (progress.error) {
-              const categorized = progress.categorizedError;
-              collectedErrors.push({
-                trackName:
-                  categorized?.trackName ?? core.getOperationDisplayName(progress.operation),
-                category: categorized?.category ?? 'unknown',
-                message: progress.error.message,
-                retryAttempts: categorized?.retryAttempts ?? 0,
-                wasRetried: categorized?.wasRetried ?? false,
-                stack: progress.error.stack,
-              });
-              failed++;
-            } else if (
-              progress.phase !== 'preparing' &&
-              progress.phase !== 'updating-db' &&
-              progress.phase !== 'complete'
-            ) {
-              completed++;
-            }
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              if (progress.phase === 'complete') {
-                process.stdout.write('\x1b[2K\r');
-                console.log('Music sync complete!');
-              } else if (progress.phase === 'updating-db') {
-                process.stdout.write('\r\x1b[KSaving iPod database...');
-              } else if (progress.phase !== 'preparing') {
-                const bar = renderProgressBar(progress.current + 1, progress.total);
-                const phaseStr = progress.phase.charAt(0).toUpperCase() + progress.phase.slice(1);
-                const line = formatProgressLine({
-                  bar,
-                  phase: phaseStr,
-                  trackName: progress.currentTrack,
-                });
-                process.stdout.write(line);
-              }
-            }
-          }
-
-          totalCompleted += completed;
-          totalFailed += failed;
-
-          if (!globalOpts.json && !globalOpts.quiet && collectedErrors.length > 0) {
-            const errorLines = formatErrors(collectedErrors, globalOpts.verbose);
-            for (const line of errorLines) {
-              console.log(line);
-            }
-          }
-
-          await adapter.disconnect();
         }
       }
 
       // ----- Sync Video Collections -----
-      if (hasVideoToSync && !dryRun) {
-        // Check video support
+      if (hasVideoToSync) {
         const ipodInfo = ipod.getInfo();
         const supportsVideo = ipodInfo.device?.supportsVideo ?? false;
 
         if (!supportsVideo) {
-          if (!globalOpts.json && !globalOpts.quiet) {
-            console.log('');
-            console.log('Skipping video sync: This iPod does not support video playback.');
+          if (dryRun) {
+            out.newline();
+            out.print('Note: This iPod does not support video playback.');
+          } else {
+            out.newline();
+            out.print('Skipping video sync: This iPod does not support video playback.');
           }
         } else {
           for (const collection of videoCollections) {
             const sourcePath = (collection.config as VideoCollectionConfig).path;
-            const collectionLabel = formatCollectionLabel(
-              collection.name,
+
+            out.newline();
+            out.print(`=== Video: ${collection.name} ===`);
+
+            const result = await syncVideoCollection({
+              out,
+              collection,
               sourcePath,
-              globalOpts.verbose > 0
-            );
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              console.log('');
-              console.log(`=== Video: ${collection.name} ===`);
-            }
-
-            // Scan video source
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.start(`Scanning video collection${collectionLabel}...`);
-            }
-
-            const scanWarnings: Array<{ file: string; message: string }> = [];
-            const videoAdapter = core.createVideoDirectoryAdapter({
-              path: sourcePath,
-              onProgress: (progress) => {
-                if (!globalOpts.json && !globalOpts.quiet) {
-                  if (progress.phase === 'discovering') {
-                    spinner.update(`Discovering video files from${collectionLabel}...`);
-                  } else {
-                    spinner.update(
-                      `Analyzing videos from${collectionLabel}: ${progress.processed}/${progress.total} files`
-                    );
-                  }
-                }
-              },
-              onWarning: (warning) => {
-                scanWarnings.push(warning);
-              },
-            });
-
-            let collectionVideos: CollectionVideo[];
-            try {
-              await videoAdapter.connect();
-              collectionVideos = await videoAdapter.getVideos();
-            } catch (err) {
-              spinner.stop();
-              const message = err instanceof Error ? err.message : 'Failed to scan source';
-              if (!globalOpts.json) {
-                console.error(`Failed to scan video source: ${message}`);
-              }
-              anyError = true;
-              continue;
-            }
-
-            const movieCount = collectionVideos.filter((v) => v.contentType === 'movie').length;
-            const tvShowCount = collectionVideos.filter((v) => v.contentType === 'tvshow').length;
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.stop(
-                `Found ${formatNumber(collectionVideos.length)} videos (${movieCount} movies, ${tvShowCount} TV episodes)`
-              );
-            }
-
-            // Get iPod video tracks
-            const allTracks = ipod.getTracks();
-            const ipodVideos: IPodVideo[] = allTracks
-              .filter(
-                (t) =>
-                  (t.mediaType & MediaType.Movie) !== 0 || (t.mediaType & MediaType.TVShow) !== 0
-              )
-              .map((t) => {
-                const isMovie = (t.mediaType & MediaType.Movie) !== 0;
-                return {
-                  id: t.filePath,
-                  filePath: t.filePath,
-                  contentType: (isMovie ? 'movie' : 'tvshow') as 'movie' | 'tvshow',
-                  title: t.title,
-                  year: t.year,
-                  seriesTitle: t.tvShow,
-                  seasonNumber: t.seasonNumber,
-                  episodeNumber: t.episodeNumber,
-                  duration: t.duration ? Math.floor(t.duration / 1000) : undefined,
-                };
-              });
-
-            // Compute video diff
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.start('Computing video sync diff...');
-            }
-
-            const videoDiff = core.diffVideos(collectionVideos, ipodVideos);
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.stop('Video diff computed');
-            }
-
-            // Create video plan
-            const ipodDevice = ipod.getInfo().device;
-            const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
-            const videoPlan = core.planVideoSync(videoDiff, {
-              deviceProfile,
-              qualityPreset: effectiveVideoQuality,
+              devicePath,
+              dryRun,
               removeOrphans,
-              useHardwareAcceleration: true,
+              effectiveVideoQuality,
+              ipod,
+              core,
             });
 
-            const videoSummary = core.getVideoPlanSummary(videoPlan);
-            const storage = getStorageInfo(devicePath);
-            const hasEnoughSpace = storage ? core.willVideoPlanFit(videoPlan, storage.free) : true;
-
-            if (!hasEnoughSpace) {
-              if (!globalOpts.json) {
-                console.error('Not enough space for video sync.');
-                console.error(`  Need: ${formatBytes(videoPlan.estimatedSize)}`);
-                console.error(`  Have: ${formatBytes(storage?.free ?? 0)}`);
-              }
-              anyError = true;
-              await videoAdapter.disconnect();
-              continue;
-            }
-
-            if (videoPlan.operations.length === 0) {
-              if (!globalOpts.json && !globalOpts.quiet) {
-                console.log('Videos already in sync! No changes needed.');
-              }
-              await videoAdapter.disconnect();
-              continue;
-            }
-
-            // Execute video sync
-            if (!globalOpts.json && !globalOpts.quiet) {
-              console.log('');
-              console.log(`Videos to process: ${formatNumber(videoPlan.operations.length)}`);
-              console.log(`  - Transcode: ${formatNumber(videoSummary.transcodeCount)}`);
-              console.log(`  - Passthrough: ${formatNumber(videoSummary.copyCount)}`);
-              console.log(`Estimated size: ${formatBytes(videoPlan.estimatedSize)}`);
-              console.log('');
-            }
-
-            const videoExecutor = core.createVideoExecutor({ ipod });
-            let videoCompleted = 0;
-
-            try {
-              for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false })) {
-                if (progress.skipped) {
-                  // Skip tracking for skipped operations
-                } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
-                  videoCompleted++;
-                }
-
-                if (!globalOpts.json && !globalOpts.quiet) {
-                  if (progress.phase === 'complete') {
-                    console.log('\nVideo sync complete.');
-                  } else if (progress.transcodeProgress) {
-                    const percent = progress.transcodeProgress.percent;
-                    const bar = renderProgressBar(Math.round(percent), 100);
-                    const line = formatProgressLine({
-                      bar,
-                      phase: 'Transcoding',
-                      trackName: progress.currentTrack,
-                      speed: progress.transcodeProgress.speed,
-                    });
-                    process.stdout.write(line);
-                  } else {
-                    const bar = renderProgressBar(progress.current + 1, progress.total);
-                    const phaseStr = progress.phase.replace('video-', '');
-                    const phaseFormatted = phaseStr.charAt(0).toUpperCase() + phaseStr.slice(1);
-                    const line = formatProgressLine({
-                      bar,
-                      phase: phaseFormatted,
-                      trackName: progress.currentTrack,
-                    });
-                    process.stdout.write(line);
-                  }
-                }
-              }
-            } catch (err) {
-              const message = err instanceof Error ? err.message : 'Video execution failed';
-              if (!globalOpts.json) {
-                console.error(`\nVideo sync error: ${message}`);
-              }
+            totalCompleted += result.completed;
+            totalFailed += result.failed;
+            if (!result.success) {
               anyError = true;
             }
-
-            totalCompleted += videoCompleted;
-            await videoAdapter.disconnect();
           }
 
-          // Save database after video sync
-          if (!dryRun && hasVideoToSync) {
+          // Save database after video sync (not in dry-run)
+          if (!dryRun) {
             ipod.save();
-          }
-        }
-      } else if (hasVideoToSync && dryRun) {
-        // Video dry-run
-        const ipodInfo = ipod.getInfo();
-        const supportsVideo = ipodInfo.device?.supportsVideo ?? false;
-
-        if (!supportsVideo) {
-          if (!globalOpts.json && !globalOpts.quiet) {
-            console.log('');
-            console.log('Note: This iPod does not support video playback.');
-          }
-        } else {
-          for (const collection of videoCollections) {
-            const sourcePath = (collection.config as VideoCollectionConfig).path;
-            const collectionLabel = formatCollectionLabel(
-              collection.name,
-              sourcePath,
-              globalOpts.verbose > 0
-            );
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.start(`Scanning video collection${collectionLabel}...`);
-            }
-
-            const videoAdapter = core.createVideoDirectoryAdapter({
-              path: sourcePath,
-              onProgress: () => {},
-              onWarning: () => {},
-            });
-
-            let collectionVideos: CollectionVideo[];
-            try {
-              await videoAdapter.connect();
-              collectionVideos = await videoAdapter.getVideos();
-            } catch {
-              spinner.stop();
-              continue;
-            }
-
-            const allTracks = ipod.getTracks();
-            const ipodVideos: IPodVideo[] = allTracks
-              .filter(
-                (t) =>
-                  (t.mediaType & MediaType.Movie) !== 0 || (t.mediaType & MediaType.TVShow) !== 0
-              )
-              .map((t) => ({
-                id: t.filePath,
-                filePath: t.filePath,
-                contentType: ((t.mediaType & MediaType.Movie) !== 0 ? 'movie' : 'tvshow') as
-                  | 'movie'
-                  | 'tvshow',
-                title: t.title,
-                year: t.year,
-                seriesTitle: t.tvShow,
-                seasonNumber: t.seasonNumber,
-                episodeNumber: t.episodeNumber,
-                duration: t.duration ? Math.floor(t.duration / 1000) : undefined,
-              }));
-
-            const videoDiff = core.diffVideos(collectionVideos, ipodVideos);
-            const ipodDevice = ipod.getInfo().device;
-            const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
-            const videoPlan = core.planVideoSync(videoDiff, {
-              deviceProfile,
-              qualityPreset: effectiveVideoQuality,
-              removeOrphans,
-              useHardwareAcceleration: true,
-            });
-
-            const videoSummary = core.getVideoPlanSummary(videoPlan);
-            const movieCount = collectionVideos.filter((v) => v.contentType === 'movie').length;
-            const tvShowCount = collectionVideos.filter((v) => v.contentType === 'tvshow').length;
-
-            if (!globalOpts.json && !globalOpts.quiet) {
-              spinner.stop();
-              console.log('');
-              console.log('=== Video Sync Plan (Dry Run) ===');
-              console.log('');
-              console.log(`Source: ${sourcePath}`);
-              console.log(`Device: ${devicePath}`);
-              console.log(`Quality: ${effectiveVideoQuality}`);
-              console.log('');
-              console.log('Collection:');
-              console.log(`  Total videos: ${formatNumber(collectionVideos.length)}`);
-              console.log(`    - Movies: ${formatNumber(movieCount)}`);
-              console.log(`    - TV Shows: ${formatNumber(tvShowCount)}`);
-              console.log('');
-              console.log('Changes:');
-              console.log(`  Videos to add: ${formatNumber(videoDiff.toAdd.length)}`);
-              if (videoSummary.transcodeCount > 0) {
-                console.log(`    - Transcode: ${formatNumber(videoSummary.transcodeCount)}`);
-              }
-              if (videoSummary.copyCount > 0) {
-                console.log(`    - Passthrough: ${formatNumber(videoSummary.copyCount)}`);
-              }
-              if (removeOrphans && videoDiff.toRemove.length > 0) {
-                console.log(`  Videos to remove: ${formatNumber(videoDiff.toRemove.length)}`);
-              }
-              console.log(`  Already synced: ${formatNumber(videoDiff.existing.length)}`);
-              console.log('');
-              console.log('Estimates:');
-              console.log(`  Size: ${formatBytes(videoPlan.estimatedSize)}`);
-              console.log(`  Time: ~${formatDuration(videoPlan.estimatedTime)}`);
-              console.log('');
-            }
-
-            await videoAdapter.disconnect();
           }
         }
       }
@@ -1773,25 +1514,24 @@ export const syncCommand = new Command('sync')
       const duration = (Date.now() - startTime) / 1000;
       const syncSucceeded = !dryRun && totalFailed === 0 && !anyError;
 
-      if (!dryRun && !globalOpts.json && !globalOpts.quiet) {
-        console.log('');
-        console.log('=== Summary ===');
-        console.log('');
+      if (!dryRun) {
+        out.newline();
+        out.print('=== Summary ===');
+        out.newline();
         if (totalFailed > 0) {
-          console.log(
+          out.print(
             `Synced ${formatNumber(totalCompleted)} items (${formatNumber(totalFailed)} failed)`
           );
         } else if (totalCompleted > 0) {
-          console.log(`Synced ${formatNumber(totalCompleted)} items successfully`);
+          out.print(`Synced ${formatNumber(totalCompleted)} items successfully`);
         } else {
-          console.log('Everything already in sync!');
+          out.print('Everything already in sync!');
         }
-        console.log(`Duration: ${formatDuration(duration)}`);
+        out.print(`Duration: ${formatDuration(duration)}`);
       }
 
       // JSON output for actual sync completion
-      if (!dryRun && globalOpts.json) {
-        // Handle eject for JSON output
+      if (!dryRun && out.isJson) {
         let ejectInfo: SyncOutput['eject'];
         if (options.eject && syncSucceeded) {
           const ejectResult = await manager.eject(devicePath, { force: false });
@@ -1802,7 +1542,7 @@ export const syncCommand = new Command('sync')
           };
         }
 
-        outputJson({
+        out.json({
           success: totalFailed === 0 && !anyError,
           dryRun: false,
           result: {
@@ -1816,31 +1556,29 @@ export const syncCommand = new Command('sync')
         });
       }
 
-      if (dryRun && !globalOpts.json && !globalOpts.quiet) {
-        console.log('');
-        console.log('Run without --dry-run to execute this plan.');
+      if (dryRun) {
+        out.newline();
+        out.print('Run without --dry-run to execute this plan.');
       }
 
-      // Show eject tip or auto-eject on successful sync (not dry-run, no errors)
-      if (syncSucceeded && !globalOpts.json && !globalOpts.quiet) {
+      // Show eject tip or auto-eject on successful sync
+      if (syncSucceeded && out.isText) {
         if (options.eject) {
-          // Auto-eject the device
-          console.log('');
-          console.log('Ejecting iPod...');
+          out.newline();
+          out.print('Ejecting iPod...');
           const ejectResult = await manager.eject(devicePath, { force: false });
           if (ejectResult.success) {
-            console.log('iPod ejected. Safe to disconnect.');
+            out.print('iPod ejected. Safe to disconnect.');
           } else {
-            console.log('Could not eject iPod automatically.');
+            out.print('Could not eject iPod automatically.');
             if (ejectResult.error) {
-              console.log(`  ${ejectResult.error}`);
+              out.print(`  ${ejectResult.error}`);
             }
-            console.log('  Run: podkit eject --force');
+            out.print('  Run: podkit eject --force');
           }
         } else {
-          // Show tip about ejecting
-          console.log('');
-          console.log("Tip: Run 'podkit eject' to safely disconnect, or use --eject next time.");
+          out.newline();
+          out.print("Tip: Run 'podkit eject' to safely disconnect, or use --eject next time.");
         }
       }
 

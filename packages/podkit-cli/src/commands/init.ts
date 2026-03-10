@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_CONFIG_PATH, DEFAULT_CONFIG } from '../config/index.js';
+import { getContext } from '../context.js';
+import { OutputContext } from '../output/index.js';
 
 /**
  * Default configuration file template (TOML format)
@@ -126,15 +128,20 @@ export const initCommand = new Command('init')
   .option('-f, --force', 'overwrite existing config file')
   .option('--path <path>', 'config file path', DEFAULT_CONFIG_PATH)
   .action(async (options) => {
+    const { globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts);
+
     const configPath = options.path as string;
     const force = options.force as boolean;
 
     const result = createConfigFile({ configPath, force });
 
     if (!result.success) {
-      console.error(`Error: ${result.error}`);
+      out.error(`Error: ${result.error}`);
+      out.json({ success: false, error: result.error, configPath: result.configPath });
       process.exit(1);
     }
 
-    console.log(formatSuccessMessage(result.configPath));
+    out.print(formatSuccessMessage(result.configPath));
+    out.json({ success: true, configPath: result.configPath, created: true });
   });
