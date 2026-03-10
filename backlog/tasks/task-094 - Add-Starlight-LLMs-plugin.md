@@ -1,9 +1,10 @@
 ---
 id: TASK-094
 title: Add Starlight LLMs plugin
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-10 10:26'
+updated_date: '2026-03-10 14:09'
 labels:
   - docs-site
   - ai

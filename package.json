@@ -24,7 +24,10 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "turbo run typecheck",
-    "clean": "turbo run clean --no-cache && rm -rf node_modules"
+    "clean": "turbo run clean --no-cache && rm -rf node_modules",
+    "docs:dev": "bun run --cwd packages/docs-site dev",
+    "docs:build": "bun run --cwd packages/docs-site build",
+    "docs:preview": "bun run --cwd packages/docs-site preview"
   },
   "manypkg": {
     "workspaceProtocol": "require"

@@ -249,21 +249,6 @@ podkit/
 +-- test/                # Shared test fixtures
 ```
 
-## Windows
-
-> **Status: TBD**
->
-> Windows support is planned but not yet documented. Key challenges:
->
-> - libgpod has limited Windows support
-> - Native Node.js bindings need Windows build toolchain
-> - iPod device access differs from Unix
->
-> Potential approaches:
-> - WSL2 as primary development environment
-> - Native Windows build with vcpkg
-> - Docker-based development environment
-
 ## Next Steps
 
 - [Testing](/developers/testing) - Testing strategy and conventions

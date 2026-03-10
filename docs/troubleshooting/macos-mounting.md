@@ -2,7 +2,7 @@
 title: macOS Mounting Issues
 description: Troubleshoot and fix mounting issues for large-capacity iPods using iFlash on macOS.
 sidebar:
-  order: 1
+  order: 2
 ---
 
 # macOS iPod Mounting Issues

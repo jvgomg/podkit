@@ -2,7 +2,7 @@
 title: Common Issues
 description: Solutions for common podkit issues including device detection, sync errors, and audio problems.
 sidebar:
-  order: 2
+  order: 1
 ---
 
 # Common Issues
