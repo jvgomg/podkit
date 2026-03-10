@@ -24,7 +24,7 @@ import { rm } from 'node:fs/promises';
 import { AsyncQueue } from './async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
 
-import type { CollectionTrack, CollectionAdapter, FileAccess } from '../adapters/interface.js';
+import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.js';
 import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
 import type {
   ExecuteOptions,

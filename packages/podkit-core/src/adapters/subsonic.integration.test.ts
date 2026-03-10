@@ -143,8 +143,6 @@ function createMockServer(port: number) {
       }
 
       if (path.endsWith('/rest/download') || path.endsWith('/rest/download.view')) {
-        const id = url.searchParams.get('id');
-
         // Return mock audio data
         const mockAudioData = new Uint8Array([0xff, 0xfb, 0x90, 0x00]); // Fake MP3 header
         return new Response(mockAudioData, {

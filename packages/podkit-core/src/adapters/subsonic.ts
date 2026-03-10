@@ -181,9 +181,8 @@ export class SubsonicAdapter implements CollectionAdapter {
               this.tracks.push(track);
             }
           }
-        } catch (error) {
-          // Log warning but continue with other albums
-          console.warn(`Failed to fetch album ${album.id} (${album.name}):`, error);
+        } catch {
+          // Silently skip albums that fail to fetch and continue with other albums
         }
       }
 

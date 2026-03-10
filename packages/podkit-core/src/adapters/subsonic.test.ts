@@ -4,15 +4,9 @@
  * Tests use manual mocking of the SubsonicAPI to avoid real network calls.
  */
 
-import { describe, it, expect, beforeEach, mock } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { SubsonicAdapter } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
-
-// Mock the SubsonicAPI module
-const mockPing = mock(() => Promise.resolve({ status: 'ok', version: '1.16.1' }));
-const mockGetAlbumList2 = mock(() => Promise.resolve({ albumList2: { album: [] } }));
-const mockGetAlbum = mock(() => Promise.resolve({ album: { song: [] } }));
-const mockDownload = mock(() => Promise.resolve({ body: new ReadableStream() }));
 
 // We need to mock the subsonic-api module before importing SubsonicAdapter
 // Since bun:test doesn't have vi.mock, we'll test the adapter's behavior
@@ -133,7 +127,6 @@ describe('SubsonicAdapter disconnect', () => {
 
 describe('Lossless detection', () => {
   it('detects FLAC as lossless', () => {
-    const adapter = createTestAdapter();
     const mockTrack = {
       id: 'track-123',
       title: 'Test Track',

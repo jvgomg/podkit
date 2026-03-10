@@ -44,7 +44,7 @@ interface SyncOutput {
 
 let source: SubsonicTestSource | null = null;
 let dockerAvailable = false;
-let subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
+const subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
 
 beforeAll(async () => {
   // Skip Docker setup unless explicitly enabled
