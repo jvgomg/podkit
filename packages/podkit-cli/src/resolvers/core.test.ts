@@ -140,11 +140,7 @@ describe('resolveNamedEntity', () => {
 
 describe('formatNotFoundError', () => {
   it('lists available entities', () => {
-    const error = formatNotFoundError(
-      'unknown',
-      { foo: {}, bar: {} },
-      'device'
-    );
+    const error = formatNotFoundError('unknown', { foo: {}, bar: {} }, 'device');
     expect(error).toContain('Device "unknown" not found');
     expect(error).toContain('foo, bar');
   });

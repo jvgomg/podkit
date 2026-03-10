@@ -123,7 +123,13 @@ function createMockSpawn(config: {
     (proc as unknown as Record<string, unknown>).stdout = stdoutStream;
     (proc as unknown as Record<string, unknown>).stderr = stderrStream;
     (proc as unknown as Record<string, unknown>).stdin = null;
-    (proc as unknown as Record<string, unknown>).stdio = [null, stdoutStream, stderrStream, null, null];
+    (proc as unknown as Record<string, unknown>).stdio = [
+      null,
+      stdoutStream,
+      stderrStream,
+      null,
+      null,
+    ];
     (proc as unknown as Record<string, unknown>).pid = 12345;
     (proc as unknown as Record<string, unknown>).killed = false;
     (proc as unknown as Record<string, unknown>).connected = false;
@@ -472,7 +478,11 @@ describe('EmbeddedVideoMetadataAdapter', () => {
   describe('custom ffprobe path', () => {
     it('uses custom ffprobe path when provided', async () => {
       let calledCommand: string | undefined;
-      const mockSpawn: SpawnFn = ((command: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+      const mockSpawn: SpawnFn = ((
+        command: string,
+        args: readonly string[],
+        options: SpawnOptions
+      ): ChildProcess => {
         calledCommand = command;
         return createMockSpawn({ stdout: MINIMAL_OUTPUT, exitCode: 0 })(command, args, options);
       }) as SpawnFn;

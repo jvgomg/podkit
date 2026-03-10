@@ -156,21 +156,13 @@ export interface NativePhotoDatabase {
   getPhotos(): Photo[];
   getPhotoAlbums(): PhotoAlbum[];
   addPhoto(imagePath: string, position?: number, rotation?: number): Photo;
-  addPhotoFromData(
-    imageData: Buffer,
-    position?: number,
-    rotation?: number
-  ): Photo;
+  addPhotoFromData(imageData: Buffer, position?: number, rotation?: number): Photo;
   removePhoto(photoId: number): void;
   getPhotoById(photoId: number): Photo | null;
   createPhotoAlbum(name: string, position?: number): PhotoAlbum;
   removePhotoAlbum(albumId: number, removePhotos?: boolean): void;
   getPhotoAlbumByName(name: string | null): PhotoAlbum | null;
-  addPhotoToAlbum(
-    albumId: number,
-    photoId: number,
-    position?: number
-  ): PhotoAlbum;
+  addPhotoToAlbum(albumId: number, photoId: number, position?: number): PhotoAlbum;
   removePhotoFromAlbum(albumId: number, photoId: number): PhotoAlbum;
   getPhotoAlbumPhotos(albumId: number): Photo[];
   setPhotoAlbumName(albumId: number, newName: string): PhotoAlbum;
@@ -402,11 +394,7 @@ export function create(): NativeDatabase {
  * @returns Native database handle
  * @throws Error if initialization fails
  */
-export function initIpod(
-  mountpoint: string,
-  model?: string,
-  name?: string
-): NativeDatabase {
+export function initIpod(mountpoint: string, model?: string, name?: string): NativeDatabase {
   const binding = loadBinding();
   return binding.initIpod(mountpoint, model, name);
 }

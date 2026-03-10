@@ -226,9 +226,9 @@ describe('VideoDirectoryAdapter integration', () => {
 
       const videos = await adapter.getVideos();
 
-      expect(
-        videos.every((v) => v.filePath.endsWith('.mp4') || v.filePath.endsWith('.mkv'))
-      ).toBe(true);
+      expect(videos.every((v) => v.filePath.endsWith('.mp4') || v.filePath.endsWith('.mkv'))).toBe(
+        true
+      );
     });
   });
 

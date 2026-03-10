@@ -232,10 +232,7 @@ export function estimatePassthroughSize(video: CollectionVideo): number {
 /**
  * Estimate transcoding time in seconds
  */
-function estimateTranscodeTime(
-  durationSeconds: number,
-  useHardwareAcceleration: boolean
-): number {
+function estimateTranscodeTime(durationSeconds: number, useHardwareAcceleration: boolean): number {
   const speedFactor = useHardwareAcceleration
     ? TRANSCODE_SPEED_FACTOR_HARDWARE
     : TRANSCODE_SPEED_FACTOR_SOFTWARE;
@@ -332,12 +329,7 @@ function planAddOperations(
       });
     } else {
       // Calculate transcode settings
-      const settings = calculateTranscodeSettings(
-        video,
-        device,
-        preset,
-        useHardwareAcceleration
-      );
+      const settings = calculateTranscodeSettings(video, device, preset, useHardwareAcceleration);
 
       operations.push({
         type: 'video-transcode',
@@ -358,10 +350,7 @@ function planAddOperations(
 /**
  * Plan operations for videos to be removed
  */
-function planRemoveOperations(
-  videos: IPodVideo[],
-  removeOrphans: boolean
-): SyncOperation[] {
+function planRemoveOperations(videos: IPodVideo[], removeOrphans: boolean): SyncOperation[] {
   if (!removeOrphans) {
     return [];
   }
@@ -475,8 +464,11 @@ export function planVideoSync(
   } = options;
 
   // Plan add operations
-  const { operations: addOperations, lowQualityVideos, unsupportedVideos } =
-    planAddOperations(diff.toAdd, deviceProfile, qualityPreset, useHardwareAcceleration);
+  const {
+    operations: addOperations,
+    lowQualityVideos,
+    unsupportedVideos,
+  } = planAddOperations(diff.toAdd, deviceProfile, qualityPreset, useHardwareAcceleration);
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);

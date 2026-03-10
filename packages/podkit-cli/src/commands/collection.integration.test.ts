@@ -22,18 +22,12 @@ import { spawn } from 'node:child_process';
 /**
  * Path to test audio fixtures
  */
-const AUDIO_FIXTURES_PATH = resolve(
-  __dirname,
-  '../../../../test/fixtures/audio'
-);
+const AUDIO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/audio');
 
 /**
  * Path to test video fixtures
  */
-const VIDEO_FIXTURES_PATH = resolve(
-  __dirname,
-  '../../../../test/fixtures/video'
-);
+const VIDEO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/video');
 
 /**
  * Path to the built CLI
@@ -216,13 +210,7 @@ describe('collection music integration', () => {
 
   it('scans directory and returns tracks', async () => {
     configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
 
     expect(result.exitCode).toBe(0);
     // Should contain track data (table format by default)
@@ -275,13 +263,7 @@ describe('collection music integration', () => {
 
   it('handles empty directory', async () => {
     configPath = await createMusicConfig(emptyDir);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('No tracks found');
@@ -328,9 +310,7 @@ describe('collection music integration', () => {
 
   it('respects --fields option', async () => {
     configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const { json, exitCode } = await runCliJson<
-      Array<Record<string, unknown>>
-    >([
+    const { json, exitCode } = await runCliJson<Array<Record<string, unknown>>>([
       '--config',
       configPath,
       'collection',
@@ -396,13 +376,7 @@ describe('collection video integration', () => {
     }
 
     configPath = await createVideoConfig(VIDEO_FIXTURES_PATH);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'video',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
 
     expect(result.exitCode).toBe(0);
     // Should contain video data (table format by default)
@@ -431,15 +405,7 @@ describe('collection video integration', () => {
         filePath?: string;
         format?: string;
       }>
-    >([
-      '--config',
-      configPath,
-      'collection',
-      'video',
-      '--format',
-      'json',
-      '-q',
-    ]);
+    >(['--config', configPath, 'collection', 'video', '--format', 'json', '-q']);
 
     expect(exitCode).toBe(0);
     expect(json).toBeArray();
@@ -457,13 +423,7 @@ describe('collection video integration', () => {
 
   it('handles empty directory', async () => {
     configPath = await createVideoConfig(emptyDir);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'video',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('No tracks found');
@@ -525,13 +485,7 @@ music = "test"
 `
     );
 
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
 
     expect(result.exitCode).toBe(1);
     expect(
@@ -576,13 +530,7 @@ path = "${AUDIO_FIXTURES_PATH}"
 `
     );
 
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
 
     expect(result.exitCode).toBe(1);
     // Should mention no default or ask to specify collection
@@ -598,13 +546,7 @@ path = "${AUDIO_FIXTURES_PATH}"
 
   it('no music collections configured returns helpful error', async () => {
     configPath = await createEmptyConfig();
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
 
     expect(result.exitCode).toBe(1);
     // Should mention no collections configured
@@ -620,13 +562,7 @@ path = "${AUDIO_FIXTURES_PATH}"
 
   it('no video collections configured returns helpful error', async () => {
     configPath = await createEmptyConfig();
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'video',
-      '-q',
-    ]);
+    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
 
     expect(result.exitCode).toBe(1);
     // Should mention no collections configured

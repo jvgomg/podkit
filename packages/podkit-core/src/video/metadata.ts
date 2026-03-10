@@ -196,7 +196,9 @@ export function formatEpisodeId(seasonNumber: number, episodeNumber: number): st
  * @param episodeId - Episode ID string
  * @returns Object with seasonNumber and episodeNumber, or null if parse failed
  */
-export function parseEpisodeId(episodeId: string): { seasonNumber: number; episodeNumber: number } | null {
+export function parseEpisodeId(
+  episodeId: string
+): { seasonNumber: number; episodeNumber: number } | null {
   // Match S01E01 format (case-insensitive)
   const sxxexxMatch = episodeId.match(/^[Ss](\d+)[Ee](\d+)$/);
   if (sxxexxMatch) {

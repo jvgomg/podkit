@@ -123,16 +123,10 @@ describe('IpodError', () => {
         }
       };
 
-      expect(handleError(new IpodError('x', 'NOT_FOUND'))).toBe(
-        'device missing'
-      );
-      expect(handleError(new IpodError('x', 'DATABASE_CORRUPT'))).toBe(
-        'database broken'
-      );
+      expect(handleError(new IpodError('x', 'NOT_FOUND'))).toBe('device missing');
+      expect(handleError(new IpodError('x', 'DATABASE_CORRUPT'))).toBe('database broken');
       expect(handleError(new IpodError('x', 'SAVE_FAILED'))).toBe('save error');
-      expect(handleError(new IpodError('x', 'COPY_FAILED'))).toBe(
-        'other error'
-      );
+      expect(handleError(new IpodError('x', 'COPY_FAILED'))).toBe('other error');
     });
   });
 });

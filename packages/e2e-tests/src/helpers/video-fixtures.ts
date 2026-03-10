@@ -104,18 +104,14 @@ export const Videos = {
 /**
  * Get the full path to a specific video fixture.
  */
-export function getVideoPath(
-  video: (typeof Videos)[keyof typeof Videos]
-): string {
+export function getVideoPath(video: (typeof Videos)[keyof typeof Videos]): string {
   return join(getVideoFixturesDir(), video.filename);
 }
 
 /**
  * Get information about a specific video.
  */
-export function getVideo(
-  video: (typeof Videos)[keyof typeof Videos]
-): TestVideo {
+export function getVideo(video: (typeof Videos)[keyof typeof Videos]): TestVideo {
   return {
     path: getVideoPath(video),
     filename: video.filename,
@@ -213,9 +209,7 @@ export async function areVideoFixturesAvailable(): Promise<boolean> {
  * }
  * ```
  */
-export async function createVideoSourceDir(
-  videos?: TestVideo[]
-): Promise<string> {
+export async function createVideoSourceDir(videos?: TestVideo[]): Promise<string> {
   const videosToInclude = videos ?? getAllVideos();
   const tempDir = join(tmpdir(), `podkit-video-e2e-${Date.now()}`);
 

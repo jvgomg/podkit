@@ -164,7 +164,13 @@ function createMockSpawn(config: {
     (proc as unknown as Record<string, unknown>).stdout = stdoutStream;
     (proc as unknown as Record<string, unknown>).stderr = stderrStream;
     (proc as unknown as Record<string, unknown>).stdin = null;
-    (proc as unknown as Record<string, unknown>).stdio = [null, stdoutStream, stderrStream, null, null];
+    (proc as unknown as Record<string, unknown>).stdio = [
+      null,
+      stdoutStream,
+      stderrStream,
+      null,
+      null,
+    ];
     (proc as unknown as Record<string, unknown>).pid = 12345;
     (proc as unknown as Record<string, unknown>).killed = false;
     (proc as unknown as Record<string, unknown>).connected = false;
@@ -403,13 +409,15 @@ describe('probeVideo', () => {
   describe('frame rate parsing', () => {
     it('parses fractional frame rates correctly', async () => {
       const outputWith2997 = JSON.stringify({
-        streams: [{
-          codec_type: 'video',
-          codec_name: 'h264',
-          width: 1920,
-          height: 1080,
-          avg_frame_rate: '30000/1001', // 29.97 fps
-        }],
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'h264',
+            width: 1920,
+            height: 1080,
+            avg_frame_rate: '30000/1001', // 29.97 fps
+          },
+        ],
         format: { format_name: 'mp4', duration: '60' },
       });
 
@@ -421,13 +429,15 @@ describe('probeVideo', () => {
 
     it('falls back to r_frame_rate when avg_frame_rate is missing', async () => {
       const outputWithRFrameRate = JSON.stringify({
-        streams: [{
-          codec_type: 'video',
-          codec_name: 'h264',
-          width: 1920,
-          height: 1080,
-          r_frame_rate: '25/1',
-        }],
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'h264',
+            width: 1920,
+            height: 1080,
+            r_frame_rate: '25/1',
+          },
+        ],
         format: { format_name: 'mp4', duration: '60' },
       });
 
@@ -441,12 +451,14 @@ describe('probeVideo', () => {
   describe('container format parsing', () => {
     it('parses WebM format', async () => {
       const webmOutput = JSON.stringify({
-        streams: [{
-          codec_type: 'video',
-          codec_name: 'vp9',
-          width: 1920,
-          height: 1080,
-        }],
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'vp9',
+            width: 1920,
+            height: 1080,
+          },
+        ],
         format: { format_name: 'matroska,webm', duration: '60' },
       });
 
@@ -458,12 +470,14 @@ describe('probeVideo', () => {
 
     it('parses AVI format', async () => {
       const aviOutput = JSON.stringify({
-        streams: [{
-          codec_type: 'video',
-          codec_name: 'mpeg4',
-          width: 640,
-          height: 480,
-        }],
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'mpeg4',
+            width: 640,
+            height: 480,
+          },
+        ],
         format: { format_name: 'avi', duration: '60' },
       });
 
@@ -475,12 +489,14 @@ describe('probeVideo', () => {
 
     it('handles unknown format gracefully', async () => {
       const unknownOutput = JSON.stringify({
-        streams: [{
-          codec_type: 'video',
-          codec_name: 'rawvideo',
-          width: 640,
-          height: 480,
-        }],
+        streams: [
+          {
+            codec_type: 'video',
+            codec_name: 'rawvideo',
+            width: 640,
+            height: 480,
+          },
+        ],
         format: { duration: '60' },
       });
 
@@ -529,7 +545,11 @@ describe('probeVideo', () => {
   describe('custom ffprobe path', () => {
     it('uses custom ffprobe path when provided', async () => {
       let calledCommand: string | undefined;
-      const mockSpawn: SpawnFn = ((command: string, args: readonly string[], options: SpawnOptions): ChildProcess => {
+      const mockSpawn: SpawnFn = ((
+        command: string,
+        args: readonly string[],
+        options: SpawnOptions
+      ): ChildProcess => {
         calledCommand = command;
         return createMockSpawn({ stdout: SAMPLE_MP4_OUTPUT, exitCode: 0 })(command, args, options);
       }) as SpawnFn;

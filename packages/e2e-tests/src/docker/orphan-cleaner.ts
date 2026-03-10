@@ -120,10 +120,14 @@ export async function checkForOrphans(): Promise<void> {
 
     console.warn(`[docker-cleanup] Warning: Found ${containers.length} orphaned test container(s)`);
     if (running.length > 0) {
-      console.warn(`[docker-cleanup]   ${running.length} running: ${running.map((c) => c.name).join(', ')}`);
+      console.warn(
+        `[docker-cleanup]   ${running.length} running: ${running.map((c) => c.name).join(', ')}`
+      );
     }
     if (stopped.length > 0) {
-      console.warn(`[docker-cleanup]   ${stopped.length} stopped: ${stopped.map((c) => c.name).join(', ')}`);
+      console.warn(
+        `[docker-cleanup]   ${stopped.length} stopped: ${stopped.map((c) => c.name).join(', ')}`
+      );
     }
     console.warn(`[docker-cleanup]   Run 'bun run cleanup:docker' to remove them.`);
   }

@@ -15,13 +15,7 @@
  * These are used for both artist and title matching. They clearly indicate
  * a featuring credit rather than being part of the artist name.
  */
-const FEAT_WORDS_EXPLICIT = [
-  'ft',
-  'ft.',
-  'feat',
-  'feat.',
-  'featuring',
-] as const;
+const FEAT_WORDS_EXPLICIT = ['ft', 'ft.', 'feat', 'feat.', 'featuring'] as const;
 
 /**
  * Additional separator words used in artist fields
@@ -44,10 +38,7 @@ const FEAT_WORDS_ARTIST_EXTRA = [
 /**
  * All featuring words for artist field splitting
  */
-export const FEAT_WORDS_ARTIST = [
-  ...FEAT_WORDS_EXPLICIT,
-  ...FEAT_WORDS_ARTIST_EXTRA,
-] as const;
+export const FEAT_WORDS_ARTIST = [...FEAT_WORDS_EXPLICIT, ...FEAT_WORDS_ARTIST_EXTRA] as const;
 
 /**
  * Bracket keywords that indicate remix/edit/version info
@@ -103,10 +94,7 @@ export function createFeatSplitPattern(forArtist: boolean): RegExp {
   // Group 1: main artist (everything before feat)
   // Group 2: the feat token itself
   // Group 3: featured artist (everything after)
-  return new RegExp(
-    `^(.+?)\\s+(?:${escaped.join('|')})\\s+(.+)$`,
-    'i'
-  );
+  return new RegExp(`^(.+?)\\s+(?:${escaped.join('|')})\\s+(.+)$`, 'i');
 }
 
 /**

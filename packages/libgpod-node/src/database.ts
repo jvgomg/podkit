@@ -316,11 +316,7 @@ export class Database {
    */
   private ensureOpen(): NativeDatabase {
     if (this._closed || !this.native) {
-      throw new LibgpodError(
-        'Database is closed',
-        LibgpodErrorCode.Unknown,
-        'ensureOpen'
-      );
+      throw new LibgpodError('Database is closed', LibgpodErrorCode.Unknown, 'ensureOpen');
     }
     return this.native;
   }
@@ -617,10 +613,7 @@ export class Database {
    * @param sourcePath Path to the source audio file
    * @returns The updated track metadata with ipod_path set
    */
-  async copyTrackToDeviceAsync(
-    handle: TrackHandle,
-    sourcePath: string
-  ): Promise<Track> {
+  async copyTrackToDeviceAsync(handle: TrackHandle, sourcePath: string): Promise<Track> {
     return this.copyTrackToDevice(handle, sourcePath);
   }
 

@@ -783,7 +783,9 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   getPlaylistTracks(playlist: IpodPlaylist): IPodTrack[] {
     this.assertOpen();
     const playlistId = this.getPlaylistId(playlist);
-    return this.db.getPlaylistTracks(playlistId).map((handle) => this.createTrackFromHandle(handle));
+    return this.db
+      .getPlaylistTracks(playlistId)
+      .map((handle) => this.createTrackFromHandle(handle));
   }
 
   /**

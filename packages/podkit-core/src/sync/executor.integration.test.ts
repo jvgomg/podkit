@@ -194,12 +194,18 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'copy',
-                source: createCollectionTrack('Test Artist', 'Test Song', 'Test Album', mp3Path, 'mp3'),
+                source: createCollectionTrack(
+                  'Test Artist',
+                  'Test Song',
+                  'Test Album',
+                  mp3Path,
+                  'mp3'
+                ),
               },
             ],
             estimatedTime: 1,
             estimatedSize: 50000,
-        warnings: [],
+            warnings: [],
           };
 
           const result = await executePlan(plan, deps);
@@ -246,13 +252,19 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'transcode',
-                source: createCollectionTrack('Transcode Artist', 'Transcode Song', 'Transcode Album', wavPath, 'wav'),
+                source: createCollectionTrack(
+                  'Transcode Artist',
+                  'Transcode Song',
+                  'Transcode Album',
+                  wavPath,
+                  'wav'
+                ),
                 preset: { name: 'high' },
               },
             ],
             estimatedTime: 5,
             estimatedSize: 100000,
-        warnings: [],
+            warnings: [],
           };
 
           const result = await executePlan(plan, deps);
@@ -315,7 +327,7 @@ describe('SyncExecutor integration', () => {
             ],
             estimatedTime: 0.1,
             estimatedSize: 0,
-        warnings: [],
+            warnings: [],
           };
 
           const result = await executePlan(plan, deps);
@@ -376,7 +388,7 @@ describe('SyncExecutor integration', () => {
             ],
             estimatedTime: 10,
             estimatedSize: 500000,
-        warnings: [],
+            warnings: [],
           };
 
           const result = await executePlan(plan, deps);
@@ -413,12 +425,18 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'copy',
-                source: createCollectionTrack('Progress Artist', 'Progress Song', 'Album', mp3Path, 'mp3'),
+                source: createCollectionTrack(
+                  'Progress Artist',
+                  'Progress Song',
+                  'Album',
+                  mp3Path,
+                  'mp3'
+                ),
               },
             ],
             estimatedTime: 1,
             estimatedSize: 50000,
-        warnings: [],
+            warnings: [],
           };
 
           const executor = new DefaultSyncExecutor(deps);
@@ -465,12 +483,18 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'copy',
-                source: createCollectionTrack('DryRun Artist', 'DryRun Song', 'Album', mp3Path, 'mp3'),
+                source: createCollectionTrack(
+                  'DryRun Artist',
+                  'DryRun Song',
+                  'Album',
+                  mp3Path,
+                  'mp3'
+                ),
               },
             ],
             estimatedTime: 1,
             estimatedSize: 50000,
-        warnings: [],
+            warnings: [],
           };
 
           const result = await executePlan(plan, deps, { dryRun: true });
@@ -489,4 +513,3 @@ describe('SyncExecutor integration', () => {
     });
   });
 });
-

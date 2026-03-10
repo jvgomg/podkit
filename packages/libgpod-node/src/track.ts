@@ -122,10 +122,7 @@ export function trackDisplayName(track: Track): string {
  * @param metadata Additional metadata
  * @returns TrackInput object
  */
-export function createTrackInput(
-  title: string,
-  metadata?: Omit<TrackInput, 'title'>
-): TrackInput {
+export function createTrackInput(title: string, metadata?: Omit<TrackInput, 'title'>): TrackInput {
   return {
     title,
     ...metadata,

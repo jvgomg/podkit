@@ -31,8 +31,12 @@ describe('podkit device add', () => {
         await writeFile(configPath, '# podkit config\n');
 
         const result = await runCli([
-          '--config', configPath,
-          'device', 'add', 'testipod', target.path,
+          '--config',
+          configPath,
+          'device',
+          'add',
+          'testipod',
+          target.path,
           '--yes',
         ]);
 
@@ -54,11 +58,7 @@ describe('podkit device add', () => {
           device: { name: string; trackCount: number };
           saved: boolean;
           isDefault: boolean;
-        }>([
-          '--config', configPath,
-          '--json',
-          'device', 'add', 'testipod', target.path,
-        ]);
+        }>(['--config', configPath, '--json', 'device', 'add', 'testipod', target.path]);
 
         expect(result.exitCode).toBe(0);
         expect(json).not.toBeNull();
@@ -73,11 +73,7 @@ describe('podkit device add', () => {
       await withTarget(async (target) => {
         await writeFile(configPath, '# podkit config\n');
 
-        await runCli([
-          '--config', configPath,
-          'device', 'add', 'firstipod', target.path,
-          '--yes',
-        ]);
+        await runCli(['--config', configPath, 'device', 'add', 'firstipod', target.path, '--yes']);
 
         const config = await readFile(configPath, 'utf-8');
         expect(config).toContain('[defaults]');
@@ -90,8 +86,12 @@ describe('podkit device add', () => {
         await writeFile(configPath, '# podkit config\n');
 
         const result = await runCli([
-          '--config', configPath,
-          'device', 'add', '123invalid', target.path,
+          '--config',
+          configPath,
+          'device',
+          'add',
+          '123invalid',
+          target.path,
           '--yes',
         ]);
 
@@ -103,14 +103,21 @@ describe('podkit device add', () => {
     it('rejects duplicate device name', async () => {
       await withTarget(async (target) => {
         // Create config with existing device
-        await writeFile(configPath, `[devices.existing]
+        await writeFile(
+          configPath,
+          `[devices.existing]
 volumeUuid = "test-uuid"
 volumeName = "test"
-`);
+`
+        );
 
         const result = await runCli([
-          '--config', configPath,
-          'device', 'add', 'existing', target.path,
+          '--config',
+          configPath,
+          'device',
+          'add',
+          'existing',
+          target.path,
           '--yes',
         ]);
 
@@ -133,8 +140,12 @@ volumeName = "test"
       await writeFile(configPath, '# podkit config\n');
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'add', 'newipod', uninitDir,
+        '--config',
+        configPath,
+        'device',
+        'add',
+        'newipod',
+        uninitDir,
         '--yes',
       ]);
 
@@ -153,11 +164,7 @@ volumeName = "test"
         success: boolean;
         initialized: boolean;
         device: { modelName: string };
-      }>([
-        '--config', configPath,
-        '--json',
-        'device', 'add', 'newipod', uninitDir,
-      ]);
+      }>(['--config', configPath, '--json', 'device', 'add', 'newipod', uninitDir]);
 
       expect(result.exitCode).toBe(0);
       expect(json).not.toBeNull();
@@ -172,8 +179,12 @@ volumeName = "test"
       await writeFile(configPath, '# podkit config\n');
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'add', 'badipod', '/nonexistent/path',
+        '--config',
+        configPath,
+        'device',
+        'add',
+        'badipod',
+        '/nonexistent/path',
         '--yes',
       ]);
 
@@ -199,20 +210,27 @@ describe('podkit device reset', () => {
   it('recreates database from scratch', async () => {
     await withTarget(async (target) => {
       // Add a device to config
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       // Get initial track count (should be 0, but testing the flow)
       const _initialCount = await target.getTrackCount();
 
       // Reset the database
       const result = await runCli([
-        '--config', configPath,
-        'device', 'reset', 'testipod',
+        '--config',
+        configPath,
+        'device',
+        'reset',
+        'testipod',
         '--yes',
-        '--device', target.path,
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -227,10 +245,13 @@ volumeName = "Test iPod"
 
   it('outputs JSON with reset info', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       const { result, json } = await runCliJson<{
         success: boolean;
@@ -238,11 +259,15 @@ volumeName = "Test iPod"
         modelName: string;
         tracksRemoved: number;
       }>([
-        '--config', configPath,
+        '--config',
+        configPath,
         '--json',
-        'device', 'reset', 'testipod',
+        'device',
+        'reset',
+        'testipod',
         '--yes',
-        '--device', target.path,
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -255,16 +280,23 @@ volumeName = "Test iPod"
 
   it('supports dry-run mode', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'reset', 'testipod',
+        '--config',
+        configPath,
+        'device',
+        'reset',
+        'testipod',
         '--dry-run',
-        '--device', target.path,
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -279,21 +311,28 @@ volumeName = "Test iPod"
 
   it('dry-run outputs JSON', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       const { result, json } = await runCliJson<{
         success: boolean;
         dryRun: boolean;
         mountPoint: string;
       }>([
-        '--config', configPath,
+        '--config',
+        configPath,
         '--json',
-        'device', 'reset', 'testipod',
+        'device',
+        'reset',
+        'testipod',
         '--dry-run',
-        '--device', target.path,
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -308,8 +347,11 @@ volumeName = "Test iPod"
       await writeFile(configPath, '# empty config\n');
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'reset', 'nonexistent',
+        '--config',
+        configPath,
+        'device',
+        'reset',
+        'nonexistent',
         '--yes',
       ]);
 
@@ -324,16 +366,23 @@ volumeName = "Test iPod"
       const uninitDir = join(tempDir, 'uninit-ipod');
       await mkdir(uninitDir, { recursive: true });
 
-      await writeFile(configPath, `[devices.uninitipod]
+      await writeFile(
+        configPath,
+        `[devices.uninitipod]
 volumeUuid = "test-uuid"
 volumeName = "Uninitialized iPod"
-`);
+`
+      );
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'reset', 'uninitipod',
+        '--config',
+        configPath,
+        'device',
+        'reset',
+        'uninitipod',
         '--yes',
-        '--device', uninitDir,
+        '--device',
+        uninitDir,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -349,16 +398,23 @@ volumeName = "Uninitialized iPod"
       const uninitDir = join(tempDir, 'uninit-dry-ipod');
       await mkdir(uninitDir, { recursive: true });
 
-      await writeFile(configPath, `[devices.uninitipod]
+      await writeFile(
+        configPath,
+        `[devices.uninitipod]
 volumeUuid = "test-uuid"
 volumeName = "Uninitialized iPod"
-`);
+`
+      );
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'reset', 'uninitipod',
+        '--config',
+        configPath,
+        'device',
+        'reset',
+        'uninitipod',
         '--dry-run',
-        '--device', uninitDir,
+        '--device',
+        uninitDir,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -385,16 +441,23 @@ describe('podkit device init', () => {
     const uninitDir = join(tempDir, 'empty-ipod');
     await mkdir(uninitDir, { recursive: true });
 
-    await writeFile(configPath, `[devices.emptyipod]
+    await writeFile(
+      configPath,
+      `[devices.emptyipod]
 volumeUuid = "test-uuid"
 volumeName = "Empty iPod"
-`);
+`
+    );
 
     const result = await runCli([
-      '--config', configPath,
-      'device', 'init', 'emptyipod',
+      '--config',
+      configPath,
+      'device',
+      'init',
+      'emptyipod',
       '--yes',
-      '--device', uninitDir,
+      '--device',
+      uninitDir,
     ]);
 
     expect(result.exitCode).toBe(0);
@@ -406,15 +469,22 @@ volumeName = "Empty iPod"
 
   it('fails when database already exists without --force', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'init', 'testipod',
-        '--device', target.path,
+        '--config',
+        configPath,
+        'device',
+        'init',
+        'testipod',
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(1);
@@ -425,17 +495,24 @@ volumeName = "Test iPod"
 
   it('reinitializes with --force and --yes', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, `[devices.testipod]
+      await writeFile(
+        configPath,
+        `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+      );
 
       const result = await runCli([
-        '--config', configPath,
-        'device', 'init', 'testipod',
+        '--config',
+        configPath,
+        'device',
+        'init',
+        'testipod',
         '--force',
         '--yes',
-        '--device', target.path,
+        '--device',
+        target.path,
       ]);
 
       expect(result.exitCode).toBe(0);
@@ -447,10 +524,13 @@ volumeName = "Test iPod"
     const uninitDir = join(tempDir, 'new-ipod');
     await mkdir(uninitDir, { recursive: true });
 
-    await writeFile(configPath, `[devices.newipod]
+    await writeFile(
+      configPath,
+      `[devices.newipod]
 volumeUuid = "test-uuid"
 volumeName = "New iPod"
-`);
+`
+    );
 
     const { result, json } = await runCliJson<{
       success: boolean;
@@ -458,11 +538,15 @@ volumeName = "New iPod"
       mountPoint: string;
       modelName: string;
     }>([
-      '--config', configPath,
+      '--config',
+      configPath,
       '--json',
-      'device', 'init', 'newipod',
+      'device',
+      'init',
+      'newipod',
       '--yes',
-      '--device', uninitDir,
+      '--device',
+      uninitDir,
     ]);
 
     expect(result.exitCode).toBe(0);

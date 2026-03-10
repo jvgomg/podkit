@@ -131,10 +131,10 @@ export interface AacPreset {
  */
 export const AAC_PRESETS: Record<Exclude<QualityPreset, 'alac'>, AacPreset> = {
   // VBR presets (variable bitrate, better quality-per-byte)
-  'max': { mode: 'vbr', quality: 5, targetKbps: 320 },
-  'high': { mode: 'vbr', quality: 5, targetKbps: 256 },
-  'medium': { mode: 'vbr', quality: 4, targetKbps: 192 },
-  'low': { mode: 'vbr', quality: 2, targetKbps: 128 },
+  max: { mode: 'vbr', quality: 5, targetKbps: 320 },
+  high: { mode: 'vbr', quality: 5, targetKbps: 256 },
+  medium: { mode: 'vbr', quality: 4, targetKbps: 192 },
+  low: { mode: 'vbr', quality: 2, targetKbps: 128 },
 
   // CBR presets (constant bitrate, predictable sizes)
   'max-cbr': { mode: 'cbr', targetKbps: 320 },
@@ -264,11 +264,7 @@ export interface Transcoder {
   /**
    * Transcode an audio file to iPod-compatible format
    */
-  transcode(
-    input: string,
-    output: string,
-    preset: QualityPreset
-  ): Promise<TranscodeResult>;
+  transcode(input: string, output: string, preset: QualityPreset): Promise<TranscodeResult>;
 
   /**
    * Probe an audio file for metadata

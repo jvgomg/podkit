@@ -227,11 +227,7 @@ describe('config writer functions', () => {
 
     it('fails if device already exists', () => {
       // Add device first
-      addDevice(
-        'terapod',
-        { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' },
-        { configPath }
-      );
+      addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
 
       // Try to add again
       const result = addDevice(
@@ -265,11 +261,7 @@ describe('config writer functions', () => {
   describe('removeDevice', () => {
     it('removes device section from config', () => {
       // Add device first
-      addDevice(
-        'terapod',
-        { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' },
-        { configPath }
-      );
+      addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
 
       // Import and use removeDevice
       const { removeDevice } = require('../config/writer.js');
@@ -304,11 +296,7 @@ describe('config writer functions', () => {
   describe('setDefaultDevice', () => {
     it('creates defaults section if it does not exist', () => {
       // Add a device first
-      addDevice(
-        'terapod',
-        { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' },
-        { configPath }
-      );
+      addDevice('terapod', { volumeUuid: 'ABC-123', volumeName: 'TERAPOD' }, { configPath });
 
       const result = setDefaultDevice('terapod', { configPath });
 

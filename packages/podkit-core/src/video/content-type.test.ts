@@ -212,7 +212,9 @@ describe('detectContentType - folder patterns', () => {
 
 describe('detectContentType - series title extraction', () => {
   it('extracts series title from parent of Season folder', () => {
-    const result = detectContentType('/TV Shows/Breaking Bad/Season 1/Breaking.Bad.S01E01.720p.mp4');
+    const result = detectContentType(
+      '/TV Shows/Breaking Bad/Season 1/Breaking.Bad.S01E01.720p.mp4'
+    );
 
     expect(result.seriesTitle).toBe('Breaking Bad');
   });
@@ -437,7 +439,9 @@ describe('detectContentType - movie fallback', () => {
 
 describe('detectContentType - real-world examples', () => {
   it('handles typical scene release naming', () => {
-    const result = detectContentType('/TV Shows/Breaking Bad/Season 1/Breaking.Bad.S01E01.720p.BluRay.x264-DEMAND.mkv');
+    const result = detectContentType(
+      '/TV Shows/Breaking Bad/Season 1/Breaking.Bad.S01E01.720p.BluRay.x264-DEMAND.mkv'
+    );
 
     expect(result.type).toBe('tvshow');
     expect(result.confidence).toBe('high');
@@ -475,7 +479,9 @@ describe('detectContentType - real-world examples', () => {
   });
 
   it('handles Netflix-style naming', () => {
-    const result = detectContentType('/TV Shows/Stranger Things/Season 01/Stranger Things - S01E01 - Chapter One.mp4');
+    const result = detectContentType(
+      '/TV Shows/Stranger Things/Season 01/Stranger Things - S01E01 - Chapter One.mp4'
+    );
 
     expect(result.type).toBe('tvshow');
     expect(result.confidence).toBe('high');
@@ -485,7 +491,9 @@ describe('detectContentType - real-world examples', () => {
   });
 
   it('handles Plex-style naming', () => {
-    const result = detectContentType('/TV/The Office (US)/Season 01/The Office (US) - s01e01 - Pilot.mp4');
+    const result = detectContentType(
+      '/TV/The Office (US)/Season 01/The Office (US) - s01e01 - Pilot.mp4'
+    );
 
     expect(result.type).toBe('tvshow');
     expect(result.confidence).toBe('high');
@@ -503,7 +511,9 @@ describe('detectContentType - real-world examples', () => {
   });
 
   it('handles web-dl format', () => {
-    const result = detectContentType('/Series/The Mandalorian/Season 02/The.Mandalorian.S02E01.WEB-DL.1080p.mkv');
+    const result = detectContentType(
+      '/Series/The Mandalorian/Season 02/The.Mandalorian.S02E01.WEB-DL.1080p.mkv'
+    );
 
     expect(result.type).toBe('tvshow');
     expect(result.confidence).toBe('high');
@@ -545,7 +555,8 @@ describe('detectContentType - edge cases', () => {
   });
 
   it('handles very long paths', () => {
-    const longPath = '/Media/TV Shows/A Very Long Show Name That Goes On And On/Season 1/' +
+    const longPath =
+      '/Media/TV Shows/A Very Long Show Name That Goes On And On/Season 1/' +
       'A.Very.Long.Show.Name.That.Goes.On.And.On.S01E01.The.Episode.Title.720p.BluRay.x264-GROUP.mkv';
 
     const result = detectContentType(longPath);

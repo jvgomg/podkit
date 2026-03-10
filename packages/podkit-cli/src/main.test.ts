@@ -38,7 +38,7 @@ describe('podkit-cli commands', () => {
   });
 
   it('sync command has expected options', () => {
-    const opts = syncCommand.options.map(o => o.long);
+    const opts = syncCommand.options.map((o) => o.long);
     expect(opts).toContain('--dry-run');
     expect(opts).toContain('--quality');
     expect(opts).toContain('--filter');
@@ -49,7 +49,7 @@ describe('podkit-cli commands', () => {
   });
 
   it('device command has subcommands', () => {
-    const subcommands = deviceCommand.commands.map(c => c.name());
+    const subcommands = deviceCommand.commands.map((c) => c.name());
     expect(subcommands).toContain('list');
     expect(subcommands).toContain('add');
     expect(subcommands).toContain('remove');
@@ -64,7 +64,7 @@ describe('podkit-cli commands', () => {
   });
 
   it('collection command has subcommands', () => {
-    const subcommands = collectionCommand.commands.map(c => c.name());
+    const subcommands = collectionCommand.commands.map((c) => c.name());
     expect(subcommands).toContain('list');
     expect(subcommands).toContain('add');
     expect(subcommands).toContain('remove');

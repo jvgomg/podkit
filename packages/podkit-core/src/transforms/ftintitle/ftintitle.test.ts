@@ -353,19 +353,31 @@ describe('applyFtInTitle', () => {
     });
 
     it('inserts before (Radio Edit)', () => {
-      const result = applyFtInTitle('Artist A ft. Artist B', 'Song Name (Radio Edit)', defaultOptions);
+      const result = applyFtInTitle(
+        'Artist A ft. Artist B',
+        'Song Name (Radio Edit)',
+        defaultOptions
+      );
       expect(result.title).toBe('Song Name (feat. Artist B) (Radio Edit)');
     });
 
     it('inserts before [Extended Mix]', () => {
-      const result = applyFtInTitle('Artist A ft. Artist B', 'Song Name [Extended Mix]', defaultOptions);
+      const result = applyFtInTitle(
+        'Artist A ft. Artist B',
+        'Song Name [Extended Mix]',
+        defaultOptions
+      );
       expect(result.title).toBe('Song Name (feat. Artist B) [Extended Mix]');
     });
   });
 
   describe('skip cases', () => {
     it('skips when title already has featuring info', () => {
-      const result = applyFtInTitle('Artist A feat. Artist B', 'Song Name (feat. Artist B)', defaultOptions);
+      const result = applyFtInTitle(
+        'Artist A feat. Artist B',
+        'Song Name (feat. Artist B)',
+        defaultOptions
+      );
       // Artist should still be cleaned
       expect(result.artist).toBe('Artist A');
       // Title unchanged (already has feat)
@@ -471,7 +483,12 @@ describe('ftintitleTransform', () => {
   describe('enabled state', () => {
     it('transforms track when enabled', () => {
       const track = createTrack('Artist A feat. Artist B', 'Song Name');
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
+      const config: FtInTitleConfig = {
+        enabled: true,
+        drop: false,
+        format: 'feat. {}',
+        ignore: [],
+      };
 
       const result = ftintitleTransform.apply(track, config);
 
@@ -483,7 +500,12 @@ describe('ftintitleTransform', () => {
 
     it('returns same object when no change needed', () => {
       const track = createTrack('Artist A', 'Song Name');
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
+      const config: FtInTitleConfig = {
+        enabled: true,
+        drop: false,
+        format: 'feat. {}',
+        ignore: [],
+      };
 
       const result = ftintitleTransform.apply(track, config);
 
@@ -497,7 +519,12 @@ describe('ftintitleTransform', () => {
         album: 'Test Album',
         albumArtist: 'Artist A',
       };
-      const config: FtInTitleConfig = { enabled: true, drop: false, format: 'feat. {}', ignore: [] };
+      const config: FtInTitleConfig = {
+        enabled: true,
+        drop: false,
+        format: 'feat. {}',
+        ignore: [],
+      };
 
       const result = ftintitleTransform.apply(track, config);
 
@@ -531,8 +558,8 @@ describe('real-world examples', () => {
     },
     {
       description: 'multiple featured artists',
-      input: { artist: 'DJ Khaled feat. Drake, Lil Wayne & Rick Ross', title: 'I\'m On One' },
-      expected: { artist: 'DJ Khaled', title: 'I\'m On One (feat. Drake, Lil Wayne & Rick Ross)' },
+      input: { artist: 'DJ Khaled feat. Drake, Lil Wayne & Rick Ross', title: "I'm On One" },
+      expected: { artist: 'DJ Khaled', title: "I'm On One (feat. Drake, Lil Wayne & Rick Ross)" },
     },
     {
       description: 'remix with featured artist',

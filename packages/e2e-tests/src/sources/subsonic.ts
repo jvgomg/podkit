@@ -203,7 +203,9 @@ export class SubsonicTestSource implements TestSource {
             const authResponse = await fetch(pingUrl);
             if (authResponse.ok) {
               const data = (await authResponse.json()) as Record<string, unknown>;
-              const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
+              const subsonicResponse = data['subsonic-response'] as
+                | Record<string, unknown>
+                | undefined;
               if (subsonicResponse?.status === 'ok') {
                 // Server is fully ready with admin user
                 return;

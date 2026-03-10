@@ -10,12 +10,7 @@
 
 import type { PodkitConfig, DeviceConfig } from '../config/types.js';
 import type { DeviceManager, PlatformDeviceInfo } from '@podkit/core';
-import type {
-  ResolvedDevice,
-  DeviceIdentity,
-  CliDeviceArg,
-  ResolutionResult,
-} from './types.js';
+import type { ResolvedDevice, DeviceIdentity, CliDeviceArg, ResolutionResult } from './types.js';
 import { resolveNamedEntity, isPathLike, formatNotFoundError } from './core.js';
 
 // =============================================================================
@@ -163,7 +158,6 @@ export function resolveEffectiveDevice(
 ):
   | { success: true; device?: ResolvedDevice; cliPath?: string }
   | { success: false; error: string } {
-
   // Case 1: --device provided as path
   if (cliDeviceArg.type === 'path') {
     return { success: true, cliPath: cliDeviceArg.path };
@@ -229,9 +223,7 @@ export interface DevicePathOptions {
  * @param options - Resolution options
  * @returns Device path result
  */
-export async function resolveDevicePath(
-  options: DevicePathOptions
-): Promise<DevicePathResult> {
+export async function resolveDevicePath(options: DevicePathOptions): Promise<DevicePathResult> {
   const { cliPath, deviceIdentity, manager, requireMounted = true } = options;
 
   // Priority 1: CLI path takes precedence

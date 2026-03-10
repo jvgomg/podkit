@@ -30,7 +30,9 @@ describe('EmbeddedVideoMetadataAdapter integration', () => {
         expect(metadata.studio).toBe('Test Studio');
         expect(metadata.year).toBe(2024);
         expect(metadata.genre).toBe('Test');
-        expect(metadata.description).toBe('A test movie with embedded metadata for validation purposes.');
+        expect(metadata.description).toBe(
+          'A test movie with embedded metadata for validation purposes.'
+        );
       }
     });
   });

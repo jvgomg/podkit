@@ -22,12 +22,7 @@ import { Command } from 'commander';
 import { existsSync, statfsSync } from 'node:fs';
 import * as readline from 'node:readline';
 import { getContext } from '../context.js';
-import {
-  addDevice,
-  removeDevice,
-  setDefaultDevice,
-  DEFAULT_CONFIG_PATH,
-} from '../config/index.js';
+import { addDevice, removeDevice, setDefaultDevice, DEFAULT_CONFIG_PATH } from '../config/index.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -509,7 +504,8 @@ const addSubcommand = new Command('add')
           console.log('This iPod needs to be initialized (no iTunesDB found).');
         }
 
-        const shouldInit = autoConfirm || globalOpts.json || await confirm('Initialize iPod database now? [Y/n] ');
+        const shouldInit =
+          autoConfirm || globalOpts.json || (await confirm('Initialize iPod database now? [Y/n] '));
 
         if (!shouldInit) {
           console.log('Cancelled. iPod not initialized.');
@@ -752,7 +748,8 @@ const addSubcommand = new Command('add')
           console.log('This iPod needs to be initialized (no iTunesDB found).');
         }
 
-        const shouldInit = autoConfirm || globalOpts.json || await confirm('Initialize iPod database now? [Y/n] ');
+        const shouldInit =
+          autoConfirm || globalOpts.json || (await confirm('Initialize iPod database now? [Y/n] '));
 
         if (!shouldInit) {
           console.log('Cancelled. iPod not initialized.');
@@ -854,7 +851,7 @@ const addSubcommand = new Command('add')
     console.log(`  Device:      /dev/${ipod.identifier}`);
     console.log('');
 
-    const shouldSave = autoConfirm || await confirm(`Add this iPod as "${name}"? [Y/n] `);
+    const shouldSave = autoConfirm || (await confirm(`Add this iPod as "${name}"? [Y/n] `));
 
     if (!shouldSave) {
       console.log('Cancelled. No changes made.');
@@ -1037,12 +1034,8 @@ const infoSubcommand = new Command('info')
 
               // Count music and video tracks
               const tracks = ipod.getTracks();
-              const musicCount = tracks.filter((t) =>
-                core.isMusicMediaType(t.mediaType)
-              ).length;
-              const videoCount = tracks.filter((t) =>
-                core.isVideoMediaType(t.mediaType)
-              ).length;
+              const musicCount = tracks.filter((t) => core.isMusicMediaType(t.mediaType)).length;
+              const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
 
               liveStatus = {
                 mounted: true,
@@ -1089,16 +1082,18 @@ const infoSubcommand = new Command('info')
     if (globalOpts.json) {
       outputJson({
         success: true,
-        device: device ? {
-          name: deviceName!,
-          volumeUuid: device.volumeUuid,
-          volumeName: device.volumeName,
-          quality: device.quality,
-          videoQuality: device.videoQuality,
-          artwork: device.artwork,
-          transforms: device.transforms as unknown as Record<string, unknown> | undefined,
-          isDefault,
-        } : undefined,
+        device: device
+          ? {
+              name: deviceName!,
+              volumeUuid: device.volumeUuid,
+              volumeName: device.volumeName,
+              quality: device.quality,
+              videoQuality: device.videoQuality,
+              artwork: device.artwork,
+              transforms: device.transforms as unknown as Record<string, unknown> | undefined,
+              isDefault,
+            }
+          : undefined,
         status: liveStatus,
       });
       return;
@@ -1215,7 +1210,9 @@ const musicSubcommand = new Command('music')
       const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
       if (!globalOpts.quiet && deviceIdentity?.volumeUuid && format !== 'json') {
-        console.error(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+        console.error(
+          formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+        );
       }
 
       const resolveResult = await resolveDevicePath({
@@ -1318,7 +1315,9 @@ const videoSubcommand = new Command('video')
       const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
       if (!globalOpts.quiet && deviceIdentity?.volumeUuid && format !== 'json') {
-        console.error(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+        console.error(
+          formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+        );
       }
 
       const resolveResult = await resolveDevicePath({
@@ -1451,7 +1450,9 @@ const clearSubcommand = new Command('clear')
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+      console.log(
+        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+      );
     }
 
     const resolveResult = await resolveDevicePath({
@@ -1499,9 +1500,7 @@ const clearSubcommand = new Command('clear')
       if (globalOpts.json) {
         outputJson({
           success: false,
-          error: isIpodError
-            ? `Not an iPod or database corrupted: ${message}`
-            : message,
+          error: isIpodError ? `Not an iPod or database corrupted: ${message}` : message,
         });
       } else {
         console.error(`Cannot read iPod database at: ${devicePath}`);
@@ -1599,7 +1598,9 @@ const clearSubcommand = new Command('clear')
           if (contentType === 'all') {
             console.log('This will remove ALL content from the iPod. Files will be deleted.');
           } else {
-            console.log(`This will remove all ${contentLabel} from the iPod. Files will be deleted.`);
+            console.log(
+              `This will remove all ${contentLabel} from the iPod. Files will be deleted.`
+            );
           }
           console.log('This action cannot be undone.');
           console.log('');
@@ -1720,7 +1721,9 @@ const resetSubcommand = new Command('reset')
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+      console.log(
+        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+      );
     }
 
     const resolveResult = await resolveDevicePath({
@@ -1946,7 +1949,9 @@ const ejectSubcommand = new Command('eject')
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+      console.log(
+        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+      );
     }
 
     const resolveResult = await resolveDevicePath({
@@ -2128,7 +2133,9 @@ const mountSubcommand = new Command('mount')
       if (volumeUuid) {
         if (!globalOpts.quiet && !globalOpts.json) {
           const deviceIdentity = getDeviceIdentity(resolvedDevice);
-          console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+          console.log(
+            formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+          );
         }
 
         const device = await manager.findByVolumeUuid(volumeUuid);
@@ -2333,7 +2340,9 @@ const initSubcommand = new Command('init')
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+      console.log(
+        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+      );
     }
 
     const resolveResult = await resolveDevicePath({

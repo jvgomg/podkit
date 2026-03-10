@@ -12,7 +12,12 @@ import {
   type VideoScanWarning,
   type CollectionVideo,
 } from './directory-adapter.js';
-import type { VideoMetadata, VideoMetadataAdapter, MovieMetadata, TVShowMetadata } from './metadata.js';
+import type {
+  VideoMetadata,
+  VideoMetadataAdapter,
+  MovieMetadata,
+  TVShowMetadata,
+} from './metadata.js';
 import type { VideoSourceAnalysis } from './types.js';
 
 // =============================================================================

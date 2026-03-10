@@ -37,17 +37,10 @@ export type {
 } from './types.js';
 
 // Config defaults
-export {
-  DEFAULT_FTINTITLE_CONFIG,
-  DEFAULT_TRANSFORMS_CONFIG,
-} from './types.js';
+export { DEFAULT_FTINTITLE_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './types.js';
 
 // Pipeline
-export {
-  applyTransforms,
-  hasEnabledTransforms,
-  getEnabledTransformsSummary,
-} from './pipeline.js';
+export { applyTransforms, hasEnabledTransforms, getEnabledTransformsSummary } from './pipeline.js';
 
 // ftintitle transform
 export { ftintitleTransform } from './ftintitle/index.js';

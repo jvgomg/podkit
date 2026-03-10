@@ -375,7 +375,10 @@ export interface VideoPresetSettings {
  * - 24-26: Good quality
  * - 27-28: Acceptable quality
  */
-export const VIDEO_PRESET_SETTINGS: Record<string, Record<VideoQualityPreset, VideoPresetSettings>> = {
+export const VIDEO_PRESET_SETTINGS: Record<
+  string,
+  Record<VideoQualityPreset, VideoPresetSettings>
+> = {
   // iPod Classic (640x480, Main profile)
   'ipod-classic': {
     max: { videoBitrate: 2500, audioBitrate: 160, crf: 18 },
@@ -419,6 +422,7 @@ export function getPresetSettingsWithFallback(
   preset: VideoQualityPreset
 ): VideoPresetSettings {
   // ipod-classic is guaranteed to exist in VIDEO_PRESET_SETTINGS
-  return VIDEO_PRESET_SETTINGS[deviceProfile]?.[preset]
-    ?? VIDEO_PRESET_SETTINGS['ipod-classic']![preset];
+  return (
+    VIDEO_PRESET_SETTINGS[deviceProfile]?.[preset] ?? VIDEO_PRESET_SETTINGS['ipod-classic']![preset]
+  );
 }

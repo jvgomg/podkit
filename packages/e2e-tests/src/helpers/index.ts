@@ -26,11 +26,7 @@ export {
   type TestTrack,
 } from './fixtures';
 
-export {
-  runPreflightChecks,
-  printResults,
-  type CheckResult,
-} from './preflight';
+export { runPreflightChecks, printResults, type CheckResult } from './preflight';
 
 export {
   getVideoFixturesDir,

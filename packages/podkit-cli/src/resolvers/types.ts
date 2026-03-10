@@ -8,7 +8,12 @@
  * - Clear error messages when not found
  */
 
-import type { PodkitConfig, DeviceConfig, MusicCollectionConfig, VideoCollectionConfig } from '../config/types.js';
+import type {
+  PodkitConfig,
+  DeviceConfig,
+  MusicCollectionConfig,
+  VideoCollectionConfig,
+} from '../config/types.js';
 
 // =============================================================================
 // Generic Resolution Types

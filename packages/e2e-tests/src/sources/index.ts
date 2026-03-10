@@ -9,8 +9,4 @@ export type { TestSource, SourceAvailabilityResult } from './types.js';
 
 export { DirectoryTestSource, createDirectorySource } from './directory.js';
 
-export {
-  SubsonicTestSource,
-  createSubsonicSource,
-  isDockerAvailable,
-} from './subsonic.js';
+export { SubsonicTestSource, createSubsonicSource, isDockerAvailable } from './subsonic.js';

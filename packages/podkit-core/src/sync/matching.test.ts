@@ -31,11 +31,7 @@ import type { IPodTrack } from './types.js';
 /**
  * Create a minimal matchable object for testing
  */
-function createMatchable(
-  artist: string,
-  title: string,
-  album: string
-): Matchable {
+function createMatchable(artist: string, title: string, album: string): Matchable {
   return { artist, title, album };
 }
 
@@ -240,12 +236,8 @@ describe('normalizeArtist', () => {
     });
 
     it('matches "The X" and "X, The" to same result', () => {
-      expect(normalizeArtist('The Beatles')).toBe(
-        normalizeArtist('Beatles, The')
-      );
-      expect(normalizeArtist('The Rolling Stones')).toBe(
-        normalizeArtist('Rolling Stones, The')
-      );
+      expect(normalizeArtist('The Beatles')).toBe(normalizeArtist('Beatles, The'));
+      expect(normalizeArtist('The Rolling Stones')).toBe(normalizeArtist('Rolling Stones, The'));
     });
 
     it('handles case variations', () => {
@@ -262,9 +254,7 @@ describe('normalizeArtist', () => {
 
     it('handles "The" in the middle of name', () => {
       // "The" in the middle should not be moved
-      expect(normalizeArtist('Hootie & The Blowfish')).toBe(
-        'hootie & the blowfish'
-      );
+      expect(normalizeArtist('Hootie & The Blowfish')).toBe('hootie & the blowfish');
       expect(normalizeArtist('Tom Petty and The Heartbreakers')).toBe(
         'tom petty and the heartbreakers'
       );
@@ -293,9 +283,7 @@ describe('normalizeArtist', () => {
 
     it('does not treat partial matches as unknown', () => {
       // "Unknown" in the name but not a placeholder
-      expect(normalizeArtist('Unknown Mortal Orchestra')).toBe(
-        'unknown mortal orchestra'
-      );
+      expect(normalizeArtist('Unknown Mortal Orchestra')).toBe('unknown mortal orchestra');
     });
   });
 });
@@ -376,11 +364,7 @@ describe('getMatchKey', () => {
 
   it('generates consistent keys regardless of whitespace', () => {
     const track1 = createMatchable('The Beatles', 'Hey Jude', 'Past Masters');
-    const track2 = createMatchable(
-      '  The  Beatles  ',
-      '  Hey  Jude  ',
-      '  Past  Masters  '
-    );
+    const track2 = createMatchable('  The  Beatles  ', '  Hey  Jude  ', '  Past  Masters  ');
 
     expect(getMatchKey(track1)).toBe(getMatchKey(track2));
   });
@@ -478,33 +462,21 @@ describe('tracksMatch', () => {
   describe('whitespace differences', () => {
     it('matches tracks with different leading/trailing whitespace', () => {
       const track1 = createMatchable('The Beatles', 'Hey Jude', 'Past Masters');
-      const track2 = createMatchable(
-        '  The Beatles  ',
-        '  Hey Jude  ',
-        '  Past Masters  '
-      );
+      const track2 = createMatchable('  The Beatles  ', '  Hey Jude  ', '  Past Masters  ');
 
       expect(tracksMatch(track1, track2)).toBe(true);
     });
 
     it('matches tracks with different internal whitespace', () => {
       const track1 = createMatchable('The Beatles', 'Hey Jude', 'Past Masters');
-      const track2 = createMatchable(
-        'The   Beatles',
-        'Hey    Jude',
-        'Past   Masters'
-      );
+      const track2 = createMatchable('The   Beatles', 'Hey    Jude', 'Past   Masters');
 
       expect(tracksMatch(track1, track2)).toBe(true);
     });
 
     it('matches tracks with tabs and newlines', () => {
       const track1 = createMatchable('The Beatles', 'Hey Jude', 'Past Masters');
-      const track2 = createMatchable(
-        'The\tBeatles',
-        'Hey\nJude',
-        'Past\r\nMasters'
-      );
+      const track2 = createMatchable('The\tBeatles', 'Hey\nJude', 'Past\r\nMasters');
 
       expect(tracksMatch(track1, track2)).toBe(true);
     });
@@ -657,12 +629,7 @@ describe('tracksMatch', () => {
   describe('edge cases', () => {
     it('handles empty fields', () => {
       // Both empty - should match
-      expect(
-        tracksMatch(
-          createMatchable('', '', ''),
-          createMatchable('', '', '')
-        )
-      ).toBe(true);
+      expect(tracksMatch(createMatchable('', '', ''), createMatchable('', '', ''))).toBe(true);
 
       // One empty, one not - should NOT match
       expect(
@@ -698,10 +665,7 @@ describe('tracksMatch', () => {
 
     it('handles tracks with only numbers', () => {
       expect(
-        tracksMatch(
-          createMatchable('311', '1999', '2001'),
-          createMatchable('311', '1999', '2001')
-        )
+        tracksMatch(createMatchable('311', '1999', '2001'), createMatchable('311', '1999', '2001'))
       ).toBe(true);
     });
 
@@ -715,8 +679,8 @@ describe('tracksMatch', () => {
 
       expect(
         tracksMatch(
-          createMatchable('Guns N\' Roses', 'Sweet Child O\' Mine', 'Appetite'),
-          createMatchable('Guns N\' Roses', 'Sweet Child O\' Mine', 'Appetite')
+          createMatchable("Guns N' Roses", "Sweet Child O' Mine", 'Appetite'),
+          createMatchable("Guns N' Roses", "Sweet Child O' Mine", 'Appetite')
         )
       ).toBe(true);
     });
@@ -848,13 +812,9 @@ describe('findMatches', () => {
   });
 
   it('matches tracks with normalization', () => {
-    const collectionTracks = [
-      createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS'),
-    ];
+    const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [
-      createIPodTrack('the beatles', 'hey jude', 'past masters'),
-    ];
+    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
 
     const results = findMatches(collectionTracks, ipodTracks);
 
@@ -887,9 +847,7 @@ describe('findMatches', () => {
   });
 
   it('handles no matches', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist 1', 'Song 1', 'Album 1'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist 1', 'Song 1', 'Album 1')];
 
     const ipodTracks = [createIPodTrack('Artist 2', 'Song 2', 'Album 2')];
 
@@ -905,9 +863,7 @@ describe('findMatches', () => {
 
 describe('findOrphanedTracks', () => {
   it('finds tracks on iPod not in collection', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist 1', 'Song 1', 'Album 1'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist 1', 'Song 1', 'Album 1')];
 
     const ipodTracks = [
       createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
@@ -923,9 +879,7 @@ describe('findOrphanedTracks', () => {
   });
 
   it('returns empty array when all iPod tracks are in collection', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
     const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
 
@@ -948,9 +902,7 @@ describe('findOrphanedTracks', () => {
   });
 
   it('handles empty iPod', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
     const orphans = findOrphanedTracks(collectionTracks, []);
 
@@ -958,13 +910,9 @@ describe('findOrphanedTracks', () => {
   });
 
   it('matches with normalization', () => {
-    const collectionTracks = [
-      createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS'),
-    ];
+    const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [
-      createIPodTrack('the beatles', 'hey jude', 'past masters'),
-    ];
+    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
 
     const orphans = findOrphanedTracks(collectionTracks, ipodTracks);
 

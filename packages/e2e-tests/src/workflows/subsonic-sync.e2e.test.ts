@@ -15,7 +15,12 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { withTarget } from '../targets/index.js';
-import { runCli, runCliJson, createSubsonicConfig, cleanupTempConfig } from '../helpers/cli-runner.js';
+import {
+  runCli,
+  runCliJson,
+  createSubsonicConfig,
+  cleanupTempConfig,
+} from '../helpers/cli-runner.js';
 import { SubsonicTestSource, isDockerAvailable } from '../sources/index.js';
 
 // =============================================================================
@@ -108,22 +113,17 @@ describe('Subsonic sync workflow', () => {
           expect(initialCount).toBe(0);
 
           // Create Subsonic config
-          const configPath = await createSubsonicConfig(
-            source!.serverUrl,
-            source!.username
-          );
+          const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
 
           try {
             // Run sync with password in environment
-            const { result, json } = await runCliJson<SyncOutput>([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-              '--json',
-            ], {
-              env: source!.getEnv(),
-              timeout: 180000, // 3 min for download + transcode
-            });
+            const { result, json } = await runCliJson<SyncOutput>(
+              ['--config', configPath, 'sync', '--device', target.path, '--json'],
+              {
+                env: source!.getEnv(),
+                timeout: 180000, // 3 min for download + transcode
+              }
+            );
 
             expect(result.exitCode).toBe(0);
             expect(json?.success).toBe(true);
@@ -164,22 +164,17 @@ describe('Subsonic sync workflow', () => {
           expect(initialCount).toBe(0);
 
           // Create Subsonic config
-          const configPath = await createSubsonicConfig(
-            source!.serverUrl,
-            source!.username
-          );
+          const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
 
           try {
             // Run dry-run
-            const result = await runCli([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-              '--dry-run',
-            ], {
-              env: source!.getEnv(),
-              timeout: 60000,
-            });
+            const result = await runCli(
+              ['--config', configPath, 'sync', '--device', target.path, '--dry-run'],
+              {
+                env: source!.getEnv(),
+                timeout: 60000,
+              }
+            );
 
             expect(result.exitCode).toBe(0);
             expect(result.stdout).toContain('Dry Run');
@@ -206,22 +201,16 @@ describe('Subsonic sync workflow', () => {
         }
 
         await withTarget(async (target) => {
-          const configPath = await createSubsonicConfig(
-            source!.serverUrl,
-            source!.username
-          );
+          const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
 
           try {
-            const { result, json } = await runCliJson<SyncOutput>([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-              '--dry-run',
-              '--json',
-            ], {
-              env: source!.getEnv(),
-              timeout: 60000,
-            });
+            const { result, json } = await runCliJson<SyncOutput>(
+              ['--config', configPath, 'sync', '--device', target.path, '--dry-run', '--json'],
+              {
+                env: source!.getEnv(),
+                timeout: 60000,
+              }
+            );
 
             expect(result.exitCode).toBe(0);
             expect(json?.success).toBe(true);
@@ -249,21 +238,17 @@ describe('Subsonic sync workflow', () => {
         }
 
         await withTarget(async (target) => {
-          const configPath = await createSubsonicConfig(
-            source!.serverUrl,
-            source!.username
-          );
+          const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
 
           try {
             // First sync
-            const firstSync = await runCli([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-            ], {
-              env: source!.getEnv(),
-              timeout: 180000,
-            });
+            const firstSync = await runCli(
+              ['--config', configPath, 'sync', '--device', target.path],
+              {
+                env: source!.getEnv(),
+                timeout: 180000,
+              }
+            );
             expect(firstSync.exitCode).toBe(0);
 
             const trackCountAfterFirst = await target.getTrackCount();
@@ -271,14 +256,13 @@ describe('Subsonic sync workflow', () => {
             console.log(`First sync: ${trackCountAfterFirst} tracks`);
 
             // Second sync - should find nothing to do
-            const secondSync = await runCli([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-            ], {
-              env: source!.getEnv(),
-              timeout: 60000,
-            });
+            const secondSync = await runCli(
+              ['--config', configPath, 'sync', '--device', target.path],
+              {
+                env: source!.getEnv(),
+                timeout: 60000,
+              }
+            );
 
             expect(secondSync.exitCode).toBe(0);
             expect(secondSync.stdout).toContain('already in sync');
@@ -305,22 +289,17 @@ describe('Subsonic sync workflow', () => {
         }
 
         await withTarget(async (target) => {
-          const configPath = await createSubsonicConfig(
-            source!.serverUrl,
-            source!.username
-          );
+          const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
 
           try {
             // Sync with JSON output to see transcoding details
-            const { result, json } = await runCliJson<SyncOutput>([
-              '--config', configPath,
-              'sync',
-              '--device', target.path,
-              '--json',
-            ], {
-              env: source!.getEnv(),
-              timeout: 180000,
-            });
+            const { result, json } = await runCliJson<SyncOutput>(
+              ['--config', configPath, 'sync', '--device', target.path, '--json'],
+              {
+                env: source!.getEnv(),
+                timeout: 180000,
+              }
+            );
 
             expect(result.exitCode).toBe(0);
             expect(json?.success).toBe(true);

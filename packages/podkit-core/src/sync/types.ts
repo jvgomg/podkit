@@ -45,10 +45,7 @@ export interface ConflictTrack {
  * - transform-remove: Transform is disabled and iPod has transformed metadata
  * - metadata-changed: Source metadata changed (for future use)
  */
-export type UpdateReason =
-  | 'transform-apply'
-  | 'transform-remove'
-  | 'metadata-changed';
+export type UpdateReason = 'transform-apply' | 'transform-remove' | 'metadata-changed';
 
 /**
  * A single metadata field change
@@ -224,10 +221,7 @@ export interface SyncExecutor {
    * Execute a sync plan
    * Yields progress updates during execution
    */
-  execute(
-    plan: SyncPlan,
-    options: ExecuteOptions
-  ): AsyncIterable<SyncProgress>;
+  execute(plan: SyncPlan, options: ExecuteOptions): AsyncIterable<SyncProgress>;
 }
 
 import type { TransformsConfig } from '../transforms/types.js';

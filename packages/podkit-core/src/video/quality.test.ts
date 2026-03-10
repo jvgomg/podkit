@@ -378,7 +378,7 @@ describe('generateQualityWarnings', () => {
       const settings = calculateEffectiveSettings(source, 'high', IPOD_CLASSIC);
       const warnings = generateQualityWarnings(source, 'high', IPOD_CLASSIC, settings);
 
-      const bitrateWarning = warnings.find(w => w.type === 'bitrate');
+      const bitrateWarning = warnings.find((w) => w.type === 'bitrate');
       expect(bitrateWarning).toBeDefined();
       expect(bitrateWarning!.message).toContain('500kbps');
       expect(bitrateWarning!.message).toContain('2000kbps'); // High preset target
@@ -389,7 +389,7 @@ describe('generateQualityWarnings', () => {
       const settings = calculateEffectiveSettings(source, 'high', IPOD_CLASSIC);
       const warnings = generateQualityWarnings(source, 'high', IPOD_CLASSIC, settings);
 
-      const bitrateWarning = warnings.find(w => w.type === 'bitrate');
+      const bitrateWarning = warnings.find((w) => w.type === 'bitrate');
       expect(bitrateWarning).toBeUndefined();
     });
   });
@@ -404,7 +404,7 @@ describe('generateQualityWarnings', () => {
       const settings = calculateEffectiveSettings(source, 'high', IPOD_CLASSIC);
       const warnings = generateQualityWarnings(source, 'high', IPOD_CLASSIC, settings);
 
-      const resWarning = warnings.find(w => w.type === 'resolution');
+      const resWarning = warnings.find((w) => w.type === 'resolution');
       expect(resWarning).toBeDefined();
       expect(resWarning!.message).toContain('480x360');
       expect(resWarning!.message).toContain('640x480');
@@ -419,7 +419,7 @@ describe('generateQualityWarnings', () => {
       const settings = calculateEffectiveSettings(source, 'high', IPOD_CLASSIC);
       const warnings = generateQualityWarnings(source, 'high', IPOD_CLASSIC, settings);
 
-      const resWarning = warnings.find(w => w.type === 'resolution');
+      const resWarning = warnings.find((w) => w.type === 'resolution');
       expect(resWarning).toBeUndefined();
     });
   });
@@ -437,7 +437,7 @@ describe('generateQualityWarnings', () => {
 
       expect(warnings.length).toBeGreaterThanOrEqual(2);
 
-      const types = warnings.map(w => w.type);
+      const types = warnings.map((w) => w.type);
       expect(types).toContain('bitrate');
       expect(types).toContain('resolution');
     });

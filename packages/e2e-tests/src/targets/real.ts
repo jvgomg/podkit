@@ -40,9 +40,7 @@ export class RealIpodTarget implements IpodTarget {
     try {
       await fs.access(mountPath);
     } catch {
-      throw new Error(
-        `iPod mount path does not exist or is not accessible: ${mountPath}`
-      );
+      throw new Error(`iPod mount path does not exist or is not accessible: ${mountPath}`);
     }
 
     // Get the iPod name from the database if possible

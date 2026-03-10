@@ -256,7 +256,9 @@ describe('getFieldValue', () => {
     });
 
     it('returns filePath or empty string', () => {
-      expect(getFieldValue(createTrack({ filePath: '/music/song.mp3' }), 'filePath')).toBe('/music/song.mp3');
+      expect(getFieldValue(createTrack({ filePath: '/music/song.mp3' }), 'filePath')).toBe(
+        '/music/song.mp3'
+      );
       expect(getFieldValue(createTrack({ filePath: undefined }), 'filePath')).toBe('');
     });
   });
@@ -361,12 +363,7 @@ describe('calculateColumnWidths', () => {
         duration: 355000,
       }),
     ];
-    const widths = calculateColumnWidths(tracks, [
-      'title',
-      'artist',
-      'album',
-      'duration',
-    ]);
+    const widths = calculateColumnWidths(tracks, ['title', 'artist', 'album', 'duration']);
 
     expect(widths.get('title')).toBe(17); // 'Bohemian Rhapsody'.length
     expect(widths.get('artist')).toBe('Artist'.length); // 'Queen' < 'Artist'
@@ -510,10 +507,7 @@ describe('formatJson', () => {
   });
 
   it('handles multiple tracks', () => {
-    const tracks = [
-      createTrack({ title: 'Song 1' }),
-      createTrack({ title: 'Song 2' }),
-    ];
+    const tracks = [createTrack({ title: 'Song 1' }), createTrack({ title: 'Song 2' })];
     const result = formatJson(tracks, ['title']);
     const parsed = JSON.parse(result);
 

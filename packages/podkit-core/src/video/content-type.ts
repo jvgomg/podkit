@@ -9,11 +9,7 @@
  */
 
 import * as path from 'node:path';
-import {
-  parseSeason,
-  parseTitleAndYear,
-  removeFileExtension,
-} from '@ctrl/video-filename-parser';
+import { parseSeason, parseTitleAndYear, removeFileExtension } from '@ctrl/video-filename-parser';
 import type { ContentType, VideoMetadata } from './metadata.js';
 import { formatEpisodeId } from './metadata.js';
 

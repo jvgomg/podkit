@@ -73,10 +73,16 @@ function createIPodTrack(
   artist: string,
   title: string,
   album: string,
-  options: Partial<Omit<IPodTrack, 'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'>> = {}
+  options: Partial<
+    Omit<
+      IPodTrack,
+      'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'
+    >
+  > = {}
 ): IPodTrack {
   // Generate unique filePath if not provided
-  const uniquePath = options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
+  const uniquePath =
+    options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
   const track: IPodTrack = {
     artist,
     title,
@@ -607,7 +613,9 @@ describe('createPlan - remove operations', () => {
   });
 
   it('includes iPod track reference in remove operation', () => {
-    const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', { filePath: ':iPod_Control:Music:F00:0123.m4a' });
+    const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', {
+      filePath: ':iPod_Control:Music:F00:0123.m4a',
+    });
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toRemove: [ipodTrack],
@@ -1307,9 +1315,7 @@ describe('createPlan - source track references', () => {
 
     expect(plan.operations[0]!.type).toBe('remove');
     if (plan.operations[0]!.type === 'remove') {
-      expect(plan.operations[0]!.track.filePath).toBe(
-        ':iPod_Control:Music:F00:test.m4a'
-      );
+      expect(plan.operations[0]!.track.filePath).toBe(':iPod_Control:Music:F00:test.m4a');
     }
   });
 });
@@ -1578,9 +1584,7 @@ describe('createPlan - ALAC preset with fallback', () => {
 
     // Verify presets
     const transcodeOps = plan.operations.filter((op) => op.type === 'transcode');
-    const presets = transcodeOps.map((op) =>
-      op.type === 'transcode' ? op.preset.name : ''
-    );
+    const presets = transcodeOps.map((op) => (op.type === 'transcode' ? op.preset.name : ''));
 
     // Should have 2 ALAC and 1 high
     expect(presets.filter((p) => p === 'alac')).toHaveLength(2);

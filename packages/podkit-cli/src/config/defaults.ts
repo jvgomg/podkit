@@ -10,12 +10,7 @@ import { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
 /**
  * Default location for config file
  */
-export const DEFAULT_CONFIG_PATH = path.join(
-  os.homedir(),
-  '.config',
-  'podkit',
-  'config.toml'
-);
+export const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.config', 'podkit', 'config.toml');
 
 /**
  * Default configuration values

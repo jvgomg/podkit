@@ -14,13 +14,7 @@ import {
   type NativePhotoDatabase,
 } from './binding';
 
-import type {
-  Photo,
-  PhotoAlbum,
-  PhotoDatabaseInfo,
-  DeviceInfo,
-  DeviceCapabilities,
-} from './types';
+import type { Photo, PhotoAlbum, PhotoDatabaseInfo, DeviceInfo, DeviceCapabilities } from './types';
 
 import { LibgpodError, LibgpodErrorCode } from './types';
 
@@ -141,11 +135,7 @@ export class PhotoDatabase {
    */
   private ensureOpen(): NativePhotoDatabase {
     if (this._closed || !this.native) {
-      throw new LibgpodError(
-        'PhotoDatabase is closed',
-        LibgpodErrorCode.Unknown,
-        'ensureOpen'
-      );
+      throw new LibgpodError('PhotoDatabase is closed', LibgpodErrorCode.Unknown, 'ensureOpen');
     }
     return this.native;
   }

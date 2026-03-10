@@ -29,10 +29,7 @@ program
   .option('--device <name|path>', 'device name or path (auto-detect if omitted)')
   .option('--config <path>', `config file path (default: ${DEFAULT_CONFIG_PATH})`);
 
-function increaseVerbosity(
-  _value: string,
-  previous: number,
-): number {
+function increaseVerbosity(_value: string, previous: number): number {
   return previous + 1;
 }
 

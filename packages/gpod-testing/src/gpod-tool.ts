@@ -36,10 +36,7 @@ export class GpodToolError extends Error {
  * Run gpod-tool command and parse JSON response.
  * @internal
  */
-async function runGpodTool<T>(
-  args: string[],
-  errorContext: string
-): Promise<T> {
+async function runGpodTool<T>(args: string[], errorContext: string): Promise<T> {
   const command = `gpod-tool ${args.join(' ')}`;
   const result = await $`gpod-tool ${args}`.nothrow().quiet();
   const stdout = result.stdout.toString();
@@ -204,10 +201,7 @@ export async function tracks(path: string): Promise<TrackInfo[]> {
  * @returns Added track information
  * @throws {GpodToolError} If adding fails
  */
-export async function addTrack(
-  path: string,
-  track: TrackInput
-): Promise<AddTrackResult> {
+export async function addTrack(path: string, track: TrackInput): Promise<AddTrackResult> {
   const args: string[] = ['add-track', path, '--json', '--title', track.title];
 
   if (track.artist) {

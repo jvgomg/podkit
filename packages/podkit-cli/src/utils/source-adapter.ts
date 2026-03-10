@@ -115,21 +115,16 @@ function createSubsonicAdapterFromConfig(
   collectionName: string
 ): core.SubsonicAdapter {
   if (!config.url) {
-    throw new Error(
-      `Subsonic collection '${collectionName}' requires 'url' in config`
-    );
+    throw new Error(`Subsonic collection '${collectionName}' requires 'url' in config`);
   }
 
   if (!config.username) {
-    throw new Error(
-      `Subsonic collection '${collectionName}' requires 'username' in config`
-    );
+    throw new Error(`Subsonic collection '${collectionName}' requires 'username' in config`);
   }
 
   // Look up password: config file first, then environment variables
   const envVarName = getSubsonicPasswordEnvVar(collectionName);
-  const password =
-    config.password ?? process.env[envVarName] ?? process.env.SUBSONIC_PASSWORD;
+  const password = config.password ?? process.env[envVarName] ?? process.env.SUBSONIC_PASSWORD;
 
   if (!password) {
     throw new Error(

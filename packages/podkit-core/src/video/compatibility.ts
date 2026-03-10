@@ -164,8 +164,7 @@ export function isCompatibleContainer(container: string): boolean {
 function isTranscodableVideoCodec(codec: string): boolean {
   const normalizedCodec = codec.toLowerCase();
   return (
-    COMPATIBLE_VIDEO_CODECS.has(normalizedCodec) ||
-    TRANSCODABLE_VIDEO_CODECS.has(normalizedCodec)
+    COMPATIBLE_VIDEO_CODECS.has(normalizedCodec) || TRANSCODABLE_VIDEO_CODECS.has(normalizedCodec)
   );
 }
 
@@ -175,8 +174,7 @@ function isTranscodableVideoCodec(codec: string): boolean {
 function isTranscodableAudioCodec(codec: string): boolean {
   const normalizedCodec = codec.toLowerCase();
   return (
-    COMPATIBLE_AUDIO_CODECS.has(normalizedCodec) ||
-    TRANSCODABLE_AUDIO_CODECS.has(normalizedCodec)
+    COMPATIBLE_AUDIO_CODECS.has(normalizedCodec) || TRANSCODABLE_AUDIO_CODECS.has(normalizedCodec)
   );
 }
 

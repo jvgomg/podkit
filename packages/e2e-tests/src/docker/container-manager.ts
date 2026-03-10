@@ -59,7 +59,9 @@ export function runDockerCommand(args: string[]): Promise<string> {
 /**
  * Start a Docker container with automatic labeling and registration.
  */
-export async function startContainer(options: StartContainerOptions): Promise<StartContainerResult> {
+export async function startContainer(
+  options: StartContainerOptions
+): Promise<StartContainerResult> {
   const containerName = options.name ?? generateContainerName(options.source);
   const timestamp = Date.now();
 

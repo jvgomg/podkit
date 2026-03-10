@@ -204,10 +204,7 @@ describe('diffVideos', () => {
     });
 
     it('should remove all videos when collection is empty', () => {
-      const ipodVideos = [
-        createIPodVideo('Movie 1', 'movie'),
-        createIPodVideo('Movie 2', 'movie'),
-      ];
+      const ipodVideos = [createIPodVideo('Movie 1', 'movie'), createIPodVideo('Movie 2', 'movie')];
 
       const diff = diffVideos([], ipodVideos);
       expect(diff.toAdd).toHaveLength(0);
@@ -218,12 +215,8 @@ describe('diffVideos', () => {
 
   describe('movie matching', () => {
     it('should match movies by title', () => {
-      const collectionVideos = [
-        createCollectionVideo('The Matrix', 'movie'),
-      ];
-      const ipodVideos = [
-        createIPodVideo('The Matrix', 'movie'),
-      ];
+      const collectionVideos = [createCollectionVideo('The Matrix', 'movie')];
+      const ipodVideos = [createIPodVideo('The Matrix', 'movie')];
 
       const diff = diffVideos(collectionVideos, ipodVideos);
       expect(diff.toAdd).toHaveLength(0);
@@ -233,12 +226,8 @@ describe('diffVideos', () => {
     });
 
     it('should match movies by title and year', () => {
-      const collectionVideos = [
-        createCollectionVideo('The Matrix', 'movie', { year: 1999 }),
-      ];
-      const ipodVideos = [
-        createIPodVideo('The Matrix', 'movie', { year: 1999 }),
-      ];
+      const collectionVideos = [createCollectionVideo('The Matrix', 'movie', { year: 1999 })];
+      const ipodVideos = [createIPodVideo('The Matrix', 'movie', { year: 1999 })];
 
       const diff = diffVideos(collectionVideos, ipodVideos);
       expect(diff.toAdd).toHaveLength(0);
@@ -246,12 +235,8 @@ describe('diffVideos', () => {
     });
 
     it('should distinguish movies with same title but different years', () => {
-      const collectionVideos = [
-        createCollectionVideo('Dune', 'movie', { year: 2021 }),
-      ];
-      const ipodVideos = [
-        createIPodVideo('Dune', 'movie', { year: 1984 }),
-      ];
+      const collectionVideos = [createCollectionVideo('Dune', 'movie', { year: 2021 })];
+      const ipodVideos = [createIPodVideo('Dune', 'movie', { year: 1984 })];
 
       const diff = diffVideos(collectionVideos, ipodVideos);
       expect(diff.toAdd).toHaveLength(1);
@@ -260,12 +245,8 @@ describe('diffVideos', () => {
     });
 
     it('should match with case-insensitive comparison', () => {
-      const collectionVideos = [
-        createCollectionVideo('THE MATRIX', 'movie'),
-      ];
-      const ipodVideos = [
-        createIPodVideo('the matrix', 'movie'),
-      ];
+      const collectionVideos = [createCollectionVideo('THE MATRIX', 'movie')];
+      const ipodVideos = [createIPodVideo('the matrix', 'movie')];
 
       const diff = diffVideos(collectionVideos, ipodVideos);
       expect(diff.existing).toHaveLength(1);
@@ -301,7 +282,7 @@ describe('diffVideos', () => {
           seasonNumber: 1,
           episodeNumber: 1,
         }),
-        createCollectionVideo('Cat\'s in the Bag', 'tvshow', {
+        createCollectionVideo("Cat's in the Bag", 'tvshow', {
           seriesTitle: 'Breaking Bad',
           seasonNumber: 1,
           episodeNumber: 2,
@@ -365,9 +346,7 @@ describe('diffVideos', () => {
     });
 
     it('should not match movie with TV show of same name', () => {
-      const collectionVideos = [
-        createCollectionVideo('Fargo', 'movie', { year: 1996 }),
-      ];
+      const collectionVideos = [createCollectionVideo('Fargo', 'movie', { year: 1996 })];
       const ipodVideos = [
         createIPodVideo('Fargo', 'tvshow', {
           seriesTitle: 'Fargo',
@@ -385,9 +364,7 @@ describe('diffVideos', () => {
 
   describe('duplicate handling', () => {
     it('should handle duplicate videos on iPod (first wins)', () => {
-      const collectionVideos = [
-        createCollectionVideo('The Matrix', 'movie'),
-      ];
+      const collectionVideos = [createCollectionVideo('The Matrix', 'movie')];
       const ipodVideos = [
         createIPodVideo('The Matrix', 'movie', { id: 'first' }),
         createIPodVideo('The Matrix', 'movie', { id: 'second' }),
@@ -414,12 +391,8 @@ describe('VideoSyncDiffer interface', () => {
 
   it('should work through the interface', () => {
     const differ = createVideoDiffer();
-    const collectionVideos = [
-      createCollectionVideo('Movie 1', 'movie'),
-    ];
-    const ipodVideos = [
-      createIPodVideo('Movie 2', 'movie'),
-    ];
+    const collectionVideos = [createCollectionVideo('Movie 1', 'movie')];
+    const ipodVideos = [createIPodVideo('Movie 2', 'movie')];
 
     const diff = differ.diff(collectionVideos, ipodVideos);
     expect(diff.toAdd).toHaveLength(1);

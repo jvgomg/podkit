@@ -92,9 +92,7 @@ function createDeviceContext(
 beforeAll(async () => {
   const available = await isGpodToolAvailable();
   if (!available) {
-    throw new Error(
-      'gpod-tool is not available. Run `mise run tools:build` to build it.'
-    );
+    throw new Error('gpod-tool is not available. Run `mise run tools:build` to build it.');
   }
 });
 

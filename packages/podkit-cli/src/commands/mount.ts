@@ -133,7 +133,9 @@ export const mountCommand = new Command('mount')
       if (volumeUuid) {
         if (!globalOpts.quiet && !globalOpts.json) {
           const deviceIdentity = getDeviceIdentity(resolvedDevice);
-          console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+          console.log(
+            formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+          );
         }
 
         const device = await manager.findByVolumeUuid(volumeUuid);

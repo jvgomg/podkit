@@ -16,11 +16,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import {
-  areFixturesAvailable,
-  Albums,
-  getAlbumTracks,
-} from '../helpers/fixtures';
+import { areFixturesAvailable, Albums, getAlbumTracks } from '../helpers/fixtures';
 
 interface SyncOutput {
   success: boolean;
@@ -31,7 +27,6 @@ interface SyncOutput {
     completed: number;
   };
 }
-
 
 /**
  * Create a temp config file with the given music collection path

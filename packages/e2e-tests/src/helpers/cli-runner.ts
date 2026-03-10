@@ -66,10 +66,7 @@ export function getCliPath(): string {
  * expect(result.stdout).toContain('Track count');
  * ```
  */
-export async function runCli(
-  args: string[],
-  options: CliOptions = {}
-): Promise<CliResult> {
+export async function runCli(args: string[], options: CliOptions = {}): Promise<CliResult> {
   const cliPath = getCliPath();
   const timeout = options.timeout ?? 30000;
 
@@ -218,10 +215,7 @@ export async function isCliAvailable(): Promise<boolean> {
  * const result = await runCli(['--config', configPath, 'sync']);
  * ```
  */
-export async function createTempConfig(
-  musicPath: string,
-  devicePath?: string
-): Promise<string> {
+export async function createTempConfig(musicPath: string, devicePath?: string): Promise<string> {
   const fs = await import('node:fs/promises');
   const os = await import('node:os');
   const path = await import('node:path');
@@ -265,10 +259,7 @@ volumeName = "test"
  * });
  * ```
  */
-export async function createSubsonicConfig(
-  serverUrl: string,
-  username: string
-): Promise<string> {
+export async function createSubsonicConfig(serverUrl: string, username: string): Promise<string> {
   const fs = await import('node:fs/promises');
   const os = await import('node:os');
   const path = await import('node:path');

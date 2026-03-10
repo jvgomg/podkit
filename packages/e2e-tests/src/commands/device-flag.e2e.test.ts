@@ -60,9 +60,12 @@ describe('global --device flag', () => {
 
         // Using --device with an absolute path should work
         const result = await runCli([
-          '--config', configPath,
-          '--device', target.path,
-          'device', 'info',
+          '--config',
+          configPath,
+          '--device',
+          target.path,
+          'device',
+          'info',
         ]);
 
         // Should recognize it as path mode and show device info
@@ -82,9 +85,12 @@ describe('global --device flag', () => {
 
       // Use ./relative/path style - should be treated as path
       const result = await runCli([
-        '--config', configPath,
-        '--device', './some/relative/path',
-        'device', 'info',
+        '--config',
+        configPath,
+        '--device',
+        './some/relative/path',
+        'device',
+        'info',
       ]);
 
       // Should be recognized as path mode
@@ -99,16 +105,22 @@ describe('global --device flag', () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-slash-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, `[devices.some]
+      await writeFile(
+        configPath,
+        `[devices.some]
 volumeUuid = "test-uuid"
 volumeName = "Some Device"
-`);
+`
+      );
 
       // Use "some/path" - should be treated as path, not as device "some"
       const result = await runCli([
-        '--config', configPath,
-        '--device', 'some/path',
-        'device', 'info',
+        '--config',
+        configPath,
+        '--device',
+        'some/path',
+        'device',
+        'info',
       ]);
 
       // Should be path mode, not resolve "some" device
@@ -126,16 +138,22 @@ volumeName = "Some Device"
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-named-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, `[devices.terapod]
+      await writeFile(
+        configPath,
+        `[devices.terapod]
 volumeUuid = "ABC-123-UUID"
 volumeName = "Terapod"
-`);
+`
+      );
 
       // Use --device with a name (no slashes) - should try named lookup
       const result = await runCli([
-        '--config', configPath,
-        '--device', 'terapod',
-        'device', 'info',
+        '--config',
+        configPath,
+        '--device',
+        'terapod',
+        'device',
+        'info',
       ]);
 
       // Should resolve the named device and show its UUID
@@ -151,16 +169,22 @@ volumeName = "Terapod"
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-unknown-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, `[devices.realdevice]
+      await writeFile(
+        configPath,
+        `[devices.realdevice]
 volumeUuid = "real-uuid"
 volumeName = "Real"
-`);
+`
+      );
 
       // Use --device with unknown name (no slash, no dot prefix)
       const result = await runCli([
-        '--config', configPath,
-        '--device', 'unknowndevice',
-        'device', 'info',
+        '--config',
+        configPath,
+        '--device',
+        'unknowndevice',
+        'device',
+        'info',
       ]);
 
       expect(result.exitCode).toBe(1);
@@ -172,16 +196,22 @@ volumeName = "Real"
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-typo-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, `[devices.terapod]
+      await writeFile(
+        configPath,
+        `[devices.terapod]
 volumeUuid = "tera-uuid"
 volumeName = "Terapod"
-`);
+`
+      );
 
       // Use --device with typo
       const result = await runCli([
-        '--config', configPath,
-        '--device', 'tearpod', // typo
-        'device', 'info',
+        '--config',
+        configPath,
+        '--device',
+        'tearpod', // typo
+        'device',
+        'info',
       ]);
 
       expect(result.exitCode).toBe(1);
@@ -204,17 +234,22 @@ volumeName = "Terapod"
         const tempDir = await mkdtemp(join(tmpdir(), 'podkit-sync-device-test-'));
         tempDirs.push(tempDir);
         const configPath = join(tempDir, 'config.toml');
-        await writeFile(configPath, `[music.main]
+        await writeFile(
+          configPath,
+          `[music.main]
 path = "${sourcePath}"
 
 [defaults]
 music = "main"
-`);
+`
+        );
 
         // Sync using --device with path
         const result = await runCli([
-          '--config', configPath,
-          '--device', target.path,
+          '--config',
+          configPath,
+          '--device',
+          target.path,
           'sync',
           '--dry-run',
         ]);
@@ -237,16 +272,21 @@ music = "main"
         const tempDir = await mkdtemp(join(tmpdir(), 'podkit-sync-json-test-'));
         tempDirs.push(tempDir);
         const configPath = join(tempDir, 'config.toml');
-        await writeFile(configPath, `[music.main]
+        await writeFile(
+          configPath,
+          `[music.main]
 path = "${sourcePath}"
 
 [defaults]
 music = "main"
-`);
+`
+        );
 
         const { result, json } = await runCliJson<SyncOutput>([
-          '--config', configPath,
-          '--device', target.path,
+          '--config',
+          configPath,
+          '--device',
+          target.path,
           '--json',
           'sync',
           '--dry-run',
@@ -266,16 +306,23 @@ music = "main"
         const tempDir = await mkdtemp(join(tmpdir(), 'podkit-reset-test-'));
         tempDirs.push(tempDir);
         const configPath = join(tempDir, 'config.toml');
-        await writeFile(configPath, `[devices.testipod]
+        await writeFile(
+          configPath,
+          `[devices.testipod]
 volumeUuid = "test-uuid"
 volumeName = "Test iPod"
-`);
+`
+        );
 
         // Reset using --device path
         const result = await runCli([
-          '--config', configPath,
-          'device', 'reset', 'testipod',
-          '--device', target.path,
+          '--config',
+          configPath,
+          'device',
+          'reset',
+          'testipod',
+          '--device',
+          target.path,
           '--dry-run',
         ]);
 
@@ -290,10 +337,13 @@ volumeName = "Test iPod"
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-init-device-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, `[devices.newipod]
+      await writeFile(
+        configPath,
+        `[devices.newipod]
 volumeUuid = "new-uuid"
 volumeName = "New iPod"
-`);
+`
+      );
 
       // Create an empty directory to initialize
       const uninitDir = join(tempDir, 'uninit-ipod');
@@ -302,9 +352,13 @@ volumeName = "New iPod"
 
       // Init using --device path
       const result = await runCli([
-        '--config', configPath,
-        'device', 'init', 'newipod',
-        '--device', uninitDir,
+        '--config',
+        configPath,
+        'device',
+        'init',
+        'newipod',
+        '--device',
+        uninitDir,
         '--yes',
       ]);
 

@@ -26,11 +26,7 @@ describe('config writer - collection functions', () => {
 
   describe('addMusicCollection', () => {
     it('creates config file if it does not exist', () => {
-      const result = addMusicCollection(
-        'main',
-        { path: '/path/to/music' },
-        { configPath }
-      );
+      const result = addMusicCollection('main', { path: '/path/to/music' }, { configPath });
 
       expect(result.success).toBe(true);
       expect(result.created).toBe(true);
@@ -38,11 +34,7 @@ describe('config writer - collection functions', () => {
     });
 
     it('adds music collection section to config', () => {
-      const result = addMusicCollection(
-        'main',
-        { path: '/path/to/music' },
-        { configPath }
-      );
+      const result = addMusicCollection('main', { path: '/path/to/music' }, { configPath });
 
       expect(result.success).toBe(true);
       const content = fs.readFileSync(configPath, 'utf-8');
@@ -136,11 +128,7 @@ describe('config writer - collection functions', () => {
 
   describe('addVideoCollection', () => {
     it('creates config file if it does not exist', () => {
-      const result = addVideoCollection(
-        'movies',
-        { path: '/path/to/movies' },
-        { configPath }
-      );
+      const result = addVideoCollection('movies', { path: '/path/to/movies' }, { configPath });
 
       expect(result.success).toBe(true);
       expect(result.created).toBe(true);
@@ -148,11 +136,7 @@ describe('config writer - collection functions', () => {
     });
 
     it('adds video collection section to config', () => {
-      const result = addVideoCollection(
-        'movies',
-        { path: '/path/to/movies' },
-        { configPath }
-      );
+      const result = addVideoCollection('movies', { path: '/path/to/movies' }, { configPath });
 
       expect(result.success).toBe(true);
       const content = fs.readFileSync(configPath, 'utf-8');

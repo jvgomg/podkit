@@ -16,20 +16,11 @@ export type {
 } from './interface.js';
 
 // Directory adapter
-export {
-  DirectoryAdapter,
-  createDirectoryAdapter,
-} from './directory.js';
+export { DirectoryAdapter, createDirectoryAdapter } from './directory.js';
 
-export type {
-  DirectoryAdapterConfig,
-  ScanProgress,
-} from './directory.js';
+export type { DirectoryAdapterConfig, ScanProgress } from './directory.js';
 
 // Subsonic adapter
-export {
-  SubsonicAdapter,
-  createSubsonicAdapter,
-} from './subsonic.js';
+export { SubsonicAdapter, createSubsonicAdapter } from './subsonic.js';
 
 export type { SubsonicAdapterConfig } from './subsonic.js';

@@ -24,14 +24,7 @@ const DEFAULT_FFPROBE = 'ffprobe';
 /**
  * Supported video file extensions
  */
-const VIDEO_EXTENSIONS = new Set([
-  '.mp4',
-  '.m4v',
-  '.mkv',
-  '.avi',
-  '.mov',
-  '.webm',
-]);
+const VIDEO_EXTENSIONS = new Set(['.mp4', '.m4v', '.mkv', '.avi', '.mov', '.webm']);
 
 /**
  * Configuration options for EmbeddedVideoMetadataAdapter
@@ -167,10 +160,7 @@ function isTVShowTags(tags: FFprobeFormatTags): boolean {
 /**
  * Build movie metadata from tags
  */
-function buildMovieMetadata(
-  tags: FFprobeFormatTags,
-  fallbackTitle: string
-): MovieMetadata {
+function buildMovieMetadata(tags: FFprobeFormatTags, fallbackTitle: string): MovieMetadata {
   return {
     contentType: 'movie',
     title: tags.title || fallbackTitle,
@@ -185,10 +175,7 @@ function buildMovieMetadata(
 /**
  * Build TV show metadata from tags
  */
-function buildTVShowMetadata(
-  tags: FFprobeFormatTags,
-  fallbackTitle: string
-): TVShowMetadata {
+function buildTVShowMetadata(tags: FFprobeFormatTags, fallbackTitle: string): TVShowMetadata {
   const seasonNumber = tags.season_number ? parseInt(tags.season_number, 10) : 1;
   const episodeNumber = tags.episode_sort ? parseInt(tags.episode_sort, 10) : 1;
 
@@ -233,9 +220,7 @@ export function parseFilename(filePath: string): FilenameParsed {
 
   // Try to parse TV show patterns first
   // Match: "Show.S01E05.Title" or "Show - S01E05 - Title" or "Show S01E05 Title"
-  const sxxexxMatch = nameWithoutExt.match(
-    /^(.+?)[.\s-]+[Ss](\d+)[Ee](\d+)(?:[.\s-]+(.*))?$/
-  );
+  const sxxexxMatch = nameWithoutExt.match(/^(.+?)[.\s-]+[Ss](\d+)[Ee](\d+)(?:[.\s-]+(.*))?$/);
   if (sxxexxMatch) {
     const [, showPart, season, episode, titlePart] = sxxexxMatch;
     return {
@@ -246,9 +231,7 @@ export function parseFilename(filePath: string): FilenameParsed {
   }
 
   // Match: "Show.1x05.Title" or "Show - 1x05 - Title"
-  const nxnnMatch = nameWithoutExt.match(
-    /^(.+?)[.\s-]+(\d+)x(\d+)(?:[.\s-]+(.*))?$/
-  );
+  const nxnnMatch = nameWithoutExt.match(/^(.+?)[.\s-]+(\d+)x(\d+)(?:[.\s-]+(.*))?$/);
   if (nxnnMatch) {
     const [, showPart, season, episode, titlePart] = nxnnMatch;
     return {
@@ -317,23 +300,14 @@ export class EmbeddedVideoMetadataAdapter implements VideoMetadataAdapter {
    * parsing when tags are missing or incomplete.
    */
   async getMetadata(filePath: string): Promise<VideoMetadata | null> {
-    const args = [
-      '-v', 'quiet',
-      '-print_format', 'json',
-      '-show_format',
-      filePath,
-    ];
+    const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', filePath];
 
     const result = await execFFprobe(this.ffprobePath, args, this.spawnFn);
 
     if (result.exitCode !== 0) {
       // Check for common error patterns
       if (result.stderr.includes('No such file or directory')) {
-        throw new VideoMetadataError(
-          `File not found: ${filePath}`,
-          result.exitCode,
-          result.stderr
-        );
+        throw new VideoMetadataError(`File not found: ${filePath}`, result.exitCode, result.stderr);
       }
       throw new VideoMetadataError(
         `ffprobe failed with exit code ${result.exitCode}`,
@@ -347,11 +321,7 @@ export class EmbeddedVideoMetadataAdapter implements VideoMetadataAdapter {
     try {
       data = JSON.parse(result.stdout);
     } catch {
-      throw new VideoMetadataError(
-        'Failed to parse ffprobe JSON output',
-        undefined,
-        result.stdout
-      );
+      throw new VideoMetadataError('Failed to parse ffprobe JSON output', undefined, result.stdout);
     }
 
     const tags = data.format?.tags ?? {};

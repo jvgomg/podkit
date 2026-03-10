@@ -31,10 +31,7 @@ import {
   setDefaultCollection,
   DEFAULT_CONFIG_PATH,
 } from '../config/index.js';
-import type {
-  MusicCollectionConfig,
-  VideoCollectionConfig,
-} from '../config/types.js';
+import type { MusicCollectionConfig, VideoCollectionConfig } from '../config/types.js';
 import {
   type DisplayTrack,
   parseFields,
@@ -173,9 +170,7 @@ function findCollection(name: string): {
 /**
  * Resolve music collection from positional argument or default
  */
-function resolveMusicCollectionArg(
-  collectionName?: string
-):
+function resolveMusicCollectionArg(collectionName?: string):
   | { error: string }
   | {
       collection: MusicCollectionConfig;
@@ -201,9 +196,7 @@ function resolveMusicCollectionArg(
 /**
  * Resolve video collection from positional argument or default
  */
-function resolveVideoCollectionArg(
-  collectionName?: string
-):
+function resolveVideoCollectionArg(collectionName?: string):
   | { error: string }
   | {
       collection: VideoCollectionConfig;
@@ -332,10 +325,7 @@ const addSubcommand = new Command('add')
 
     // Check if collection already exists
     const existing = findCollection(name);
-    if (
-      (type === 'music' && existing.music) ||
-      (type === 'video' && existing.video)
-    ) {
+    if ((type === 'music' && existing.music) || (type === 'video' && existing.video)) {
       const error = `A ${type} collection named '${name}' already exists.`;
       if (globalOpts.json) {
         outputJson({ success: false, error });
@@ -462,9 +452,7 @@ const removeSubcommand = new Command('remove')
     // Confirm removal in interactive mode
     if (!globalOpts.json && !options.yes) {
       const typeList = typesToRemove.join(' and ');
-      const shouldRemove = await confirm(
-        `Remove ${typeList} collection '${name}'? [y/N] `
-      );
+      const shouldRemove = await confirm(`Remove ${typeList} collection '${name}'? [y/N] `);
       if (!shouldRemove) {
         console.log('Cancelled. No collections removed.');
         return;

@@ -3,11 +3,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import {
-  applyTransforms,
-  hasEnabledTransforms,
-  getEnabledTransformsSummary,
-} from './pipeline.js';
+import { applyTransforms, hasEnabledTransforms, getEnabledTransformsSummary } from './pipeline.js';
 import type { TransformableTrack, TransformsConfig } from './types.js';
 import { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
 

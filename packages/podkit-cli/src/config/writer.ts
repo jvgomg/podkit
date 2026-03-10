@@ -171,10 +171,7 @@ export function addDevice(
  *
  * Removes the [devices.<name>] section and any nested sections.
  */
-export function removeDevice(
-  name: string,
-  options?: UpdateConfigOptions
-): UpdateConfigResult {
+export function removeDevice(name: string, options?: UpdateConfigOptions): UpdateConfigResult {
   const configPath = options?.configPath ?? DEFAULT_CONFIG_PATH;
 
   if (!fs.existsSync(configPath)) {
@@ -238,10 +235,7 @@ export function removeDevice(
  * Updates or creates the [defaults] section with the device name.
  * Pass an empty string to clear the default device.
  */
-export function setDefaultDevice(
-  name: string,
-  options?: UpdateConfigOptions
-): UpdateConfigResult {
+export function setDefaultDevice(name: string, options?: UpdateConfigOptions): UpdateConfigResult {
   const configPath = options?.configPath ?? DEFAULT_CONFIG_PATH;
   const createIfMissing = options?.createIfMissing ?? true;
 
@@ -292,10 +286,7 @@ export function setDefaultDevice(
         );
       } else {
         // Add device line to existing [defaults] section
-        content = content.replace(
-          /(\[defaults\]\s*\n)/,
-          `$1device = "${name}"\n`
-        );
+        content = content.replace(/(\[defaults\]\s*\n)/, `$1device = "${name}"\n`);
       }
     }
   } else if (name !== '') {
@@ -657,10 +648,7 @@ export function setDefaultCollection(
       );
     } else {
       // Add to existing [defaults] section
-      content = content.replace(
-        /(\[defaults\])/,
-        `$1\n${type} = "${escapeTomlString(name)}"`
-      );
+      content = content.replace(/(\[defaults\])/, `$1\n${type} = "${escapeTomlString(name)}"`);
     }
   } else {
     // Create [defaults] section

@@ -10,12 +10,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import {
-  withTestIpod,
-  Database,
-  MediaType,
-  type TrackHandle,
-} from './helpers/test-setup';
+import { withTestIpod, Database, MediaType, type TrackHandle } from './helpers/test-setup';
 
 describe('Edge case investigation', () => {
   describe('empty database operations', () => {

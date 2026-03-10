@@ -2,12 +2,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import {
-  configExists,
-  createConfigFile,
-  formatSuccessMessage,
-  CONFIG_TEMPLATE,
-} from './init.js';
+import { configExists, createConfigFile, formatSuccessMessage, CONFIG_TEMPLATE } from './init.js';
 import { DEFAULT_CONFIG } from '../config/index.js';
 
 describe('init command', () => {

@@ -1,29 +1,25 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  formatDuration,
-  renderProgressBar,
-  syncCommand,
-} from './sync.js';
+import { formatDuration, renderProgressBar, syncCommand } from './sync.js';
 import { formatBytes } from './display-utils.js';
 
 describe('sync command', () => {
   describe('command options', () => {
     it('has --eject option', () => {
       const options = syncCommand.options;
-      const ejectOption = options.find(opt => opt.long === '--eject');
+      const ejectOption = options.find((opt) => opt.long === '--eject');
       expect(ejectOption).toBeDefined();
       expect(ejectOption?.description).toContain('eject');
     });
 
     it('has --dry-run option', () => {
       const options = syncCommand.options;
-      const dryRunOption = options.find(opt => opt.long === '--dry-run');
+      const dryRunOption = options.find((opt) => opt.long === '--dry-run');
       expect(dryRunOption).toBeDefined();
     });
 
     it('has --delete option', () => {
       const options = syncCommand.options;
-      const deleteOption = options.find(opt => opt.long === '--delete');
+      const deleteOption = options.find((opt) => opt.long === '--delete');
       expect(deleteOption).toBeDefined();
     });
   });

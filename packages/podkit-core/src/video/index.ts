@@ -27,12 +27,7 @@ export type {
   VideoMetadataAdapter,
 } from './metadata.js';
 
-export {
-  isMovieMetadata,
-  isTVShowMetadata,
-  formatEpisodeId,
-  parseEpisodeId,
-} from './metadata.js';
+export { isMovieMetadata, isTVShowMetadata, formatEpisodeId, parseEpisodeId } from './metadata.js';
 
 // Embedded video metadata adapter
 export type { EmbeddedVideoMetadataConfig } from './metadata-embedded.js';
@@ -83,10 +78,7 @@ export {
 } from './quality.js';
 
 // Video transcoding
-export type {
-  VideoTranscodeOptions,
-  HardwareAccelerationInfo,
-} from './transcode.js';
+export type { VideoTranscodeOptions, HardwareAccelerationInfo } from './transcode.js';
 export {
   transcodeVideo,
   buildVideoTranscodeArgs,
@@ -104,7 +96,4 @@ export type {
   VideoFilter,
   VideoDirectoryAdapterConfig,
 } from './directory-adapter.js';
-export {
-  VideoDirectoryAdapter,
-  createVideoDirectoryAdapter,
-} from './directory-adapter.js';
+export { VideoDirectoryAdapter, createVideoDirectoryAdapter } from './directory-adapter.js';

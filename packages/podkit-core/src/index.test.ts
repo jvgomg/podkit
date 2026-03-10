@@ -47,7 +47,10 @@ describe('podkit-core', () => {
     });
 
     it('creates transcode-error with file path', () => {
-      const error = createError('transcode-error', { file: '/path/to/file.flac', message: 'FFmpeg failed' });
+      const error = createError('transcode-error', {
+        file: '/path/to/file.flac',
+        message: 'FFmpeg failed',
+      });
       expect(error.type).toBe('transcode-error');
       expect(error.file).toBe('/path/to/file.flac');
       expect(error.message).toBe('FFmpeg failed');
@@ -116,7 +119,11 @@ describe('podkit-core', () => {
 
     it('exports classic formats', () => {
       expect(IPOD_ARTWORK_FORMATS.classic).toHaveLength(3);
-      expect(IPOD_ARTWORK_FORMATS.classic[2]).toEqual({ width: 320, height: 320, format: 'rgb565' });
+      expect(IPOD_ARTWORK_FORMATS.classic[2]).toEqual({
+        width: 320,
+        height: 320,
+        format: 'rgb565',
+      });
     });
   });
 
@@ -200,7 +207,11 @@ describe('podkit-core', () => {
       const external: ArtworkSource = { type: 'external', imagePath: '/path/to/cover.jpg' };
       expect(external.type).toBe('external');
 
-      const buffer: ArtworkSource = { type: 'buffer', data: Buffer.from('test'), mimeType: 'image/jpeg' };
+      const buffer: ArtworkSource = {
+        type: 'buffer',
+        data: Buffer.from('test'),
+        mimeType: 'image/jpeg',
+      };
       expect(buffer.type).toBe('buffer');
     });
   });

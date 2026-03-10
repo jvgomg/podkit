@@ -29,9 +29,7 @@ export function getPlatform(): NodeJS.Platform {
  * @param platform - Platform identifier (defaults to current platform)
  * @returns Device manager implementation
  */
-export function createDeviceManager(
-  platform: NodeJS.Platform = process.platform
-): DeviceManager {
+export function createDeviceManager(platform: NodeJS.Platform = process.platform): DeviceManager {
   switch (platform) {
     case 'darwin':
       return createMacOSManager();

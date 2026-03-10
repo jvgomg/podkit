@@ -3,13 +3,13 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import type { VideoMetadata, MovieMetadata, TVShowMetadata, VideoMetadataAdapter } from './metadata.js';
-import {
-  isMovieMetadata,
-  isTVShowMetadata,
-  formatEpisodeId,
-  parseEpisodeId,
+import type {
+  VideoMetadata,
+  MovieMetadata,
+  TVShowMetadata,
+  VideoMetadataAdapter,
 } from './metadata.js';
+import { isMovieMetadata, isTVShowMetadata, formatEpisodeId, parseEpisodeId } from './metadata.js';
 
 // =============================================================================
 // Type Guard Tests

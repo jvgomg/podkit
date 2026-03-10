@@ -7,7 +7,11 @@
  * - Default collection from config
  */
 
-import type { PodkitConfig, MusicCollectionConfig, VideoCollectionConfig } from '../config/types.js';
+import type {
+  PodkitConfig,
+  MusicCollectionConfig,
+  VideoCollectionConfig,
+} from '../config/types.js';
 import type {
   CollectionType,
   ResolvedMusicCollection,

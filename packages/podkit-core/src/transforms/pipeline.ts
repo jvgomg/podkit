@@ -7,11 +7,7 @@
  * @module
  */
 
-import type {
-  TransformableTrack,
-  TransformResult,
-  TransformsConfig,
-} from './types.js';
+import type { TransformableTrack, TransformResult, TransformsConfig } from './types.js';
 import { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
 import { ftintitleTransform } from './ftintitle/index.js';
 

@@ -12,11 +12,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import {
-  withTestIpod,
-  Database,
-  MediaType,
-} from './helpers/test-setup';
+import { withTestIpod, Database, MediaType } from './helpers/test-setup';
 
 describe('TASK-041: Video removal CRITICAL investigation', () => {
   describe('removing all videos', () => {
@@ -125,11 +121,13 @@ describe('TASK-041: Video removal CRITICAL investigation', () => {
         // Add 3 video tracks
         const handles = [];
         for (let i = 1; i <= 3; i++) {
-          handles.push(db.addTrack({
-            title: `Video ${i}`,
-            mediaType: MediaType.Movie,
-            movieFlag: true,
-          }));
+          handles.push(
+            db.addTrack({
+              title: `Video ${i}`,
+              mediaType: MediaType.Movie,
+              movieFlag: true,
+            })
+          );
         }
         db.saveSync();
         console.log(`Added ${handles.length} videos`);

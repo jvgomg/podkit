@@ -18,18 +18,18 @@ import type { ExtractedArtwork } from './types.js';
  */
 const PICTURE_TYPE_PRIORITY: Record<string, number> = {
   'Cover (front)': 0,
-  'Cover': 1,
-  'Media': 2,
+  Cover: 1,
+  Media: 2,
   'Leaflet page': 3,
   'Cover (back)': 4,
   'Lead artist': 5,
-  'Artist': 6,
-  'Band': 7,
-  'Composer': 8,
-  'Conductor': 9,
-  'Illustration': 10,
+  Artist: 6,
+  Band: 7,
+  Composer: 8,
+  Conductor: 9,
+  Illustration: 10,
   'Publisher logotype': 11,
-  'Other': 100,
+  Other: 100,
 };
 
 /**
@@ -123,7 +123,9 @@ export async function extractArtwork(
     };
   } catch (error) {
     // Return null on parse errors - don't fail the entire operation
-    options?.onSkip?.(`Failed to extract artwork from ${filePath}: ${error instanceof Error ? error.message : String(error)}`);
+    options?.onSkip?.(
+      `Failed to extract artwork from ${filePath}: ${error instanceof Error ? error.message : String(error)}`
+    );
     return null;
   }
 }
@@ -149,10 +151,7 @@ function selectBestPicture(pictures: mm.IPicture[]): mm.IPicture {
  * Detect image dimensions from binary data.
  * Supports JPEG and PNG. Returns 0x0 for unsupported formats.
  */
-function detectImageDimensions(
-  data: Buffer,
-  mimeType: string
-): { width: number; height: number } {
+function detectImageDimensions(data: Buffer, mimeType: string): { width: number; height: number } {
   try {
     if (mimeType === 'image/jpeg') {
       return parseJpegDimensions(data);
@@ -232,12 +231,7 @@ function parsePngDimensions(data: Buffer): { width: number; height: number } {
   }
 
   // Check PNG signature
-  if (
-    data[0] !== 0x89 ||
-    data[1] !== 0x50 ||
-    data[2] !== 0x4e ||
-    data[3] !== 0x47
-  ) {
+  if (data[0] !== 0x89 || data[1] !== 0x50 || data[2] !== 0x4e || data[3] !== 0x47) {
     return { width: 0, height: 0 };
   }
 

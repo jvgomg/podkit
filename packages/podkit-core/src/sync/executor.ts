@@ -738,11 +738,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
       }
 
       try {
-        const result = await this.transferWithRetry(
-          prepared,
-          artworkEnabled,
-          retryConfig
-        );
+        const result = await this.transferWithRetry(prepared, artworkEnabled, retryConfig);
 
         if (result.value) {
           bytesProcessed += result.value.bytesTransferred;
@@ -900,11 +896,12 @@ export class DefaultSyncExecutor implements SyncExecutor {
     prepareFn: () => Promise<PreparedFile>,
     operation: SyncOperation,
     retryConfig: Required<RetryConfig>
-  ): Promise<{ value: PreparedFile; error?: undefined; attempts: number } | { value: null; error: Error; attempts: number }> {
+  ): Promise<
+    | { value: PreparedFile; error?: undefined; attempts: number }
+    | { value: null; error: Error; attempts: number }
+  > {
     const maxRetries =
-      operation.type === 'transcode'
-        ? retryConfig.transcodeRetries
-        : retryConfig.copyRetries;
+      operation.type === 'transcode' ? retryConfig.transcodeRetries : retryConfig.copyRetries;
 
     let lastError: Error | undefined;
 
@@ -934,7 +931,10 @@ export class DefaultSyncExecutor implements SyncExecutor {
     prepared: PreparedFile,
     artworkEnabled: boolean,
     retryConfig: Required<RetryConfig>
-  ): Promise<{ value: { bytesTransferred: number }; error?: undefined; attempts?: number } | { value: null; error: Error; attempts: number }> {
+  ): Promise<
+    | { value: { bytesTransferred: number }; error?: undefined; attempts?: number }
+    | { value: null; error: Error; attempts: number }
+  > {
     let lastError: Error | undefined;
     let attempt = 0;
 
@@ -985,7 +985,9 @@ export class DefaultSyncExecutor implements SyncExecutor {
       case 'video-copy':
       case 'video-remove':
         // Video operations are handled by VideoSyncExecutor, not this executor
-        throw new Error(`Video operations (${operation.type}) should be handled by VideoSyncExecutor`);
+        throw new Error(
+          `Video operations (${operation.type}) should be handled by VideoSyncExecutor`
+        );
     }
   }
 
@@ -1149,9 +1151,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
     }
 
     if (!foundTrack) {
-      throw new Error(
-        `Track not found in database: ${targetTrack.artist} - ${targetTrack.title}`
-      );
+      throw new Error(`Track not found in database: ${targetTrack.artist} - ${targetTrack.title}`);
     }
 
     // Convert TrackMetadata to TrackFields format for update()

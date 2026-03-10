@@ -169,7 +169,8 @@ export function buildVideoTranscodeArgs(
 ): string[] {
   const args: string[] = [
     // Input file
-    '-i', input,
+    '-i',
+    input,
   ];
 
   // Force 8-bit output (required for iPod compatibility and HDR/10-bit sources)
@@ -180,19 +181,28 @@ export function buildVideoTranscodeArgs(
     // VideoToolbox hardware encoder (macOS)
     // Note: VideoToolbox doesn't support CRF, uses bitrate-based encoding
     args.push(
-      '-c:v', 'h264_videotoolbox',
-      '-profile:v', mapProfileForVideoToolbox(settings.videoProfile),
-      '-b:v', `${settings.targetVideoBitrate}k`,
+      '-c:v',
+      'h264_videotoolbox',
+      '-profile:v',
+      mapProfileForVideoToolbox(settings.videoProfile),
+      '-b:v',
+      `${settings.targetVideoBitrate}k`
     );
   } else {
     // libx264 software encoder
     args.push(
-      '-c:v', 'libx264',
-      '-profile:v', settings.videoProfile,
-      '-level', settings.videoLevel,
-      '-crf', String(settings.crf),
-      '-maxrate', `${settings.targetVideoBitrate}k`,
-      '-bufsize', `${settings.targetVideoBitrate * 2}k`,
+      '-c:v',
+      'libx264',
+      '-profile:v',
+      settings.videoProfile,
+      '-level',
+      settings.videoLevel,
+      '-crf',
+      String(settings.crf),
+      '-maxrate',
+      `${settings.targetVideoBitrate}k`,
+      '-bufsize',
+      `${settings.targetVideoBitrate * 2}k`
     );
   }
 
@@ -204,11 +214,7 @@ export function buildVideoTranscodeArgs(
   args.push('-r', String(settings.frameRate));
 
   // Audio codec: AAC stereo
-  args.push(
-    '-c:a', 'aac',
-    '-b:a', `${settings.targetAudioBitrate}k`,
-    '-ac', '2',
-  );
+  args.push('-c:a', 'aac', '-b:a', `${settings.targetAudioBitrate}k`, '-ac', '2');
 
   // Output optimizations
   args.push(
@@ -217,9 +223,11 @@ export function buildVideoTranscodeArgs(
     // Overwrite output
     '-y',
     // Fast start for progressive playback
-    '-movflags', '+faststart',
+    '-movflags',
+    '+faststart',
     // iPod-compatible container
-    '-f', 'ipod',
+    '-f',
+    'ipod'
   );
 
   // Output file (must come last)
@@ -264,8 +272,10 @@ function mapProfileForVideoToolbox(profile: VideoProfile): string {
 export function buildScaleFilter(targetWidth: number, targetHeight: number): string {
   // Scale to fit within target dimensions, preserving aspect ratio
   // Then pad to exact target dimensions with black bars
-  return `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,` +
-    `pad=${targetWidth}:${targetHeight}:-1:-1:black`;
+  return (
+    `scale=${targetWidth}:${targetHeight}:force_original_aspect_ratio=decrease,` +
+    `pad=${targetWidth}:${targetHeight}:-1:-1:black`
+  );
 }
 
 // =============================================================================
@@ -349,12 +359,7 @@ async function getVideoDuration(
   ffprobePath: string,
   spawnFn: SpawnFn = spawn
 ): Promise<number> {
-  const args = [
-    '-v', 'quiet',
-    '-print_format', 'json',
-    '-show_format',
-    filePath,
-  ];
+  const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', filePath];
 
   try {
     const result = await execCommand(ffprobePath, args, spawnFn);
@@ -506,8 +511,7 @@ export async function transcodeVideo(
 
       if (code !== 0) {
         // Extract a meaningful error message from stderr
-        const errorMessage = extractFFmpegError(stderr) ||
-          `FFmpeg exited with code ${code}`;
+        const errorMessage = extractFFmpegError(stderr) || `FFmpeg exited with code ${code}`;
         reject(new VideoTranscodeError(errorMessage, code ?? undefined, stderr));
         return;
       }

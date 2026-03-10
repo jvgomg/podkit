@@ -226,12 +226,34 @@ describe('SubsonicAdapter getTracks', () => {
 
   it('fetches tracks from single album', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test Album', artist: 'Test Artist', songCount: 2, duration: 300, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test Album',
+        artist: 'Test Artist',
+        songCount: 2,
+        duration: 300,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [
-        { id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album', duration: 180, suffix: 'mp3', bitRate: 320 },
-        { id: 'song2', title: 'Track 2', artist: 'Test Artist', album: 'Test Album', duration: 120, suffix: 'flac' },
+        {
+          id: 'song1',
+          title: 'Track 1',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          duration: 180,
+          suffix: 'mp3',
+          bitRate: 320,
+        },
+        {
+          id: 'song2',
+          title: 'Track 2',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          duration: 120,
+          suffix: 'flac',
+        },
       ],
     };
 
@@ -249,11 +271,24 @@ describe('SubsonicAdapter getTracks', () => {
 
   it('converts duration from seconds to milliseconds', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test Album', artist: 'Test Artist', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test Album',
+        artist: 'Test Artist',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [
-        { id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album', duration: 180 },
+        {
+          id: 'song1',
+          title: 'Track 1',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          duration: 180,
+        },
       ],
     };
 
@@ -265,11 +300,24 @@ describe('SubsonicAdapter getTracks', () => {
 
   it('detects FLAC as lossless', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test Album', artist: 'Test Artist', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test Album',
+        artist: 'Test Artist',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [
-        { id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album', suffix: 'flac' },
+        {
+          id: 'song1',
+          title: 'Track 1',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          suffix: 'flac',
+        },
       ],
     };
 
@@ -282,11 +330,24 @@ describe('SubsonicAdapter getTracks', () => {
 
   it('detects MP3 as lossy', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test Album', artist: 'Test Artist', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test Album',
+        artist: 'Test Artist',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [
-        { id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album', suffix: 'mp3' },
+        {
+          id: 'song1',
+          title: 'Track 1',
+          artist: 'Test Artist',
+          album: 'Test Album',
+          suffix: 'mp3',
+        },
       ],
     };
 
@@ -299,12 +360,17 @@ describe('SubsonicAdapter getTracks', () => {
 
   it('caches tracks on second call', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test Album', artist: 'Test Artist', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test Album',
+        artist: 'Test Artist',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
-      album1: [
-        { id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album' },
-      ],
+      album1: [{ id: 'song1', title: 'Track 1', artist: 'Test Artist', album: 'Test Album' }],
     };
 
     const adapter = createAdapter();
@@ -333,7 +399,14 @@ describe('SubsonicAdapter getTracks', () => {
     serverState.songs = Object.fromEntries(
       serverState.albums.map((album) => [
         album.id,
-        [{ id: `song-${album.id}`, title: `Song from ${album.name}`, artist: 'Artist', album: album.name }],
+        [
+          {
+            id: `song-${album.id}`,
+            title: `Song from ${album.name}`,
+            artist: 'Artist',
+            album: album.name,
+          },
+        ],
       ])
     );
 
@@ -351,12 +424,48 @@ describe('SubsonicAdapter getTracks', () => {
 describe('SubsonicAdapter filtering', () => {
   beforeEach(() => {
     serverState.albums = [
-      { id: 'album1', name: 'Rock Album', artist: 'Rock Band', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z', genre: 'Rock', year: 2024 },
-      { id: 'album2', name: 'Jazz Album', artist: 'Jazz Group', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z', genre: 'Jazz', year: 2023 },
+      {
+        id: 'album1',
+        name: 'Rock Album',
+        artist: 'Rock Band',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+        genre: 'Rock',
+        year: 2024,
+      },
+      {
+        id: 'album2',
+        name: 'Jazz Album',
+        artist: 'Jazz Group',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+        genre: 'Jazz',
+        year: 2023,
+      },
     ];
     serverState.songs = {
-      album1: [{ id: 'song1', title: 'Rock Song', artist: 'Rock Band', album: 'Rock Album', genre: 'Rock', year: 2024 }],
-      album2: [{ id: 'song2', title: 'Jazz Song', artist: 'Jazz Group', album: 'Jazz Album', genre: 'Jazz', year: 2023 }],
+      album1: [
+        {
+          id: 'song1',
+          title: 'Rock Song',
+          artist: 'Rock Band',
+          album: 'Rock Album',
+          genre: 'Rock',
+          year: 2024,
+        },
+      ],
+      album2: [
+        {
+          id: 'song2',
+          title: 'Jazz Song',
+          artist: 'Jazz Group',
+          album: 'Jazz Album',
+          genre: 'Jazz',
+          year: 2023,
+        },
+      ],
     };
   });
 
@@ -419,7 +528,14 @@ describe('SubsonicAdapter file access', () => {
 
   it('getStream fetches from download endpoint', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test', artist: 'Test', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test',
+        artist: 'Test',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [{ id: 'song1', title: 'Test', artist: 'Test', album: 'Test' }],
@@ -450,7 +566,14 @@ describe('SubsonicAdapter file access', () => {
 describe('SubsonicAdapter disconnect', () => {
   it('clears cache on disconnect', async () => {
     serverState.albums = [
-      { id: 'album1', name: 'Test', artist: 'Test', songCount: 1, duration: 180, created: '2024-01-01T00:00:00Z' },
+      {
+        id: 'album1',
+        name: 'Test',
+        artist: 'Test',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
     ];
     serverState.songs = {
       album1: [{ id: 'song1', title: 'Test', artist: 'Test', album: 'Test' }],

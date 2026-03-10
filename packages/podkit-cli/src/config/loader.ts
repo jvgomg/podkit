@@ -29,7 +29,12 @@ import type {
   DeviceConfig,
   DefaultsConfig,
 } from './types.js';
-import { QUALITY_PRESETS, AAC_QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
+import {
+  QUALITY_PRESETS,
+  AAC_QUALITY_PRESETS,
+  DEFAULT_TRANSFORMS_CONFIG,
+  VIDEO_QUALITY_PRESETS,
+} from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 
 /**
@@ -245,8 +250,7 @@ function parseMusicCollections(
     if (collectionType === 'directory') {
       if (typeof rawCollection.path !== 'string') {
         throw new Error(
-          `Missing or invalid "path" in [music.${name}]. ` +
-            `Directory collections require a path.`
+          `Missing or invalid "path" in [music.${name}]. ` + `Directory collections require a path.`
         );
       }
       collections[name] = {
@@ -257,8 +261,7 @@ function parseMusicCollections(
       // Subsonic collection
       if (typeof rawCollection.url !== 'string') {
         throw new Error(
-          `Missing or invalid "url" in [music.${name}]. ` +
-            `Subsonic collections require a url.`
+          `Missing or invalid "url" in [music.${name}]. ` + `Subsonic collections require a url.`
         );
       }
       if (typeof rawCollection.username !== 'string') {
@@ -306,8 +309,7 @@ function parseVideoCollections(
 
     if (typeof collection.path !== 'string') {
       throw new Error(
-        `Missing or invalid "path" in [video.${name}]. ` +
-          `Video collections require a path.`
+        `Missing or invalid "path" in [video.${name}]. ` + `Video collections require a path.`
       );
     }
 
@@ -423,9 +425,7 @@ function parseDevices(
  *
  * Extracts [defaults] section into DefaultsConfig.
  */
-function parseDefaults(
-  rawDefaults: ConfigFileDefaults | undefined
-): DefaultsConfig | undefined {
+function parseDefaults(rawDefaults: ConfigFileDefaults | undefined): DefaultsConfig | undefined {
   if (!rawDefaults || typeof rawDefaults !== 'object') {
     return undefined;
   }
@@ -457,9 +457,7 @@ function parseDefaults(
  *
  * Logs warnings if defaults reference non-existent items.
  */
-function validateDefaultReferences(
-  config: PartialConfig
-): void {
+function validateDefaultReferences(config: PartialConfig): void {
   const { defaults, music, video, devices } = config;
 
   if (!defaults) {

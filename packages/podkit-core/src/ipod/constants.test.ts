@@ -78,10 +78,8 @@ describe('MediaType', () => {
     });
 
     it('can check media type with bitwise operations', () => {
-      const isAudio = (mediaType: number) =>
-        (mediaType & MediaType.Audio) !== 0;
-      const isPodcast = (mediaType: number) =>
-        (mediaType & MediaType.Podcast) !== 0;
+      const isAudio = (mediaType: number) => (mediaType & MediaType.Audio) !== 0;
+      const isPodcast = (mediaType: number) => (mediaType & MediaType.Podcast) !== 0;
 
       expect(isAudio(MediaType.Audio)).toBe(true);
       expect(isAudio(MediaType.Podcast)).toBe(false);

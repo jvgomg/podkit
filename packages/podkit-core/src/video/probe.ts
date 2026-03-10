@@ -117,10 +117,10 @@ function parseContainerFormat(formatName: string | undefined): string {
   const formatMap: Record<string, string> = {
     'mov,mp4,m4a,3gp,3g2,mj2': 'mp4',
     'matroska,webm': 'mkv',
-    'mpegts': 'ts',
-    'mpeg': 'mpg',
-    'avi': 'avi',
-    'asf': 'wmv',
+    mpegts: 'ts',
+    mpeg: 'mpg',
+    avi: 'avi',
+    asf: 'wmv',
   };
 
   // Check for known multi-format strings
@@ -204,28 +204,20 @@ export async function probeVideo(
   const ffprobePath = config.ffprobePath ?? DEFAULT_FFPROBE;
   const spawnFn = config._spawnFn ?? spawn;
 
-  const args = [
-    '-v', 'quiet',
-    '-print_format', 'json',
-    '-show_format',
-    '-show_streams',
-    filePath,
-  ];
+  const args = ['-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filePath];
 
   const result = await execFFprobe(ffprobePath, args, spawnFn);
 
   if (result.exitCode !== 0) {
     // Check for common error patterns
     if (result.stderr.includes('No such file or directory')) {
-      throw new VideoProbeError(
-        `File not found: ${filePath}`,
-        result.exitCode,
-        result.stderr
-      );
+      throw new VideoProbeError(`File not found: ${filePath}`, result.exitCode, result.stderr);
     }
-    if (result.stderr.includes('Invalid data found') ||
-        result.stderr.includes('invalid data') ||
-        result.stderr.includes('moov atom not found')) {
+    if (
+      result.stderr.includes('Invalid data found') ||
+      result.stderr.includes('invalid data') ||
+      result.stderr.includes('moov atom not found')
+    ) {
       throw new VideoProbeError(
         `Corrupt or invalid video file: ${filePath}`,
         result.exitCode,
@@ -244,11 +236,7 @@ export async function probeVideo(
   try {
     data = JSON.parse(result.stdout);
   } catch {
-    throw new VideoProbeError(
-      'Failed to parse ffprobe JSON output',
-      undefined,
-      result.stdout
-    );
+    throw new VideoProbeError('Failed to parse ffprobe JSON output', undefined, result.stdout);
   }
 
   // Find video and audio streams
@@ -286,8 +274,8 @@ export async function probeVideo(
   }
 
   // Frame rate: prefer avg_frame_rate, fall back to r_frame_rate
-  const frameRate = parseFrameRate(videoStream?.avg_frame_rate) ||
-                    parseFrameRate(videoStream?.r_frame_rate);
+  const frameRate =
+    parseFrameRate(videoStream?.avg_frame_rate) || parseFrameRate(videoStream?.r_frame_rate);
 
   // Audio stream analysis
   const hasAudioStream = audioStream !== undefined;
@@ -296,9 +284,7 @@ export async function probeVideo(
     ? Math.round(parseInt(audioStream.bit_rate, 10) / 1000)
     : 0;
   const audioChannels = audioStream?.channels ?? 0;
-  const audioSampleRate = audioStream?.sample_rate
-    ? parseInt(audioStream.sample_rate, 10)
-    : 0;
+  const audioSampleRate = audioStream?.sample_rate ? parseInt(audioStream.sample_rate, 10) : 0;
 
   return {
     filePath,

@@ -11,10 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Re-export gpod-testing utilities
-export {
-  withTestIpod,
-  isGpodToolAvailable,
-} from '@podkit/gpod-testing';
+export { withTestIpod, isGpodToolAvailable } from '@podkit/gpod-testing';
 
 // Re-export library exports
 export {

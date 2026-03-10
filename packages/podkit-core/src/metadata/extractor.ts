@@ -33,16 +33,12 @@ export interface FileDisplayMetadata {
  * console.log(`Bitrate: ${metadata.bitrate} kbps`);
  * ```
  */
-export async function getFileDisplayMetadata(
-  filePath: string
-): Promise<FileDisplayMetadata> {
+export async function getFileDisplayMetadata(filePath: string): Promise<FileDisplayMetadata> {
   try {
     const metadata = await mm.parseFile(filePath, { skipCovers: false });
 
     // Check for artwork
-    const hasArtwork =
-      metadata.common.picture !== undefined &&
-      metadata.common.picture.length > 0;
+    const hasArtwork = metadata.common.picture !== undefined && metadata.common.picture.length > 0;
 
     // Extract bitrate (convert from bps to kbps)
     const bitrate = metadata.format.bitrate

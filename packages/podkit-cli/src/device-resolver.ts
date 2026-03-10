@@ -117,13 +117,8 @@ export function formatDeviceError(result: ResolveDeviceResult): string {
 /**
  * Format error message when a named device is not found
  */
-export function formatDeviceNotFoundError(
-  deviceName: string,
-  config: PodkitConfig
-): string {
-  const availableDevices = config.devices
-    ? Object.keys(config.devices).join(', ')
-    : '(none)';
+export function formatDeviceNotFoundError(deviceName: string, config: PodkitConfig): string {
+  const availableDevices = config.devices ? Object.keys(config.devices).join(', ') : '(none)';
   return `Device "${deviceName}" not found in config. Available devices: ${availableDevices}`;
 }
 

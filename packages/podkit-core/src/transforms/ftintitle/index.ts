@@ -12,11 +12,7 @@
  * @module
  */
 
-import type {
-  TrackTransform,
-  TransformableTrack,
-  FtInTitleConfig,
-} from '../types.js';
+import type { TrackTransform, TransformableTrack, FtInTitleConfig } from '../types.js';
 import { DEFAULT_FTINTITLE_CONFIG } from '../types.js';
 import { applyFtInTitle } from './extract.js';
 

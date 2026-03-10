@@ -305,8 +305,14 @@ describe('IpodDatabase integration', () => {
           // Create a minimal MP3-like file (won't play, but tests copy mechanism)
           // In real tests, we'd use a proper audio file
           const mp3Header = Buffer.from([
-            0xff, 0xfb, 0x90, 0x00, // MP3 frame header
-            0x00, 0x00, 0x00, 0x00, // padding
+            0xff,
+            0xfb,
+            0x90,
+            0x00, // MP3 frame header
+            0x00,
+            0x00,
+            0x00,
+            0x00, // padding
           ]);
           await writeFile(audioPath, mp3Header);
 

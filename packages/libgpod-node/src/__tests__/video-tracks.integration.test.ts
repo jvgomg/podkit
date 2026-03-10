@@ -11,11 +11,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import {
-  withTestIpod,
-  Database,
-  MediaType,
-} from './helpers/test-setup';
+import { withTestIpod, Database, MediaType } from './helpers/test-setup';
 
 describe('libgpod-node video track operations', () => {
   describe('movie tracks', () => {

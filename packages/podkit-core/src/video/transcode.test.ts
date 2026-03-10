@@ -75,7 +75,13 @@ function createMockSpawn(config: MockSpawnConfig): SpawnFn {
     (proc as unknown as Record<string, unknown>).stdout = stdoutStream;
     (proc as unknown as Record<string, unknown>).stderr = stderrStream;
     (proc as unknown as Record<string, unknown>).stdin = null;
-    (proc as unknown as Record<string, unknown>).stdio = [null, stdoutStream, stderrStream, null, null];
+    (proc as unknown as Record<string, unknown>).stdio = [
+      null,
+      stdoutStream,
+      stderrStream,
+      null,
+      null,
+    ];
     (proc as unknown as Record<string, unknown>).pid = 12345;
     (proc as unknown as Record<string, unknown>).killed = false;
     (proc as unknown as Record<string, unknown>).connected = false;
@@ -423,12 +429,9 @@ describe('transcodeVideo', () => {
   it('transcodes video successfully', async () => {
     const mockSpawn = createMockSpawn({ exitCode: 0 });
 
-    await transcodeVideo(
-      '/input.mkv',
-      '/output.m4v',
-      defaultSettings,
-      { _spawnFn: mockSpawn } as Parameters<typeof transcodeVideo>[3]
-    );
+    await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+      _spawnFn: mockSpawn,
+    } as Parameters<typeof transcodeVideo>[3]);
 
     // Test passes if no error is thrown
   });
@@ -441,12 +444,9 @@ describe('transcodeVideo', () => {
 
     let error: Error | undefined;
     try {
-      await transcodeVideo(
-        '/input.mkv',
-        '/output.m4v',
-        defaultSettings,
-        { _spawnFn: mockSpawn } as Parameters<typeof transcodeVideo>[3]
-      );
+      await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+        _spawnFn: mockSpawn,
+      } as Parameters<typeof transcodeVideo>[3]);
     } catch (e) {
       error = e as Error;
     }
@@ -462,12 +462,9 @@ describe('transcodeVideo', () => {
 
     let thrownError: Error | undefined;
     try {
-      await transcodeVideo(
-        '/input.mkv',
-        '/output.m4v',
-        defaultSettings,
-        { _spawnFn: mockSpawn } as Parameters<typeof transcodeVideo>[3]
-      );
+      await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+        _spawnFn: mockSpawn,
+      } as Parameters<typeof transcodeVideo>[3]);
     } catch (e) {
       thrownError = e as Error;
     }
@@ -484,15 +481,10 @@ describe('transcodeVideo', () => {
 
     let error: Error | undefined;
     try {
-      await transcodeVideo(
-        '/input.mkv',
-        '/output.m4v',
-        defaultSettings,
-        {
-          signal: controller.signal,
-          _spawnFn: mockSpawn,
-        } as Parameters<typeof transcodeVideo>[3]
-      );
+      await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+        signal: controller.signal,
+        _spawnFn: mockSpawn,
+      } as Parameters<typeof transcodeVideo>[3]);
     } catch (e) {
       error = e as Error;
     }
@@ -516,15 +508,10 @@ describe('transcodeVideo', () => {
       },
     });
 
-    await transcodeVideo(
-      '/input.mkv',
-      '/output.m4v',
-      defaultSettings,
-      {
-        onProgress: (p) => progressUpdates.push({ time: p.time, percent: p.percent }),
-        _spawnFn: mockSpawn,
-      } as Parameters<typeof transcodeVideo>[3]
-    );
+    await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+      onProgress: (p) => progressUpdates.push({ time: p.time, percent: p.percent }),
+      _spawnFn: mockSpawn,
+    } as Parameters<typeof transcodeVideo>[3]);
 
     expect(progressUpdates.length).toBeGreaterThan(0);
     expect(progressUpdates.some((p) => p.percent === 50)).toBe(true);
@@ -532,21 +519,20 @@ describe('transcodeVideo', () => {
 
   it('uses custom ffmpeg path when provided', async () => {
     let capturedCommand = '';
-    const mockSpawn: SpawnFn = ((command: string, args: readonly string[], options?: SpawnOptions) => {
+    const mockSpawn: SpawnFn = ((
+      command: string,
+      args: readonly string[],
+      options?: SpawnOptions
+    ) => {
       capturedCommand = command;
       const innerSpawn = createMockSpawn({ exitCode: 0 });
       return innerSpawn(command, args, options ?? {});
     }) as SpawnFn;
 
-    await transcodeVideo(
-      '/input.mkv',
-      '/output.m4v',
-      defaultSettings,
-      {
-        ffmpegPath: '/custom/ffmpeg',
-        _spawnFn: mockSpawn,
-      } as Parameters<typeof transcodeVideo>[3]
-    );
+    await transcodeVideo('/input.mkv', '/output.m4v', defaultSettings, {
+      ffmpegPath: '/custom/ffmpeg',
+      _spawnFn: mockSpawn,
+    } as Parameters<typeof transcodeVideo>[3]);
 
     expect(capturedCommand).toBe('/custom/ffmpeg');
   });

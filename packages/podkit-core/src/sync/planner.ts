@@ -48,10 +48,7 @@ import type {
 } from './types.js';
 import type { TrackMetadata } from '../types.js';
 import { estimateTransferTime } from './estimation.js';
-import {
-  calculateVideoOperationSize,
-  calculateVideoOperationTime,
-} from './video-planner.js';
+import { calculateVideoOperationSize, calculateVideoOperationTime } from './video-planner.js';
 
 // =============================================================================
 // Constants
@@ -65,12 +62,7 @@ import {
  * - aac: Raw AAC - supported but less common
  * - alac: Apple Lossless - supported on newer iPods
  */
-const IPOD_COMPATIBLE_FORMATS: Set<AudioFileType> = new Set([
-  'mp3',
-  'm4a',
-  'aac',
-  'alac',
-]);
+const IPOD_COMPATIBLE_FORMATS: Set<AudioFileType> = new Set(['mp3', 'm4a', 'aac', 'alac']);
 
 /**
  * Formats that require transcoding to iPod-compatible format
@@ -92,10 +84,7 @@ const TRANSCODE_REQUIRED_FORMATS: Set<AudioFileType> = new Set([
 /**
  * Lossy formats that are NOT iPod-compatible (require lossy→lossy conversion)
  */
-const INCOMPATIBLE_LOSSY_FORMATS: Set<AudioFileType> = new Set([
-  'ogg',
-  'opus',
-]);
+const INCOMPATIBLE_LOSSY_FORMATS: Set<AudioFileType> = new Set(['ogg', 'opus']);
 
 /**
  * Default transcode configuration
@@ -202,10 +191,7 @@ export function willWarnLossyToLossy(category: SourceCategory): boolean {
  * @param category - Source file category
  * @returns The effective quality preset to use
  */
-function resolveEffectivePreset(
-  config: TranscodeConfig,
-  category: SourceCategory
-): QualityPreset {
+function resolveEffectivePreset(config: TranscodeConfig, category: SourceCategory): QualityPreset {
   // ALAC only valid for lossless sources
   if (config.quality === 'alac') {
     if (category === 'lossless') {
@@ -236,14 +222,11 @@ function getTranscodeConfig(options: PlanOptions): TranscodeConfig {
  * @param bitrateKbps - Target bitrate in kilobits per second
  * @returns Estimated file size in bytes
  */
-export function estimateTranscodedSize(
-  durationMs: number,
-  bitrateKbps: number
-): number {
+export function estimateTranscodedSize(durationMs: number, bitrateKbps: number): number {
   // Convert: duration(ms) * bitrate(kbps) / 8 = bytes
   // duration_ms / 1000 = seconds
   // bitrate_kbps * 1000 / 8 = bytes per second
-  const audioBytes = (durationMs / 1000) * (bitrateKbps * 1000 / 8);
+  const audioBytes = (durationMs / 1000) * ((bitrateKbps * 1000) / 8);
   return Math.ceil(audioBytes + M4A_CONTAINER_OVERHEAD_BYTES);
 }
 
@@ -374,10 +357,7 @@ interface PlanAddResult {
  * Uses source categorization to determine the appropriate operation for each
  * track and collects lossy-to-lossy warnings.
  */
-function planAddOperations(
-  tracks: CollectionTrack[],
-  config: TranscodeConfig
-): PlanAddResult {
+function planAddOperations(tracks: CollectionTrack[], config: TranscodeConfig): PlanAddResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
 
@@ -424,10 +404,7 @@ function planAddOperations(
 /**
  * Plan operations for tracks to be removed
  */
-function planRemoveOperations(
-  tracks: IPodTrack[],
-  removeOrphans: boolean
-): SyncOperation[] {
+function planRemoveOperations(tracks: IPodTrack[], removeOrphans: boolean): SyncOperation[] {
   if (!removeOrphans) {
     return [];
   }
@@ -447,9 +424,7 @@ function planUpdateOperations(tracks: UpdateTrack[]): SyncOperation[] {
 /**
  * Calculate estimated size for an operation
  */
-export function calculateOperationSize(
-  operation: SyncOperation
-): number {
+export function calculateOperationSize(operation: SyncOperation): number {
   switch (operation.type) {
     case 'transcode': {
       const duration = operation.source.duration ?? 240000; // default 4 min
@@ -557,13 +532,8 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  *   console.log(`Warnings: ${plan.warnings.length}`);
  * }
  */
-export function createPlan(
-  diff: SyncDiff,
-  options: PlanOptions = {}
-): SyncPlan {
-  const {
-    removeOrphans = false,
-  } = options;
+export function createPlan(diff: SyncDiff, options: PlanOptions = {}): SyncPlan {
+  const { removeOrphans = false } = options;
 
   // Get transcode config (handles both legacy and new formats)
   const config = getTranscodeConfig(options);
@@ -616,10 +586,7 @@ export function createPlan(
  * @param availableSpace - Available space in bytes
  * @returns true if plan fits, false otherwise
  */
-export function willFitInSpace(
-  plan: SyncPlan,
-  availableSpace: number
-): boolean {
+export function willFitInSpace(plan: SyncPlan, availableSpace: number): boolean {
   return plan.estimatedSize <= availableSpace;
 }
 

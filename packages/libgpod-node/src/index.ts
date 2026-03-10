@@ -130,7 +130,4 @@ export {
 } from './track';
 
 // Native binding utilities (for advanced use)
-export {
-  isNativeAvailable,
-  getVersion as getNativeVersion,
-} from './binding';
+export { isNativeAvailable, getVersion as getNativeVersion } from './binding';

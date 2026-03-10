@@ -24,10 +24,7 @@
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import { hasEnabledTransforms } from '../transforms/pipeline.js';
-import {
-  buildMatchIndex,
-  getTransformMatchKeys,
-} from './matching.js';
+import { buildMatchIndex, getTransformMatchKeys } from './matching.js';
 import type {
   ConflictTrack,
   DiffOptions,
@@ -68,10 +65,7 @@ function isEmpty(value: unknown): boolean {
 /**
  * Check if two values are different (handling undefined/null/empty)
  */
-function valuesDiffer(
-  collectionValue: unknown,
-  ipodValue: unknown
-): boolean {
+function valuesDiffer(collectionValue: unknown, ipodValue: unknown): boolean {
   // Both empty -> no difference
   if (isEmpty(collectionValue) && isEmpty(ipodValue)) {
     return false;

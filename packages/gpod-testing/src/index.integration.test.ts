@@ -15,9 +15,7 @@ describe('gpod-testing', () => {
   beforeAll(async () => {
     const available = await isGpodToolAvailable();
     if (!available) {
-      throw new Error(
-        'gpod-tool not found in PATH. Run `mise run tools:build` first.'
-      );
+      throw new Error('gpod-tool not found in PATH. Run `mise run tools:build` first.');
     }
   });
 
@@ -74,9 +72,9 @@ describe('gpod-testing', () => {
     it('fails with models requiring FirewireID (iPod Classic 6th gen+)', async () => {
       // MB565 (iPod Classic 120GB) requires FirewireID in SysInfo
       // libgpod doesn't auto-generate this, so initialization fails
-      await expect(
-        createTestIpod({ model: 'MB565', name: 'Classic' })
-      ).rejects.toThrow("Couldn't find the iPod firewire ID");
+      await expect(createTestIpod({ model: 'MB565', name: 'Classic' })).rejects.toThrow(
+        "Couldn't find the iPod firewire ID"
+      );
     });
 
     it('allows adding tracks', async () => {

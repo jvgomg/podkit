@@ -138,13 +138,10 @@ export class MacOSDeviceManager implements DeviceManager {
     }
 
     // Determine mount point
-    const mountPoint =
-      options?.target ?? `/tmp/podkit-${device.volumeName || 'ipod'}`;
+    const mountPoint = options?.target ?? `/tmp/podkit-${device.volumeName || 'ipod'}`;
 
     // Build mount command
-    const devicePath = deviceId.startsWith('/dev/')
-      ? deviceId
-      : `/dev/${deviceId}`;
+    const devicePath = deviceId.startsWith('/dev/') ? deviceId : `/dev/${deviceId}`;
 
     const mountCommand = `mount -t msdos ${devicePath} ${mountPoint}`;
 
@@ -182,12 +179,7 @@ export class MacOSDeviceManager implements DeviceManager {
     }
 
     // Execute mount
-    const { stderr, code } = await execCommand('mount', [
-      '-t',
-      'msdos',
-      devicePath,
-      mountPoint,
-    ]);
+    const { stderr, code } = await execCommand('mount', ['-t', 'msdos', devicePath, mountPoint]);
 
     if (code === 0) {
       return {
@@ -249,11 +241,7 @@ export class MacOSDeviceManager implements DeviceManager {
 
       // Check volume name patterns commonly used for iPods
       const volumeName = device.volumeName.toUpperCase();
-      if (
-        volumeName.includes('IPOD') ||
-        volumeName.includes('POD') ||
-        volumeName === 'TERAPOD'
-      ) {
+      if (volumeName.includes('IPOD') || volumeName.includes('POD') || volumeName === 'TERAPOD') {
         ipods.push(device);
       }
     }

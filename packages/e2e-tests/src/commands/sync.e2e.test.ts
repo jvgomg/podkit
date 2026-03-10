@@ -114,11 +114,7 @@ describe('podkit sync', () => {
       const configPath = await createTempConfig(sourcePath);
       tempConfigPaths.push(configPath);
 
-      const result = await runCli([
-        '--config',
-        configPath,
-        'sync',
-      ]);
+      const result = await runCli(['--config', configPath, 'sync']);
 
       expect(result.exitCode).toBe(1);
       expect(result.stderr).toContain('No devices configured');
@@ -129,13 +125,7 @@ describe('podkit sync', () => {
         const configPath = await createTempConfig('/nonexistent/path');
         tempConfigPaths.push(configPath);
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          'sync',
-          '--device',
-          target.path,
-        ]);
+        const result = await runCli(['--config', configPath, 'sync', '--device', target.path]);
 
         expect(result.exitCode).toBe(1);
         expect(result.stderr).toContain('not found');
@@ -256,13 +246,7 @@ describe('podkit sync', () => {
         const configPath = await createTempConfig(sourcePath);
         tempConfigPaths.push(configPath);
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          'sync',
-          '--device',
-          target.path,
-        ]);
+        const result = await runCli(['--config', configPath, 'sync', '--device', target.path]);
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('sync complete');
@@ -347,13 +331,7 @@ describe('podkit sync', () => {
         tempConfigPaths.push(configPath);
 
         // First sync
-        const result1 = await runCli([
-          '--config',
-          configPath,
-          'sync',
-          '--device',
-          target.path,
-        ]);
+        const result1 = await runCli(['--config', configPath, 'sync', '--device', target.path]);
         expect(result1.exitCode).toBe(0);
 
         // Second sync should skip all tracks (already synced)
@@ -414,13 +392,7 @@ describe('podkit sync', () => {
         const configPath = await createTempConfig(sourcePath);
         tempConfigPaths.push(configPath);
 
-        const result = await runCli([
-          '--config',
-          configPath,
-          'sync',
-          '--device',
-          target.path,
-        ]);
+        const result = await runCli(['--config', configPath, 'sync', '--device', target.path]);
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('podkit eject');

@@ -168,9 +168,7 @@ export const Tracks = {
 /**
  * Get information about a specific track.
  */
-export function getTrack(
-  track: (typeof Tracks)[keyof typeof Tracks]
-): TestTrack {
+export function getTrack(track: (typeof Tracks)[keyof typeof Tracks]): TestTrack {
   return {
     path: getTrackPath(track.album, track.filename),
     filename: track.filename,

@@ -235,9 +235,7 @@ export interface MatchResult {
  * @param tracks - Tracks to index
  * @returns Map from match key to track
  */
-export function buildMatchIndex<T extends Matchable>(
-  tracks: T[]
-): Map<string, T> {
+export function buildMatchIndex<T extends Matchable>(tracks: T[]): Map<string, T> {
   const index = new Map<string, T>();
 
   for (const track of tracks) {

@@ -104,7 +104,9 @@ export const ejectCommand = new Command('eject')
     const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
     if (!globalOpts.quiet && !globalOpts.json && deviceIdentity?.volumeUuid) {
-      console.log(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0));
+      console.log(
+        formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, globalOpts.verbose > 0)
+      );
     }
 
     const resolveResult = await resolveDevicePath({

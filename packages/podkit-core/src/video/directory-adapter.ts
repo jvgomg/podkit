@@ -393,17 +393,13 @@ export class VideoDirectoryAdapter {
       // TV-specific (use content type detection which already handles metadata)
       seriesTitle: contentTypeResult.seriesTitle,
       seasonNumber:
-        metadata?.contentType === 'tvshow'
-          ? metadata.seasonNumber
-          : contentTypeResult.seasonNumber,
+        metadata?.contentType === 'tvshow' ? metadata.seasonNumber : contentTypeResult.seasonNumber,
       episodeNumber:
         metadata?.contentType === 'tvshow'
           ? metadata.episodeNumber
           : contentTypeResult.episodeNumber,
       episodeId:
-        metadata?.contentType === 'tvshow'
-          ? metadata.episodeId
-          : contentTypeResult.episodeId,
+        metadata?.contentType === 'tvshow' ? metadata.episodeId : contentTypeResult.episodeId,
       network: metadata?.contentType === 'tvshow' ? metadata.network : undefined,
 
       // Technical info from probe

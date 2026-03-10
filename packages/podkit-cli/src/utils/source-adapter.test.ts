@@ -48,9 +48,7 @@ describe('parseSubsonicUrl', () => {
   });
 
   it('throws for non-subsonic URL', () => {
-    expect(() => parseSubsonicUrl('https://music.example.com')).toThrow(
-      /Not a Subsonic URL/
-    );
+    expect(() => parseSubsonicUrl('https://music.example.com')).toThrow(/Not a Subsonic URL/);
   });
 });
 
@@ -74,15 +72,11 @@ describe('getSubsonicPasswordEnvVar', () => {
   });
 
   it('handles hyphenated names', () => {
-    expect(getSubsonicPasswordEnvVar('my-collection')).toBe(
-      'PODKIT_MUSIC_MY_COLLECTION_PASSWORD'
-    );
+    expect(getSubsonicPasswordEnvVar('my-collection')).toBe('PODKIT_MUSIC_MY_COLLECTION_PASSWORD');
   });
 
   it('handles mixed case names', () => {
-    expect(getSubsonicPasswordEnvVar('MyCollection')).toBe(
-      'PODKIT_MUSIC_MYCOLLECTION_PASSWORD'
-    );
+    expect(getSubsonicPasswordEnvVar('MyCollection')).toBe('PODKIT_MUSIC_MYCOLLECTION_PASSWORD');
   });
 });
 

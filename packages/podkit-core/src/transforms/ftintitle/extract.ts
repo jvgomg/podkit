@@ -100,10 +100,7 @@ function findIgnoredArtist(artist: string, ignoreList: string[]): string | null 
  * extractFeaturedArtist('Coheed and Cambria and Other Artist', { ignore: ['Coheed and Cambria'] })
  * // { mainArtist: 'Coheed and Cambria', featuredArtist: 'Other Artist' }
  */
-export function extractFeaturedArtist(
-  artist: string,
-  options?: ExtractOptions
-): ExtractResult {
+export function extractFeaturedArtist(artist: string, options?: ExtractOptions): ExtractResult {
   // First try with explicit tokens only (most reliable)
   const explicitPattern = createFeatSplitPattern(false);
   let match = artist.match(explicitPattern);
@@ -190,11 +187,7 @@ export function extractFeaturedArtist(
  * insertFeatIntoTitle('Song (Remix)', 'Artist B', 'feat. {}')
  * // 'Song (feat. Artist B) (Remix)'
  */
-export function insertFeatIntoTitle(
-  title: string,
-  featuredArtist: string,
-  format: string
-): string {
+export function insertFeatIntoTitle(title: string, featuredArtist: string, format: string): string {
   // Format the featuring text
   const featText = `(${format.replace('{}', featuredArtist)})`;
 

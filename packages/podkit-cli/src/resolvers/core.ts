@@ -54,9 +54,7 @@ export interface ResolveNamedEntityOptions<T> {
  * }
  * ```
  */
-export function resolveNamedEntity<T>(
-  options: ResolveNamedEntityOptions<T>
-): ResolutionResult<T> {
+export function resolveNamedEntity<T>(options: ResolveNamedEntityOptions<T>): ResolutionResult<T> {
   const { entities, defaultName, requestedName, entityType, addCommand, defaultCommand } = options;
 
   // Case 1: Explicit name requested
@@ -94,9 +92,7 @@ export function resolveNamedEntity<T>(
   // Case 3: No default set
   const hasEntities = entities && Object.keys(entities).length > 0;
   if (hasEntities) {
-    const setDefaultHint = defaultCommand
-      ? ` or set a default with: ${defaultCommand}`
-      : '';
+    const setDefaultHint = defaultCommand ? ` or set a default with: ${defaultCommand}` : '';
     return {
       success: false,
       error: `No default ${entityType} set. Specify a name${setDefaultHint}`,

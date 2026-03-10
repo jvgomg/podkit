@@ -149,10 +149,7 @@ export function generateQualityWarnings(
 
   // Check if source resolution limits output
   // Source is limiting if it's smaller than what the device could display
-  if (
-    source.width < device.maxWidth ||
-    source.height < device.maxHeight
-  ) {
+  if (source.width < device.maxWidth || source.height < device.maxHeight) {
     // Only warn if the source dimensions are actually limiting the output
     if (
       effectiveSettings.targetWidth < device.maxWidth ||
@@ -217,23 +214,20 @@ export function calculateEffectiveSettings(
 
   // Cap video bitrate: min(preset, source, device max)
   // If source bitrate is 0 (unknown), use preset/device limits
-  const targetVideoBitrate = source.videoBitrate > 0
-    ? Math.min(presetSettings.videoBitrate, source.videoBitrate, device.maxVideoBitrate)
-    : Math.min(presetSettings.videoBitrate, device.maxVideoBitrate);
+  const targetVideoBitrate =
+    source.videoBitrate > 0
+      ? Math.min(presetSettings.videoBitrate, source.videoBitrate, device.maxVideoBitrate)
+      : Math.min(presetSettings.videoBitrate, device.maxVideoBitrate);
 
   // Cap audio bitrate: min(preset, source, device max)
   // Note: we don't downgrade audio if source is lower since re-encoding
   // at a slightly higher bitrate won't hurt quality
-  const targetAudioBitrate = Math.min(
-    presetSettings.audioBitrate,
-    device.maxAudioBitrate
-  );
+  const targetAudioBitrate = Math.min(presetSettings.audioBitrate, device.maxAudioBitrate);
 
   // Cap frame rate: min(source, device max)
   // If source frame rate is 0 (unknown), use device max
-  const frameRate = source.frameRate > 0
-    ? Math.min(source.frameRate, device.maxFrameRate)
-    : device.maxFrameRate;
+  const frameRate =
+    source.frameRate > 0 ? Math.min(source.frameRate, device.maxFrameRate) : device.maxFrameRate;
 
   return {
     targetWidth: dimensions.width,
@@ -287,5 +281,5 @@ export function getQualityLimitationSummary(
 ): string[] {
   const effectiveSettings = calculateEffectiveSettings(source, preset, device);
   const warnings = generateQualityWarnings(source, preset, device, effectiveSettings);
-  return warnings.map(w => w.message);
+  return warnings.map((w) => w.message);
 }

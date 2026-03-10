@@ -16,11 +16,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import {
-  computeDiff,
-  createDiffer,
-  DefaultSyncDiffer,
-} from './differ.js';
+import { computeDiff, createDiffer, DefaultSyncDiffer } from './differ.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { IPodTrack } from './types.js';
 
@@ -60,10 +56,16 @@ function createIPodTrack(
   artist: string,
   title: string,
   album: string,
-  options: Partial<Omit<IPodTrack, 'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'>> = {}
+  options: Partial<
+    Omit<
+      IPodTrack,
+      'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'
+    >
+  > = {}
 ): IPodTrack {
   // Generate unique filePath if not provided
-  const uniquePath = options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
+  const uniquePath =
+    options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
   const track: IPodTrack = {
     artist,
     title,
@@ -125,7 +127,11 @@ function generateTracks(
     if (type === 'collection') {
       tracks.push(createCollectionTrack(artist, title, album));
     } else {
-      tracks.push(createIPodTrack(artist, title, album, { filePath: `:iPod_Control:Music:F${String(i % 100).padStart(2, '0')}:${String(i).padStart(4, '0')}.m4a` }));
+      tracks.push(
+        createIPodTrack(artist, title, album, {
+          filePath: `:iPod_Control:Music:F${String(i % 100).padStart(2, '0')}:${String(i).padStart(4, '0')}.m4a`,
+        })
+      );
     }
   }
 
@@ -223,13 +229,9 @@ describe('computeDiff - identical collections', () => {
   });
 
   it('matches tracks with case differences', () => {
-    const collectionTracks = [
-      createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS'),
-    ];
+    const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [
-      createIPodTrack('the beatles', 'hey jude', 'past masters'),
-    ];
+    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -243,9 +245,7 @@ describe('computeDiff - identical collections', () => {
       createCollectionTrack('  The Beatles  ', '  Hey Jude  ', '  Past Masters  '),
     ];
 
-    const ipodTracks = [
-      createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters'),
-    ];
+    const ipodTracks = [createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -255,13 +255,9 @@ describe('computeDiff - identical collections', () => {
   });
 
   it('matches tracks with accent differences (Unicode normalization)', () => {
-    const collectionTracks = [
-      createCollectionTrack('Bjork', 'Army of Me', 'Post'),
-    ];
+    const collectionTracks = [createCollectionTrack('Bjork', 'Army of Me', 'Post')];
 
-    const ipodTracks = [
-      createIPodTrack('Bjork', 'Army of Me', 'Post'),
-    ];
+    const ipodTracks = [createIPodTrack('Bjork', 'Army of Me', 'Post')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -271,13 +267,9 @@ describe('computeDiff - identical collections', () => {
   });
 
   it('matches "The X" with "X, The" artist format', () => {
-    const collectionTracks = [
-      createCollectionTrack('The Beatles', 'Hey Jude', 'Past Masters'),
-    ];
+    const collectionTracks = [createCollectionTrack('The Beatles', 'Hey Jude', 'Past Masters')];
 
-    const ipodTracks = [
-      createIPodTrack('Beatles, The', 'Hey Jude', 'Past Masters'),
-    ];
+    const ipodTracks = [createIPodTrack('Beatles, The', 'Hey Jude', 'Past Masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -349,10 +341,7 @@ describe('computeDiff - mixed scenarios', () => {
     expect(diff.toRemove[0]!.artist).toBe('Artist D');
 
     expect(diff.existing).toHaveLength(2);
-    expect(diff.existing.map((m) => m.collection.artist).sort()).toEqual([
-      'Artist A',
-      'Artist C',
-    ]);
+    expect(diff.existing.map((m) => m.collection.artist).sort()).toEqual(['Artist A', 'Artist C']);
   });
 
   it('handles mostly overlapping collections', () => {
@@ -429,13 +418,9 @@ describe('computeDiff - mixed scenarios', () => {
 
 describe('computeDiff - conflict detection', () => {
   it('detects genre conflicts', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { genre: 'Rock' }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { genre: 'Rock' })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { genre: 'Pop' }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { genre: 'Pop' })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -445,13 +430,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('detects year conflicts', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { year: 2020 }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { year: 2020 })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { year: 2019 }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { year: 2019 })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -460,13 +441,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('detects trackNumber conflicts', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { trackNumber: 1 }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { trackNumber: 1 })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { trackNumber: 2 }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { trackNumber: 2 })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -475,13 +452,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('detects discNumber conflicts', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { discNumber: 1 }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { discNumber: 1 })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { discNumber: 2 }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { discNumber: 2 })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -534,13 +507,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('does not report conflict for matching metadata with case differences', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { genre: 'ROCK' }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { genre: 'ROCK' })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { genre: 'rock' }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { genre: 'rock' })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -554,9 +523,7 @@ describe('computeDiff - conflict detection', () => {
       createCollectionTrack('Artist', 'Song', 'Album', { genre: undefined }),
     ];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { genre: undefined }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { genre: undefined })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -565,13 +532,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('handles empty string vs undefined as equivalent', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { genre: '' }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { genre: '' })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { genre: undefined }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { genre: undefined })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -580,13 +543,9 @@ describe('computeDiff - conflict detection', () => {
   });
 
   it('detects conflict when one has value and other is undefined', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album', { genre: 'Rock' }),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album', { genre: 'Rock' })];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album', { genre: undefined }),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album', { genre: undefined })];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -622,13 +581,9 @@ describe('computeDiff - conflict detection', () => {
 
 describe('computeDiff - false positive prevention', () => {
   it('does NOT match tracks with similar but different artists', () => {
-    const collectionTracks = [
-      createCollectionTrack('Beatles', 'Hey Jude', 'Past Masters'),
-    ];
+    const collectionTracks = [createCollectionTrack('Beatles', 'Hey Jude', 'Past Masters')];
 
-    const ipodTracks = [
-      createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters'),
-    ];
+    const ipodTracks = [createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -639,13 +594,9 @@ describe('computeDiff - false positive prevention', () => {
   });
 
   it('does NOT match tracks with similar but different titles', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song!', 'Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song!', 'Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -655,13 +606,9 @@ describe('computeDiff - false positive prevention', () => {
   });
 
   it('does NOT match tracks with similar but different albums', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album (Deluxe)'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album (Deluxe)')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -671,13 +618,9 @@ describe('computeDiff - false positive prevention', () => {
   });
 
   it('does NOT match live vs studio versions', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song (Live)', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song (Live)', 'Album')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -687,13 +630,9 @@ describe('computeDiff - false positive prevention', () => {
   });
 
   it('does NOT match remix vs original', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song (Remix)', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song (Remix)', 'Album')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -707,9 +646,7 @@ describe('computeDiff - false positive prevention', () => {
       createCollectionTrack('Pink Floyd', 'Money', 'Dark Side of the Moon'),
     ];
 
-    const ipodTracks = [
-      createIPodTrack('Dark Side of the Moon', 'Money', 'Pink Floyd'),
-    ];
+    const ipodTracks = [createIPodTrack('Dark Side of the Moon', 'Money', 'Pink Floyd')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -725,13 +662,9 @@ describe('computeDiff - false positive prevention', () => {
 
 describe('computeDiff - false negative prevention', () => {
   it('matches tracks that should match despite case differences', () => {
-    const collectionTracks = [
-      createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS'),
-    ];
+    const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [
-      createIPodTrack('the beatles', 'hey jude', 'past masters'),
-    ];
+    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -741,13 +674,9 @@ describe('computeDiff - false negative prevention', () => {
   });
 
   it('matches tracks that should match despite whitespace differences', () => {
-    const collectionTracks = [
-      createCollectionTrack('The  Beatles', 'Hey   Jude', 'Past Masters'),
-    ];
+    const collectionTracks = [createCollectionTrack('The  Beatles', 'Hey   Jude', 'Past Masters')];
 
-    const ipodTracks = [
-      createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters'),
-    ];
+    const ipodTracks = [createIPodTrack('The Beatles', 'Hey Jude', 'Past Masters')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -755,13 +684,9 @@ describe('computeDiff - false negative prevention', () => {
   });
 
   it('matches tracks that should match despite accent differences', () => {
-    const collectionTracks = [
-      createCollectionTrack('Bjork', 'Army of Me', 'Post'),
-    ];
+    const collectionTracks = [createCollectionTrack('Bjork', 'Army of Me', 'Post')];
 
-    const ipodTracks = [
-      createIPodTrack('Bjork', 'Army of Me', 'Post'),
-    ];
+    const ipodTracks = [createIPodTrack('Bjork', 'Army of Me', 'Post')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -850,25 +775,18 @@ describe('computeDiff - performance', () => {
     const overlapCount = 4000;
 
     // Create overlapping tracks
-    const overlappingCollection = generateTracks(
-      overlapCount,
-      'collection'
-    ) as CollectionTrack[];
+    const overlappingCollection = generateTracks(overlapCount, 'collection') as CollectionTrack[];
     const overlappingIpod = generateTracks(overlapCount, 'ipod') as IPodTrack[];
 
     // Create unique tracks for each side
     const uniqueCollection: CollectionTrack[] = [];
     for (let i = overlapCount; i < collectionCount; i++) {
-      uniqueCollection.push(
-        createCollectionTrack(`UniqueCollArtist${i}`, `Song${i}`, `Album${i}`)
-      );
+      uniqueCollection.push(createCollectionTrack(`UniqueCollArtist${i}`, `Song${i}`, `Album${i}`));
     }
 
     const uniqueIpod: IPodTrack[] = [];
     for (let i = overlapCount; i < ipodCount; i++) {
-      uniqueIpod.push(
-        createIPodTrack(`UniqueIpodArtist${i}`, `Song${i}`, `Album${i}`)
-      );
+      uniqueIpod.push(createIPodTrack(`UniqueIpodArtist${i}`, `Song${i}`, `Album${i}`));
     }
 
     const collectionTracks = [...overlappingCollection, ...uniqueCollection];
@@ -959,9 +877,7 @@ describe('createDiffer', () => {
   it('creates functional differ instances', () => {
     const differ = createDiffer();
 
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
     const ipodTracks: IPodTrack[] = [];
 
@@ -979,13 +895,9 @@ describe('createDiffer', () => {
 
 describe('computeDiff - edge cases', () => {
   it('handles tracks with empty strings', () => {
-    const collectionTracks = [
-      createCollectionTrack('', '', ''),
-    ];
+    const collectionTracks = [createCollectionTrack('', '', '')];
 
-    const ipodTracks = [
-      createIPodTrack('', '', ''),
-    ];
+    const ipodTracks = [createIPodTrack('', '', '')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -994,13 +906,9 @@ describe('computeDiff - edge cases', () => {
 
   it('handles tracks with very long strings', () => {
     const longString = 'A'.repeat(1000);
-    const collectionTracks = [
-      createCollectionTrack(longString, longString, longString),
-    ];
+    const collectionTracks = [createCollectionTrack(longString, longString, longString)];
 
-    const ipodTracks = [
-      createIPodTrack(longString, longString, longString),
-    ];
+    const ipodTracks = [createIPodTrack(longString, longString, longString)];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1008,13 +916,9 @@ describe('computeDiff - edge cases', () => {
   });
 
   it('handles tracks with special characters', () => {
-    const collectionTracks = [
-      createCollectionTrack('AC/DC', "Rock 'n' Roll", 'Back in Black'),
-    ];
+    const collectionTracks = [createCollectionTrack('AC/DC', "Rock 'n' Roll", 'Back in Black')];
 
-    const ipodTracks = [
-      createIPodTrack('AC/DC', "Rock 'n' Roll", 'Back in Black'),
-    ];
+    const ipodTracks = [createIPodTrack('AC/DC', "Rock 'n' Roll", 'Back in Black')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1022,13 +926,9 @@ describe('computeDiff - edge cases', () => {
   });
 
   it('handles tracks with CJK characters', () => {
-    const collectionTracks = [
-      createCollectionTrack('YMO', 'Technopolis', 'Solid State Survivor'),
-    ];
+    const collectionTracks = [createCollectionTrack('YMO', 'Technopolis', 'Solid State Survivor')];
 
-    const ipodTracks = [
-      createIPodTrack('YMO', 'Technopolis', 'Solid State Survivor'),
-    ];
+    const ipodTracks = [createIPodTrack('YMO', 'Technopolis', 'Solid State Survivor')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1036,13 +936,9 @@ describe('computeDiff - edge cases', () => {
   });
 
   it('handles tracks with emoji', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song', 'Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1050,13 +946,9 @@ describe('computeDiff - edge cases', () => {
   });
 
   it('handles single track collections', () => {
-    const collectionTracks = [
-      createCollectionTrack('Artist', 'Song', 'Album'),
-    ];
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
-    const ipodTracks = [
-      createIPodTrack('Other Artist', 'Other Song', 'Other Album'),
-    ];
+    const ipodTracks = [createIPodTrack('Other Artist', 'Other Song', 'Other Album')];
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1085,12 +977,8 @@ describe('computeDiff - transform-aware matching', () => {
 
   describe('toUpdate array', () => {
     it('returns empty toUpdate when no transforms configured', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks);
 
@@ -1099,12 +987,8 @@ describe('computeDiff - transform-aware matching', () => {
     });
 
     it('returns empty toUpdate when transforms disabled', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_DISABLED,
@@ -1122,13 +1006,9 @@ describe('computeDiff - transform-aware matching', () => {
   describe('transform-apply', () => {
     it('detects when transform should be applied (iPod has original metadata)', () => {
       // Source has "Artist feat. B" which should transform to "Artist"
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
       // iPod has original (untransformed) metadata
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_ENABLED,
@@ -1193,12 +1073,8 @@ describe('computeDiff - transform-aware matching', () => {
     });
 
     it('does not add to toUpdate when track has no featured artist', () => {
-      const collectionTracks = [
-        createCollectionTrack('Solo Artist', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Solo Artist', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Solo Artist', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Solo Artist', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_ENABLED,
@@ -1216,13 +1092,9 @@ describe('computeDiff - transform-aware matching', () => {
   describe('transform-remove', () => {
     it('detects when transform should be removed (iPod has transformed metadata, config disabled)', () => {
       // Source has original "Artist feat. B"
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
       // iPod has transformed metadata (was previously synced with transforms enabled)
-      const ipodTracks = [
-        createIPodTrack('Artist', 'Song (feat. B)', 'Album'),
-      ];
+      const ipodTracks = [createIPodTrack('Artist', 'Song (feat. B)', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_DISABLED,
@@ -1271,13 +1143,9 @@ describe('computeDiff - transform-aware matching', () => {
 
   describe('already correct', () => {
     it('does not update when iPod already has transformed metadata (transforms enabled)', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
       // iPod already has transformed metadata
-      const ipodTracks = [
-        createIPodTrack('Artist', 'Song (feat. B)', 'Album'),
-      ];
+      const ipodTracks = [createIPodTrack('Artist', 'Song (feat. B)', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_ENABLED,
@@ -1288,12 +1156,8 @@ describe('computeDiff - transform-aware matching', () => {
     });
 
     it('does not update when iPod has original metadata (transforms disabled)', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_DISABLED,
@@ -1310,13 +1174,9 @@ describe('computeDiff - transform-aware matching', () => {
 
   describe('toAdd with transforms', () => {
     it('adds track to toAdd when neither key matches', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
       // iPod has completely different track
-      const ipodTracks = [
-        createIPodTrack('Other Artist', 'Other Song', 'Other Album'),
-      ];
+      const ipodTracks = [createIPodTrack('Other Artist', 'Other Song', 'Other Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: TRANSFORMS_ENABLED,
@@ -1331,9 +1191,7 @@ describe('computeDiff - transform-aware matching', () => {
     });
 
     it('preserves original metadata when transforms disabled', () => {
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
       const ipodTracks: IPodTrack[] = [];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
@@ -1408,12 +1266,8 @@ describe('computeDiff - transform-aware matching', () => {
         ftintitle: { enabled: true, drop: false, format: 'with {}', ignore: [] },
       };
 
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: customTransforms,
@@ -1432,12 +1286,8 @@ describe('computeDiff - transform-aware matching', () => {
         ftintitle: { enabled: true, drop: true, format: 'feat. {}', ignore: [] },
       };
 
-      const collectionTracks = [
-        createCollectionTrack('Artist feat. B', 'Song', 'Album'),
-      ];
-      const ipodTracks = [
-        createIPodTrack('Artist feat. B', 'Song', 'Album'),
-      ];
+      const collectionTracks = [createCollectionTrack('Artist feat. B', 'Song', 'Album')];
+      const ipodTracks = [createIPodTrack('Artist feat. B', 'Song', 'Album')];
 
       const diff = computeDiff(collectionTracks, ipodTracks, {
         transforms: dropTransforms,

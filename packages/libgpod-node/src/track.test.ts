@@ -236,10 +236,7 @@ describe('track utilities', () => {
   });
 
   describe('trackDisplayName', () => {
-    const createTrack = (
-      title: string | null,
-      artist: string | null
-    ): Track =>
+    const createTrack = (title: string | null, artist: string | null): Track =>
       ({
         id: 1,
         dbid: BigInt(1),
@@ -277,27 +274,19 @@ describe('track utilities', () => {
       }) as Track;
 
     it('formats artist and title', () => {
-      expect(trackDisplayName(createTrack('Song', 'Artist'))).toBe(
-        'Artist - Song'
-      );
+      expect(trackDisplayName(createTrack('Song', 'Artist'))).toBe('Artist - Song');
     });
 
     it('handles missing artist', () => {
-      expect(trackDisplayName(createTrack('Song', null))).toBe(
-        'Unknown Artist - Song'
-      );
+      expect(trackDisplayName(createTrack('Song', null))).toBe('Unknown Artist - Song');
     });
 
     it('handles missing title', () => {
-      expect(trackDisplayName(createTrack(null, 'Artist'))).toBe(
-        'Artist - Unknown Title'
-      );
+      expect(trackDisplayName(createTrack(null, 'Artist'))).toBe('Artist - Unknown Title');
     });
 
     it('handles both missing', () => {
-      expect(trackDisplayName(createTrack(null, null))).toBe(
-        'Unknown Artist - Unknown Title'
-      );
+      expect(trackDisplayName(createTrack(null, null))).toBe('Unknown Artist - Unknown Title');
     });
   });
 });

@@ -236,9 +236,7 @@ describe('video/compatibility transcode', () => {
     const result = checkVideoCompatibility(analysis, ipodClassic);
 
     expect(result.status).toBe('transcode');
-    expect(result.reasons).toContain(
-      'Resolution exceeds device maximum: 1920x1080 > 640x480'
-    );
+    expect(result.reasons).toContain('Resolution exceeds device maximum: 1920x1080 > 640x480');
   });
 
   it('transcode: Width exceeds limit', () => {
@@ -250,9 +248,7 @@ describe('video/compatibility transcode', () => {
     const result = checkVideoCompatibility(analysis, ipodClassic);
 
     expect(result.status).toBe('transcode');
-    expect(result.reasons).toContain(
-      'Resolution exceeds device maximum: 720x480 > 640x480'
-    );
+    expect(result.reasons).toContain('Resolution exceeds device maximum: 720x480 > 640x480');
   });
 
   it('transcode: Height exceeds limit', () => {
@@ -264,9 +260,7 @@ describe('video/compatibility transcode', () => {
     const result = checkVideoCompatibility(analysis, ipodClassic);
 
     expect(result.status).toBe('transcode');
-    expect(result.reasons).toContain(
-      'Resolution exceeds device maximum: 640x576 > 640x480'
-    );
+    expect(result.reasons).toContain('Resolution exceeds device maximum: 640x576 > 640x480');
   });
 
   it('transcode: Wrong video codec (HEVC)', () => {
@@ -323,9 +317,7 @@ describe('video/compatibility transcode', () => {
     const result = checkVideoCompatibility(analysis, ipodClassic);
 
     expect(result.status).toBe('transcode');
-    expect(result.reasons).toContain(
-      'Video bitrate exceeds maximum: 5000kbps > 2500kbps'
-    );
+    expect(result.reasons).toContain('Video bitrate exceeds maximum: 5000kbps > 2500kbps');
   });
 
   it('transcode: Frame rate exceeds maximum', () => {
@@ -380,9 +372,7 @@ describe('video/compatibility transcode', () => {
     expect(result.status).toBe('transcode');
     expect(result.reasons).toContain('Incompatible container: mkv');
     expect(result.reasons).toContain('Incompatible video codec: hevc');
-    expect(result.reasons).toContain(
-      'Resolution exceeds device maximum: 1920x1080 > 640x480'
-    );
+    expect(result.reasons).toContain('Resolution exceeds device maximum: 1920x1080 > 640x480');
     expect(result.reasons).toContain('Incompatible audio codec: ac3');
   });
 });
@@ -685,9 +675,7 @@ describe('video/compatibility canPassthrough', () => {
     const result = canPassthrough(analysis, ipodClassic);
 
     expect(result.canPassthrough).toBe(false);
-    expect(result.reasons).toContain(
-      'Resolution exceeds device maximum: 1920x1080 > 640x480'
-    );
+    expect(result.reasons).toContain('Resolution exceeds device maximum: 1920x1080 > 640x480');
   });
 
   it('returns false with reasons for unsupported codec', () => {

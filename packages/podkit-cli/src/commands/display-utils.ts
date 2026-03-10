@@ -289,11 +289,7 @@ export function formatJson(tracks: DisplayTrack[], fields: FieldName[]): string 
         obj['duration'] = track.duration;
         obj['durationFormatted'] = formatDuration(track.duration);
       } else {
-        obj[field] = track[field as keyof DisplayTrack] as
-          | string
-          | number
-          | boolean
-          | undefined;
+        obj[field] = track[field as keyof DisplayTrack] as string | number | boolean | undefined;
       }
     }
     return obj;

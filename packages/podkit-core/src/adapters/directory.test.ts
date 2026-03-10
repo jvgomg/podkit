@@ -547,10 +547,7 @@ describe('DirectoryAdapter', () => {
 
   describe('progress reporting', () => {
     it('reports progress during scan', async () => {
-      mockGlob.mockImplementation(async () => [
-        '/music/song1.mp3',
-        '/music/song2.mp3',
-      ]);
+      mockGlob.mockImplementation(async () => ['/music/song1.mp3', '/music/song2.mp3']);
       mockParseFile.mockImplementation(async () => ({
         common: { title: 'Test' },
         format: {},
@@ -577,7 +574,10 @@ describe('DirectoryAdapter', () => {
     it('handles unicode in file paths', async () => {
       mockGlob.mockImplementation(async () => ['/music/\u97F3\u697D/\u66F2.flac']);
       mockParseFile.mockImplementation(async () => ({
-        common: { title: '\u97F3\u697D\u306E\u66F2', artist: '\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8' },
+        common: {
+          title: '\u97F3\u697D\u306E\u66F2',
+          artist: '\u30A2\u30FC\u30C6\u30A3\u30B9\u30C8',
+        },
         format: {},
       }));
 

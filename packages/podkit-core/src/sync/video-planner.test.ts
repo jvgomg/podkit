@@ -34,10 +34,7 @@ import { getDefaultDeviceProfile } from '../video/types.js';
 /**
  * Create a CollectionVideo for testing
  */
-function createVideo(
-  title: string,
-  options: Partial<CollectionVideo> = {}
-): CollectionVideo {
+function createVideo(title: string, options: Partial<CollectionVideo> = {}): CollectionVideo {
   return {
     id: options.id ?? `/videos/${title}.mkv`,
     filePath: options.filePath ?? `/videos/${title}.mkv`,
@@ -364,9 +361,7 @@ describe('willVideoPlanFit', () => {
   });
 
   it('should return false when plan does not fit', () => {
-    const videos = [
-      createVideo('Large', { container: 'mkv', duration: 7200 }),
-    ];
+    const videos = [createVideo('Large', { container: 'mkv', duration: 7200 })];
     const diff = createDiff(videos);
     const plan = planVideoSync(diff);
 

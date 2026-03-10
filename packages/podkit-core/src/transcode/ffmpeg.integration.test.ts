@@ -239,9 +239,9 @@ describe('FFmpegTranscoder integration', () => {
       const outputPath = join(testDir, 'output-invalid.m4a');
       const invalidInput = join(testDir, 'nonexistent.wav');
 
-      await expect(
-        transcoder.transcode(invalidInput, outputPath, 'high')
-      ).rejects.toThrow(TranscodeError);
+      await expect(transcoder.transcode(invalidInput, outputPath, 'high')).rejects.toThrow(
+        TranscodeError
+      );
     });
 
     it('throws FFmpegNotFoundError when FFmpeg is missing', async () => {
@@ -250,9 +250,9 @@ describe('FFmpegTranscoder integration', () => {
         ffmpegPath: '/nonexistent/ffmpeg',
       });
 
-      await expect(
-        badTranscoder.transcode(testAudioPath, outputPath, 'high')
-      ).rejects.toThrow(FFmpegNotFoundError);
+      await expect(badTranscoder.transcode(testAudioPath, outputPath, 'high')).rejects.toThrow(
+        FFmpegNotFoundError
+      );
     });
 
     it('overwrites existing output file', async () => {
@@ -396,7 +396,9 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
     for (const file of requiredFiles) {
       const exists = await stat(join(fixturesDir, file)).catch(() => null);
       if (!exists) {
-        throw new Error(`Missing test fixture: ${file}. Run generate.sh in test/fixtures/audio/multi-format/`);
+        throw new Error(
+          `Missing test fixture: ${file}. Run generate.sh in test/fixtures/audio/multi-format/`
+        );
       }
     }
   });
@@ -542,9 +544,12 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       // Use ffprobe to check metadata
       const result = await new Promise<string>((resolve, reject) => {
         const proc = spawn('ffprobe', [
-          '-v', 'error',
-          '-show_entries', 'format_tags=title,artist,album',
-          '-of', 'json',
+          '-v',
+          'error',
+          '-show_entries',
+          'format_tags=title,artist,album',
+          '-of',
+          'json',
           output,
         ]);
         let stdout = '';
@@ -575,9 +580,12 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       // OGG metadata is stored in stream tags, which FFmpeg may map to format tags in M4A
       const result = await new Promise<string>((resolve, reject) => {
         const proc = spawn('ffprobe', [
-          '-v', 'error',
-          '-show_entries', 'format_tags:stream_tags',
-          '-of', 'json',
+          '-v',
+          'error',
+          '-show_entries',
+          'format_tags:stream_tags',
+          '-of',
+          'json',
           output,
         ]);
         let stdout = '';

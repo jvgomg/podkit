@@ -8,12 +8,7 @@
 export const VERSION = '0.0.0';
 
 // Shared types
-export type {
-  AudioFileType,
-  TrackMetadata,
-  TrackFilter,
-  PodkitError,
-} from './types.js';
+export type { AudioFileType, TrackMetadata, TrackFilter, PodkitError } from './types.js';
 export { createError } from './types.js';
 
 // Collection adapters
@@ -26,22 +21,12 @@ export type {
   SubsonicAdapterConfig as AdapterSubsonicConfig,
 } from './adapters/interface.js';
 
-export {
-  DirectoryAdapter,
-  createDirectoryAdapter,
-} from './adapters/directory.js';
+export { DirectoryAdapter, createDirectoryAdapter } from './adapters/directory.js';
 
-export type {
-  DirectoryAdapterConfig,
-  ScanProgress,
-  ScanWarning,
-} from './adapters/directory.js';
+export type { DirectoryAdapterConfig, ScanProgress, ScanWarning } from './adapters/directory.js';
 
 // Subsonic adapter
-export {
-  SubsonicAdapter,
-  createSubsonicAdapter,
-} from './adapters/subsonic.js';
+export { SubsonicAdapter, createSubsonicAdapter } from './adapters/subsonic.js';
 
 export type { SubsonicAdapterConfig } from './adapters/subsonic.js';
 
@@ -70,11 +55,7 @@ export type {
 } from './sync/types.js';
 
 // Differ
-export {
-  computeDiff,
-  createDiffer,
-  DefaultSyncDiffer,
-} from './sync/differ.js';
+export { computeDiff, createDiffer, DefaultSyncDiffer } from './sync/differ.js';
 
 // Planner
 export {
@@ -184,10 +165,7 @@ export type {
   ArtworkProcessor,
   ArtworkOptions,
 } from './artwork/types.js';
-export {
-  IPOD_ARTWORK_FORMATS,
-  EXTERNAL_ARTWORK_NAMES,
-} from './artwork/types.js';
+export { IPOD_ARTWORK_FORMATS, EXTERNAL_ARTWORK_NAMES } from './artwork/types.js';
 
 export type { ExtractArtworkOptions } from './artwork/extractor.js';
 export {
@@ -200,10 +178,7 @@ export {
 
 // Metadata extraction utilities
 export type { FileDisplayMetadata } from './metadata/extractor.js';
-export {
-  getFileDisplayMetadata,
-  getFilesDisplayMetadata,
-} from './metadata/extractor.js';
+export { getFileDisplayMetadata, getFilesDisplayMetadata } from './metadata/extractor.js';
 
 // iPod database abstraction layer
 export type {
@@ -240,10 +215,7 @@ export type {
   FtInTitleConfig,
   TransformsConfig,
 } from './transforms/types.js';
-export {
-  DEFAULT_FTINTITLE_CONFIG,
-  DEFAULT_TRANSFORMS_CONFIG,
-} from './transforms/types.js';
+export { DEFAULT_FTINTITLE_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './transforms/types.js';
 export {
   applyTransforms,
   hasEnabledTransforms,
@@ -324,10 +296,7 @@ export {
 } from './video/quality.js';
 
 // Video transcoding
-export type {
-  VideoTranscodeOptions,
-  HardwareAccelerationInfo,
-} from './video/transcode.js';
+export type { VideoTranscodeOptions, HardwareAccelerationInfo } from './video/transcode.js';
 export {
   transcodeVideo,
   buildVideoTranscodeArgs,
@@ -345,10 +314,7 @@ export type {
   VideoFilter,
   VideoDirectoryAdapterConfig,
 } from './video/directory-adapter.js';
-export {
-  VideoDirectoryAdapter,
-  createVideoDirectoryAdapter,
-} from './video/directory-adapter.js';
+export { VideoDirectoryAdapter, createVideoDirectoryAdapter } from './video/directory-adapter.js';
 
 // Video sync differ
 export type {

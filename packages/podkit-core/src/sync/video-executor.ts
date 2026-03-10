@@ -133,10 +133,7 @@ export interface VideoSyncExecutor {
    * }
    * ```
    */
-  execute(
-    plan: VideoSyncPlan,
-    options?: VideoExecuteOptions
-  ): AsyncIterable<VideoExecutorProgress>;
+  execute(plan: VideoSyncPlan, options?: VideoExecuteOptions): AsyncIterable<VideoExecutorProgress>;
 }
 
 // =============================================================================
@@ -234,13 +231,7 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
               bytesProcessed = lastProgress.bytesProcessed;
             }
           } else if (operation.type === 'video-remove') {
-            yield* this.executeRemove(
-              operation,
-              index,
-              total,
-              bytesProcessed,
-              plan.estimatedSize
-            );
+            yield* this.executeRemove(operation, index, total, bytesProcessed, plan.estimatedSize);
           }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -291,22 +282,21 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
   /**
    * Execute in dry-run mode
    */
-  private async *executeDryRun(
-    plan: VideoSyncPlan
-  ): AsyncIterable<VideoExecutorProgress> {
+  private async *executeDryRun(plan: VideoSyncPlan): AsyncIterable<VideoExecutorProgress> {
     const total = plan.operations.length;
     const bytesProcessed = 0;
 
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;
 
-      const phase = operation.type === 'video-transcode'
-        ? 'video-transcoding'
-        : operation.type === 'video-copy'
-          ? 'video-copying'
-          : operation.type === 'video-remove'
-            ? 'removing'
-            : 'preparing';
+      const phase =
+        operation.type === 'video-transcode'
+          ? 'video-transcoding'
+          : operation.type === 'video-copy'
+            ? 'video-copying'
+            : operation.type === 'video-remove'
+              ? 'removing'
+              : 'preparing';
 
       yield {
         phase,
@@ -367,12 +357,14 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
         onTranscodeProgress?.(progress);
       },
       signal,
-    }).then(() => {
-      transcodeComplete = true;
-    }).catch((err) => {
-      transcodeError = err instanceof Error ? err : new Error(String(err));
-      transcodeComplete = true;
-    });
+    })
+      .then(() => {
+        transcodeComplete = true;
+      })
+      .catch((err) => {
+        transcodeError = err instanceof Error ? err : new Error(String(err));
+        transcodeComplete = true;
+      });
 
     // Yield progress updates while transcoding
     while (!transcodeComplete) {
@@ -389,7 +381,7 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       };
 
       // Wait a bit before next update (100ms)
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, 100));
     }
 
     // Check for errors
@@ -508,8 +500,7 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
     const tracks = this.ipod.getTracks();
     const foundTrack = tracks.find(
       (t) =>
-        t.filePath === video.filePath ||
-        (t.title === video.title && t.tvShow === video.seriesTitle)
+        t.filePath === video.filePath || (t.title === video.title && t.tvShow === video.seriesTitle)
     );
 
     if (!foundTrack) {
@@ -551,7 +542,7 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
     if (!dryRun) {
       throw new Error(
         'PlaceholderVideoSyncExecutor only supports dry-run mode. ' +
-        'Use createVideoExecutor({ ipod }) for real execution.'
+          'Use createVideoExecutor({ ipod }) for real execution.'
       );
     }
 
@@ -561,13 +552,14 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
     for (let index = 0; index < plan.operations.length; index++) {
       const operation = plan.operations[index]!;
 
-      const phase = operation.type === 'video-transcode'
-        ? 'video-transcoding'
-        : operation.type === 'video-copy'
-          ? 'video-copying'
-          : operation.type === 'video-remove'
-            ? 'removing'
-            : 'preparing';
+      const phase =
+        operation.type === 'video-transcode'
+          ? 'video-transcoding'
+          : operation.type === 'video-copy'
+            ? 'video-copying'
+            : operation.type === 'video-remove'
+              ? 'removing'
+              : 'preparing';
 
       yield {
         phase,
@@ -619,7 +611,11 @@ export function getVideoOperationDisplayName(operation: SyncOperation): string {
     }
     case 'video-remove': {
       const video = operation.video;
-      if (video.contentType === 'tvshow' && video.seasonNumber !== undefined && video.episodeNumber !== undefined) {
+      if (
+        video.contentType === 'tvshow' &&
+        video.seasonNumber !== undefined &&
+        video.episodeNumber !== undefined
+      ) {
         const showName = video.seriesTitle || video.title;
         const episodeId = `S${String(video.seasonNumber).padStart(2, '0')}E${String(video.episodeNumber).padStart(2, '0')}`;
         return `${showName} - ${episodeId}`;

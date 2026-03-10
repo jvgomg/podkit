@@ -482,9 +482,7 @@ describe('transforms: ftintitle', () => {
           // Verify transformed metadata
           const tracksAfterToggle: ListTrack[] = await target.getTracks();
 
-          const harmonyAfter = tracksAfterToggle.find((t) =>
-            t.title.includes('Harmony')
-          );
+          const harmonyAfter = tracksAfterToggle.find((t) => t.title.includes('Harmony'));
           expect(harmonyAfter?.artist).toBe('Main Artist');
           expect(harmonyAfter?.title).toBe('Harmony (feat. Guest Singer)');
 
@@ -524,9 +522,7 @@ describe('transforms: ftintitle', () => {
 
           // Verify transformed metadata
           const tracksTransformed: ListTrack[] = await target.getTracks();
-          const harmonyTransformed = tracksTransformed.find((t) =>
-            t.title.includes('Harmony')
-          );
+          const harmonyTransformed = tracksTransformed.find((t) => t.title.includes('Harmony'));
           expect(harmonyTransformed?.artist).toBe('Main Artist');
           expect(harmonyTransformed?.title).toBe('Harmony (feat. Guest Singer)');
 

@@ -402,9 +402,7 @@ export class FFmpegTranscoder implements Transcoder {
         const duration = Date.now() - startTime;
 
         if (code !== 0) {
-          reject(
-            new TranscodeError(`FFmpeg exited with code ${code}`, code ?? undefined, stderr)
-          );
+          reject(new TranscodeError(`FFmpeg exited with code ${code}`, code ?? undefined, stderr));
           return;
         }
 

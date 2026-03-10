@@ -187,9 +187,7 @@ export async function withTestIpod<T>(
 export async function createTestIpodsForModels(
   models: IpodModelNumber[]
 ): Promise<(TestIpod & TestIpodHelpers)[]> {
-  return Promise.all(
-    models.map((model) => createTestIpod({ model, name: `Test ${model}` }))
-  );
+  return Promise.all(models.map((model) => createTestIpod({ model, name: `Test ${model}` })));
 }
 
 /**

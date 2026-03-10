@@ -10,11 +10,7 @@
 
 import { describe, it, expect } from 'bun:test';
 
-import {
-  withTestIpod,
-  Database,
-  MediaType,
-} from './helpers/test-setup';
+import { withTestIpod, Database, MediaType } from './helpers/test-setup';
 
 describe('libgpod-node chapter data (getTrackChapters, setTrackChapters)', () => {
   it('can get chapters from a track without chapters', async () => {
@@ -255,29 +251,26 @@ describe('libgpod-node chapter data (clearTrackChapters)', () => {
     });
   });
 
-  it(
-    'clearTrackChapters is idempotent (works on track without chapters)',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
+  it('clearTrackChapters is idempotent (works on track without chapters)', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
 
-        const handle = db.addTrack({
-          title: 'No Chapters',
-          mediaType: MediaType.Podcast,
-        });
-
-        // Should not throw
-        db.clearTrackChapters(handle);
-        expect(db.getTrackChapters(handle)).toHaveLength(0);
-
-        // Call again - should still not throw
-        db.clearTrackChapters(handle);
-        expect(db.getTrackChapters(handle)).toHaveLength(0);
-
-        db.close();
+      const handle = db.addTrack({
+        title: 'No Chapters',
+        mediaType: MediaType.Podcast,
       });
-    }
-  );
+
+      // Should not throw
+      db.clearTrackChapters(handle);
+      expect(db.getTrackChapters(handle)).toHaveLength(0);
+
+      // Call again - should still not throw
+      db.clearTrackChapters(handle);
+      expect(db.getTrackChapters(handle)).toHaveLength(0);
+
+      db.close();
+    });
+  });
 
   it('cleared chapters persist after save', async () => {
     await withTestIpod(async (ipod) => {
@@ -329,9 +322,7 @@ describe('libgpod-node chapter data edge cases', () => {
         duration: 300000, // 5 minutes
       });
 
-      const chapters = db.setTrackChapters(handle, [
-        { startPos: 0, title: 'The Only Chapter' },
-      ]);
+      const chapters = db.setTrackChapters(handle, [{ startPos: 0, title: 'The Only Chapter' }]);
 
       expect(chapters).toHaveLength(1);
       expect(chapters[0]!.startPos).toBe(1); // 0 becomes 1 in libgpod
@@ -364,93 +355,84 @@ describe('libgpod-node chapter data edge cases', () => {
     });
   });
 
-  it(
-    'can set chapter with startPos beyond track duration',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
+  it('can set chapter with startPos beyond track duration', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
 
-        const handle = db.addTrack({
-          title: 'Duration Test',
-          mediaType: MediaType.Podcast,
-          duration: 60000, // 1 minute
-        });
-
-        // Set chapter at 2 minutes (past the 1 minute duration)
-        // libgpod doesn't validate this - it's up to the caller
-        const chapters = db.setTrackChapters(handle, [
-          { startPos: 0, title: 'Start' },
-          { startPos: 120000, title: 'Beyond Duration' },
-        ]);
-
-        expect(chapters).toHaveLength(2);
-        expect(chapters[1]!.startPos).toBe(120000);
-
-        db.close();
+      const handle = db.addTrack({
+        title: 'Duration Test',
+        mediaType: MediaType.Podcast,
+        duration: 60000, // 1 minute
       });
-    }
-  );
 
-  it(
-    'chapters added out of order are stored as provided',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
+      // Set chapter at 2 minutes (past the 1 minute duration)
+      // libgpod doesn't validate this - it's up to the caller
+      const chapters = db.setTrackChapters(handle, [
+        { startPos: 0, title: 'Start' },
+        { startPos: 120000, title: 'Beyond Duration' },
+      ]);
 
-        const handle = db.addTrack({
-          title: 'Out of Order Test',
-          mediaType: MediaType.Podcast,
-          duration: 600000,
-        });
+      expect(chapters).toHaveLength(2);
+      expect(chapters[1]!.startPos).toBe(120000);
 
-        // Add chapters in reverse chronological order
-        // libgpod stores chapters in the order they are added
-        const chapters = db.setTrackChapters(handle, [
-          { startPos: 300000, title: 'Middle' },
-          { startPos: 0, title: 'Start' },
-          { startPos: 600000, title: 'End' },
-        ]);
+      db.close();
+    });
+  });
 
-        expect(chapters).toHaveLength(3);
-        // Chapters are stored in the order provided
-        expect(chapters[0]!.startPos).toBe(300000);
-        expect(chapters[0]!.title).toBe('Middle');
-        expect(chapters[1]!.startPos).toBe(1); // 0 becomes 1
-        expect(chapters[1]!.title).toBe('Start');
-        expect(chapters[2]!.startPos).toBe(600000);
-        expect(chapters[2]!.title).toBe('End');
+  it('chapters added out of order are stored as provided', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
 
-        db.close();
+      const handle = db.addTrack({
+        title: 'Out of Order Test',
+        mediaType: MediaType.Podcast,
+        duration: 600000,
       });
-    }
-  );
 
-  it(
-    'can add chapter with very large startPos',
-    async () => {
-      await withTestIpod(async (ipod) => {
-        const db = Database.openSync(ipod.path);
+      // Add chapters in reverse chronological order
+      // libgpod stores chapters in the order they are added
+      const chapters = db.setTrackChapters(handle, [
+        { startPos: 300000, title: 'Middle' },
+        { startPos: 0, title: 'Start' },
+        { startPos: 600000, title: 'End' },
+      ]);
 
-        const handle = db.addTrack({
-          title: 'Large Time Test',
-          mediaType: MediaType.Audiobook,
-          duration: 86400000, // 24 hours
-        });
+      expect(chapters).toHaveLength(3);
+      // Chapters are stored in the order provided
+      expect(chapters[0]!.startPos).toBe(300000);
+      expect(chapters[0]!.title).toBe('Middle');
+      expect(chapters[1]!.startPos).toBe(1); // 0 becomes 1
+      expect(chapters[1]!.title).toBe('Start');
+      expect(chapters[2]!.startPos).toBe(600000);
+      expect(chapters[2]!.title).toBe('End');
 
-        // Add a chapter at 12 hours
-        const chapters = db.setTrackChapters(handle, [
-          { startPos: 0, title: 'Beginning' },
-          { startPos: 43200000, title: 'Halfway' }, // 12 hours in ms
-        ]);
+      db.close();
+    });
+  });
 
-        expect(chapters).toHaveLength(2);
-        expect(chapters[1]!.startPos).toBe(43200000);
-        expect(chapters[1]!.title).toBe('Halfway');
+  it('can add chapter with very large startPos', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
 
-        db.close();
+      const handle = db.addTrack({
+        title: 'Large Time Test',
+        mediaType: MediaType.Audiobook,
+        duration: 86400000, // 24 hours
       });
-    }
-  );
+
+      // Add a chapter at 12 hours
+      const chapters = db.setTrackChapters(handle, [
+        { startPos: 0, title: 'Beginning' },
+        { startPos: 43200000, title: 'Halfway' }, // 12 hours in ms
+      ]);
+
+      expect(chapters).toHaveLength(2);
+      expect(chapters[1]!.startPos).toBe(43200000);
+      expect(chapters[1]!.title).toBe('Halfway');
+
+      db.close();
+    });
+  });
 });
 
 describe('libgpod-node chapter data with media types', () => {
