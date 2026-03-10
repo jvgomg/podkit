@@ -69,6 +69,13 @@ jobs:
             intltool autoconf automake libtool gtk-doc-tools \
             meson ninja-build curl
 
+      # Cache static dependencies (libgpod, gdk-pixbuf, glib .a files)
+      - name: Cache static dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.STATIC_DEPS_DIR }}
+          key: static-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+
       # Build all native dependencies as static libraries
       - name: Build static dependencies
         run: bash tools/prebuild/build-static-deps.sh
