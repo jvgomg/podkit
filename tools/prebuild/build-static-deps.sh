@@ -3,16 +3,16 @@ set -e
 
 # Build static dependencies for libgpod-node prebuilds.
 #
-# Produces a self-contained prefix at STATIC_DEPS_DIR with static libraries
-# for libgpod and all its transitive dependencies. The resulting .node binary
-# will have no runtime dependency on libgpod, glib, or any other native lib.
+# Produces .a files at STATIC_DEPS_DIR/lib/ so the .node binary can be
+# statically linked with no runtime dependency on libgpod, glib, etc.
 #
 # Usage:
 #   STATIC_DEPS_DIR=/path/to/prefix ./build-static-deps.sh
 #
 # Platforms:
-#   macOS (x64/arm64): Copies Homebrew static libs + builds gdk-pixbuf and libgpod from source
-#   Linux (x64/arm64): Uses system -dev packages (incl. libgpod-dev) + builds gdk-pixbuf from source
+#   macOS: Uses Homebrew headers for compilation, collects .a files for linking,
+#          builds gdk-pixbuf and libgpod from source (Homebrew doesn't ship .a for these)
+#   Linux: Uses system -dev packages (incl. libgpod-dev), builds gdk-pixbuf from source
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -25,17 +25,18 @@ GDK_PIXBUF_VERSION="2.42.12"
 
 log() { echo "==> $1"; }
 
-mkdir -p "$STATIC_DEPS_DIR/lib" "$STATIC_DEPS_DIR/include" "$STATIC_DEPS_DIR/lib/pkgconfig"
+mkdir -p "$STATIC_DEPS_DIR/lib"
 mkdir -p "$WORK_DIR"
 
 OS="$(uname)"
 
 # ---------------------------------------------------------------------------
-# Shared: build gdk-pixbuf from source as static (neither platform ships .a)
+# Shared: build gdk-pixbuf .a from source (neither platform ships it)
 # ---------------------------------------------------------------------------
 build_gdk_pixbuf_static() {
   local pkg_config_path="$1"
-  local extra_link_args="$2"
+  local extra_c_args="$2"
+  local extra_link_args="$3"
 
   if [ -f "$STATIC_DEPS_DIR/lib/libgdk_pixbuf-2.0.a" ]; then
     log "gdk-pixbuf already built, skipping"
@@ -54,28 +55,22 @@ build_gdk_pixbuf_static() {
   meson setup _build --prefix="$STATIC_DEPS_DIR" \
     --default-library=static \
     --pkg-config-path="$pkg_config_path" \
-    -Dc_args="-I$STATIC_DEPS_DIR/include" \
-    -Dc_link_args="-L$STATIC_DEPS_DIR/lib $extra_link_args" \
+    -Dc_args="$extra_c_args" \
+    -Dc_link_args="$extra_link_args" \
     -Dman=false -Dgtk_doc=false -Dintrospection=disabled \
     -Dinstalled_tests=false -Dbuiltin_loaders=all \
     -Dgio_sniffing=false -Dtests=false
 
-  # Only build the static library — skip utility executables (gdk-pixbuf-pixdata etc.)
-  # which fail linking due to libtiff's many transitive deps (zstd, lzma, jbig, etc.)
+  # Only build the static library — skip utility executables which fail
+  # linking due to libtiff's many transitive deps (zstd, lzma, jbig, etc.)
   ninja -C _build -j"$NPROC" gdk-pixbuf/libgdk_pixbuf-2.0.a
 
-  # Manual install since `ninja install` would try to build everything
   cp _build/gdk-pixbuf/libgdk_pixbuf-2.0.a "$STATIC_DEPS_DIR/lib/"
-  mkdir -p "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf"
-  # Copy all public headers (avoid listing individually — easy to miss one like gdk-pixbuf-macros.h)
-  cp gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
-  cp _build/gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/"
-  cp _build/meson-private/gdk-pixbuf-2.0.pc "$STATIC_DEPS_DIR/lib/pkgconfig/" 2>/dev/null || true
   cd "$WORK_DIR"
 }
 
 # ---------------------------------------------------------------------------
-# macOS
+# macOS — use Homebrew for headers, just collect .a files
 # ---------------------------------------------------------------------------
 if [ "$OS" = "Darwin" ]; then
   HOMEBREW_PREFIX="$(brew --prefix)"
@@ -84,22 +79,16 @@ if [ "$OS" = "Darwin" ]; then
     if [ -f "$1" ]; then cp "$1" "$2"; else log "  WARNING: $1 not found"; fi
   }
 
-  # 1. Copy Homebrew static libs
+  # 1. Copy .a files from Homebrew (headers stay in Homebrew — used via pkg-config)
   log "Copying static libraries from Homebrew..."
 
   GLIB_PREFIX="$(brew --prefix glib)"
   for lib in libglib-2.0.a libgobject-2.0.a libgio-2.0.a libgmodule-2.0.a; do
     copy_if_exists "$GLIB_PREFIX/lib/$lib" "$STATIC_DEPS_DIR/lib/$lib"
   done
-  cp -R "$GLIB_PREFIX/include/glib-2.0" "$STATIC_DEPS_DIR/include/" 2>/dev/null || true
-  cp -R "$GLIB_PREFIX/lib/glib-2.0" "$STATIC_DEPS_DIR/lib/" 2>/dev/null || true
-  for pc in glib-2.0.pc gobject-2.0.pc gio-2.0.pc gmodule-2.0.pc; do
-    copy_if_exists "$GLIB_PREFIX/lib/pkgconfig/$pc" "$STATIC_DEPS_DIR/lib/pkgconfig/$pc"
-  done
 
   GETTEXT_PREFIX="$(brew --prefix gettext)"
   copy_if_exists "$GETTEXT_PREFIX/lib/libintl.a" "$STATIC_DEPS_DIR/lib/libintl.a"
-  cp "$GETTEXT_PREFIX/include/libintl.h" "$STATIC_DEPS_DIR/include/" 2>/dev/null || true
 
   PCRE2_PREFIX="$(brew --prefix pcre2)"
   copy_if_exists "$PCRE2_PREFIX/lib/libpcre2-8.a" "$STATIC_DEPS_DIR/lib/libpcre2-8.a"
@@ -109,19 +98,16 @@ if [ "$OS" = "Darwin" ]; then
 
   LIBPLIST_PREFIX="$(brew --prefix libplist)"
   copy_if_exists "$LIBPLIST_PREFIX/lib/libplist-2.0.a" "$STATIC_DEPS_DIR/lib/libplist-2.0.a"
-  cp -R "$LIBPLIST_PREFIX/include/plist" "$STATIC_DEPS_DIR/include/" 2>/dev/null || true
 
   for formula in libpng jpeg-turbo libtiff; do
     fprefix="$(brew --prefix "$formula" 2>/dev/null || true)"
     if [ -n "$fprefix" ] && [ -d "$fprefix" ]; then
       for a in "$fprefix"/lib/*.a; do [ -f "$a" ] && cp "$a" "$STATIC_DEPS_DIR/lib/"; done
-      cp -R "$fprefix"/include/* "$STATIC_DEPS_DIR/include/" 2>/dev/null || true
     fi
   done
 
-  # 2. Build gdk-pixbuf (Homebrew doesn't ship .a)
-  # Collect pkg-config and linker paths for image libs
-  PKG_PATHS="$STATIC_DEPS_DIR/lib/pkgconfig:$HOMEBREW_PREFIX/lib/pkgconfig"
+  # 2. Build gdk-pixbuf .a (Homebrew doesn't ship static lib)
+  PKG_PATHS="$HOMEBREW_PREFIX/lib/pkgconfig"
   LINK_ARGS=""
   for formula in libpng jpeg-turbo libtiff zstd xz; do
     fprefix="$(brew --prefix "$formula" 2>/dev/null || true)"
@@ -132,9 +118,9 @@ if [ "$OS" = "Darwin" ]; then
   done
   LINK_ARGS="$LINK_ARGS -lpng16 -ljpeg -ltiff -lz"
 
-  build_gdk_pixbuf_static "$PKG_PATHS" "$LINK_ARGS"
+  build_gdk_pixbuf_static "$PKG_PATHS" "" "$LINK_ARGS"
 
-  # 3. Build libgpod as static
+  # 3. Build libgpod as static — use Homebrew for headers (like tools/libgpod-macos/build.sh)
   if [ ! -f "$STATIC_DEPS_DIR/lib/libgpod.a" ]; then
     log "Building libgpod from source (static)..."
     cd "$WORK_DIR"
@@ -155,9 +141,11 @@ if [ "$OS" = "Darwin" ]; then
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
 
-    export PKG_CONFIG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$HOMEBREW_PREFIX/lib/pkgconfig"
-    export CFLAGS="-I$STATIC_DEPS_DIR/include -I$HOMEBREW_PREFIX/include"
-    export LDFLAGS="-L$STATIC_DEPS_DIR/lib -L$HOMEBREW_PREFIX/lib"
+    # Use Homebrew pkg-config paths — same as tools/libgpod-macos/build.sh
+    LIBPLIST_PREFIX="$(brew --prefix libplist)"
+    export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig"
+    export CFLAGS="-I$HOMEBREW_PREFIX/include -I$LIBPLIST_PREFIX/include"
+    export LDFLAGS="-L$HOMEBREW_PREFIX/lib -L$LIBPLIST_PREFIX/lib"
 
     autoreconf -fi
     ./configure \
@@ -175,12 +163,12 @@ if [ "$OS" = "Darwin" ]; then
   log "macOS static dependencies built to $STATIC_DEPS_DIR"
 
 # ---------------------------------------------------------------------------
-# Linux: use system -dev packages, only build gdk-pixbuf from source
+# Linux: use system -dev packages, only build gdk-pixbuf .a from source
 # ---------------------------------------------------------------------------
 elif [ "$OS" = "Linux" ]; then
   log "Collecting system static libraries..."
 
-  # Copy system .a files to our prefix
+  # Copy system .a files to our prefix (skip missing ones silently)
   for lib in libgpod.a \
              libglib-2.0.a libgobject-2.0.a libgio-2.0.a libgmodule-2.0.a \
              libffi.a libpcre2-8.a libplist-2.0.a \
@@ -190,27 +178,11 @@ elif [ "$OS" = "Linux" ]; then
     [ -n "$found" ] && cp "$found" "$STATIC_DEPS_DIR/lib/"
   done
 
-  # Copy headers
-  for dir in /usr/include/glib-2.0 /usr/include/gdk-pixbuf-2.0 /usr/include/gpod-1.0; do
-    [ -d "$dir" ] && cp -R "$dir" "$STATIC_DEPS_DIR/include/"
-  done
-  # GLib internal config header (glibconfig.h)
-  GLIB_INTERNAL=$(find /usr/lib /usr/lib64 -path "*/glib-2.0/include" 2>/dev/null | head -1)
-  if [ -n "$GLIB_INTERNAL" ]; then
-    mkdir -p "$STATIC_DEPS_DIR/lib/glib-2.0"
-    cp -R "$GLIB_INTERNAL" "$STATIC_DEPS_DIR/lib/glib-2.0/"
-  fi
-
-  # Copy pkg-config files
-  for pc in glib-2.0.pc gobject-2.0.pc gio-2.0.pc gdk-pixbuf-2.0.pc libgpod-1.0.pc; do
-    found=$(find /usr/lib /usr/lib64 /usr/share -path "*pkgconfig/$pc" 2>/dev/null | head -1)
-    [ -n "$found" ] && cp "$found" "$STATIC_DEPS_DIR/lib/pkgconfig/"
-  done
-
-  # Build gdk-pixbuf from source (Ubuntu doesn't ship libgdk_pixbuf-2.0.a)
+  # Build gdk-pixbuf .a from source (Ubuntu doesn't ship it)
   SYS_PKG_PATH=$(pkg-config --variable pc_path pkg-config 2>/dev/null || echo "/usr/lib/pkgconfig:/usr/share/pkgconfig")
   build_gdk_pixbuf_static \
-    "$STATIC_DEPS_DIR/lib/pkgconfig:$SYS_PKG_PATH" \
+    "$SYS_PKG_PATH" \
+    "" \
     "-lpng16 -ljpeg -ltiff -lz"
 
   log "Linux static dependencies built to $STATIC_DEPS_DIR"
