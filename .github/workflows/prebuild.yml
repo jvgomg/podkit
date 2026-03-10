@@ -4,13 +4,8 @@ on:
   push:
     tags:
       - 'v*'
-  pull_request:
-    paths:
-      - 'packages/libgpod-node/native/**'
-      - 'packages/libgpod-node/binding.gyp'
-      - 'tools/prebuild/**'
-      - '.github/workflows/prebuild.yml'
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   prebuild:
