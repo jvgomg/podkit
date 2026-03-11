@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 concurrency:
   group: release
@@ -18,7 +19,7 @@ jobs:
   changesets:
     runs-on: ubuntu-latest
     outputs:
-      published: ${{ steps.changesets.outputs.published }}
+      should_release: ${{ steps.detect.outputs.should_release }}
       hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
 
     steps:
@@ -45,15 +46,34 @@ jobs:
         uses: changesets/action@v1
         with:
           version: bun run version
-          publish: echo "Release build will handle publishing"
+          publish: echo "publish-placeholder"
           title: "Version Packages"
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
+      - name: Detect if this is a release merge
+        id: detect
+        run: |
+          if [ "${{ steps.changesets.outputs.hasChangesets }}" = "false" ]; then
+            # No pending changesets — check if this commit is from a Version Packages PR merge
+            COMMIT_MSG=$(git log -1 --format="%s")
+            echo "Commit message: $COMMIT_MSG"
+            if echo "$COMMIT_MSG" | grep -q "Version Packages"; then
+              echo "should_release=true" >> "$GITHUB_OUTPUT"
+              echo "Release detected — triggering build pipeline"
+            else
+              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "No changesets and not a version merge — nothing to do"
+            fi
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "Pending changesets found — version PR will be created/updated"
+          fi
+
   # Step 2: Build native prebuilds (only when releasing)
   prebuilds:
     needs: changesets
-    if: needs.changesets.outputs.published == 'true'
+    if: needs.changesets.outputs.should_release == 'true'
     uses: ./.github/workflows/prebuild.yml
 
   # Step 3: Compile CLI binaries for each platform
