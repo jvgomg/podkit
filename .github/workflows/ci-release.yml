@@ -1,0 +1,141 @@
+name: CI Release (Version PR)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  # Only run when this is a "Version Packages" PR from changesets
+  check-pr:
+    runs-on: ubuntu-latest
+    outputs:
+      is_version_pr: ${{ steps.check.outputs.is_version_pr }}
+    steps:
+      - name: Check if Version Packages PR
+        id: check
+        run: |
+          if [[ "${{ github.event.pull_request.title }}" == "Version Packages" ]]; then
+            echo "is_version_pr=true" >> "$GITHUB_OUTPUT"
+            echo "This is a Version Packages PR - running release CI"
+          else
+            echo "is_version_pr=false" >> "$GITHUB_OUTPUT"
+            echo "Not a Version Packages PR - skipping release CI"
+          fi
+
+  # Build native prebuilds for all platforms
+  prebuilds:
+    needs: check-pr
+    if: needs.check-pr.outputs.is_version_pr == 'true'
+    uses: ./.github/workflows/prebuild.yml
+
+  # Compile and smoke test CLI binaries for each platform
+  compile:
+    needs: [check-pr, prebuilds]
+    if: needs.check-pr.outputs.is_version_pr == 'true' && needs.prebuilds.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+            platform: darwin
+          - os: macos-15-intel
+            arch: x64
+            platform: darwin
+          - os: ubuntu-24.04
+            arch: x64
+            platform: linux
+          - os: ubuntu-24.04-arm64
+            arch: arm64
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    name: Compile ${{ matrix.platform }}-${{ matrix.arch }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download prebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/libgpod-node/prebuilds/
+
+      - name: List prebuilds
+        run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Compile CLI binary
+        run: bun run compile
+
+      - name: Smoke test - version
+        run: |
+          VERSION=$(packages/podkit-cli/bin/podkit --version)
+          echo "Version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: --version produced no output"
+            exit 1
+          fi
+
+      - name: Smoke test - help
+        run: packages/podkit-cli/bin/podkit --help
+
+      - name: Smoke test - dynamic deps (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          echo "Dynamic dependencies:"
+          otool -L packages/podkit-cli/bin/podkit
+          if otool -L packages/podkit-cli/bin/podkit | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+            echo "ERROR: Found unexpected dynamic dependencies"
+            exit 1
+          fi
+
+      - name: Smoke test - dynamic deps (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          echo "Dynamic dependencies:"
+          ldd packages/podkit-cli/bin/podkit || true
+          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
+            echo "ERROR: Found unexpected dynamic dependencies"
+            exit 1
+          fi
+
+      - name: Smoke test - dummy iPod device info
+        run: |
+          mkdir -p /tmp/test-ipod/iPod_Control/iTunes
+          # This may exit non-zero (no iTunesDB) but should not segfault.
+          # A missing native addon would cause a crash before any output.
+          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
+            echo "ERROR: Native addon failed to load"
+            exit 1
+          fi
+
+  # Summary job for branch protection rules
+  release-ci-passed:
+    needs: [check-pr, compile]
+    if: always()
+    runs-on: ubuntu-latest
+    name: Release CI Status
+    steps:
+      - name: Check results
+        run: |
+          if [[ "${{ needs.check-pr.outputs.is_version_pr }}" != "true" ]]; then
+            echo "Not a version PR - skipping"
+            exit 0
+          fi
+          if [[ "${{ needs.compile.result }}" != "success" ]]; then
+            echo "Compile jobs failed or were cancelled"
+            exit 1
+          fi
+          echo "All release CI checks passed"

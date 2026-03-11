@@ -1,0 +1,247 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  # Step 1: Detect changesets and either create a version PR or flag for release
+  changesets:
+    runs-on: ubuntu-latest
+    outputs:
+      published: ${{ steps.changesets.outputs.published }}
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Create release Pull Request or detect release merge
+        id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bun run version
+          publish: echo "Release build will handle publishing"
+          title: "Version Packages"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Step 2: Build native prebuilds (only when releasing)
+  prebuilds:
+    needs: changesets
+    if: needs.changesets.outputs.published == 'true'
+    uses: ./.github/workflows/prebuild.yml
+
+  # Step 3: Compile CLI binaries for each platform
+  compile:
+    needs: prebuilds
+    if: needs.prebuilds.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15
+            arch: arm64
+            platform: darwin
+          - os: macos-15-intel
+            arch: x64
+            platform: darwin
+          - os: ubuntu-24.04
+            arch: x64
+            platform: linux
+          - os: ubuntu-24.04-arm64
+            arch: arm64
+            platform: linux
+
+    runs-on: ${{ matrix.os }}
+    name: Compile ${{ matrix.platform }}-${{ matrix.arch }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Download prebuild
+        uses: actions/download-artifact@v4
+        with:
+          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}
+          path: packages/libgpod-node/prebuilds/
+
+      - name: List prebuilds
+        run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Compile CLI binary
+        run: bun run compile
+
+      - name: Smoke test - version
+        run: |
+          VERSION=$(packages/podkit-cli/bin/podkit --version)
+          echo "Version: $VERSION"
+          if [ -z "$VERSION" ]; then
+            echo "ERROR: --version produced no output"
+            exit 1
+          fi
+
+      - name: Smoke test - help
+        run: packages/podkit-cli/bin/podkit --help
+
+      - name: Smoke test - dynamic deps (macOS)
+        if: matrix.platform == 'darwin'
+        run: |
+          echo "Dynamic dependencies:"
+          otool -L packages/podkit-cli/bin/podkit
+          if otool -L packages/podkit-cli/bin/podkit | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+            echo "ERROR: Found unexpected dynamic dependencies"
+            exit 1
+          fi
+
+      - name: Smoke test - dynamic deps (Linux)
+        if: matrix.platform == 'linux'
+        run: |
+          echo "Dynamic dependencies:"
+          ldd packages/podkit-cli/bin/podkit || true
+          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
+            echo "ERROR: Found unexpected dynamic dependencies"
+            exit 1
+          fi
+
+      - name: Smoke test - dummy iPod device info
+        run: |
+          mkdir -p /tmp/test-ipod/iPod_Control/iTunes
+          # This may exit non-zero (no iTunesDB) but should not segfault.
+          # A missing native addon would cause a crash before any output.
+          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
+            echo "ERROR: Native addon failed to load"
+            exit 1
+          fi
+
+      - name: Create tarball
+        run: |
+          cd packages/podkit-cli/bin
+          tar czf "${GITHUB_WORKSPACE}/podkit-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz" podkit
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: podkit-${{ matrix.platform }}-${{ matrix.arch }}
+          path: podkit-${{ matrix.platform }}-${{ matrix.arch }}.tar.gz
+          retention-days: 30
+
+  # Step 4: Create GitHub Release with all platform tarballs
+  release:
+    needs: [changesets, compile]
+    if: needs.compile.result == 'success'
+    runs-on: ubuntu-latest
+    name: Create GitHub Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(jq -r '.version' packages/podkit-cli/package.json)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=podkit@$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing version: $VERSION"
+
+      - name: Download all tarballs
+        uses: actions/download-artifact@v4
+        with:
+          pattern: podkit-*
+          path: release-assets/
+          merge-multiple: true
+
+      - name: List release assets
+        run: ls -la release-assets/
+
+      - name: Generate SHA256 checksums
+        working-directory: release-assets
+        run: |
+          sha256sum podkit-*.tar.gz > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Build release notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NOTES_FILE="release-notes.md"
+          VERSION="${{ steps.version.outputs.version }}"
+          : > "$NOTES_FILE"
+
+          # Add version PR description at the top if available
+          PR_BODY=$(gh pr list --state merged --search "\"Version Packages\" in:title" --limit 1 --json body --jq '.[0].body // empty')
+          if [ -n "$PR_BODY" ]; then
+            echo "$PR_BODY" >> "$NOTES_FILE"
+            echo "" >> "$NOTES_FILE"
+            echo "---" >> "$NOTES_FILE"
+            echo "" >> "$NOTES_FILE"
+          fi
+
+          # Add changelog from CHANGELOG.md
+          echo "## Changelog" >> "$NOTES_FILE"
+          echo "" >> "$NOTES_FILE"
+          CHANGELOG_FILE="packages/podkit-cli/CHANGELOG.md"
+          if [ -f "$CHANGELOG_FILE" ]; then
+            # Extract the latest version section (from first ## to the next ##)
+            awk '/^## [0-9]/{if(found) exit; found=1; next} found{print}' "$CHANGELOG_FILE" >> "$NOTES_FILE"
+          else
+            echo "Release $VERSION" >> "$NOTES_FILE"
+          fi
+          echo "" >> "$NOTES_FILE"
+
+          # Add checksums
+          echo "## Checksums (SHA256)" >> "$NOTES_FILE"
+          echo "" >> "$NOTES_FILE"
+          echo '```' >> "$NOTES_FILE"
+          cat release-assets/SHA256SUMS.txt >> "$NOTES_FILE"
+          echo '```' >> "$NOTES_FILE"
+
+          echo "--- Release notes ---"
+          cat "$NOTES_FILE"
+
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          VERSION="${{ steps.version.outputs.version }}"
+
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — skipping release"
+            exit 0
+          fi
+
+          git tag "$TAG"
+          git push origin "$TAG"
+
+          gh release create "$TAG" \
+            --title "podkit $VERSION" \
+            --notes-file release-notes.md \
+            release-assets/podkit-*.tar.gz \
+            release-assets/SHA256SUMS.txt
