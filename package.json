@@ -26,6 +26,8 @@
     "typecheck": "turbo run typecheck",
     "compile": "turbo run compile --filter=podkit",
     "clean": "turbo run clean --no-cache && rm -rf node_modules",
+    "changeset": "bunx changeset",
+    "version": "bunx changeset version",
     "docs:dev": "bun run --cwd packages/docs-site dev",
     "docs:build": "bun run --cwd packages/docs-site build",
     "docs:preview": "bun run --cwd packages/docs-site preview"
@@ -34,6 +36,8 @@
     "workspaceProtocol": "require"
   },
   "devDependencies": {
+    "@changesets/changelog-github": "^0.6.0",
+    "@changesets/cli": "^2.30.0",
     "@manypkg/cli": "^0.25.1",
     "oxlint": "^1.49.0",
     "prettier": "^3.8.1",

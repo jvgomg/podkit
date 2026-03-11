@@ -1,5 +1,6 @@
 {
   "name": "@podkit/gpod-testing",
+  "private": true,
   "version": "0.0.0",
   "description": "Test utilities for creating and managing iPod test environments",
   "type": "module",
