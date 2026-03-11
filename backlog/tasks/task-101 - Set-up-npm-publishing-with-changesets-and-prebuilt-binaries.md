@@ -4,12 +4,16 @@ title: Set up npm publishing with changesets and prebuilt binaries
 status: To Do
 assignee: []
 created_date: '2026-03-10 16:08'
+updated_date: '2026-03-11 14:18'
 labels:
   - dx
   - packaging
   - ci
+  - npm
 dependencies:
   - TASK-100
+  - TASK-104
+  - TASK-107
 references:
   - packages/libgpod-node/package.json
   - .github/workflows/prebuild.yml
@@ -22,53 +26,24 @@ priority: medium
 <!-- SECTION:DESCRIPTION:BEGIN -->
 ## Goal
 
-Set up automated npm publishing using [changesets](https://github.com/changesets/changesets) with the [changesets GitHub Action](https://github.com/changesets/action). The publish pipeline must include prebuilt native binaries from the prebuild CI workflow (TASK-100) so that `npm install @podkit/libgpod-node` works without any native build tools.
+Set up automated npm publishing using changesets. This task is **deferred until the Homebrew Distribution milestone (m-7) is complete**, as changesets setup and the release workflow are being built there first. This task's scope is now limited to the npm-specific publishing concerns that build on top of that foundation.
 
-## Context
+## Remaining Scope (post-Homebrew milestone)
 
-TASK-100 adds a GitHub Actions workflow (`prebuild.yml`) that builds statically-linked `.node` binaries for darwin-x64, darwin-arm64, and linux-x64 using prebuildify. These are uploaded as workflow artifacts. This task needs to integrate those artifacts into the npm publish flow.
+Once the Homebrew milestone is done, the following will already exist:
+- Changesets CLI configured for the monorepo
+- GitHub Actions release workflow producing compiled CLI binaries
+- GitHub Releases with changelogs
 
-## Implementation Approach
-
-### 1. Install and configure changesets
-
-```bash
-bun add -D @changesets/cli @changesets/changelog-github
-```
-
-Initialize changesets config (`.changeset/config.json`), configure for the monorepo.
-
-### 2. Create a release workflow
-
-Create `.github/workflows/release.yml` that:
-
-1. Triggers on push to `main`
-2. Uses `changesets/action` to either:
-   - Open a "Version Packages" PR (when changesets are pending), or
-   - Publish to npm (when the version PR is merged)
-3. Before publishing, triggers the `prebuild.yml` workflow and downloads the combined prebuilds artifact
-4. Places prebuilds into `packages/libgpod-node/prebuilds/` before `npm publish`
-
-### 3. Workflow coordination
-
-The release workflow needs the prebuilds from `prebuild.yml`. Options:
-- **workflow_call**: Make `prebuild.yml` callable as a reusable workflow from the release workflow
-- **workflow_dispatch + wait**: Trigger prebuild and poll for completion
-- **Build inline**: Include the prebuild matrix directly in the release workflow
-
-Recommended: Make `prebuild.yml` a reusable workflow (`workflow_call`) that the release workflow calls before publishing.
-
-### 4. Publish script
-
-The changesets action calls a publish command. Create a script that:
-1. Downloads/verifies prebuilds are in place
-2. Runs `bun run build` (TypeScript compilation)
-3. Runs `changeset publish`
+This task then covers:
+1. Adding `npm publish` to the release workflow for `@podkit/core` and `@podkit/libgpod-node`
+2. Ensuring prebuilt `.node` binaries are included in the published `@podkit/libgpod-node` npm package
+3. Verifying `npm install @podkit/libgpod-node` works on a clean system without native build tools
+4. Configuring independent versioning so core-only changes don't require CLI releases
 
 ## Reference
 
 - [changesets GitHub Action](https://github.com/changesets/action)
-- [changesets docs](https://github.com/changesets/changesets/blob/main/docs/intro-to-using-changesets.md)
 - prebuild workflow: `.github/workflows/prebuild.yml`
 - Package files config: `packages/libgpod-node/package.json` (`files` field includes `prebuilds/`)
 <!-- SECTION:DESCRIPTION:END -->

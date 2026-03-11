@@ -26,6 +26,11 @@
       "inputs": ["src/**", "tsconfig.json"],
       "outputs": []
     },
+    "compile": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "package.json"],
+      "outputs": ["bin/**"]
+    },
     "clean": {
       "cache": false
     }

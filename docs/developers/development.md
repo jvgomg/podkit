@@ -188,6 +188,26 @@ mise run tools:build
 mise trust  # First time only
 ```
 
+## Building a Standalone Binary
+
+You can compile podkit into a single standalone executable using Bun. The binary embeds the JavaScript bundle and native libgpod addon — no runtime dependencies are needed (other than FFmpeg).
+
+```bash
+# Build dependencies and compile the CLI binary
+bun run compile
+```
+
+This builds all required packages (including native bindings) and produces `packages/podkit-cli/bin/podkit`, a self-contained binary for your current platform and architecture. You can copy it anywhere:
+
+```bash
+cp packages/podkit-cli/bin/podkit /usr/local/bin/podkit
+podkit --version
+```
+
+:::note
+FFmpeg is still required at runtime for transcoding.
+:::
+
 ## Running Tests
 
 ```bash

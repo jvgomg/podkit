@@ -4,6 +4,7 @@ title: Add changelog / release notes section
 status: To Do
 assignee: []
 created_date: '2026-03-10 10:31'
+updated_date: '2026-03-11 14:26'
 labels:
   - docs-site
   - documentation
@@ -36,3 +37,9 @@ Add a changelog or release notes section to the documentation site.
 - [ ] #2 Accessible from navigation
 - [ ] #3 Process documented for updating
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Superseded by TASK-108 (Update docs site with Homebrew installation guide), which includes a changelog/releases page as acceptance criterion #7.
+<!-- SECTION:NOTES:END -->
