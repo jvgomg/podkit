@@ -1,6 +1,6 @@
 {
   "name": "podkit",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "type": "module",
   "bin": {
     "podkit": "./dist/main.js"
