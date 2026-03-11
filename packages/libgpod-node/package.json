@@ -1,6 +1,6 @@
 {
   "name": "@podkit/libgpod-node",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "Native Node.js bindings for libgpod",
   "type": "module",
   "main": "./dist/index.js",
