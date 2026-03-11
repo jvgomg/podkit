@@ -16,12 +16,14 @@ import { loadConfig, DEFAULT_CONFIG_PATH } from './config/index.js';
 import type { GlobalOptions } from './config/index.js';
 import { setContext } from './context.js';
 
+declare const PODKIT_VERSION: string;
+
 const program = new Command();
 
 program
   .name('podkit')
   .description('Sync music collections to iPod devices')
-  .version('0.0.0')
+  .version(PODKIT_VERSION)
   .option('-v, --verbose', 'increase verbosity (stackable: -v, -vv, -vvv)', increaseVerbosity, 0)
   .option('-q, --quiet', 'suppress non-essential output')
   .option('--json', 'output in JSON format')

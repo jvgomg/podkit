@@ -12,13 +12,13 @@
     "bin"
   ],
   "scripts": {
-    "build": "bun build src/main.ts --outdir dist --target node && bun run build:types",
+    "build": "bun build src/main.ts --outdir dist --target node --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\" && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "dev": "bun run src/main.ts",
     "test": "bun test",
     "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No unit tests found'",
     "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No integration tests found'",
-    "compile": "bun build --compile src/main.ts --outfile bin/podkit",
+    "compile": "bun build --compile src/main.ts --outfile bin/podkit --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\"",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist bin"
   },
