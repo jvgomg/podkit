@@ -4,7 +4,7 @@ title: Auto-update Homebrew formula on release
 status: Done
 assignee: []
 created_date: '2026-03-11 14:17'
-updated_date: '2026-03-11 14:53'
+updated_date: '2026-03-11 18:01'
 labels:
   - ci
   - packaging
@@ -76,11 +76,11 @@ After pushing the formula update, optionally trigger `brew test` in the homebrew
 <!-- AC:BEGIN -->
 - [x] #1 Release workflow includes a post-release job that updates the Homebrew formula
 - [x] #2 Formula version, URLs, and SHA256 checksums are updated automatically
-- [ ] #3 Authentication to homebrew-podkit uses a deploy key or equivalent secure mechanism
+- [x] #3 Authentication to homebrew-podkit uses a deploy key or equivalent secure mechanism
 - [x] #4 Formula update is committed and pushed to homebrew-podkit main branch
 - [x] #5 The update script/logic is testable independently of the CI workflow
 - [x] #6 Formula update failure does not block or roll back the GitHub Release
-- [ ] #7 `brew upgrade podkit` picks up the new version after the formula is updated
+- [x] #7 `brew upgrade podkit` picks up the new version after the formula is updated
 <!-- AC:END -->
 
 ## Implementation Notes

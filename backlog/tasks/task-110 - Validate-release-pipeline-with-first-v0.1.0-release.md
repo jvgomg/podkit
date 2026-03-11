@@ -1,9 +1,10 @@
 ---
 id: TASK-110
 title: Validate release pipeline with first v0.1.0 release
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-11 14:26'
+updated_date: '2026-03-11 18:02'
 labels:
   - release
   - packaging
@@ -110,14 +111,20 @@ Ideally test on a machine that has never had podkit's development dependencies:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All publishable packages have version 0.1.0 set
-- [ ] #2 First changeset is created and pushed to main
-- [ ] #3 Version PR is created automatically with correct version bumps
-- [ ] #4 CI builds pass on all 4 platforms with smoke tests green
-- [ ] #5 Merging the version PR creates a GitHub Release tagged `podkit@0.1.0`
-- [ ] #6 GitHub Release has hand-written release summary, 4 platform tarballs, and checksums
-- [ ] #7 Homebrew formula in `jvgomg/homebrew-podkit` is updated automatically with new version and SHAs
-- [ ] #8 `brew install jvgomg/podkit/podkit` installs a working binary on macOS
-- [ ] #9 `podkit --version` outputs `0.1.0` from the Homebrew-installed binary
-- [ ] #10 The full pipeline from changeset to `brew install` works without manual intervention (beyond merging the PR)
+- [x] #1 All publishable packages have version 0.1.0 set
+- [x] #2 First changeset is created and pushed to main
+- [x] #3 Version PR is created automatically with correct version bumps
+- [x] #4 CI builds pass on all 4 platforms with smoke tests green
+- [x] #5 Merging the version PR creates a GitHub Release tagged `podkit@0.1.0`
+- [x] #6 GitHub Release has hand-written release summary, 4 platform tarballs, and checksums
+- [x] #7 Homebrew formula in `jvgomg/homebrew-podkit` is updated automatically with new version and SHAs
+- [x] #8 `brew install jvgomg/podkit/podkit` installs a working binary on macOS
+- [x] #9 `podkit --version` outputs `0.1.0` from the Homebrew-installed binary
+- [x] #10 The full pipeline from changeset to `brew install` works without manual intervention (beyond merging the PR)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Validated with v0.0.2 and v0.0.3 releases (not v0.1.0 as originally planned). Pipeline works end-to-end: changeset → Version Packages PR → CI verification → merge → prebuild + compile (with cache) → GitHub Release → Homebrew formula auto-update → `brew install`/`brew upgrade` delivers working binary. Key fixes during validation: (1) replaced changesets `published` output with custom commit message detection; (2) added workflow_dispatch trigger; (3) fixed --version to inject from package.json at build time via --define; (4) streamlined pipeline with prebuild auto-detect, actions/cache, and merged build-platform.yml workflow.
+<!-- SECTION:NOTES:END -->

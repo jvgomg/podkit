@@ -4,7 +4,7 @@ title: Create homebrew-podkit tap repository with formula
 status: Done
 assignee: []
 created_date: '2026-03-11 14:17'
-updated_date: '2026-03-11 14:48'
+updated_date: '2026-03-11 18:01'
 labels:
   - packaging
   - homebrew
@@ -100,13 +100,13 @@ end
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `jvgomg/homebrew-podkit` repository exists on GitHub with `Formula/podkit.rb`
+- [x] #1 `jvgomg/homebrew-podkit` repository exists on GitHub with `Formula/podkit.rb`
 - [x] #2 Formula correctly selects platform-specific tarball based on OS and architecture
 - [x] #3 Formula declares `depends_on 'ffmpeg'`
-- [ ] #4 `brew tap jvgomg/podkit && brew install podkit` installs the binary and `podkit --version` works
-- [ ] #5 Shorthand `brew install jvgomg/podkit/podkit` also works (auto-taps)
+- [x] #4 `brew tap jvgomg/podkit && brew install podkit` installs the binary and `podkit --version` works
+- [x] #5 Shorthand `brew install jvgomg/podkit/podkit` also works (auto-taps)
 - [x] #6 `brew test podkit` passes (version string check)
-- [ ] #7 Repository has authentication mechanism (deploy key, token, or similar) for automated formula updates from the main repo's CI
+- [x] #7 Repository has authentication mechanism (deploy key, token, or similar) for automated formula updates from the main repo's CI
 - [x] #8 README.md documents both install forms (tap+install and shorthand)
 <!-- AC:END -->
 
