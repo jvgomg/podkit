@@ -1,5 +1,11 @@
 # podkit
 
+## 0.0.2
+
+### Patch Changes
+
+- [`168a9d2`](https://github.com/jvgomg/podkit/commit/168a9d2577b447cff75c75897c7a834f0ccd7114) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix release pipeline to correctly detect version merges
+
 ## 0.0.1
 
 ### Patch Changes
