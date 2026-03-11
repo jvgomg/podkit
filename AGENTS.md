@@ -39,6 +39,11 @@ bun test packages/podkit-core    # Run tests for specific package
 # Build
 bun run build                    # Build all packages for Node.js
 
+# Release
+bunx changeset                   # Create a changeset for your changes
+bunx changeset version           # Apply pending changesets (CI does this)
+bun run compile                  # Build standalone CLI binary locally
+
 # CLI
 podkit sync --dry-run                   # Sync all collections (music + video)
 podkit sync music -c main --dry-run     # Sync specific music collection
@@ -382,6 +387,61 @@ When encountering libgpod CRITICAL assertions or unexpected behavior:
 - TypeScript strict mode
 - Bun test runner
 - ESM modules
+
+## Release Workflow
+
+This project uses [changesets](https://github.com/changesets/changesets) for versioning and changelog generation.
+
+### When to Add a Changeset
+
+**Required** for any user-facing change to a published package:
+- `podkit` (CLI)
+- `@podkit/core`
+- `@podkit/libgpod-node`
+
+**Not required** for:
+- Test-only changes
+- Documentation-only changes
+- CI/CD changes, dev tooling
+- Changes to private packages (`@podkit/gpod-testing`, `@podkit/e2e-tests`, `@podkit/docs-site`)
+
+### How to Add a Changeset
+
+```bash
+bunx changeset
+```
+
+1. Select affected package(s)
+2. Choose bump type (`patch` / `minor` / `major`)
+3. Write a summary from the user's perspective (this becomes the changelog entry)
+4. Commit the generated `.changeset/*.md` file in the same PR as the code change
+
+### Changeset Content Guidelines
+
+- Write for end users, not developers
+- Focus on what changed and why, not implementation details
+- Use present tense ("Add", "Fix", "Improve")
+- Good examples:
+  - "Add support for syncing video files to iPod"
+  - "Fix artwork not transferring for FLAC files"
+  - "Improve transcoding performance for large collections"
+
+### Version Bump Rules
+
+- **patch**: Bug fixes, minor improvements
+- **minor**: New features, non-breaking changes
+- **major**: Breaking changes (config format, CLI flags, API)
+- When in doubt, use `patch`
+- Forgetting a changeset is recoverable — add one in a follow-up PR
+
+### Release Flow
+
+1. Changesets accumulate on `main` as PRs are merged
+2. A bot PR ("Version Packages") is created/updated automatically
+3. When ready to release, merge the version PR
+4. CI builds binaries for 4 platforms and creates a GitHub Release with tarballs (`.github/workflows/release.yml`)
+5. Homebrew formula is auto-updated with new version and checksums
+6. Users get the update via `brew upgrade podkit`
 
 ## Entry Points
 
