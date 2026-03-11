@@ -55,12 +55,24 @@ jobs:
         id: detect
         run: |
           if [ "${{ steps.changesets.outputs.hasChangesets }}" = "false" ]; then
-            # No pending changesets — check if this commit is from a Version Packages PR merge
+            # No pending changesets — check if this is a release-worthy commit
             COMMIT_MSG=$(git log -1 --format="%s")
             echo "Commit message: $COMMIT_MSG"
+
+            # Release if: Version Packages merge OR manual dispatch with unreleased version
             if echo "$COMMIT_MSG" | grep -q "Version Packages"; then
               echo "should_release=true" >> "$GITHUB_OUTPUT"
-              echo "Release detected — triggering build pipeline"
+              echo "Release detected — Version Packages merge"
+            elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+              VERSION=$(jq -r '.version' packages/podkit-cli/package.json)
+              TAG="podkit@$VERSION"
+              if git fetch --tags && git rev-parse "$TAG" >/dev/null 2>&1; then
+                echo "should_release=false" >> "$GITHUB_OUTPUT"
+                echo "Manual dispatch but $TAG already exists — nothing to release"
+              else
+                echo "should_release=true" >> "$GITHUB_OUTPUT"
+                echo "Manual dispatch — releasing $TAG"
+              fi
             else
               echo "should_release=false" >> "$GITHUB_OUTPUT"
               echo "No changesets and not a version merge — nothing to do"
