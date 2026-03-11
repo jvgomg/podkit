@@ -1,5 +1,11 @@
 # podkit
 
+## 0.0.3
+
+### Patch Changes
+
+- [`3c2c3e8`](https://github.com/jvgomg/podkit/commit/3c2c3e8ad1baf7a92fe65c2e3570b9a6a674fa41) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix `--version` to show the correct version number instead of 0.0.0
+
 ## 0.0.2
 
 ### Patch Changes
