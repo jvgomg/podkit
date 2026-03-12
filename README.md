@@ -1,6 +1,6 @@
 # podkit
 
-Sync your music collection to iPod. The way it should work.
+Modern sync for classic iPods.
 
 **[Documentation](https://jvgomg.github.io/podkit)** | **[Getting Started](https://jvgomg.github.io/podkit/getting-started/installation)** | **[Roadmap](https://jvgomg.github.io/podkit/roadmap)**
 
