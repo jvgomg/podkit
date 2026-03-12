@@ -1,5 +1,29 @@
 # podkit
 
+## 0.1.0
+
+### Minor Changes
+
+- [`83743dd`](https://github.com/jvgomg/podkit/commit/83743dda91e34d1ca2fa313e6f773096243b9a07) Thanks [@jvgomg](https://github.com/jvgomg)! - Add device validation and capability communication
+  - Detect unsupported devices (iPod Touch, iPhone, iPad, buttonless Shuffles, Nano 6th gen) with clear error messages explaining why they won't work
+  - Warn when iPod model cannot be identified, with instructions to fix SysInfo
+  - Show device capability indicators (+/-) in `podkit device info` output
+  - Block `podkit device add` for unsupported devices and show capabilities during confirmation
+  - Add sync pre-flight checks that block unsupported devices and warn about incompatible content types
+  - Include structured capabilities and validation data in JSON output
+
+- [`39e3129`](https://github.com/jvgomg/podkit/commit/39e31298517688bcd3feb98233e584d5ed2e4507) Thanks [@jvgomg](https://github.com/jvgomg)! - Add stats, albums, and artists views to content listing commands
+  - `device music`, `device video`, `collection music`, and `collection video` now show summary stats by default (track/album/artist counts and file type breakdown)
+  - Add `--tracks` flag to list all tracks (previous default behavior)
+  - Add `--albums` flag to list albums with track counts
+  - Add `--artists` flag to list artists with album/track counts
+  - `--tracks --json` on device commands now includes all iPod metadata fields (play stats, timestamps, video fields, etc.)
+
+### Patch Changes
+
+- Updated dependencies [[`83743dd`](https://github.com/jvgomg/podkit/commit/83743dda91e34d1ca2fa313e6f773096243b9a07)]:
+  - @podkit/core@0.1.0
+
 ## 0.0.3
 
 ### Patch Changes
