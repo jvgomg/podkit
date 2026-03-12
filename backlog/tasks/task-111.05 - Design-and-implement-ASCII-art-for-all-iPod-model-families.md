@@ -1,10 +1,10 @@
 ---
 id: TASK-111.05
 title: Design and implement ASCII art for all iPod model families
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-11 15:31'
-updated_date: '2026-03-11 15:34'
+updated_date: '2026-03-11 23:26'
 labels:
   - feature
   - design
@@ -173,19 +173,19 @@ This script is the primary tool for iterating on the art during development.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ASCII art templates for all 7 supported model families: Classic/Video, Mini, Nano tall (1st-2nd), Nano short/fat (3rd), Nano slim (4th-5th), Shuffle (1st-2nd), Unknown
-- [ ] #2 Large wheel (E-style curved) used for Classic/Video/Unknown, small wheel (A-style box) used for Nano/Mini
-- [ ] #3 Shuffle has no screen — expressions use speech/thought bubbles
-- [ ] #4 All 7 expressions render correctly for screened models: neutral, happy, excited, sleepy, concerned, syncing (with progress bar), satisfied
-- [ ] #5 Shuffle expressions render via bubbles for all 7 moods
-- [ ] #6 Preview script runnable via `bun run preview` with --model, --expression, --color flags
-- [ ] #7 Preview script supports --all-expressions to show all expressions for one model
-- [ ] #8 Preview script supports --all-models to show all models for one expression
-- [ ] #9 Gallery mode (--gallery) renders all models side-by-side, bottom-aligned on a shared baseline
-- [ ] #10 Gallery mode detects terminal width and wraps iPods to next row when they won't fit
-- [ ] #11 Gallery mode shows model label beneath each iPod
-- [ ] #12 2-3 character spacing between iPods in gallery mode
-- [ ] #13 Color flag applies ANSI color to the body fill region
+- [x] #1 ASCII art templates for all 7 supported model families: Classic/Video, Mini, Nano tall (1st-2nd), Nano short/fat (3rd), Nano slim (4th-5th), Shuffle (1st-2nd), Unknown
+- [x] #2 Large wheel (E-style curved) used for Classic/Video/Unknown, small wheel (A-style box) used for Nano/Mini
+- [x] #3 Shuffle has no screen — expressions use speech/thought bubbles
+- [x] #4 All 7 expressions render correctly for screened models: neutral, happy, excited, sleepy, concerned, syncing (with progress bar), satisfied
+- [x] #5 Shuffle expressions render via bubbles for all 7 moods
+- [x] #6 Preview script runnable via `bun run preview` with --model, --expression, --color flags
+- [x] #7 Preview script supports --all-expressions to show all expressions for one model
+- [x] #8 Preview script supports --all-models to show all models for one expression
+- [x] #9 Gallery mode (--gallery) renders all models side-by-side, bottom-aligned on a shared baseline
+- [x] #10 Gallery mode detects terminal width and wraps iPods to next row when they won't fit
+- [x] #11 Gallery mode shows model label beneath each iPod
+- [x] #12 2-3 character spacing between iPods in gallery mode
+- [x] #13 Color flag applies ANSI color to the body fill region
 <!-- AC:END -->
 
 ## Implementation Notes

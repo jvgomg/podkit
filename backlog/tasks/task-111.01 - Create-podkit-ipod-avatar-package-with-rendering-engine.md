@@ -1,10 +1,10 @@
 ---
 id: TASK-111.01
 title: Create @podkit/ipod-avatar package with rendering engine
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-11 15:19'
-updated_date: '2026-03-11 16:27'
+updated_date: '2026-03-11 23:25'
 labels:
   - feature
   - new-package
@@ -38,17 +38,17 @@ See design document doc-002 for the full specification including supported devic
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Package scaffolded at packages/ipod-avatar/ with package.json, tsconfig.json, workspace dependency in root
-- [ ] #2 ASCII art templates exist for all 7 supported model families, each visually distinctive
-- [ ] #3 Color palette with 11 colors maps to ANSI escape codes and applies to body region
-- [ ] #4 7 expression types render correctly in screen area (or bubbles for Shuffle)
-- [ ] #5 renderAvatar() returns styled string array for static display
-- [ ] #6 renderSyncFrames() returns animation frames with progress indicator
-- [ ] #7 Terminal background detection works via OSC 11 / COLORFGBG / heuristic / fallback
-- [ ] #8 Contrast compensation adds outlines for dark-on-dark and light-on-light scenarios
-- [ ] #9 generationToModelFamily() maps all supported generation strings from libgpod to correct model family
-- [ ] #10 Unsupported generations (nano_6, shuffle_3, shuffle_4, touch_*, iphone_*, ipad_*) map to Unknown family
-- [ ] #11 Unit tests cover rendering, color application, expression compositing, and generation mapping
+- [x] #1 Package scaffolded at packages/ipod-avatar/ with package.json, tsconfig.json, workspace dependency in root
+- [x] #2 ASCII art templates exist for all 7 supported model families, each visually distinctive
+- [x] #3 Color palette with 11 colors maps to ANSI escape codes and applies to body region
+- [x] #4 7 expression types render correctly in screen area (or bubbles for Shuffle)
+- [x] #5 renderAvatar() returns styled string array for static display
+- [x] #6 renderSyncFrames() returns animation frames with progress indicator
+- [x] #7 Terminal background detection works via OSC 11 / COLORFGBG / heuristic / fallback
+- [x] #8 Contrast compensation adds outlines for dark-on-dark and light-on-light scenarios
+- [x] #9 generationToModelFamily() maps all supported generation strings from libgpod to correct model family
+- [x] #10 Unsupported generations (nano_6, shuffle_3, shuffle_4, touch_*, iphone_*, ipad_*) map to Unknown family
+- [x] #11 Unit tests cover rendering, color application, expression compositing, and generation mapping
 <!-- AC:END -->
 
 ## Implementation Notes

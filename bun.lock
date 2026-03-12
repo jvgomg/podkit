@@ -47,6 +47,13 @@
         "@types/bun": "latest",
       },
     },
+    "packages/ipod-avatar": {
+      "name": "@podkit/ipod-avatar",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/libgpod-node": {
       "name": "@podkit/libgpod-node",
       "version": "0.0.1",
@@ -394,6 +401,8 @@
     "@podkit/e2e-tests": ["@podkit/e2e-tests@workspace:packages/e2e-tests"],
 
     "@podkit/gpod-testing": ["@podkit/gpod-testing@workspace:packages/gpod-testing"],
+
+    "@podkit/ipod-avatar": ["@podkit/ipod-avatar@workspace:packages/ipod-avatar"],
 
     "@podkit/libgpod-node": ["@podkit/libgpod-node@workspace:packages/libgpod-node"],
 
