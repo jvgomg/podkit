@@ -35,6 +35,14 @@ make -C tools/gpod-tool clean 2>/dev/null || true
 echo "Cleaned."
 """
 
+[tasks."tools:brew-test"]
+description = "Smoke test the brew install of podkit on Debian (via Docker)"
+run = """
+#!/usr/bin/env bash
+set -e
+docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from smoke-test
+"""
+
 [tasks."tools:check"]
 description = "Build and test all native tools"
 depends = ["tools:build"]

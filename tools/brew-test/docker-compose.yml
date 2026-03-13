@@ -1,0 +1,10 @@
+services:
+  smoke-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: smoke-test
+      args:
+        TAP: jvgomg/podkit
+    # Ensure the container exits after the smoke test (no restart loop)
+    restart: "no"

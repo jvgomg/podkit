@@ -240,6 +240,22 @@ bun run cleanup:docker        # Remove stopped containers
 bun run cleanup:docker --force  # Force remove all
 ```
 
+## Brew Install Smoke Test
+
+Verifies that the published Homebrew formula installs and runs correctly on Debian Linux using Docker.
+
+```bash
+mise run tools:brew-test
+```
+
+This spins up a `debian:bookworm-slim` container, installs Homebrew, taps `jvgomg/podkit`, installs podkit, and runs `podkit --version` and `podkit --help`. The container exits non-zero on any failure.
+
+**When to run it:** After publishing a new release, before announcing it. It catches formula issues (wrong URLs, bad checksums, missing deps) that unit/integration tests can't.
+
+The build is layered for speed: system deps, Homebrew, and ffmpeg are cached build layers. The `brew install podkit` step and assertions run as the container's startup command (not a build layer), so they always execute fresh against the live formula regardless of Docker's build cache. A cold build takes ~5-10 minutes (dominated by ffmpeg); warm runs are ~1 minute.
+
+Source: `tools/brew-test/`
+
 ## See Also
 
 - [Device Testing](/developers/device-testing) - Testing device compatibility
