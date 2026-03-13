@@ -1,5 +1,26 @@
 # podkit
 
+## 0.2.0
+
+### Minor Changes
+
+- [`d3b8eb2`](https://github.com/jvgomg/podkit/commit/d3b8eb25fc2f453689a5d2e38eb6acb9fe70b1e1) Thanks [@jvgomg](https://github.com/jvgomg)! - Improve `podkit device add` to detect and handle unmounted iPods, including iFlash-modified devices that macOS refuses to automount.
+  - Scans for both mounted and unmounted iPods — no longer requires the device to be pre-mounted
+  - Assesses unmounted devices before attempting to mount: reads block size and capacity from diskutil, queries USB product ID via system_profiler, and resolves it to a model name (e.g. "iPod Classic 6th generation")
+  - Confirms iFlash adapters via two independent signals: 2048-byte block size (iFlash emulates optical media sectors) and capacity exceeding the original iPod Classic maximum of 160 GB
+  - Attempts `diskutil mount` first (no elevated privileges required); falls back to `mount -t msdos` for large FAT32 volumes that macOS refuses to mount through its normal mechanisms
+  - When sudo is required, explains exactly why with per-signal detail and shows the exact command to run (`sudo podkit device add <name>`)
+  - Exports `DeviceAssessment`, `IFlashAssessment`, `IFlashEvidence`, and `UsbDeviceInfo` types from `@podkit/core`
+
+### Patch Changes
+
+- [`f268d71`](https://github.com/jvgomg/podkit/commit/f268d71a83e9fb31eb15d99348a6d8f7e1b02c2b) Thanks [@jvgomg](https://github.com/jvgomg)! - Extract filesystem validation into a shared utility module for improved testability
+
+- [`b3d530f`](https://github.com/jvgomg/podkit/commit/b3d530ff32fc84647f695e46a833ae17d5e6fb02) Thanks [@jvgomg](https://github.com/jvgomg)! - Add support for PODKIT_CONFIG environment variable to set config file path
+
+- Updated dependencies [[`d3b8eb2`](https://github.com/jvgomg/podkit/commit/d3b8eb25fc2f453689a5d2e38eb6acb9fe70b1e1)]:
+  - @podkit/core@0.2.0
+
 ## 0.1.0
 
 ### Minor Changes
