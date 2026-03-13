@@ -16,6 +16,9 @@ import type {
   EjectOptions,
   MountOptions,
 } from '../types.js';
+import type { DeviceAssessment, UsbDeviceInfo } from '../assessment.js';
+import { detectIFlash } from '../assessment.js';
+import { lookupIpodModel } from '../ipod-models.js';
 
 /**
  * Execute a command and return stdout
@@ -127,8 +130,10 @@ export class MacOSDeviceManager implements DeviceManager {
   }
 
   async mount(deviceId: string, options?: MountOptions): Promise<MountResult> {
-    // Get device info to determine volume name
-    const device = await this.getPlatformDeviceInfo(deviceId);
+    const diskId = deviceId.replace('/dev/', '');
+
+    // Get device info to determine volume name and current state
+    const device = await this.getPlatformDeviceInfo(diskId);
     if (!device) {
       return {
         success: false,
@@ -137,38 +142,57 @@ export class MacOSDeviceManager implements DeviceManager {
       };
     }
 
-    // Determine mount point
-    const mountPoint = options?.target ?? `/tmp/podkit-${device.volumeName || 'ipod'}`;
+    // Already mounted — return existing mount point
+    if (device.isMounted && device.mountPoint) {
+      return {
+        success: true,
+        device: deviceId,
+        mountPoint: device.mountPoint,
+      };
+    }
 
-    // Build mount command
-    const devicePath = deviceId.startsWith('/dev/') ? deviceId : `/dev/${deviceId}`;
-
-    const mountCommand = `mount -t msdos ${devicePath} ${mountPoint}`;
+    const devicePath = `/dev/${diskId}`;
+    const sudoMountPoint = options?.target ?? `/tmp/podkit-${device.volumeName || 'ipod'}`;
+    const sudoMountCommand = `mount -t msdos ${devicePath} ${sudoMountPoint}`;
 
     if (options?.dryRun) {
       return {
         success: true,
         device: deviceId,
-        mountPoint,
-        dryRunCommand: `sudo ${mountCommand}`,
+        mountPoint: sudoMountPoint,
+        dryRunCommand: `sudo ${sudoMountCommand}`,
       };
     }
 
-    // Check if we're root
+    // Attempt 1: diskutil mount — works without elevated privileges for volumes
+    // that macOS is willing to mount (standard-size FAT32 volumes, etc.)
+    const diskutilResult = await execCommand('diskutil', ['mount', diskId]);
+    if (diskutilResult.code === 0) {
+      // Re-fetch to get the actual mount point assigned by diskutil
+      const mounted = await this.getPlatformDeviceInfo(diskId);
+      return {
+        success: true,
+        device: deviceId,
+        mountPoint: mounted?.mountPoint,
+      };
+    }
+
+    // Attempt 2: mount -t msdos — required for large FAT32 volumes (iFlash)
+    // that macOS refuses to mount through its normal mechanisms. Requires root.
     if (process.getuid && process.getuid() !== 0) {
       return {
         success: false,
         device: deviceId,
         error: 'Mount requires elevated privileges.',
         requiresSudo: true,
-        dryRunCommand: `sudo ${mountCommand}`,
+        dryRunCommand: `sudo ${sudoMountCommand}`,
       };
     }
 
     // Create mount point if it doesn't exist
-    if (!existsSync(mountPoint)) {
+    if (!existsSync(sudoMountPoint)) {
       try {
-        mkdirSync(mountPoint, { recursive: true });
+        mkdirSync(sudoMountPoint, { recursive: true });
       } catch (err) {
         return {
           success: false,
@@ -178,14 +202,18 @@ export class MacOSDeviceManager implements DeviceManager {
       }
     }
 
-    // Execute mount
-    const { stderr, code } = await execCommand('mount', ['-t', 'msdos', devicePath, mountPoint]);
+    const { stderr, code } = await execCommand('mount', [
+      '-t',
+      'msdos',
+      devicePath,
+      sudoMountPoint,
+    ]);
 
     if (code === 0) {
       return {
         success: true,
         device: deviceId,
-        mountPoint,
+        mountPoint: sudoMountPoint,
       };
     }
 
@@ -332,6 +360,11 @@ Replace diskXsY with your actual device identifier`;
     const sizeStr = info['Disk Size'] || info['Total Size'] || '0';
     const size = parseSize(sizeStr);
 
+    // Parse block size (512 = standard HDD, 2048 = iFlash adapter)
+    const blockSizeStr = info['Device Block Size'] || '';
+    const blockSizeMatch = blockSizeStr.match(/^(\d+)/);
+    const blockSizeBytes = blockSizeMatch ? parseInt(blockSizeMatch[1]!, 10) : undefined;
+
     // Get media type
     const mediaType = info['Media Type'] || '';
 
@@ -340,10 +373,124 @@ Replace diskXsY with your actual device identifier`;
       volumeName,
       volumeUuid,
       size,
+      blockSizeBytes,
       isMounted,
       mountPoint: isMounted ? mountPoint : undefined,
       mediaType,
     };
+  }
+
+  async assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null> {
+    const diskId = diskIdentifier.replace('/dev/', '');
+    const device = await this.getPlatformDeviceInfo(diskId);
+    if (!device) return null;
+
+    // Derive the whole-disk identifier (disk5s2 → disk5) for USB lookup
+    const wholeDisk = diskId.replace(/s\d+$/, '');
+    const usb = await this.queryUsbInfo(wholeDisk);
+
+    const iFlash = detectIFlash(device.size, device.blockSizeBytes ?? 512);
+
+    return {
+      diskIdentifier: diskId,
+      volumeName: device.volumeName,
+      volumeUuid: device.volumeUuid || undefined,
+      sizeBytes: device.size,
+      blockSizeBytes: device.blockSizeBytes ?? 512,
+      isMounted: device.isMounted,
+      mountPoint: device.mountPoint,
+      usb,
+      iFlash,
+    };
+  }
+
+  /**
+   * Query USB subsystem for device identity matching a whole-disk BSD name.
+   *
+   * Parses system_profiler SPUSBDataType JSON output and searches the USB
+   * device tree for an entry whose bsd_name matches the given whole-disk
+   * identifier (e.g., "disk5"). Returns USB product/vendor IDs and a
+   * resolved model name if the product ID is in the lookup table.
+   */
+  private async queryUsbInfo(wholeDisk: string): Promise<UsbDeviceInfo | undefined> {
+    const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
+    if (code !== 0 || !stdout) return undefined;
+
+    let profilerData: unknown;
+    try {
+      profilerData = JSON.parse(stdout);
+    } catch {
+      return undefined;
+    }
+
+    return this.findUsbDeviceByBsdName(profilerData, wholeDisk);
+  }
+
+  /**
+   * Recursively search a system_profiler data structure for a USB device entry
+   * that owns the given whole-disk BSD name.
+   *
+   * The product_id lives on the USB device node, while bsd_name is nested
+   * inside its Media sub-array. We search for a node that has a product_id
+   * and contains the target bsd_name anywhere in its subtree.
+   */
+  private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbDeviceInfo | undefined {
+    if (!node || typeof node !== 'object') return undefined;
+
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const result = this.findUsbDeviceByBsdName(item, wholeDisk);
+        if (result) return result;
+      }
+      return undefined;
+    }
+
+    const record = node as Record<string, unknown>;
+
+    // If this node has a product_id and the target bsd_name appears anywhere
+    // in its subtree, this is the USB device entry we want.
+    if (
+      typeof record['product_id'] === 'string' &&
+      this.subtreeContainsBsdName(record, wholeDisk)
+    ) {
+      const productId = record['product_id'];
+      const rawVendorId = typeof record['vendor_id'] === 'string' ? record['vendor_id'] : '';
+
+      // vendor_id may be the string "apple_vendor_id" or "0x05ac (Apple Inc.)"
+      const vendorId =
+        rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
+
+      return {
+        productId,
+        vendorId,
+        modelName: lookupIpodModel(productId),
+      };
+    }
+
+    // Recurse into all child values to find a matching USB device deeper in the tree
+    for (const value of Object.values(record)) {
+      const result = this.findUsbDeviceByBsdName(value, wholeDisk);
+      if (result) return result;
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Return true if any node in the subtree has bsd_name equal to the target.
+   */
+  private subtreeContainsBsdName(node: unknown, target: string): boolean {
+    if (!node || typeof node !== 'object') return false;
+
+    if (Array.isArray(node)) {
+      return node.some((item) => this.subtreeContainsBsdName(item, target));
+    }
+
+    const record = node as Record<string, unknown>;
+
+    if (record['bsd_name'] === target) return true;
+
+    return Object.values(record).some((v) => this.subtreeContainsBsdName(v, target));
   }
 
   /**

@@ -5,6 +5,8 @@
  * discovering iPod devices.
  */
 
+import type { DeviceAssessment } from './assessment.js';
+
 /**
  * Information about an attached disk device from the platform
  *
@@ -20,6 +22,11 @@ export interface PlatformDeviceInfo {
   volumeUuid: string;
   /** Device size in bytes */
   size: number;
+  /**
+   * Physical block size in bytes as reported by the OS.
+   * Standard iPod hard drives report 512. iFlash adapters report 2048.
+   */
+  blockSizeBytes?: number;
   /** Whether the device is currently mounted */
   isMounted: boolean;
   /** Current mount point if mounted (e.g., "/Volumes/TERAPOD") */
@@ -152,6 +159,18 @@ export interface DeviceManager {
    * @returns true if elevated privileges are required but not available
    */
   requiresPrivileges(operation: 'mount' | 'eject'): boolean;
+
+  /**
+   * Assess a device's characteristics before mounting
+   *
+   * Gathers all available OS-level and USB-level information about a device
+   * without requiring it to be mounted. Used to generate diagnostics for
+   * devices that fail to automount and to identify iFlash adapters.
+   *
+   * @param diskIdentifier - Partition identifier (e.g., "disk5s2")
+   * @returns Structured assessment, or null if the device cannot be found
+   */
+  assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null>;
 }
 
 /**

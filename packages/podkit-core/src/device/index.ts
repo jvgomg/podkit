@@ -37,6 +37,16 @@ export type {
   IpodIdentity,
 } from './types.js';
 
+export type {
+  DeviceAssessment,
+  IFlashAssessment,
+  IFlashEvidence,
+  UsbDeviceInfo,
+} from './assessment.js';
+
+export { detectIFlash } from './assessment.js';
+export { lookupIpodModel } from './ipod-models.js';
+
 // Manager factory
 export {
   getDeviceManager,

@@ -1,38 +1,85 @@
 ---
 title: macOS Mounting Issues
-description: Troubleshoot and fix mounting issues for large-capacity iPods using iFlash on macOS.
+description: Troubleshoot and fix mounting issues for large-capacity iPods using iFlash adapters on macOS.
 sidebar:
   order: 2
 ---
 
-Large-capacity iPods using iFlash adapters with SD cards may fail to mount automatically on macOS. This issue was [originally documented by u/Efficient_Pattern on Reddit](https://www.reddit.com/r/IpodClassic/comments/1o6nk41/mounting_issues_workaround_with_1tb_ipodsiflash/).
+Large-capacity iPods using iFlash adapters (SD card storage replacements) may fail to mount automatically on macOS. This issue was [originally documented by u/Efficient_Pattern on Reddit](https://www.reddit.com/r/IpodClassic/comments/1o6nk41/mounting_issues_workaround_with_1tb_ipodsiflash/).
+
+## Why this happens
+
+macOS refuses to automatically mount very large FAT32 volumes — there is an undocumented size threshold above which automounting is silently blocked. iFlash-modified iPods with large SD cards (typically 1 TB+) hit this threshold.
+
+iFlash adapters can be identified by two signals visible without mounting the device:
+
+- **2048-byte block size** — iFlash adapters emulate optical media sectors; standard iPod hard drives use 512-byte sectors
+- **Capacity exceeds iPod Classic maximum** — original iPod Classic maximum was 160 GB; anything larger is iFlash
+
+These signals mean that even `diskutil mount` fails — it uses the same macOS automount machinery. Only `mount -t msdos` (which requires root) bypasses the restriction.
 
 ## Symptoms
 
-- iPod appears in Finder's sidebar but shows infinite spinning wheel
+- iPod appears in Finder's sidebar but shows an infinite spinning wheel
 - Disk volume does not mount
 - iPod does not appear in Music app
-- `diskutil list` shows the device but it's not accessible
+- `diskutil list` shows the device but it is not accessible
 
-This affects iPods with 1TB+ storage (iFlash Quad with multiple SD cards). The issue occurs because macOS refuses to automatically mount very large FAT32 volumes.
+## Using `podkit device add`
 
-## Using podkit mount
+When you run `podkit device add <name>` without specifying a path, podkit scans for both mounted and unmounted devices. If it finds an unmounted iFlash device, it assesses it and explains what it found before attempting to mount:
 
-If your device is registered with podkit, the easiest solution is the built-in mount command:
+```
+Scanning for attached iPods...
 
-```bash
-podkit mount
+Found iPod: TERAPOD (1.0 TB) — not mounted
+  Model:   iPod Classic 6th generation
+  Storage: iFlash confirmed — 2048-byte block size; Capacity exceeds iPod Classic maximum
+
+Attempting to mount...
+macOS cannot automatically mount this device.
+
+iFlash confirmed by:
+  • 2048-byte block size: 2048
+    iFlash adapters emulate optical media sectors; standard iPod HDDs use 512-byte sectors
+  • Capacity exceeds iPod Classic maximum: 1.0 TB
+    Original iPod Classic maximum was 160 GB
+
+macOS refuses to mount large FAT32 volumes through its normal mechanisms.
+Elevated privileges are required to mount this device directly.
+
+Run:  sudo podkit device add myipod
 ```
 
-This auto-detects the disk identifier and mounts it for you. You can also specify the disk identifier directly:
+Re-run with `sudo` to mount and register the device in one step:
 
 ```bash
-podkit mount --disk /dev/disk4s2
+sudo podkit device add myipod
 ```
 
-See [Mounting and Ejecting](/user-guide/devices/mounting-ejecting) for more details.
+Once the device is registered, use `podkit mount` for subsequent mounts (see below).
+
+## Using `podkit device mount`
+
+After the device is registered with podkit, mount it again after reconnecting:
+
+```bash
+podkit device mount
+# or for a named device
+podkit device mount myipod
+```
+
+For iFlash devices, this command also requires `sudo`:
+
+```bash
+sudo podkit device mount myipod
+```
+
+podkit identifies the device by its stored `volumeUuid`, finds the disk identifier, and runs the appropriate mount command.
 
 ## Manual Workaround
+
+If you prefer to mount without podkit, or need to do it before registering:
 
 ### 1. Find the disk identifier
 
@@ -40,7 +87,7 @@ See [Mounting and Ejecting](/user-guide/devices/mounting-ejecting) for more deta
 diskutil list
 ```
 
-Look for your iPod - it will show as `DOS_FAT_32` with a name like "IPOD" or similar:
+Look for your iPod — it will show as `DOS_FAT_32` with a name like "IPOD":
 
 ```
 /dev/disk4 (external, physical):
@@ -70,7 +117,7 @@ You should see: `Artwork`, `Device`, `iTunes`, `Music`
 
 ## Convenience Alias
 
-Add this to your `~/.zshrc` (or `~/.bashrc`) to auto-detect and mount the iPod:
+Add this to your `~/.zshrc` (or `~/.bashrc`) to auto-detect and mount the iPod without podkit:
 
 ```bash
 alias ipod='dev=$(diskutil list | awk "/IPOD/ && /disk[0-9]+s[0-9]+/ {print \$NF; exit}"); [ -n "$dev" ] && sudo mkdir -p /Volumes/iPod && sudo mount -t msdos /dev/$dev /Volumes/iPod || echo "iPod volume not found"'
@@ -90,19 +137,19 @@ The `iPod_Control` folder is hidden by default. To see it in Finder:
 Unmount before disconnecting:
 
 ```bash
+podkit device eject
+```
+
+Or manually:
+
+```bash
 diskutil unmount /Volumes/iPod
 ```
 
 Note: `sudo umount` often fails with "Resource busy" on macOS. Use `diskutil unmount` instead.
 
-Or use podkit:
-
-```bash
-podkit eject
-```
-
 ## See Also
 
-- [Mounting and Ejecting](/user-guide/devices/mounting-ejecting) - podkit mount/eject commands
-- [Supported Devices](/devices/supported-devices) - Device compatibility
-- [iPod Internals](/devices/ipod-internals) - Device technical details
+- [Mounting and Ejecting](/user-guide/devices/mounting-ejecting) — full mount/eject reference
+- [Adding a Device](/user-guide/devices/adding-devices) — registering devices
+- [Supported Devices](/devices/supported-devices) — device compatibility

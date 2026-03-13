@@ -390,6 +390,10 @@ export type {
   EjectOptions,
   MountOptions,
   IpodIdentity,
+  DeviceAssessment,
+  IFlashAssessment,
+  IFlashEvidence,
+  UsbDeviceInfo,
 } from './device/index.js';
 export {
   getDeviceManager,

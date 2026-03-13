@@ -13,6 +13,7 @@ import type {
   EjectOptions,
   MountOptions,
 } from '../types.js';
+import type { DeviceAssessment } from '../assessment.js';
 
 /**
  * Device manager for unsupported platforms
@@ -59,6 +60,10 @@ export class UnsupportedDeviceManager implements DeviceManager {
   requiresPrivileges(_operation: 'mount' | 'eject'): boolean {
     // Unknown for unsupported platforms - operation will fail anyway
     return false;
+  }
+
+  async assessDevice(_diskIdentifier: string): Promise<DeviceAssessment | null> {
+    return null;
   }
 
   getManualInstructions(operation: 'mount' | 'eject'): string {
