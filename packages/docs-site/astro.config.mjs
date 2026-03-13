@@ -4,6 +4,7 @@ import starlightLinksValidator from 'starlight-links-validator';
 import starlightLlmsTxt from 'starlight-llms-txt';
 import mermaid from 'astro-mermaid';
 import { remarkBaseUrl } from './src/remark-base-url.mjs';
+import remarkEmoji from 'remark-emoji';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -15,7 +16,7 @@ export default defineConfig({
   site: 'https://jvgomg.github.io',
   base,
   markdown: {
-    remarkPlugins: [remarkBaseUrl({ base })],
+    remarkPlugins: [remarkBaseUrl({ base }), remarkEmoji],
   },
   vite: {
     resolve: {
