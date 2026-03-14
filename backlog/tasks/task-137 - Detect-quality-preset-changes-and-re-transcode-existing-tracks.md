@@ -4,7 +4,7 @@ title: Detect quality preset changes and re-transcode existing tracks
 status: Done
 assignee: []
 created_date: '2026-03-14 18:19'
-updated_date: '2026-03-14 19:19'
+updated_date: '2026-03-14 22:28'
 labels:
   - sync
   - feature
@@ -113,35 +113,39 @@ Simpler variant of B — store the last-used quality preset per device in the co
 <!-- SECTION:FINAL_SUMMARY:BEGIN -->
 ## Implementation
 
-Added quality preset change detection using Option A (bitrate comparison, no persistent state).
+Detect quality preset changes and re-transcode existing tracks for both audio and video.
 
-### New upgrade reasons
-- `preset-upgrade`: iPod bitrate significantly below current preset target
-- `preset-downgrade`: iPod bitrate significantly above current preset target
+### Audio preset change detection
+- New `preset-upgrade` and `preset-downgrade` upgrade reasons
+- `detectPresetChange()` checks lossless source tracks against current preset target
+- Shared `detectBitratePresetMismatch()` function with ±50 kbps tolerance (empirically tuned for aac_at VBR)
+- Minimum 64 kbps threshold to filter unreliable bitrate values from short files
+- Post-processing step in the audio differ on `existing` tracks
+- Suppressed by `--skip-upgrades`
 
-### Detection
-- New `detectPresetChange(source, ipod, presetBitrate)` in `upgrades.ts`
-- Only applies to lossless source tracks (lossy are copied as-is)
-- ±32 kbps tolerance for VBR variance (adjacent presets are 64+ kbps apart)
-- Minimum bitrate threshold of 64 kbps to avoid false positives from short files
-- Runs as post-processing step in the differ on `existing` tracks
+### Video preset change detection
+- Video differ detects bitrate mismatches on existing videos using the same shared comparison
+- Video planner generates remove + re-transcode operations (videos have no user data to preserve)
+- Works across all device profiles (iPod Classic, Video 5G, Nano 3G+)
+
+### Bug fixes discovered during device testing
+1. **aac_at encoder quality mapping was inverted** — the macOS AudioToolbox encoder uses 0=best, 14=worst, but the code assumed 14=best. This caused "high" preset to encode at ~44 kbps instead of ~256 kbps. Fixed with empirically-measured bitrate-to-quality mapping.
+2. **Video executor stored source bitrate** — probed the source file instead of the transcoded output, causing iPod database to store ~15,000 kbps (source) instead of ~400 kbps (actual). Fixed by probing the output file.
+
+### Device testing (iPod Video 5th Gen)
+- Audio: 44 FLAC tracks (CHVRCHES, Foals, Mk.gee) tested across all presets. All 2+ level transitions detected. Same-preset re-runs idempotent.
+- Video: 5 movie clips tested across all 4 presets (low/medium/high/max). All adjacent transitions detected. All idempotency checks pass.
 
 ### Files modified
 - `packages/podkit-core/src/sync/types.ts` — new UpgradeReason values, DiffOptions.presetBitrate
-- `packages/podkit-core/src/sync/upgrades.ts` — `detectPresetChange()`, updated `isFileReplacementUpgrade()`
-- `packages/podkit-core/src/sync/differ.ts` — post-processing step for preset change detection
-- `packages/podkit-cli/src/commands/sync.ts` — pass presetBitrate, updated UpdateBreakdown
+- `packages/podkit-core/src/sync/upgrades.ts` — `detectBitratePresetMismatch()`, `detectPresetChange()`, updated `isFileReplacementUpgrade()`
+- `packages/podkit-core/src/sync/differ.ts` — audio preset change post-processing
+- `packages/podkit-core/src/sync/video-differ.ts` — video preset change detection, bitrate on IPodVideo
+- `packages/podkit-core/src/sync/video-planner.ts` — handle toReplace → remove + transcode
+- `packages/podkit-core/src/sync/video-executor.ts` — probe transcoded output for accurate bitrate
+- `packages/podkit-core/src/transcode/ffmpeg.ts` — fix aac_at quality mapping
+- `packages/podkit-cli/src/commands/sync.ts` — pass presetBitrate for audio and video
 - `packages/podkit-cli/src/output/formatters.ts` — display labels for new reasons
-- `docs/user-guide/syncing/upgrades.md` — new categories and Preset Changes section
-- `docs/reference/quality-presets.md` — note about re-transcoding on preset change
-- `adr/adr-009-self-healing-sync.md` — updated out-of-scope note
-
-### Tests
-- 13 new unit tests for `detectPresetChange` (upgrades.test.ts)
-- 8 new unit tests for differ integration (differ.test.ts)
-- 2 new E2E tests (preset-change.e2e.test.ts)
-- All 1322 unit tests pass, all 198 E2E tests pass
-
-### Known limitation
-The iPod database (via libgpod) stores low bitrate values for short test audio files, preventing E2E testing of the actual bitrate detection threshold. E2E tests verify the pipeline doesn't crash and skip-upgrades works; detection logic is covered by unit tests.
+- Docs: upgrades guide, quality presets reference, ADR-009, quality preset testing guide
+- Tests: 1341 unit tests (41 new), 198 E2E tests (2 new), all passing
 <!-- SECTION:FINAL_SUMMARY:END -->
