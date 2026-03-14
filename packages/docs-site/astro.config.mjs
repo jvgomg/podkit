@@ -26,6 +26,7 @@ export default defineConfig({
           __dirname,
           'node_modules/@astrojs/starlight/components'
         ),
+        '@components': resolve(__dirname, 'src/components'),
       },
     },
   },

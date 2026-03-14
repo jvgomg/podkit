@@ -38,6 +38,13 @@ import type {
 import * as gpodTool from './gpod-tool';
 
 /**
+ * Default FirewireGuid for test iPod environments.
+ * Used automatically when creating test databases for models
+ * that require authentication checksums (Classic, Nano 3+).
+ */
+export const TEST_FIREWIRE_GUID = '0000000000000000000000000000000000DECADE';
+
+/**
  * Create a test iPod environment.
  *
  * Creates a complete iPod directory structure with database, suitable for
@@ -82,7 +89,11 @@ export async function createTestIpod(
   }
 
   // Initialize iPod structure
-  await gpodTool.init(ipodPath, { model, name });
+  await gpodTool.init(ipodPath, {
+    model,
+    name,
+    firewireId: options.firewireId ?? TEST_FIREWIRE_GUID,
+  });
 
   // Track cleanup state
   let cleaned = false;
@@ -192,10 +203,6 @@ export async function createTestIpodsForModels(
 
 /**
  * Pre-configured test iPod models for common test scenarios.
- *
- * Note: Some newer iPod models (6th gen+) require additional SysInfo fields
- * (FirewireID) that libgpod doesn't auto-generate. Use Video/5th gen models
- * for reliable test environments.
  */
 export const TestModels = {
   /** iPod Video 60GB (5th gen) - Primary test target, full features */
@@ -207,12 +214,15 @@ export const TestModels = {
   /** iPod Video 30GB Black (5th gen) - Alternative Video model */
   VIDEO_30GB_BLACK: 'MA146' as IpodModelNumber,
 
-  /**
-   * iPod Nano 2GB (2nd gen) - Nano-specific behavior
-   * Note: May have limited artwork support
-   */
+  /** iPod Nano 2GB (2nd gen) - Nano-specific behavior */
   NANO_2GB: 'MA477' as IpodModelNumber,
 
-  // Note: iPod Classic models (MB565, MC297) require FirewireID in SysInfo
-  // and are not supported for test environment creation without additional setup
+  /** iPod Classic 120GB (6th gen) - Hash58 checksum model */
+  CLASSIC_120GB: 'MB565' as IpodModelNumber,
+
+  /** iPod Classic 160GB (7th gen) - Latest Classic model */
+  CLASSIC_160GB: 'MC293' as IpodModelNumber,
+
+  /** iPod Nano 8GB (5th gen) - Hash72 checksum model with HashInfo */
+  NANO_5G: 'MC027' as IpodModelNumber,
 } as const;

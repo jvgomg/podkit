@@ -34,6 +34,13 @@ export interface CreateTestIpodOptions {
    * Custom path for the test iPod. If not provided, a temp directory is created.
    */
   path?: string;
+
+  /**
+   * FirewireGuid for iPod models that require authentication checksums.
+   * Must be exactly 40 hex characters. If not provided, a default test
+   * GUID is used automatically.
+   */
+  firewireId?: string;
 }
 
 /**

@@ -1,0 +1,126 @@
+---
+title: Supported Devices
+description: iPod model compatibility, verification status, and feature support for podkit.
+sidebar:
+  order: 1
+---
+
+import DeviceCompatibilityTable from '@components/DeviceCompatibilityTable.astro';
+import TestingDetails from '@components/TestingDetails.astro';
+
+podkit targets Apple's **stock iPod firmware** — the original operating system that ships on every iPod. By solving the hard problem of syncing with the iTunesDB database format, podkit builds a foundation that can extend to easier targets in the future (see [Other Devices](/devices/other-devices)).
+
+## Overview
+
+podkit uses [libgpod](https://github.com/gtkpod/libgpod) for iPod database management. Our device support directly reflects libgpod's capabilities. libgpod works with iPods that use **USB Mass Storage mode** with the **iTunesDB** database format.
+
+Devices that use iOS sync protocols (iPod Touch, iPhone, iPad) or require iTunes-specific authentication (buttonless Shuffles) are **not supported** by libgpod and therefore not supported by podkit.
+
+## How We Test
+
+podkit tests device compatibility using **simulated iPod databases** — real iTunesDB structures created in temporary directories. Each supported iPod generation has automated E2E tests that verify:
+
+1. **Database initialization** — creating a valid iTunesDB for the model
+2. **Feature detection** — confirming artwork, video, and playlist support matches expectations
+3. **Track operations** — adding tracks, reading them back, verifying database integrity
+
+For models requiring authentication checksums (iPod Classic, Nano 3rd-5th gen), we simulate the authentication data:
+- **Hash58 models** (Classic, Nano 3-4): A test FirewireGuid is injected into SysInfo
+- **Hash72 models** (Nano 5): A synthetic HashInfo file is generated alongside the FirewireGuid
+
+These simulated databases exercise the same libgpod code paths as real hardware — the only difference is the authentication data comes from deterministic test values instead of being read from physical device firmware.
+
+## Confidence Levels
+
+| Level | Meaning |
+|-------|---------|
+| ✅ **Verified** | Confirmed working with real hardware by a contributor |
+| 🧪 **Simulated** | Has automated E2E test coverage with simulated database |
+| ❔ **Expected** | Should work based on libgpod support, but not yet tested |
+
+## Device Compatibility
+
+<DeviceCompatibilityTable />
+
+## Unsupported Devices
+
+The following devices **cannot** be supported by podkit:
+
+| Device | Reason |
+|--------|--------|
+| iPod Nano 6th Gen | Different database format (touch screen square design) |
+| iPod Nano 7th Gen | Different database format (tall touch screen) |
+| iPod Shuffle 3rd Gen | Buttonless; requires iTunes authentication hash |
+| iPod Shuffle 4th Gen | Buttonless; requires iTunes authentication hash |
+| iPod Touch (all) | Uses iOS sync protocol; iTunesDB requires cryptographic signing |
+| iPhone (all) | Uses iOS sync protocol |
+| iPad (all) | Uses iOS sync protocol |
+
+### Why Can't iOS Devices Be Supported?
+
+Starting with iPod Touch, Apple changed the sync architecture:
+
+1. **No USB Mass Storage**: iOS devices don't mount as a filesystem
+2. **Signed Database**: The iTunesDB must be cryptographically signed by iTunes
+3. **Proprietary Protocol**: Sync uses Apple's proprietary AFC (Apple File Conduit) protocol
+
+libgpod cannot implement iTunes' signing mechanism, making iOS device support technically impossible without reverse-engineering Apple's authentication.
+
+## Testing Details
+
+<TestingDetails />
+
+## Feature Support by Generation
+
+| Generation | Music | Artwork | Video | Playlists | Smart Playlists |
+|------------|-------|---------|-------|-----------|-----------------|
+| 1st-4th Gen | ✅ | ❌ | ❌ | ✅ | ✅ |
+| Photo | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Video (5th/5.5th) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Classic (6th/7th) | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mini | ✅ | ❌ | ❌ | ✅ | ✅ |
+| Nano 1st-2nd | ✅ | ✅ | ❌ | ✅ | ✅ |
+| Nano 3rd-5th | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shuffle 1st-2nd | ✅ | ❌ | ❌ | ✅ | ❌ |
+
+## iFlash / SD Card Adapters
+
+iPods with [iFlash](https://www.iflash.xyz/) or similar SD card adapters are fully supported. These adapters replace the original hard drive but don't change the iPod's firmware or database format.
+
+**Note**: Large capacity iFlash builds (>128GB) may have mounting issues on macOS. See [macOS Mounting Issues](/troubleshooting/macos-mounting) for troubleshooting.
+
+## Confirming Your Device Works
+
+If you have an iPod model marked as ❔ and successfully use it with podkit, please help us verify support:
+
+1. **Report success**: Open an issue or PR noting your model number and any observations
+2. **Model number**: Found in Settings > About on the iPod, or on the device's back
+3. **What to test**:
+   - Basic sync (adding tracks)
+   - Artwork display
+   - Playlist creation
+   - Video sync (if applicable)
+
+## Troubleshooting
+
+### "Unknown" Model Detection
+
+If podkit shows your iPod as "Unknown Generation":
+
+1. Check if `iPod_Control/Device/SysInfo` exists on your iPod
+2. If missing, create it with your model number:
+   ```bash
+   echo "ModelNumStr: MA147" > /Volumes/IPOD/iPod_Control/Device/SysInfo
+   ```
+3. See [iPod Internals](/devices/ipod-internals) for model number reference
+
+### Device Not Mounting
+
+- **macOS**: See [macOS Mounting Issues](/troubleshooting/macos-mounting)
+- **Linux**: Ensure you have appropriate udev rules; see libgpod documentation
+
+## See Also
+
+- [Other Devices](/devices/other-devices) - Rockbox, standalone DAPs, and future device support
+- [iPod Internals](/devices/ipod-internals) - iTunesDB format and device quirks
+- [macOS Mounting Issues](/troubleshooting/macos-mounting) - Large iFlash troubleshooting

@@ -1,0 +1,42 @@
+---
+import { GENERATION_INFO } from '@podkit/compatibility';
+
+function getConfidenceDisplay(confidence: string): string {
+  switch (confidence) {
+    case 'verified': return '✅ Verified';
+    case 'simulated': return '🧪 Simulated';
+    default: return '❔ Expected';
+  }
+}
+
+function featureDisplay(supported: boolean): string {
+  return supported ? '✅' : '❌';
+}
+---
+
+<table>
+  <thead>
+    <tr>
+      <th>Generation</th>
+      <th>Models</th>
+      <th>Music</th>
+      <th>Artwork</th>
+      <th>Video</th>
+      <th>Playlists</th>
+      <th>Confidence</th>
+    </tr>
+  </thead>
+  <tbody>
+    {GENERATION_INFO.map((gen) => (
+      <tr>
+        <td>{gen.displayName}</td>
+        <td><code>{gen.models.join(', ')}</code></td>
+        <td>{featureDisplay(gen.features.music)}</td>
+        <td>{featureDisplay(gen.features.artwork)}</td>
+        <td>{featureDisplay(gen.features.video)}</td>
+        <td>{featureDisplay(gen.features.playlists)}</td>
+        <td>{getConfidenceDisplay(gen.confidence)}</td>
+      </tr>
+    ))}
+  </tbody>
+</table>

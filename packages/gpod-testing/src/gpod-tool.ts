@@ -43,7 +43,11 @@ async function runGpodTool<T>(args: string[], errorContext: string): Promise<T> 
 
   let json: T & { success?: boolean; valid?: boolean; error?: string };
   try {
-    json = JSON.parse(stdout);
+    // libgpod's sqlite generation (for Nano 5+) writes directly to stdout,
+    // so we extract the JSON object from the output (noise always precedes it)
+    const jsonStart = stdout.indexOf('{\n');
+    const jsonStr = jsonStart >= 0 ? stdout.slice(jsonStart) : stdout;
+    json = JSON.parse(jsonStr);
   } catch {
     throw new GpodToolError(
       `Failed to parse gpod-tool output: ${errorContext}`,
@@ -96,7 +100,7 @@ export async function getGpodToolVersion(): Promise<string> {
  */
 export async function init(
   path: string,
-  options: { model?: IpodModelNumber; name?: string } = {}
+  options: { model?: IpodModelNumber; name?: string; firewireId?: string } = {}
 ): Promise<{ path: string; model: string; name: string }> {
   const args: string[] = ['init', path, '--json'];
 
@@ -105,6 +109,9 @@ export async function init(
   }
   if (options.name) {
     args.push('--name', options.name);
+  }
+  if (options.firewireId) {
+    args.push('--firewire-id', options.firewireId);
   }
 
   const json = await runGpodTool<{

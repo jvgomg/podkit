@@ -6,6 +6,12 @@
       "inputs": ["src/**", "package.json", "tsconfig.json"],
       "outputs": ["dist/**"]
     },
+    "@podkit/docs-site#test": { "dependsOn": [] },
+    "@podkit/docs-site#test:unit": { "dependsOn": [] },
+    "@podkit/docs-site#test:integration": { "dependsOn": [] },
+    "@podkit/demo#test": { "dependsOn": [] },
+    "@podkit/demo#test:unit": { "dependsOn": [] },
+    "@podkit/demo#test:integration": { "dependsOn": [] },
     "@podkit/demo#build": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "build.ts", "package.json", "tsconfig.json"],

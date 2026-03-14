@@ -69,12 +69,17 @@ describe('gpod-testing', () => {
       }
     });
 
-    it('fails with models requiring FirewireID (iPod Classic 6th gen+)', async () => {
+    it('succeeds with models requiring FirewireID (iPod Classic 6th gen+)', async () => {
       // MB565 (iPod Classic 120GB) requires FirewireID in SysInfo
-      // libgpod doesn't auto-generate this, so initialization fails
-      await expect(createTestIpod({ model: 'MB565', name: 'Classic' })).rejects.toThrow(
-        "Couldn't find the iPod firewire ID"
-      );
+      // A default test GUID is injected automatically
+      const ipod = await createTestIpod({ model: 'MB565', name: 'Classic' });
+      try {
+        const info = await ipod.info();
+        expect(info.device.supportsArtwork).toBe(true);
+        expect(info.device.supportsVideo).toBe(true);
+      } finally {
+        await ipod.cleanup();
+      }
     });
 
     it('allows adding tracks', async () => {

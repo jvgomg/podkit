@@ -72,6 +72,71 @@ static void print_json_bool(const char *key, bool value, bool comma) {
 }
 
 /* ============================================================================
+ * Helpers: firewire-id support for init
+ * ============================================================================ */
+
+static bool is_valid_firewire_id(const char *id) {
+    if (!id) return false;
+    size_t len = strlen(id);
+    if (len != 40) return false;
+    for (size_t i = 0; i < 40; i++) {
+        char c = id[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+            return false;
+    }
+    return true;
+}
+
+static bool is_hash72_model(Itdb_Device *device) {
+    const Itdb_IpodInfo *info = itdb_device_get_ipod_info(device);
+    if (!info) return false;
+    return (info->ipod_generation == ITDB_IPOD_GENERATION_NANO_5);
+}
+
+static int write_synthetic_hash_info(const char *path, const char *firewire_id) {
+    /* Build file path */
+    char hash_path[4096];
+    snprintf(hash_path, sizeof(hash_path), "%s/iPod_Control/Device/HashInfo", path);
+
+    /* 54-byte HashInfo structure */
+    unsigned char data[54];
+    memset(data, 0, sizeof(data));
+
+    /* Header: "HASHv0" */
+    memcpy(data, "HASHv0", 6);
+
+    /* UUID: decode hex firewire_id into 20 bytes */
+    for (int i = 0; i < 20; i++) {
+        unsigned int byte;
+        sscanf(&firewire_id[i * 2], "%02x", &byte);
+        data[6 + i] = (unsigned char)byte;
+    }
+
+    /* rndpart: 12 deterministic bytes */
+    unsigned char rndpart[12] = { 0xDE, 0xCA, 0xDE, 0x00, 0xDE, 0xCA, 0xDE, 0x00, 0xDE, 0xCA, 0xDE, 0x00 };
+    memcpy(data + 26, rndpart, 12);
+
+    /* iv: 16 deterministic bytes */
+    for (int i = 0; i < 16; i++) {
+        data[38 + i] = (unsigned char)i;
+    }
+
+    /* Ensure directory exists */
+    char device_dir[4096];
+    snprintf(device_dir, sizeof(device_dir), "%s/iPod_Control/Device", path);
+    if (g_mkdir_with_parents(device_dir, 0755) != 0) {
+        return -1;
+    }
+
+    /* Write file */
+    if (!g_file_set_contents(hash_path, (const gchar *)data, sizeof(data), NULL)) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/* ============================================================================
  * Command: init
  * ============================================================================ */
 
@@ -81,10 +146,11 @@ static void print_init_usage(void) {
     fprintf(stderr, "Create a new iPod database structure.\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
-    fprintf(stderr, "  -m, --model <model>   Model number (default: MA147 - iPod Video 60GB)\n");
-    fprintf(stderr, "  -n, --name <name>     iPod name (default: Test iPod)\n");
-    fprintf(stderr, "  -j, --json            Output result as JSON\n");
-    fprintf(stderr, "  -h, --help            Show this help\n");
+    fprintf(stderr, "  -m, --model <model>      Model number (default: MA147 - iPod Video 60GB)\n");
+    fprintf(stderr, "  -n, --name <name>        iPod name (default: Test iPod)\n");
+    fprintf(stderr, "  -f, --firewire-id <hex>  FirewireGuid for checksum models (40 hex chars)\n");
+    fprintf(stderr, "  -j, --json               Output result as JSON\n");
+    fprintf(stderr, "  -h, --help               Show this help\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Common model numbers:\n");
     fprintf(stderr, "  MA147  iPod Video 60GB (5th gen)\n");
@@ -96,21 +162,24 @@ static int cmd_init(int argc, char *argv[]) {
     const char *model = "MA147";
     const char *name = "Test iPod";
     const char *path = NULL;
+    const char *firewire_id = NULL;
 
     static struct option long_options[] = {
-        {"model", required_argument, 0, 'm'},
-        {"name",  required_argument, 0, 'n'},
-        {"json",  no_argument,       0, 'j'},
-        {"help",  no_argument,       0, 'h'},
+        {"model",       required_argument, 0, 'm'},
+        {"name",        required_argument, 0, 'n'},
+        {"firewire-id", required_argument, 0, 'f'},
+        {"json",        no_argument,       0, 'j'},
+        {"help",        no_argument,       0, 'h'},
         {0, 0, 0, 0}
     };
 
     int opt;
     optind = 1;  /* Reset getopt */
-    while ((opt = getopt_long(argc, argv, "m:n:jh", long_options, NULL)) != -1) {
+    while ((opt = getopt_long(argc, argv, "m:n:f:jh", long_options, NULL)) != -1) {
         switch (opt) {
             case 'm': model = optarg; break;
             case 'n': name = optarg; break;
+            case 'f': firewire_id = optarg; break;
             case 'j': json_output = true; break;
             case 'h': print_init_usage(); return 0;
             default:  print_init_usage(); return 1;
@@ -138,27 +207,97 @@ static int cmd_init(int argc, char *argv[]) {
         return 1;
     }
 
-    /* Initialize iPod */
-    GError *error = NULL;
-    gboolean success = itdb_init_ipod(path, model, name, &error);
-
-    if (!success) {
-        if (json_output) {
-            printf("{\n");
-            print_json_bool("success", false, true);
-            print_json_string("error", error ? error->message : "Unknown error", false);
-            printf("}\n");
-        } else {
-            fprintf(stderr, "Error: %s\n", error ? error->message : "Unknown error");
+    if (firewire_id) {
+        /* Validate firewire ID */
+        if (!is_valid_firewire_id(firewire_id)) {
+            if (json_output) {
+                printf("{\n");
+                print_json_bool("success", false, true);
+                print_json_string("error", "firewire-id must be exactly 40 hex characters", false);
+                printf("}\n");
+            } else {
+                fprintf(stderr, "Error: firewire-id must be exactly 40 hex characters\n");
+            }
+            return 1;
         }
-        if (error) g_error_free(error);
-        return 1;
+
+        /* Pass 1: itdb_init_ipod() - creates directory structure + SysInfo, may fail at write */
+        GError *init_error = NULL;
+        itdb_init_ipod(path, model, name, &init_error);
+        /* Ignore error - it's expected for checksum models */
+        if (init_error) g_error_free(init_error);
+
+        /* Pass 2: Create fresh database, read SysInfo from disk */
+        Itdb_iTunesDB *itdb = itdb_new();
+        itdb_set_mountpoint(itdb, path);  /* This reads ModelNumStr from SysInfo */
+
+        /* Set FirewireGuid */
+        itdb_device_set_sysinfo(itdb->device, "FirewireGuid", firewire_id);
+
+        /* For hash72 models (Nano 5th gen), write synthetic HashInfo */
+        if (is_hash72_model(itdb->device)) {
+            if (write_synthetic_hash_info(path, firewire_id) != 0) {
+                if (json_output) {
+                    printf("{\n");
+                    print_json_bool("success", false, true);
+                    print_json_string("error", "Failed to write HashInfo file", false);
+                    printf("}\n");
+                } else {
+                    fprintf(stderr, "Error: Failed to write HashInfo file\n");
+                }
+                itdb_free(itdb);
+                return 1;
+            }
+        }
+
+        /* Create master playlist */
+        Itdb_Playlist *mpl = itdb_playlist_new(name, FALSE);
+        itdb_playlist_set_mpl(mpl);
+        itdb_playlist_add(itdb, mpl, -1);
+
+        /* Write database */
+        GError *write_error = NULL;
+        if (!itdb_write(itdb, &write_error)) {
+            if (json_output) {
+                printf("{\n");
+                print_json_bool("success", false, true);
+                print_json_string("error", write_error ? write_error->message : "Failed to write database", false);
+                printf("}\n");
+            } else {
+                fprintf(stderr, "Error: %s\n", write_error ? write_error->message : "Failed to write database");
+            }
+            if (write_error) g_error_free(write_error);
+            itdb_free(itdb);
+            return 1;
+        }
+
+        itdb_free(itdb);
+    } else {
+        /* Original flow - no firewire-id */
+        GError *error = NULL;
+        gboolean success = itdb_init_ipod(path, model, name, &error);
+
+        if (!success) {
+            if (json_output) {
+                printf("{\n");
+                print_json_bool("success", false, true);
+                print_json_string("error", error ? error->message : "Unknown error", false);
+                printf("}\n");
+            } else {
+                fprintf(stderr, "Error: %s\n", error ? error->message : "Unknown error");
+            }
+            if (error) g_error_free(error);
+            return 1;
+        }
     }
 
     if (json_output) {
         printf("{\n");
         print_json_bool("success", true, true);
         print_json_string("path", path, true);
+        if (firewire_id) {
+            print_json_string("firewire_id", firewire_id, true);
+        }
         print_json_string("model", model, true);
         print_json_string("name", name, false);
         printf("}\n");

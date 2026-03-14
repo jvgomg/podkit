@@ -100,10 +100,13 @@ Pre-configured model constants for common test scenarios.
 ```typescript
 import { TestModels } from '@podkit/gpod-testing';
 
-TestModels.VIDEO_60GB      // 'MA147' - Primary test target
-TestModels.VIDEO_30GB      // 'MA002' - Alternative Video model
+TestModels.VIDEO_60GB       // 'MA147' - Primary test target
+TestModels.VIDEO_30GB       // 'MA002' - Alternative Video model
 TestModels.VIDEO_30GB_BLACK // 'MA146' - Black variant
-TestModels.NANO_2GB        // 'MA477' - Nano testing
+TestModels.NANO_2GB         // 'MA477' - Nano testing
+TestModels.CLASSIC_120GB    // 'MB565' - Classic 6th gen
+TestModels.CLASSIC_160GB    // 'MC293' - Classic 7th gen
+TestModels.NANO_5G          // 'MC027' - Nano 5th gen
 ```
 
 ### Low-Level API
@@ -125,7 +128,7 @@ if (await isGpodToolAvailable()) {
 
 // Error handling
 try {
-  await gpodTool.init('/tmp/test', { model: 'MB565' });
+  await gpodTool.init('/nonexistent/readonly/path', { model: 'MA147' });
 } catch (error) {
   if (error instanceof GpodToolError) {
     console.log(error.message);  // Error from gpod-tool
@@ -137,22 +140,17 @@ try {
 
 ## Supported Models
 
-**Recommended for testing (work without FirewireID):**
+All supported iPod generations can be used for test environments. Models that require authentication checksums (Classic, Nano 3+) are handled automatically via a default test FirewireGuid.
 
 | Constant | Model | Device |
 |----------|-------|--------|
 | `VIDEO_60GB` | MA147 | iPod Video 60GB (5th gen) |
 | `VIDEO_30GB` | MA002 | iPod Video 30GB (5th gen) |
+| `VIDEO_30GB_BLACK` | MA146 | iPod Video 30GB Black (5th gen) |
 | `NANO_2GB` | MA477 | iPod Nano 2GB (2nd gen) |
-
-**Not supported for test environments:**
-
-iPod Classic 6th gen+ models (MB565, MC297) require a FirewireID in SysInfo that libgpod doesn't auto-generate. These will throw:
-
-```typescript
-await createTestIpod({ model: 'MB565' });
-// Throws: "Couldn't find the iPod firewire ID"
-```
+| `CLASSIC_120GB` | MB565 | iPod Classic 120GB (6th gen) |
+| `CLASSIC_160GB` | MC293 | iPod Classic 160GB (7th gen) |
+| `NANO_5G` | MC027 | iPod Nano 8GB (5th gen) |
 
 ## Example Test Patterns
 
@@ -209,15 +207,9 @@ it('handles multiple tracks', async () => {
 ```typescript
 import { GpodToolError } from '@podkit/gpod-testing';
 
-it('handles unsupported models', async () => {
-  await expect(
-    createTestIpod({ model: 'MB565' })
-  ).rejects.toThrow("Couldn't find the iPod firewire ID");
-});
-
 it('provides detailed error info', async () => {
   try {
-    await gpodTool.init('/tmp/fail', { model: 'MB565' });
+    await gpodTool.init('/nonexistent/readonly/path', { model: 'MA147' });
   } catch (error) {
     expect(error).toBeInstanceOf(GpodToolError);
     if (error instanceof GpodToolError) {
@@ -235,7 +227,8 @@ import { createTestIpodsForModels, TestModels } from '@podkit/gpod-testing';
 it('works on different iPod models', async () => {
   const ipods = await createTestIpodsForModels([
     TestModels.VIDEO_60GB,
-    TestModels.VIDEO_30GB,
+    TestModels.CLASSIC_120GB,
+    TestModels.NANO_5G,
   ]);
 
   try {
@@ -274,14 +267,6 @@ Build the tool first:
 mise run tools:build
 mise trust
 # Restart shell or: eval "$(mise activate bash)"
-```
-
-### "Couldn't find the iPod firewire ID"
-
-You're using an iPod Classic model. Use a Video model instead:
-```typescript
-createTestIpod({ model: 'MA147' })  // Works
-createTestIpod({ model: 'MB565' })  // Fails - Classic needs FirewireID
 ```
 
 ### Tests timing out

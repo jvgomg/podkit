@@ -14,6 +14,13 @@
         "typescript": "^5.9.0",
       },
     },
+    "packages/compatibility": {
+      "name": "@podkit/compatibility",
+      "version": "0.0.0",
+      "dependencies": {
+        "@podkit/libgpod-node": "workspace:*",
+      },
+    },
     "packages/demo": {
       "name": "@podkit/demo",
       "dependencies": {
@@ -29,6 +36,7 @@
       "version": "0.0.1",
       "dependencies": {
         "@astrojs/starlight": "^0.33.0",
+        "@podkit/compatibility": "workspace:*",
         "astro": "^5.15.0",
         "astro-mermaid": "^1.3.1",
         "mermaid": "^11.13.0",
@@ -44,6 +52,7 @@
       "name": "@podkit/e2e-tests",
       "version": "0.0.0",
       "dependencies": {
+        "@podkit/compatibility": "workspace:*",
         "@podkit/gpod-testing": "workspace:*",
         "podkit": "workspace:*",
       },
@@ -73,7 +82,7 @@
     },
     "packages/podkit-cli": {
       "name": "podkit",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "bin": {
         "podkit": "./dist/main.js",
       },
@@ -89,7 +98,7 @@
     },
     "packages/podkit-core": {
       "name": "@podkit/core",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "dependencies": {
         "@ctrl/video-filename-parser": "^5.4.1",
         "@podkit/libgpod-node": "workspace:*",
@@ -397,6 +406,8 @@
     "@pnpm/network.ca-file": ["@pnpm/network.ca-file@1.0.2", "", { "dependencies": { "graceful-fs": "4.2.10" } }, "sha512-YcPQ8a0jwYU9bTdJDpXjMi7Brhkr1mXsXrUJvjqM2mQDgkRiz8jFaQGOdaLxgjtUfQgZhKy/O3cG/YwmgKaxLA=="],
 
     "@pnpm/npm-conf": ["@pnpm/npm-conf@3.0.2", "", { "dependencies": { "@pnpm/config.env-replace": "^1.1.0", "@pnpm/network.ca-file": "^1.0.1", "config-chain": "^1.1.11" } }, "sha512-h104Kh26rR8tm+a3Qkc5S4VLYint3FE48as7+/5oCEcKR2idC/pF1G6AhIXKI+eHPJa/3J9i5z0Al47IeGHPkA=="],
+
+    "@podkit/compatibility": ["@podkit/compatibility@workspace:packages/compatibility"],
 
     "@podkit/core": ["@podkit/core@workspace:packages/podkit-core"],
 
@@ -1760,8 +1771,6 @@
 
     "@npmcli/agent/lru-cache": ["lru-cache@10.4.3", "", {}, "sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ=="],
 
-    "@podkit/e2e-tests/@types/bun": ["@types/bun@1.3.9", "", { "dependencies": { "bun-types": "1.3.9" } }, "sha512-KQ571yULOdWJiMH+RIWIOZ7B2RXQGpL1YQrBtLIV3FqDcCu6FsbFUBwhdKUlCKUpS3PJDsHlJ1QKlpxoVR+xtw=="],
-
     "@rollup/pluginutils/estree-walker": ["estree-walker@2.0.2", "", {}, "sha512-Rfkk/Mp/DL7JVje3u18FxFujQlTNR2q6QfMSMB7AvCBx91NGj/ba3kCfza0f6dVDbw7YlRf/nDrn7pQrCCyQ/w=="],
 
     "ansi-align/string-width": ["string-width@4.2.3", "", { "dependencies": { "emoji-regex": "^8.0.0", "is-fullwidth-code-point": "^3.0.0", "strip-ansi": "^6.0.1" } }, "sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g=="],
@@ -1837,8 +1846,6 @@
     "@isaacs/cliui/strip-ansi/ansi-regex": ["ansi-regex@6.2.2", "", {}, "sha512-Bq3SmSpyFHaWjPk8If9yc6svM8c56dB5BAtW4Qbw5jHTwwXXcTLoRMkpDJp6VL0XzlWaCHTXrkFURMYmD0sLqg=="],
 
     "@manypkg/cli/@manypkg/get-packages/@manypkg/find-root": ["@manypkg/find-root@3.1.0", "", { "dependencies": { "@manypkg/tools": "^2.1.0" } }, "sha512-BcSqCyKhBVZ5YkSzOiheMCV41kqAFptW6xGqYSTjkVTl9XQpr+pqHhwgGCOHQtjDCv7Is6EFyA14Sm5GVbVABA=="],
-
-    "@podkit/e2e-tests/@types/bun/bun-types": ["bun-types@1.3.9", "", { "dependencies": { "@types/node": "*" } }, "sha512-+UBWWOakIP4Tswh0Bt0QD0alpTY8cb5hvgiYeWCMet9YukHbzuruIEeXC2D7nMJPB12kbh8C7XJykSexEqGKJg=="],
 
     "ansi-align/string-width/emoji-regex": ["emoji-regex@8.0.0", "", {}, "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A=="],
 

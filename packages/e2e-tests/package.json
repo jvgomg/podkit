@@ -17,6 +17,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@podkit/compatibility": "workspace:*",
     "@podkit/gpod-testing": "workspace:*",
     "podkit": "workspace:*"
   },

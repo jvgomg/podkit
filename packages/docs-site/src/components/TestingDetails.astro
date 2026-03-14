@@ -1,0 +1,40 @@
+---
+import { GENERATION_INFO, REAL_DEVICE_REPORTS } from '@podkit/compatibility';
+import type { GenerationInfo } from '@podkit/compatibility';
+
+function getAuthDisplay(checksumType: string): string {
+  switch (checksumType) {
+    case 'none': return 'None';
+    case 'hash58': return 'Hash58 (simulated)';
+    case 'hash72': return 'Hash72 (simulated)';
+    default: return checksumType;
+  }
+}
+
+function getRealDeviceStatus(gen: GenerationInfo): string {
+  const reports = REAL_DEVICE_REPORTS.filter((r) => r.generation === gen.generation);
+  if (reports.length === 0) return '—';
+  return reports.map((r) => `${r.confirmedBy} (${r.date})`).join(', ');
+}
+---
+
+<table>
+  <thead>
+    <tr>
+      <th>Generation</th>
+      <th>Auth Type</th>
+      <th>E2E Test</th>
+      <th>Real Device</th>
+    </tr>
+  </thead>
+  <tbody>
+    {GENERATION_INFO.map((gen) => (
+      <tr>
+        <td>{gen.displayName}</td>
+        <td>{getAuthDisplay(gen.checksumType)}</td>
+        <td>✅ Pass</td>
+        <td set:html={getRealDeviceStatus(gen)} />
+      </tr>
+    ))}
+  </tbody>
+</table>

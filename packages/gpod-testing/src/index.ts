@@ -37,7 +37,7 @@ export type {
 } from './types';
 
 // High-level test utilities (primary API)
-export { createTestIpod, withTestIpod, createTestIpodsForModels, TestModels } from './test-ipod';
+export { createTestIpod, withTestIpod, createTestIpodsForModels, TestModels, TEST_FIREWIRE_GUID } from './test-ipod';
 
 // Low-level gpod-tool wrapper (for advanced use)
 export * as gpodTool from './gpod-tool';
