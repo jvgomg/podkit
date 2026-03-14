@@ -49,9 +49,10 @@ describe('iPod model compatibility', () => {
 
           const tracks = await ipod.tracks();
           expect(tracks).toHaveLength(1);
-          expect(tracks[0].title).toBe('Test Track');
-          expect(tracks[0].artist).toBe('Test Artist');
-          expect(tracks[0].album).toBe('Test Album');
+          const track = tracks[0]!;
+          expect(track.title).toBe('Test Track');
+          expect(track.artist).toBe('Test Artist');
+          expect(track.album).toBe('Test Album');
         }, { model: model.modelNumber });
       });
 
