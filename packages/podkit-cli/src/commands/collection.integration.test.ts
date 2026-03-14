@@ -210,7 +210,7 @@ describe('collection music integration', () => {
 
   it('scans directory and returns tracks', async () => {
     configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks', '-q']);
 
     expect(result.exitCode).toBe(0);
     // Should contain track data (table format by default)
@@ -234,7 +234,7 @@ describe('collection music integration', () => {
         duration: number;
         durationFormatted: string;
       }>
-    >(['--config', configPath, 'collection', 'music', '--format', 'json', '-q']);
+    >(['--config', configPath, 'collection', 'music', '--tracks', '--format', 'json', '-q']);
 
     expect(exitCode).toBe(0);
     expect(json).toBeArray();
@@ -263,7 +263,7 @@ describe('collection music integration', () => {
 
   it('handles empty directory', async () => {
     configPath = await createMusicConfig(emptyDir);
-    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
+    const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks', '-q']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('No tracks found');
@@ -276,6 +276,7 @@ describe('collection music integration', () => {
       configPath,
       'collection',
       'music',
+      '--tracks',
       '--format',
       'json',
       '-q',
@@ -293,6 +294,7 @@ describe('collection music integration', () => {
       configPath,
       'collection',
       'music',
+      '--tracks',
       '--format',
       'csv',
       '-q',
@@ -315,6 +317,7 @@ describe('collection music integration', () => {
       configPath,
       'collection',
       'music',
+      '--tracks',
       '--format',
       'json',
       '--fields',
@@ -376,7 +379,7 @@ describe('collection video integration', () => {
     }
 
     configPath = await createVideoConfig(VIDEO_FIXTURES_PATH);
-    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
+    const result = await runCli(['--config', configPath, 'collection', 'video', '--tracks', '-q']);
 
     expect(result.exitCode).toBe(0);
     // Should contain video data (table format by default)
@@ -405,7 +408,7 @@ describe('collection video integration', () => {
         filePath?: string;
         format?: string;
       }>
-    >(['--config', configPath, 'collection', 'video', '--format', 'json', '-q']);
+    >(['--config', configPath, 'collection', 'video', '--tracks', '--format', 'json', '-q']);
 
     expect(exitCode).toBe(0);
     expect(json).toBeArray();
@@ -423,7 +426,7 @@ describe('collection video integration', () => {
 
   it('handles empty directory', async () => {
     configPath = await createVideoConfig(emptyDir);
-    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
+    const result = await runCli(['--config', configPath, 'collection', 'video', '--tracks', '-q']);
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('No tracks found');
@@ -441,6 +444,7 @@ describe('collection video integration', () => {
       configPath,
       'collection',
       'video',
+      '--tracks',
       '--format',
       'json',
       '-q',
