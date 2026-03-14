@@ -109,6 +109,10 @@ export function formatUpdateReason(reason: string): string {
       return 'Format upgrade';
     case 'quality-upgrade':
       return 'Quality upgrade';
+    case 'preset-upgrade':
+      return 'Preset upgrade';
+    case 'preset-downgrade':
+      return 'Preset downgrade';
     case 'artwork-added':
       return 'Artwork added';
     case 'soundcheck-update':

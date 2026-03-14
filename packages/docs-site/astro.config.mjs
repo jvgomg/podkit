@@ -142,6 +142,7 @@ export default defineConfig({
                 { slug: 'user-guide/syncing/video' },
                 { slug: 'user-guide/syncing/compilation-albums' },
                 { slug: 'user-guide/syncing/sound-check' },
+                { slug: 'user-guide/syncing/upgrades' },
               ],
             },
             {

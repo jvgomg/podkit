@@ -149,6 +149,8 @@ export interface UpdateBreakdown {
   'metadata-changed'?: number;
   'format-upgrade'?: number;
   'quality-upgrade'?: number;
+  'preset-upgrade'?: number;
+  'preset-downgrade'?: number;
   'artwork-added'?: number;
   'soundcheck-update'?: number;
   'metadata-correction'?: number;
@@ -548,10 +550,12 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
   // Compute diff
   const diffSpinner = out.spinner('Computing sync diff...');
   const ipodTracks = ipod.getTracks();
+  const transcodingActive = effectiveQuality !== 'lossless';
   const diff = core.computeDiff(collectionTracks, ipodTracks, {
     transforms: effectiveTransforms,
     skipUpgrades,
-    transcodingActive: effectiveQuality !== 'lossless',
+    transcodingActive,
+    presetBitrate: transcodingActive ? core.getPresetBitrate(effectiveQuality) : undefined,
   });
   diffSpinner.stop('Diff computed');
 
@@ -1046,17 +1050,25 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
         seasonNumber: t.seasonNumber,
         episodeNumber: t.episodeNumber,
         duration: t.duration ? Math.floor(t.duration / 1000) : undefined,
+        bitrate: t.bitrate || undefined,
       };
     });
 
-  // Compute video diff
+  // Compute video diff (with preset bitrate for preset change detection)
   const diffSpinner = out.spinner('Computing video sync diff...');
-  const videoDiff = core.diffVideos(collectionVideos, ipodVideos);
+  const ipodDevice = ipod.getInfo().device;
+  const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
+  const videoPresetSettings = core.getPresetSettingsWithFallback(
+    deviceProfile.name,
+    effectiveVideoQuality
+  );
+  const videoPresetBitrate = videoPresetSettings.videoBitrate + videoPresetSettings.audioBitrate;
+  const videoDiff = core.diffVideos(collectionVideos, ipodVideos, {
+    presetBitrate: videoPresetBitrate,
+  });
   diffSpinner.stop('Video diff computed');
 
   // Create video plan
-  const ipodDevice = ipod.getInfo().device;
-  const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
   const videoPlan = core.planVideoSync(videoDiff, {
     deviceProfile,
     qualityPreset: effectiveVideoQuality,

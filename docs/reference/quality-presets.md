@@ -71,9 +71,12 @@ FFmpeg encoder settings by preset:
 
 | Preset | Native AAC (`-q:a`) | libfdk_aac (`-vbr`) | aac_at (`-q:a`) |
 |--------|---------------------|---------------------|-----------------|
-| max/high | 5 | 5 | 14 |
-| medium | 4 | 4 | 11 |
+| max | 5 | 5 | 0 |
+| high | 5 | 5 | 2 |
+| medium | 4 | 4 | 4 |
 | low | 2 | 3 | 6 |
+
+Note: The `aac_at` encoder (macOS AudioToolbox) uses an inverted quality scale where 0 is highest quality and 14 is lowest. The native `aac` and `libfdk_aac` encoders use a scale where higher values mean higher quality. podkit maps target bitrates to the correct `aac_at` quality value automatically.
 
 ## Video Presets
 
@@ -115,6 +118,14 @@ Video quality is capped to source quality:
 | 1080p @ 8 Mbps | high | 640x480 @ 2000 kbps |
 | 480p @ 1.5 Mbps | high | 480p @ 1500 kbps (capped) |
 | 360p @ 800 kbps | high | 360p @ 800 kbps (source limited) |
+
+## Changing Presets
+
+When you change your quality preset, podkit detects that existing transcoded tracks on the iPod don't match the new target bitrate and re-transcodes them on the next sync. Play counts, star ratings, and playlist membership are preserved.
+
+This applies to lossless source tracks only. Lossy sources (MP3, AAC) are copied as-is regardless of the preset.
+
+See [Track Upgrades](/user-guide/syncing/upgrades#preset-changes) for details.
 
 ## Choosing a Preset
 

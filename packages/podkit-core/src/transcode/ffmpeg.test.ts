@@ -44,22 +44,33 @@ describe('buildVbrArgs', () => {
   });
 
   describe('aac_at encoder (macOS)', () => {
-    it('maps quality to aac_at scale (quality 5)', () => {
+    it('maps quality level 5 to highest quality (q=0) without targetKbps', () => {
+      // aac_at scale is inverted: 0 = highest, 14 = lowest
       const args = buildVbrArgs('aac_at', 5);
-      // 5 * 2.8 = 14
-      expect(args).toEqual(['-q:a', '14']);
+      expect(args).toEqual(['-q:a', '0']);
     });
 
-    it('maps quality to aac_at scale (quality 2)', () => {
+    it('maps quality level 2 to q=6 without targetKbps', () => {
       const args = buildVbrArgs('aac_at', 2);
-      // 2 * 2.8 = 5.6 -> 6
       expect(args).toEqual(['-q:a', '6']);
     });
 
-    it('maps quality to aac_at scale (quality 4)', () => {
+    it('maps quality level 4 to q=4 without targetKbps', () => {
       const args = buildVbrArgs('aac_at', 4);
-      // 4 * 2.8 = 11.2 -> 11
-      expect(args).toEqual(['-q:a', '11']);
+      expect(args).toEqual(['-q:a', '4']);
+    });
+
+    it('uses targetKbps to differentiate max (320 → q=0) from high (256 → q=2)', () => {
+      expect(buildVbrArgs('aac_at', 5, 320)).toEqual(['-q:a', '0']);
+      expect(buildVbrArgs('aac_at', 5, 256)).toEqual(['-q:a', '2']);
+    });
+
+    it('maps targetKbps 192 → q=4', () => {
+      expect(buildVbrArgs('aac_at', 4, 192)).toEqual(['-q:a', '4']);
+    });
+
+    it('maps targetKbps 128 → q=6', () => {
+      expect(buildVbrArgs('aac_at', 2, 128)).toEqual(['-q:a', '6']);
     });
   });
 

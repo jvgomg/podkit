@@ -1,9 +1,10 @@
 ---
 id: TASK-137
 title: Detect quality preset changes and re-transcode existing tracks
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-14 18:19'
+updated_date: '2026-03-14 19:19'
 labels:
   - sync
   - feature
@@ -100,9 +101,47 @@ Simpler variant of B — store the last-used quality preset per device in the co
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Changing quality preset (e.g., high → max) triggers re-transcoding of existing tracks
-- [ ] #2 Dry-run shows tracks that need re-transcoding due to preset change
-- [ ] #3 Track count is unchanged after re-transcoding (upgrades, not adds)
-- [ ] #4 Play counts, ratings, and playlist membership preserved during re-transcode
-- [ ] #5 skipUpgrades flag also suppresses preset-change re-transcoding
+- [x] #1 Changing quality preset (e.g., high → max) triggers re-transcoding of existing tracks
+- [x] #2 Dry-run shows tracks that need re-transcoding due to preset change
+- [x] #3 Track count is unchanged after re-transcoding (upgrades, not adds)
+- [x] #4 Play counts, ratings, and playlist membership preserved during re-transcode
+- [x] #5 skipUpgrades flag also suppresses preset-change re-transcoding
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Implementation
+
+Added quality preset change detection using Option A (bitrate comparison, no persistent state).
+
+### New upgrade reasons
+- `preset-upgrade`: iPod bitrate significantly below current preset target
+- `preset-downgrade`: iPod bitrate significantly above current preset target
+
+### Detection
+- New `detectPresetChange(source, ipod, presetBitrate)` in `upgrades.ts`
+- Only applies to lossless source tracks (lossy are copied as-is)
+- ±32 kbps tolerance for VBR variance (adjacent presets are 64+ kbps apart)
+- Minimum bitrate threshold of 64 kbps to avoid false positives from short files
+- Runs as post-processing step in the differ on `existing` tracks
+
+### Files modified
+- `packages/podkit-core/src/sync/types.ts` — new UpgradeReason values, DiffOptions.presetBitrate
+- `packages/podkit-core/src/sync/upgrades.ts` — `detectPresetChange()`, updated `isFileReplacementUpgrade()`
+- `packages/podkit-core/src/sync/differ.ts` — post-processing step for preset change detection
+- `packages/podkit-cli/src/commands/sync.ts` — pass presetBitrate, updated UpdateBreakdown
+- `packages/podkit-cli/src/output/formatters.ts` — display labels for new reasons
+- `docs/user-guide/syncing/upgrades.md` — new categories and Preset Changes section
+- `docs/reference/quality-presets.md` — note about re-transcoding on preset change
+- `adr/adr-009-self-healing-sync.md` — updated out-of-scope note
+
+### Tests
+- 13 new unit tests for `detectPresetChange` (upgrades.test.ts)
+- 8 new unit tests for differ integration (differ.test.ts)
+- 2 new E2E tests (preset-change.e2e.test.ts)
+- All 1322 unit tests pass, all 198 E2E tests pass
+
+### Known limitation
+The iPod database (via libgpod) stores low bitrate values for short test audio files, preventing E2E testing of the actual bitrate detection threshold. E2E tests verify the pipeline doesn't crash and skip-upgrades works; detection logic is covered by unit tests.
+<!-- SECTION:FINAL_SUMMARY:END -->

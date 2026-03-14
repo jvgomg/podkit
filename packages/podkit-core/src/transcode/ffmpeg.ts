@@ -72,22 +72,67 @@ export interface FFmpegTranscoderConfig {
 /**
  * Build FFmpeg arguments for VBR encoding
  */
-export function buildVbrArgs(encoder: string, quality: number): string[] {
+export function buildVbrArgs(encoder: string, quality: number, targetKbps?: number): string[] {
   switch (encoder) {
     case 'libfdk_aac':
       // libfdk_aac uses -vbr 1-5 scale
       // Also set cutoff to preserve high frequencies
       return ['-vbr', String(quality), '-cutoff', '18000'];
     case 'aac_at':
-      // aac_at uses -q:a 0-14 scale (14 = highest)
-      // Map our 1-5 to aac_at's scale
-      const aacAtQuality = Math.round(quality * 2.8);
+      // aac_at uses -q:a 0-14 scale where 0 = highest quality, 14 = lowest.
+      // Map target bitrate to aac_at quality (empirically measured):
+      //   q=0  ~350 kbps (max)
+      //   q=2  ~265 kbps (high)
+      //   q=4  ~200 kbps (medium)
+      //   q=6  ~145 kbps (low)
+      //   q=8  ~107 kbps
+      const aacAtQuality =
+        targetKbps !== undefined
+          ? aacAtQualityFromBitrate(targetKbps)
+          : aacAtQualityFromLevel(quality);
       return ['-q:a', String(aacAtQuality)];
     case 'aac':
     default:
-      // Native AAC uses -q:a 0.1-5 scale
+      // Native AAC uses -q:a 0.1-5 scale (5 = highest quality)
       return ['-q:a', String(quality)];
   }
+}
+
+/**
+ * Map a target bitrate to the closest aac_at -q:a value.
+ *
+ * Empirically measured scale (CHVRCHES, Foals, Mk.gee):
+ *   q=0 ~350, q=1 ~290, q=2 ~265, q=3 ~220, q=4 ~200,
+ *   q=5 ~155, q=6 ~145, q=7 ~121, q=8 ~107
+ */
+function aacAtQualityFromBitrate(targetKbps: number): number {
+  // Ordered from highest quality (lowest q) to lowest
+  const scale: Array<[number, number]> = [
+    [320, 0],
+    [256, 2],
+    [192, 4],
+    [128, 6],
+    [96, 8],
+  ];
+  // Find the closest target
+  let best = scale[0]![1];
+  let bestDist = Math.abs(targetKbps - scale[0]![0]);
+  for (const [kbps, q] of scale) {
+    const dist = Math.abs(targetKbps - kbps);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = q;
+    }
+  }
+  return best;
+}
+
+/**
+ * Fallback: map our internal 1-5 quality level to aac_at scale.
+ */
+function aacAtQualityFromLevel(quality: number): number {
+  const map: Record<number, number> = { 5: 0, 4: 4, 3: 5, 2: 6, 1: 8 };
+  return map[quality] ?? Math.max(0, Math.round(14 - quality * 2.8));
 }
 
 /**
@@ -124,8 +169,8 @@ export function buildTranscodeArgs(
 
   // Apply quality settings based on mode (VBR vs CBR)
   if (aacPreset.mode === 'vbr' && aacPreset.quality !== undefined) {
-    // VBR mode
-    args.push(...buildVbrArgs(encoder, aacPreset.quality));
+    // VBR mode — pass targetKbps so aac_at can pick the right quality level
+    args.push(...buildVbrArgs(encoder, aacPreset.quality, aacPreset.targetKbps));
   } else {
     // CBR mode
     args.push('-b:a', `${aacPreset.targetKbps}k`);

@@ -256,6 +256,10 @@ The build is layered for speed: system deps, Homebrew, and ffmpeg are cached bui
 
 Source: `tools/brew-test/`
 
+## Quality Preset Device Testing
+
+See [Quality Preset Device Testing](/developers/quality-preset-testing) for the methodology and results of testing preset change detection with real iPod hardware.
+
 ## See Also
 
 - [Device Testing](/developers/device-testing) - Testing device compatibility

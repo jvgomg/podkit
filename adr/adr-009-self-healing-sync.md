@@ -256,4 +256,4 @@ Remove the old track from the iPod and add a fresh one with the new file.
 
 - Upgrades are on by default; `--skip-upgrades` is the escape hatch for time/space-constrained syncs
 - Future work: collection caching (TASK-071) could store additional state to enable hash-based detection later if metadata comparison proves insufficient
-- **Quality preset changes are out of scope here.** Detecting that a user changed their quality preset (e.g., `high` → `max`) and re-transcoding existing tracks accordingly is a separate concern tracked in TASK-137. Self-healing sync only detects changes in the source collection, not changes to sync configuration.
+- **Quality preset changes** are handled by TASK-137 via `detectPresetChange()` in `upgrades.ts`. When a user changes their quality preset, the diff engine compares iPod bitrates against the new preset target and flags mismatches as `preset-upgrade` or `preset-downgrade`. This runs as a post-processing step in the differ, separate from `detectUpgrades()` which focuses on source improvements.

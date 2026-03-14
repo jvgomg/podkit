@@ -21,11 +21,13 @@ podkit recognizes several types of improvements:
 |----------|---------|--------------|
 | **Format upgrade** | MP3 replaced with FLAC | New file transcoded and copied to iPod |
 | **Quality upgrade** | 128 kbps re-ripped at 320 kbps | New file transcoded and copied to iPod |
+| **Preset upgrade** | Quality preset changed from low to high | Re-transcoded at new (higher) bitrate |
+| **Preset downgrade** | Quality preset changed from high to low | Re-transcoded at new (lower) bitrate |
 | **Artwork added** | Artwork embedded into previously bare files | New file copied with artwork |
 | **Sound Check update** | ReplayGain tags added to collection | Metadata updated (no file transfer) |
 | **Metadata correction** | Genre, year, or track numbers fixed | Metadata updated (no file transfer) |
 
-File-replacement upgrades (format, quality, artwork) require transferring a new audio file to the iPod. Metadata-only updates (Sound Check, metadata corrections) are instant since they only touch the iPod database.
+File-replacement upgrades (format, quality, preset, artwork) require transferring a new audio file to the iPod. Metadata-only updates (Sound Check, metadata corrections) are instant since they only touch the iPod database.
 
 ## Preserved User Data
 
@@ -38,6 +40,21 @@ Upgrades preserve everything about the track's history on the iPod:
 - Date added
 
 This is possible because podkit updates the existing database entry rather than deleting and recreating it.
+
+## Preset Changes
+
+When you change your quality preset (e.g., from `low` to `high`), podkit detects that existing transcoded tracks on the iPod don't match the new target bitrate and re-transcodes them on the next sync. Both directions are supported:
+
+- **Preset upgrade**: iPod bitrate is significantly lower than the new preset target (e.g., switching from `low` at 128 kbps to `high` at 256 kbps)
+- **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `max` at 320 kbps to `medium` at 192 kbps)
+
+This only affects lossless source tracks (FLAC, WAV, AIFF) that are transcoded during sync. Lossy source tracks (MP3, AAC) are copied as-is regardless of the quality preset.
+
+A tolerance of ±50 kbps is used to handle natural VBR bitrate variance. Tracks whose bitrate falls within this tolerance of the preset target are considered in sync.
+
+**VBR overlap note:** Adjacent VBR presets (e.g., medium and high) can produce overlapping bitrate ranges depending on content complexity. Jumps of two or more preset levels (e.g., low → high, low → max) are always detected. Single-step transitions between adjacent VBR presets may miss some tracks in the overlap zone — use CBR presets (e.g., `low-cbr`, `high-cbr`) for guaranteed detection of all preset changes.
+
+Like other file-replacement upgrades, preset changes are suppressed by `--skip-upgrades`.
 
 ## Dry-Run Output
 
@@ -53,7 +70,8 @@ Sync plan:
   Remove:    2 tracks
   Upgrade:  12 tracks
     Format upgrade:     8  (MP3 → FLAC)
-    Artwork added:      3
+    Preset upgrade:     2  (quality preset changed)
+    Artwork added:      1
     Sound Check update: 1
   Unchanged: 1,397 tracks
 ```

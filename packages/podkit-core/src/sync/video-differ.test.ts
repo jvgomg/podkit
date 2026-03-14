@@ -82,6 +82,7 @@ function createIPodVideo(
     seasonNumber: options.seasonNumber,
     episodeNumber: options.episodeNumber,
     duration: options.duration,
+    bitrate: options.bitrate,
   };
 }
 
@@ -397,5 +398,78 @@ describe('VideoSyncDiffer interface', () => {
     const diff = differ.diff(collectionVideos, ipodVideos);
     expect(diff.toAdd).toHaveLength(1);
     expect(diff.toRemove).toHaveLength(1);
+  });
+});
+
+// =============================================================================
+// Video Preset Change Detection
+// =============================================================================
+
+describe('video preset change detection', () => {
+  it('moves video from existing to toReplace when bitrate differs from preset', () => {
+    const collection = [createCollectionVideo('Movie', 'movie', { year: 2020 })];
+    const ipod = [createIPodVideo('Movie', 'movie', { year: 2020, bitrate: 396 })];
+
+    const diff = diffVideos(collection, ipod, { presetBitrate: 728 });
+
+    expect(diff.existing).toHaveLength(0);
+    expect(diff.toReplace).toHaveLength(1);
+    expect(diff.toReplace[0]!.collection.title).toBe('Movie');
+  });
+
+  it('keeps video in existing when bitrate is within tolerance', () => {
+    const collection = [createCollectionVideo('Movie', 'movie', { year: 2020 })];
+    const ipod = [createIPodVideo('Movie', 'movie', { year: 2020, bitrate: 400 })];
+
+    const diff = diffVideos(collection, ipod, { presetBitrate: 396 });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toReplace).toHaveLength(0);
+  });
+
+  it('does not detect preset change when presetBitrate is not set', () => {
+    const collection = [createCollectionVideo('Movie', 'movie', { year: 2020 })];
+    const ipod = [createIPodVideo('Movie', 'movie', { year: 2020, bitrate: 100 })];
+
+    const diff = diffVideos(collection, ipod);
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toReplace).toHaveLength(0);
+  });
+
+  it('does not detect preset change when iPod has no bitrate', () => {
+    const collection = [createCollectionVideo('Movie', 'movie', { year: 2020 })];
+    const ipod = [createIPodVideo('Movie', 'movie', { year: 2020 })];
+
+    const diff = diffVideos(collection, ipod, { presetBitrate: 728 });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toReplace).toHaveLength(0);
+  });
+
+  it('does not detect preset change when iPod bitrate is below minimum', () => {
+    const collection = [createCollectionVideo('Movie', 'movie', { year: 2020 })];
+    const ipod = [createIPodVideo('Movie', 'movie', { year: 2020, bitrate: 30 })];
+
+    const diff = diffVideos(collection, ipod, { presetBitrate: 728 });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toReplace).toHaveLength(0);
+  });
+
+  it('detects both upgrade and downgrade', () => {
+    const collection = [
+      createCollectionVideo('Movie A', 'movie', { year: 2020 }),
+      createCollectionVideo('Movie B', 'movie', { year: 2021 }),
+    ];
+    const ipod = [
+      createIPodVideo('Movie A', 'movie', { year: 2020, bitrate: 396 }), // low → high = upgrade
+      createIPodVideo('Movie B', 'movie', { year: 2021, bitrate: 896 }), // max → low = downgrade
+    ];
+
+    const diff = diffVideos(collection, ipod, { presetBitrate: 728 });
+
+    expect(diff.toReplace).toHaveLength(2);
+    expect(diff.existing).toHaveLength(0);
   });
 });

@@ -36,6 +36,8 @@ export interface MatchedTrack {
 export type UpgradeReason =
   | 'format-upgrade'
   | 'quality-upgrade'
+  | 'preset-upgrade'
+  | 'preset-downgrade'
   | 'artwork-added'
   | 'soundcheck-update'
   | 'metadata-correction';
@@ -288,6 +290,17 @@ export interface DiffOptions {
    * @default false
    */
   transcodingActive?: boolean;
+
+  /**
+   * Target bitrate (kbps) for the active quality preset.
+   * When set alongside `transcodingActive`, enables detection of preset changes:
+   * if an existing transcoded track's bitrate differs significantly from this
+   * target, it will be flagged for re-transcoding as `preset-upgrade` or
+   * `preset-downgrade`.
+   *
+   * Only affects lossless source tracks (lossy sources are copied as-is).
+   */
+  presetBitrate?: number;
 }
 
 /**

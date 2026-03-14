@@ -19,6 +19,7 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import { hasEnabledTransforms } from '../transforms/pipeline.js';
 import { buildMatchIndex, getTransformMatchKeys } from './matching.js';
 import {
+  detectPresetChange,
   detectUpgrades,
   getIpodFormatFamily,
   isFileReplacementUpgrade,
@@ -229,6 +230,37 @@ export function computeDiff(
         toAdd.push(collectionTrack);
       }
     }
+  }
+
+  // Post-processing: detect quality preset changes on existing tracks.
+  // Only when transcoding is active (lossy preset) and presetBitrate is provided.
+  // Tracks with a bitrate mismatch are moved from existing → toUpdate.
+  if (options?.transcodingActive && options?.presetBitrate && !(options?.skipUpgrades ?? false)) {
+    const presetBitrate = options.presetBitrate;
+    const stillExisting: MatchedTrack[] = [];
+
+    for (const match of existing) {
+      const presetChange = detectPresetChange(match.collection, match.ipod, presetBitrate);
+      if (presetChange) {
+        toUpdate.push({
+          source: match.collection,
+          ipod: match.ipod,
+          reason: presetChange,
+          changes: [
+            {
+              field: 'bitrate',
+              from: String(match.ipod.bitrate),
+              to: String(presetBitrate),
+            },
+          ],
+        });
+      } else {
+        stillExisting.push(match);
+      }
+    }
+
+    existing.length = 0;
+    existing.push(...stillExisting);
   }
 
   // Find iPod tracks that weren't matched (candidates for removal)

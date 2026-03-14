@@ -8,7 +8,12 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { isQualityUpgrade, detectUpgrades, isFileReplacementUpgrade } from './upgrades.js';
+import {
+  isQualityUpgrade,
+  detectUpgrades,
+  isFileReplacementUpgrade,
+  detectPresetChange,
+} from './upgrades.js';
 import { computeDiff } from './differ.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { IPodTrack } from './types.js';
@@ -1065,6 +1070,14 @@ describe('isFileReplacementUpgrade', () => {
     expect(isFileReplacementUpgrade('artwork-added')).toBe(true);
   });
 
+  it('returns true for preset-upgrade', () => {
+    expect(isFileReplacementUpgrade('preset-upgrade')).toBe(true);
+  });
+
+  it('returns true for preset-downgrade', () => {
+    expect(isFileReplacementUpgrade('preset-downgrade')).toBe(true);
+  });
+
   it('returns false for soundcheck-update', () => {
     expect(isFileReplacementUpgrade('soundcheck-update')).toBe(false);
   });
@@ -1383,5 +1396,159 @@ describe('computeDiff with upgrades', () => {
       expect(diff.existing).toHaveLength(1);
       expect(diff.toRemove).toHaveLength(1);
     });
+  });
+});
+
+// =============================================================================
+// detectPresetChange
+// =============================================================================
+
+describe('detectPresetChange', () => {
+  it('returns preset-upgrade when iPod bitrate is below preset target', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 128,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBe('preset-upgrade');
+  });
+
+  it('returns preset-downgrade when iPod bitrate is above preset target', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 256,
+    });
+
+    expect(detectPresetChange(source, ipod, 128)).toBe('preset-downgrade');
+  });
+
+  it('returns null when iPod bitrate is within tolerance of preset target', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 260,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBeNull();
+  });
+
+  it('returns null for lossy source (copied as-is, preset irrelevant)', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'mp3',
+      lossless: false,
+      bitrate: 192,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'MPEG audio file',
+      bitrate: 128,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBeNull();
+  });
+
+  it('returns null when iPod has no bitrate', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 0,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBeNull();
+  });
+
+  it('returns null when iPod bitrate is below minimum threshold (short file artifact)', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // Very short files can produce extremely low bitrates (e.g., 17 kbps)
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 17,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBeNull();
+  });
+
+  it('detects lossless-to-lossy preset change as preset-downgrade', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // ALAC on iPod from when preset was "lossless"
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'Apple Lossless audio file',
+      bitrate: 900,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBe('preset-downgrade');
+  });
+
+  it('returns null at exactly the tolerance boundary', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // 256 - 50 = 206, exactly at boundary → within tolerance
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 206,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBeNull();
+  });
+
+  it('returns preset-upgrade just beyond the tolerance boundary', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // 256 - 51 = 205, just beyond boundary
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 205,
+    });
+
+    expect(detectPresetChange(source, ipod, 256)).toBe('preset-upgrade');
+  });
+
+  it('detects upgrade across adjacent presets (low → medium)', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 128,
+    });
+
+    expect(detectPresetChange(source, ipod, 192)).toBe('preset-upgrade');
+  });
+
+  it('detects downgrade across adjacent presets (medium → low)', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 192,
+    });
+
+    expect(detectPresetChange(source, ipod, 128)).toBe('preset-downgrade');
   });
 });

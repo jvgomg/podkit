@@ -57,6 +57,9 @@ export interface IPodVideo {
 
   /** Duration in seconds */
   duration?: number;
+
+  /** Combined video+audio bitrate in kbps (from iPod database) */
+  bitrate?: number;
 }
 
 /**
@@ -79,6 +82,8 @@ export interface VideoSyncDiff {
   toRemove: IPodVideo[];
   /** Videos that exist in both and are in sync */
   existing: MatchedVideo[];
+  /** Videos that need re-transcoding due to quality preset change */
+  toReplace: MatchedVideo[];
 }
 
 /**
@@ -90,6 +95,13 @@ export interface VideoDiffOptions {
    * Default: false (uses fuzzy matching for titles)
    */
   strictMatch?: boolean;
+
+  /**
+   * Target combined bitrate (kbps) for the active video quality preset.
+   * When set, existing videos with bitrates significantly different from
+   * this target are moved to `toReplace` for re-transcoding.
+   */
+  presetBitrate?: number;
 }
 
 // =============================================================================
@@ -216,6 +228,19 @@ function buildIpodVideoIndex(ipodVideos: IPodVideo[]): Map<string, IPodVideo> {
  * console.log(`${diff.existing.length} videos already synced`);
  * ```
  */
+/**
+ * Tolerance for VBR variance when comparing video bitrate to preset target (kbps).
+ * Video uses CRF encoding with a bitrate cap, so actual bitrates are fairly consistent
+ * but can vary by content complexity. Same tolerance as audio preset detection.
+ */
+const VIDEO_PRESET_CHANGE_TOLERANCE = 50;
+
+/**
+ * Minimum iPod bitrate (kbps) for video preset change detection to be meaningful.
+ * Below this threshold, the stored bitrate likely doesn't reflect encoding quality.
+ */
+const VIDEO_MIN_PRESET_BITRATE = 64;
+
 export function diffVideos(
   collectionVideos: CollectionVideo[],
   ipodVideos: IPodVideo[],
@@ -257,10 +282,34 @@ export function diffVideos(
     }
   }
 
+  // Post-processing: detect quality preset changes on existing videos
+  const toReplace: MatchedVideo[] = [];
+  if (_options?.presetBitrate) {
+    const presetBitrate = _options.presetBitrate;
+    const stillExisting: MatchedVideo[] = [];
+
+    for (const match of existing) {
+      const ipodBitrate = match.ipod.bitrate;
+      if (
+        ipodBitrate &&
+        ipodBitrate >= VIDEO_MIN_PRESET_BITRATE &&
+        Math.abs(ipodBitrate - presetBitrate) > VIDEO_PRESET_CHANGE_TOLERANCE
+      ) {
+        toReplace.push(match);
+      } else {
+        stillExisting.push(match);
+      }
+    }
+
+    existing.length = 0;
+    existing.push(...stillExisting);
+  }
+
   return {
     toAdd,
     toRemove,
     existing,
+    toReplace,
   };
 }
 

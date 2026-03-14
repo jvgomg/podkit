@@ -395,12 +395,16 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
     // Get transcoded file size
     const outputStats = await stat(tempOutputPath);
 
-    // Probe the source video for metadata
+    // Probe the source video for metadata (title, duration, etc.)
     const analysis = await probeVideo(source.filePath);
 
-    // Create track input for iPod database
+    // Probe the transcoded output for accurate bitrate (source bitrate != output bitrate)
+    const outputAnalysis = await probeVideo(tempOutputPath);
+
+    // Create track input for iPod database — use source metadata but output bitrate/size
     const trackInput = createVideoTrackInput(source, analysis, {
       size: outputStats.size,
+      bitrate: outputAnalysis.videoBitrate + outputAnalysis.audioBitrate,
     });
 
     // Add track to iPod and copy file

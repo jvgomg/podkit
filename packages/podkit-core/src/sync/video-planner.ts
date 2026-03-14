@@ -473,8 +473,32 @@ export function planVideoSync(
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
 
-  // Combine and order operations
-  const allOperations = [...removeOperations, ...addOperations];
+  // Plan preset change operations (remove old + re-transcode)
+  const replaceRemoveOps: SyncOperation[] = [];
+  const replaceAddOps: SyncOperation[] = [];
+  if (diff.toReplace && diff.toReplace.length > 0) {
+    // Remove old versions
+    for (const match of diff.toReplace) {
+      replaceRemoveOps.push({ type: 'video-remove', video: match.ipod });
+    }
+    // Re-transcode with current quality
+    const replaceSources = diff.toReplace.map((m) => m.collection);
+    const { operations: replaceTranscodeOps } = planAddOperations(
+      replaceSources,
+      deviceProfile,
+      qualityPreset,
+      useHardwareAcceleration
+    );
+    replaceAddOps.push(...replaceTranscodeOps);
+  }
+
+  // Combine and order operations (removes first, then adds/transcodes)
+  const allOperations = [
+    ...removeOperations,
+    ...replaceRemoveOps,
+    ...addOperations,
+    ...replaceAddOps,
+  ];
   const orderedOperations = orderOperations(allOperations);
 
   // Calculate totals
