@@ -135,6 +135,8 @@ export default defineConfig({
                 { slug: 'user-guide/syncing' },
                 { slug: 'user-guide/syncing/music' },
                 { slug: 'user-guide/syncing/video' },
+                { slug: 'user-guide/syncing/compilation-albums' },
+                { slug: 'user-guide/syncing/sound-check' },
               ],
             },
             {
