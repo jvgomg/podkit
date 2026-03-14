@@ -134,7 +134,7 @@ describe('collection command', () => {
     });
 
     afterEach(() => {
-      process.exitCode = savedExitCode;
+      process.exitCode = 0;
       clearContext();
     });
 
