@@ -9,6 +9,11 @@ import type { AudioFileType, TrackFilter } from '../types.js';
 import type { Readable } from 'node:stream';
 
 /**
+ * Source of a Sound Check value, indicating which tag format it was extracted from.
+ */
+export type SoundCheckSource = 'iTunNORM' | 'replayGain_track' | 'replayGain_album';
+
+/**
  * Unified file access - supports both local and remote sources
  *
  * Local adapters return path-based access for direct file operations.
@@ -71,6 +76,12 @@ export interface CollectionTrack {
    */
   soundcheck?: number;
 
+  /**
+   * Source of the Sound Check value (which tag format it was extracted from).
+   * Only populated by collection adapters, not available from the iPod database.
+   */
+  soundcheckSource?: SoundCheckSource;
+
   // Identifiers (optional, for advanced matching)
   musicBrainzRecordingId?: string;
   musicBrainzReleaseId?: string;
@@ -89,6 +100,11 @@ export interface CollectionAdapter {
    * Human-readable name for this adapter
    */
   readonly name: string;
+
+  /**
+   * Technical adapter type identifier (e.g., 'directory', 'subsonic')
+   */
+  readonly adapterType: string;
 
   /**
    * Connect to the collection source

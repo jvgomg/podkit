@@ -11,6 +11,7 @@ import {
   escapeCsv,
   computeStats,
   formatStatsText,
+  collectTips,
   aggregateAlbums,
   formatAlbumsTable,
   aggregateArtists,
@@ -750,6 +751,29 @@ describe('computeStats', () => {
     const stats = computeStats(tracks);
     expect(stats.soundCheckTracks).toBe(0);
   });
+
+  it('aggregates soundcheck sources', () => {
+    const tracks = [
+      createTrack({ soundcheck: 1024, soundcheckSource: 'iTunNORM' }),
+      createTrack({ soundcheck: 2048, soundcheckSource: 'iTunNORM' }),
+      createTrack({ soundcheck: 512, soundcheckSource: 'replayGain_track' }),
+      createTrack({ soundcheck: undefined }),
+    ];
+    const stats = computeStats(tracks);
+    expect(stats.soundCheckSources).toEqual({
+      iTunNORM: 2,
+      replayGain_track: 1,
+    });
+  });
+
+  it('returns undefined soundCheckSources when no sources present', () => {
+    const tracks = [
+      createTrack({ soundcheck: 1024 }), // no source info
+      createTrack({ soundcheck: undefined }),
+    ];
+    const stats = computeStats(tracks);
+    expect(stats.soundCheckSources).toBeUndefined();
+  });
 });
 
 // =============================================================================
@@ -824,7 +848,7 @@ describe('formatStatsText', () => {
     expect(result).not.toContain('Compilations');
   });
 
-  it('includes Sound Check line when tracks have soundcheck data', () => {
+  it('includes Sound Check line with percentage format', () => {
     const stats: ContentStats = {
       tracks: 100,
       albums: 10,
@@ -836,7 +860,39 @@ describe('formatStatsText', () => {
     };
     const result = formatStatsText(stats, 'Music:');
 
-    expect(result).toContain('Sound Check: 75/100 tracks');
+    expect(result).toContain('Sound Check: 75 (75%)');
+  });
+
+  it('floors the percentage (never rounds up to 100%)', () => {
+    const stats: ContentStats = {
+      tracks: 1000,
+      albums: 10,
+      artists: 8,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 997,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    // 997/1000 = 99.7%, should floor to 99%
+    expect(result).toContain('Sound Check: 997 (99%)');
+    expect(result).not.toContain('100%');
+  });
+
+  it('shows 100% only when all tracks have soundcheck', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 8,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 100,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    expect(result).toContain('Sound Check: 100 (100%)');
   });
 
   it('omits Sound Check line when no tracks have soundcheck data', () => {
@@ -852,6 +908,203 @@ describe('formatStatsText', () => {
     const result = formatStatsText(stats, 'Music:');
 
     expect(result).not.toContain('Sound Check');
+  });
+
+  it('shows source line in verbose mode with source info', () => {
+    const stats: ContentStats = {
+      tracks: 10,
+      albums: 2,
+      artists: 1,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', {
+      verbose: true,
+      source: { adapterType: 'directory', location: '/Volumes/Music/FLAC' },
+    });
+
+    expect(result).toContain('Source: directory (/Volumes/Music/FLAC)');
+  });
+
+  it('does not show source line without verbose flag', () => {
+    const stats: ContentStats = {
+      tracks: 10,
+      albums: 2,
+      artists: 1,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', {
+      verbose: false,
+      source: { adapterType: 'directory', location: '/Volumes/Music/FLAC' },
+    });
+
+    expect(result).not.toContain('Source:');
+  });
+
+  it('shows sound check source breakdown in verbose mode', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 80,
+      soundCheckSources: {
+        iTunNORM: 50,
+        replayGain_track: 25,
+        replayGain_album: 5,
+      },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { verbose: true });
+
+    expect(result).toContain('iTunNORM');
+    expect(result).toContain('ReplayGain (track)');
+    expect(result).toContain('ReplayGain (album)');
+  });
+
+  it('does not show source breakdown without verbose flag', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 80,
+      soundCheckSources: {
+        iTunNORM: 50,
+        replayGain_track: 25,
+        replayGain_album: 5,
+      },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    expect(result).not.toContain('iTunNORM');
+    expect(result).not.toContain('ReplayGain (track)');
+  });
+
+  it('shows tip when partial sound check coverage', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 80,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    expect(result).toContain('Tips:');
+    expect(result).toContain('Some tracks are missing Sound Check data');
+    expect(result).toContain('https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/');
+  });
+
+  it('does not show tip when all tracks have sound check', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 100,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    expect(result).not.toContain('Tips:');
+  });
+
+  it('does not show tip when no tracks have sound check', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    expect(result).not.toContain('Tips:');
+  });
+
+  it('shows tips after file types section', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 80,
+      fileTypes: { flac: 100 },
+    };
+    const result = formatStatsText(stats, 'Music:');
+
+    const fileTypesIdx = result.indexOf('File Types:');
+    const tipsIdx = result.indexOf('Tips:');
+    expect(fileTypesIdx).toBeGreaterThan(-1);
+    expect(tipsIdx).toBeGreaterThan(fileTypesIdx);
+  });
+});
+
+// =============================================================================
+// collectTips tests
+// =============================================================================
+
+describe('collectTips', () => {
+  it('returns sound check tip for partial coverage', () => {
+    const tips = collectTips({
+      stats: {
+        tracks: 100,
+        albums: 10,
+        artists: 5,
+        compilationAlbums: 0,
+        compilationTracks: 0,
+        soundCheckTracks: 50,
+        fileTypes: {},
+      },
+    });
+    expect(tips).toHaveLength(1);
+    expect(tips[0]!.message).toContain('Sound Check');
+    expect(tips[0]!.url).toBeDefined();
+  });
+
+  it('returns no tips for full coverage', () => {
+    const tips = collectTips({
+      stats: {
+        tracks: 100,
+        albums: 10,
+        artists: 5,
+        compilationAlbums: 0,
+        compilationTracks: 0,
+        soundCheckTracks: 100,
+        fileTypes: {},
+      },
+    });
+    expect(tips).toHaveLength(0);
+  });
+
+  it('returns no tips when no sound check data', () => {
+    const tips = collectTips({
+      stats: {
+        tracks: 100,
+        albums: 10,
+        artists: 5,
+        compilationAlbums: 0,
+        compilationTracks: 0,
+        soundCheckTracks: 0,
+        fileTypes: {},
+      },
+    });
+    expect(tips).toHaveLength(0);
   });
 });
 

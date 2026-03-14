@@ -9,6 +9,17 @@
  */
 
 import type { IAudioMetadata } from 'music-metadata';
+import type { SoundCheckSource } from '../adapters/interface.js';
+
+/**
+ * Result of extracting a soundcheck value, including the source tag format.
+ */
+export interface SoundCheckResult {
+  /** Soundcheck value (guint32) */
+  value: number;
+  /** Which tag format the value was extracted from */
+  source: SoundCheckSource;
+}
 
 /**
  * Convert a ReplayGain value (in dB) to iPod soundcheck format.
@@ -69,28 +80,28 @@ export function iTunNORMToSoundcheck(normString: string): number | null {
  * 3. ReplayGain album gain (fallback)
  *
  * @param metadata - Parsed audio metadata from music-metadata
- * @returns soundcheck value, or null if no normalization data found
+ * @returns soundcheck result with value and source, or null if no normalization data found
  */
-export function extractSoundcheck(metadata: IAudioMetadata): number | null {
+export function extractSoundcheck(metadata: IAudioMetadata): SoundCheckResult | null {
   // 1. Try iTunNORM from native tags
   const iTunNORM = findITunNORM(metadata);
   if (iTunNORM !== null) {
     const sc = iTunNORMToSoundcheck(iTunNORM);
     if (sc !== null) {
-      return sc;
+      return { value: sc, source: 'iTunNORM' };
     }
   }
 
   // 2. Try ReplayGain track gain
   const trackGain = metadata.common.replaygain_track_gain;
   if (trackGain?.dB !== undefined) {
-    return replayGainToSoundcheck(trackGain.dB);
+    return { value: replayGainToSoundcheck(trackGain.dB), source: 'replayGain_track' };
   }
 
   // 3. Try ReplayGain album gain as fallback
   const albumGain = metadata.common.replaygain_album_gain;
   if (albumGain?.dB !== undefined) {
-    return replayGainToSoundcheck(albumGain.dB);
+    return { value: replayGainToSoundcheck(albumGain.dB), source: 'replayGain_album' };
   }
 
   return null;

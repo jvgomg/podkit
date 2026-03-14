@@ -651,6 +651,7 @@ const musicSubcommand = new Command('music')
         format: t.fileType || undefined,
         bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
         soundcheck: t.soundcheck || undefined,
+        soundcheckSource: t.soundcheckSource,
       }));
 
       if (mode === 'stats') {
@@ -658,7 +659,13 @@ const musicSubcommand = new Command('music')
         if (format === 'json') {
           out.stdout(JSON.stringify(stats, null, 2));
         } else {
-          out.stdout(formatStatsText(stats, heading));
+          const sourceInfo = collectionConfig.type === 'subsonic'
+            ? { adapterType: 'subsonic', location: collectionConfig.url! }
+            : { adapterType: 'directory', location: collectionConfig.path };
+          out.stdout(formatStatsText(stats, heading, {
+            verbose: out.isVerbose,
+            source: sourceInfo,
+          }));
         }
       } else if (mode === 'albums') {
         const albums = aggregateAlbums(displayTracks);

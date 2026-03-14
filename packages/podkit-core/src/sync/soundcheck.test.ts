@@ -89,7 +89,7 @@ describe('extractSoundcheck', () => {
     expect(extractSoundcheck(metadata)).toBeNull();
   });
 
-  it('extracts from ReplayGain track gain', () => {
+  it('extracts from ReplayGain track gain with source', () => {
     const metadata = makeMetadata({
       common: {
         track: { no: null, of: null },
@@ -98,10 +98,10 @@ describe('extractSoundcheck', () => {
       },
     });
     const result = extractSoundcheck(metadata);
-    expect(result).toBe(replayGainToSoundcheck(-6));
+    expect(result).toEqual({ value: replayGainToSoundcheck(-6), source: 'replayGain_track' });
   });
 
-  it('falls back to ReplayGain album gain', () => {
+  it('falls back to ReplayGain album gain with source', () => {
     const metadata = makeMetadata({
       common: {
         track: { no: null, of: null },
@@ -110,7 +110,7 @@ describe('extractSoundcheck', () => {
       },
     });
     const result = extractSoundcheck(metadata);
-    expect(result).toBe(replayGainToSoundcheck(-4));
+    expect(result).toEqual({ value: replayGainToSoundcheck(-4), source: 'replayGain_album' });
   });
 
   it('prefers iTunNORM over ReplayGain', () => {
@@ -130,7 +130,7 @@ describe('extractSoundcheck', () => {
       },
     });
     const result = extractSoundcheck(metadata);
-    expect(result).toBe(0x0a2b); // iTunNORM value, not ReplayGain
+    expect(result).toEqual({ value: 0x0a2b, source: 'iTunNORM' });
   });
 
   it('extracts iTunNORM from MP4 tags', () => {
@@ -145,7 +145,7 @@ describe('extractSoundcheck', () => {
       },
     });
     const result = extractSoundcheck(metadata);
-    expect(result).toBe(0x600);
+    expect(result).toEqual({ value: 0x600, source: 'iTunNORM' });
   });
 
   it('prefers track gain over album gain', () => {
@@ -158,6 +158,6 @@ describe('extractSoundcheck', () => {
       },
     });
     const result = extractSoundcheck(metadata);
-    expect(result).toBe(replayGainToSoundcheck(-3));
+    expect(result).toEqual({ value: replayGainToSoundcheck(-3), source: 'replayGain_track' });
   });
 });

@@ -9,7 +9,7 @@ Sound Check is the iPod's built-in volume normalization feature. It adjusts play
 
 podkit reads existing normalization data from your source files and writes the appropriate Sound Check value to the iPod database during sync. No analysis or scanning step is required — if your files already have normalization tags, podkit will use them automatically.
 
-This works with both directory and Subsonic collections. Navidrome and other [OpenSubsonic](https://opensubsonic.netlify.app/)-compatible servers expose ReplayGain data via the API, so podkit can extract Sound Check values without needing direct file access.
+This works with both [directory](/user-guide/collections/directory/) and [Subsonic](/user-guide/collections/subsonic/) collections. Navidrome and other [OpenSubsonic](https://opensubsonic.netlify.app/)-compatible servers expose ReplayGain data via the API, so podkit can extract Sound Check values without needing direct file access.
 
 ## How It Works
 
@@ -40,6 +40,92 @@ ReplayGain values are converted using the formula: `1000 × 10^(gain_dB / −10)
 - Tracks **with** normalization data: Sound Check value is written to the iPod database
 - Tracks **without** normalization data: Sound Check is set to 0 (no adjustment)
 - The `--dry-run` output shows how many tracks have normalization data
+
+## Viewing Sound Check Values
+
+### Summary stats
+
+By default, `podkit device music` and `podkit collection music` show a stats summary. When any tracks have Sound Check data, the summary includes a coverage line showing the count and percentage:
+
+```
+Music on MYIPOD:
+  Tracks:  650
+  Albums:  42
+  Artists: 28
+  Sound Check: 620 (95%)
+```
+
+If some tracks have Sound Check data but coverage is not 100%, a tip is shown with a link back to this page:
+
+```
+Tips:
+  Some tracks are missing Sound Check data. Add normalization tags for consistent volume.
+  See: https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/
+```
+
+### Dry run output
+
+When running [`podkit sync --dry-run`](/reference/cli-commands/), the output includes a Sound Check line showing how many tracks have normalization data:
+
+```
+Changes:
+  Tracks to add: 150
+    - Transcode: 120
+    - Copy: 30
+  Already synced: 500
+
+Estimates:
+  Size: 1.2 GB
+  Time: ~12:30
+  Sound Check: 142/150 tracks have normalization data
+```
+
+### Verbose mode
+
+Use `-v` to see a breakdown of which normalization tag formats were found in a collection:
+
+```bash
+podkit collection music -v
+```
+
+```
+Music in collection 'main':
+  Source: directory (/Volumes/Music/FLAC)
+
+  Tracks:  650
+  Albums:  42
+  Artists: 28
+  Sound Check: 620 (95%)
+    iTunNORM            380
+    ReplayGain (track)  200
+    ReplayGain (album)   40
+```
+
+The source breakdown is only available for collections (not devices), since the iPod database stores only the final Sound Check value without recording which tag format it came from.
+
+The available sources depend on the adapter:
+
+| Adapter | Available sources |
+|---------|-------------------|
+| [directory](/user-guide/collections/directory/) | iTunNORM, ReplayGain (track), ReplayGain (album) |
+| [subsonic](/user-guide/collections/subsonic/) | ReplayGain (track), ReplayGain (album) |
+
+### Per-track values
+
+Use `--tracks --fields` to see individual Sound Check values:
+
+```bash
+podkit device music --tracks --fields title,artist,soundcheck
+podkit collection music --tracks --fields title,artist,soundcheck
+```
+
+Or in JSON format:
+
+```bash
+podkit device music --tracks --format json
+```
+
+Tracks without ReplayGain or iTunNORM tags will show an empty soundcheck field.
 
 ## Adding Normalization Data to Your Files
 
@@ -73,52 +159,3 @@ beet replaygain
 ### iTunes / Apple Music
 
 iTunes automatically writes iTunNORM tags when you enable Sound Check in preferences. These tags are embedded in the file and will be read by podkit.
-
-## Dry Run Output
-
-When running `podkit sync --dry-run`, the output includes a Sound Check line showing how many tracks have normalization data:
-
-```
-Changes:
-  Tracks to add: 150
-    - Transcode: 120
-    - Copy: 30
-  Already synced: 500
-
-Estimates:
-  Size: 1.2 GB
-  Time: ~12:30
-  Sound Check: 142/150 tracks have normalization data
-```
-
-## Viewing Sound Check Values
-
-### Summary stats
-
-By default, `podkit device music` and `podkit collection music` show a stats summary. When any tracks have Sound Check data, the summary includes a coverage line:
-
-```
-Music on TERAPOD:
-
-  Tracks:  650
-  Albums:  42
-  Artists: 28
-  Sound Check: 620/650 tracks
-```
-
-### Per-track values
-
-Use `--tracks --fields` to see individual Sound Check values:
-
-```bash
-podkit device music --tracks --fields title,artist,soundcheck
-podkit collection music --tracks --fields title,artist,soundcheck
-```
-
-Or in JSON format:
-
-```bash
-podkit device music --tracks --format json
-```
-
-Tracks without ReplayGain or iTunNORM tags will show an empty soundcheck field.

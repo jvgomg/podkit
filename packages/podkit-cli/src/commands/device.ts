@@ -1601,7 +1601,7 @@ const musicSubcommand = new Command('music')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading));
+            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose }));
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);
@@ -1752,7 +1752,7 @@ const videoSubcommand = new Command('video')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading));
+            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose }));
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);

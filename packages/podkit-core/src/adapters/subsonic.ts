@@ -7,7 +7,7 @@
 
 import SubsonicAPI from 'subsonic-api';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
-import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
+import type { CollectionAdapter, CollectionTrack, FileAccess, SoundCheckSource } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
 import { replayGainToSoundcheck } from '../sync/soundcheck.js';
 
@@ -105,6 +105,7 @@ function getCodec(suffix: string | undefined, contentType: string | undefined): 
  */
 export class SubsonicAdapter implements CollectionAdapter {
   readonly name = 'subsonic';
+  readonly adapterType = 'subsonic';
 
   private api: SubsonicAPI;
   private config: SubsonicAdapterConfig;
@@ -283,7 +284,10 @@ export class SubsonicAdapter implements CollectionAdapter {
 
       // Sound Check (volume normalization) from ReplayGain data
       // Prefer track gain over album gain
-      soundcheck: this.extractReplayGainSoundcheck(song.replayGain),
+      ...(() => {
+        const sc = this.extractReplayGainSoundcheck(song.replayGain);
+        return sc ? { soundcheck: sc.value, soundcheckSource: sc.source } : {};
+      })(),
     };
   }
 
@@ -296,15 +300,18 @@ export class SubsonicAdapter implements CollectionAdapter {
    */
   private extractReplayGainSoundcheck(
     replayGain: Child['replayGain'],
-  ): number | undefined {
+  ): { value: number; source: SoundCheckSource } | undefined {
     if (!replayGain) return undefined;
 
-    // Prefer track gain, fall back to album gain
-    const gainDb = replayGain.trackGain ?? replayGain.albumGain;
+    if (replayGain.trackGain !== undefined) {
+      return { value: replayGainToSoundcheck(replayGain.trackGain), source: 'replayGain_track' };
+    }
 
-    if (gainDb === undefined) return undefined;
+    if (replayGain.albumGain !== undefined) {
+      return { value: replayGainToSoundcheck(replayGain.albumGain), source: 'replayGain_album' };
+    }
 
-    return replayGainToSoundcheck(gainDb);
+    return undefined;
   }
 
   /**

@@ -116,6 +116,7 @@ function isLosslessCodec(codec: string | undefined, fileType: AudioFileType): bo
  */
 export class DirectoryAdapter implements CollectionAdapter {
   readonly name = 'directory';
+  readonly adapterType = 'directory';
 
   private rootPath: string;
   private extensions: string[];
@@ -233,6 +234,9 @@ export class DirectoryAdapter implements CollectionAdapter {
       bitrate = Math.round(format.bitrate / 1000);
     }
 
+    // Volume normalization
+    const scResult = extractSoundcheck(metadata);
+
     // Build track object
     const track: CollectionTrack = {
       // Use file path as unique ID
@@ -262,7 +266,8 @@ export class DirectoryAdapter implements CollectionAdapter {
       bitrate,
 
       // Volume normalization
-      soundcheck: extractSoundcheck(metadata) ?? undefined,
+      soundcheck: scResult?.value,
+      soundcheckSource: scResult?.source,
 
       // External identifiers
       musicBrainzRecordingId: common.musicbrainz_recordingid,

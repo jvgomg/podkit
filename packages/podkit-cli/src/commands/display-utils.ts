@@ -5,6 +5,8 @@
  * of track tables, JSON, and CSV exports.
  */
 
+import type { SoundCheckSource } from '@podkit/core';
+
 // =============================================================================
 // Types and Constants
 // =============================================================================
@@ -29,6 +31,7 @@ export interface DisplayTrack {
   format?: string;
   bitrate?: number;
   soundcheck?: number;
+  soundcheckSource?: SoundCheckSource;
 }
 
 /**
@@ -352,6 +355,7 @@ export interface ContentStats {
   compilationAlbums: number;
   compilationTracks: number;
   soundCheckTracks: number;
+  soundCheckSources?: Record<SoundCheckSource, number>;
   fileTypes: Record<string, number>;
 }
 
@@ -362,6 +366,7 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
   const albums = new Set<string>();
   const artists = new Set<string>();
   const fileTypes: Record<string, number> = {};
+  const soundCheckSources: Record<string, number> = {};
   const compilationAlbumSet = new Set<string>();
   let compilationTracks = 0;
   let soundCheckTracks = 0;
@@ -379,6 +384,10 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
 
     if (track.soundcheck !== undefined && track.soundcheck > 0) {
       soundCheckTracks++;
+      if (track.soundcheckSource) {
+        soundCheckSources[track.soundcheckSource] =
+          (soundCheckSources[track.soundcheckSource] || 0) + 1;
+      }
     }
 
     if (track.format) {
@@ -393,17 +402,90 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
     compilationAlbums: compilationAlbumSet.size,
     compilationTracks,
     soundCheckTracks,
+    soundCheckSources: Object.keys(soundCheckSources).length > 0
+      ? (soundCheckSources as Record<SoundCheckSource, number>)
+      : undefined,
     fileTypes,
   };
 }
+
+// =============================================================================
+// Tips (actionable insights shown after stats)
+// =============================================================================
+
+export interface Tip {
+  message: string;
+  url?: string;
+}
+
+export interface TipDefinition {
+  evaluate: (context: TipContext) => Tip | null;
+}
+
+export interface TipContext {
+  stats: ContentStats;
+}
+
+const SOUND_CHECK_TIP: TipDefinition = {
+  evaluate: ({ stats }) => {
+    if (stats.soundCheckTracks > 0 && stats.soundCheckTracks < stats.tracks) {
+      return {
+        message:
+          'Some tracks are missing Sound Check data. Add normalization tags for consistent volume.',
+        url: 'https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/',
+      };
+    }
+    return null;
+  },
+};
+
+const ALL_TIPS: TipDefinition[] = [SOUND_CHECK_TIP];
+
+export function collectTips(context: TipContext): Tip[] {
+  const tips: Tip[] = [];
+  for (const def of ALL_TIPS) {
+    const tip = def.evaluate(context);
+    if (tip) tips.push(tip);
+  }
+  return tips;
+}
+
+// =============================================================================
+// Stats formatting
+// =============================================================================
+
+export interface StatsFormatOptions {
+  verbose?: boolean;
+  source?: {
+    adapterType: string;
+    location: string;
+  };
+}
+
+const SOUND_CHECK_SOURCE_LABELS: Record<SoundCheckSource, string> = {
+  iTunNORM: 'iTunNORM',
+  replayGain_track: 'ReplayGain (track)',
+  replayGain_album: 'ReplayGain (album)',
+};
 
 /**
  * Format stats as human-readable text.
  * @param stats - computed stats
  * @param heading - heading line (e.g., "Music on TERAPOD:")
+ * @param options - optional verbose and source info
  */
-export function formatStatsText(stats: ContentStats, heading: string): string {
-  const lines: string[] = [heading, ''];
+export function formatStatsText(
+  stats: ContentStats,
+  heading: string,
+  options?: StatsFormatOptions,
+): string {
+  const lines: string[] = [heading];
+
+  if (options?.verbose && options?.source) {
+    lines.push(`  Source: ${options.source.adapterType} (${options.source.location})`);
+  }
+
+  lines.push('');
 
   const trackLabel = formatNumber(stats.tracks);
   const albumLabel = formatNumber(stats.albums);
@@ -421,8 +503,19 @@ export function formatStatsText(stats: ContentStats, heading: string): string {
 
   if (stats.soundCheckTracks > 0) {
     const scTracks = formatNumber(stats.soundCheckTracks);
-    const totalTracks = formatNumber(stats.tracks);
-    lines.push(`  Sound Check: ${scTracks}/${totalTracks} tracks`);
+    const pct = Math.floor((stats.soundCheckTracks / stats.tracks) * 100);
+    lines.push(`  Sound Check: ${scTracks} (${pct}%)`);
+
+    if (options?.verbose && stats.soundCheckSources) {
+      const entries = Object.entries(stats.soundCheckSources).sort((a, b) => b[1] - a[1]);
+      const maxLabelLen = Math.max(
+        ...entries.map(([k]) => SOUND_CHECK_SOURCE_LABELS[k as SoundCheckSource].length),
+      );
+      for (const [source, count] of entries) {
+        const label = SOUND_CHECK_SOURCE_LABELS[source as SoundCheckSource];
+        lines.push(`    ${label.padEnd(maxLabelLen)}  ${formatNumber(count)}`);
+      }
+    }
   }
 
   const typeEntries = Object.entries(stats.fileTypes).sort((a, b) => b[1] - a[1]);
@@ -432,6 +525,18 @@ export function formatStatsText(stats: ContentStats, heading: string): string {
     const maxTypeLen = Math.max(...typeEntries.map(([t]) => t.length));
     for (const [type, count] of typeEntries) {
       lines.push(`    ${type.padEnd(maxTypeLen)}  ${formatNumber(count)}`);
+    }
+  }
+
+  const tips = collectTips({ stats });
+  if (tips.length > 0) {
+    lines.push('');
+    lines.push('Tips:');
+    for (const tip of tips) {
+      lines.push(`  ${tip.message}`);
+      if (tip.url) {
+        lines.push(`  See: ${tip.url}`);
+      }
     }
   }
 

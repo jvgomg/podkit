@@ -19,6 +19,7 @@ export type {
   AdapterConfig,
   DirectoryAdapterConfig as AdapterDirectoryConfig,
   SubsonicAdapterConfig as AdapterSubsonicConfig,
+  SoundCheckSource,
 } from './adapters/interface.js';
 
 export { DirectoryAdapter, createDirectoryAdapter } from './adapters/directory.js';
@@ -404,6 +405,7 @@ export {
 } from './device/index.js';
 
 // Sound Check (volume normalization)
+export type { SoundCheckResult } from './sync/soundcheck.js';
 export {
   replayGainToSoundcheck,
   iTunNORMToSoundcheck,
