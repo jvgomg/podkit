@@ -17,15 +17,7 @@ import { join } from 'node:path';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  error?: string;
-  plan?: {
-    tracksToAdd: number;
-  };
-}
+import type { SyncOutput } from 'podkit/types';
 
 // Track temp directories for cleanup
 let tempDirs: string[] = [];

@@ -19,25 +19,7 @@ import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  plan?: {
-    tracksToAdd: number;
-    tracksToRemove: number;
-    tracksToTranscode: number;
-    tracksToCopy: number;
-    tracksWithConflicts: number;
-  };
-  result?: {
-    completed: number;
-    failed: number;
-  };
-}
+import type { SyncOutput } from 'podkit/types';
 
 interface DeviceTrack {
   title: string;

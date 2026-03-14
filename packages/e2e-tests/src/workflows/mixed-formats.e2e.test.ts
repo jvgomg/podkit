@@ -8,67 +8,12 @@
  */
 
 import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runCli, runCliJson } from '../helpers/cli-runner';
+import { runCli, runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
-
-interface WarningInfo {
-  type: string;
-  message: string;
-  trackCount: number;
-  tracks?: string[];
-}
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  source?: string;
-  device?: string;
-  plan?: {
-    tracksToAdd: number;
-    tracksToRemove: number;
-    tracksToTranscode: number;
-    tracksToCopy: number;
-    estimatedSize: number;
-    estimatedTime: number;
-  };
-  operations?: Array<{
-    type: 'transcode' | 'copy' | 'remove' | 'update-metadata';
-    track: string;
-    status?: 'pending' | 'completed' | 'failed' | 'skipped';
-    error?: string;
-  }>;
-  result?: {
-    completed: number;
-    failed: number;
-    skipped: number;
-    bytesTransferred: number;
-    duration: number;
-  };
-  planWarnings?: WarningInfo[];
-  error?: string;
-}
-
-/**
- * Create a temp config file with the given music collection path
- */
-async function createTempConfig(musicPath: string): Promise<string> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'podkit-mixed-formats-config-'));
-  const configPath = join(tempDir, 'config.toml');
-
-  const content = `[music.main]
-path = "${musicPath}"
-
-[defaults]
-music = "main"
-`;
-
-  await writeFile(configPath, content);
-  return configPath;
-}
+import type { SyncOutput } from 'podkit/types';
 
 // Track temp config paths for cleanup
 let tempConfigPaths: string[] = [];

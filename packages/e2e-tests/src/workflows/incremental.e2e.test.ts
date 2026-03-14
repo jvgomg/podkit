@@ -11,40 +11,13 @@
  */
 
 import { describe, it, expect, beforeAll } from 'bun:test';
-import { mkdtemp, rm, symlink, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, symlink, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCliJson } from '../helpers/cli-runner';
+import { runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, Albums, getAlbumTracks } from '../helpers/fixtures';
-
-interface SyncOutput {
-  success: boolean;
-  plan?: {
-    tracksToAdd: number;
-  };
-  result?: {
-    completed: number;
-  };
-}
-
-/**
- * Create a temp config file with the given music collection path
- */
-async function createTempConfig(musicPath: string): Promise<string> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'podkit-incremental-config-'));
-  const configPath = join(tempDir, 'config.toml');
-
-  const content = `[music.main]
-path = "${musicPath}"
-
-[defaults]
-music = "main"
-`;
-
-  await writeFile(configPath, content);
-  return configPath;
-}
+import type { SyncOutput } from 'podkit/types';
 
 describe('workflow: incremental sync', () => {
   let fixturesAvailable: boolean;

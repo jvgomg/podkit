@@ -7,6 +7,10 @@
   },
   "main": "./dist/main.js",
   "types": "./dist/main.d.ts",
+  "exports": {
+    ".": "./dist/main.js",
+    "./types": "./src/types.ts"
+  },
   "files": [
     "dist",
     "bin"

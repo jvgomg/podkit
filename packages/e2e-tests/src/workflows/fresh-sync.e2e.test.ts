@@ -10,37 +10,12 @@
  */
 
 import { describe, it, expect, beforeAll } from 'bun:test';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCli, runCliJson } from '../helpers/cli-runner';
+import { rm } from 'node:fs/promises';
+import { runCli, runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
-
-interface SyncOutput {
-  success: boolean;
-  result?: {
-    completed: number;
-  };
-}
-
-/**
- * Create a temp config file with the given music collection path
- */
-async function createTempConfig(musicPath: string): Promise<string> {
-  const tempDir = await mkdtemp(join(tmpdir(), 'podkit-fresh-sync-config-'));
-  const configPath = join(tempDir, 'config.toml');
-
-  const content = `[music.main]
-path = "${musicPath}"
-
-[defaults]
-music = "main"
-`;
-
-  await writeFile(configPath, content);
-  return configPath;
-}
+import type { SyncOutput } from 'podkit/types';
 
 describe('workflow: fresh sync', () => {
   let fixturesAvailable: boolean;

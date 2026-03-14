@@ -93,7 +93,7 @@ interface SyncOptions {
 /**
  * Categorized error info for JSON output
  */
-interface ErrorInfo {
+export interface ErrorInfo {
   track: string;
   category: string;
   message: string;
@@ -105,7 +105,7 @@ interface ErrorInfo {
 /**
  * Warning info for JSON output (plan warnings like lossy-to-lossy)
  */
-interface PlanWarningInfo {
+export interface PlanWarningInfo {
   type: string;
   message: string;
   trackCount: number;
@@ -115,7 +115,7 @@ interface PlanWarningInfo {
 /**
  * Execution warning info for JSON output (artwork, metadata issues during sync)
  */
-interface ExecutionWarningInfo {
+export interface ExecutionWarningInfo {
   type: string;
   track: string;
   message: string;
@@ -124,7 +124,7 @@ interface ExecutionWarningInfo {
 /**
  * Scan warning info for JSON output (file parsing issues)
  */
-interface ScanWarningInfo {
+export interface ScanWarningInfo {
   file: string;
   message: string;
 }
@@ -132,7 +132,7 @@ interface ScanWarningInfo {
 /**
  * Transform info for JSON output
  */
-interface TransformInfo {
+export interface TransformInfo {
   name: string;
   enabled: boolean;
   mode?: string;
@@ -142,7 +142,7 @@ interface TransformInfo {
 /**
  * Update breakdown by reason for JSON output
  */
-interface UpdateBreakdown {
+export interface UpdateBreakdown {
   'transform-apply'?: number;
   'transform-remove'?: number;
   'metadata-changed'?: number;
@@ -151,7 +151,7 @@ interface UpdateBreakdown {
 /**
  * Conflict info for JSON output - tracks that match but have metadata differences
  */
-interface ConflictInfo {
+export interface ConflictInfo {
   track: string;
   fields: string[];
   details: Array<{
@@ -164,7 +164,7 @@ interface ConflictInfo {
 /**
  * JSON output structure for sync command
  */
-interface SyncOutput {
+export interface SyncOutput {
   success: boolean;
   dryRun: boolean;
   source?: string;

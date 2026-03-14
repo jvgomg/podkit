@@ -20,42 +20,7 @@ import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  transforms?: Array<{
-    name: string;
-    enabled: boolean;
-    mode?: string;
-    format?: string;
-  }>;
-  plan?: {
-    tracksToAdd: number;
-    tracksToRemove: number;
-    tracksToUpdate: number;
-    updateBreakdown?: {
-      'transform-apply'?: number;
-      'transform-remove'?: number;
-      'metadata-changed'?: number;
-    };
-    tracksToTranscode: number;
-    tracksToCopy: number;
-  };
-  operations?: Array<{
-    type: 'transcode' | 'copy' | 'remove' | 'update-metadata';
-    track: string;
-    status?: string;
-    changes?: Array<{ field: string; from: string; to: string }>;
-  }>;
-  result?: {
-    completed: number;
-    failed: number;
-  };
-}
+import type { SyncOutput } from 'podkit/types';
 
 interface ListTrack {
   title: string;

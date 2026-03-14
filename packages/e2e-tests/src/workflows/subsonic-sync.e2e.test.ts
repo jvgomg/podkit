@@ -23,25 +23,7 @@ import {
 } from '../helpers/cli-runner.js';
 import { SubsonicTestSource, isDockerAvailable } from '../sources/index.js';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  plan?: {
-    tracksToAdd: number;
-    tracksToRemove: number;
-    tracksToTranscode: number;
-    tracksToCopy: number;
-  };
-  result?: {
-    completed: number;
-    failed: number;
-  };
-  error?: string;
-}
+import type { SyncOutput } from 'podkit/types';
 
 // =============================================================================
 // Test Setup

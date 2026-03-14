@@ -24,24 +24,7 @@ import { isDockerAvailable } from '../sources/index.js';
 import { startContainer, stopContainer } from '../docker/index.js';
 import { areFixturesAvailable, getTrackPath, Tracks } from '../helpers/fixtures.js';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-interface SyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  plan?: {
-    tracksToAdd: number;
-    tracksToRemove: number;
-    tracksToTranscode: number;
-    tracksToCopy: number;
-  };
-  result?: {
-    completed: number;
-    failed: number;
-  };
-}
+import type { SyncOutput } from 'podkit/types';
 
 interface DeviceTrack {
   title: string;

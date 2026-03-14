@@ -7,6 +7,8 @@ export {
   runCliJson,
   isCliAvailable,
   getCliPath,
+  createTempConfig,
+  cleanupTempConfig,
   type CliResult,
   type CliOptions,
   type CliJsonResult,
