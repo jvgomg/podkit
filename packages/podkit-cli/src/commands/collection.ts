@@ -645,6 +645,7 @@ const musicSubcommand = new Command('music')
         compilation: t.compilation,
         format: t.fileType || undefined,
         bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
+        soundcheck: t.soundcheck || undefined,
       }));
 
       if (mode === 'stats') {

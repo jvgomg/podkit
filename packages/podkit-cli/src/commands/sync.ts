@@ -181,6 +181,7 @@ interface SyncOutput {
     tracksWithConflicts: number;
     estimatedSize: number;
     estimatedTime: number;
+    soundCheckTracks?: number;
   };
   conflictDetails?: ConflictInfo[];
   operations?: Array<{
@@ -877,6 +878,13 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
         out.print('  WARNING: May not have enough space!');
       }
     }
+    // Sound Check stats
+    if (diff.toAdd.length > 0) {
+      const withSoundcheck = diff.toAdd.filter((t) => t.soundcheck !== undefined).length;
+      out.print(
+        `  Sound Check: ${formatNumber(withSoundcheck)}/${formatNumber(diff.toAdd.length)} tracks have normalization data`
+      );
+    }
     out.newline();
 
     // Transform preview
@@ -958,6 +966,10 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
       tracksWithConflicts: diff.conflicts.length,
       estimatedSize: plan.estimatedSize,
       estimatedTime: plan.estimatedTime,
+      soundCheckTracks:
+        diff.toAdd.length > 0
+          ? diff.toAdd.filter((t) => t.soundcheck !== undefined).length
+          : undefined,
     },
     operations,
     conflictDetails: conflictDetails.length > 0 ? conflictDetails : undefined,

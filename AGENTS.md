@@ -109,6 +109,7 @@ Read these documents based on what you're working on:
 | iPod internals | [docs/devices/ipod-internals.md](docs/devices/ipod-internals.md) |
 | Troubleshooting | [docs/troubleshooting/](docs/troubleshooting/) |
 | Compilation albums | [docs/user-guide/syncing/compilation-albums.md](docs/user-guide/syncing/compilation-albums.md) |
+| Sound Check | [docs/user-guide/syncing/sound-check.md](docs/user-guide/syncing/sound-check.md) |
 | Transforms | [docs/user-guide/transforms.md](docs/user-guide/transforms.md) |
 | Demo GIF package | [packages/demo/README.md](packages/demo/README.md) |
 | Package READMEs | `packages/*/README.md` |

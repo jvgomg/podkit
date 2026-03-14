@@ -28,6 +28,7 @@ export interface DisplayTrack {
   compilation?: boolean;
   format?: string;
   bitrate?: number;
+  soundcheck?: number;
 }
 
 /**
@@ -48,6 +49,7 @@ export const AVAILABLE_FIELDS = [
   'compilation',
   'format',
   'bitrate',
+  'soundcheck',
 ] as const;
 
 export type FieldName = (typeof AVAILABLE_FIELDS)[number];
@@ -75,6 +77,7 @@ export const FIELD_HEADERS: Record<FieldName, string> = {
   compilation: 'Comp',
   format: 'Format',
   bitrate: 'Bitrate',
+  soundcheck: 'SndChk',
 };
 
 /**
@@ -95,6 +98,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
   compilation: 4,
   format: 8,
   bitrate: 7,
+  soundcheck: 10,
 };
 
 // =============================================================================
@@ -182,6 +186,8 @@ export function getFieldValue(track: DisplayTrack, field: FieldName): string {
       return track.format || '';
     case 'bitrate':
       return track.bitrate ? `${track.bitrate}` : '';
+    case 'soundcheck':
+      return track.soundcheck ? `${track.soundcheck}` : '';
     default:
       return '';
   }

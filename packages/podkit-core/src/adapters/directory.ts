@@ -10,6 +10,7 @@ import * as mm from 'music-metadata';
 import { extname, basename, resolve } from 'node:path';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { AudioFileType, TrackFilter } from '../types.js';
+import { extractSoundcheck } from '../sync/soundcheck.js';
 
 /**
  * Warning emitted during directory scanning
@@ -259,6 +260,9 @@ export class DirectoryAdapter implements CollectionAdapter {
       codec,
       lossless,
       bitrate,
+
+      // Volume normalization
+      soundcheck: extractSoundcheck(metadata) ?? undefined,
 
       // External identifiers
       musicBrainzRecordingId: common.musicbrainz_recordingid,

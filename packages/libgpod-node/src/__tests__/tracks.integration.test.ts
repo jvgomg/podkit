@@ -738,3 +738,81 @@ describe('libgpod-node track lookup by dbid (getTrackByDbId)', () => {
     });
   });
 });
+
+// Tests for soundcheck (Sound Check / volume normalization)
+describe('libgpod-node soundcheck field', () => {
+  it('stores soundcheck value on addTrack', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
+
+      const handle = db.addTrack({
+        title: 'Soundcheck Test',
+        artist: 'Test Artist',
+        soundcheck: 2603,
+      });
+
+      const track = db.getTrack(handle);
+      expect(track.soundcheck).toBe(2603);
+
+      db.close();
+    });
+  });
+
+  it('defaults soundcheck to 0 when not provided', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
+
+      const handle = db.addTrack({ title: 'No Soundcheck' });
+
+      const track = db.getTrack(handle);
+      expect(track.soundcheck).toBe(0);
+
+      db.close();
+    });
+  });
+
+  it('updates soundcheck via updateTrack', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
+
+      const handle = db.addTrack({
+        title: 'Update Soundcheck',
+        soundcheck: 1000,
+      });
+
+      const updated = db.updateTrack(handle, { soundcheck: 5623 });
+      expect(updated.soundcheck).toBe(5623);
+
+      // Verify via getTrack too
+      const track = db.getTrack(handle);
+      expect(track.soundcheck).toBe(5623);
+
+      db.close();
+    });
+  });
+
+  it('soundcheck persists after save and reopen', async () => {
+    await withTestIpod(async (ipod) => {
+      const db = Database.openSync(ipod.path);
+
+      db.addTrack({
+        title: 'Persist Soundcheck',
+        soundcheck: 3981,
+      });
+
+      db.saveSync();
+      db.close();
+
+      // Reopen and verify
+      const db2 = Database.openSync(ipod.path);
+      const handles = db2.getTracks();
+      expect(handles).toHaveLength(1);
+
+      const track = db2.getTrack(handles[0]!);
+      expect(track.title).toBe('Persist Soundcheck');
+      expect(track.soundcheck).toBe(3981);
+
+      db2.close();
+    });
+  });
+});

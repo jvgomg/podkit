@@ -264,6 +264,8 @@ export interface Track {
   size: number;
   /** Beats per minute */
   bpm: number;
+  /** Sound Check volume normalization value */
+  soundcheck: number;
 
   // File type
   /** File type description (e.g., "MPEG audio file") */
@@ -363,6 +365,8 @@ export interface TrackInput {
   size?: number;
   /** BPM */
   bpm?: number;
+  /** Sound Check volume normalization value */
+  soundcheck?: number;
 
   /** File type description */
   filetype?: string;

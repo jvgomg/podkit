@@ -325,6 +325,7 @@ function toTrackInput(track: CollectionTrack): TrackInput {
     discNumber: track.discNumber,
     compilation: track.compilation,
     duration: track.duration,
+    soundcheck: track.soundcheck,
   };
 }
 

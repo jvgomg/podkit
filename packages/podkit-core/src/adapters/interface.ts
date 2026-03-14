@@ -64,6 +64,13 @@ export interface CollectionTrack {
    */
   bitrate?: number;
 
+  // Volume normalization
+  /**
+   * Sound Check value for volume normalization.
+   * Extracted from ReplayGain or iTunNORM tags.
+   */
+  soundcheck?: number;
+
   // Identifiers (optional, for advanced matching)
   musicBrainzRecordingId?: string;
   musicBrainzReleaseId?: string;

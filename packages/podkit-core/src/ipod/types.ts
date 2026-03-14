@@ -67,6 +67,8 @@ export interface TrackInput {
   size?: number;
   /** Beats per minute */
   bpm?: number;
+  /** Sound Check volume normalization value */
+  soundcheck?: number;
   /** File type description (e.g., "MPEG audio file", "AAC audio file") */
   filetype?: string;
   /** Media type flags (use MediaType constants) */
@@ -146,6 +148,8 @@ export interface TrackFields {
   year?: number;
   /** Beats per minute */
   bpm?: number;
+  /** Sound Check volume normalization value */
+  soundcheck?: number;
   /** Media type flags */
   mediaType?: number;
   /** Whether the track is part of a compilation */
@@ -243,6 +247,8 @@ export interface IPodTrack {
   readonly size: number;
   /** Beats per minute */
   readonly bpm?: number;
+  /** Sound Check volume normalization value */
+  readonly soundcheck?: number;
   /** File type description (e.g., "MPEG audio file", "AAC audio file") */
   readonly filetype?: string;
   /** Media type flags */

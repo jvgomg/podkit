@@ -120,6 +120,7 @@ export class IpodTrackImpl implements IPodTrack {
   readonly sampleRate: number;
   readonly size: number;
   readonly bpm?: number;
+  readonly soundcheck?: number;
   readonly filetype?: string;
   readonly mediaType: number;
   readonly filePath: string;
@@ -176,6 +177,7 @@ export class IpodTrackImpl implements IPodTrack {
     this.sampleRate = data.sampleRate ?? 0;
     this.size = data.size ?? 0;
     this.bpm = data.bpm || undefined;
+    this.soundcheck = data.soundcheck || undefined;
     this.filetype = data.filetype ?? undefined;
     this.mediaType = data.mediaType ?? 0;
 

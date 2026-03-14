@@ -397,6 +397,7 @@ function ipodTrackToFullJson(t: {
   sortTvShow?: string;
   seasonNumber?: number;
   episodeNumber?: number;
+  soundcheck?: number;
   movieFlag?: boolean;
 }): Record<string, unknown> {
   return {
@@ -435,6 +436,7 @@ function ipodTrackToFullJson(t: {
     sortTvShow: t.sortTvShow || null,
     seasonNumber: t.seasonNumber || null,
     episodeNumber: t.episodeNumber || null,
+    soundcheck: t.soundcheck || null,
     movieFlag: t.movieFlag || null,
   };
 }
@@ -1586,6 +1588,7 @@ const musicSubcommand = new Command('music')
           compilation: t.compilation,
           format: parseFormat(t.filetype),
           bitrate: t.bitrate > 0 ? t.bitrate : undefined,
+          soundcheck: t.soundcheck || undefined,
         }));
 
         if (mode === 'stats') {

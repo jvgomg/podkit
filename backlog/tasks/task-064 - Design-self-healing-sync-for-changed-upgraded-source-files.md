@@ -4,6 +4,7 @@ title: Design self-healing sync for changed/upgraded source files
 status: To Do
 assignee: []
 created_date: '2026-02-26 14:38'
+updated_date: '2026-03-14 02:42'
 labels:
   - design
   - sync
@@ -101,3 +102,13 @@ Design document / ADR covering:
 - [ ] #4 CLI/config options designed
 - [ ] #5 ADR documenting the approach
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+### Sound Check / volume normalization
+
+With TASK-133 (Sound Check support), tracks now carry a `soundcheck` value extracted from ReplayGain/iTunNORM tags. If a user adds normalization data to files that are already synced (e.g., runs `loudgain` on their collection), the soundcheck value won't be updated on the iPod because the diff engine only matches on core metadata (title/artist/album). The track would need to be removed and re-added.
+
+This is a candidate for the "meaningful change" criteria — a soundcheck value appearing (or changing) on a source track that's already synced could trigger an in-place metadata update without replacing the audio file, since soundcheck is just a database field, not part of the audio data.
+<!-- SECTION:NOTES:END -->

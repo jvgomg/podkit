@@ -74,6 +74,7 @@ Napi::Value DatabaseWrapper::AddTrack(const Napi::CallbackInfo& info) {
     track->samplerate = static_cast<guint16>(GetOptionalInt32(input, "sampleRate", 0));
     track->size = GetOptionalInt32(input, "size", 0);
     track->BPM = static_cast<gint16>(GetOptionalInt32(input, "bpm", 0));
+    track->soundcheck = static_cast<guint32>(GetOptionalInt32(input, "soundcheck", 0));
 
     track->filetype = GetOptionalString(input, "filetype");
     track->mediatype = GetOptionalInt32(input, "mediaType", ITDB_MEDIATYPE_AUDIO);
@@ -318,6 +319,9 @@ Napi::Value DatabaseWrapper::UpdateTrack(const Napi::CallbackInfo& info) {
     }
     if (fields.Has("bpm") && fields.Get("bpm").IsNumber()) {
         track->BPM = static_cast<gint16>(fields.Get("bpm").As<Napi::Number>().Int32Value());
+    }
+    if (fields.Has("soundcheck") && fields.Get("soundcheck").IsNumber()) {
+        track->soundcheck = fields.Get("soundcheck").As<Napi::Number>().Uint32Value();
     }
     if (fields.Has("rating") && fields.Get("rating").IsNumber()) {
         track->rating = fields.Get("rating").As<Napi::Number>().Uint32Value();

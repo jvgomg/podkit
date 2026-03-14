@@ -403,5 +403,12 @@ export {
   isPlatformSupported,
 } from './device/index.js';
 
+// Sound Check (volume normalization)
+export {
+  replayGainToSoundcheck,
+  iTunNORMToSoundcheck,
+  extractSoundcheck,
+} from './sync/soundcheck.js';
+
 // Stream utilities (for remote sources)
 export { streamToTempFile, cleanupTempFile } from './utils/stream.js';

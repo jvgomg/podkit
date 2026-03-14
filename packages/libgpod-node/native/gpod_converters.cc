@@ -151,6 +151,7 @@ Napi::Object TrackToObject(Napi::Env env, const Itdb_Track* track) {
     obj.Set("sampleRate", Napi::Number::New(env, track->samplerate));
     obj.Set("size", Napi::Number::New(env, track->size));
     obj.Set("bpm", Napi::Number::New(env, track->BPM));
+    obj.Set("soundcheck", Napi::Number::New(env, track->soundcheck));
 
     // File type
     obj.Set("filetype", GcharToValue(env, track->filetype));

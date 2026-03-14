@@ -40,6 +40,7 @@ function createMockTrack(overrides: Partial<Track> = {}): Track {
     sampleRate: 44100,
     size: 5000000,
     bpm: 120,
+    soundcheck: 0,
     filetype: 'MPEG audio file',
     mediaType: 0x0001, // Audio
     ipodPath: ':iPod_Control:Music:F00:TEST.mp3',
