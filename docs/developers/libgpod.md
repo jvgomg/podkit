@@ -13,7 +13,7 @@ libgpod is a C library for reading and writing the iTunes database (iTunesDB) on
 
 | Attribute | Value |
 |-----------|-------|
-| **Repository** | https://github.com/libgpod/libgpod |
+| **Repository** | https://github.com/fadingred/libgpod |
 | **Language** | C (with GLib) |
 | **License** | LGPL-2.1 |
 | **Current Version** | 0.8.3 |

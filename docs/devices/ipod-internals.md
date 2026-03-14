@@ -264,10 +264,6 @@ For the complete device compatibility list, see [Supported Devices](/devices/sup
 | iPod Nano 6th/7th | Different database format (not iTunesDB) |
 | iPod Shuffle 3rd/4th | Buttonless design; requires iTunes authentication hash |
 
-### Rockbox Compatibility
-
-iPods running [Rockbox](https://www.rockbox.org/) firmware use a different database format. However, Rockbox can also play files directly from the filesystem without a database, so tracks synced via libgpod will still be playable.
-
 ## Troubleshooting
 
 ### Database Corruption
@@ -300,9 +296,8 @@ sudo fsck.vfat -a /dev/sdX1
 
 ## References
 
-- [iPod Database Specification (archived)](https://web.archive.org/web/20110514113255/http://ipl.derpapst.org/wiki/ITunesDB)
-- [libgpod Source Code](https://github.com/libgpod/libgpod)
-- [Rockbox iPod Port](https://www.rockbox.org/wiki/IpodPort)
+- [iPod Database Specification (iPodLinux wiki)](https://web.archive.org/web/20100328043222/http://ipodlinux.org/wiki/ITunesDB)
+- [libgpod Source Code](https://github.com/fadingred/libgpod)
 
 ## See Also
 

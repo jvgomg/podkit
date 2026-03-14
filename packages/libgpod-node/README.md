@@ -1,6 +1,6 @@
 # @podkit/libgpod-node
 
-Native Node.js bindings for [libgpod](https://github.com/libgpod/libgpod), the C library for reading and writing iPod databases.
+Native Node.js bindings for [libgpod](https://github.com/fadingred/libgpod), the C library for reading and writing iPod databases.
 
 ## Overview
 
