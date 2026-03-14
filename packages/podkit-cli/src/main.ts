@@ -27,7 +27,7 @@ const program = new Command();
 
 program
   .name('podkit')
-  .description('Sync music collections to iPod devices')
+  .description('Modern sync for classic iPods')
   .version(version)
   .option('-v, --verbose', 'increase verbosity (stackable: -v, -vv, -vvv)', increaseVerbosity, 0)
   .option('-q, --quiet', 'suppress non-essential output')
