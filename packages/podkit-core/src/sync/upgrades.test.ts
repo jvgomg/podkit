@@ -13,6 +13,7 @@ import {
   detectUpgrades,
   isFileReplacementUpgrade,
   detectPresetChange,
+  detectBitratePresetMismatch,
 } from './upgrades.js';
 import { computeDiff } from './differ.js';
 import type { CollectionTrack } from '../adapters/interface.js';
@@ -1400,7 +1401,65 @@ describe('computeDiff with upgrades', () => {
 });
 
 // =============================================================================
-// detectPresetChange
+// detectBitratePresetMismatch (shared between audio and video)
+// =============================================================================
+
+describe('detectBitratePresetMismatch', () => {
+  it('returns preset-upgrade when bitrate is below target minus tolerance', () => {
+    expect(detectBitratePresetMismatch(128, 256)).toBe('preset-upgrade');
+  });
+
+  it('returns preset-downgrade when bitrate is above target plus tolerance', () => {
+    expect(detectBitratePresetMismatch(400, 256)).toBe('preset-downgrade');
+  });
+
+  it('returns null when bitrate is within tolerance', () => {
+    expect(detectBitratePresetMismatch(260, 256)).toBeNull();
+  });
+
+  it('returns null when bitrate is undefined', () => {
+    expect(detectBitratePresetMismatch(undefined, 256)).toBeNull();
+  });
+
+  it('returns null when bitrate is zero', () => {
+    expect(detectBitratePresetMismatch(0, 256)).toBeNull();
+  });
+
+  it('returns null when bitrate is below minimum threshold', () => {
+    expect(detectBitratePresetMismatch(17, 256)).toBeNull();
+  });
+
+  it('respects custom tolerance', () => {
+    // 230 is within default tolerance of 256 (diff=26 < 50)
+    expect(detectBitratePresetMismatch(230, 256)).toBeNull();
+    // But not within tolerance of 20
+    expect(detectBitratePresetMismatch(230, 256, 20)).toBe('preset-upgrade');
+  });
+
+  it('respects custom minBitrate', () => {
+    // 50 is below default min of 64
+    expect(detectBitratePresetMismatch(50, 256)).toBeNull();
+    // But above custom min of 30
+    expect(detectBitratePresetMismatch(50, 256, 50, 30)).toBe('preset-upgrade');
+  });
+
+  it('works for video bitrate ranges (iPod Classic)', () => {
+    // iPod Classic: low=1096, medium=1628, high=2128, max=2660
+    expect(detectBitratePresetMismatch(1096, 2128)).toBe('preset-upgrade');
+    expect(detectBitratePresetMismatch(2660, 1096)).toBe('preset-downgrade');
+    expect(detectBitratePresetMismatch(2128, 2128)).toBeNull();
+  });
+
+  it('works for video bitrate ranges (iPod Video 5G)', () => {
+    // iPod Video 5G: low=396, medium=496, high=728, max=896
+    expect(detectBitratePresetMismatch(396, 728)).toBe('preset-upgrade');
+    expect(detectBitratePresetMismatch(896, 396)).toBe('preset-downgrade');
+    expect(detectBitratePresetMismatch(728, 728)).toBeNull();
+  });
+});
+
+// =============================================================================
+// detectPresetChange (audio-specific wrapper)
 // =============================================================================
 
 describe('detectPresetChange', () => {

@@ -355,39 +355,75 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
   );
 }
 
+// =============================================================================
+// Preset Change Detection (shared between audio and video)
+// =============================================================================
+
 /**
- * Tolerance for VBR variance when comparing iPod bitrate to preset target (kbps).
+ * Default tolerance for comparing iPod bitrate against preset target (kbps).
  *
- * VBR encoding produces content-dependent bitrates. Empirically measured ranges
- * for aac_at on diverse music (electronic, rock, indie):
+ * Audio VBR encoding produces content-dependent bitrates. Empirically measured
+ * ranges for aac_at on diverse music (electronic, rock, indie):
  *   low  (target 128): 111-161 kbps (spread ±25)
  *   medium (target 192): 154-225 kbps (spread ±35)
  *   high (target 256): 212-303 kbps (spread ±45)
  *   max  (target 320): 284-386 kbps (spread ±51)
  *
- * 50 kbps tolerance accommodates the widest observed VBR spread (±51 for max
- * preset) while still reliably detecting jumps of 2+ preset levels (e.g.,
- * low↔high). Adjacent presets (e.g., medium↔high) may have overlapping VBR
- * ranges and are not always detectable — this is acceptable since the audio
- * quality difference between adjacent VBR presets is subtle.
+ * 50 kbps accommodates the widest observed audio VBR spread while still
+ * reliably detecting jumps of 2+ preset levels (e.g., low↔high). Adjacent
+ * presets (e.g., medium↔high) may overlap in audio VBR.
+ *
+ * Video CRF + bitrate cap is much more predictable (±4 kbps in testing),
+ * so callers can pass a tighter tolerance if needed.
  */
-const PRESET_CHANGE_TOLERANCE = 50;
+export const DEFAULT_PRESET_CHANGE_TOLERANCE = 50;
 
 /**
- * Minimum iPod bitrate (kbps) for preset change detection to be meaningful.
- *
- * Very short audio files can produce extremely low reported bitrates in the
- * iPod database (e.g., 17 kbps for a 2-second file) due to container overhead
- * dominating the file size. These bitrates don't reflect the encoding quality
- * and should not trigger re-transcoding.
- *
- * Set to half of the lowest preset target (128 / 2 = 64) to avoid false
- * positives while still detecting real mismatches.
+ * Default minimum iPod bitrate (kbps) below which preset change detection
+ * is skipped. Very short audio files can produce extremely low reported
+ * bitrates (e.g., 17 kbps for a 2-second file) that don't reflect encoding
+ * quality.
  */
-const MIN_PRESET_BITRATE = 64;
+export const DEFAULT_MIN_PRESET_BITRATE = 64;
 
 /**
- * Detect if a matched track needs re-transcoding due to a quality preset change.
+ * Compare an iPod track's bitrate against a preset target to detect a mismatch.
+ *
+ * Used by both audio and video preset change detection. Returns the direction
+ * of the mismatch, or null if the bitrate is within tolerance.
+ *
+ * @param ipodBitrate - Bitrate stored in the iPod database (kbps), or undefined/0
+ * @param presetBitrate - Target bitrate for the active quality preset (kbps)
+ * @param tolerance - Maximum acceptable difference (kbps). Defaults to {@link DEFAULT_PRESET_CHANGE_TOLERANCE}.
+ * @param minBitrate - Ignore iPod bitrates below this (kbps). Defaults to {@link DEFAULT_MIN_PRESET_BITRATE}.
+ * @returns `'preset-upgrade'` if iPod bitrate is significantly below target,
+ *          `'preset-downgrade'` if significantly above, or `null` if within tolerance
+ */
+export function detectBitratePresetMismatch(
+  ipodBitrate: number | undefined,
+  presetBitrate: number,
+  tolerance: number = DEFAULT_PRESET_CHANGE_TOLERANCE,
+  minBitrate: number = DEFAULT_MIN_PRESET_BITRATE
+): 'preset-upgrade' | 'preset-downgrade' | null {
+  if (!ipodBitrate || ipodBitrate < minBitrate) {
+    return null;
+  }
+
+  const diff = ipodBitrate - presetBitrate;
+
+  if (diff < -tolerance) {
+    return 'preset-upgrade';
+  }
+
+  if (diff > tolerance) {
+    return 'preset-downgrade';
+  }
+
+  return null;
+}
+
+/**
+ * Detect if a matched audio track needs re-transcoding due to a quality preset change.
  *
  * This is separate from {@link detectUpgrades} which compares source vs iPod quality.
  * This function compares iPod bitrate against the *expected* bitrate for the current
@@ -412,24 +448,5 @@ export function detectPresetChange(
     return null;
   }
 
-  // Need iPod bitrate to compare, and it must be high enough to be meaningful.
-  // Very short files can produce extremely low reported bitrates that don't
-  // reflect the actual encoding quality.
-  if (!ipod.bitrate || ipod.bitrate < MIN_PRESET_BITRATE) {
-    return null;
-  }
-
-  const diff = ipod.bitrate - presetBitrate;
-
-  if (diff < -PRESET_CHANGE_TOLERANCE) {
-    // iPod bitrate is significantly lower than preset target
-    return 'preset-upgrade';
-  }
-
-  if (diff > PRESET_CHANGE_TOLERANCE) {
-    // iPod bitrate is significantly higher than preset target
-    return 'preset-downgrade';
-  }
-
-  return null;
+  return detectBitratePresetMismatch(ipod.bitrate, presetBitrate);
 }

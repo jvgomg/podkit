@@ -19,6 +19,7 @@
 
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { ContentType } from '../video/metadata.js';
+import { detectBitratePresetMismatch } from './upgrades.js';
 
 // =============================================================================
 // Types
@@ -228,19 +229,6 @@ function buildIpodVideoIndex(ipodVideos: IPodVideo[]): Map<string, IPodVideo> {
  * console.log(`${diff.existing.length} videos already synced`);
  * ```
  */
-/**
- * Tolerance for VBR variance when comparing video bitrate to preset target (kbps).
- * Video uses CRF encoding with a bitrate cap, so actual bitrates are fairly consistent
- * but can vary by content complexity. Same tolerance as audio preset detection.
- */
-const VIDEO_PRESET_CHANGE_TOLERANCE = 50;
-
-/**
- * Minimum iPod bitrate (kbps) for video preset change detection to be meaningful.
- * Below this threshold, the stored bitrate likely doesn't reflect encoding quality.
- */
-const VIDEO_MIN_PRESET_BITRATE = 64;
-
 export function diffVideos(
   collectionVideos: CollectionVideo[],
   ipodVideos: IPodVideo[],
@@ -282,19 +270,16 @@ export function diffVideos(
     }
   }
 
-  // Post-processing: detect quality preset changes on existing videos
+  // Post-processing: detect quality preset changes on existing videos.
+  // Uses the same bitrate comparison as audio preset detection.
   const toReplace: MatchedVideo[] = [];
   if (_options?.presetBitrate) {
     const presetBitrate = _options.presetBitrate;
     const stillExisting: MatchedVideo[] = [];
 
     for (const match of existing) {
-      const ipodBitrate = match.ipod.bitrate;
-      if (
-        ipodBitrate &&
-        ipodBitrate >= VIDEO_MIN_PRESET_BITRATE &&
-        Math.abs(ipodBitrate - presetBitrate) > VIDEO_PRESET_CHANGE_TOLERANCE
-      ) {
+      const mismatch = detectBitratePresetMismatch(match.ipod.bitrate, presetBitrate);
+      if (mismatch) {
         toReplace.push(match);
       } else {
         stillExisting.push(match);
