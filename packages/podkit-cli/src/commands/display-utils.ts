@@ -355,7 +355,7 @@ export interface ContentStats {
   compilationAlbums: number;
   compilationTracks: number;
   soundCheckTracks: number;
-  soundCheckSources?: Record<SoundCheckSource, number>;
+  soundCheckSources?: Partial<Record<SoundCheckSource, number>>;
   fileTypes: Record<string, number>;
 }
 
@@ -404,7 +404,7 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
     soundCheckTracks,
     soundCheckSources:
       Object.keys(soundCheckSources).length > 0
-        ? (soundCheckSources as Record<SoundCheckSource, number>)
+        ? (soundCheckSources as Partial<Record<SoundCheckSource, number>>)
         : undefined,
     fileTypes,
   };

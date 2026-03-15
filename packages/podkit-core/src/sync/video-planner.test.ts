@@ -67,7 +67,7 @@ function createDiff(
   toRemove: IPodVideo[] = [],
   existing: { collection: CollectionVideo; ipod: IPodVideo }[] = []
 ): VideoSyncDiff {
-  return { toAdd, toRemove, existing };
+  return { toAdd, toRemove, toReplace: [], existing };
 }
 
 // =============================================================================

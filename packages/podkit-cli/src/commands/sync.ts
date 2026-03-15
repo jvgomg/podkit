@@ -1249,7 +1249,7 @@ export const syncCommand = new Command('sync')
 
     // ----- Validate type argument -----
     const typeArgs = options.type ?? [];
-    let syncTypes: SyncType[] = [];
+    const syncTypes: SyncType[] = [];
     for (const t of typeArgs) {
       if (t === 'music' || t === 'video') {
         if (!syncTypes.includes(t)) syncTypes.push(t);
