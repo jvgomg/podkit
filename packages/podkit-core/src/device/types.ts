@@ -65,6 +65,8 @@ export interface MountResult {
   requiresSudo?: boolean;
   /** Dry run - command that would be executed */
   dryRunCommand?: string;
+  /** Device assessment when available (populated on sudo-required failures) */
+  assessment?: DeviceAssessment;
 }
 
 /**

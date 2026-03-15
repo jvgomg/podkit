@@ -180,12 +180,15 @@ export class MacOSDeviceManager implements DeviceManager {
     // Attempt 2: mount -t msdos — required for large FAT32 volumes (iFlash)
     // that macOS refuses to mount through its normal mechanisms. Requires root.
     if (process.getuid && process.getuid() !== 0) {
+      // Assess device to provide diagnostics (iFlash detection, capacity, etc.)
+      const assessment = await this.assessDevice(diskId);
       return {
         success: false,
         device: deviceId,
         error: 'Mount requires elevated privileges.',
         requiresSudo: true,
         dryRunCommand: `sudo ${sudoMountCommand}`,
+        assessment: assessment ?? undefined,
       };
     }
 
@@ -290,12 +293,10 @@ export class MacOSDeviceManager implements DeviceManager {
     return null;
   }
 
-  requiresPrivileges(operation: 'mount' | 'eject'): boolean {
-    if (operation === 'mount') {
-      // Mount requires root on macOS
-      return typeof process.getuid === 'function' && process.getuid() !== 0;
-    }
-    // Eject via diskutil doesn't require root
+  requiresPrivileges(_operation: 'mount' | 'eject'): boolean {
+    // Mount attempts diskutil first (no privileges needed), only falling back
+    // to mount -t msdos (which needs root) for large FAT32 volumes.
+    // Eject via diskutil doesn't require root either.
     return false;
   }
 

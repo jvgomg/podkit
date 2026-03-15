@@ -9,6 +9,14 @@
 export { formatBytes, formatNumber } from '../commands/display-utils.js';
 
 /**
+ * Render text in bold using ANSI escape codes when stdout is a TTY.
+ * Falls back to plain text when output is piped or redirected.
+ */
+export function bold(text: string): string {
+  return process.stdout.isTTY ? `\x1b[1m${text}\x1b[0m` : text;
+}
+
+/**
  * Format duration in seconds as human-readable time
  *
  * @example

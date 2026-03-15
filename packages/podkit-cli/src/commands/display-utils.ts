@@ -410,46 +410,10 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
   };
 }
 
-// =============================================================================
-// Tips (actionable insights shown after stats)
-// =============================================================================
-
-export interface Tip {
-  message: string;
-  url?: string;
-}
-
-export interface TipDefinition {
-  evaluate: (context: TipContext) => Tip | null;
-}
-
-export interface TipContext {
-  stats: ContentStats;
-}
-
-const SOUND_CHECK_TIP: TipDefinition = {
-  evaluate: ({ stats }) => {
-    if (stats.soundCheckTracks > 0 && stats.soundCheckTracks < stats.tracks) {
-      return {
-        message:
-          'Some tracks are missing Sound Check data. Add normalization tags for consistent volume.',
-        url: 'https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/',
-      };
-    }
-    return null;
-  },
-};
-
-const ALL_TIPS: TipDefinition[] = [SOUND_CHECK_TIP];
-
-export function collectTips(context: TipContext): Tip[] {
-  const tips: Tip[] = [];
-  for (const def of ALL_TIPS) {
-    const tip = def.evaluate(context);
-    if (tip) tips.push(tip);
-  }
-  return tips;
-}
+// Re-export tips framework from output module for backward compatibility
+import { collectTips, formatTips, printTips } from '../output/tips.js';
+export { collectTips, formatTips, printTips };
+export type { Tip, TipContext, TipDefinition } from '../output/tips.js';
 
 // =============================================================================
 // Stats formatting
@@ -529,16 +493,10 @@ export function formatStatsText(
     }
   }
 
-  const tips = collectTips({ stats });
-  if (tips.length > 0) {
+  const tipLines = formatTips(collectTips({ stats }));
+  if (tipLines.length > 0) {
     lines.push('');
-    lines.push('Tips:');
-    for (const tip of tips) {
-      lines.push(`  ${tip.message}`);
-      if (tip.url) {
-        lines.push(`  See: ${tip.url}`);
-      }
-    }
+    lines.push(...tipLines);
   }
 
   return lines.join('\n');

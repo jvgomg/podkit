@@ -11,7 +11,6 @@ import {
   escapeCsv,
   computeStats,
   formatStatsText,
-  collectTips,
   aggregateAlbums,
   formatAlbumsTable,
   aggregateArtists,
@@ -998,7 +997,7 @@ describe('formatStatsText', () => {
     };
     const result = formatStatsText(stats, 'Music:');
 
-    expect(result).toContain('Tips:');
+    expect(result).toContain('Tip:');
     expect(result).toContain('Some tracks are missing Sound Check data');
     expect(result).toContain('https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/');
   });
@@ -1015,7 +1014,7 @@ describe('formatStatsText', () => {
     };
     const result = formatStatsText(stats, 'Music:');
 
-    expect(result).not.toContain('Tips:');
+    expect(result).not.toContain('Tip:');
   });
 
   it('does not show tip when no tracks have sound check', () => {
@@ -1030,7 +1029,7 @@ describe('formatStatsText', () => {
     };
     const result = formatStatsText(stats, 'Music:');
 
-    expect(result).not.toContain('Tips:');
+    expect(result).not.toContain('Tip:');
   });
 
   it('shows tips after file types section', () => {
@@ -1046,62 +1045,9 @@ describe('formatStatsText', () => {
     const result = formatStatsText(stats, 'Music:');
 
     const fileTypesIdx = result.indexOf('File Types:');
-    const tipsIdx = result.indexOf('Tips:');
+    const tipsIdx = result.indexOf('Tip:');
     expect(fileTypesIdx).toBeGreaterThan(-1);
     expect(tipsIdx).toBeGreaterThan(fileTypesIdx);
-  });
-});
-
-// =============================================================================
-// collectTips tests
-// =============================================================================
-
-describe('collectTips', () => {
-  it('returns sound check tip for partial coverage', () => {
-    const tips = collectTips({
-      stats: {
-        tracks: 100,
-        albums: 10,
-        artists: 5,
-        compilationAlbums: 0,
-        compilationTracks: 0,
-        soundCheckTracks: 50,
-        fileTypes: {},
-      },
-    });
-    expect(tips).toHaveLength(1);
-    expect(tips[0]!.message).toContain('Sound Check');
-    expect(tips[0]!.url).toBeDefined();
-  });
-
-  it('returns no tips for full coverage', () => {
-    const tips = collectTips({
-      stats: {
-        tracks: 100,
-        albums: 10,
-        artists: 5,
-        compilationAlbums: 0,
-        compilationTracks: 0,
-        soundCheckTracks: 100,
-        fileTypes: {},
-      },
-    });
-    expect(tips).toHaveLength(0);
-  });
-
-  it('returns no tips when no sound check data', () => {
-    const tips = collectTips({
-      stats: {
-        tracks: 100,
-        albums: 10,
-        artists: 5,
-        compilationAlbums: 0,
-        compilationTracks: 0,
-        soundCheckTracks: 0,
-        fileTypes: {},
-      },
-    });
-    expect(tips).toHaveLength(0);
   });
 });
 

@@ -56,7 +56,7 @@ import {
   formatArtistsTable,
   escapeCsv,
 } from './display-utils.js';
-import { OutputContext, formatBytes, formatNumber } from '../output/index.js';
+import { OutputContext, formatBytes, formatNumber, bold, printTips } from '../output/index.js';
 import { formatGeneration, validateDevice, formatValidationMessages } from '@podkit/core';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
@@ -316,6 +316,7 @@ export interface DeviceMountOutput {
   dryRunCommand?: string;
   error?: string;
   requiresSudo?: boolean;
+  assessment?: import('@podkit/core').DeviceAssessment;
 }
 
 export interface DeviceInitOutput {
@@ -534,14 +535,6 @@ const listSubcommand = new Command('list')
 // =============================================================================
 // Add subcommand
 // =============================================================================
-
-/**
- * Render text in bold using ANSI escape codes when stdout is a TTY.
- * Falls back to plain text when output is piped or redirected.
- */
-function bold(text: string): string {
-  return process.stdout.isTTY ? `\x1b[1m${text}\x1b[0m` : text;
-}
 
 /**
  * Format the iFlash evidence list into a sentence suitable for display.
@@ -2403,21 +2396,6 @@ const mountSubcommand = new Command('mount')
 
     const manager = getDeviceManager();
 
-    // Check early if privileges are required (before device lookup)
-    if (!dryRun && manager.requiresPrivileges('mount')) {
-      out.result<DeviceMountOutput>(
-        { success: false, error: 'Mount requires elevated privileges', requiresSudo: true },
-        () => {
-          out.error('Mount requires elevated privileges.');
-          out.newline();
-          out.error('Run with sudo:');
-          out.error('  sudo podkit device mount [options]');
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
     if (!manager.isSupported) {
       out.result<DeviceMountOutput>(
         { success: false, error: `Mount is not supported on ${manager.platform}` },
@@ -2519,6 +2497,7 @@ const mountSubcommand = new Command('mount')
     }
 
     if (result.requiresSudo) {
+      const assessment = result.assessment;
       out.result<DeviceMountOutput>(
         {
           success: false,
@@ -2526,12 +2505,32 @@ const mountSubcommand = new Command('mount')
           error: 'Mount requires elevated privileges',
           requiresSudo: true,
           dryRunCommand: result.dryRunCommand,
+          assessment,
         },
         () => {
-          out.error('Mount requires elevated privileges.');
+          const displayName = assessment?.volumeName ?? deviceId;
+          const diskId = assessment?.diskIdentifier ?? deviceId;
+          out.error(`Mount failed for ${displayName} (${diskId})`);
+          out.newline();
+
+          if (assessment?.iFlash.confirmed) {
+            out.error('iFlash storage detected:');
+            for (const evidence of assessment.iFlash.evidence) {
+              out.error(`  • ${evidence.signal}: ${evidence.value}`);
+              out.error(`    ${evidence.detail}`);
+            }
+            out.newline();
+            out.error('macOS refuses to automatically mount large FAT32 volumes created by');
+            out.error('iFlash adapters. Elevated privileges are required to bypass this.');
+          } else {
+            out.error('This device requires elevated privileges to mount.');
+          }
+
           out.newline();
           out.error('Run:');
-          out.error(`  ${result.dryRunCommand}`);
+          out.error(`  ${bold('sudo')} podkit device mount`);
+
+          printTips(out, { mountRequiresSudo: true });
         }
       );
       process.exitCode = 1;

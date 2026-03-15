@@ -41,6 +41,8 @@ export {
   // Re-exported from display-utils
   formatBytes,
   formatNumber,
+  // Text styling
+  bold,
   // Duration formatting
   formatDurationSeconds,
   // Header formatting
@@ -56,3 +58,7 @@ export {
 } from './formatters.js';
 
 export type { DeviceHeaderInfo, CollectedError, TransformPreviewEntry } from './formatters.js';
+
+// Tips
+export { collectTips, formatTips, printTips } from './tips.js';
+export type { Tip, TipContext, TipDefinition } from './tips.js';
