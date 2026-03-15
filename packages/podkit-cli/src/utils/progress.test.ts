@@ -18,6 +18,8 @@ describe('truncateTrackName', () => {
 describe('formatProgressLine', () => {
   const bar = '[======>       ] 50%';
   const barLength = bar.length; // 20
+  // eslint-disable-next-line no-control-regex
+  const ansiPrefix = /\r\x1b\[K/;
 
   it('fits output within terminal width', () => {
     const line = formatProgressLine({
@@ -28,7 +30,7 @@ describe('formatProgressLine', () => {
       terminalWidth: 60,
     });
     // Strip ANSI escape prefix
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible.length).toBeLessThanOrEqual(60);
   });
 
@@ -39,7 +41,7 @@ describe('formatProgressLine', () => {
       trackName: 'Some Track',
       terminalWidth: barLength + 'Transcoding'.length + 3, // barely fits base
     });
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible).not.toContain('Some Track');
     expect(visible).toContain('Transcoding');
   });
@@ -51,7 +53,7 @@ describe('formatProgressLine', () => {
       trackName: 'Short',
       terminalWidth: 120,
     });
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible).toContain('Short');
   });
 
@@ -62,7 +64,7 @@ describe('formatProgressLine', () => {
       speed: 2.3,
       terminalWidth: 80,
     });
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible).toContain('(2.3x)');
   });
 
@@ -72,7 +74,7 @@ describe('formatProgressLine', () => {
       phase: 'Copying',
       terminalWidth: 80,
     });
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible).toBe(`${bar} Copying`);
   });
 
@@ -84,7 +86,7 @@ describe('formatProgressLine', () => {
       trackName: longName,
       terminalWidth: 60,
     });
-    const visible = line.replace(/\r\x1b\[K/, '');
+    const visible = line.replace(ansiPrefix, '');
     expect(visible.length).toBeLessThanOrEqual(60);
     expect(visible).toContain('...');
   });
