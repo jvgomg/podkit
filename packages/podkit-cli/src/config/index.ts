@@ -31,7 +31,7 @@ export type {
   DeviceConfig,
   DefaultsConfig,
   // Raw config file types
-  ConfigFileTransforms,
+  ConfigFileCleanArtists,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,

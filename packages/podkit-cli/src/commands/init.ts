@@ -12,8 +12,7 @@ import { OutputContext } from '../output/index.js';
  * See docs/adr/ADR-008-multi-collection-device-config.md for details.
  */
 export const CONFIG_TEMPLATE = `# podkit configuration
-# See: https://github.com/your-repo/podkit
-# Schema: docs/adr/ADR-008-multi-collection-device-config.md
+# Docs: https://jvgomg.github.io/podkit/user-guide/configuration
 
 # Music collections
 # Uncomment and edit to add your music library:
@@ -23,6 +22,19 @@ export const CONFIG_TEMPLATE = `# podkit configuration
 # Video collections (optional)
 # [video.movies]
 # path = "/path/to/movies"
+
+# Clean up featured artist entries in iPod artist list
+# Moves "Artist feat. X" credits from the artist field into the title.
+# Docs: https://jvgomg.github.io/podkit/reference/clean-artists
+#
+# Simple — just enable it:
+# cleanArtists = true
+#
+# With options:
+# [cleanArtists]
+# drop = false          # true to remove feat. info entirely
+# format = "feat. {}"   # format string ({} = featured artist)
+# ignore = []           # artist names to skip, e.g. ["Simon & Garfunkel"]
 
 # Devices
 # Run 'podkit device add -d <name>' to auto-detect and add your iPod

@@ -128,16 +128,15 @@ videoQuality = "high"
 
 See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
 
-## Transforms
+## Clean Artists
 
-Transforms modify track metadata during sync. Currently, the `ftintitle` transform moves featured artist credits from the Artist field into the Title field — useful for cleaner artist browsing on iPods:
+The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync — useful for cleaner artist browsing on iPods:
 
 ```toml
-[transforms.ftintitle]
-enabled = true
+cleanArtists = true
 ```
 
-Transforms can be overridden per device. See [Artist Transforms](/user-guide/devices/artist-transforms) for a setup guide and the [Transform Reference](/reference/transforms) for all options.
+This can be overridden per device. See [Artist Transforms](/user-guide/devices/artist-transforms) for a setup guide and the [Clean Artists Transform Reference](/reference/clean-artists) for all options.
 
 ## Minimal Example
 

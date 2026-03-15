@@ -1,11 +1,11 @@
 ---
-title: Album Artist Transform
-description: Detailed reference for the ftintitle transform — configuration options, recognized patterns, and edge cases.
+title: Clean Artists Transform
+description: Detailed reference for the cleanArtists feature — configuration options, recognized patterns, and edge cases.
 sidebar:
   order: 4
 ---
 
-The `ftintitle` transform moves featured artist credits from the Artist field into the Title field during sync. For a user-friendly introduction and setup guide, see [Artist Transforms](/user-guide/devices/artist-transforms).
+The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync. For a user-friendly introduction and setup guide, see [Artist Transforms](/user-guide/devices/artist-transforms).
 
 ## Origins
 
@@ -17,9 +17,16 @@ This transform is inspired by and ported from the [beets ftintitle plugin](https
 
 ## Configuration Reference
 
+The simplest form is a boolean:
+
 ```toml
-[transforms.ftintitle]
-enabled = true       # Enable the transform (default: false)
+cleanArtists = true
+```
+
+For more control, use the table form (implies enabled):
+
+```toml
+[cleanArtists]
 drop = false         # If true, drop feat. info entirely (default: false)
 format = "feat. {}"  # Format string, {} is replaced with featured artist
 ignore = ["Simon & Garfunkel"]  # Don't split these artist names
@@ -27,22 +34,20 @@ ignore = ["Simon & Garfunkel"]  # Don't split these artist names
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | boolean | `false` | Whether the transform is active |
 | `drop` | boolean | `false` | If `true`, drop featuring info entirely instead of moving to title |
 | `format` | string | `"feat. {}"` | Format string for featuring text in title (`{}` is replaced with artist names) |
 | `ignore` | string[] | `[]` | Artist names to ignore when splitting on ambiguous separators (`and`, `&`, `with`) |
 
 ### Per-Device Override
 
-Device-level settings override global transform settings:
+Device-level settings override the global `cleanArtists` setting:
 
 ```toml
-[devices.myipod.transforms.ftintitle]
-enabled = true
+[devices.myipod.cleanArtists]
 format = "feat. {}"
 
 [devices.nano]
-# No transforms configured — uses original metadata
+cleanArtists = false  # Uses original metadata
 ```
 
 ## Patterns Recognized
@@ -96,28 +101,27 @@ Keywords that trigger this positioning:
 Some artist names naturally contain words like "and", "&", or "with" that the transform would otherwise treat as featuring indicators. Add these to the `ignore` list to prevent incorrect splitting:
 
 ```toml
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 ignore = ["Simon & Garfunkel", "Hall & Oates", "Earth, Wind & Fire"]
 ```
 
 ## CLI Output
 
-When transforms are active, `podkit sync --dry-run` shows what will change:
+When `cleanArtists` is active, `podkit sync --dry-run` shows what will change:
 
 ```
-Transforms:
-  ftintitle: enabled (format: "feat. {}")
+Clean Artists:
+  enabled (format: "feat. {}")
 
 Summary:
   Tracks to add: 5
   Tracks to update: 147
-    Apply ftintitle: 145
+    Clean artists: 145
     Metadata changed: 2
   Tracks to remove: 0
   Already synced: 1,262
 
-Tracks to update (transform):
+Tracks to update (clean artists):
   Artist A feat. Artist B - Song Name
     -> Artist: "Artist A"
     -> Title: "Song Name (feat. Artist B)"
@@ -126,5 +130,5 @@ Tracks to update (transform):
 ## See Also
 
 - [Artist Transforms](/user-guide/devices/artist-transforms) — Quick setup guide
-- [Configuration](/user-guide/configuration) — Config file options
+- [Configuration](/user-guide/configuration) — Config file overview
 - [CLI Commands](/reference/cli-commands) — Command-line reference

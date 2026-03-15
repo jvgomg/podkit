@@ -111,7 +111,7 @@ Read these documents based on what you're working on:
 | Compilation albums | [docs/user-guide/syncing/compilation-albums.md](docs/user-guide/syncing/compilation-albums.md) |
 | Sound Check | [docs/user-guide/syncing/sound-check.md](docs/user-guide/syncing/sound-check.md) |
 | Track upgrades | [docs/user-guide/syncing/upgrades.md](docs/user-guide/syncing/upgrades.md) |
-| Transforms | [docs/user-guide/transforms.md](docs/user-guide/transforms.md) |
+| Clean Artists | [docs/reference/clean-artists.md](docs/reference/clean-artists.md) |
 | Demo GIF package | [packages/demo/README.md](packages/demo/README.md) |
 | Package READMEs | `packages/*/README.md` |
 | Feature requests | [agents/feature-requests.md](agents/feature-requests.md) |

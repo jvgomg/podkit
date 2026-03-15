@@ -108,9 +108,9 @@ export function renderProgressBar(current: number, total: number, width = 30): s
 export function formatUpdateReason(reason: string): string {
   switch (reason) {
     case 'transform-apply':
-      return 'Apply ftintitle';
+      return 'Apply clean artists';
     case 'transform-remove':
-      return 'Revert ftintitle';
+      return 'Revert clean artists';
     case 'metadata-changed':
       return 'Metadata changed';
     case 'format-upgrade':

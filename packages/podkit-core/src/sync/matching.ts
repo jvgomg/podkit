@@ -360,8 +360,8 @@ export function getTransformMatchKeys(
   // even when the transform is currently disabled (to find tracks that
   // were previously transformed and need reverting).
   const forceEnabledConfig: TransformsConfig = {
-    ftintitle: {
-      ...transforms.ftintitle,
+    cleanArtists: {
+      ...transforms.cleanArtists,
       enabled: true, // Force enable for matching purposes
     },
   };

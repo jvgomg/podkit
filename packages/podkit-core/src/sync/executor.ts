@@ -1158,7 +1158,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
    * Execute an update-metadata operation
    *
    * Updates iPod track metadata without transferring any files.
-   * Used for transform changes (e.g., ftintitle enable/disable) where
+   * Used for transform changes (e.g., clean artists enable/disable) where
    * only artist/title fields need updating.
    *
    * Preserves play statistics (play count, rating, skip count).

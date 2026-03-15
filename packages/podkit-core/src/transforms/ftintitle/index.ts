@@ -1,5 +1,5 @@
 /**
- * ftintitle transform
+ * Clean artists transform
  *
  * Moves "featuring" artists from the Artist field to the Title field.
  * This keeps artist lists clean on iPods (which don't respect Album Artist).
@@ -12,12 +12,12 @@
  * @module
  */
 
-import type { TrackTransform, TransformableTrack, FtInTitleConfig } from '../types.js';
-import { DEFAULT_FTINTITLE_CONFIG } from '../types.js';
+import type { TrackTransform, TransformableTrack, CleanArtistsConfig } from '../types.js';
+import { DEFAULT_CLEAN_ARTISTS_CONFIG } from '../types.js';
 import { applyFtInTitle } from './extract.js';
 
 /**
- * The ftintitle transform implementation
+ * The clean artists transform implementation
  *
  * Transforms track metadata by:
  * 1. Extracting featured artist from the artist field
@@ -33,11 +33,11 @@ import { applyFtInTitle } from './extract.js';
  * // After (with drop: true)
  * { artist: 'Artist A', title: 'Song Name' }
  */
-export const ftintitleTransform: TrackTransform<FtInTitleConfig> = {
-  name: 'ftintitle',
-  defaultConfig: DEFAULT_FTINTITLE_CONFIG,
+export const cleanArtistsTransform: TrackTransform<CleanArtistsConfig> = {
+  name: 'cleanArtists',
+  defaultConfig: DEFAULT_CLEAN_ARTISTS_CONFIG,
 
-  apply(track: TransformableTrack, config: FtInTitleConfig): TransformableTrack {
+  apply(track: TransformableTrack, config: CleanArtistsConfig): TransformableTrack {
     // If not enabled, return track unchanged
     if (!config.enabled) {
       return track;

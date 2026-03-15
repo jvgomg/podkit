@@ -15,6 +15,9 @@ const base = '/podkit';
 export default defineConfig({
   site: 'https://jvgomg.github.io',
   base,
+  redirects: {
+    '/reference/transforms/': '/reference/clean-artists/',
+  },
   markdown: {
     remarkPlugins: [remarkBaseUrl({ base }), remarkEmoji],
   },
@@ -47,7 +50,7 @@ export default defineConfig({
 - **Media sources**: Local directories or Subsonic-compatible servers (Navidrome, Airsonic, Gonic)
 - **Devices**: Multiple iPods with independent quality settings and transforms
 - **Transcoding**: Only transcodes what's needed — compatible files are copied as-is
-- **Transforms**: The ftintitle transform cleans up "Artist feat. X" entries on iPod
+- **Clean Artists**: The clean artists feature cleans up "Artist feat. X" entries on iPod
 - **Configuration**: TOML config file at ~/.config/podkit/config.toml`,
           optionalLinks: [
             {

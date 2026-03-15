@@ -37,4 +37,8 @@ export const ENV_KEYS = {
   videoQuality: `${ENV_PREFIX}VIDEO_QUALITY`,
   lossyQuality: `${ENV_PREFIX}LOSSY_QUALITY`,
   artwork: `${ENV_PREFIX}ARTWORK`,
+  cleanArtists: `${ENV_PREFIX}CLEAN_ARTISTS`,
+  cleanArtistsDrop: `${ENV_PREFIX}CLEAN_ARTISTS_DROP`,
+  cleanArtistsFormat: `${ENV_PREFIX}CLEAN_ARTISTS_FORMAT`,
+  cleanArtistsIgnore: `${ENV_PREFIX}CLEAN_ARTISTS_IGNORE`,
 } as const;

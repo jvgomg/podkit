@@ -31,6 +31,10 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.videoQuality];
     delete process.env[ENV_KEYS.lossyQuality];
     delete process.env[ENV_KEYS.artwork];
+    delete process.env[ENV_KEYS.cleanArtists];
+    delete process.env[ENV_KEYS.cleanArtistsDrop];
+    delete process.env[ENV_KEYS.cleanArtistsFormat];
+    delete process.env[ENV_KEYS.cleanArtistsIgnore];
   });
 
   describe('DEFAULT_CONFIG', () => {
@@ -263,14 +267,13 @@ artwork = "yes"
       expect(result).toEqual({});
     });
 
-    describe('transforms config', () => {
-      it('parses [transforms.ftintitle] section', () => {
+    describe('cleanArtists config', () => {
+      it('parses [cleanArtists] table form with options', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 drop = false
 format = "feat. {}"
 `
@@ -278,7 +281,7 @@ format = "feat. {}"
 
         const result = loadConfigFile(configPath);
         expect(result?.transforms).toBeDefined();
-        expect(result?.transforms?.ftintitle).toEqual({
+        expect(result?.transforms?.cleanArtists).toEqual({
           enabled: true,
           drop: false,
           format: 'feat. {}',
@@ -286,21 +289,47 @@ format = "feat. {}"
         });
       });
 
-      it('parses partial transforms config (enabled only)', () => {
+      it('parses boolean shorthand (cleanArtists = true)', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
-enabled = true
+cleanArtists = true
 `
         );
 
         const result = loadConfigFile(configPath);
-        expect(result?.transforms?.ftintitle.enabled).toBe(true);
+        expect(result?.transforms?.cleanArtists.enabled).toBe(true);
         // Other values should be defaults
-        expect(result?.transforms?.ftintitle.drop).toBe(false);
-        expect(result?.transforms?.ftintitle.format).toBe('feat. {}');
+        expect(result?.transforms?.cleanArtists.drop).toBe(false);
+        expect(result?.transforms?.cleanArtists.format).toBe('feat. {}');
+      });
+
+      it('parses [cleanArtists] table form (implies enabled)', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          `
+[cleanArtists]
+`
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.transforms?.cleanArtists.enabled).toBe(true);
+      });
+
+      it('parses [cleanArtists] with enabled = false', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          `
+[cleanArtists]
+enabled = false
+`
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.transforms?.cleanArtists.enabled).toBe(false);
       });
 
       it('parses drop mode', () => {
@@ -308,14 +337,13 @@ enabled = true
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 drop = true
 `
         );
 
         const result = loadConfigFile(configPath);
-        expect(result?.transforms?.ftintitle.drop).toBe(true);
+        expect(result?.transforms?.cleanArtists.drop).toBe(true);
       });
 
       it('parses custom format string', () => {
@@ -323,14 +351,13 @@ drop = true
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 format = "with {}"
 `
         );
 
         const result = loadConfigFile(configPath);
-        expect(result?.transforms?.ftintitle.format).toBe('with {}');
+        expect(result?.transforms?.cleanArtists.format).toBe('with {}');
       });
 
       it('throws on format without placeholder', () => {
@@ -338,8 +365,7 @@ format = "with {}"
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 format = "no placeholder here"
 `
         );
@@ -352,7 +378,7 @@ format = "no placeholder here"
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
+[cleanArtists]
 enabled = "true"
 `
         );
@@ -365,7 +391,7 @@ enabled = "true"
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
+[cleanArtists]
 drop = "yes"
 `
         );
@@ -378,7 +404,7 @@ drop = "yes"
         fs.writeFileSync(
           configPath,
           `
-[transforms.ftintitle]
+[cleanArtists]
 format = 123
 `
         );
@@ -386,7 +412,7 @@ format = 123
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid type for "format"/);
       });
 
-      it('returns defaults when transforms section missing', () => {
+      it('returns defaults when cleanArtists not specified', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -398,20 +424,6 @@ quality = "high"
         const result = loadConfigFile(configPath);
         // transforms should not be in the result if not specified
         expect(result?.transforms).toBeUndefined();
-      });
-
-      it('handles empty transforms section', () => {
-        const configPath = path.join(tempDir, 'config.toml');
-        fs.writeFileSync(
-          configPath,
-          `
-[transforms]
-`
-        );
-
-        const result = loadConfigFile(configPath);
-        // Should have transforms with defaults
-        expect(result?.transforms?.ftintitle).toEqual(DEFAULT_TRANSFORMS_CONFIG.ftintitle);
       });
     });
 
@@ -633,7 +645,7 @@ artwork = true
         });
       });
 
-      it('parses device with transforms', () => {
+      it('parses device with cleanArtists', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -642,16 +654,15 @@ artwork = true
 volumeUuid = "ABC-123"
 volumeName = "TERAPOD"
 
-[devices.terapod.transforms.ftintitle]
-enabled = true
+[devices.terapod.cleanArtists]
 format = "feat. {}"
 `
         );
 
         const result = loadConfigFile(configPath);
         expect(result?.devices?.terapod!.transforms).toBeDefined();
-        expect(result?.devices?.terapod!.transforms?.ftintitle!.enabled).toBe(true);
-        expect(result?.devices?.terapod!.transforms?.ftintitle!.format).toBe('feat. {}');
+        expect(result?.devices?.terapod!.transforms?.cleanArtists!.enabled).toBe(true);
+        expect(result?.devices?.terapod!.transforms?.cleanArtists!.format).toBe('feat. {}');
       });
 
       it('parses multiple devices', () => {
@@ -859,8 +870,7 @@ quality = "high"
 videoQuality = "high"
 artwork = true
 
-[devices.terapod.transforms.ftintitle]
-enabled = true
+[devices.terapod.cleanArtists]
 format = "feat. {}"
 
 [devices.nano]
@@ -892,7 +902,7 @@ device = "terapod"
         // Devices
         expect(Object.keys(result?.devices ?? {})).toHaveLength(2);
         expect(result?.devices?.terapod!.quality).toBe('high');
-        expect(result?.devices?.terapod!.transforms?.ftintitle!.enabled).toBe(true);
+        expect(result?.devices?.terapod!.transforms?.cleanArtists!.enabled).toBe(true);
         expect(result?.devices?.nano!.artwork).toBe(false);
 
         // Defaults
@@ -999,6 +1009,55 @@ device = "terapod"
       process.env[ENV_KEYS.lossyQuality] = 'lossless';
       const result = loadEnvConfig();
       expect(result.lossyQuality).toBeUndefined();
+    });
+
+    it('reads PODKIT_CLEAN_ARTISTS=true', () => {
+      process.env[ENV_KEYS.cleanArtists] = 'true';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.enabled).toBe(true);
+    });
+
+    it('reads PODKIT_CLEAN_ARTISTS=false', () => {
+      process.env[ENV_KEYS.cleanArtists] = 'false';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.enabled).toBe(false);
+    });
+
+    it('reads PODKIT_CLEAN_ARTISTS_DROP=true', () => {
+      process.env[ENV_KEYS.cleanArtistsDrop] = 'true';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.drop).toBe(true);
+    });
+
+    it('reads PODKIT_CLEAN_ARTISTS_FORMAT', () => {
+      process.env[ENV_KEYS.cleanArtistsFormat] = 'featuring {}';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.format).toBe('featuring {}');
+    });
+
+    it('reads PODKIT_CLEAN_ARTISTS_IGNORE as comma-separated list', () => {
+      process.env[ENV_KEYS.cleanArtistsIgnore] = 'Simon & Garfunkel, Hall & Oates';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.ignore).toEqual(['Simon & Garfunkel', 'Hall & Oates']);
+    });
+
+    it('handles empty PODKIT_CLEAN_ARTISTS_IGNORE', () => {
+      process.env[ENV_KEYS.cleanArtistsIgnore] = '';
+      const result = loadEnvConfig();
+      expect(result.transforms?.cleanArtists.ignore).toEqual([]);
+    });
+
+    it('does not set transforms when no clean artists env vars present', () => {
+      const result = loadEnvConfig();
+      expect(result.transforms).toBeUndefined();
+    });
+
+    it('sets only specified clean artists fields', () => {
+      process.env[ENV_KEYS.cleanArtistsDrop] = 'true';
+      const result = loadEnvConfig();
+      // drop is set, but enabled inherits default (false)
+      expect(result.transforms?.cleanArtists.drop).toBe(true);
+      expect(result.transforms?.cleanArtists.enabled).toBe(false);
     });
   });
 
@@ -1197,7 +1256,7 @@ device = "terapod"
       it('merges transforms config from partial', () => {
         const partial: PartialConfig = {
           transforms: {
-            ftintitle: {
+            cleanArtists: {
               enabled: true,
               drop: false,
               format: 'feat. {}',
@@ -1206,13 +1265,13 @@ device = "terapod"
           },
         };
         const result = mergeConfigs(partial);
-        expect(result.transforms.ftintitle.enabled).toBe(true);
+        expect(result.transforms.cleanArtists.enabled).toBe(true);
       });
 
       it('deep merges transforms (later configs override all fields)', () => {
         const first: PartialConfig = {
           transforms: {
-            ftintitle: {
+            cleanArtists: {
               enabled: false,
               drop: false,
               format: 'ft. {}',
@@ -1222,7 +1281,7 @@ device = "terapod"
         };
         const second: PartialConfig = {
           transforms: {
-            ftintitle: {
+            cleanArtists: {
               enabled: true,
               drop: true,
               format: 'feat. {}',
@@ -1231,9 +1290,9 @@ device = "terapod"
           },
         };
         const result = mergeConfigs(first, second);
-        expect(result.transforms.ftintitle.enabled).toBe(true);
-        expect(result.transforms.ftintitle.drop).toBe(true);
-        expect(result.transforms.ftintitle.format).toBe('feat. {}');
+        expect(result.transforms.cleanArtists.enabled).toBe(true);
+        expect(result.transforms.cleanArtists.drop).toBe(true);
+        expect(result.transforms.cleanArtists.format).toBe('feat. {}');
       });
 
       it('preserves default transforms when partial has none', () => {
@@ -1351,7 +1410,7 @@ device = "terapod"
               volumeUuid: 'ABC',
               volumeName: 'TERAPOD',
               transforms: {
-                ftintitle: {
+                cleanArtists: {
                   enabled: false,
                   drop: false,
                   format: 'ft. {}',
@@ -1367,7 +1426,7 @@ device = "terapod"
               volumeUuid: 'ABC',
               volumeName: 'TERAPOD',
               transforms: {
-                ftintitle: {
+                cleanArtists: {
                   enabled: true,
                   drop: false,
                   format: 'feat. {}',
@@ -1378,8 +1437,8 @@ device = "terapod"
           },
         };
         const result = mergeConfigs(first, second);
-        expect(result.devices?.terapod!.transforms?.ftintitle!.enabled).toBe(true);
-        expect(result.devices?.terapod!.transforms?.ftintitle!.format).toBe('feat. {}');
+        expect(result.devices?.terapod!.transforms?.cleanArtists!.enabled).toBe(true);
+        expect(result.devices?.terapod!.transforms?.cleanArtists!.format).toBe('feat. {}');
       });
     });
 
@@ -1470,13 +1529,12 @@ path = "/custom/music"
       expect(result.configFileExists).toBe(false);
     });
 
-    it('loads transforms config and merges with defaults', () => {
+    it('loads cleanArtists config and merges with defaults', () => {
       const configPath = path.join(tempDir, 'config.toml');
       fs.writeFileSync(
         configPath,
         `
-[transforms.ftintitle]
-enabled = true
+cleanArtists = true
 `
       );
 
@@ -1489,10 +1547,10 @@ enabled = true
       };
 
       const result = loadConfig(globalOpts);
-      expect(result.config.transforms.ftintitle.enabled).toBe(true);
+      expect(result.config.transforms.cleanArtists.enabled).toBe(true);
       // Other values should be defaults
-      expect(result.config.transforms.ftintitle.drop).toBe(false);
-      expect(result.config.transforms.ftintitle.format).toBe('feat. {}');
+      expect(result.config.transforms.cleanArtists.drop).toBe(false);
+      expect(result.config.transforms.cleanArtists.format).toBe('feat. {}');
     });
 
     it('uses default transforms when not specified in config', () => {

@@ -66,9 +66,9 @@ export interface TrackTransform<TConfig = unknown> {
 }
 
 /**
- * Configuration for the ftintitle transform
+ * Configuration for the clean artists transform
  */
-export interface FtInTitleConfig {
+export interface CleanArtistsConfig {
   /** Whether the transform is enabled */
   enabled: boolean;
   /** If true, drop featuring info entirely instead of moving to title */
@@ -86,9 +86,9 @@ export interface FtInTitleConfig {
 }
 
 /**
- * Default ftintitle configuration
+ * Default clean artists configuration
  */
-export const DEFAULT_FTINTITLE_CONFIG: FtInTitleConfig = {
+export const DEFAULT_CLEAN_ARTISTS_CONFIG: CleanArtistsConfig = {
   enabled: false,
   drop: false,
   format: 'feat. {}',
@@ -99,12 +99,12 @@ export const DEFAULT_FTINTITLE_CONFIG: FtInTitleConfig = {
  * Configuration for all transforms
  */
 export interface TransformsConfig {
-  ftintitle: FtInTitleConfig;
+  cleanArtists: CleanArtistsConfig;
 }
 
 /**
  * Default configuration for all transforms
  */
 export const DEFAULT_TRANSFORMS_CONFIG: TransformsConfig = {
-  ftintitle: DEFAULT_FTINTITLE_CONFIG,
+  cleanArtists: DEFAULT_CLEAN_ARTISTS_CONFIG,
 };

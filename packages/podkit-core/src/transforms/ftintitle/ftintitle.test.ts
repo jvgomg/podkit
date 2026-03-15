@@ -14,9 +14,9 @@ import {
   titleContainsFeat,
 } from './extract.js';
 import { findInsertPosition } from './patterns.js';
-import { ftintitleTransform } from './index.js';
-import type { TransformableTrack, FtInTitleConfig } from '../types.js';
-import { DEFAULT_FTINTITLE_CONFIG } from '../types.js';
+import { cleanArtistsTransform } from './index.js';
+import type { TransformableTrack, CleanArtistsConfig } from '../types.js';
+import { DEFAULT_CLEAN_ARTISTS_CONFIG } from '../types.js';
 
 // =============================================================================
 // extractFeaturedArtist tests
@@ -459,10 +459,10 @@ describe('applyFtInTitle', () => {
 });
 
 // =============================================================================
-// ftintitleTransform tests
+// cleanArtistsTransform tests
 // =============================================================================
 
-describe('ftintitleTransform', () => {
+describe('cleanArtistsTransform', () => {
   function createTrack(artist: string, title: string): TransformableTrack {
     return { artist, title, album: 'Test Album' };
   }
@@ -470,9 +470,9 @@ describe('ftintitleTransform', () => {
   describe('disabled state', () => {
     it('returns track unchanged when disabled', () => {
       const track = createTrack('Artist A feat. Artist B', 'Song Name');
-      const config: FtInTitleConfig = { ...DEFAULT_FTINTITLE_CONFIG, enabled: false };
+      const config: CleanArtistsConfig = { ...DEFAULT_CLEAN_ARTISTS_CONFIG, enabled: false };
 
-      const result = ftintitleTransform.apply(track, config);
+      const result = cleanArtistsTransform.apply(track, config);
 
       expect(result).toBe(track); // Same object reference
       expect(result.artist).toBe('Artist A feat. Artist B');
@@ -483,14 +483,14 @@ describe('ftintitleTransform', () => {
   describe('enabled state', () => {
     it('transforms track when enabled', () => {
       const track = createTrack('Artist A feat. Artist B', 'Song Name');
-      const config: FtInTitleConfig = {
+      const config: CleanArtistsConfig = {
         enabled: true,
         drop: false,
         format: 'feat. {}',
         ignore: [],
       };
 
-      const result = ftintitleTransform.apply(track, config);
+      const result = cleanArtistsTransform.apply(track, config);
 
       expect(result).not.toBe(track); // Different object
       expect(result.artist).toBe('Artist A');
@@ -500,14 +500,14 @@ describe('ftintitleTransform', () => {
 
     it('returns same object when no change needed', () => {
       const track = createTrack('Artist A', 'Song Name');
-      const config: FtInTitleConfig = {
+      const config: CleanArtistsConfig = {
         enabled: true,
         drop: false,
         format: 'feat. {}',
         ignore: [],
       };
 
-      const result = ftintitleTransform.apply(track, config);
+      const result = cleanArtistsTransform.apply(track, config);
 
       expect(result).toBe(track); // Same object (no changes)
     });
@@ -519,14 +519,14 @@ describe('ftintitleTransform', () => {
         album: 'Test Album',
         albumArtist: 'Artist A',
       };
-      const config: FtInTitleConfig = {
+      const config: CleanArtistsConfig = {
         enabled: true,
         drop: false,
         format: 'feat. {}',
         ignore: [],
       };
 
-      const result = ftintitleTransform.apply(track, config);
+      const result = cleanArtistsTransform.apply(track, config);
 
       expect(result.albumArtist).toBe('Artist A');
     });
@@ -534,11 +534,11 @@ describe('ftintitleTransform', () => {
 
   describe('transform interface', () => {
     it('has correct name', () => {
-      expect(ftintitleTransform.name).toBe('ftintitle');
+      expect(cleanArtistsTransform.name).toBe('cleanArtists');
     });
 
     it('has default config', () => {
-      expect(ftintitleTransform.defaultConfig).toEqual(DEFAULT_FTINTITLE_CONFIG);
+      expect(cleanArtistsTransform.defaultConfig).toEqual(DEFAULT_CLEAN_ARTISTS_CONFIG);
     });
   });
 });

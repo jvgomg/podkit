@@ -18,12 +18,13 @@ import type {
   AacQualityPreset,
   VideoQualityPreset,
   ConfigFileContent,
+  ConfigFileCleanArtists,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,
   ConfigFileDefaults,
   GlobalOptions,
-  TransformsConfig,
+  CleanArtistsConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
   DeviceConfig,
@@ -32,7 +33,7 @@ import type {
 import {
   QUALITY_PRESETS,
   AAC_QUALITY_PRESETS,
-  DEFAULT_TRANSFORMS_CONFIG,
+  DEFAULT_CLEAN_ARTISTS_CONFIG,
   VIDEO_QUALITY_PRESETS,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
@@ -127,9 +128,11 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     config.skipUpgrades = parsed.skipUpgrades;
   }
 
-  // Parse transforms section
-  if (parsed.transforms !== undefined) {
-    config.transforms = parseTransformsConfig(parsed.transforms);
+  // Parse cleanArtists (boolean or table)
+  if (parsed.cleanArtists !== undefined) {
+    config.transforms = {
+      cleanArtists: parseCleanArtistsConfig(parsed.cleanArtists),
+    };
   }
 
   // ==========================================================================
@@ -167,72 +170,86 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
 }
 
 /**
- * Parse and validate transforms config from TOML
+ * Parse and validate cleanArtists config from TOML
  *
- * Merges provided values with defaults and validates types.
+ * Accepts either a boolean (simple enable/disable) or a table with options.
+ * When provided as a table, enabled defaults to true unless explicitly set to false.
+ *
+ * @param raw - The raw TOML value for cleanArtists
+ * @param context - Config path context for error messages (e.g., "cleanArtists" or "devices.nano.cleanArtists")
  */
-function parseTransformsConfig(raw: ConfigFileContent['transforms']): TransformsConfig {
-  const config: TransformsConfig = { ...DEFAULT_TRANSFORMS_CONFIG };
-
-  if (raw?.ftintitle !== undefined) {
-    const ftRaw = raw.ftintitle;
-    config.ftintitle = {
-      ...DEFAULT_TRANSFORMS_CONFIG.ftintitle,
+function parseCleanArtistsConfig(
+  raw: ConfigFileCleanArtists,
+  context: string = 'cleanArtists'
+): CleanArtistsConfig {
+  // Boolean shorthand: cleanArtists = true/false
+  if (typeof raw === 'boolean') {
+    return {
+      ...DEFAULT_CLEAN_ARTISTS_CONFIG,
+      enabled: raw,
     };
+  }
 
-    // Validate types and set values
-    if (ftRaw.enabled !== undefined) {
-      if (typeof ftRaw.enabled !== 'boolean') {
-        throw new Error(
-          `Invalid type for "enabled" in [transforms.ftintitle]. ` +
-            `Expected boolean, got ${typeof ftRaw.enabled}.`
-        );
-      }
-      config.ftintitle.enabled = ftRaw.enabled;
+  // Table form: [cleanArtists] with options — enabled defaults to true
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`Invalid type for "${context}". Expected boolean or table, got ${typeof raw}.`);
+  }
+
+  const config: CleanArtistsConfig = {
+    ...DEFAULT_CLEAN_ARTISTS_CONFIG,
+    enabled: true, // Table form implies enabled
+  };
+
+  // Validate types and set values
+  if (raw.enabled !== undefined) {
+    if (typeof raw.enabled !== 'boolean') {
+      throw new Error(
+        `Invalid type for "enabled" in [${context}]. ` +
+          `Expected boolean, got ${typeof raw.enabled}.`
+      );
     }
-    if (ftRaw.drop !== undefined) {
-      if (typeof ftRaw.drop !== 'boolean') {
-        throw new Error(
-          `Invalid type for "drop" in [transforms.ftintitle]. ` +
-            `Expected boolean, got ${typeof ftRaw.drop}.`
-        );
-      }
-      config.ftintitle.drop = ftRaw.drop;
+    config.enabled = raw.enabled;
+  }
+  if (raw.drop !== undefined) {
+    if (typeof raw.drop !== 'boolean') {
+      throw new Error(
+        `Invalid type for "drop" in [${context}]. ` + `Expected boolean, got ${typeof raw.drop}.`
+      );
     }
-    if (ftRaw.format !== undefined) {
-      if (typeof ftRaw.format !== 'string') {
-        throw new Error(
-          `Invalid type for "format" in [transforms.ftintitle]. ` +
-            `Expected string, got ${typeof ftRaw.format}.`
-        );
-      }
-      // Validate format contains placeholder
-      if (!ftRaw.format.includes('{}')) {
-        throw new Error(
-          `Invalid format "${ftRaw.format}" in [transforms.ftintitle]. ` +
-            'Format must contain "{}" placeholder for featured artist(s).'
-        );
-      }
-      config.ftintitle.format = ftRaw.format;
+    config.drop = raw.drop;
+  }
+  if (raw.format !== undefined) {
+    if (typeof raw.format !== 'string') {
+      throw new Error(
+        `Invalid type for "format" in [${context}]. ` + `Expected string, got ${typeof raw.format}.`
+      );
     }
-    if (ftRaw.ignore !== undefined) {
-      if (!Array.isArray(ftRaw.ignore)) {
+    // Validate format contains placeholder
+    if (!raw.format.includes('{}')) {
+      throw new Error(
+        `Invalid format "${raw.format}" in [${context}]. ` +
+          'Format must contain "{}" placeholder for featured artist(s).'
+      );
+    }
+    config.format = raw.format;
+  }
+  if (raw.ignore !== undefined) {
+    if (!Array.isArray(raw.ignore)) {
+      throw new Error(
+        `Invalid type for "ignore" in [${context}]. ` +
+          `Expected array of strings, got ${typeof raw.ignore}.`
+      );
+    }
+    // Validate each element is a string
+    for (const item of raw.ignore) {
+      if (typeof item !== 'string') {
         throw new Error(
-          `Invalid type for "ignore" in [transforms.ftintitle]. ` +
-            `Expected array of strings, got ${typeof ftRaw.ignore}.`
+          `Invalid item in "ignore" array in [${context}]. ` +
+            `Expected string, got ${typeof item}.`
         );
       }
-      // Validate each element is a string
-      for (const item of ftRaw.ignore) {
-        if (typeof item !== 'string') {
-          throw new Error(
-            `Invalid item in "ignore" array in [transforms.ftintitle]. ` +
-              `Expected string, got ${typeof item}.`
-          );
-        }
-      }
-      config.ftintitle.ignore = ftRaw.ignore;
     }
+    config.ignore = raw.ignore;
   }
 
   return config;
@@ -352,7 +369,7 @@ function parseVideoCollections(
  * Parse devices from TOML
  *
  * Extracts [devices.*] sections into a Record<string, DeviceConfig>.
- * Handles nested [devices.*.transforms] sections.
+ * Handles nested [devices.*.cleanArtists] sections.
  */
 function parseDevices(
   rawDevices: Record<string, ConfigFileDevice> | undefined
@@ -462,9 +479,14 @@ function parseDevices(
       device.skipUpgrades = rawDevice.skipUpgrades;
     }
 
-    // Parse optional transforms
-    if (rawDevice.transforms !== undefined) {
-      device.transforms = parseTransformsConfig(rawDevice.transforms);
+    // Parse optional cleanArtists (boolean or table)
+    if (rawDevice.cleanArtists !== undefined) {
+      device.transforms = {
+        cleanArtists: parseCleanArtistsConfig(
+          rawDevice.cleanArtists,
+          `devices.${name}.cleanArtists`
+        ),
+      };
     }
 
     devices[name] = device;
@@ -550,9 +572,17 @@ function validateDefaultReferences(config: PartialConfig): void {
 }
 
 /**
+ * Parse a boolean-ish env var value
+ */
+function parseBoolEnv(value: string): boolean {
+  return ['true', '1', 'yes'].includes(value.toLowerCase());
+}
+
+/**
  * Read configuration from environment variables
  *
- * Reads PODKIT_QUALITY, PODKIT_AUDIO_QUALITY, PODKIT_VIDEO_QUALITY, PODKIT_LOSSY_QUALITY, PODKIT_ARTWORK
+ * Reads PODKIT_QUALITY, PODKIT_AUDIO_QUALITY, PODKIT_VIDEO_QUALITY,
+ * PODKIT_LOSSY_QUALITY, PODKIT_ARTWORK, and PODKIT_CLEAN_ARTISTS_* vars.
  */
 export function loadEnvConfig(): PartialConfig {
   const config: PartialConfig = {};
@@ -589,8 +619,41 @@ export function loadEnvConfig(): PartialConfig {
 
   const artwork = process.env[ENV_KEYS.artwork];
   if (artwork !== undefined) {
-    // Accept 'true', '1', 'yes' as truthy
-    config.artwork = ['true', '1', 'yes'].includes(artwork.toLowerCase());
+    config.artwork = parseBoolEnv(artwork);
+  }
+
+  // Clean artists env vars
+  const cleanArtists = process.env[ENV_KEYS.cleanArtists];
+  const cleanArtistsDrop = process.env[ENV_KEYS.cleanArtistsDrop];
+  const cleanArtistsFormat = process.env[ENV_KEYS.cleanArtistsFormat];
+  const cleanArtistsIgnore = process.env[ENV_KEYS.cleanArtistsIgnore];
+
+  if (
+    cleanArtists !== undefined ||
+    cleanArtistsDrop !== undefined ||
+    cleanArtistsFormat !== undefined ||
+    cleanArtistsIgnore !== undefined
+  ) {
+    const ca: CleanArtistsConfig = { ...DEFAULT_CLEAN_ARTISTS_CONFIG };
+
+    if (cleanArtists !== undefined) {
+      ca.enabled = parseBoolEnv(cleanArtists);
+    }
+    if (cleanArtistsDrop !== undefined) {
+      ca.drop = parseBoolEnv(cleanArtistsDrop);
+    }
+    if (cleanArtistsFormat !== undefined) {
+      ca.format = cleanArtistsFormat;
+    }
+    if (cleanArtistsIgnore !== undefined) {
+      // Comma-separated list, trimmed
+      ca.ignore = cleanArtistsIgnore
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+    }
+
+    config.transforms = { cleanArtists: ca };
   }
 
   return config;
@@ -692,9 +755,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
       // Deep merge transforms config
       // NOTE: When adding new transforms, update this block to include them
       merged.transforms = {
-        ftintitle: {
-          ...merged.transforms.ftintitle,
-          ...config.transforms.ftintitle,
+        cleanArtists: {
+          ...merged.transforms.cleanArtists,
+          ...config.transforms.cleanArtists,
         },
       };
     }
@@ -735,9 +798,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
             // Deep merge transforms if both exist
             transforms: deviceConfig.transforms
               ? {
-                  ftintitle: {
-                    ...existingDevice.transforms?.ftintitle,
-                    ...deviceConfig.transforms.ftintitle,
+                  cleanArtists: {
+                    ...existingDevice.transforms?.cleanArtists,
+                    ...deviceConfig.transforms.cleanArtists,
                   },
                 }
               : existingDevice.transforms,

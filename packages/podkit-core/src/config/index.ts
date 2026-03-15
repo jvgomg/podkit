@@ -6,5 +6,5 @@
  * @module
  */
 
-export type { FtInTitleConfig, TransformsConfig } from './types.js';
-export { DEFAULT_FTINTITLE_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './types.js';
+export type { CleanArtistsConfig, TransformsConfig } from './types.js';
+export { DEFAULT_CLEAN_ARTISTS_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './types.js';

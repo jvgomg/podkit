@@ -8,5 +8,5 @@
  */
 
 // Re-export transform configuration types
-export type { FtInTitleConfig, TransformsConfig } from '../transforms/types.js';
-export { DEFAULT_FTINTITLE_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from '../transforms/types.js';
+export type { CleanArtistsConfig, TransformsConfig } from '../transforms/types.js';
+export { DEFAULT_CLEAN_ARTISTS_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from '../transforms/types.js';

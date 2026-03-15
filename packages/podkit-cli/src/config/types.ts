@@ -10,12 +10,14 @@ export type {
   QualityPreset,
   AacQualityPreset,
   TransformsConfig,
+  CleanArtistsConfig,
   VideoQualityPreset,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
   AAC_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
+  DEFAULT_CLEAN_ARTISTS_CONFIG,
   VIDEO_QUALITY_PRESETS,
 } from '@podkit/core';
 
@@ -98,8 +100,7 @@ export interface VideoCollectionConfig {
  * videoQuality = "medium"
  * artwork = true
  *
- * [devices.terapod.transforms.ftintitle]
- * enabled = true
+ * [devices.terapod.cleanArtists]
  * format = "feat. {}"
  * ```
  */
@@ -216,16 +217,19 @@ export type PartialConfig = Partial<PodkitConfig>;
 // =============================================================================
 
 /**
- * Raw transform configuration as parsed from TOML
+ * Raw cleanArtists configuration as parsed from TOML
+ *
+ * Can be either a boolean (simple enable/disable) or a table with options.
+ * When provided as a table, enabled defaults to true unless explicitly set to false.
  */
-export interface ConfigFileTransforms {
-  ftintitle?: {
-    enabled?: boolean;
-    drop?: boolean;
-    format?: string;
-    ignore?: string[];
-  };
-}
+export type ConfigFileCleanArtists =
+  | boolean
+  | {
+      enabled?: boolean;
+      drop?: boolean;
+      format?: string;
+      ignore?: string[];
+    };
 
 /**
  * Raw music collection config as parsed from TOML
@@ -256,7 +260,7 @@ export interface ConfigFileDevice {
   videoQuality?: string;
   artwork?: boolean;
   skipUpgrades?: boolean;
-  transforms?: ConfigFileTransforms;
+  cleanArtists?: ConfigFileCleanArtists;
 }
 
 /**
@@ -280,9 +284,7 @@ export interface ConfigFileDefaults {
  * videoQuality = "medium"
  * lossyQuality = "max"
  * artwork = true
- *
- * [transforms.ftintitle]
- * enabled = true
+ * cleanArtists = true
  *
  * [music.main]
  * path = "/Volumes/Media/music/library"
@@ -296,8 +298,8 @@ export interface ConfigFileDefaults {
  * quality = "high"
  * artwork = true
  *
- * [devices.terapod.transforms.ftintitle]
- * enabled = true
+ * [devices.terapod.cleanArtists]
+ * format = "feat. {}"
  *
  * [defaults]
  * music = "main"
@@ -315,7 +317,7 @@ export interface ConfigFileContent {
   lossyQuality?: string;
   artwork?: boolean;
   skipUpgrades?: boolean;
-  transforms?: ConfigFileTransforms;
+  cleanArtists?: ConfigFileCleanArtists;
 
   /** Named music collections: [music.{name}] */
   music?: Record<string, ConfigFileMusicCollection>;

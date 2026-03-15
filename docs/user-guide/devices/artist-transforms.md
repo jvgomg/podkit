@@ -7,11 +7,11 @@ sidebar:
 
 Classic iPods don't use the Album Artist field for navigation — when you browse by Artist, it uses the track-level Artist field. If your music tags tracks as "Daft Punk feat. Pharrell Williams", you end up with dozens of one-off artist entries cluttering your artist list.
 
-For the full configuration reference including all recognized patterns, bracket positioning, and edge cases, see the [Album Artist Transform Reference](/reference/transforms).
+For the full configuration reference including all recognized patterns, bracket positioning, and edge cases, see the [Clean Artists Transform Reference](/reference/clean-artists).
 
-## The ftintitle Transform
+## The Clean Artists Feature
 
-The `ftintitle` transform moves featured artist credits from the Artist field into the Title field during sync. Your source files are never modified.
+The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync. Your source files are never modified.
 
 | | Artist | Title |
 |---|--------|-------|
@@ -25,8 +25,7 @@ Your iPod artist list goes from a mess of one-off entries to a clean, browsable 
 Enable it globally in your [config file](/user-guide/configuration):
 
 ```toml
-[transforms.ftintitle]
-enabled = true
+cleanArtists = true
 ```
 
 That's all you need. podkit recognizes common featuring patterns (`feat.`, `ft.`, `featuring`, `with`, `vs`, `&`) and handles them automatically.
@@ -36,8 +35,7 @@ That's all you need. podkit recognizes common featuring patterns (`feat.`, `ft.`
 Some artist names naturally contain words like "&" or "with" that the transform would incorrectly split on. Add these to the `ignore` list:
 
 ```toml
-[transforms.ftintitle]
-enabled = true
+[cleanArtists]
 ignore = ["Simon & Garfunkel", "Earth, Wind & Fire", "Hall & Oates"]
 ```
 
@@ -46,18 +44,19 @@ ignore = ["Simon & Garfunkel", "Earth, Wind & Fire", "Hall & Oates"]
 You can enable the transform for some devices and not others. Devices can be referenced by their config name or mount path with `--device`:
 
 ```toml
-# Global: transform enabled
-[transforms.ftintitle]
-enabled = true
+# Global: clean artists enabled
+cleanArtists = true
 
-# This device uses the global transform
+# This device uses the global setting
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
 
 # This device uses original metadata
-[devices.nano.transforms.ftintitle]
-enabled = false
+[devices.nano]
+volumeUuid = "EFGH-5678"
+volumeName = "NANO"
+cleanArtists = false
 ```
 
 ## Reversibility
@@ -66,9 +65,9 @@ Transforms are reversible. If you disable a transform and re-sync, podkit update
 
 ## More Options
 
-For the full list of configuration options, recognized patterns, bracket positioning rules, and edge cases, see the [Album Artist Transform Reference](/reference/transforms).
+For the full list of configuration options, recognized patterns, bracket positioning rules, and edge cases, see the [Clean Artists Transform Reference](/reference/clean-artists).
 
 ## See Also
 
-- [Album Artist Transform Reference](/reference/transforms) — Full configuration reference
+- [Clean Artists Transform Reference](/reference/clean-artists) — Full configuration reference
 - [Managing Devices](/user-guide/devices) — Device configuration overview

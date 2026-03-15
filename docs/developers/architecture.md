@@ -186,7 +186,7 @@ A parallel set of types exists for video sync (`VideoSyncDiff`, `VideoSyncPlan`,
 
 ### Transforms
 
-The transforms module applies metadata transformations before syncing. For example, the `ftintitle` transform moves featured artist credits from the artist field into the title (e.g., "Artist feat. Guest" becomes artist "Artist", title "Song (feat. Guest)"). Transforms are configured per-collection and tracked in the diff engine so they can be applied or reverted.
+The transforms module applies metadata transformations before syncing. For example, the `cleanArtists` feature moves featured artist credits from the artist field into the title (e.g., "Artist feat. Guest" becomes artist "Artist", title "Song (feat. Guest)"). Transforms are configured globally or per-device and tracked in the diff engine so they can be applied or reverted.
 
 ## Data Flow
 
@@ -234,7 +234,7 @@ Tracks are matched by normalized `(artist, title, album)` tuple. Normalization i
 
 The matching module builds a `Map` index of iPod tracks by match key, then looks up each collection track. Unmatched collection tracks become `toAdd`, unmatched iPod tracks become `toRemove`, and matched pairs are checked for metadata conflicts or transform updates.
 
-When transforms are configured, matching also considers the transformed metadata. For example, if the `ftintitle` transform is enabled, a collection track with artist "Artist feat. Guest" will match an iPod track with artist "Artist" and title containing "(feat. Guest)".
+When transforms are configured, matching also considers the transformed metadata. For example, if `cleanArtists` is enabled, a collection track with artist "Artist feat. Guest" will match an iPod track with artist "Artist" and title containing "(feat. Guest)".
 
 ## Error Handling
 

@@ -9,16 +9,16 @@
 
 import type { TransformableTrack, TransformResult, TransformsConfig } from './types.js';
 import { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
-import { ftintitleTransform } from './ftintitle/index.js';
+import { cleanArtistsTransform } from './ftintitle/index.js';
 
 /**
  * All registered transforms in application order
  *
  * Transforms are applied in this order. If adding new transforms,
- * consider dependencies between them (e.g., ftintitle should run
+ * consider dependencies between them (e.g., cleanArtists should run
  * before any transform that depends on clean artist names).
  */
-const TRANSFORMS = [ftintitleTransform] as const;
+const TRANSFORMS = [cleanArtistsTransform] as const;
 
 /**
  * Apply all enabled transforms to a track
@@ -31,7 +31,7 @@ const TRANSFORMS = [ftintitleTransform] as const;
  * @returns Original and transformed track, plus applied flag
  *
  * @example
- * const result = applyTransforms(track, { ftintitle: { enabled: true, drop: false, format: 'feat. {}' } });
+ * const result = applyTransforms(track, { cleanArtists: { enabled: true, drop: false, format: 'feat. {}' } });
  * if (result.applied) {
  *   console.log('Track was transformed');
  *   console.log('Original:', result.original);
@@ -70,7 +70,7 @@ export function applyTransforms<T extends TransformableTrack>(
  * @returns True if at least one transform is enabled
  */
 export function hasEnabledTransforms(config: TransformsConfig): boolean {
-  return config.ftintitle.enabled;
+  return config.cleanArtists.enabled;
   // Add more checks as transforms are added:
   // || config.otherTransform.enabled
 }
@@ -86,16 +86,16 @@ export function getEnabledTransformsSummary(
 ): Array<{ name: string; description: string }> {
   const enabled: Array<{ name: string; description: string }> = [];
 
-  if (config.ftintitle.enabled) {
-    const { drop, format } = config.ftintitle;
+  if (config.cleanArtists.enabled) {
+    const { drop, format } = config.cleanArtists;
     if (drop) {
       enabled.push({
-        name: 'ftintitle',
+        name: 'cleanArtists',
         description: 'drop featuring info',
       });
     } else {
       enabled.push({
-        name: 'ftintitle',
+        name: 'cleanArtists',
         description: `move to title (format: "${format}")`,
       });
     }

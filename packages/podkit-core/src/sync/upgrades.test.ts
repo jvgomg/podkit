@@ -1294,7 +1294,7 @@ describe('computeDiff with upgrades', () => {
       });
 
       const transforms = {
-        ftintitle: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
+        cleanArtists: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
       };
 
       const diff = computeDiff([source], [ipod], {

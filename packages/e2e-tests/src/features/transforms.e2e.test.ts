@@ -1,8 +1,8 @@
 /**
- * E2E tests for metadata transforms (ftintitle).
+ * E2E tests for metadata transforms (cleanArtists).
  *
  * Tests the full transform pipeline from config through to iPod metadata:
- * - Basic ftintitle sync with transform enabled
+ * - Basic cleanArtists sync with transform enabled
  * - Transform toggle workflow (enable -> sync -> disable -> sync)
  * - Dry-run output shows transform info
  * - Custom format and drop mode options
@@ -54,11 +54,11 @@ interface FeaturedTrack {
   filename: string;
   /** Artist name with featuring info (e.g., "Artist feat. Guest") */
   artist: string;
-  /** Expected artist after ftintitle transform */
+  /** Expected artist after cleanArtists transform */
   expectedArtist: string;
   /** Track title */
   title: string;
-  /** Expected title after ftintitle transform (with default format) */
+  /** Expected title after cleanArtists transform (with default format) */
   expectedTitle: string;
 }
 
@@ -128,7 +128,7 @@ async function createConfigFile(
   options: {
     source: string;
     device: string;
-    ftintitle?: {
+    cleanArtists?: {
       enabled?: boolean;
       drop?: boolean;
       format?: string;
@@ -137,29 +137,43 @@ async function createConfigFile(
 ): Promise<string> {
   const configPath = join(configDir, 'config.toml');
 
-  // Use ADR-008 format with music collection and global transforms
+  // Use ADR-008 format with music collection and global cleanArtists
   // Note: Device is passed via --device flag, not config
-  let content = `[music.default]
-path = "${options.source}"
-
-# Global settings
+  // IMPORTANT: Top-level keys must come before any [section] headers in TOML
+  let content = `# Global settings
 quality = "low"
 `;
 
-  if (options.ftintitle) {
-    content += '\n[transforms.ftintitle]\n';
-    if (options.ftintitle.enabled !== undefined) {
-      content += `enabled = ${options.ftintitle.enabled}\n`;
-    }
-    if (options.ftintitle.drop !== undefined) {
-      content += `drop = ${options.ftintitle.drop}\n`;
-    }
-    if (options.ftintitle.format !== undefined) {
-      content += `format = "${options.ftintitle.format}"\n`;
+  if (options.cleanArtists) {
+    // If only enabled is set and it's a simple boolean, use shorthand
+    const hasOptions =
+      options.cleanArtists.drop !== undefined || options.cleanArtists.format !== undefined;
+    const isDisabled = options.cleanArtists.enabled === false;
+
+    if (!hasOptions && !isDisabled) {
+      // Simple boolean shorthand
+      content += 'cleanArtists = true\n';
+    } else if (isDisabled && !hasOptions) {
+      content += 'cleanArtists = false\n';
+    } else {
+      // Table form with options
+      content += '\n[cleanArtists]\n';
+      if (options.cleanArtists.enabled === false) {
+        content += `enabled = false\n`;
+      }
+      if (options.cleanArtists.drop !== undefined) {
+        content += `drop = ${options.cleanArtists.drop}\n`;
+      }
+      if (options.cleanArtists.format !== undefined) {
+        content += `format = "${options.cleanArtists.format}"\n`;
+      }
     }
   }
 
   content += `
+[music.default]
+path = "${options.source}"
+
 [defaults]
 music = "default"
 `;
@@ -172,7 +186,7 @@ music = "default"
 // Tests
 // =============================================================================
 
-describe('transforms: ftintitle', () => {
+describe('transforms: cleanArtists', () => {
   let fixturesAvailable: boolean;
   let metaflacAvailable: boolean;
 
@@ -196,8 +210,8 @@ describe('transforms: ftintitle', () => {
     return false;
   }
 
-  describe('basic sync with ftintitle enabled', () => {
-    it('transforms featured artists to title during sync', async () => {
+  describe('basic sync with cleanArtists enabled', () => {
+    it('cleans featured artists during sync', async () => {
       if (skipIfUnavailable()) return;
 
       await withTarget(async (target) => {
@@ -206,11 +220,11 @@ describe('transforms: ftintitle', () => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
 
         try {
-          // Create config with ftintitle enabled
+          // Create config with cleanArtists enabled
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           // Sync with transforms enabled
@@ -255,7 +269,7 @@ describe('transforms: ftintitle', () => {
       });
     }, 120000);
 
-    it('does not transform when ftintitle is disabled', async () => {
+    it('does not transform when cleanArtists is disabled', async () => {
       if (skipIfUnavailable()) return;
 
       await withTarget(async (target) => {
@@ -263,11 +277,11 @@ describe('transforms: ftintitle', () => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
 
         try {
-          // Create config with ftintitle disabled (default)
+          // Create config with cleanArtists disabled (default)
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: false },
+            cleanArtists: { enabled: false },
           });
 
           // Sync without transforms
@@ -311,7 +325,7 @@ describe('transforms: ftintitle', () => {
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           const { result, json } = await runCliJson<SyncOutput>([
@@ -331,7 +345,7 @@ describe('transforms: ftintitle', () => {
           // Verify transforms array in output
           expect(json?.transforms).toBeDefined();
           expect(json?.transforms?.length).toBe(1);
-          expect(json!.transforms![0]!.name).toBe('ftintitle');
+          expect(json!.transforms![0]!.name).toBe('cleanArtists');
           expect(json!.transforms![0]!.enabled).toBe(true);
           expect(json!.transforms![0]!.mode).toBe('move');
           expect(json!.transforms![0]!.format).toBe('feat. {}');
@@ -353,7 +367,7 @@ describe('transforms: ftintitle', () => {
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           const result = await runCli([
@@ -366,7 +380,7 @@ describe('transforms: ftintitle', () => {
           ]);
 
           expect(result.exitCode).toBe(0);
-          expect(result.stdout).toContain('Transforms: ftintitle: enabled');
+          expect(result.stdout).toContain('Transforms: Clean artists: enabled');
           expect(result.stdout).toContain('format: "feat. {}"');
         } finally {
           await rm(collectionDir, { recursive: true, force: true });
@@ -385,11 +399,11 @@ describe('transforms: ftintitle', () => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
 
         try {
-          // Step 1: Initial sync with ftintitle disabled
+          // Step 1: Initial sync with cleanArtists disabled
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: false },
+            cleanArtists: { enabled: false },
           });
 
           const { result: result1 } = await runCliJson<SyncOutput>([
@@ -407,11 +421,11 @@ describe('transforms: ftintitle', () => {
           const harmonyBefore = tracksBeforeToggle.find((t) => t.title === 'Harmony');
           expect(harmonyBefore?.artist).toBe('Main Artist feat. Guest Singer');
 
-          // Step 2: Enable ftintitle and sync again
+          // Step 2: Enable cleanArtists and sync again
           const configPathEnabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           // Dry-run first to check what will happen
@@ -468,11 +482,11 @@ describe('transforms: ftintitle', () => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
 
         try {
-          // Step 1: Initial sync with ftintitle enabled
+          // Step 1: Initial sync with cleanArtists enabled
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           const { result: result1 } = await runCliJson<SyncOutput>([
@@ -491,11 +505,11 @@ describe('transforms: ftintitle', () => {
           expect(harmonyTransformed?.artist).toBe('Main Artist');
           expect(harmonyTransformed?.title).toBe('Harmony (feat. Guest Singer)');
 
-          // Step 2: Disable ftintitle and sync again
+          // Step 2: Disable cleanArtists and sync again
           const configPathDisabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: false },
+            cleanArtists: { enabled: false },
           });
 
           // Dry-run to see revert operations
@@ -549,7 +563,7 @@ describe('transforms: ftintitle', () => {
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: {
+            cleanArtists: {
               enabled: true,
               format: 'ft. {}',
             },
@@ -587,7 +601,7 @@ describe('transforms: ftintitle', () => {
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: {
+            cleanArtists: {
               enabled: true,
               drop: true,
             },
@@ -642,7 +656,7 @@ describe('transforms: ftintitle', () => {
           const configPath = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: {
+            cleanArtists: {
               enabled: true,
               drop: true,
             },
@@ -658,7 +672,7 @@ describe('transforms: ftintitle', () => {
           ]);
 
           expect(result.exitCode).toBe(0);
-          expect(result.stdout).toContain('ftintitle: enabled (drop mode)');
+          expect(result.stdout).toContain('Clean artists: enabled (drop mode)');
         } finally {
           await rm(collectionDir, { recursive: true, force: true });
           await rm(configDir, { recursive: true, force: true });
@@ -680,7 +694,7 @@ describe('transforms: ftintitle', () => {
           const configPathDisabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: false },
+            cleanArtists: { enabled: false },
           });
 
           await runCliJson<SyncOutput>([
@@ -696,7 +710,7 @@ describe('transforms: ftintitle', () => {
           const configPathEnabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           const result = await runCli([
@@ -735,7 +749,7 @@ describe('transforms: ftintitle', () => {
           const configPathDisabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: false },
+            cleanArtists: { enabled: false },
           });
 
           await runCliJson<SyncOutput>([
@@ -751,7 +765,7 @@ describe('transforms: ftintitle', () => {
           const configPathEnabled = await createConfigFile(configDir, {
             source: collectionDir,
             device: target.path,
-            ftintitle: { enabled: true },
+            cleanArtists: { enabled: true },
           });
 
           const { json } = await runCliJson<SyncOutput>([

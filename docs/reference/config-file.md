@@ -24,12 +24,14 @@ lossyQuality = "max"         # Quality for lossy sources when audioQuality = "lo
 artwork = true               # Include album artwork
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 
-# Global transforms
-[transforms.ftintitle]
-enabled = false
-drop = false
-format = "feat. {}"
-ignore = []
+# Clean up featured artist credits (simple form)
+cleanArtists = true
+
+# Or with options (table form):
+# [cleanArtists]
+# drop = false
+# format = "feat. {}"
+# ignore = []
 
 # Music collections
 [music.<name>]
@@ -49,9 +51,9 @@ audioQuality = "high"        # Audio override for this device
 videoQuality = "high"        # Video override for this device
 artwork = true
 
-# Per-device transforms
-[devices.<name>.transforms.ftintitle]
-enabled = true
+# Per-device clean artists
+[devices.<name>.cleanArtists]
+format = "feat. {}"
 
 # Defaults
 [defaults]
@@ -148,27 +150,29 @@ skipUpgrades = false          # Allow file-replacement upgrades (default)
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `skipUpgrades` | boolean | no | global `skipUpgrades` | Skip file-replacement upgrades for this device |
 
-### Per-Device Transforms
+### Per-Device Clean Artists
 
-Devices can override global transform settings:
+Devices can override the global `cleanArtists` setting:
 
 ```toml
-[devices.classic.transforms.ftintitle]
-enabled = true
+[devices.classic.cleanArtists]
 format = "feat. {}"
 ```
 
-## Transforms
+## Clean Artists
 
-Global transform settings, applied to all devices unless overridden.
+Extracts featured artist information from the artist field and moves it to the title field. Applied globally to all devices unless overridden.
 
-### ftintitle
-
-Extracts featured artist information from the artist field and moves it to the title field.
+The simplest form is a boolean:
 
 ```toml
-[transforms.ftintitle]
-enabled = true
+cleanArtists = true
+```
+
+For more control, use the table form (implies enabled):
+
+```toml
+[cleanArtists]
 drop = false
 format = "feat. {}"
 ignore = ["Simon & Garfunkel"]
@@ -176,7 +180,6 @@ ignore = ["Simon & Garfunkel"]
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `enabled` | boolean | `false` | Whether the transform is active |
 | `drop` | boolean | `false` | If `true`, drop featuring info entirely instead of moving to title |
 | `format` | string | `"feat. {}"` | Format string for featuring text in title (`{}` is replaced with artist names) |
 | `ignore` | string[] | `[]` | Artist names to ignore when splitting on ambiguous separators (`and`, `&`, `with`) |
@@ -232,9 +235,8 @@ videoQuality = "high"         # Override quality for video only
 lossyQuality = "max"         # Quality for lossy sources when audioQuality = "lossless"
 artwork = true
 
-# Global transforms
-[transforms.ftintitle]
-enabled = true
+# Clean up featured artist credits
+[cleanArtists]
 format = "feat. {}"
 ignore = ["Simon & Garfunkel", "Hall & Oates"]
 

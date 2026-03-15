@@ -17,6 +17,10 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_VIDEO_QUALITY` | Video-specific quality (overrides config file `videoQuality`) |
 | `PODKIT_LOSSY_QUALITY` | Lossy source quality (overrides config file `lossyQuality`) |
 | `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
+| `PODKIT_CLEAN_ARTISTS` | Enable/disable clean artists (`true`/`false`) |
+| `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
+| `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |
+| `PODKIT_CLEAN_ARTISTS_IGNORE` | Comma-separated artist names to skip (e.g., `Simon & Garfunkel,Hall & Oates`) |
 | `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for collection `<NAME>` (uppercase, hyphens become underscores) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
 

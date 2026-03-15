@@ -144,7 +144,7 @@ export type {
   TransformableTrack,
   TransformResult,
   TrackTransform,
-  FtInTitleConfig,
+  CleanArtistsConfig,
   TransformsConfig,
 } from '@podkit/core';
 
@@ -1442,8 +1442,8 @@ export function supportsVideo(_generation: string): boolean {
 // Transforms (mock, pass-through)
 // =============================================================================
 
-export const DEFAULT_FTINTITLE_CONFIG = { enabled: false };
-export const DEFAULT_TRANSFORMS_CONFIG = { ftintitle: { enabled: false } };
+export const DEFAULT_CLEAN_ARTISTS_CONFIG = { enabled: false };
+export const DEFAULT_TRANSFORMS_CONFIG = { cleanArtists: { enabled: false } };
 
 export function applyTransforms(track: any, _config: any) {
   return { track, transformed: false, changes: [] };
@@ -1457,7 +1457,7 @@ export function getEnabledTransformsSummary(_config: any): string[] {
   return [];
 }
 
-export function ftintitleTransform(track: any, _config: any) {
+export function cleanArtistsTransform(track: any, _config: any) {
   return { track, transformed: false, changes: [] };
 }
 

@@ -115,30 +115,35 @@ export function addDevice(
     lines.push(`artwork = ${device.artwork}`);
   }
 
-  // Handle transforms (nested TOML)
-  if (device.transforms) {
-    for (const [transformName, transformConfig] of Object.entries(device.transforms)) {
-      const config = transformConfig as Record<string, unknown>;
-      const transformLines: string[] = [];
+  // Handle cleanArtists config
+  if (device.transforms?.cleanArtists) {
+    const ca = device.transforms.cleanArtists;
+    const hasOptions = ca.drop || ca.format !== 'feat. {}' || (ca.ignore && ca.ignore.length > 0);
 
-      if ('enabled' in config) {
-        transformLines.push(`enabled = ${config.enabled}`);
+    if (!hasOptions) {
+      // Simple boolean form
+      lines.push(`cleanArtists = ${ca.enabled}`);
+    } else {
+      // Table form with options
+      const caLines: string[] = [];
+      if (!ca.enabled) {
+        caLines.push(`enabled = false`);
       }
-      if ('drop' in config) {
-        transformLines.push(`drop = ${config.drop}`);
+      if (ca.drop) {
+        caLines.push(`drop = ${ca.drop}`);
       }
-      if ('format' in config && config.format) {
-        transformLines.push(`format = "${config.format}"`);
+      if (ca.format && ca.format !== 'feat. {}') {
+        caLines.push(`format = "${ca.format}"`);
       }
-      if ('ignore' in config && Array.isArray(config.ignore)) {
-        const ignoreList = config.ignore.map((s: string) => `"${s}"`).join(', ');
-        transformLines.push(`ignore = [${ignoreList}]`);
+      if (ca.ignore && ca.ignore.length > 0) {
+        const ignoreList = ca.ignore.map((s: string) => `"${s}"`).join(', ');
+        caLines.push(`ignore = [${ignoreList}]`);
       }
 
-      if (transformLines.length > 0) {
+      if (caLines.length > 0) {
         lines.push('');
-        lines.push(`[devices.${name}.transforms.${transformName}]`);
-        lines.push(...transformLines);
+        lines.push(`[devices.${name}.cleanArtists]`);
+        lines.push(...caLines);
       }
     }
   }
@@ -311,7 +316,7 @@ export function removeDevice(name: string, options?: UpdateConfigOptions): Updat
 
   // Remove the [devices.<name>] section and any nested [devices.<name>.*] sections
   // This regex matches from [devices.name] up to the next top-level section or end of file
-  // It also handles nested sections like [devices.name.transforms.ftintitle]
+  // It also handles nested sections like [devices.name.cleanArtists]
   const removeRegex = new RegExp(
     `\\n?\\[devices\\.${escapeRegExp(name)}\\][\\s\\S]*?(?=\\n\\[(?!devices\\.${escapeRegExp(name)}\\.))|\\n?\\[devices\\.${escapeRegExp(name)}\\][\\s\\S]*$`,
     'g'

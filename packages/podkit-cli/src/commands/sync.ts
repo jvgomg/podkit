@@ -259,11 +259,11 @@ export { renderProgressBar };
 function formatTransformsConfig(transforms: TransformsConfig): string | null {
   const parts: string[] = [];
 
-  if (transforms.ftintitle.enabled) {
-    if (transforms.ftintitle.drop) {
-      parts.push('ftintitle: enabled (drop mode)');
+  if (transforms.cleanArtists.enabled) {
+    if (transforms.cleanArtists.drop) {
+      parts.push('Clean artists: enabled (drop mode)');
     } else {
-      parts.push(`ftintitle: enabled (format: "${transforms.ftintitle.format}")`);
+      parts.push(`Clean artists: enabled (format: "${transforms.cleanArtists.format}")`);
     }
   }
 
@@ -349,9 +349,9 @@ function getEffectiveTransforms(
   }
 
   return {
-    ftintitle: {
-      ...globalTransforms.ftintitle,
-      ...deviceConfig.transforms.ftintitle,
+    cleanArtists: {
+      ...globalTransforms.cleanArtists,
+      ...deviceConfig.transforms.cleanArtists,
     },
   };
 }
@@ -784,12 +784,14 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
   }));
 
   const transformsInfo: TransformInfo[] = [];
-  if (effectiveTransforms.ftintitle.enabled) {
+  if (effectiveTransforms.cleanArtists.enabled) {
     transformsInfo.push({
-      name: 'ftintitle',
+      name: 'cleanArtists',
       enabled: true,
-      mode: effectiveTransforms.ftintitle.drop ? 'drop' : 'move',
-      format: effectiveTransforms.ftintitle.drop ? undefined : effectiveTransforms.ftintitle.format,
+      mode: effectiveTransforms.cleanArtists.drop ? 'drop' : 'move',
+      format: effectiveTransforms.cleanArtists.drop
+        ? undefined
+        : effectiveTransforms.cleanArtists.format,
     });
   }
 
@@ -867,7 +869,7 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
     out.newline();
 
     // Transform preview
-    if (effectiveTransforms.ftintitle.enabled) {
+    if (effectiveTransforms.cleanArtists.enabled) {
       const tracksToTransform = [
         ...diff.toAdd,
         ...diff.toUpdate.filter((u) => u.reason === 'transform-apply').map((u) => u.source),

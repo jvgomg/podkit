@@ -232,16 +232,16 @@ export type {
   TransformableTrack,
   TransformResult,
   TrackTransform,
-  FtInTitleConfig,
+  CleanArtistsConfig,
   TransformsConfig,
 } from './transforms/types.js';
-export { DEFAULT_FTINTITLE_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './transforms/types.js';
+export { DEFAULT_CLEAN_ARTISTS_CONFIG, DEFAULT_TRANSFORMS_CONFIG } from './transforms/types.js';
 export {
   applyTransforms,
   hasEnabledTransforms,
   getEnabledTransformsSummary,
 } from './transforms/pipeline.js';
-export { ftintitleTransform } from './transforms/ftintitle/index.js';
+export { cleanArtistsTransform } from './transforms/ftintitle/index.js';
 export {
   applyFtInTitle,
   extractFeaturedArtist,
