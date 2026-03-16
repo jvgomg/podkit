@@ -19,8 +19,8 @@
  * ```
  */
 import { Command } from 'commander';
+import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statfsSync } from '../utils/fs.js';
-import * as readline from 'node:readline';
 import { getContext } from '../context.js';
 import {
   addDevice,
@@ -86,41 +86,6 @@ export function getStorageInfo(
   }
 }
 
-/**
- * Prompt user for yes/no confirmation (defaults to yes)
- */
-async function confirm(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      const normalized = answer.toLowerCase().trim();
-      resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
-    });
-  });
-}
-
-/**
- * Prompt user for no/yes confirmation (defaults to no)
- */
-async function confirmNo(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      const normalized = answer.toLowerCase().trim();
-      resolve(normalized === 'y' || normalized === 'yes');
-    });
-  });
-}
 
 /**
  * Format a table row with consistent column widths
@@ -697,7 +662,7 @@ const addSubcommand = new Command('add')
         out.print('This iPod needs to be initialized (no iTunesDB found).');
 
         const shouldInit =
-          autoConfirm || out.isJson || (await confirm('Initialize iPod database now? [Y/n] '));
+          autoConfirm || out.isJson || (await confirm('Initialize iPod database now?'));
 
         if (!shouldInit) {
           out.print('Cancelled. iPod not initialized.');
@@ -843,7 +808,7 @@ const addSubcommand = new Command('add')
 
         out.newline();
 
-        const shouldSave = await confirm(`Add this iPod as "${name}"? [Y/n] `);
+        const shouldSave = await confirm(`Add this iPod as "${name}"?`);
 
         if (!shouldSave) {
           out.print('Cancelled. No changes made.');
@@ -1022,7 +987,7 @@ const addSubcommand = new Command('add')
         out.print('This iPod needs to be initialized (no iTunesDB found).');
 
         const shouldInit =
-          autoConfirm || out.isJson || (await confirm('Initialize iPod database now? [Y/n] '));
+          autoConfirm || out.isJson || (await confirm('Initialize iPod database now?'));
 
         if (!shouldInit) {
           out.print('Cancelled. iPod not initialized.');
@@ -1162,7 +1127,7 @@ const addSubcommand = new Command('add')
 
       out.newline();
 
-      const shouldSave = await confirm(`Add this iPod as "${name}"? [Y/n] `);
+      const shouldSave = await confirm(`Add this iPod as "${name}"?`);
 
       if (!shouldSave) {
         out.print('Cancelled. No changes made.');
@@ -1263,7 +1228,7 @@ const removeSubcommand = new Command('remove')
       }
       out.newline();
 
-      const confirmed = await confirmNo(`Remove device "${name}"? [y/N] `);
+      const confirmed = await confirmNo(`Remove device "${name}"?`);
       if (!confirmed) {
         out.print('Cancelled. No changes made.');
         return;
@@ -2223,7 +2188,7 @@ const resetSubcommand = new Command('reset')
         out.print('Your device configuration in podkit will remain valid.');
         out.newline();
 
-        const confirmed = await confirmNo('Continue? [y/N] ');
+        const confirmed = await confirmNo('Continue?');
         if (!confirmed) {
           out.print('Cancelled. No changes made.');
           return;
@@ -2711,7 +2676,7 @@ const initSubcommand = new Command('init')
       out.newline();
       out.print('WARNING: This will delete all existing tracks and playlists!');
       out.newline();
-      const confirmed = await confirmNo('Reinitialize the iPod database? [y/N] ');
+      const confirmed = await confirmNo('Reinitialize the iPod database?');
       if (!confirmed) {
         out.print('Cancelled. No changes made.');
         return;

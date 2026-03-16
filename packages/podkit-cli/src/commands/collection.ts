@@ -22,7 +22,7 @@
 import { Command } from 'commander';
 import * as path from 'node:path';
 import { existsSync, statSync } from '../utils/fs.js';
-import * as readline from 'node:readline';
+import { confirmNo } from '../utils/confirm.js';
 import { getContext } from '../context.js';
 import {
   addMusicCollection,
@@ -99,24 +99,6 @@ export interface CollectionModifyOutput {
   error?: string;
 }
 
-/**
- * Prompt user for yes/no confirmation
- */
-async function confirm(question: string): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      const normalized = answer.toLowerCase().trim();
-      // Default to yes if empty
-      resolve(normalized === '' || normalized === 'y' || normalized === 'yes');
-    });
-  });
-}
 
 /**
  * Format collections as a table
@@ -453,14 +435,14 @@ const removeSubcommand = new Command('remove')
       } else {
         // Interactive mode: ask user
         out.print(`Found '${name}' in both music and video collections.`);
-        const removeBoth = await confirm('Remove both? [y/N] ');
+        const removeBoth = await confirmNo('Remove both?');
         if (removeBoth) {
           typesToRemove = ['music', 'video'];
         } else {
           // Let them choose
-          const removeMusic = await confirm('Remove music collection? [y/N] ');
+          const removeMusic = await confirmNo('Remove music collection?');
           if (removeMusic) typesToRemove.push('music');
-          const removeVideo = await confirm('Remove video collection? [y/N] ');
+          const removeVideo = await confirmNo('Remove video collection?');
           if (removeVideo) typesToRemove.push('video');
         }
       }
@@ -476,7 +458,7 @@ const removeSubcommand = new Command('remove')
     // Confirm removal in interactive mode
     if (out.isText && !options.yes) {
       const typeList = typesToRemove.join(' and ');
-      const shouldRemove = await confirm(`Remove ${typeList} collection '${name}'? [y/N] `);
+      const shouldRemove = await confirmNo(`Remove ${typeList} collection '${name}'?`);
       if (!shouldRemove) {
         out.print('Cancelled. No collections removed.');
         return;
