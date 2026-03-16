@@ -9,19 +9,16 @@ This guide covers audio quality presets, encoder options, and file size estimate
 
 ## Quality Presets
 
-| Preset | Type | Target | Description |
-|--------|------|--------|-------------|
-| `lossless` | Lossless | N/A | Apple Lossless (only from lossless sources) |
-| `max` | VBR | ~320 kbps | Highest VBR quality level |
-| `max-cbr` | CBR | 320 kbps | Guaranteed 320 kbps |
-| `high` | VBR | ~256 kbps | Transparent quality (default) |
-| `high-cbr` | CBR | 256 kbps | Predictable file sizes |
-| `medium` | VBR | ~192 kbps | Excellent quality |
-| `medium-cbr` | CBR | 192 kbps | |
-| `low` | VBR | ~128 kbps | Good quality, space-efficient |
-| `low-cbr` | CBR | 128 kbps | |
+| Preset | Target | Description |
+|--------|--------|-------------|
+| `max` | Lossless or ~256 kbps | ALAC if device supports it and source is lossless; otherwise same as `high` |
+| `high` | ~256 kbps | Transparent quality (**default**) |
+| `medium` | ~192 kbps | Excellent quality |
+| `low` | ~128 kbps | Good quality, space-efficient |
 
 **Default:** `high` (VBR ~256 kbps)
+
+The `max` preset is device-aware. On devices that support Apple Lossless (iPod Classic, Video 5G/5.5G, Nano 3G-5G), it produces ALAC from lossless sources. On other devices, it falls back to the same high-quality AAC as the `high` preset.
 
 ## Configuration
 
@@ -31,11 +28,11 @@ This guide covers audio quality presets, encoder options, and file size estimate
 # Default: VBR ~256 kbps
 podkit sync
 
-# Lossless (ALAC) with lossy quality fallback
-podkit sync --audio-quality lossless --lossy-quality max
+# Best quality — ALAC on supported devices, high AAC on others
+podkit sync --audio-quality max
 
-# Guaranteed 320 kbps CBR
-podkit sync --audio-quality max-cbr
+# CBR encoding for predictable file sizes
+podkit sync --encoding cbr
 
 # Space-efficient
 podkit sync --quality low
@@ -49,24 +46,23 @@ podkit sync --quality medium --audio-quality high
 ```toml
 # Top-level settings in config.toml
 quality = "high"          # Unified quality for audio and video
-audioQuality = "high"     # Audio-specific override: lossless | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
-lossyQuality = "max"     # Quality for lossy sources when audioQuality = "lossless"
+audioQuality = "high"     # Audio-specific override: max | high | medium | low
+encoding = "vbr"          # Encoding mode: vbr (default) or cbr
 ```
 
 ## Example Scenarios
 
-**Scenario 1: Audiophile with mixed collection**
+**Scenario 1: Audiophile with iPod Classic**
 
 ```toml
-audioQuality = "lossless"
-lossyQuality = "max"
+audioQuality = "max"
 ```
 
 | Source | Result |
 |--------|--------|
-| FLAC | ALAC (lossless preserved) |
+| FLAC | ALAC (Classic supports lossless) |
 | MP3 320 | Copy as-is |
-| OGG 192 | AAC ~320 VBR (lossy quality) + warning |
+| OGG 192 | AAC ~192 kbps VBR (capped at source bitrate) + warning |
 
 **Scenario 2: Space-conscious user**
 
@@ -78,40 +74,54 @@ quality = "medium"
 |--------|--------|
 | FLAC | AAC ~192 kbps VBR |
 | MP3 128 | Copy as-is |
-| Opus 128 | AAC ~192 kbps VBR + warning |
+| Opus 128 | AAC ~128 kbps VBR (capped at source bitrate) + warning |
 
 **Scenario 3: Predictable file sizes**
 
 ```toml
-quality = "high-cbr"
+quality = "high"
+encoding = "cbr"
 ```
 
 | Source | Result |
 |--------|--------|
 | FLAC | AAC 256 kbps CBR |
 | MP3 320 | Copy as-is |
-| OGG 192 | AAC 256 kbps CBR + warning |
+| OGG 192 | AAC 192 kbps CBR (capped at source bitrate) + warning |
 
 ## VBR vs CBR
 
+VBR is the default encoding mode. You can switch to CBR globally or per device with the `encoding` option:
+
+```toml
+encoding = "cbr"  # global
+
+[devices.nano]
+encoding = "cbr"  # per device
+```
+
 | Mode | Pros | Cons |
 |------|------|------|
-| **VBR** | Better quality-per-MB, adapts to content | Less predictable file sizes |
-| **CBR** | Predictable file sizes | May waste bits on simple passages |
+| **VBR** (default) | Better quality-per-MB, adapts to content | Less predictable file sizes; adjacent preset changes may not always be detected |
+| **CBR** | Predictable file sizes, reliable preset change detection | May waste bits on simple passages |
 
 **Note:** VBR AAC works correctly for seeking on iPods (unlike VBR MP3). podkit defaults to VBR for better quality efficiency.
 
+### Incompatible Lossy Bitrate Capping
+
+When transcoding incompatible lossy sources (OGG, Opus), the effective bitrate is capped at the source file's bitrate to avoid creating a larger file with no quality benefit. For example, a 128 kbps OGG file transcoded with the `high` preset (256 kbps target) will be transcoded at 128 kbps, not 256 kbps.
+
 ## File Size Guidelines
 
-| Preset | Mode | Approx Bitrate | File Size (4 min song) |
-|--------|------|----------------|------------------------|
-| **lossless** | Lossless | ~900 kbps | ~26 MB |
-| **max** | VBR | ~320 kbps | ~9.4 MB |
-| **high** | VBR | ~256 kbps | ~7.5 MB |
-| **medium** | VBR | ~192 kbps | ~5.6 MB |
-| **low** | VBR | ~128 kbps | ~3.8 MB |
+| Preset | Approx Bitrate | File Size (4 min song) |
+|--------|----------------|------------------------|
+| **max** (ALAC) | ~900 kbps | ~26 MB |
+| **max** (AAC fallback) | ~256 kbps | ~7.5 MB |
+| **high** | ~256 kbps | ~7.5 MB |
+| **medium** | ~192 kbps | ~5.6 MB |
+| **low** | ~128 kbps | ~3.8 MB |
 
-VBR file sizes vary based on content complexity. CBR sizes are exact.
+VBR file sizes vary based on content complexity. CBR sizes are exact. The `max` preset produces ALAC (lossless) on devices that support it, otherwise AAC at the same quality as `high`.
 
 ## AAC Encoders
 

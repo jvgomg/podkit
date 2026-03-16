@@ -76,13 +76,15 @@ podkit sync [options]
 | `-t, --type <type>` | Content type: `music` or `video` (repeatable; omit for both) |
 | `-c, --collection <name>` | Collection name to sync (searches both music and video) |
 | `-n, --dry-run` | Show what would be synced without making changes |
-| `--quality <preset>` | Unified quality preset for audio and video: `max`, `high`, `medium`, `low` (also accepts audio-only values like `lossless`, `*-cbr` which only affect audio) |
-| `--audio-quality <preset>` | Audio-specific quality override: `lossless`, `max`, `max-cbr`, `high`, `high-cbr`, `medium`, `medium-cbr`, `low`, `low-cbr` |
+| `--quality <preset>` | Unified quality preset for audio and video: `max`, `high`, `medium`, `low` |
+| `--audio-quality <preset>` | Audio-specific quality override: `max`, `high`, `medium`, `low` |
 | `--video-quality <preset>` | Video-specific quality override: `max`, `high`, `medium`, `low` |
-| `--lossy-quality <preset>` | Quality for lossy sources when audio quality is `lossless` (default: `max`) |
+| `--encoding <mode>` | Encoding mode: `vbr` (default) or `cbr` |
 | `--filter <pattern>` | Only sync tracks matching pattern |
 | `--no-artwork` | Skip artwork transfer |
 | `--skip-upgrades` | Skip file-replacement upgrades for changed source files |
+| `--force-transcode` | Re-transcode all lossless-source tracks regardless of bitrate match |
+| `--force-sync-tags` | Write sync tags to all matched transcoded tracks without re-transcoding |
 | `--delete` | Remove tracks from iPod that are not in the source |
 | `--eject` | Eject iPod after successful sync |
 
@@ -113,8 +115,8 @@ podkit sync -d myipod
 # Sync with lower quality to save space
 podkit sync --quality medium
 
-# Lossless audio with fallback for lossy sources
-podkit sync --audio-quality lossless --lossy-quality high
+# Best quality — ALAC on supported devices
+podkit sync --audio-quality max
 
 # Set unified quality, but override audio specifically
 podkit sync --quality medium --audio-quality high
@@ -156,9 +158,10 @@ podkit device add -d <name> [options]
 |--------|-------------|
 | `--path <path>` | Explicit path to iPod mount point (auto-detected if omitted) |
 | `-y, --yes` | Skip confirmation prompts |
-| `--quality <preset>` | Set transcoding quality: `lossless`, `max`, `high`, `medium`, `low` (and CBR variants) |
+| `--quality <preset>` | Set transcoding quality: `max`, `high`, `medium`, `low` |
 | `--audio-quality <preset>` | Set audio quality (overrides `--quality`) |
 | `--video-quality <preset>` | Set video quality: `max`, `high`, `medium`, `low` |
+| `--encoding <mode>` | Set encoding mode: `vbr` or `cbr` |
 | `--artwork` / `--no-artwork` | Enable or disable artwork sync for this device |
 
 ```bash
@@ -171,8 +174,8 @@ podkit device add -d classic --path /Volumes/IPOD
 # Add with quality settings
 podkit device add -d nano --quality medium --no-artwork
 
-# Add with specific audio quality
-podkit device add -d classic --audio-quality lossless --video-quality high
+# Add with best quality (ALAC on supported devices)
+podkit device add -d classic --audio-quality max --video-quality high
 ```
 
 ### `podkit device remove`
@@ -197,9 +200,10 @@ podkit device set -d <name> [options]
 
 | Option | Description |
 |--------|-------------|
-| `--quality <preset>` | Set transcoding quality: `lossless`, `max`, `high`, `medium`, `low` (and CBR variants) |
+| `--quality <preset>` | Set transcoding quality: `max`, `high`, `medium`, `low` |
 | `--audio-quality <preset>` | Set audio quality (overrides `--quality`) |
 | `--video-quality <preset>` | Set video quality: `max`, `high`, `medium`, `low` |
+| `--encoding <mode>` | Set encoding mode: `vbr` or `cbr` |
 | `--artwork` / `--no-artwork` | Enable or disable artwork sync |
 | `--clear-quality` | Remove quality setting (use global default) |
 | `--clear-audio-quality` | Remove audio quality setting |
@@ -208,7 +212,7 @@ podkit device set -d <name> [options]
 
 ```bash
 # Set quality on a device
-podkit device set -d classic --quality lossless
+podkit device set -d classic --quality max
 
 # Set audio and video quality separately
 podkit device set -d nano --audio-quality medium --video-quality low

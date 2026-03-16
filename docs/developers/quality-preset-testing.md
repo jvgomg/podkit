@@ -5,11 +5,11 @@ sidebar:
   order: 6
 ---
 
-When a user changes their quality preset, podkit compares iPod track bitrate against the current preset target to detect mismatches and re-transcode affected tracks. Because encoding produces content-dependent bitrates (especially audio VBR), this detection requires real-device testing beyond what automated unit and E2E tests can verify.
+When a user changes their quality preset, podkit compares iPod track bitrate against the current preset target to detect mismatches and re-transcode affected tracks. Detection uses a percentage-based tolerance (30% for VBR, 10% for CBR) that adapts to the encoding mode. Because encoding produces content-dependent bitrates (especially audio VBR), this detection requires real-device testing beyond what automated unit and E2E tests can verify.
 
 ## Why Device Testing Is Needed
 
-- **Audio VBR variance is content-dependent.** The `aac_at` encoder on macOS produces bitrates that vary by track content. The ±50 kbps tolerance was chosen based on empirical data, but new content or encoder versions could shift the ranges.
+- **Audio VBR variance is content-dependent.** The `aac_at` encoder on macOS produces bitrates that vary by track content. The percentage-based tolerance (30% for VBR, 10% for CBR) was chosen based on empirical data, but new content or encoder versions could shift the ranges.
 - **Video CRF variance depends on content complexity.** Video uses CRF encoding with a bitrate cap. The actual bitrate is very consistent in practice (±4 kbps observed) but could vary more with extreme content.
 - **Dummy iPod bitrates are unreliable.** The libgpod-based test iPods store very low bitrate values (~14-17 kbps) for short test fixtures, making automated E2E detection testing impractical. Unit tests cover the detection logic; device tests verify it end-to-end.
 - **Encoder mapping correctness.** The `aac_at` encoder uses an inverted quality scale (0=best, 14=worst) compared to the native `aac` encoder (5=best). This was discovered through device testing and would not have been caught by unit tests alone.
@@ -19,8 +19,9 @@ When a user changes their quality preset, podkit compares iPod track bitrate aga
 Audio and video preset change detection share the same core comparison via `detectBitratePresetMismatch()` in `upgrades.ts`:
 
 1. Compare iPod track bitrate against the current preset's target bitrate
-2. If the difference exceeds a tolerance threshold (default ±50 kbps), flag for re-transcoding
-3. Ignore tracks with bitrates below a minimum threshold (default 64 kbps) to avoid false positives from short files or corrupt metadata
+2. If the difference exceeds a percentage-based tolerance (30% for VBR, 10% for CBR), flag for re-transcoding
+3. For `max` preset on ALAC-capable devices, use format detection instead of bitrate comparison
+4. Ignore tracks with bitrates below a minimum threshold (default 64 kbps) to avoid false positives from short files or corrupt metadata
 
 **Audio-specific:** Only lossless source tracks are checked — lossy sources (MP3, AAC) are copied as-is regardless of preset.
 
@@ -37,12 +38,13 @@ Measured across CHVRCHES, Foals, and Mk.gee (44 tracks, diverse genres):
 | low | 128 kbps | 6 | 111-161 kbps | 139 kbps |
 | medium | 192 kbps | 4 | 154-225 kbps | 189 kbps |
 | high | 256 kbps | 2 | 212-305 kbps | 253 kbps |
-| max | 320 kbps | 0 | 284-386 kbps | 339 kbps |
+
+The `max` preset produces ALAC on devices that support it, otherwise falls back to the same quality as `high`.
 
 Adjacent audio presets (e.g., medium and high) have overlapping VBR ranges:
 - **Jumps of 2+ preset levels** (e.g., low to high) are always detected
 - **Single-step transitions** between adjacent VBR presets may miss some tracks in the overlap zone
-- **CBR presets** (`low-cbr`, `high-cbr`, etc.) produce exact bitrates and are always detected
+- **CBR encoding** (`encoding = "cbr"`) produces exact bitrates and all preset changes are reliably detected
 
 ### Video (H.264 CRF + bitrate cap)
 
@@ -65,7 +67,7 @@ Video bitrates are very consistent because CRF + bitrate cap produces predictabl
 | iPod Video 5G | 396 | 496 | 728 | 896 | 100 kbps |
 | iPod Nano 3G+ | 396 | 496 | 728 | 896 | 100 kbps |
 
-The ±50 kbps tolerance works for all device profiles. iPod Classic has very large gaps (500+ kbps). iPod Video 5G/Nano have a minimum gap of 100 kbps (medium↔low), which is 2× the tolerance.
+The percentage-based tolerance (30% VBR, 10% CBR) works for all device profiles. iPod Classic has very large gaps (500+ kbps). iPod Video 5G/Nano have a minimum gap of 100 kbps (medium to low), which is well within detection range.
 
 ## Test Methodology
 
@@ -106,15 +108,16 @@ EOF
 | 2 | Change to `high`, dry-run | All tracks: `preset-upgrade` |
 | 3 | Sync at `high` | Re-transcoded to ~212-305 kbps |
 | 4 | Dry-run at `high` | **0 updates** (idempotent) |
-| 5 | Change to `max`, dry-run | Most tracks: `preset-upgrade` (some in overlap zone) |
-| 6 | Sync at `max` | Re-transcoded to ~284-386 kbps |
-| 7 | Dry-run at `max` | **0 updates** (idempotent) |
+| 5a | **Non-ALAC device:** Change to `max`, dry-run | **0 updates** (`max` = same as `high` on non-ALAC devices) |
+| 5b | **ALAC-capable device:** Change to `max`, dry-run | All tracks: `preset-upgrade` (re-transcode to ALAC) |
+| 6b | Sync at `max` on ALAC device | Re-transcoded to ALAC (lossless) |
+| 7b | Dry-run at `max` on ALAC device | **0 updates** (idempotent) |
 | 8 | Change to `low`, dry-run | All tracks: `preset-downgrade` |
 | 9 | Sync at `low` | Re-transcoded to ~112-163 kbps |
 | 10 | Dry-run at `low` | **0 updates** (idempotent) |
 | 11 | `--skip-upgrades` | **0 updates** (suppressed) |
-| 12 | Change to `low-cbr` | 0 updates (same target bitrate) |
-| 13 | Change to `high-cbr` | All tracks: `preset-upgrade` |
+| 12 | Change to `encoding = "cbr"` at `low` | 0 updates (same target bitrate) |
+| 13 | Change to `high` with `encoding = "cbr"` | All tracks: `preset-upgrade` |
 
 ### Video Test Setup
 
@@ -191,13 +194,11 @@ Tested on iPod Video 5th Generation (60GB) with 44 FLAC tracks (CHVRCHES, Foals,
 |-----------|----------|--------|-------|
 | low → high | 44/44 | 0 | 100% detection |
 | high → high | 0/44 | — | Idempotent |
-| high → max | 35/44 | 9 | 9 tracks in VBR overlap zone (220-290 kbps) |
-| max → max | 0/44 | — | Idempotent |
-| max → low | 44/44 | 0 | 100% detection |
+| high → low | 44/44 | 0 | 100% detection |
 | low → low | 0/44 | — | Idempotent |
 | low → high (skip-upgrades) | 0/44 | — | Correctly suppressed |
-| low VBR → low-cbr | 0/44 | — | Same target bitrate |
-| low → high-cbr | 44/44 | 0 | 100% detection |
+| low VBR → low CBR | 0/44 | — | Same target bitrate |
+| low → high CBR | 44/44 | 0 | 100% detection |
 
 ### Video
 

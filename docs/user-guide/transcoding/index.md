@@ -66,13 +66,13 @@ Audio and video quality use a unified system. The `quality` field sets both audi
 quality = "high"
 
 # Or override audio and video separately
-audioQuality = "lossless"
+audioQuality = "max"
 videoQuality = "medium"
 
 # Per-device overrides
 [devices.classic]
 quality = "high"
-audioQuality = "lossless"     # Lossless audio on Classic
+audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 
 [devices.nano]
@@ -87,7 +87,7 @@ export PODKIT_VIDEO_QUALITY=low
 
 # Command-line overrides
 podkit sync --quality medium
-podkit sync --audio-quality lossless --lossy-quality max
+podkit sync --audio-quality max
 podkit sync --video-quality low
 ```
 

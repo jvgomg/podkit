@@ -40,6 +40,8 @@ export interface TrackMetadata {
   duration?: number; // milliseconds
   /** Sound Check volume normalization value */
   soundcheck?: number;
+  /** Comment field */
+  comment?: string;
 }
 
 /**

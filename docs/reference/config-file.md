@@ -18,9 +18,9 @@ Override with `--config <path>` or the `PODKIT_CONFIG` environment variable.
 ```toml
 # Global defaults
 quality = "high"             # Unified quality: max | high | medium | low
-audioQuality = "high"        # Audio override: lossless | max | max-cbr | high | high-cbr | medium | medium-cbr | low | low-cbr
+audioQuality = "high"        # Audio override: max | high | medium | low
 videoQuality = "high"        # Video override: max | high | medium | low
-lossyQuality = "max"         # Quality for lossy sources when audioQuality = "lossless"
+encoding = "vbr"             # Encoding mode: vbr | cbr
 artwork = true               # Include album artwork
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 
@@ -49,6 +49,7 @@ volumeName = "..."
 quality = "high"             # Unified quality for this device
 audioQuality = "high"        # Audio override for this device
 videoQuality = "high"        # Video override for this device
+encoding = "vbr"             # Encoding mode override for this device
 artwork = true
 
 # Per-device clean artists
@@ -68,10 +69,12 @@ These apply to all devices unless overridden at the device level.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `quality` | string | `"high"` | Unified quality preset for both audio and video. Values common to both: `max`, `high`, `medium`, `low`. Audio-only values (`lossless`, `*-cbr`) are accepted but only affect audio. |
-| `audioQuality` | string | - | Audio-specific quality override. Accepts all audio presets: `lossless`, `max`, `max-cbr`, `high`, `high-cbr`, `medium`, `medium-cbr`, `low`, `low-cbr`. Overrides `quality` for audio. |
+| `quality` | string | `"high"` | Unified quality preset for both audio and video: `max`, `high`, `medium`, `low`. The `max` preset is device-aware — it uses ALAC (lossless) on devices that support it when the source is lossless, otherwise falls back to `high`-quality AAC. |
+| `audioQuality` | string | - | Audio-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for audio. |
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
-| `lossyQuality` | string | `"max"` | Quality preset for lossy sources when `audioQuality` resolves to `lossless` |
+| `encoding` | string | `"vbr"` | Encoding mode for lossy AAC: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. |
+| `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
+| `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
 
@@ -133,9 +136,9 @@ Each device is defined under `[devices.<name>]`. Use `podkit device add -d <name
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "IPOD"
-quality = "high"              # Unified quality (audio + video)
-audioQuality = "lossless"     # Override: lossless audio
-videoQuality = "high"         # Override: high video quality
+quality = "max"               # Best quality — ALAC on Classic (supports it)
+videoQuality = "high"
+encoding = "vbr"              # Encoding mode for this device
 artwork = true
 skipUpgrades = false          # Allow file-replacement upgrades (default)
 ```
@@ -147,6 +150,9 @@ skipUpgrades = false          # Allow file-replacement upgrades (default)
 | `quality` | string | no | global `quality` | Unified quality preset override for this device |
 | `audioQuality` | string | no | global `audioQuality` | Audio-specific quality override for this device |
 | `videoQuality` | string | no | global `videoQuality` | Video-specific quality override for this device |
+| `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
+| `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
+| `bitrateTolerance` | number | no | global `bitrateTolerance` | Override preset change detection tolerance for this device |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `skipUpgrades` | boolean | no | global `skipUpgrades` | Skip file-replacement upgrades for this device |
 
@@ -218,11 +224,11 @@ Audio and video quality each have their own resolution chain. More specific sett
 **Video quality** (first match wins):
 
 1. CLI `--video-quality`
-2. CLI `--quality` (only if the value is video-compatible: `max`, `high`, `medium`, `low`)
+2. CLI `--quality`
 3. Device `videoQuality`
-4. Device `quality` (only if the value is video-compatible)
+4. Device `quality`
 5. Global `videoQuality`
-6. Global `quality` (only if the value is video-compatible)
+6. Global `quality`
 7. Default: `"high"`
 
 ## Full Example
@@ -230,9 +236,7 @@ Audio and video quality each have their own resolution chain. More specific sett
 ```toml
 # Global defaults
 quality = "high"              # Unified quality for audio and video
-audioQuality = "high"         # Override quality for audio only
-videoQuality = "high"         # Override quality for video only
-lossyQuality = "max"         # Quality for lossy sources when audioQuality = "lossless"
+encoding = "vbr"              # VBR encoding (default)
 artwork = true
 
 # Clean up featured artist credits
@@ -264,8 +268,7 @@ path = "/Volumes/Media/tv-shows"
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-quality = "high"              # Unified quality for this device
-audioQuality = "lossless"     # Lossless audio on Classic (overrides quality)
+audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 artwork = true
 

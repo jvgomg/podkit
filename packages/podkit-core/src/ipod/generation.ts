@@ -17,6 +17,8 @@ export interface IpodGenerationMetadata {
   displayName: string;
   /** Video device profile name (for video-capable models only) */
   videoProfile?: 'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g';
+  /** Whether this generation supports ALAC (Apple Lossless) playback */
+  supportsAlac?: boolean;
 }
 
 /**
@@ -92,16 +94,19 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
     id: 'nano_3',
     displayName: 'Nano (3rd Generation)',
     videoProfile: 'ipod-nano-3g',
+    supportsAlac: true,
   },
   nano_4: {
     id: 'nano_4',
     displayName: 'Nano (4th Generation)',
     videoProfile: 'ipod-nano-3g',
+    supportsAlac: true,
   },
   nano_5: {
     id: 'nano_5',
     displayName: 'Nano (5th Generation)',
     videoProfile: 'ipod-nano-3g',
+    supportsAlac: true,
   },
   nano_6: {
     id: 'nano_6',
@@ -111,26 +116,31 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
     id: 'video_1',
     displayName: 'Video (5th Generation)',
     videoProfile: 'ipod-video-5g',
+    supportsAlac: true,
   },
   video_2: {
     id: 'video_2',
     displayName: 'Video (5.5th Generation)',
     videoProfile: 'ipod-video-5g',
+    supportsAlac: true,
   },
   classic_1: {
     id: 'classic_1',
     displayName: 'Classic (6th Generation)',
     videoProfile: 'ipod-classic',
+    supportsAlac: true,
   },
   classic_2: {
     id: 'classic_2',
     displayName: 'Classic (6.5th Generation)',
     videoProfile: 'ipod-classic',
+    supportsAlac: true,
   },
   classic_3: {
     id: 'classic_3',
     displayName: 'Classic (7th Generation)',
     videoProfile: 'ipod-classic',
+    supportsAlac: true,
   },
   touch_1: {
     id: 'touch_1',
@@ -229,4 +239,28 @@ export function supportsVideo(generation: IpodGeneration): boolean;
 export function supportsVideo(generation: string): boolean;
 export function supportsVideo(generation: string): boolean {
   return getVideoProfile(generation) !== undefined;
+}
+
+/**
+ * Check if a generation supports ALAC (Apple Lossless) playback.
+ *
+ * ALAC-capable generations: Video 5G/5.5G, Classic all, Nano 3G-5G.
+ * All other generations (Nano 1G-2G, 6G-7G, Shuffle, Mini, Touch, etc.) do not.
+ *
+ * @param generation - Generation identifier from libgpod
+ * @returns True if the generation supports ALAC playback
+ *
+ * @example
+ * ```typescript
+ * supportsAlac('classic_3');  // true
+ * supportsAlac('nano_5');     // true
+ * supportsAlac('nano_1');     // false
+ * supportsAlac('shuffle_3');  // false
+ * ```
+ */
+export function supportsAlac(generation: IpodGeneration): boolean;
+export function supportsAlac(generation: string): boolean;
+export function supportsAlac(generation: string): boolean {
+  const metadata = IPOD_GENERATIONS[generation as IpodGeneration];
+  return metadata?.supportsAlac ?? false;
 }

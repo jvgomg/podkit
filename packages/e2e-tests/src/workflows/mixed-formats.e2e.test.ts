@@ -134,7 +134,7 @@ describe('mixed format collection sync', () => {
   });
 
   describe('quality presets', () => {
-    it('uses lossless preset with lossyQuality for mixed collection', async () => {
+    it('uses max preset for mixed collection', async () => {
       if (!fixturesAvailable) {
         console.log('Skipping: fixtures not available');
         return;
@@ -151,9 +151,7 @@ describe('mixed format collection sync', () => {
           '--device',
           target.path,
           '--audio-quality',
-          'lossless',
-          '--lossy-quality',
-          'high',
+          'max',
           '--dry-run',
           '--json',
         ]);
@@ -166,7 +164,7 @@ describe('mixed format collection sync', () => {
       });
     });
 
-    it('uses CBR preset for all transcodes', async () => {
+    it('uses CBR encoding for all transcodes', async () => {
       if (!fixturesAvailable) {
         console.log('Skipping: fixtures not available');
         return;
@@ -183,7 +181,9 @@ describe('mixed format collection sync', () => {
           '--device',
           target.path,
           '--quality',
-          'medium-cbr',
+          'medium',
+          '--encoding',
+          'cbr',
           '--dry-run',
           '--json',
         ]);
@@ -231,7 +231,7 @@ describe('mixed format collection sync', () => {
       });
     }, 120000); // 2 min timeout for transcoding
 
-    it('syncs with lossless quality', async () => {
+    it('syncs with max quality', async () => {
       if (!fixturesAvailable) {
         console.log('Skipping: fixtures not available');
         return;
@@ -248,8 +248,6 @@ describe('mixed format collection sync', () => {
           '--device',
           target.path,
           '--audio-quality',
-          'lossless',
-          '--lossy-quality',
           'max',
           '--json',
         ]);

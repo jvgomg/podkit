@@ -59,7 +59,18 @@ export type {
 export { computeDiff, createDiffer, DefaultSyncDiffer } from './sync/differ.js';
 
 // Upgrade detection (self-healing sync)
-export { isQualityUpgrade, detectUpgrades, isFileReplacementUpgrade } from './sync/upgrades.js';
+export {
+  isQualityUpgrade,
+  detectUpgrades,
+  isFileReplacementUpgrade,
+  isSourceLossless,
+  detectPresetChange,
+  detectBitratePresetMismatch,
+  DEFAULT_VBR_TOLERANCE,
+  DEFAULT_CBR_TOLERANCE,
+  DEFAULT_MIN_PRESET_BITRATE,
+} from './sync/upgrades.js';
+export type { PresetChangeOptions } from './sync/upgrades.js';
 
 // Planner
 export {
@@ -93,6 +104,17 @@ export {
   getTransformMatchKeys,
 } from './sync/matching.js';
 
+// Sync tags
+export type { SyncTagData } from './sync/sync-tags.js';
+export {
+  parseSyncTag,
+  formatSyncTag,
+  writeSyncTag,
+  syncTagMatchesConfig,
+  buildAudioSyncTag,
+  buildVideoSyncTag,
+} from './sync/sync-tags.js';
+
 // Sync executor
 export type {
   ExecutorProgress,
@@ -104,6 +126,7 @@ export type {
   RetryConfig,
   ExecutionWarning,
   ExecutionWarningType,
+  SyncTagConfig,
 } from './sync/executor.js';
 export {
   DefaultSyncExecutor,
@@ -125,21 +148,18 @@ export type {
   TranscodeProgress,
   TranscodeOptions,
   QualityPreset,
-  AacQualityPreset,
+  EncodingMode,
   TranscodeConfig,
   AacPreset,
 } from './transcode/types.js';
 export {
   QUALITY_PRESETS,
-  AAC_QUALITY_PRESETS,
   AAC_PRESETS,
   ALAC_PRESET,
   isValidQualityPreset,
-  isValidAacPreset,
   getPresetBitrate,
-  isLosslessPreset,
-  isVbrPreset,
-  resolveLossyQuality,
+  isMaxPreset,
+  isVbrEncoding,
 } from './transcode/types.js';
 
 export {
@@ -152,7 +172,7 @@ export {
   buildAlacArgs,
   buildVbrArgs,
 } from './transcode/ffmpeg.js';
-export type { FFmpegTranscoderConfig } from './transcode/ffmpeg.js';
+export type { AacTranscodeConfig, FFmpegTranscoderConfig } from './transcode/ffmpeg.js';
 
 // Transcode progress parsing (shared utilities)
 export {
@@ -208,6 +228,7 @@ export {
   formatGeneration,
   getVideoProfile,
   supportsVideo,
+  supportsAlac,
 } from './ipod/generation.js';
 export type { IpodGenerationMetadata } from './ipod/generation.js';
 

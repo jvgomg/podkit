@@ -93,7 +93,7 @@ export type {
   TranscodeProgress,
   TranscodeOptions,
   QualityPreset,
-  AacQualityPreset,
+  EncodingMode,
   TranscodeConfig,
   AacPreset,
   FFmpegTranscoderConfig,
@@ -1283,37 +1283,16 @@ export function parseTimeString(_str: string): number {
 // =============================================================================
 
 export const QUALITY_PRESETS = [
-  'lossless',
   'max',
-  'max-cbr',
   'high',
-  'high-cbr',
   'medium',
-  'medium-cbr',
   'low',
-  'low-cbr',
-] as const;
-
-export const AAC_QUALITY_PRESETS = [
-  'max',
-  'max-cbr',
-  'high',
-  'high-cbr',
-  'medium',
-  'medium-cbr',
-  'low',
-  'low-cbr',
 ] as const;
 
 export const AAC_PRESETS = {
-  max: { mode: 'vbr', quality: 5, targetKbps: 320 },
   high: { mode: 'vbr', quality: 5, targetKbps: 256 },
   medium: { mode: 'vbr', quality: 4, targetKbps: 192 },
   low: { mode: 'vbr', quality: 2, targetKbps: 128 },
-  'max-cbr': { mode: 'cbr', targetKbps: 320 },
-  'high-cbr': { mode: 'cbr', targetKbps: 256 },
-  'medium-cbr': { mode: 'cbr', targetKbps: 192 },
-  'low-cbr': { mode: 'cbr', targetKbps: 128 },
 } as const;
 
 export const ALAC_PRESET = {
@@ -1326,27 +1305,20 @@ export function isValidQualityPreset(value: string): boolean {
   return QUALITY_PRESETS.includes(value as any);
 }
 
-export function isValidAacPreset(value: string): boolean {
-  return AAC_QUALITY_PRESETS.includes(value as any);
-}
-
 export function getPresetBitrate(preset: string): number {
-  if (preset === 'lossless') return 900;
   return (AAC_PRESETS as any)[preset]?.targetKbps ?? 256;
 }
 
-export function isLosslessPreset(preset: string): boolean {
-  return preset === 'lossless';
+export function isMaxPreset(preset: string): boolean {
+  return preset === 'max';
 }
 
-export function isVbrPreset(preset: string): boolean {
-  if (preset === 'lossless') return false;
-  return (AAC_PRESETS as any)[preset]?.mode === 'vbr';
+export function isVbrEncoding(encoding?: string): boolean {
+  return encoding !== 'cbr';
 }
 
-export function resolveLossyQuality(config: any) {
-  if (config.lossyQuality) return config.lossyQuality;
-  return config.quality === 'lossless' ? 'max' : config.quality;
+export function supportsAlac(_generation: string): boolean {
+  return false;
 }
 
 // =============================================================================
@@ -1422,6 +1394,10 @@ export function buildSyncWarnings(_validation: any, _config: any): string[] {
 // =============================================================================
 
 export const IPOD_GENERATIONS = {} as any;
+
+export function parseSyncTag(_comment: string | null | undefined): null {
+  return null;
+}
 
 export function formatGeneration(generation: string): string {
   if (generation === 'classic_3') return 'Classic (3rd Generation)';

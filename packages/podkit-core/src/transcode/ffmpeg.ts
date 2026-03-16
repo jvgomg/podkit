@@ -16,6 +16,7 @@ import type {
   TranscodeOptions,
   AudioMetadata,
   QualityPreset,
+  EncodingMode,
 } from './types.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
@@ -136,26 +137,68 @@ function aacAtQualityFromLevel(quality: number): number {
 }
 
 /**
- * Build FFmpeg command arguments for transcoding
+ * Resolved AAC transcode configuration for FFmpeg argument building.
+ *
+ * This is the resolved form after the planner has:
+ * - Resolved `max` to either ALAC or `high`
+ * - Applied bitrate capping for incompatible lossy sources
+ * - Applied custom bitrate overrides
+ */
+export interface AacTranscodeConfig {
+  /** Target bitrate in kbps */
+  bitrateKbps: number;
+  /** Encoding mode */
+  encoding: EncodingMode;
+  /** VBR quality level from the preset (used for non-aac_at encoders) */
+  quality?: number;
+}
+
+/**
+ * Build FFmpeg command arguments for transcoding.
+ *
+ * Accepts either a `QualityPreset` name (for backward compatibility and simple cases)
+ * or an `AacTranscodeConfig` object for full control over bitrate and encoding mode.
+ *
+ * The `'lossless'` string triggers ALAC encoding.
+ * The `'max'` preset should never reach this function — the planner resolves it
+ * to either `'lossless'` or an AAC config before calling.
  *
  * @param input - Input file path
  * @param output - Output file path
  * @param encoder - AAC encoder to use (ignored for ALAC)
- * @param preset - Quality preset name
+ * @param preset - Quality preset name or resolved AAC config
  * @returns Array of FFmpeg arguments
  */
 export function buildTranscodeArgs(
   input: string,
   output: string,
   encoder: string,
-  preset: QualityPreset
+  preset: QualityPreset | 'lossless' | AacTranscodeConfig
 ): string[] {
   // Handle ALAC encoding
   if (preset === 'lossless') {
     return buildAlacArgs(input, output);
   }
 
-  const aacPreset = AAC_PRESETS[preset];
+  // Resolve preset to AAC config
+  let bitrateKbps: number;
+  let encoding: EncodingMode;
+  let quality: number | undefined;
+
+  if (typeof preset === 'object') {
+    // Resolved config from planner
+    bitrateKbps = preset.bitrateKbps;
+    encoding = preset.encoding;
+    quality = preset.quality;
+  } else {
+    // QualityPreset string — look up from AAC_PRESETS
+    // max resolves to high
+    const presetKey = preset === 'max' ? 'high' : preset;
+    const aacPreset = AAC_PRESETS[presetKey];
+    bitrateKbps = aacPreset.targetKbps;
+    encoding = aacPreset.mode === 'vbr' ? 'vbr' : 'cbr';
+    quality = aacPreset.quality;
+  }
 
   const args: string[] = [
     // Input
@@ -167,13 +210,13 @@ export function buildTranscodeArgs(
     encoder,
   ];
 
-  // Apply quality settings based on mode (VBR vs CBR)
-  if (aacPreset.mode === 'vbr' && aacPreset.quality !== undefined) {
+  // Apply quality settings based on encoding mode (VBR vs CBR)
+  if (encoding === 'vbr' && quality !== undefined) {
     // VBR mode — pass targetKbps so aac_at can pick the right quality level
-    args.push(...buildVbrArgs(encoder, aacPreset.quality, aacPreset.targetKbps));
+    args.push(...buildVbrArgs(encoder, quality, bitrateKbps));
   } else {
     // CBR mode
-    args.push('-b:a', `${aacPreset.targetKbps}k`);
+    args.push('-b:a', `${bitrateKbps}k`);
   }
 
   // Sample rate (44100 Hz standard)
@@ -367,7 +410,7 @@ export class FFmpegTranscoder implements Transcoder {
   async transcode(
     input: string,
     output: string,
-    preset: QualityPreset,
+    preset: QualityPreset | 'lossless' | AacTranscodeConfig,
     options: TranscodeOptions = {}
   ): Promise<TranscodeResult> {
     // Check if already aborted

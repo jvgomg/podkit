@@ -1739,4 +1739,390 @@ describe('preset change detection', () => {
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('preset-downgrade');
   });
+
+  it('passes encodingMode to preset change detection', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // 230 vs 256: diff = -26
+    // VBR 30% tolerance = 76.8 → within tolerance → existing
+    // CBR 10% tolerance = 25.6 → outside tolerance → upgrade
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 230,
+    });
+
+    // Default VBR: within tolerance
+    const diffVbr = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+    });
+    expect(diffVbr.existing).toHaveLength(1);
+    expect(diffVbr.toUpdate).toHaveLength(0);
+
+    // CBR: outside tolerance
+    const diffCbr = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'cbr',
+    });
+    expect(diffCbr.toUpdate).toHaveLength(1);
+    expect(diffCbr.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('passes custom bitrateTolerance to preset change detection', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // 240 vs 256: diff = -16
+    // Default VBR 30% tolerance = 76.8 → within
+    // Custom 5% tolerance = 12.8 → outside
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 240,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      bitrateTolerance: 0.05,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('detects ALAC format-based preset upgrade when isAlacPreset is true', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // iPod has AAC, but max+ALAC-capable should produce ALAC
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 256,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      isAlacPreset: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+    expect(diff.toUpdate[0]!.changes).toContainEqual({
+      field: 'lossless',
+      from: 'AAC audio file',
+      to: 'ALAC',
+    });
+  });
+
+  it('keeps ALAC track as existing when isAlacPreset is true', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // iPod already has ALAC — in sync
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'Apple Lossless audio file',
+      bitrate: 900,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      isAlacPreset: true,
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('isAlacPreset works without presetBitrate when transcodingActive', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      filetype: 'AAC audio file',
+      bitrate: 256,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      isAlacPreset: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('forceTranscode moves lossless-source tracks from existing to toUpdate', () => {
+    const losslessSource = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const lossySource = createCollectionTrack('Artist2', 'Track2', 'Album', {
+      lossless: false,
+      fileType: 'mp3',
+    });
+    const ipod1 = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+    });
+    const ipod2 = createIPodTrack('Artist2', 'Track2', 'Album', {
+      bitrate: 320,
+      filetype: 'MPEG audio file',
+    });
+
+    const diff = computeDiff([losslessSource, lossySource], [ipod1, ipod2], {
+      forceTranscode: true,
+      transcodingActive: true,
+    });
+
+    // Lossless source → force-transcode
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('force-transcode');
+    expect(diff.toUpdate[0]!.source.artist).toBe('Artist');
+
+    // Lossy source → stays in existing (not re-transcoded)
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.existing[0]!.collection.artist).toBe('Artist2');
+  });
+
+  it('forceTranscode promotes metadata-only updates to file replacement for lossless sources', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+      soundcheck: 1234,
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      soundcheck: 5678,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      forceTranscode: true,
+      transcodingActive: true,
+    });
+
+    // Track gets force-transcode as primary reason (file replacement)
+    // even though it originally only had soundcheck-update (metadata-only)
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('force-transcode');
+    expect(diff.existing).toHaveLength(0);
+  });
+
+  it('forceTranscode does not duplicate tracks with existing file-replacement upgrades', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+      hasArtwork: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      hasArtwork: false,
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      forceTranscode: true,
+      transcodingActive: true,
+    });
+
+    // artwork-added is already a file-replacement upgrade, so force-transcode
+    // is not injected. The track is updated once with artwork-added as reason.
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('artwork-added');
+    expect(diff.existing).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Sync Tag Detection
+// =============================================================================
+
+describe('sync tag detection', () => {
+  it('sync tag match keeps track as existing', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr]',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'vbr',
+      resolvedQuality: 'high',
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('sync tag mismatch on quality triggers preset-upgrade', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 128,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=low encoding=vbr]',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'vbr',
+      resolvedQuality: 'high',
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('sync tag mismatch on quality triggers preset-downgrade', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr]',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 128,
+      encodingMode: 'vbr',
+      resolvedQuality: 'low',
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-downgrade');
+  });
+
+  it('sync tag mismatch on encoding triggers preset-upgrade', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr]',
+    });
+
+    // Same quality but different encoding mode
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'cbr',
+      resolvedQuality: 'high',
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('no sync tag falls back to bitrate tolerance detection', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // No comment (no sync tag) — should use bitrate detection
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 128,
+      filetype: 'AAC audio file',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'vbr',
+      resolvedQuality: 'high',
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('preset-upgrade');
+  });
+
+  it('no sync tag with bitrate in range keeps track as existing', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    // No comment, bitrate within VBR 30% tolerance (256 ± 77)
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 240,
+      filetype: 'AAC audio file',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'vbr',
+      resolvedQuality: 'high',
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('sync tag with custom bitrate mismatch triggers re-transcode', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'flac',
+      lossless: true,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=cbr]',
+    });
+
+    // Config now includes a custom bitrate
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 320,
+      encodingMode: 'cbr',
+      resolvedQuality: 'high',
+      customBitrate: 320,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+  });
+
+  it('lossy source tracks are not affected by sync tag detection', () => {
+    const source = createCollectionTrack('Artist', 'Song', 'Album', {
+      fileType: 'mp3',
+      lossless: false,
+    });
+    const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+      bitrate: 128,
+      filetype: 'MPEG audio file',
+      comment: '[podkit:v1 quality=low encoding=vbr]',
+    });
+
+    const diff = computeDiff([source], [ipod], {
+      transcodingActive: true,
+      presetBitrate: 256,
+      encodingMode: 'vbr',
+      resolvedQuality: 'high',
+    });
+
+    // Lossy sources are copied as-is, not affected by preset detection
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
 });

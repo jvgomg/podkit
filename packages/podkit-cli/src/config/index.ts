@@ -21,6 +21,7 @@ export type {
   PodkitConfig,
   PartialConfig,
   QualityPreset,
+  EncodingMode,
   GlobalOptions,
   ConfigFileContent,
   TransformsConfig,

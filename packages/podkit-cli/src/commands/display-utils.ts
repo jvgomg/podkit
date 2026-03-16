@@ -32,6 +32,7 @@ export interface DisplayTrack {
   bitrate?: number;
   soundcheck?: number;
   soundcheckSource?: SoundCheckSource;
+  syncTag?: boolean;
 }
 
 /**
@@ -53,6 +54,7 @@ export const AVAILABLE_FIELDS = [
   'format',
   'bitrate',
   'soundcheck',
+  'syncTag',
 ] as const;
 
 export type FieldName = (typeof AVAILABLE_FIELDS)[number];
@@ -81,6 +83,7 @@ export const FIELD_HEADERS: Record<FieldName, string> = {
   format: 'Format',
   bitrate: 'Bitrate',
   soundcheck: 'SndChk',
+  syncTag: 'Sync',
 };
 
 /**
@@ -102,6 +105,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
   format: 8,
   bitrate: 7,
   soundcheck: 10,
+  syncTag: 4,
 };
 
 // =============================================================================
@@ -191,6 +195,8 @@ export function getFieldValue(track: DisplayTrack, field: FieldName): string {
       return track.bitrate ? `${track.bitrate}` : '';
     case 'soundcheck':
       return track.soundcheck ? `${track.soundcheck}` : '';
+    case 'syncTag':
+      return track.syncTag === true ? '\u2713' : track.syncTag === false ? '\u2717' : '-';
     default:
       return '';
   }
@@ -355,6 +361,7 @@ export interface ContentStats {
   compilationAlbums: number;
   compilationTracks: number;
   soundCheckTracks: number;
+  syncTagTracks: number;
   soundCheckSources?: Partial<Record<SoundCheckSource, number>>;
   fileTypes: Record<string, number>;
 }
@@ -370,6 +377,7 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
   const compilationAlbumSet = new Set<string>();
   let compilationTracks = 0;
   let soundCheckTracks = 0;
+  let syncTagTracks = 0;
 
   for (const track of tracks) {
     const album = track.album || 'Unknown Album';
@@ -380,6 +388,10 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
     if (track.compilation === true) {
       compilationTracks++;
       compilationAlbumSet.add(album);
+    }
+
+    if (track.syncTag === true) {
+      syncTagTracks++;
     }
 
     if (track.soundcheck !== undefined && track.soundcheck > 0) {
@@ -401,6 +413,7 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
     artists: artists.size,
     compilationAlbums: compilationAlbumSet.size,
     compilationTracks,
+    syncTagTracks,
     soundCheckTracks,
     soundCheckSources:
       Object.keys(soundCheckSources).length > 0
@@ -464,6 +477,12 @@ export function formatStatsText(
     const compAlbums = formatNumber(stats.compilationAlbums);
     const compTracks = formatNumber(stats.compilationTracks);
     lines.push(`  Compilations: ${compAlbums} albums (${compTracks} tracks)`);
+  }
+
+  if (stats.syncTagTracks > 0) {
+    const stTracks = formatNumber(stats.syncTagTracks);
+    const pct = Math.floor((stats.syncTagTracks / stats.tracks) * 100);
+    lines.push(`  Sync Tags: ${stTracks} (${pct}%)`);
   }
 
   if (stats.soundCheckTracks > 0) {

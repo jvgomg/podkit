@@ -330,13 +330,17 @@ describe('FFmpegTranscoder integration', () => {
       });
     }
 
-    // CBR presets
-    const cbrPresets = ['max-cbr', 'high-cbr', 'medium-cbr', 'low-cbr'] as const;
-    for (const preset of cbrPresets) {
-      it(`transcodes with ${preset} preset (CBR)`, async () => {
-        const outputPath = join(testDir, `output-${preset}.m4a`);
+    // CBR via AacTranscodeConfig
+    const cbrConfigs = [
+      { name: 'high-cbr', config: { bitrateKbps: 256, encoding: 'cbr' as const } },
+      { name: 'medium-cbr', config: { bitrateKbps: 192, encoding: 'cbr' as const } },
+      { name: 'low-cbr', config: { bitrateKbps: 128, encoding: 'cbr' as const } },
+    ];
+    for (const { name, config } of cbrConfigs) {
+      it(`transcodes with ${name} config (CBR)`, async () => {
+        const outputPath = join(testDir, `output-${name}.m4a`);
 
-        const result = await transcoder.transcode(testAudioPath, outputPath, preset);
+        const result = await transcoder.transcode(testAudioPath, outputPath, config);
 
         expect(result.outputPath).toBe(outputPath);
         expect(result.size).toBeGreaterThan(0);
@@ -526,7 +530,7 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       const input = join(fixturesDir, '08-opus-track.opus');
       const output = join(outputDir, 'opus-to-aac-cbr.m4a');
 
-      const result = await transcoder.transcode(input, output, 'high-cbr');
+      const result = await transcoder.transcode(input, output, { bitrateKbps: 256, encoding: 'cbr' });
 
       expect(result.size).toBeGreaterThan(0);
       const meta = await transcoder.probe(output);

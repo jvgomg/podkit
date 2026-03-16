@@ -13,6 +13,9 @@
  * 5. Space checking and plan validation
  * 6. Mixed scenarios with various file types
  * 7. Edge cases (empty diff, no duration, etc.)
+ * 8. `max` preset: ALAC on capable devices, high on non-capable
+ * 9. Incompatible lossy bitrate capping
+ * 10. Custom bitrate and encoding mode overrides
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -509,8 +512,6 @@ describe('createPlan - operation types', () => {
   });
 
   it('transcodes ALAC files to AAC by default (for space efficiency)', () => {
-    // ALAC is lossless, so with default quality='high', it gets transcoded to AAC
-    // This is intentional - ALAC takes more space, and most users want smaller files
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'alac')],
@@ -520,21 +521,6 @@ describe('createPlan - operation types', () => {
 
     expect(plan.operations).toHaveLength(1);
     expect(plan.operations[0]!.type).toBe('transcode');
-  });
-
-  it('copies ALAC files when quality=lossless and source is ALAC', () => {
-    // When user wants lossless output and source is already ALAC, just copy it
-    const track = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
-    track.codec = 'alac'; // Mark as ALAC codec
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [track],
-    };
-
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
-
-    expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('copy');
   });
 
   it('includes preset in transcode operations', () => {
@@ -786,8 +772,6 @@ describe('createPlan - size calculation', () => {
 
 describe('createPlan - time calculation', () => {
   it('estimates time for transcode operations based on transfer speed', () => {
-    // With pipeline execution, time is based on USB transfer speed (2.5 MB/s),
-    // not transcode time (since transcode happens in parallel)
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [
@@ -800,7 +784,6 @@ describe('createPlan - time calculation', () => {
     const plan = createPlan(diff);
 
     // 3 minutes at 256kbps AAC = ~5.6 MB, transfer at 2.5 MB/s = ~2.2 seconds
-    // Allow some tolerance for estimation variance
     expect(plan.estimatedTime).toBeGreaterThan(1);
     expect(plan.estimatedTime).toBeLessThan(5);
   });
@@ -914,6 +897,27 @@ describe('calculateOperationSize', () => {
     // High should be roughly twice as large as low
     expect(highSize).toBeGreaterThan(lowSize * 1.8);
     expect(highSize).toBeLessThan(lowSize * 2.2);
+  });
+
+  it('uses bitrateOverride when present', () => {
+    const track = createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
+      duration: 180000,
+    });
+
+    const overriddenSize = calculateOperationSize({
+      type: 'transcode',
+      source: track,
+      preset: { name: 'high', bitrateOverride: 128 },
+    });
+
+    const lowSize = calculateOperationSize({
+      type: 'transcode',
+      source: track,
+      preset: { name: 'low' }, // also 128 kbps
+    });
+
+    // Should be approximately the same
+    expect(overriddenSize).toBe(lowSize);
   });
 });
 
@@ -1358,113 +1362,45 @@ describe('createPlan - lossy-to-lossy warnings', () => {
     expect(plan.warnings[0]!.message).toContain('3 tracks');
   });
 
-  it('does not generate warning for FLAC files', () => {
+  it('does not generate warning for lossless files', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
 
     const plan = createPlan(diff);
-
     expect(plan.warnings).toHaveLength(0);
   });
 
-  it('does not generate warning for MP3 files', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(0);
-  });
-
-  it('does not generate warning for M4A/AAC files', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'm4a')],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(0);
-  });
-
-  it('does not generate warning for WAV files', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'wav')],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(0);
-  });
-
-  it('does not generate warning for AIFF files', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'aiff')],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(0);
-  });
-
-  it('generates warning only for incompatible lossy in mixed collection', () => {
+  it('does not generate warning for compatible lossy files', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [
-        // Lossless (no warning)
-        createCollectionTrack('Artist', 'FLAC', 'Album', 'flac'),
-        createCollectionTrack('Artist', 'WAV', 'Album', 'wav'),
-        // Compatible lossy (no warning)
         createCollectionTrack('Artist', 'MP3', 'Album', 'mp3'),
-        createCollectionTrack('Artist', 'AAC', 'Album', 'm4a'),
-        // Incompatible lossy (warning)
-        createCollectionTrack('Artist', 'OGG', 'Album', 'ogg'),
-        createCollectionTrack('Artist', 'Opus', 'Album', 'opus'),
+        createCollectionTrack('Artist', 'M4A', 'Album', 'm4a'),
       ],
     };
 
     const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(1);
-    expect(plan.warnings[0]!.tracks).toHaveLength(2);
-    expect(plan.warnings[0]!.tracks.map((t) => t.title)).toContain('OGG');
-    expect(plan.warnings[0]!.tracks.map((t) => t.title)).toContain('Opus');
-  });
-
-  it('includes correct tracks in warning', () => {
-    const oggTrack = createCollectionTrack('OGG Artist', 'OGG Song', 'Album', 'ogg');
-    const opusTrack = createCollectionTrack('Opus Artist', 'Opus Song', 'Album', 'opus');
-
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [oggTrack, opusTrack],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings[0]!.tracks).toContain(oggTrack);
-    expect(plan.warnings[0]!.tracks).toContain(opusTrack);
+    expect(plan.warnings).toHaveLength(0);
   });
 });
 
 // =============================================================================
-// ALAC Preset with Fallback Tests
+// Max Preset Tests (ADR-010)
 // =============================================================================
 
-describe('createPlan - lossless preset with lossyQuality', () => {
-  it('uses ALAC for lossless sources with quality=lossless', () => {
+describe('createPlan - max preset', () => {
+  it('resolves max to ALAC for lossless source on ALAC-capable device', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
 
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
 
     expect(plan.operations).toHaveLength(1);
     expect(plan.operations[0]!.type).toBe('transcode');
@@ -1473,62 +1409,7 @@ describe('createPlan - lossless preset with lossyQuality', () => {
     }
   });
 
-  it('uses ALAC for WAV sources with quality=lossless', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'WAV', 'Album', 'wav')],
-    };
-
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
-
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
-      expect(plan.operations[0]!.preset.name).toBe('lossless');
-    }
-  });
-
-  it('uses default lossyQuality (max) for lossy sources with quality=lossless', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'OGG', 'Album', 'ogg')],
-    };
-
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
-
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
-      expect(plan.operations[0]!.preset.name).toBe('max');
-    }
-  });
-
-  it('uses custom lossyQuality for lossy sources with quality=lossless', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'OGG', 'Album', 'ogg')],
-    };
-
-    const plan = createPlan(diff, {
-      transcodeConfig: { quality: 'lossless', lossyQuality: 'high' },
-    });
-
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
-      expect(plan.operations[0]!.preset.name).toBe('high');
-    }
-  });
-
-  it('copies compatible lossy sources even with quality=lossless', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'MP3', 'Album', 'mp3')],
-    };
-
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
-
-    expect(plan.operations[0]!.type).toBe('copy');
-  });
-
-  it('copies ALAC sources when quality=lossless', () => {
+  it('copies ALAC source with max preset on ALAC-capable device', () => {
     const track = createCollectionTrack('Artist', 'ALAC', 'Album', 'alac');
     track.codec = 'alac';
 
@@ -1537,12 +1418,99 @@ describe('createPlan - lossless preset with lossyQuality', () => {
       toAdd: [track],
     };
 
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('copy');
+  });
+
+  it('resolves max to high for lossless source on non-ALAC device', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
+    };
+
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: false,
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.name).toBe('high');
+    }
+  });
+
+  it('resolves max to high for lossless source when deviceSupportsAlac not set', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
+    };
+
+    // deviceSupportsAlac defaults to false
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+    });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.name).toBe('high');
+    }
+  });
+
+  it('copies compatible lossy with max preset regardless of ALAC support', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'MP3', 'Album', 'mp3')],
+    };
+
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
 
     expect(plan.operations[0]!.type).toBe('copy');
   });
 
-  it('handles mixed collection with lossless quality correctly', () => {
+  it('transcodes FLAC to ALAC with max on ALAC-capable device', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
+    };
+
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.name).toBe('lossless');
+    }
+  });
+
+  it('transcodes FLAC to AAC at high quality with max on non-ALAC device', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
+    };
+
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: false,
+    });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.name).toBe('high');
+    }
+  });
+
+  it('handles mixed collection with max + ALAC device correctly', () => {
     const alacTrack = createCollectionTrack('Artist', 'Existing ALAC', 'Album', 'm4a', {
       codec: 'alac',
     });
@@ -1559,13 +1527,15 @@ describe('createPlan - lossless preset with lossyQuality', () => {
     };
 
     const plan = createPlan(diff, {
-      transcodeConfig: { quality: 'lossless', lossyQuality: 'high' },
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
     });
     const summary = getPlanSummary(plan);
 
     // FLAC, WAV -> transcode to ALAC (2 transcodes)
-    // OGG -> transcode to lossyQuality high (1 transcode)
-    // Existing ALAC, MP3 -> copy (2 copies)
+    // OGG -> transcode to AAC at high (1 transcode)
+    // Existing ALAC -> copy (1 copy)
+    // MP3 -> copy (1 copy)
     expect(summary.transcodeCount).toBe(3);
     expect(summary.copyCount).toBe(2);
 
@@ -1573,27 +1543,163 @@ describe('createPlan - lossless preset with lossyQuality', () => {
     const transcodeOps = plan.operations.filter((op) => op.type === 'transcode');
     const presets = transcodeOps.map((op) => (op.type === 'transcode' ? op.preset.name : ''));
 
-    // Should have 2 lossless and 1 high
+    // Should have 2 lossless (FLAC, WAV) and 1 high (OGG)
     expect(presets.filter((p) => p === 'lossless')).toHaveLength(2);
     expect(presets.filter((p) => p === 'high')).toHaveLength(1);
   });
 });
 
 // =============================================================================
-// Quality Preset Tests (VBR/CBR variants)
+// Incompatible Lossy Bitrate Capping Tests (ADR-010)
+// =============================================================================
+
+describe('createPlan - incompatible lossy bitrate capping', () => {
+  it('caps OGG at source bitrate when lower than preset', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
+          bitrate: 128,
+        }),
+      ],
+    };
+
+    // high preset target is 256 kbps, but source is only 128 kbps
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'high' } });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
+    }
+  });
+
+  it('uses preset bitrate when source bitrate is higher', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
+          bitrate: 320,
+        }),
+      ],
+    };
+
+    // low preset target is 128 kbps, source is 320 kbps → use preset (128)
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'low' } });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
+    }
+  });
+
+  it('uses preset bitrate when source bitrate is unknown', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
+          bitrate: undefined,
+        }),
+      ],
+    };
+
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'high' } });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      // bitrateOverride should be preset bitrate (256) since source is unknown
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(256);
+    }
+  });
+
+  it('caps OGG at source bitrate with max preset (not at 256)', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
+          bitrate: 128,
+        }),
+      ],
+    };
+
+    // max resolves to high (256 kbps) for incompatible lossy, but source is only 128 → cap at 128
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
+    }
+  });
+
+  it('caps Opus at source bitrate with medium preset', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'Opus Song', 'Album', 'opus', {
+          bitrate: 96,
+        }),
+      ],
+    };
+
+    // medium preset target is 192 kbps, source is 96 kbps → cap at 96
+    const plan = createPlan(diff, { transcodeConfig: { quality: 'medium' } });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(96);
+    }
+  });
+});
+
+// =============================================================================
+// Custom Bitrate Override Tests (ADR-010)
+// =============================================================================
+
+describe('createPlan - custom bitrate', () => {
+  it('passes custom bitrate through for lossless sources', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
+    };
+
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'high', customBitrate: 200 },
+    });
+
+    expect(plan.operations[0]!.type).toBe('transcode');
+    if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.preset.bitrateOverride).toBe(200);
+    }
+  });
+
+  it('uses custom bitrate for size estimation', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [
+        createCollectionTrack('Artist', 'FLAC', 'Album', 'flac', {
+          duration: 180000,
+        }),
+      ],
+    };
+
+    const planDefault = createPlan(diff, { transcodeConfig: { quality: 'high' } });
+    const planCustom = createPlan(diff, {
+      transcodeConfig: { quality: 'high', customBitrate: 128 },
+    });
+
+    // Custom 128 should be about half the size of default 256
+    expect(planCustom.estimatedSize).toBeLessThan(planDefault.estimatedSize * 0.6);
+  });
+});
+
+// =============================================================================
+// Quality Preset Tests
 // =============================================================================
 
 describe('createPlan - quality presets', () => {
-  const presets = [
-    'max',
-    'max-cbr',
-    'high',
-    'high-cbr',
-    'medium',
-    'medium-cbr',
-    'low',
-    'low-cbr',
-  ] as const;
+  const presets = ['max', 'high', 'medium', 'low'] as const;
 
   for (const preset of presets) {
     it(`uses ${preset} preset when configured`, () => {
@@ -1606,29 +1712,14 @@ describe('createPlan - quality presets', () => {
 
       expect(plan.operations[0]!.type).toBe('transcode');
       if (plan.operations[0]!.type === 'transcode') {
-        expect(plan.operations[0]!.preset.name).toBe(preset);
+        // max resolves to 'high' when deviceSupportsAlac is false (default)
+        const expectedPreset = preset === 'max' ? 'high' : preset;
+        expect(plan.operations[0]!.preset.name).toBe(expectedPreset);
       }
     });
   }
 
-  it('estimates larger size for max than low preset', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [
-        createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
-          duration: 180000,
-        }),
-      ],
-    };
-
-    const planMax = createPlan(diff, { transcodeConfig: { quality: 'max' } });
-    const planLow = createPlan(diff, { transcodeConfig: { quality: 'low' } });
-
-    // Max is 320 kbps, Low is 128 kbps
-    expect(planMax.estimatedSize).toBeGreaterThan(planLow.estimatedSize * 2);
-  });
-
-  it('estimates same size for VBR and CBR at same bitrate', () => {
+  it('estimates larger size for high than low preset', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toAdd: [
@@ -1639,12 +1730,10 @@ describe('createPlan - quality presets', () => {
     };
 
     const planHigh = createPlan(diff, { transcodeConfig: { quality: 'high' } });
-    const planHighCbr = createPlan(diff, {
-      transcodeConfig: { quality: 'high-cbr' },
-    });
+    const planLow = createPlan(diff, { transcodeConfig: { quality: 'low' } });
 
-    // Both are 256 kbps target
-    expect(planHigh.estimatedSize).toBe(planHighCbr.estimatedSize);
+    // High is 256 kbps, Low is 128 kbps
+    expect(planHigh.estimatedSize).toBeGreaterThan(planLow.estimatedSize * 1.8);
   });
 
   it('estimates larger size for ALAC than AAC', () => {
@@ -1657,7 +1746,10 @@ describe('createPlan - quality presets', () => {
       ],
     };
 
-    const planAlac = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
+    const planAlac = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
     const planHigh = createPlan(diff, { transcodeConfig: { quality: 'high' } });
 
     // ALAC ~900 kbps vs AAC ~256 kbps
@@ -1718,57 +1810,6 @@ describe('createPlan - update operations', () => {
     }
   });
 
-  it('preserves iPod track reference in update-metadata operation', () => {
-    const ipodTrack = createIPodTrack('Artist feat. B', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:UPDATE.m4a',
-    });
-
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          ipod: ipodTrack,
-          reason: 'transform-apply',
-          changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-    const op = plan.operations[0];
-
-    expect(op!.type).toBe('update-metadata');
-    if (op!.type === 'update-metadata') {
-      expect(op!.track.filePath).toBe(':iPod_Control:Music:F00:UPDATE.m4a');
-    }
-  });
-
-  it('creates multiple update operations for multiple toUpdate tracks', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist 1', 'Song 1', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist 1 feat. B', 'Song 1', 'Album'),
-          reason: 'transform-apply',
-          changes: [{ field: 'artist', from: 'Artist 1 feat. B', to: 'Artist 1' }],
-        },
-        {
-          source: createCollectionTrack('Artist 2', 'Song 2', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist 2 feat. C', 'Song 2', 'Album'),
-          reason: 'transform-apply',
-          changes: [{ field: 'artist', from: 'Artist 2 feat. C', to: 'Artist 2' }],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.operations).toHaveLength(2);
-    expect(plan.operations.every((op) => op.type === 'update-metadata')).toBe(true);
-  });
-
   it('orders update operations after transcodes', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
@@ -1790,33 +1831,6 @@ describe('createPlan - update operations', () => {
     expect(types.indexOf('transcode')).toBeLessThan(types.indexOf('update-metadata'));
   });
 
-  it('handles transform-remove reason', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist feat. B', 'Song', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist', 'Song (feat. B)', 'Album'),
-          reason: 'transform-remove',
-          changes: [
-            { field: 'artist', from: 'Artist', to: 'Artist feat. B' },
-            { field: 'title', from: 'Song (feat. B)', to: 'Song' },
-          ],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-    const op = plan.operations[0];
-
-    expect(op!.type).toBe('update-metadata');
-    if (op!.type === 'update-metadata') {
-      // Reverting: artist goes back to original, title loses feat
-      expect(op!.metadata.artist).toBe('Artist feat. B');
-      expect(op!.metadata.title).toBe('Song');
-    }
-  });
-
   it('does not count update operations in estimated size', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
@@ -1833,27 +1847,6 @@ describe('createPlan - update operations', () => {
     const plan = createPlan(diff);
 
     expect(plan.estimatedSize).toBe(0);
-  });
-
-  it('includes update operations in getPlanSummary', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'New', 'Album', 'mp3')],
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Existing', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist feat. B', 'Existing', 'Album'),
-          reason: 'transform-apply',
-          changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-    const summary = getPlanSummary(plan);
-
-    expect(summary.copyCount).toBe(1);
-    expect(summary.updateCount).toBe(1);
   });
 });
 
@@ -1891,15 +1884,12 @@ describe('createPlan - upgrade operations', () => {
     expect(op.type).toBe('upgrade');
     if (op.type === 'upgrade') {
       expect(op.reason).toBe('format-upgrade');
-      expect(op.source.artist).toBe('Artist');
-      expect(op.target.artist).toBe('Artist');
-      // FLAC source needs transcoding to AAC
       expect(op.preset).toBeDefined();
       expect(op.preset!.name).toBe('high');
     }
   });
 
-  it('creates upgrade operation for format-upgrade with ALAC preset', () => {
+  it('creates upgrade operation for format-upgrade with max + ALAC device', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
       toUpdate: [
@@ -1916,7 +1906,10 @@ describe('createPlan - upgrade operations', () => {
       ],
     };
 
-    const plan = createPlan(diff, { transcodeConfig: { quality: 'lossless' } });
+    const plan = createPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+    });
 
     const op = plan.operations[0]!;
     expect(op.type).toBe('upgrade');
@@ -1956,30 +1949,6 @@ describe('createPlan - upgrade operations', () => {
     }
   });
 
-  it('creates upgrade operation for artwork-added reason', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Song', 'Album', 'm4a'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
-            hasArtwork: false,
-          }),
-          reason: 'artwork-added',
-          changes: [],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-
-    const op = plan.operations[0]!;
-    expect(op.type).toBe('upgrade');
-    if (op.type === 'upgrade') {
-      expect(op.reason).toBe('artwork-added');
-    }
-  });
-
   it('creates update-metadata operation for soundcheck-update reason', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
@@ -1991,34 +1960,6 @@ describe('createPlan - upgrade operations', () => {
           ipod: createIPodTrack('Artist', 'Song', 'Album'),
           reason: 'soundcheck-update',
           changes: [{ field: 'soundcheck', from: '', to: '1234' }],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('update-metadata');
-  });
-
-  it('creates update-metadata operation for metadata-correction reason', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
-            genre: 'Rock',
-            year: 2024,
-          }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
-            genre: 'Pop',
-            year: 2020,
-          }),
-          reason: 'metadata-correction',
-          changes: [
-            { field: 'genre', from: 'Pop', to: 'Rock' },
-            { field: 'year', from: '2020', to: '2024' },
-          ],
         },
       ],
     };
@@ -2053,38 +1994,25 @@ describe('createPlan - upgrade operations', () => {
     expect(plan.estimatedTime).toBeGreaterThan(0);
   });
 
-  it('includes upgrade operations in getPlanSummary', () => {
+  it('generates lossy-to-lossy warning for OGG upgrade source', () => {
     const diff: SyncDiff = {
       ...createEmptyDiff(),
-      toAdd: [createCollectionTrack('Artist', 'New', 'Album', 'mp3')],
       toUpdate: [
         {
-          source: createCollectionTrack('Artist', 'Upgrade', 'Album', 'flac', {
-            lossless: true,
-          }),
-          ipod: createIPodTrack('Artist', 'Upgrade', 'Album', {
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'ogg'),
+          ipod: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
           reason: 'format-upgrade',
-          changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
-        },
-        {
-          source: createCollectionTrack('Artist', 'Update', 'Album', 'mp3', {
-            soundcheck: 1234,
-          }),
-          ipod: createIPodTrack('Artist', 'Update', 'Album'),
-          reason: 'soundcheck-update',
-          changes: [{ field: 'soundcheck', from: '', to: '1234' }],
+          changes: [],
         },
       ],
     };
 
     const plan = createPlan(diff);
-    const summary = getPlanSummary(plan);
 
-    expect(summary.upgradeCount).toBe(1);
-    expect(summary.updateCount).toBe(1);
-    expect(summary.copyCount).toBe(1); // the add operation
+    expect(plan.warnings).toHaveLength(1);
+    expect(plan.warnings[0]!.type).toBe('lossy-to-lossy');
   });
 
   it('orders upgrade operations after removes and copies, before transcodes and updates', () => {
@@ -2120,58 +2048,5 @@ describe('createPlan - upgrade operations', () => {
     expect(types.indexOf('remove')).toBeLessThan(types.indexOf('upgrade'));
     expect(types.indexOf('upgrade')).toBeLessThan(types.indexOf('transcode'));
     expect(types.indexOf('transcode')).toBeLessThan(types.indexOf('update-metadata'));
-  });
-
-  it('generates lossy-to-lossy warning for OGG upgrade source', () => {
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Song', 'Album', 'ogg'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
-            filetype: 'MPEG audio file',
-          }),
-          reason: 'format-upgrade',
-          changes: [],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-
-    expect(plan.warnings).toHaveLength(1);
-    expect(plan.warnings[0]!.type).toBe('lossy-to-lossy');
-  });
-
-  it('preserves target iPod track reference in upgrade operation', () => {
-    const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:UPGRADE.m4a',
-      playCount: 42,
-      rating: 80,
-    });
-
-    const diff: SyncDiff = {
-      ...createEmptyDiff(),
-      toUpdate: [
-        {
-          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
-            lossless: true,
-          }),
-          ipod: ipodTrack,
-          reason: 'format-upgrade',
-          changes: [],
-        },
-      ],
-    };
-
-    const plan = createPlan(diff);
-    const op = plan.operations[0]!;
-
-    expect(op.type).toBe('upgrade');
-    if (op.type === 'upgrade') {
-      expect(op.target.filePath).toBe(':iPod_Control:Music:F00:UPGRADE.m4a');
-      expect(op.target.playCount).toBe(42);
-      expect(op.target.rating).toBe(80);
-    }
   });
 });

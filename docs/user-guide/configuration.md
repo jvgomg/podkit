@@ -82,7 +82,7 @@ Each device can have its own quality and artwork settings, so a high-capacity Cl
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-audioQuality = "lossless"
+audioQuality = "max"       # ALAC on Classic (it supports lossless)
 
 [devices.nano]
 volumeUuid = "EFGH-5678"
@@ -122,11 +122,11 @@ For finer control, `audioQuality` and `videoQuality` override `quality` independ
 
 ```toml
 [devices.classic]
-audioQuality = "lossless"
+audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 ```
 
-See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
+By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`. See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
 
 ## Clean Artists
 

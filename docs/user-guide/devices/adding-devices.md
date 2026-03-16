@@ -22,7 +22,7 @@ podkit device add -d classic --path /Volumes/IPOD
 podkit device add -d nano --quality medium --no-artwork
 
 # Add with separate audio/video quality
-podkit device add -d classic --audio-quality lossless --video-quality high
+podkit device add -d classic --audio-quality max --video-quality high
 ```
 
 podkit reads the volume UUID and name from the mounted filesystem and adds the device to your config file. The first device added is automatically set as the default.
@@ -33,7 +33,7 @@ After adding a device, you can update its settings with `podkit device set`:
 
 ```bash
 # Set quality on an existing device
-podkit device set -d classic --quality lossless
+podkit device set -d classic --quality max
 
 # Set audio and video quality separately
 podkit device set -d nano --audio-quality medium --video-quality low

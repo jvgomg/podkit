@@ -10,7 +10,7 @@ Output packages/demo/demo.gif
 Set Shell "zsh"
 Set FontSize 16
 Set FontFamily "Menlo"
-Set Width 800
+Set Width 820
 Set Height 600
 Set Padding 20
 Set LineHeight 1.2
@@ -18,7 +18,6 @@ Set Theme "Dracula+"
 Set WindowBar Colorful
 Set Margin 18
 Set MarginFill "#9129d6"
-Set TypingSpeed 50ms
 Set CursorBlink true
 Set WaitTimeout 30s
 Set Framerate 15
@@ -26,6 +25,7 @@ Set Framerate 15
 Env HOME "/tmp/podkit-demo"
 
 # --- Hidden setup: clean slate, install binary, configure prompt --------------
+Set TypingSpeed 0ms
 Hide
 Type `rm -rf /tmp/podkit-demo && mkdir -p /tmp/podkit-demo/{media/music,media/videos,ipod,bin} && cp "$DEMO_BIN" /tmp/podkit-demo/bin/podkit`
 Enter
@@ -36,6 +36,7 @@ Enter
 Type "clear"
 Enter
 Show
+Set TypingSpeed 50ms
 
 # --- 1. Add a device ----------------------------------------------------------
 Sleep 500ms
@@ -104,12 +105,12 @@ Sleep 500ms
 Enter
 Wait /❯/
 Sleep 500ms
-Type "podkit collection music -c main"
+Type "podkit collection music"
 Sleep 500ms
 Enter
 Wait /❯/
 Sleep 2s
-Type "podkit collection music -c main --artists"
+Type "podkit collection music --artists"
 Sleep 500ms
 Enter
 Wait /❯/

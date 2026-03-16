@@ -6,10 +6,12 @@
  * tracks to `toUpdate` instead of `existing` when upgrades are available.
  *
  * @see ADR-009 for full design context
+ * @see ADR-010 for preset change detection redesign
  * @module
  */
 
 import type { CollectionTrack } from '../adapters/interface.js';
+import type { EncodingMode } from '../transcode/types.js';
 import type { IPodTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
 
@@ -121,7 +123,7 @@ export function getIpodFormatFamily(ipod: IPodTrack): FormatFamily {
 /**
  * Determine whether a source track is lossless.
  */
-function isSourceLossless(source: CollectionTrack): boolean {
+export function isSourceLossless(source: CollectionTrack): boolean {
   if (source.lossless !== undefined) {
     return source.lossless;
   }
@@ -351,7 +353,8 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
     reason === 'quality-upgrade' ||
     reason === 'artwork-added' ||
     reason === 'preset-upgrade' ||
-    reason === 'preset-downgrade'
+    reason === 'preset-downgrade' ||
+    reason === 'force-transcode'
   );
 }
 
@@ -360,23 +363,23 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
 // =============================================================================
 
 /**
- * Default tolerance for comparing iPod bitrate against preset target (kbps).
+ * Default tolerance for VBR encoding as a ratio of the preset target bitrate.
  *
- * Audio VBR encoding produces content-dependent bitrates. Empirically measured
- * ranges for aac_at on diverse music (electronic, rock, indie):
- *   low  (target 128): 111-161 kbps (spread ±25)
- *   medium (target 192): 154-225 kbps (spread ±35)
- *   high (target 256): 212-303 kbps (spread ±45)
- *   max  (target 320): 284-386 kbps (spread ±51)
+ * VBR encoding produces content-dependent bitrates with wide variance.
+ * 30% accommodates the observed VBR spread while reliably detecting
+ * jumps of 2+ preset levels. Adjacent VBR presets may overlap.
  *
- * 50 kbps accommodates the widest observed audio VBR spread while still
- * reliably detecting jumps of 2+ preset levels (e.g., low↔high). Adjacent
- * presets (e.g., medium↔high) may overlap in audio VBR.
- *
- * Video CRF + bitrate cap is much more predictable (±4 kbps in testing),
- * so callers can pass a tighter tolerance if needed.
+ * @see ADR-010 for empirical data
  */
-export const DEFAULT_PRESET_CHANGE_TOLERANCE = 50;
+export const DEFAULT_VBR_TOLERANCE = 0.3;
+
+/**
+ * Default tolerance for CBR encoding as a ratio of the preset target bitrate.
+ *
+ * CBR bitrates are stable, so a tighter tolerance (10%) can reliably
+ * detect adjacent tier changes.
+ */
+export const DEFAULT_CBR_TOLERANCE = 0.1;
 
 /**
  * Default minimum iPod bitrate (kbps) below which preset change detection
@@ -392,9 +395,14 @@ export const DEFAULT_MIN_PRESET_BITRATE = 64;
  * Used by both audio and video preset change detection. Returns the direction
  * of the mismatch, or null if the bitrate is within tolerance.
  *
+ * The tolerance is a ratio (0.0-1.0) of the preset target bitrate, converted
+ * to an absolute kbps value internally. For example, a tolerance of 0.3 with
+ * a preset target of 256 kbps gives an absolute tolerance of 76.8 kbps.
+ *
  * @param ipodBitrate - Bitrate stored in the iPod database (kbps), or undefined/0
  * @param presetBitrate - Target bitrate for the active quality preset (kbps)
- * @param tolerance - Maximum acceptable difference (kbps). Defaults to {@link DEFAULT_PRESET_CHANGE_TOLERANCE}.
+ * @param tolerance - Maximum acceptable difference as a ratio (0.0-1.0).
+ *                    Defaults to {@link DEFAULT_VBR_TOLERANCE} (0.3).
  * @param minBitrate - Ignore iPod bitrates below this (kbps). Defaults to {@link DEFAULT_MIN_PRESET_BITRATE}.
  * @returns `'preset-upgrade'` if iPod bitrate is significantly below target,
  *          `'preset-downgrade'` if significantly above, or `null` if within tolerance
@@ -402,24 +410,41 @@ export const DEFAULT_MIN_PRESET_BITRATE = 64;
 export function detectBitratePresetMismatch(
   ipodBitrate: number | undefined,
   presetBitrate: number,
-  tolerance: number = DEFAULT_PRESET_CHANGE_TOLERANCE,
+  tolerance: number = DEFAULT_VBR_TOLERANCE,
   minBitrate: number = DEFAULT_MIN_PRESET_BITRATE
 ): 'preset-upgrade' | 'preset-downgrade' | null {
   if (!ipodBitrate || ipodBitrate < minBitrate) {
     return null;
   }
 
+  const absoluteTolerance = presetBitrate * tolerance;
   const diff = ipodBitrate - presetBitrate;
 
-  if (diff < -tolerance) {
+  if (diff < -absoluteTolerance) {
     return 'preset-upgrade';
   }
 
-  if (diff > tolerance) {
+  if (diff > absoluteTolerance) {
     return 'preset-downgrade';
   }
 
   return null;
+}
+
+/**
+ * Options for preset change detection.
+ */
+export interface PresetChangeOptions {
+  /** Encoding mode (vbr or cbr). Determines default tolerance. */
+  encodingMode?: EncodingMode;
+  /** Custom tolerance ratio (0.0-1.0) overriding the default for the encoding mode. */
+  bitrateTolerance?: number;
+  /**
+   * When true, indicates this is an ALAC preset (max on an ALAC-capable device).
+   * Uses format-based detection instead of bitrate comparison:
+   * if the iPod track is ALAC, it's in sync; if it's AAC, it's a preset-upgrade.
+   */
+  isAlacPreset?: boolean;
 }
 
 /**
@@ -432,21 +457,43 @@ export function detectBitratePresetMismatch(
  * Only applies to lossless source tracks — lossy sources are copied as-is regardless
  * of the quality preset, so preset changes don't affect them.
  *
+ * For ALAC presets (max + ALAC-capable device), uses format-based detection:
+ * if the iPod track is ALAC, it's in sync. If it's AAC, it needs re-transcoding
+ * to ALAC (preset-upgrade).
+ *
  * @param source - Track from the collection source
  * @param ipod - Matched track currently on the iPod
  * @param presetBitrate - Target bitrate (kbps) for the active quality preset
+ * @param options - Optional parameters for encoding mode, tolerance, and ALAC detection
  * @returns `'preset-upgrade'` if iPod bitrate is below target, `'preset-downgrade'`
  *          if above target, or `null` if within tolerance
  */
 export function detectPresetChange(
   source: CollectionTrack,
   ipod: IPodTrack,
-  presetBitrate: number
+  presetBitrate: number,
+  options?: PresetChangeOptions
 ): 'preset-upgrade' | 'preset-downgrade' | null {
   // Only applies to lossless sources (lossy are copied as-is)
   if (!isSourceLossless(source)) {
     return null;
   }
 
-  return detectBitratePresetMismatch(ipod.bitrate, presetBitrate);
+  // ALAC format-based detection: max preset on ALAC-capable device
+  if (options?.isAlacPreset) {
+    const ipodLossless = isIpodTrackLossless(ipod);
+    if (ipodLossless === true) {
+      // iPod track is already ALAC — in sync
+      return null;
+    }
+    // iPod track is AAC (or unknown) — needs re-transcoding to ALAC
+    return 'preset-upgrade';
+  }
+
+  // Determine effective tolerance
+  const tolerance =
+    options?.bitrateTolerance ??
+    ((options?.encodingMode ?? 'vbr') === 'cbr' ? DEFAULT_CBR_TOLERANCE : DEFAULT_VBR_TOLERANCE);
+
+  return detectBitratePresetMismatch(ipod.bitrate, presetBitrate, tolerance);
 }

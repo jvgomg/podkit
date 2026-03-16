@@ -1079,6 +1079,10 @@ describe('isFileReplacementUpgrade', () => {
     expect(isFileReplacementUpgrade('preset-downgrade')).toBe(true);
   });
 
+  it('returns true for force-transcode', () => {
+    expect(isFileReplacementUpgrade('force-transcode')).toBe(true);
+  });
+
   it('returns false for soundcheck-update', () => {
     expect(isFileReplacementUpgrade('soundcheck-update')).toBe(false);
   });
@@ -1402,18 +1406,23 @@ describe('computeDiff with upgrades', () => {
 
 // =============================================================================
 // detectBitratePresetMismatch (shared between audio and video)
+// Now uses percentage-based tolerance (ratio 0.0-1.0) instead of fixed kbps.
+// Default tolerance is 0.3 (30% of preset target).
 // =============================================================================
 
 describe('detectBitratePresetMismatch', () => {
   it('returns preset-upgrade when bitrate is below target minus tolerance', () => {
+    // 128 vs 256 target: diff = -128, tolerance = 256 * 0.3 = 76.8 → upgrade
     expect(detectBitratePresetMismatch(128, 256)).toBe('preset-upgrade');
   });
 
   it('returns preset-downgrade when bitrate is above target plus tolerance', () => {
+    // 400 vs 256 target: diff = 144, tolerance = 256 * 0.3 = 76.8 → downgrade
     expect(detectBitratePresetMismatch(400, 256)).toBe('preset-downgrade');
   });
 
   it('returns null when bitrate is within tolerance', () => {
+    // 260 vs 256 target: diff = 4, tolerance = 256 * 0.3 = 76.8 → within
     expect(detectBitratePresetMismatch(260, 256)).toBeNull();
   });
 
@@ -1429,37 +1438,75 @@ describe('detectBitratePresetMismatch', () => {
     expect(detectBitratePresetMismatch(17, 256)).toBeNull();
   });
 
-  it('respects custom tolerance', () => {
-    // 230 is within default tolerance of 256 (diff=26 < 50)
+  it('respects custom tolerance ratio', () => {
+    // 230 vs 256: diff = -26
+    // Default 30% tolerance = 76.8 → within tolerance
     expect(detectBitratePresetMismatch(230, 256)).toBeNull();
-    // But not within tolerance of 20
-    expect(detectBitratePresetMismatch(230, 256, 20)).toBe('preset-upgrade');
+    // Custom 5% tolerance = 12.8 → outside tolerance
+    expect(detectBitratePresetMismatch(230, 256, 0.05)).toBe('preset-upgrade');
   });
 
   it('respects custom minBitrate', () => {
     // 50 is below default min of 64
     expect(detectBitratePresetMismatch(50, 256)).toBeNull();
     // But above custom min of 30
-    expect(detectBitratePresetMismatch(50, 256, 50, 30)).toBe('preset-upgrade');
+    expect(detectBitratePresetMismatch(50, 256, 0.3, 30)).toBe('preset-upgrade');
+  });
+
+  it('uses VBR tolerance (30%) by default', () => {
+    // 256 * 0.3 = 76.8 kbps tolerance
+    // 179 is just below 256 - 76.8 = 179.2 → upgrade
+    expect(detectBitratePresetMismatch(179, 256)).toBe('preset-upgrade');
+    // 180 is within tolerance (256 - 76.8 = 179.2)
+    expect(detectBitratePresetMismatch(180, 256)).toBeNull();
+  });
+
+  it('detects with CBR tolerance (10%)', () => {
+    // 256 * 0.1 = 25.6 kbps tolerance
+    // 230 is below 256 - 25.6 = 230.4 → upgrade
+    expect(detectBitratePresetMismatch(230, 256, 0.1)).toBe('preset-upgrade');
+    // 231 is within tolerance
+    expect(detectBitratePresetMismatch(231, 256, 0.1)).toBeNull();
   });
 
   it('works for video bitrate ranges (iPod Classic)', () => {
     // iPod Classic: low=1096, medium=1628, high=2128, max=2660
+    // 1096 vs 2128: diff = -1032, tolerance = 2128 * 0.3 = 638.4 → upgrade
     expect(detectBitratePresetMismatch(1096, 2128)).toBe('preset-upgrade');
+    // 2660 vs 1096: diff = 1564, tolerance = 1096 * 0.3 = 328.8 → downgrade
     expect(detectBitratePresetMismatch(2660, 1096)).toBe('preset-downgrade');
     expect(detectBitratePresetMismatch(2128, 2128)).toBeNull();
   });
 
   it('works for video bitrate ranges (iPod Video 5G)', () => {
     // iPod Video 5G: low=396, medium=496, high=728, max=896
+    // 396 vs 728: diff = -332, tolerance = 728 * 0.3 = 218.4 → upgrade
     expect(detectBitratePresetMismatch(396, 728)).toBe('preset-upgrade');
+    // 896 vs 396: diff = 500, tolerance = 396 * 0.3 = 118.8 → downgrade
     expect(detectBitratePresetMismatch(896, 396)).toBe('preset-downgrade');
     expect(detectBitratePresetMismatch(728, 728)).toBeNull();
+  });
+
+  it('handles very low bitrate floor correctly', () => {
+    // 65 is above the 64 min threshold
+    // 65 vs 256: diff = -191, tolerance = 256 * 0.3 = 76.8 → upgrade
+    expect(detectBitratePresetMismatch(65, 256)).toBe('preset-upgrade');
+    // 63 is below the 64 min threshold → null
+    expect(detectBitratePresetMismatch(63, 256)).toBeNull();
+  });
+
+  it('handles tolerance at exact boundary', () => {
+    // 256 * 0.3 = 76.8, so boundary is 256 - 76.8 = 179.2
+    // 180 (above 179.2) → within tolerance
+    expect(detectBitratePresetMismatch(180, 256)).toBeNull();
+    // 179 (below 179.2) → outside tolerance
+    expect(detectBitratePresetMismatch(179, 256)).toBe('preset-upgrade');
   });
 });
 
 // =============================================================================
 // detectPresetChange (audio-specific wrapper)
+// Now supports percentage-based tolerance, encoding mode, and ALAC detection.
 // =============================================================================
 
 describe('detectPresetChange', () => {
@@ -1473,6 +1520,7 @@ describe('detectPresetChange', () => {
       bitrate: 128,
     });
 
+    // 128 vs 256: diff = -128, tolerance = 256 * 0.3 = 76.8 → upgrade
     expect(detectPresetChange(source, ipod, 256)).toBe('preset-upgrade');
   });
 
@@ -1486,6 +1534,7 @@ describe('detectPresetChange', () => {
       bitrate: 256,
     });
 
+    // 256 vs 128: diff = 128, tolerance = 128 * 0.3 = 38.4 → downgrade
     expect(detectPresetChange(source, ipod, 128)).toBe('preset-downgrade');
   });
 
@@ -1534,7 +1583,6 @@ describe('detectPresetChange', () => {
       fileType: 'flac',
       lossless: true,
     });
-    // Very short files can produce extremely low bitrates (e.g., 17 kbps)
     const ipod = createIPodTrack('Artist', 'Song', 'Album', {
       filetype: 'AAC audio file',
       bitrate: 17,
@@ -1548,7 +1596,7 @@ describe('detectPresetChange', () => {
       fileType: 'flac',
       lossless: true,
     });
-    // ALAC on iPod from when preset was "lossless"
+    // ALAC on iPod (900 kbps) vs 256 target: diff = 644, tolerance = 76.8 → downgrade
     const ipod = createIPodTrack('Artist', 'Song', 'Album', {
       filetype: 'Apple Lossless audio file',
       bitrate: 900,
@@ -1557,35 +1605,37 @@ describe('detectPresetChange', () => {
     expect(detectPresetChange(source, ipod, 256)).toBe('preset-downgrade');
   });
 
-  it('returns null at exactly the tolerance boundary', () => {
+  it('returns null at exactly the VBR tolerance boundary', () => {
     const source = createCollectionTrack('Artist', 'Song', 'Album', {
       fileType: 'flac',
       lossless: true,
     });
-    // 256 - 50 = 206, exactly at boundary → within tolerance
+    // 256 * 0.3 = 76.8, boundary = 256 - 76.8 = 179.2
+    // 180 is above 179.2 → within tolerance
     const ipod = createIPodTrack('Artist', 'Song', 'Album', {
       filetype: 'AAC audio file',
-      bitrate: 206,
+      bitrate: 180,
     });
 
     expect(detectPresetChange(source, ipod, 256)).toBeNull();
   });
 
-  it('returns preset-upgrade just beyond the tolerance boundary', () => {
+  it('returns preset-upgrade just beyond the VBR tolerance boundary', () => {
     const source = createCollectionTrack('Artist', 'Song', 'Album', {
       fileType: 'flac',
       lossless: true,
     });
-    // 256 - 51 = 205, just beyond boundary
+    // 256 * 0.3 = 76.8, boundary = 256 - 76.8 = 179.2
+    // 179 is below 179.2 → outside tolerance
     const ipod = createIPodTrack('Artist', 'Song', 'Album', {
       filetype: 'AAC audio file',
-      bitrate: 205,
+      bitrate: 179,
     });
 
     expect(detectPresetChange(source, ipod, 256)).toBe('preset-upgrade');
   });
 
-  it('detects upgrade across adjacent presets (low → medium)', () => {
+  it('detects upgrade across adjacent presets (low → medium) with VBR tolerance', () => {
     const source = createCollectionTrack('Artist', 'Song', 'Album', {
       fileType: 'flac',
       lossless: true,
@@ -1595,10 +1645,11 @@ describe('detectPresetChange', () => {
       bitrate: 128,
     });
 
+    // 128 vs 192: diff = -64, tolerance = 192 * 0.3 = 57.6 → upgrade
     expect(detectPresetChange(source, ipod, 192)).toBe('preset-upgrade');
   });
 
-  it('detects downgrade across adjacent presets (medium → low)', () => {
+  it('detects downgrade across adjacent presets (medium → low) with VBR tolerance', () => {
     const source = createCollectionTrack('Artist', 'Song', 'Album', {
       fileType: 'flac',
       lossless: true,
@@ -1608,6 +1659,121 @@ describe('detectPresetChange', () => {
       bitrate: 192,
     });
 
+    // 192 vs 128: diff = 64, tolerance = 128 * 0.3 = 38.4 → downgrade
     expect(detectPresetChange(source, ipod, 128)).toBe('preset-downgrade');
+  });
+
+  describe('CBR encoding mode', () => {
+    it('uses tighter tolerance (10%) for CBR', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'AAC audio file',
+        bitrate: 230,
+      });
+
+      // 230 vs 256: diff = -26
+      // VBR tolerance = 256 * 0.3 = 76.8 → within tolerance
+      expect(detectPresetChange(source, ipod, 256)).toBeNull();
+      // CBR tolerance = 256 * 0.1 = 25.6 → outside tolerance
+      expect(detectPresetChange(source, ipod, 256, { encodingMode: 'cbr' })).toBe(
+        'preset-upgrade'
+      );
+    });
+  });
+
+  describe('custom bitrateTolerance', () => {
+    it('overrides default tolerance', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'AAC audio file',
+        bitrate: 240,
+      });
+
+      // 240 vs 256: diff = -16
+      // Default VBR 30% tolerance = 76.8 → within
+      expect(detectPresetChange(source, ipod, 256)).toBeNull();
+      // Custom 5% tolerance = 12.8 → outside
+      expect(detectPresetChange(source, ipod, 256, { bitrateTolerance: 0.05 })).toBe(
+        'preset-upgrade'
+      );
+    });
+
+    it('custom tolerance overrides encoding mode default', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'AAC audio file',
+        bitrate: 220,
+      });
+
+      // 220 vs 256: diff = -36
+      // CBR 10% tolerance = 25.6 → outside, but custom 0.2 = 51.2 → within
+      expect(
+        detectPresetChange(source, ipod, 256, { encodingMode: 'cbr', bitrateTolerance: 0.2 })
+      ).toBeNull();
+    });
+  });
+
+  describe('ALAC format-based detection', () => {
+    it('returns null when iPod track is already ALAC', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'Apple Lossless audio file',
+        bitrate: 900,
+      });
+
+      expect(detectPresetChange(source, ipod, 256, { isAlacPreset: true })).toBeNull();
+    });
+
+    it('returns preset-upgrade when iPod track is AAC and should be ALAC', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'AAC audio file',
+        bitrate: 256,
+      });
+
+      expect(detectPresetChange(source, ipod, 256, { isAlacPreset: true })).toBe('preset-upgrade');
+    });
+
+    it('returns preset-upgrade when iPod filetype is unknown and ALAC preset', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'flac',
+        lossless: true,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        bitrate: 256,
+      });
+
+      expect(detectPresetChange(source, ipod, 256, { isAlacPreset: true })).toBe('preset-upgrade');
+    });
+
+    it('does not apply ALAC detection for lossy sources', () => {
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 192,
+      });
+      const ipod = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'MPEG audio file',
+        bitrate: 128,
+      });
+
+      // Lossy source → always null regardless of isAlacPreset
+      expect(detectPresetChange(source, ipod, 256, { isAlacPreset: true })).toBeNull();
+    });
   });
 });

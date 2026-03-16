@@ -422,13 +422,13 @@ quality = "high"
 
     const result = updateDevice(
       'myipod',
-      { audioQuality: 'lossless', videoQuality: 'medium', artwork: true },
+      { audioQuality: 'max', videoQuality: 'medium', artwork: true },
       { configPath }
     );
 
     expect(result.success).toBe(true);
     const content = fs.readFileSync(configPath, 'utf-8');
-    expect(content).toContain('audioQuality = "lossless"');
+    expect(content).toContain('audioQuality = "max"');
     expect(content).toContain('videoQuality = "medium"');
     expect(content).toContain('artwork = true');
   });

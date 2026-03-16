@@ -21,6 +21,8 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-006](/developers/adr/adr-006-video-transcoding) | Video Transcoding | Accepted | 2026-03-08 |
 | [ADR-007](/developers/adr/adr-007-subsonic-collection-source) | Subsonic Collection Source | Proposed | 2026-03-08 |
 | [ADR-008](/developers/adr/adr-008-multi-collection-device-config) | Multi-Collection Device Config | Proposed | 2026-03-08 |
+| [ADR-009](/developers/adr/adr-009-self-healing-sync) | Self-Healing Sync | Accepted | 2026-03-14 |
+| [ADR-010](/developers/adr/adr-010-quality-preset-redesign) | Quality Preset Redesign | Accepted | 2026-03-15 |
 
 ## What is an ADR?
 

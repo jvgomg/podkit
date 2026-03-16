@@ -464,7 +464,7 @@ describe('video preset change detection', () => {
     ];
     const ipod = [
       createIPodVideo('Movie A', 'movie', { year: 2020, bitrate: 396 }), // low → high = upgrade
-      createIPodVideo('Movie B', 'movie', { year: 2021, bitrate: 896 }), // max → low = downgrade
+      createIPodVideo('Movie B', 'movie', { year: 2021, bitrate: 1200 }), // well above 30% tolerance → downgrade
     ];
 
     const diff = diffVideos(collection, ipod, { presetBitrate: 728 });

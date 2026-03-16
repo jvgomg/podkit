@@ -121,6 +121,10 @@ export function formatUpdateReason(reason: string): string {
       return 'Preset upgrade';
     case 'preset-downgrade':
       return 'Preset downgrade';
+    case 'force-transcode':
+      return 'Force transcode';
+    case 'sync-tag-write':
+      return 'Sync tag';
     case 'artwork-added':
       return 'Artwork added';
     case 'soundcheck-update':

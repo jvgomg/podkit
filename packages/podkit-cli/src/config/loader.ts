@@ -15,7 +15,7 @@ import type {
   PodkitConfig,
   PartialConfig,
   QualityPreset,
-  AacQualityPreset,
+  EncodingMode,
   VideoQualityPreset,
   ConfigFileContent,
   ConfigFileCleanArtists,
@@ -32,11 +32,21 @@ import type {
 } from './types.js';
 import {
   QUALITY_PRESETS,
-  AAC_QUALITY_PRESETS,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   VIDEO_QUALITY_PRESETS,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
+
+/**
+ * Build a quality validation error message.
+ */
+function qualityError(fieldName: string, value: string, context?: string): string {
+  const location = context ? ` in ${context}` : ' in config';
+  return (
+    `Invalid ${fieldName} value "${value}"${location}. ` +
+    `Valid values: ${QUALITY_PRESETS.join(', ')}`
+  );
+}
 
 /**
  * Check if a string is a valid quality preset
@@ -46,10 +56,10 @@ function isValidQuality(value: string): value is QualityPreset {
 }
 
 /**
- * Check if a string is a valid AAC quality preset (for fallback)
+ * Check if a string is a valid encoding mode
  */
-function isValidAacQuality(value: string): value is AacQualityPreset {
-  return AAC_QUALITY_PRESETS.includes(value as AacQualityPreset);
+function isValidEncodingMode(value: string): value is EncodingMode {
+  return value === 'vbr' || value === 'cbr';
 }
 
 /**
@@ -80,10 +90,7 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     if (isValidQuality(parsed.quality)) {
       config.quality = parsed.quality;
     } else {
-      throw new Error(
-        `Invalid quality value "${parsed.quality}" in config. ` +
-          `Valid values: ${QUALITY_PRESETS.join(', ')}`
-      );
+      throw new Error(qualityError('quality', parsed.quality));
     }
   }
 
@@ -91,10 +98,7 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     if (isValidQuality(parsed.audioQuality)) {
       config.audioQuality = parsed.audioQuality;
     } else {
-      throw new Error(
-        `Invalid audioQuality value "${parsed.audioQuality}" in config. ` +
-          `Valid values: ${QUALITY_PRESETS.join(', ')}`
-      );
+      throw new Error(qualityError('audioQuality', parsed.audioQuality));
     }
   }
 
@@ -109,15 +113,35 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     }
   }
 
-  if (typeof parsed.lossyQuality === 'string') {
-    if (isValidAacQuality(parsed.lossyQuality)) {
-      config.lossyQuality = parsed.lossyQuality;
+  if (typeof parsed.encoding === 'string') {
+    if (isValidEncodingMode(parsed.encoding)) {
+      config.encoding = parsed.encoding;
     } else {
       throw new Error(
-        `Invalid lossyQuality value "${parsed.lossyQuality}" in config. ` +
-          `Valid values: ${AAC_QUALITY_PRESETS.join(', ')}`
+        `Invalid encoding value "${parsed.encoding}" in config. ` +
+          `Valid values: vbr, cbr`
       );
     }
+  }
+
+  if (parsed.customBitrate !== undefined) {
+    if (typeof parsed.customBitrate !== 'number' || !Number.isInteger(parsed.customBitrate) || parsed.customBitrate < 64 || parsed.customBitrate > 320) {
+      throw new Error(
+        `Invalid customBitrate value "${parsed.customBitrate}" in config. ` +
+          `Must be an integer between 64 and 320.`
+      );
+    }
+    config.customBitrate = parsed.customBitrate;
+  }
+
+  if (parsed.bitrateTolerance !== undefined) {
+    if (typeof parsed.bitrateTolerance !== 'number' || parsed.bitrateTolerance < 0.0 || parsed.bitrateTolerance > 1.0) {
+      throw new Error(
+        `Invalid bitrateTolerance value "${parsed.bitrateTolerance}" in config. ` +
+          `Must be a number between 0.0 and 1.0.`
+      );
+    }
+    config.bitrateTolerance = parsed.bitrateTolerance;
   }
 
   if (typeof parsed.artwork === 'boolean') {
@@ -415,10 +439,7 @@ function parseDevices(
         );
       }
       if (!isValidQuality(rawDevice.quality)) {
-        throw new Error(
-          `Invalid quality value "${rawDevice.quality}" in [devices.${name}]. ` +
-            `Valid values: ${QUALITY_PRESETS.join(', ')}`
-        );
+        throw new Error(qualityError('quality', rawDevice.quality, `[devices.${name}]`));
       }
       device.quality = rawDevice.quality;
     }
@@ -432,10 +453,7 @@ function parseDevices(
         );
       }
       if (!isValidQuality(rawDevice.audioQuality)) {
-        throw new Error(
-          `Invalid audioQuality value "${rawDevice.audioQuality}" in [devices.${name}]. ` +
-            `Valid values: ${QUALITY_PRESETS.join(', ')}`
-        );
+        throw new Error(qualityError('audioQuality', rawDevice.audioQuality, `[devices.${name}]`));
       }
       device.audioQuality = rawDevice.audioQuality;
     }
@@ -455,6 +473,45 @@ function parseDevices(
         );
       }
       device.videoQuality = rawDevice.videoQuality;
+    }
+
+    // Parse optional encoding
+    if (rawDevice.encoding !== undefined) {
+      if (typeof rawDevice.encoding !== 'string') {
+        throw new Error(
+          `Invalid type for "encoding" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.encoding}.`
+        );
+      }
+      if (!isValidEncodingMode(rawDevice.encoding)) {
+        throw new Error(
+          `Invalid encoding value "${rawDevice.encoding}" in [devices.${name}]. ` +
+            `Valid values: vbr, cbr`
+        );
+      }
+      device.encoding = rawDevice.encoding;
+    }
+
+    // Parse optional customBitrate
+    if (rawDevice.customBitrate !== undefined) {
+      if (typeof rawDevice.customBitrate !== 'number' || !Number.isInteger(rawDevice.customBitrate) || rawDevice.customBitrate < 64 || rawDevice.customBitrate > 320) {
+        throw new Error(
+          `Invalid customBitrate value "${rawDevice.customBitrate}" in [devices.${name}]. ` +
+            `Must be an integer between 64 and 320.`
+        );
+      }
+      device.customBitrate = rawDevice.customBitrate;
+    }
+
+    // Parse optional bitrateTolerance
+    if (rawDevice.bitrateTolerance !== undefined) {
+      if (typeof rawDevice.bitrateTolerance !== 'number' || rawDevice.bitrateTolerance < 0.0 || rawDevice.bitrateTolerance > 1.0) {
+        throw new Error(
+          `Invalid bitrateTolerance value "${rawDevice.bitrateTolerance}" in [devices.${name}]. ` +
+            `Must be a number between 0.0 and 1.0.`
+        );
+      }
+      device.bitrateTolerance = rawDevice.bitrateTolerance;
     }
 
     // Parse optional artwork
@@ -582,7 +639,8 @@ function parseBoolEnv(value: string): boolean {
  * Read configuration from environment variables
  *
  * Reads PODKIT_QUALITY, PODKIT_AUDIO_QUALITY, PODKIT_VIDEO_QUALITY,
- * PODKIT_LOSSY_QUALITY, PODKIT_ARTWORK, and PODKIT_CLEAN_ARTISTS_* vars.
+ * PODKIT_ENCODING, PODKIT_CUSTOM_BITRATE, PODKIT_BITRATE_TOLERANCE,
+ * PODKIT_ARTWORK, and PODKIT_CLEAN_ARTISTS_* vars.
  */
 export function loadEnvConfig(): PartialConfig {
   const config: PartialConfig = {};
@@ -610,11 +668,37 @@ export function loadEnvConfig(): PartialConfig {
     }
   }
 
-  const lossyQuality = process.env[ENV_KEYS.lossyQuality];
-  if (lossyQuality !== undefined) {
-    if (isValidAacQuality(lossyQuality)) {
-      config.lossyQuality = lossyQuality;
+  const encoding = process.env[ENV_KEYS.encoding];
+  if (encoding !== undefined) {
+    if (isValidEncodingMode(encoding)) {
+      config.encoding = encoding;
     }
+  }
+
+  const customBitrate = process.env[ENV_KEYS.customBitrate];
+  if (customBitrate !== undefined) {
+    const parsed = parseInt(customBitrate, 10);
+    if (!isNaN(parsed) && Number.isInteger(parsed) && parsed >= 64 && parsed <= 320) {
+      config.customBitrate = parsed;
+    }
+  }
+
+  const bitrateTolerance = process.env[ENV_KEYS.bitrateTolerance];
+  if (bitrateTolerance !== undefined) {
+    const parsed = parseFloat(bitrateTolerance);
+    if (!isNaN(parsed) && parsed >= 0.0 && parsed <= 1.0) {
+      config.bitrateTolerance = parsed;
+    }
+  }
+
+  const forceTranscode = process.env[ENV_KEYS.forceTranscode];
+  if (forceTranscode !== undefined) {
+    config.forceTranscode = parseBoolEnv(forceTranscode);
+  }
+
+  const forceSyncTags = process.env[ENV_KEYS.forceSyncTags];
+  if (forceSyncTags !== undefined) {
+    config.forceSyncTags = parseBoolEnv(forceSyncTags);
   }
 
   const artwork = process.env[ENV_KEYS.artwork];
@@ -673,7 +757,7 @@ export function loadCliConfig(
     quality?: string;
     audioQuality?: string;
     videoQuality?: string;
-    lossyQuality?: string;
+    encoding?: string;
     artwork?: boolean;
     skipUpgrades?: boolean;
   }
@@ -700,9 +784,9 @@ export function loadCliConfig(
       }
     }
 
-    if (commandOpts.lossyQuality !== undefined) {
-      if (isValidAacQuality(commandOpts.lossyQuality)) {
-        config.lossyQuality = commandOpts.lossyQuality;
+    if (commandOpts.encoding !== undefined) {
+      if (isValidEncodingMode(commandOpts.encoding)) {
+        config.encoding = commandOpts.encoding;
       }
     }
 
@@ -742,8 +826,14 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     if (config.videoQuality !== undefined) {
       merged.videoQuality = config.videoQuality;
     }
-    if (config.lossyQuality !== undefined) {
-      merged.lossyQuality = config.lossyQuality;
+    if (config.encoding !== undefined) {
+      merged.encoding = config.encoding;
+    }
+    if (config.customBitrate !== undefined) {
+      merged.customBitrate = config.customBitrate;
+    }
+    if (config.bitrateTolerance !== undefined) {
+      merged.bitrateTolerance = config.bitrateTolerance;
     }
     if (config.artwork !== undefined) {
       merged.artwork = config.artwork;
@@ -856,7 +946,7 @@ export function loadConfig(
     quality?: string;
     audioQuality?: string;
     videoQuality?: string;
-    lossyQuality?: string;
+    encoding?: string;
     artwork?: boolean;
     skipUpgrades?: boolean;
   }

@@ -23,6 +23,8 @@ import { rm } from 'node:fs/promises';
 
 import { AsyncQueue } from './async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
+import { buildAudioSyncTag, parseSyncTag, writeSyncTag } from './sync-tags.js';
+import type { SyncTagData } from './sync-tags.js';
 
 import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.js';
 import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
@@ -131,6 +133,19 @@ export const DEFAULT_RETRY_CONFIG: Required<RetryConfig> = {
 /**
  * Extended options for sync execution
  */
+/**
+ * Configuration for writing sync tags to iPod tracks.
+ *
+ * When provided, sync tags are written to the comment field of transcoded
+ * tracks, enabling exact preset change detection on future syncs.
+ */
+export interface SyncTagConfig {
+  /** Encoding mode: 'vbr' | 'cbr' */
+  encodingMode?: string;
+  /** Custom bitrate override (only when explicitly set by user) */
+  customBitrate?: number;
+}
+
 export interface ExtendedExecuteOptions extends ExecuteOptions {
   /** Continue executing remaining operations after an error */
   continueOnError?: boolean;
@@ -145,6 +160,17 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * Optional for local sources where filePath is directly usable.
    */
   adapter?: CollectionAdapter;
+  /**
+   * Sync tag configuration for writing transcode metadata to iPod tracks.
+   *
+   * When provided, the executor writes sync tags (e.g., `[podkit:v1 quality=high encoding=vbr]`)
+   * to the comment field of transcoded tracks. This enables exact preset change detection
+   * without bitrate tolerance comparison.
+   *
+   * The resolved quality preset name comes from the operation's preset ref;
+   * this config supplies the encoding mode and optional custom bitrate.
+   */
+  syncTagConfig?: SyncTagConfig;
 }
 
 /**
@@ -480,6 +506,8 @@ export class DefaultSyncExecutor implements SyncExecutor {
   private transcoder: FFmpegTranscoder;
   /** Warnings collected during execution */
   private warnings: ExecutionWarning[] = [];
+  /** Sync tag config for the current execution (set during execute()) */
+  private syncTagConfig?: SyncTagConfig;
 
   constructor(deps: ExecutorDependencies) {
     this.ipod = deps.ipod;
@@ -536,7 +564,11 @@ export class DefaultSyncExecutor implements SyncExecutor {
       retryConfig = {},
       artwork = true,
       adapter,
+      syncTagConfig,
     } = options;
+
+    // Store sync tag config for use during transfer
+    this.syncTagConfig = syncTagConfig;
 
     // Clear warnings from previous execution
     this.clearWarnings();
@@ -1222,6 +1254,17 @@ export class DefaultSyncExecutor implements SyncExecutor {
     if (metadata.soundcheck !== undefined) {
       updateFields.soundcheck = metadata.soundcheck;
     }
+    if (metadata.comment !== undefined) {
+      // For sync-tag-write: the comment value is a formatted sync tag string.
+      // Parse it back to SyncTagData, then use writeSyncTag to merge it into
+      // the track's existing comment (preserving any user text).
+      const syncTagData = parseSyncTag(metadata.comment);
+      if (syncTagData) {
+        updateFields.comment = writeSyncTag(foundTrack.comment, syncTagData);
+      } else {
+        updateFields.comment = metadata.comment;
+      }
+    }
 
     // Update the track metadata (preserves play stats automatically)
     foundTrack.update(updateFields);
@@ -1389,6 +1432,14 @@ export class DefaultSyncExecutor implements SyncExecutor {
       ...(bitrate !== undefined && { bitrate }),
     };
 
+    // Write sync tag for transcode operations (not copy operations)
+    if (operation.type === 'transcode' && operation.preset) {
+      const syncTag = this.buildSyncTagForPreset(operation.preset.name);
+      if (syncTag) {
+        trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
+      }
+    }
+
     const track = this.ipod.addTrack(trackInput);
 
     // Copy file to iPod
@@ -1453,6 +1504,14 @@ export class DefaultSyncExecutor implements SyncExecutor {
     if (source.albumArtist !== undefined) updateFields.albumArtist = source.albumArtist;
     if (source.compilation !== undefined) updateFields.compilation = source.compilation;
 
+    // Write sync tag for upgrade operations with a preset (transcoded)
+    if (operation.preset) {
+      const syncTag = this.buildSyncTagForPreset(operation.preset.name);
+      if (syncTag) {
+        updateFields.comment = writeSyncTag(foundTrack.comment, syncTag);
+      }
+    }
+
     foundTrack.update(updateFields);
 
     // Extract and transfer artwork if enabled
@@ -1461,6 +1520,23 @@ export class DefaultSyncExecutor implements SyncExecutor {
     }
 
     return { bytesTransferred: size, track: foundTrack };
+  }
+
+  /**
+   * Build a SyncTagData from a preset name and the current sync tag config.
+   *
+   * Returns undefined if no sync tag config is set (sync tags disabled).
+   */
+  private buildSyncTagForPreset(presetName: string): SyncTagData | undefined {
+    if (!this.syncTagConfig) {
+      return undefined;
+    }
+
+    return buildAudioSyncTag(
+      presetName,
+      this.syncTagConfig.encodingMode,
+      this.syncTagConfig.customBitrate
+    );
   }
 
   /**

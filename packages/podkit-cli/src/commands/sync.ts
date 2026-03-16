@@ -66,11 +66,6 @@ import { createMusicAdapter } from '../utils/source-adapter.js';
 // =============================================================================
 
 /**
- * AAC-only quality presets (for lossyQuality)
- */
-type AacQualityPreset = Exclude<QualityPreset, 'lossless'>;
-
-/**
  * Valid sync types
  */
 type SyncType = 'music' | 'video';
@@ -84,10 +79,12 @@ interface SyncOptions {
   quality?: QualityPreset;
   audioQuality?: QualityPreset;
   videoQuality?: VideoQualityPreset;
-  lossyQuality?: AacQualityPreset;
+  encoding?: string;
   filter?: string;
   artwork?: boolean;
   skipUpgrades?: boolean;
+  forceTranscode?: boolean;
+  forceSyncTags?: boolean;
   delete?: boolean;
   collection?: string;
   eject?: boolean;
@@ -153,6 +150,8 @@ export interface UpdateBreakdown {
   'quality-upgrade'?: number;
   'preset-upgrade'?: number;
   'preset-downgrade'?: number;
+  'force-transcode'?: number;
+  'sync-tag-write'?: number;
   'artwork-added'?: number;
   'soundcheck-update'?: number;
   'metadata-correction'?: number;
@@ -389,7 +388,6 @@ function getEffectiveVideoQuality(
 
 /**
  * Check if an audio quality preset is also valid as a video quality preset
- * (i.e., max, high, medium, low — not lossless or *-cbr variants)
  */
 function isVideoQualityCompatible(quality: QualityPreset): boolean {
   return ['max', 'high', 'medium', 'low'].includes(quality);
@@ -414,6 +412,42 @@ function getEffectiveSkipUpgrades(
   return deviceConfig?.skipUpgrades ?? globalSkipUpgrades ?? false;
 }
 
+/**
+ * Get effective encoding mode
+ *
+ * Resolution order: device encoding > global encoding > undefined (defaults to VBR)
+ */
+function getEffectiveEncoding(
+  config: PodkitConfig,
+  deviceConfig?: DeviceConfig
+): import('@podkit/core').EncodingMode | undefined {
+  return deviceConfig?.encoding ?? config.encoding;
+}
+
+/**
+ * Get effective custom bitrate
+ *
+ * Resolution order: device customBitrate > global customBitrate > undefined
+ */
+function getEffectiveCustomBitrate(
+  config: PodkitConfig,
+  deviceConfig?: DeviceConfig
+): number | undefined {
+  return deviceConfig?.customBitrate ?? config.customBitrate;
+}
+
+/**
+ * Get effective bitrate tolerance
+ *
+ * Resolution order: device bitrateTolerance > global bitrateTolerance > undefined
+ */
+function getEffectiveBitrateTolerance(
+  config: PodkitConfig,
+  deviceConfig?: DeviceConfig
+): number | undefined {
+  return deviceConfig?.bitrateTolerance ?? config.bitrateTolerance;
+}
+
 // =============================================================================
 // Music Sync Helpers
 // =============================================================================
@@ -427,9 +461,14 @@ interface MusicSyncContext {
   removeOrphans: boolean;
   effectiveTransforms: TransformsConfig;
   effectiveQuality: QualityPreset;
-  lossyQuality: AacQualityPreset | undefined;
+  effectiveEncoding: import('@podkit/core').EncodingMode | undefined;
+  effectiveCustomBitrate: number | undefined;
+  effectiveBitrateTolerance: number | undefined;
+  deviceSupportsAlac: boolean;
   effectiveArtwork: boolean;
   skipUpgrades: boolean;
+  forceTranscode: boolean;
+  forceSyncTags: boolean;
   ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
   core: typeof import('@podkit/core');
@@ -455,9 +494,14 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
     removeOrphans,
     effectiveTransforms,
     effectiveQuality,
-    lossyQuality,
+    effectiveEncoding,
+    effectiveCustomBitrate,
+    effectiveBitrateTolerance,
+    deviceSupportsAlac,
     effectiveArtwork,
     skipUpgrades,
+    forceTranscode,
+    forceSyncTags,
     ipod,
     transcoder,
     core,
@@ -552,18 +596,40 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
   // Compute diff
   const diffSpinner = out.spinner('Computing sync diff...');
   const ipodTracks = ipod.getTracks();
-  const transcodingActive = effectiveQuality !== 'lossless';
+  const isAlacPreset = effectiveQuality === 'max' && deviceSupportsAlac;
+
+  // Resolve quality for sync tag comparison:
+  // - max + ALAC device → 'lossless'
+  // - max + non-ALAC device → 'high' (max falls back to high)
+  // - other → as-is ('high', 'medium', 'low')
+  const resolvedQuality = isAlacPreset
+    ? 'lossless'
+    : effectiveQuality === 'max'
+      ? 'high'
+      : effectiveQuality;
+
   const diff = core.computeDiff(collectionTracks, ipodTracks, {
     transforms: effectiveTransforms,
     skipUpgrades,
-    transcodingActive,
-    presetBitrate: transcodingActive ? core.getPresetBitrate(effectiveQuality) : undefined,
+    forceTranscode,
+    forceSyncTags,
+    transcodingActive: true,
+    presetBitrate: core.getPresetBitrate(effectiveQuality),
+    encodingMode: effectiveEncoding,
+    bitrateTolerance: effectiveBitrateTolerance,
+    isAlacPreset,
+    resolvedQuality,
+    customBitrate: effectiveCustomBitrate,
   });
   diffSpinner.stop('Diff computed');
 
   // Create sync plan
-  const transcodeConfig = { quality: effectiveQuality, lossyQuality };
-  const plan = core.createPlan(diff, { removeOrphans, transcodeConfig });
+  const transcodeConfig = {
+    quality: effectiveQuality,
+    encoding: effectiveEncoding,
+    customBitrate: effectiveCustomBitrate,
+  };
+  const plan = core.createPlan(diff, { removeOrphans, transcodeConfig, deviceSupportsAlac });
   const summary = core.getPlanSummary(plan);
   const storage = getStorageInfo(devicePath);
   const hasEnoughSpace = storage ? core.willFitInSpace(plan, storage.free) : true;
@@ -575,7 +641,6 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
       sourcePath,
       devicePath,
       effectiveQuality,
-      lossyQuality,
       effectiveTransforms,
       skipUpgrades,
       diff,
@@ -655,6 +720,10 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
     continueOnError: true,
     artwork: effectiveArtwork,
     adapter,
+    syncTagConfig: {
+      encodingMode: effectiveEncoding,
+      customBitrate: effectiveCustomBitrate,
+    },
   })) {
     if (progress.error) {
       const categorized = progress.categorizedError;
@@ -708,7 +777,6 @@ interface MusicDryRunContext {
   sourcePath: string;
   devicePath: string;
   effectiveQuality: QualityPreset;
-  lossyQuality: AacQualityPreset | undefined;
   effectiveTransforms: TransformsConfig;
   skipUpgrades: boolean;
   diff: ReturnType<typeof import('@podkit/core').computeDiff>;
@@ -727,7 +795,6 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
     sourcePath,
     devicePath,
     effectiveQuality,
-    lossyQuality,
     effectiveTransforms,
     skipUpgrades,
     diff,
@@ -808,9 +875,7 @@ function buildMusicDryRunOutput(ctx: MusicDryRunContext): SyncOutput {
     out.newline();
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
-    const qualityDisplay = lossyQuality
-      ? `${effectiveQuality} (lossy: ${lossyQuality})`
-      : effectiveQuality;
+    const qualityDisplay = effectiveQuality;
     out.print(`Quality: ${qualityDisplay}`);
     const transformsDisplay = formatTransformsConfig(effectiveTransforms);
     if (transformsDisplay) {
@@ -1055,6 +1120,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
         episodeNumber: t.episodeNumber,
         duration: t.duration ? Math.floor(t.duration / 1000) : undefined,
         bitrate: t.bitrate || undefined,
+        comment: t.comment,
       };
     });
 
@@ -1069,6 +1135,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
   const videoPresetBitrate = videoPresetSettings.videoBitrate + videoPresetSettings.audioBitrate;
   const videoDiff = core.diffVideos(collectionVideos, ipodVideos, {
     presetBitrate: videoPresetBitrate,
+    resolvedVideoQuality: effectiveVideoQuality,
   });
   diffSpinner.stop('Video diff computed');
 
@@ -1148,7 +1215,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
   let videoCompleted = 0;
 
   try {
-    for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false })) {
+    for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false, videoQuality: effectiveVideoQuality })) {
       if (progress.skipped) {
         // Skip tracking for skipped operations
       } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
@@ -1217,19 +1284,18 @@ export const syncCommand = new Command('sync')
   )
   .option(
     '--audio-quality <preset>',
-    'audio transcoding quality (overrides --quality): lossless, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr'
+    'audio transcoding quality (overrides --quality): max, high, medium, low'
   )
   .option(
     '--video-quality <preset>',
     'video transcoding quality (overrides --quality): max, high, medium, low'
   )
-  .option(
-    '--lossy-quality <preset>',
-    'quality for lossy sources when audio quality is lossless (default: max)'
-  )
+  .option('--encoding <mode>', 'audio encoding mode: vbr, cbr')
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--skip-upgrades', 'skip file-replacement upgrades for changed source files')
+  .option('--force-transcode', 're-transcode all lossless-source tracks regardless of bitrate')
+  .option('--force-sync-tags', 'write sync tags to all matched transcoded tracks without re-transcoding')
   .option('--delete', 'remove tracks from iPod not in source')
   .option('--eject', 'eject iPod after successful sync')
   .action(async (options: SyncOptions) => {
@@ -1304,7 +1370,12 @@ export const syncCommand = new Command('sync')
       options.skipUpgrades !== undefined
         ? options.skipUpgrades
         : getEffectiveSkipUpgrades(config.skipUpgrades, deviceConfig);
-    const lossyQuality = options.lossyQuality ?? config.lossyQuality;
+    // Resolve encoding settings
+    const effectiveEncoding = options.encoding
+      ? (options.encoding as import('@podkit/core').EncodingMode)
+      : getEffectiveEncoding(config, deviceConfig);
+    const effectiveCustomBitrate = getEffectiveCustomBitrate(config, deviceConfig);
+    const effectiveBitrateTolerance = getEffectiveBitrateTolerance(config, deviceConfig);
 
     // ----- Resolve collections -----
     const allCollections = resolveCollections(config, options.collection, syncType);
@@ -1519,6 +1590,11 @@ export const syncCommand = new Command('sync')
       }
     }
 
+    // Determine ALAC capability from device generation
+    const deviceSupportsAlac = ipodDeviceInfo?.generation
+      ? core.supportsAlac(ipodDeviceInfo.generation)
+      : false;
+
     // Track overall results
     let totalCompleted = 0;
     let totalFailed = 0;
@@ -1544,9 +1620,14 @@ export const syncCommand = new Command('sync')
             removeOrphans,
             effectiveTransforms,
             effectiveQuality,
-            lossyQuality,
+            effectiveEncoding,
+            effectiveCustomBitrate,
+            effectiveBitrateTolerance,
+            deviceSupportsAlac,
             effectiveArtwork,
             skipUpgrades: effectiveSkipUpgrades,
+            forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
+            forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
             ipod,
             transcoder,
             core,

@@ -72,6 +72,51 @@ Solutions for frequently encountered problems with podkit.
 
 ## Sync Issues
 
+### Tracks keep re-transcoding on every sync
+
+**Symptoms:** Some tracks are re-transcoded every time you sync, even though nothing has changed.
+
+**Cause:** VBR encoding produces content-dependent bitrates that can vary from the preset's target. When the actual bitrate falls outside the detection tolerance, podkit thinks the preset has changed and re-transcodes the track. The new transcode produces a similarly variable bitrate, creating a cycle.
+
+**Solutions:**
+
+1. **Write sync tags (recommended).** Sync tags store the exact preset used for each track, eliminating bitrate-based false positives entirely:
+   ```bash
+   podkit sync --force-sync-tags
+   ```
+   This tags all existing tracks with your current preset info. Future syncs use exact comparison for tagged tracks. See [Track Upgrades — Sync Tags](/user-guide/syncing/upgrades#sync-tags) for details.
+2. **Increase the tolerance.** The default VBR tolerance is 30%. You can raise it in your config:
+   ```toml
+   bitrateTolerance = 0.4  # 40% tolerance
+   ```
+3. **Switch to CBR encoding.** CBR produces stable bitrates that don't trigger false positives:
+   ```toml
+   encoding = "cbr"
+   ```
+4. **Accept some re-transcoding.** With VBR, a small number of tracks may be re-transcoded on each sync. This is inherent to VBR encoding and does not affect audio quality.
+
+To force re-transcoding of all lossless-source tracks (e.g., after changing presets or encoding mode), use `--force-transcode`:
+
+```bash
+podkit sync --force-transcode
+```
+
+This preserves play counts, ratings, and playlist membership. Preview with `--dry-run` first.
+
+### Not all tracks re-transcoded after switching encoding mode
+
+**Symptoms:** You switched from VBR to CBR (or vice versa) at the same quality preset, but only some tracks were re-transcoded.
+
+**Cause:** The iPod database stores a track's bitrate but not how it was encoded. podkit detects changes by comparing the stored bitrate against the current preset target. When switching VBR to CBR, the tighter CBR tolerance catches tracks whose VBR bitrate landed far from the target, but tracks that are already close are left alone. When switching CBR to VBR, existing tracks at the exact target bitrate are well within VBR tolerance and are left as-is.
+
+This is expected behaviour — tracks left alone are already at the right quality. New tracks added in future syncs will use the new encoding mode.
+
+**If you need every track re-encoded**, use `--force-transcode`:
+
+```bash
+podkit sync --force-transcode
+```
+
 ### Sync is slow
 
 **Tips to speed up sync:**

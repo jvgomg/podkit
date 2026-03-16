@@ -19,10 +19,17 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import { hasEnabledTransforms } from '../transforms/pipeline.js';
 import { buildMatchIndex, getTransformMatchKeys } from './matching.js';
 import {
+  buildAudioSyncTag,
+  formatSyncTag,
+  parseSyncTag,
+  syncTagMatchesConfig,
+} from './sync-tags.js';
+import {
   detectPresetChange,
   detectUpgrades,
   getIpodFormatFamily,
   isFileReplacementUpgrade,
+  isSourceLossless,
   metadataValuesDiffer,
 } from './upgrades.js';
 import type {
@@ -183,6 +190,18 @@ export function computeDiff(
         }
       }
 
+      // When forceTranscode is on and source is lossless, ensure the track gets
+      // a file-replacement upgrade even if it only has metadata-only reasons.
+      // This way the re-transcode happens and metadata updates are applied as
+      // part of the upgrade transfer.
+      if (
+        options?.forceTranscode &&
+        isSourceLossless(collectionTrack) &&
+        !upgradeReasons.some(isFileReplacementUpgrade)
+      ) {
+        upgradeReasons.unshift('force-transcode');
+      }
+
       if (upgradeReasons.length > 0) {
         // Filter by skipUpgrades: when enabled, suppress file-replacement upgrades
         // but keep metadata-only upgrades (soundcheck, metadata-correction)
@@ -233,30 +252,149 @@ export function computeDiff(
   }
 
   // Post-processing: detect quality preset changes on existing tracks.
-  // Only when transcoding is active (lossy preset) and presetBitrate is provided.
-  // Tracks with a bitrate mismatch are moved from existing → toUpdate.
-  if (options?.transcodingActive && options?.presetBitrate && !(options?.skipUpgrades ?? false)) {
-    const presetBitrate = options.presetBitrate;
+  // When isAlacPreset is true, we check format-based detection (no presetBitrate needed).
+  // Otherwise, when transcoding is active and presetBitrate is provided, check bitrate.
+  // Tracks with a mismatch are moved from existing → toUpdate.
+  //
+  // Sync tag priority: if a track has a sync tag, use exact comparison against
+  // the current config. If no sync tag, fall back to bitrate tolerance detection.
+  const shouldCheckPreset =
+    !(options?.skipUpgrades ?? false) &&
+    (options?.isAlacPreset || (options?.transcodingActive && options?.presetBitrate));
+
+  if (shouldCheckPreset) {
+    const presetBitrate = options?.presetBitrate ?? 0;
+    const presetChangeOptions = {
+      encodingMode: options?.encodingMode,
+      bitrateTolerance: options?.bitrateTolerance,
+      isAlacPreset: options?.isAlacPreset,
+    };
+
+    // Build expected sync tag from current config (for sync tag comparison)
+    const resolvedQuality = options?.resolvedQuality;
+    const expectedSyncTag = resolvedQuality
+      ? buildAudioSyncTag(resolvedQuality, options?.encodingMode, options?.customBitrate)
+      : undefined;
+
     const stillExisting: MatchedTrack[] = [];
 
     for (const match of existing) {
-      const presetChange = detectPresetChange(match.collection, match.ipod, presetBitrate);
+      // Only check lossless-source tracks (lossy are copied as-is)
+      if (!isSourceLossless(match.collection)) {
+        stillExisting.push(match);
+        continue;
+      }
+
+      // Try sync tag comparison first
+      const syncTag = parseSyncTag(match.ipod.comment);
+      let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
+
+      if (syncTag && expectedSyncTag) {
+        // Sync tag exists — use exact comparison
+        if (!syncTagMatchesConfig(syncTag, expectedSyncTag)) {
+          // Determine direction from quality tier comparison
+          presetChange = determineSyncTagDirection(syncTag, expectedSyncTag);
+        }
+        // else: sync tag matches → in sync, presetChange stays null
+      } else {
+        // No sync tag on track, or no resolvedQuality in options — fall back to bitrate tolerance.
+        // Callers must pass resolvedQuality to enable sync tag comparison.
+        presetChange = detectPresetChange(
+          match.collection,
+          match.ipod,
+          presetBitrate,
+          presetChangeOptions
+        );
+      }
+
       if (presetChange) {
+        const changes: { field: 'bitrate' | 'lossless'; from: string; to: string }[] =
+          options?.isAlacPreset
+            ? [
+                {
+                  field: 'lossless' as const,
+                  from: String(match.ipod.filetype ?? 'AAC'),
+                  to: 'ALAC',
+                },
+              ]
+            : [
+                {
+                  field: 'bitrate' as const,
+                  from: String(match.ipod.bitrate),
+                  to: String(presetBitrate),
+                },
+              ];
+
         toUpdate.push({
           source: match.collection,
           ipod: match.ipod,
           reason: presetChange,
-          changes: [
-            {
-              field: 'bitrate',
-              from: String(match.ipod.bitrate),
-              to: String(presetBitrate),
-            },
-          ],
+          changes,
         });
       } else {
         stillExisting.push(match);
       }
+    }
+
+    existing.length = 0;
+    existing.push(...stillExisting);
+  }
+
+  // Post-processing: force re-transcoding of all lossless-source tracks.
+  // Only lossless sources are affected — compatible lossy (MP3, AAC) are always
+  // copied as-is and re-encoding them would only degrade quality.
+  if (options?.forceTranscode) {
+    const stillExisting: MatchedTrack[] = [];
+
+    for (const match of existing) {
+      if (isSourceLossless(match.collection)) {
+        toUpdate.push({
+          source: match.collection,
+          ipod: match.ipod,
+          reason: 'force-transcode',
+          changes: [{ field: 'bitrate', from: String(match.ipod.bitrate ?? 'unknown'), to: 'forced' }],
+        });
+      } else {
+        stillExisting.push(match);
+      }
+    }
+
+    existing.length = 0;
+    existing.push(...stillExisting);
+  }
+
+  // Post-processing: write sync tags to lossless-source tracks that are missing
+  // or have outdated tags. This is metadata-only — no file replacement.
+  if (options?.forceSyncTags && options?.resolvedQuality) {
+    const expectedTag = buildAudioSyncTag(
+      options.resolvedQuality,
+      options.encodingMode,
+      options.customBitrate
+    );
+    const stillExisting: MatchedTrack[] = [];
+
+    for (const match of existing) {
+      if (!isSourceLossless(match.collection)) {
+        stillExisting.push(match);
+        continue;
+      }
+
+      // Compare formatted tag strings — rewrite if the text differs,
+      // even if the semantic meaning is equivalent (e.g., missing encoding=vbr).
+      // This ensures all tags are complete and consistent.
+      const expectedTagStr = formatSyncTag(expectedTag);
+      const currentTag = parseSyncTag(match.ipod.comment);
+      if (currentTag && formatSyncTag(currentTag) === expectedTagStr) {
+        stillExisting.push(match);
+        continue;
+      }
+
+      toUpdate.push({
+        source: match.collection,
+        ipod: match.ipod,
+        reason: 'sync-tag-write',
+        changes: [{ field: 'comment', from: match.ipod.comment ?? '', to: formatSyncTag(expectedTag) }],
+      });
     }
 
     existing.length = 0;
@@ -351,6 +489,51 @@ function buildUpgradeChanges(
   }
 
   return changes;
+}
+
+/**
+ * Quality tier ordering for determining preset change direction.
+ *
+ * Higher index = higher quality. Used when sync tags indicate a mismatch
+ * to determine whether it's an upgrade or downgrade.
+ */
+const QUALITY_TIER_ORDER: Record<string, number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+  max: 3, // video uses 'max' directly; audio resolves 'max' to 'lossless' or 'high' before tagging
+  lossless: 3,
+};
+
+/**
+ * Determine the direction of a sync tag mismatch.
+ *
+ * Compares old (iPod) and new (config) sync tags to decide if the preset
+ * change is an upgrade or downgrade. Falls back to 'preset-upgrade' if
+ * the direction cannot be determined.
+ */
+function determineSyncTagDirection(
+  oldTag: { quality: string; encoding?: string; bitrate?: number },
+  newTag: { quality: string; encoding?: string; bitrate?: number }
+): 'preset-upgrade' | 'preset-downgrade' {
+  const oldTier = QUALITY_TIER_ORDER[oldTag.quality] ?? -1;
+  const newTier = QUALITY_TIER_ORDER[newTag.quality] ?? -1;
+
+  if (newTier > oldTier) {
+    return 'preset-upgrade';
+  }
+  if (newTier < oldTier) {
+    return 'preset-downgrade';
+  }
+
+  // Same quality tier — encoding or bitrate change.
+  // If bitrate changed, use that for direction.
+  if (oldTag.bitrate !== undefined && newTag.bitrate !== undefined) {
+    return newTag.bitrate > oldTag.bitrate ? 'preset-upgrade' : 'preset-downgrade';
+  }
+
+  // Encoding mode change at same quality is a re-transcode (treat as upgrade)
+  return 'preset-upgrade';
 }
 
 /**

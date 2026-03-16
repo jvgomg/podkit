@@ -29,7 +29,9 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.quality];
     delete process.env[ENV_KEYS.audioQuality];
     delete process.env[ENV_KEYS.videoQuality];
-    delete process.env[ENV_KEYS.lossyQuality];
+    delete process.env[ENV_KEYS.encoding];
+    delete process.env[ENV_KEYS.customBitrate];
+    delete process.env[ENV_KEYS.bitrateTolerance];
     delete process.env[ENV_KEYS.artwork];
     delete process.env[ENV_KEYS.cleanArtists];
     delete process.env[ENV_KEYS.cleanArtistsDrop];
@@ -81,15 +83,10 @@ quality = "invalid"
 
     // Quality preset tests
     const validPresets = [
-      'lossless',
       'max',
-      'max-cbr',
       'high',
-      'high-cbr',
       'medium',
-      'medium-cbr',
       'low',
-      'low-cbr',
     ] as const;
     for (const preset of validPresets) {
       it(`accepts quality = "${preset}"`, () => {
@@ -101,60 +98,78 @@ quality = "invalid"
       });
     }
 
-    // lossyQuality tests
-    it('parses lossyQuality option', () => {
-      const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(
-        configPath,
-        `
-quality = "lossless"
-lossyQuality = "high"
-`
-      );
-
-      const result = loadConfigFile(configPath);
-      expect(result?.quality).toBe('lossless');
-      expect(result?.lossyQuality).toBe('high');
-    });
-
-    it('throws on lossless as lossyQuality (lossless is not valid AAC preset)', () => {
-      const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(
-        configPath,
-        `
-quality = "lossless"
-lossyQuality = "lossless"
-`
-      );
-
-      expect(() => loadConfigFile(configPath)).toThrow(/Invalid lossyQuality value/);
-    });
-
-    const validLossyQualities = [
-      'max',
-      'max-cbr',
-      'high',
-      'high-cbr',
-      'medium',
-      'medium-cbr',
-      'low',
-      'low-cbr',
-    ] as const;
-    for (const lossyQuality of validLossyQualities) {
-      it(`accepts lossyQuality = "${lossyQuality}"`, () => {
+    const invalidPresets = ['lossless', 'max-cbr', 'high-cbr', 'medium-cbr', 'low-cbr'] as const;
+    for (const preset of invalidPresets) {
+      it(`rejects invalid preset "${preset}"`, () => {
         const configPath = path.join(tempDir, 'config.toml');
-        fs.writeFileSync(
-          configPath,
-          `
-quality = "lossless"
-lossyQuality = "${lossyQuality}"
-`
-        );
+        fs.writeFileSync(configPath, `quality = "${preset}"`);
 
-        const result = loadConfigFile(configPath);
-        expect(result?.lossyQuality).toBe(lossyQuality);
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid quality/);
       });
     }
+
+    // encoding tests
+    it('parses encoding option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `encoding = "cbr"`);
+
+      const result = loadConfigFile(configPath);
+      expect(result?.encoding).toBe('cbr');
+    });
+
+    it('accepts encoding = "vbr"', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `encoding = "vbr"`);
+
+      const result = loadConfigFile(configPath);
+      expect(result?.encoding).toBe('vbr');
+    });
+
+    it('throws on invalid encoding', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `encoding = "abr"`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid encoding value/);
+    });
+
+    // customBitrate tests
+    it('parses customBitrate option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `customBitrate = 256`);
+
+      const result = loadConfigFile(configPath);
+      expect(result?.customBitrate).toBe(256);
+    });
+
+    it('throws on customBitrate below 64', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `customBitrate = 32`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid customBitrate/);
+    });
+
+    it('throws on customBitrate above 320', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `customBitrate = 400`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid customBitrate/);
+    });
+
+    // bitrateTolerance tests
+    it('parses bitrateTolerance option', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `bitrateTolerance = 0.25`);
+
+      const result = loadConfigFile(configPath);
+      expect(result?.bitrateTolerance).toBe(0.25);
+    });
+
+    it('throws on bitrateTolerance above 1.0', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `bitrateTolerance = 1.5`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid bitrateTolerance/);
+    });
 
     // audioQuality tests
     it('parses audioQuality option', () => {
@@ -162,12 +177,12 @@ lossyQuality = "${lossyQuality}"
       fs.writeFileSync(
         configPath,
         `
-audioQuality = "lossless"
+audioQuality = "max"
 `
       );
 
       const result = loadConfigFile(configPath);
-      expect(result?.audioQuality).toBe('lossless');
+      expect(result?.audioQuality).toBe('max');
     });
 
     it('throws on invalid audioQuality', () => {
@@ -179,7 +194,21 @@ audioQuality = "invalid"
 `
       );
 
-      expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioQuality value/);
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioQuality/);
+    });
+
+    it('rejects invalid preset "lossless" for audioQuality', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `audioQuality = "lossless"`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioQuality/);
+    });
+
+    it('rejects invalid preset "high-cbr" for audioQuality', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, `audioQuality = "high-cbr"`);
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid audioQuality/);
     });
 
     // root-level videoQuality tests
@@ -628,7 +657,7 @@ volumeName = "TERAPOD"
 volumeUuid = "ABC-123"
 volumeName = "TERAPOD"
 quality = "high"
-audioQuality = "lossless"
+audioQuality = "max"
 videoQuality = "medium"
 artwork = true
 `
@@ -639,7 +668,7 @@ artwork = true
           volumeUuid: 'ABC-123',
           volumeName: 'TERAPOD',
           quality: 'high',
-          audioQuality: 'lossless',
+          audioQuality: 'max',
           videoQuality: 'medium',
           artwork: true,
         });
@@ -933,15 +962,10 @@ device = "terapod"
 
     // All quality presets via env
     const envPresets = [
-      'lossless',
       'max',
-      'max-cbr',
       'high',
-      'high-cbr',
       'medium',
-      'medium-cbr',
       'low',
-      'low-cbr',
     ] as const;
     for (const preset of envPresets) {
       it(`reads PODKIT_QUALITY=${preset}`, () => {
@@ -950,6 +974,12 @@ device = "terapod"
         expect(result.quality).toBe(preset);
       });
     }
+
+    it('ignores invalid preset via PODKIT_QUALITY', () => {
+      process.env[ENV_KEYS.quality] = 'lossless';
+      const result = loadEnvConfig();
+      expect(result.quality).toBeUndefined();
+    });
 
     it('reads PODKIT_ARTWORK=true', () => {
       process.env[ENV_KEYS.artwork] = 'true';
@@ -976,9 +1006,9 @@ device = "terapod"
     });
 
     it('reads PODKIT_AUDIO_QUALITY with valid value', () => {
-      process.env[ENV_KEYS.audioQuality] = 'lossless';
+      process.env[ENV_KEYS.audioQuality] = 'max';
       const result = loadEnvConfig();
-      expect(result.audioQuality).toBe('lossless');
+      expect(result.audioQuality).toBe('max');
     });
 
     it('ignores PODKIT_AUDIO_QUALITY with invalid value', () => {
@@ -999,16 +1029,40 @@ device = "terapod"
       expect(result.videoQuality).toBeUndefined();
     });
 
-    it('reads PODKIT_LOSSY_QUALITY with valid value', () => {
-      process.env[ENV_KEYS.lossyQuality] = 'high';
+    it('reads PODKIT_ENCODING with valid value', () => {
+      process.env[ENV_KEYS.encoding] = 'cbr';
       const result = loadEnvConfig();
-      expect(result.lossyQuality).toBe('high');
+      expect(result.encoding).toBe('cbr');
     });
 
-    it('ignores PODKIT_LOSSY_QUALITY with invalid value', () => {
-      process.env[ENV_KEYS.lossyQuality] = 'lossless';
+    it('ignores PODKIT_ENCODING with invalid value', () => {
+      process.env[ENV_KEYS.encoding] = 'abr';
       const result = loadEnvConfig();
-      expect(result.lossyQuality).toBeUndefined();
+      expect(result.encoding).toBeUndefined();
+    });
+
+    it('reads PODKIT_CUSTOM_BITRATE with valid value', () => {
+      process.env[ENV_KEYS.customBitrate] = '256';
+      const result = loadEnvConfig();
+      expect(result.customBitrate).toBe(256);
+    });
+
+    it('ignores PODKIT_CUSTOM_BITRATE with invalid value', () => {
+      process.env[ENV_KEYS.customBitrate] = '999';
+      const result = loadEnvConfig();
+      expect(result.customBitrate).toBeUndefined();
+    });
+
+    it('reads PODKIT_BITRATE_TOLERANCE with valid value', () => {
+      process.env[ENV_KEYS.bitrateTolerance] = '0.25';
+      const result = loadEnvConfig();
+      expect(result.bitrateTolerance).toBe(0.25);
+    });
+
+    it('ignores PODKIT_BITRATE_TOLERANCE with invalid value', () => {
+      process.env[ENV_KEYS.bitrateTolerance] = '2.0';
+      const result = loadEnvConfig();
+      expect(result.bitrateTolerance).toBeUndefined();
     });
 
     it('reads PODKIT_CLEAN_ARTISTS=true', () => {
@@ -1123,15 +1177,10 @@ device = "terapod"
 
     // All quality presets via CLI
     const cliPresets = [
-      'lossless',
       'max',
-      'max-cbr',
       'high',
-      'high-cbr',
       'medium',
-      'medium-cbr',
       'low',
-      'low-cbr',
     ] as const;
     for (const preset of cliPresets) {
       it(`extracts quality = "${preset}" from command options`, () => {
@@ -1147,31 +1196,29 @@ device = "terapod"
       });
     }
 
-    // lossyQuality option via CLI
-    it('extracts lossyQuality from command options', () => {
+    // encoding option via CLI
+    it('extracts encoding from command options', () => {
       const globalOpts: GlobalOptions = {
         verbose: 0,
         quiet: false,
         json: false,
         color: true,
       };
-      const commandOpts = { audioQuality: 'lossless', lossyQuality: 'high' };
+      const commandOpts = { encoding: 'cbr' };
       const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.audioQuality).toBe('lossless');
-      expect(result.lossyQuality).toBe('high');
+      expect(result.encoding).toBe('cbr');
     });
 
-    // Invalid lossyQuality via CLI (alac is not valid AAC preset)
-    it('ignores invalid lossyQuality in command options', () => {
+    it('ignores invalid encoding in command options', () => {
       const globalOpts: GlobalOptions = {
         verbose: 0,
         quiet: false,
         json: false,
         color: true,
       };
-      const commandOpts = { lossyQuality: 'invalid' };
+      const commandOpts = { encoding: 'invalid' };
       const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.lossyQuality).toBeUndefined();
+      expect(result.encoding).toBeUndefined();
     });
 
     // audioQuality option via CLI
@@ -1182,9 +1229,9 @@ device = "terapod"
         json: false,
         color: true,
       };
-      const commandOpts = { audioQuality: 'max-cbr' };
+      const commandOpts = { audioQuality: 'max' };
       const result = loadCliConfig(globalOpts, commandOpts);
-      expect(result.audioQuality).toBe('max-cbr');
+      expect(result.audioQuality).toBe('max');
     });
 
     // videoQuality option via CLI

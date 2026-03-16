@@ -32,6 +32,7 @@ import type { SyncProgress, SyncOperation, ExecuteOptions } from './types.js';
 import type { VideoSyncPlan } from './video-planner.js';
 import type { TranscodeProgress } from '../transcode/types.js';
 import type { IpodDatabase } from '../ipod/index.js';
+import { buildVideoSyncTag, writeSyncTag } from './sync-tags.js';
 import { transcodeVideo } from '../video/transcode.js';
 import { probeVideo } from '../video/probe.js';
 import { createVideoTrackInput } from '../ipod/video.js';
@@ -72,6 +73,12 @@ export interface VideoExecuteOptions extends ExecuteOptions {
 
   /** Callback for transcode progress updates (within a single video) */
   onTranscodeProgress?: (progress: TranscodeProgress) => void;
+
+  /**
+   * Video quality preset name for sync tag writing.
+   * When set, sync tags are written to transcoded video tracks.
+   */
+  videoQuality?: string;
 }
 
 /**
@@ -145,6 +152,8 @@ export interface VideoSyncExecutor {
  */
 export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
   private ipod: IpodDatabase;
+  /** Video quality preset for sync tag writing (set during execute()) */
+  private videoQuality?: string;
 
   constructor(deps: VideoExecutorDependencies) {
     this.ipod = deps.ipod;
@@ -163,7 +172,11 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       tempDir = tmpdir(),
       signal,
       onTranscodeProgress,
+      videoQuality,
     } = options;
+
+    // Store video quality for sync tag writing
+    this.videoQuality = videoQuality;
 
     const total = plan.operations.length;
     let bytesProcessed = 0;
@@ -406,6 +419,12 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       size: outputStats.size,
       bitrate: outputAnalysis.videoBitrate + outputAnalysis.audioBitrate,
     });
+
+    // Write sync tag for video quality if configured
+    if (this.videoQuality) {
+      const syncTag = buildVideoSyncTag(this.videoQuality);
+      trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
+    }
 
     // Add track to iPod and copy file
     const track = this.ipod.addTrack(trackInput);

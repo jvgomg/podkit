@@ -72,16 +72,18 @@ libgpod cannot implement iTunes' signing mechanism, making iOS device support te
 
 ## Feature Support by Generation
 
-| Generation | Music | Artwork | Video | Playlists | Smart Playlists |
-|------------|-------|---------|-------|-----------|-----------------|
-| 1st-4th Gen | ✅ | ❌ | ❌ | ✅ | ✅ |
-| Photo | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Video (5th/5.5th) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Classic (6th/7th) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Mini | ✅ | ❌ | ❌ | ✅ | ✅ |
-| Nano 1st-2nd | ✅ | ✅ | ❌ | ✅ | ✅ |
-| Nano 3rd-5th | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Shuffle 1st-2nd | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Generation | Music | ALAC | Artwork | Video | Playlists | Smart Playlists |
+|------------|-------|------|---------|-------|-----------|-----------------|
+| 1st-4th Gen | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Photo | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Video (5th/5.5th) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Classic (6th/7th) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Mini | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ |
+| Nano 1st-2nd | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ |
+| Nano 3rd-5th | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Shuffle 1st-2nd | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+
+The ALAC column indicates Apple Lossless support. The `max` quality preset uses this to automatically choose between ALAC (lossless) and high-quality AAC based on device capability.
 
 ## iFlash / SD Card Adapters
 

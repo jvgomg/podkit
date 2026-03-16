@@ -46,15 +46,75 @@ This is possible because podkit updates the existing database entry rather than 
 When you change your quality preset (e.g., from `low` to `high`), podkit detects that existing transcoded tracks on the iPod don't match the new target bitrate and re-transcodes them on the next sync. Both directions are supported:
 
 - **Preset upgrade**: iPod bitrate is significantly lower than the new preset target (e.g., switching from `low` at 128 kbps to `high` at 256 kbps)
-- **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `max` at 320 kbps to `medium` at 192 kbps)
+- **Preset downgrade**: iPod bitrate is significantly higher than the new preset target (e.g., switching from `high` at 256 kbps to `medium` at 192 kbps)
 
 This only affects lossless source tracks (FLAC, WAV, AIFF) that are transcoded during sync. Lossy source tracks (MP3, AAC) are copied as-is regardless of the quality preset.
 
-A tolerance of ±50 kbps is used to handle natural VBR bitrate variance. Tracks whose bitrate falls within this tolerance of the preset target are considered in sync.
+### Tolerance
 
-**VBR overlap note:** Adjacent VBR presets (e.g., medium and high) can produce overlapping bitrate ranges depending on content complexity. Jumps of two or more preset levels (e.g., low → high, low → max) are always detected. Single-step transitions between adjacent VBR presets may miss some tracks in the overlap zone — use CBR presets (e.g., `low-cbr`, `high-cbr`) for guaranteed detection of all preset changes.
+Preset change detection uses a **percentage-based tolerance** that adapts to the encoding mode:
+
+| Encoding | Default tolerance | Rationale |
+|----------|------------------|-----------|
+| VBR | 30% of target bitrate | Wide enough to absorb VBR variance |
+| CBR | 10% of target bitrate | CBR bitrates are stable, so tighter detection is safe |
+| ALAC (`max` on capable device) | Format check | Is the iPod track ALAC? Yes = in sync. No = needs upgrade |
+
+For example, at the `high` preset (256 kbps target) with VBR encoding, tracks between 179 and 333 kbps are considered in sync.
+
+If you find that syncs are incorrectly re-transcoding tracks, you can adjust the tolerance with the `bitrateTolerance` config option:
+
+```toml
+bitrateTolerance = 0.25  # 25% tolerance instead of the default
+```
+
+See the [Config File Reference](/reference/config-file) for details.
+
+**VBR overlap note:** Adjacent VBR presets (e.g., `medium` and `high`) can produce overlapping bitrate ranges depending on content complexity. Jumps of two or more preset levels (e.g., `low` to `high`) are always detected. Single-step transitions between adjacent VBR presets may miss some tracks in the overlap zone — use `encoding = "cbr"` for guaranteed detection of all preset changes.
+
+### Switching encoding mode
+
+The iPod database stores a track's bitrate but not whether it was encoded with VBR or CBR. When you switch encoding mode at the same quality preset, podkit uses the tolerance for your new mode to decide what to re-transcode:
+
+- **VBR to CBR**: The tighter CBR tolerance (10%) catches tracks whose VBR bitrate landed far from the target. Tracks that happen to be close to the target are left alone — they're already at the right quality. Typically 40–60% of tracks are re-transcoded.
+- **CBR to VBR**: The wider VBR tolerance (30%) means existing CBR tracks (at the exact target bitrate) are well within range and left alone. This is the right behaviour — a CBR file at the target bitrate is already excellent quality. New tracks added in future syncs will use VBR.
+- **Different preset + different encoding** (e.g., `low` VBR to `high` CBR): The bitrate difference is large enough that all tracks are detected and re-transcoded regardless of encoding mode.
+
+If you want every track re-encoded after an encoding mode change, use `--force-transcode`:
+
+```bash
+podkit sync --force-transcode
+```
+
+This re-transcodes all lossless-source tracks while preserving play counts, ratings, and playlist membership. Compatible lossy sources (MP3, AAC) are not affected — they are always copied as-is. Use `--dry-run` to preview what would be re-transcoded.
 
 Like other file-replacement upgrades, preset changes are suppressed by `--skip-upgrades`.
+
+### Sync Tags
+
+Sync tags are metadata stored in the iPod track's comment field that record exactly what transcode settings produced each file. They look like this:
+
+```
+[podkit:v1 quality=high encoding=vbr]
+```
+
+When a sync tag is present, podkit uses exact comparison instead of bitrate tolerance to detect preset changes. This eliminates all false positives from VBR bitrate variance and reliably detects any change in quality, encoding mode, or custom bitrate.
+
+**Gradual rollout:** Sync tags are written automatically to all newly transcoded tracks. Existing tracks on your iPod (synced before sync tags were introduced) will continue using bitrate-based detection until they are re-transcoded.
+
+To immediately tag all existing transcoded tracks with your current preset info (without re-transcoding them), use `--force-sync-tags`:
+
+```bash
+podkit sync --force-sync-tags
+```
+
+This writes sync tags to all matched lossless-source tracks on the iPod. Future syncs will then use exact comparison for those tracks. Use `--dry-run` to preview what would be tagged:
+
+```bash
+podkit sync --force-sync-tags --dry-run
+```
+
+Sync tags coexist with any existing text in the comment field — they don't overwrite user comments.
 
 ## Dry-Run Output
 

@@ -8,14 +8,13 @@
 // Import quality preset types from core
 export type {
   QualityPreset,
-  AacQualityPreset,
+  EncodingMode,
   TransformsConfig,
   CleanArtistsConfig,
   VideoQualityPreset,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
-  AAC_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   VIDEO_QUALITY_PRESETS,
@@ -24,7 +23,7 @@ export {
 // Import type for local use
 import type {
   QualityPreset,
-  AacQualityPreset,
+  EncodingMode,
   TransformsConfig,
   VideoQualityPreset,
 } from '@podkit/core';
@@ -96,7 +95,7 @@ export interface VideoCollectionConfig {
  * volumeUuid = "ABC-123"
  * volumeName = "TERAPOD"
  * quality = "high"
- * audioQuality = "lossless"
+ * audioQuality = "max"
  * videoQuality = "medium"
  * artwork = true
  *
@@ -115,6 +114,12 @@ export interface DeviceConfig {
   audioQuality?: QualityPreset;
   /** Video transcoding quality preset (overrides quality) */
   videoQuality?: VideoQualityPreset;
+  /** Encoding mode for AAC transcoding (overrides global) */
+  encoding?: EncodingMode;
+  /** Custom bitrate override in kbps (overrides global) */
+  customBitrate?: number;
+  /** Bitrate tolerance ratio for preset change detection (overrides global) */
+  bitrateTolerance?: number;
   /** Whether to sync artwork to this device */
   artwork?: boolean;
   /** Skip file-replacement upgrades during sync for this device */
@@ -164,14 +169,29 @@ export interface PodkitConfig {
   /** Video transcoding quality preset (overrides quality for video) */
   videoQuality?: VideoQualityPreset;
   /**
-   * Quality preset for lossy sources when audioQuality='lossless'.
-   * Default: 'max' if audioQuality='lossless', otherwise inherits from audioQuality
+   * Encoding mode for AAC transcoding.
+   * VBR (variable bitrate) is the default and provides better quality per byte.
+   * CBR (constant bitrate) produces predictable file sizes.
    */
-  lossyQuality?: AacQualityPreset;
+  encoding?: EncodingMode;
+  /**
+   * Custom bitrate override in kbps (64-320).
+   * Overrides the preset's target bitrate for AAC encoding.
+   */
+  customBitrate?: number;
+  /**
+   * Bitrate tolerance ratio (0.0-1.0) for preset change detection.
+   * Overrides the default tolerance for the encoding mode.
+   */
+  bitrateTolerance?: number;
   /** Include artwork in sync (global default, can be overridden per-device) */
   artwork: boolean;
   /** Skip file-replacement upgrades during sync (global default, can be overridden per-device) */
   skipUpgrades?: boolean;
+  /** Force re-transcoding of all lossless-source tracks (CLI/env only, not saved in config) */
+  forceTranscode?: boolean;
+  /** Write sync tags to all matched transcoded tracks without re-transcoding (CLI/env only) */
+  forceSyncTags?: boolean;
   /** Transform configuration (global default, can be overridden per-device) */
   transforms: TransformsConfig;
 
@@ -258,6 +278,9 @@ export interface ConfigFileDevice {
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;
+  encoding?: string;
+  customBitrate?: number;
+  bitrateTolerance?: number;
   artwork?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
@@ -280,9 +303,8 @@ export interface ConfigFileDefaults {
  * @example Multi-collection/device format (ADR-008)
  * ```toml
  * quality = "high"
- * audioQuality = "lossless"
+ * audioQuality = "max"
  * videoQuality = "medium"
- * lossyQuality = "max"
  * artwork = true
  * cleanArtists = true
  *
@@ -314,7 +336,9 @@ export interface ConfigFileContent {
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;
-  lossyQuality?: string;
+  encoding?: string;
+  customBitrate?: number;
+  bitrateTolerance?: number;
   artwork?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;

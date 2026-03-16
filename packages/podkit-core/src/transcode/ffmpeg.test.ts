@@ -15,6 +15,7 @@ import {
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
+import type { AacTranscodeConfig } from './ffmpeg.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
 
@@ -60,8 +61,7 @@ describe('buildVbrArgs', () => {
       expect(args).toEqual(['-q:a', '4']);
     });
 
-    it('uses targetKbps to differentiate max (320 → q=0) from high (256 → q=2)', () => {
-      expect(buildVbrArgs('aac_at', 5, 320)).toEqual(['-q:a', '0']);
+    it('maps targetKbps 256 → q=2 (high)', () => {
       expect(buildVbrArgs('aac_at', 5, 256)).toEqual(['-q:a', '2']);
     });
 
@@ -86,7 +86,7 @@ describe('buildTranscodeArgs', () => {
   const input = '/path/to/input.flac';
   const output = '/path/to/output.m4a';
 
-  describe('VBR presets', () => {
+  describe('VBR presets (by name)', () => {
     it('generates correct arguments for high preset (VBR)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'high');
 
@@ -120,35 +120,90 @@ describe('buildTranscodeArgs', () => {
       expect(args).toContain('2');
     });
 
-    it('generates correct arguments for max preset (VBR)', () => {
+    it('resolves max preset to high VBR (quality 5, 256 kbps target)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'max');
 
+      // max resolves to high internally
       expect(args).toContain('-q:a');
       expect(args).toContain('5');
     });
   });
 
-  describe('CBR presets', () => {
-    it('uses CBR arguments for high-cbr preset', () => {
-      const args = buildTranscodeArgs(input, output, 'aac', 'high-cbr');
+  describe('CBR via AacTranscodeConfig', () => {
+    it('uses CBR arguments for high CBR config', () => {
+      const config: AacTranscodeConfig = { bitrateKbps: 256, encoding: 'cbr' };
+      const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
       expect(args).toContain('256k');
       expect(args).not.toContain('-q:a');
     });
 
-    it('uses CBR arguments for max-cbr preset', () => {
-      const args = buildTranscodeArgs(input, output, 'aac', 'max-cbr');
+    it('uses CBR arguments for 320 kbps config', () => {
+      const config: AacTranscodeConfig = { bitrateKbps: 320, encoding: 'cbr' };
+      const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
       expect(args).toContain('320k');
     });
 
-    it('uses CBR arguments for low-cbr preset', () => {
-      const args = buildTranscodeArgs(input, output, 'aac', 'low-cbr');
+    it('uses CBR arguments for 128 kbps config', () => {
+      const config: AacTranscodeConfig = { bitrateKbps: 128, encoding: 'cbr' };
+      const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
       expect(args).toContain('128k');
+    });
+  });
+
+  describe('VBR via AacTranscodeConfig', () => {
+    it('uses VBR arguments with quality and bitrate', () => {
+      const config: AacTranscodeConfig = {
+        bitrateKbps: 256,
+        encoding: 'vbr',
+        quality: 5,
+      };
+      const args = buildTranscodeArgs(input, output, 'aac', config);
+
+      expect(args).toContain('-q:a');
+      expect(args).toContain('5');
+      expect(args).not.toContain('-b:a');
+    });
+
+    it('passes targetKbps to VBR args for aac_at encoder', () => {
+      const config: AacTranscodeConfig = {
+        bitrateKbps: 192,
+        encoding: 'vbr',
+        quality: 4,
+      };
+      const args = buildTranscodeArgs(input, output, 'aac_at', config);
+
+      // aac_at maps 192 kbps → q=4
+      expect(args).toContain('-q:a');
+      expect(args).toContain('4');
+    });
+  });
+
+  describe('custom bitrate via AacTranscodeConfig', () => {
+    it('uses custom bitrate for CBR', () => {
+      const config: AacTranscodeConfig = { bitrateKbps: 200, encoding: 'cbr' };
+      const args = buildTranscodeArgs(input, output, 'aac', config);
+
+      expect(args).toContain('-b:a');
+      expect(args).toContain('200k');
+    });
+
+    it('uses custom bitrate for VBR with aac_at', () => {
+      const config: AacTranscodeConfig = {
+        bitrateKbps: 200,
+        encoding: 'vbr',
+        quality: 4,
+      };
+      const args = buildTranscodeArgs(input, output, 'aac_at', config);
+
+      // aac_at maps 200 kbps → q=4 (closest)
+      expect(args).toContain('-q:a');
+      expect(args).toContain('4');
     });
   });
 
@@ -225,7 +280,7 @@ describe('buildAlacArgs', () => {
   const input = '/path/to/input.flac';
   const output = '/path/to/output.m4a';
 
-  it('generates ALAC arguments via buildTranscodeArgs', () => {
+  it('generates ALAC arguments via buildTranscodeArgs with lossless', () => {
     const args = buildTranscodeArgs(input, output, 'aac', 'lossless');
 
     expect(args).toContain('-i');
@@ -425,7 +480,7 @@ describe('TranscodeError', () => {
 });
 
 describe('AAC_PRESETS', () => {
-  it('has high preset with VBR quality 5', () => {
+  it('has high preset with VBR quality 5 at 256 kbps', () => {
     expect(AAC_PRESETS.high).toEqual({
       mode: 'vbr',
       quality: 5,
@@ -433,7 +488,7 @@ describe('AAC_PRESETS', () => {
     });
   });
 
-  it('has medium preset with VBR quality 4', () => {
+  it('has medium preset with VBR quality 4 at 192 kbps', () => {
     expect(AAC_PRESETS.medium).toEqual({
       mode: 'vbr',
       quality: 4,
@@ -441,7 +496,7 @@ describe('AAC_PRESETS', () => {
     });
   });
 
-  it('has low preset with VBR quality 2', () => {
+  it('has low preset with VBR quality 2 at 128 kbps', () => {
     expect(AAC_PRESETS.low).toEqual({
       mode: 'vbr',
       quality: 2,
@@ -449,25 +504,7 @@ describe('AAC_PRESETS', () => {
     });
   });
 
-  it('has max preset with VBR quality 5', () => {
-    expect(AAC_PRESETS.max).toEqual({
-      mode: 'vbr',
-      quality: 5,
-      targetKbps: 320,
-    });
-  });
-
-  it('has high-cbr preset with 256 kbps', () => {
-    expect(AAC_PRESETS['high-cbr']).toEqual({
-      mode: 'cbr',
-      targetKbps: 256,
-    });
-  });
-
-  it('has max-cbr preset with 320 kbps', () => {
-    expect(AAC_PRESETS['max-cbr']).toEqual({
-      mode: 'cbr',
-      targetKbps: 320,
-    });
+  it('has only 3 presets (high, medium, low)', () => {
+    expect(Object.keys(AAC_PRESETS)).toEqual(['high', 'medium', 'low']);
   });
 });

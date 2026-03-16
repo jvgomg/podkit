@@ -8,7 +8,7 @@
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
-import type { QualityPreset, TranscodeConfig } from '../transcode/types.js';
+import type { EncodingMode, QualityPreset, TranscodeConfig } from '../transcode/types.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../video/types.js';
 import type { IPodVideo } from './video-differ.js';
@@ -38,6 +38,7 @@ export type UpgradeReason =
   | 'quality-upgrade'
   | 'preset-upgrade'
   | 'preset-downgrade'
+  | 'force-transcode'
   | 'artwork-added'
   | 'soundcheck-update'
   | 'metadata-correction';
@@ -48,6 +49,8 @@ export type UpgradeReason =
  * - transform-apply: Transform is enabled and iPod has original metadata
  * - transform-remove: Transform is disabled and iPod has transformed metadata
  * - metadata-changed: Source metadata changed (for future use)
+ * - force-transcode: User requested forced re-transcoding via --force-transcode
+ * - sync-tag-write: Write/update sync tag in track comment field (metadata-only)
  * - format-upgrade: Source is lossless, iPod has lossy (file replacement)
  * - quality-upgrade: Same format family, significantly higher bitrate (file replacement)
  * - artwork-added: Source has artwork, iPod does not (file replacement)
@@ -58,6 +61,8 @@ export type UpdateReason =
   | 'transform-apply'
   | 'transform-remove'
   | 'metadata-changed'
+  | 'force-transcode'
+  | 'sync-tag-write'
   | UpgradeReason;
 
 /**
@@ -77,7 +82,8 @@ export interface MetadataChange {
     | 'soundcheck'
     | 'bitrate'
     | 'fileType'
-    | 'lossless';
+    | 'lossless'
+    | 'comment';
   from: string;
   to: string;
 }
@@ -111,12 +117,20 @@ export interface SyncDiff {
 }
 
 /**
- * Transcode preset reference for sync operations
+ * Transcode preset reference for sync operations.
  *
- * Uses QualityPreset type which includes ALAC and CBR variants.
+ * The `name` field holds the resolved preset: 'lossless' for ALAC,
+ * or 'high' | 'medium' | 'low' for AAC. The planner resolves `max`
+ * before creating the ref (it never appears as a name here).
+ *
+ * The optional `bitrateOverride` is used when:
+ * - Incompatible lossy sources are capped at their source bitrate
+ * - Custom bitrate is configured by the user
  */
 export interface TranscodePresetRef {
-  name: QualityPreset;
+  name: Exclude<QualityPreset, 'max'> | 'lossless';
+  /** Bitrate override in kbps (replaces preset default) */
+  bitrateOverride?: number;
 }
 
 // =============================================================================
@@ -282,6 +296,28 @@ export interface DiffOptions {
   skipUpgrades?: boolean;
 
   /**
+   * When true, force re-transcoding of all lossless-source tracks regardless
+   * of whether their bitrate matches the current preset. Useful after switching
+   * encoding mode (VBR/CBR) or customBitrate, where bitrate comparison alone
+   * may not detect all tracks that need updating.
+   *
+   * Compatible lossy sources (MP3, AAC) are not affected — they are always
+   * copied as-is since re-encoding would degrade quality.
+   *
+   * @default false
+   */
+  forceTranscode?: boolean;
+
+  /**
+   * When true, move lossless-source tracks that are missing or have outdated
+   * sync tags to `toUpdate` with reason `'sync-tag-write'`. This is a
+   * metadata-only update — no file replacement occurs.
+   *
+   * @default false
+   */
+  forceSyncTags?: boolean;
+
+  /**
    * When true, indicates that lossless sources are transcoded to lossy format
    * (e.g., FLAC → AAC) during sync. This suppresses false `format-upgrade`
    * detections: a lossless source paired with a lossy iPod track is the
@@ -301,6 +337,39 @@ export interface DiffOptions {
    * Only affects lossless source tracks (lossy sources are copied as-is).
    */
   presetBitrate?: number;
+
+  /**
+   * Encoding mode for preset change detection tolerance.
+   * VBR uses 30% tolerance (wider for variance), CBR uses 10% (tighter).
+   *
+   * @default 'vbr'
+   */
+  encodingMode?: EncodingMode;
+
+  /**
+   * Custom bitrate tolerance ratio (0.0-1.0) for preset change detection.
+   * Overrides the default tolerance for the encoding mode.
+   */
+  bitrateTolerance?: number;
+
+  /**
+   * When true, indicates the current preset resolves to ALAC (max + ALAC-capable device).
+   * Uses format-based detection instead of bitrate comparison for preset changes.
+   */
+  isAlacPreset?: boolean;
+
+  /**
+   * Resolved quality for sync tag comparison (e.g., 'high', 'lossless').
+   * This is the quality after resolving 'max' to either 'lossless' or 'high'.
+   * When set, enables sync tag-based preset change detection.
+   */
+  resolvedQuality?: string;
+
+  /**
+   * Custom bitrate override for sync tag comparison.
+   * Only set when the user has explicitly configured a custom bitrate.
+   */
+  customBitrate?: number;
 }
 
 /**
@@ -335,10 +404,21 @@ export interface PlanOptions {
   removeOrphans?: boolean;
 
   /**
-   * Transcode configuration with quality and fallback
+   * Transcode configuration with quality and encoding mode
    */
   transcodeConfig?: TranscodeConfig;
 
   /** Maximum size in bytes (for space-constrained syncs) */
   maxSize?: number;
+
+  /**
+   * Whether the target device supports ALAC (Apple Lossless) playback.
+   *
+   * When true and quality='max', lossless sources will be sent as ALAC
+   * rather than transcoded to AAC. Only iPod Classic, Video 5G/5.5G,
+   * and Nano 3G–5G support ALAC.
+   *
+   * @default false
+   */
+  deviceSupportsAlac?: boolean;
 }

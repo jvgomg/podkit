@@ -15,7 +15,11 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_QUALITY` | Unified quality preset (overrides config file `quality`) |
 | `PODKIT_AUDIO_QUALITY` | Audio-specific quality (overrides config file `audioQuality`) |
 | `PODKIT_VIDEO_QUALITY` | Video-specific quality (overrides config file `videoQuality`) |
-| `PODKIT_LOSSY_QUALITY` | Lossy source quality (overrides config file `lossyQuality`) |
+| `PODKIT_ENCODING` | Encoding mode: `vbr` or `cbr` (overrides config file `encoding`) |
+| `PODKIT_CUSTOM_BITRATE` | Override target bitrate for AAC encoding, 64-320 kbps (overrides config file `customBitrate`) |
+| `PODKIT_BITRATE_TOLERANCE` | Override preset change detection tolerance, 0.0-1.0 (overrides config file `bitrateTolerance`) |
+| `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |
+| `PODKIT_FORCE_SYNC_TAGS` | Write sync tags to all matched transcoded tracks without re-transcoding (`true`/`false`) |
 | `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
 | `PODKIT_CLEAN_ARTISTS` | Enable/disable clean artists (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |

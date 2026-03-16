@@ -23,7 +23,7 @@ For audio-specific control, use `audioQuality` on a device. This overrides `qual
 ```toml
 [devices.classic]
 quality = "high"              # Video uses high
-audioQuality = "lossless"     # Audio uses lossless (overrides quality)
+audioQuality = "max"          # Best quality — ALAC on Classic (overrides quality)
 
 [devices.nano]
 audioQuality = "medium"
@@ -33,13 +33,12 @@ This overrides the global `audioQuality` and `quality` settings in your [config 
 
 | Preset | Bitrate | Best for |
 |--------|---------|----------|
-| `lossless` | Lossless | High-capacity devices |
-| `max` | ~320 kbps VBR | Best AAC quality |
+| `max` | Lossless or ~256 kbps | ALAC on supported devices, otherwise same as `high` |
 | `high` | ~256 kbps VBR | Good quality, reasonable size (**default**) |
 | `medium` | ~192 kbps VBR | Saving space |
 | `low` | ~128 kbps VBR | Maximum compression |
 
-CBR variants (`max-cbr`, `high-cbr`, `medium-cbr`, `low-cbr`) are also available for predictable file sizes. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
+For predictable file sizes, set `encoding = "cbr"` on the device. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
 
 ## Video Quality
 
@@ -71,7 +70,7 @@ quality = "high"
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
-audioQuality = "lossless"     # Lossless audio
+audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 
 [devices.nano]
@@ -82,7 +81,7 @@ videoQuality = "low"          # Override: low video quality
 artwork = false
 ```
 
-The Classic gets lossless audio and high-quality video, while the Nano uses medium audio, low-quality video, and skips artwork to save space.
+The Classic gets the best audio quality (ALAC, since it supports lossless playback) and high-quality video, while the Nano uses medium audio, low-quality video, and skips artwork to save space.
 
 ## Setting Quality via CLI
 
@@ -90,10 +89,10 @@ You can set quality on a device when adding it or at any time afterward:
 
 ```bash
 # Set quality when adding a device
-podkit device add -d classic --audio-quality lossless --video-quality high
+podkit device add -d classic --audio-quality max --video-quality high
 
 # Change quality on an existing device
-podkit device set -d classic --quality lossless
+podkit device set -d classic --quality max
 podkit device set -d nano --audio-quality medium --video-quality low
 
 # Clear a setting (reverts to global default)
@@ -106,7 +105,7 @@ You can also override quality for a single sync without changing device settings
 
 ```bash
 podkit sync --quality medium
-podkit sync --audio-quality lossless --lossy-quality max
+podkit sync --audio-quality max
 podkit sync --video-quality low
 podkit sync --device nano --quality medium --video-quality low
 podkit sync --device /Volumes/NANO --audio-quality high

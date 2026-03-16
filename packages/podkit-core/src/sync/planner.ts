@@ -14,13 +14,14 @@
  * | **Compatible Lossy** | MP3, M4A (AAC) | Copy as-is (no re-encoding) |
  * | **Incompatible Lossy** | OGG, Opus | Transcode + lossy→lossy warning |
  *
- * ## Decision Matrix
+ * ## Audio Decision Tree (ADR-010)
  *
- * | Source | Target: ALAC | Target: AAC preset |
- * |--------|--------------|-------------------|
- * | Lossless | Convert to ALAC | Transcode to AAC |
- * | Compatible Lossy | Copy as-is | Copy as-is |
- * | Incompatible Lossy | Transcode + warn | Transcode + warn |
+ * | Source | max + ALAC device | max + non-ALAC device | high/medium/low |
+ * |--------|-------------------|-----------------------|-----------------|
+ * | Lossless (FLAC, WAV, AIFF) | Transcode to ALAC | AAC at high bitrate | AAC at preset bitrate |
+ * | Lossless (ALAC) | Copy as-is | AAC at high bitrate | AAC at preset bitrate |
+ * | Compatible Lossy (MP3, AAC) | Copy as-is | Copy as-is | Copy as-is |
+ * | Incompatible Lossy (OGG, Opus) | AAC capped at source | AAC capped at source | AAC capped at source |
  *
  * @module
  */
@@ -31,7 +32,6 @@ import {
   type QualityPreset,
   type TranscodeConfig,
   getPresetBitrate,
-  resolveLossyQuality,
 } from '../transcode/types.js';
 import type {
   IPodTrack,
@@ -188,22 +188,32 @@ export function willWarnLossyToLossy(category: SourceCategory): boolean {
 
 /**
  * Resolve the effective quality preset for a track based on its source category
+ * and device capabilities.
+ *
+ * The `max` preset is device-aware:
+ * - If the device supports ALAC and the source is lossless → 'lossless' (ALAC)
+ * - If the device does NOT support ALAC → 'high' (same as high preset)
+ * - For lossy sources, `max` behaves like 'high'
  *
  * @param config - Transcode configuration
  * @param category - Source file category
- * @returns The effective quality preset to use
+ * @param deviceSupportsAlac - Whether the target device supports ALAC playback
+ * @returns The effective quality preset to use ('lossless' | 'high' | 'medium' | 'low')
  */
-function resolveEffectivePreset(config: TranscodeConfig, category: SourceCategory): QualityPreset {
-  // Lossless preset only valid for lossless sources
-  if (config.quality === 'lossless') {
-    if (category === 'lossless') {
+function resolveEffectivePreset(
+  config: TranscodeConfig,
+  category: SourceCategory,
+  deviceSupportsAlac: boolean
+): Exclude<QualityPreset, 'max'> | 'lossless' {
+  if (config.quality === 'max') {
+    if (category === 'lossless' && deviceSupportsAlac) {
       return 'lossless';
     }
-    // Lossy quality for lossy sources
-    return resolveLossyQuality(config);
+    // max without ALAC support, or for lossy sources → same as high
+    return 'high';
   }
 
-  // Non-ALAC presets use quality directly
+  // high, medium, low pass through as-is
   return config.quality;
 }
 
@@ -346,6 +356,9 @@ function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetadata> {
       case 'soundcheck':
         metadata.soundcheck = change.to ? Number(change.to) : undefined;
         break;
+      case 'comment':
+        metadata.comment = change.to || undefined;
+        break;
     }
   }
 
@@ -372,18 +385,56 @@ interface PlanAddResult {
 }
 
 /**
+ * Resolve the effective bitrate for an incompatible lossy source.
+ *
+ * Caps the target bitrate at the source's bitrate to avoid creating larger
+ * files with no quality benefit (lossy-to-lossy transcoding).
+ *
+ * @param track - The source track
+ * @param config - Transcode configuration
+ * @returns The effective bitrate in kbps
+ */
+function resolveIncompatibleLossyBitrate(track: CollectionTrack, config: TranscodeConfig): number {
+  const presetBitrate = config.customBitrate ?? getPresetBitrate(config.quality);
+  const sourceBitrate = track.bitrate;
+
+  if (sourceBitrate && sourceBitrate > 0) {
+    return Math.min(sourceBitrate, presetBitrate);
+  }
+  // Unknown source bitrate — use preset as safe default
+  return presetBitrate;
+}
+
+/**
+ * Create a TranscodePresetRef for a resolved preset, with optional bitrate override.
+ *
+ * @param preset - The resolved preset ('lossless' | 'high' | 'medium' | 'low')
+ * @param bitrateOverride - Optional bitrate override (for incompatible lossy capping or custom bitrate)
+ */
+function makePresetRef(preset: Exclude<QualityPreset, 'max'> | 'lossless', bitrateOverride?: number): TranscodePresetRef {
+  return {
+    name: preset,
+    ...(bitrateOverride !== undefined && { bitrateOverride }),
+  };
+}
+
+/**
  * Plan operations for tracks to be added with source categorization
  *
  * Uses source categorization to determine the appropriate operation for each
  * track and collects lossy-to-lossy warnings.
  */
-function planAddOperations(tracks: CollectionTrack[], config: TranscodeConfig): PlanAddResult {
+function planAddOperations(
+  tracks: CollectionTrack[],
+  config: TranscodeConfig,
+  deviceSupportsAlac: boolean
+): PlanAddResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
 
   for (const track of tracks) {
     const category = categorizeSource(track);
-    const effectivePreset = resolveEffectivePreset(config, category);
+    const effectivePreset = resolveEffectivePreset(config, category, deviceSupportsAlac);
 
     // Track lossy-to-lossy conversions for warnings
     if (willWarnLossyToLossy(category)) {
@@ -398,11 +449,14 @@ function planAddOperations(tracks: CollectionTrack[], config: TranscodeConfig): 
             operations.push(createCopyOperation(track));
           } else {
             // Transcode to ALAC
-            operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+            operations.push(createTranscodeOperation(track, makePresetRef('lossless')));
           }
         } else {
-          // Transcode lossless to AAC
-          operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+          // Transcode lossless to AAC — apply custom bitrate if set
+          const bitrateOverride = config.customBitrate;
+          operations.push(
+            createTranscodeOperation(track, makePresetRef(effectivePreset, bitrateOverride))
+          );
         }
         break;
 
@@ -411,10 +465,15 @@ function planAddOperations(tracks: CollectionTrack[], config: TranscodeConfig): 
         operations.push(createCopyOperation(track));
         break;
 
-      case 'incompatible-lossy':
+      case 'incompatible-lossy': {
         // OGG/Opus: must transcode (warning already collected)
-        operations.push(createTranscodeOperation(track, { name: effectivePreset }));
+        // Cap bitrate at source bitrate to avoid inflating file size
+        const effectiveBitrate = resolveIncompatibleLossyBitrate(track, config);
+        operations.push(
+          createTranscodeOperation(track, makePresetRef(effectivePreset, effectiveBitrate))
+        );
         break;
+      }
     }
   }
 
@@ -452,7 +511,11 @@ interface PlanUpdateResult {
  * the highest-priority file-replacement reason is used for the upgrade operation.
  * Metadata updates are handled as part of the upgrade transfer.
  */
-function planUpdateOperations(tracks: UpdateTrack[], config: TranscodeConfig): PlanUpdateResult {
+function planUpdateOperations(
+  tracks: UpdateTrack[],
+  config: TranscodeConfig,
+  deviceSupportsAlac: boolean
+): PlanUpdateResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
 
@@ -462,7 +525,7 @@ function planUpdateOperations(tracks: UpdateTrack[], config: TranscodeConfig): P
     // Check if this is a file-replacement upgrade
     if (isFileReplacementUpgrade(reason)) {
       const category = categorizeSource(updateTrack.source);
-      const effectivePreset = resolveEffectivePreset(config, category);
+      const effectivePreset = resolveEffectivePreset(config, category, deviceSupportsAlac);
 
       // Track lossy-to-lossy conversions for warnings
       if (willWarnLossyToLossy(category)) {
@@ -479,18 +542,21 @@ function planUpdateOperations(tracks: UpdateTrack[], config: TranscodeConfig): P
             if (updateTrack.source.codec?.toLowerCase() === 'alac') {
               preset = undefined; // copy
             } else {
-              preset = { name: effectivePreset };
+              preset = makePresetRef('lossless');
             }
           } else {
-            preset = { name: effectivePreset };
+            const bitrateOverride = config.customBitrate;
+            preset = makePresetRef(effectivePreset, bitrateOverride);
           }
           break;
         case 'compatible-lossy':
           preset = undefined; // copy
           break;
-        case 'incompatible-lossy':
-          preset = { name: effectivePreset };
+        case 'incompatible-lossy': {
+          const effectiveBitrate = resolveIncompatibleLossyBitrate(updateTrack.source, config);
+          preset = makePresetRef(effectivePreset, effectiveBitrate);
           break;
+        }
       }
 
       operations.push({
@@ -516,7 +582,7 @@ export function calculateOperationSize(operation: SyncOperation): number {
   switch (operation.type) {
     case 'transcode': {
       const duration = operation.source.duration ?? 240000; // default 4 min
-      const bitrate = getPresetBitrate(operation.preset.name);
+      const bitrate = operation.preset.bitrateOverride ?? getPresetBitrate(operation.preset.name);
       return estimateTranscodedSize(duration, bitrate);
     }
     case 'copy': {
@@ -526,7 +592,7 @@ export function calculateOperationSize(operation: SyncOperation): number {
       // Upgrades replace a file, so estimate based on preset (transcode) or source (copy)
       if (operation.preset) {
         const duration = operation.source.duration ?? 240000;
-        const bitrate = getPresetBitrate(operation.preset.name);
+        const bitrate = operation.preset.bitrateOverride ?? getPresetBitrate(operation.preset.name);
         return estimateTranscodedSize(duration, bitrate);
       }
       return estimateCopySize(operation.source);
@@ -642,19 +708,19 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  * }
  */
 export function createPlan(diff: SyncDiff, options: PlanOptions = {}): SyncPlan {
-  const { removeOrphans = false } = options;
+  const { removeOrphans = false, deviceSupportsAlac = false } = options;
 
   // Get transcode config (handles both legacy and new formats)
   const config = getTranscodeConfig(options);
 
   // Plan add operations using source categorization logic
-  const addResult = planAddOperations(diff.toAdd, config);
+  const addResult = planAddOperations(diff.toAdd, config, deviceSupportsAlac);
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
 
   // Plan update/upgrade operations for metadata changes and file replacements
-  const updateResult = planUpdateOperations(diff.toUpdate, config);
+  const updateResult = planUpdateOperations(diff.toUpdate, config, deviceSupportsAlac);
 
   // Combine and order operations
   const allOperations = [...addResult.operations, ...removeOperations, ...updateResult.operations];

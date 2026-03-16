@@ -57,7 +57,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold, printTips } from '../output/index.js';
-import { formatGeneration, validateDevice, formatValidationMessages } from '@podkit/core';
+import { formatGeneration, validateDevice, formatValidationMessages, parseSyncTag } from '@podkit/core';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
 
@@ -264,6 +264,7 @@ export interface DeviceInfoOutput {
     };
     musicCount?: number;
     videoCount?: number;
+    syncTagCount?: number;
   };
   error?: string;
 }
@@ -568,6 +569,7 @@ interface AddOptions {
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;
+  encoding?: string;
   artwork?: boolean;
 }
 
@@ -577,13 +579,14 @@ const addSubcommand = new Command('add')
   .option('-y, --yes', 'skip confirmation prompts')
   .option(
     '--quality <preset>',
-    'transcoding quality preset: lossless, max, high, medium, low (and CBR variants)'
+    'transcoding quality preset: max, high, medium, low'
   )
   .option(
     '--audio-quality <preset>',
-    'audio quality (overrides --quality): lossless, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr'
+    'audio quality (overrides --quality): max, high, medium, low'
   )
   .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
+  .option('--encoding <mode>', 'encoding mode: vbr, cbr')
   .option('--artwork', 'sync artwork to this device')
   .option('--no-artwork', 'do not sync artwork to this device')
   .action(async (options: AddOptions & { path?: string }) => {
@@ -639,6 +642,16 @@ const addSubcommand = new Command('add')
       !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)
     ) {
       const error = `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`;
+      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+    if (
+      options.encoding !== undefined &&
+      options.encoding !== 'vbr' &&
+      options.encoding !== 'cbr'
+    ) {
+      const error = `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`;
       out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;
@@ -760,6 +773,7 @@ const addSubcommand = new Command('add')
       if (options.quality) deviceConfig.quality = options.quality as any;
       if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
       if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
+      if (options.encoding) deviceConfig.encoding = options.encoding as any;
       if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
       // Validate device if database is available
@@ -1069,6 +1083,7 @@ const addSubcommand = new Command('add')
     if (options.quality) deviceConfig.quality = options.quality as any;
     if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
     if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
+    if (options.encoding) deviceConfig.encoding = options.encoding as any;
     if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
     // Validate detected device
@@ -1330,6 +1345,7 @@ const infoSubcommand = new Command('info')
               const tracks = ipod.getTracks();
               const musicCount = tracks.filter((t) => core.isMusicMediaType(t.mediaType)).length;
               const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
+              const syncTagCount = tracks.filter((t) => parseSyncTag(t.comment) !== null).length;
 
               const deviceValidation = validateDevice(info.device, resolveResult.path);
 
@@ -1350,6 +1366,7 @@ const infoSubcommand = new Command('info')
                 },
                 musicCount,
                 videoCount,
+                syncTagCount,
               };
 
               if (storage) {
@@ -1459,7 +1476,11 @@ const infoSubcommand = new Command('info')
           }
 
           if (liveStatus.musicCount !== undefined) {
-            out.print(`  Music:         ${formatNumber(liveStatus.musicCount)} tracks`);
+            const syncSuffix =
+              liveStatus.syncTagCount && liveStatus.syncTagCount > 0
+                ? ` (${formatNumber(liveStatus.syncTagCount)} with sync tags)`
+                : '';
+            out.print(`  Music:         ${formatNumber(liveStatus.musicCount)} tracks${syncSuffix}`);
           }
           if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {
             out.print(`  Video:         ${formatNumber(liveStatus.videoCount)} videos`);
@@ -1605,6 +1626,7 @@ const musicSubcommand = new Command('music')
           format: parseFormat(t.filetype),
           bitrate: t.bitrate > 0 ? t.bitrate : undefined,
           soundcheck: t.soundcheck || undefined,
+          syncTag: parseSyncTag(t.comment) !== null,
         }));
 
         if (mode === 'stats') {
@@ -1643,7 +1665,10 @@ const musicSubcommand = new Command('music')
         } else {
           // tracks mode
           if (format === 'json') {
-            const fullTracks = musicTracks.map(ipodTrackToFullJson);
+            const fullTracks = musicTracks.map((t) => ({
+              ...ipodTrackToFullJson(t),
+              syncTag: parseSyncTag(t.comment) !== null,
+            }));
             out.stdout(JSON.stringify(fullTracks, null, 2));
           } else if (format === 'csv') {
             out.stdout(formatCsv(displayTracks, fields));
@@ -1755,6 +1780,7 @@ const videoSubcommand = new Command('video')
           compilation: t.compilation,
           format: parseFormat(t.filetype),
           bitrate: t.bitrate > 0 ? t.bitrate : undefined,
+          syncTag: parseSyncTag(t.comment) !== null,
         }));
 
         if (mode === 'stats') {
@@ -1793,7 +1819,10 @@ const videoSubcommand = new Command('video')
         } else {
           // tracks mode
           if (format === 'json') {
-            const fullTracks = videoTracks.map(ipodTrackToFullJson);
+            const fullTracks = videoTracks.map((t) => ({
+              ...ipodTrackToFullJson(t),
+              syncTag: parseSyncTag(t.comment) !== null,
+            }));
             out.stdout(JSON.stringify(fullTracks, null, 2));
           } else if (format === 'csv') {
             out.stdout(formatCsv(displayTracks, fields));
@@ -2725,10 +2754,12 @@ interface SetOptions {
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;
+  encoding?: string;
   artwork?: boolean;
   clearQuality?: boolean;
   clearAudioQuality?: boolean;
   clearVideoQuality?: boolean;
+  clearEncoding?: boolean;
   clearArtwork?: boolean;
 }
 
@@ -2736,18 +2767,20 @@ const setSubcommand = new Command('set')
   .description('update device settings (quality, artwork)')
   .option(
     '--quality <preset>',
-    'transcoding quality preset: lossless, max, high, medium, low (and CBR variants)'
+    'transcoding quality preset: max, high, medium, low'
   )
   .option(
     '--audio-quality <preset>',
-    'audio quality (overrides --quality): lossless, max, max-cbr, high, high-cbr, medium, medium-cbr, low, low-cbr'
+    'audio quality (overrides --quality): max, high, medium, low'
   )
   .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
+  .option('--encoding <mode>', 'encoding mode: vbr, cbr')
   .option('--artwork', 'sync artwork to this device')
   .option('--no-artwork', 'do not sync artwork to this device')
   .option('--clear-quality', 'remove quality setting (use global default)')
   .option('--clear-audio-quality', 'remove audio quality setting (use global default)')
   .option('--clear-video-quality', 'remove video quality setting (use global default)')
+  .option('--clear-encoding', 'remove encoding setting (use global default)')
   .option('--clear-artwork', 'remove artwork setting (use global default)')
   .action(async (options: SetOptions) => {
     const { config, globalOpts, configResult } = getContext();
@@ -2801,6 +2834,16 @@ const setSubcommand = new Command('set')
       process.exitCode = 1;
       return;
     }
+    if (
+      options.encoding !== undefined &&
+      options.encoding !== 'vbr' &&
+      options.encoding !== 'cbr'
+    ) {
+      const error = `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`;
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
 
     // Build updates object (null means remove the setting)
     const updates: Record<string, string | boolean | null> = {};
@@ -2823,6 +2866,12 @@ const setSubcommand = new Command('set')
       updates.videoQuality = options.videoQuality;
     }
 
+    if (options.clearEncoding) {
+      updates.encoding = null;
+    } else if (options.encoding !== undefined) {
+      updates.encoding = options.encoding;
+    }
+
     if (options.clearArtwork) {
       updates.artwork = null;
     } else if (options.artwork !== undefined) {
@@ -2831,7 +2880,7 @@ const setSubcommand = new Command('set')
 
     if (Object.keys(updates).length === 0) {
       const error =
-        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --artwork, or --clear-* variants).';
+        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, or --clear-* variants).';
       out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;

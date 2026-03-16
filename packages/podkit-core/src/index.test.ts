@@ -82,26 +82,29 @@ describe('podkit-core', () => {
       });
     });
 
-    it('exports CBR variants', () => {
-      expect(AAC_PRESETS['high-cbr']).toEqual({
-        mode: 'cbr',
-        targetKbps: 256,
-      });
+    it('does not include max (max resolves at planner level)', () => {
+      expect('max' in AAC_PRESETS).toBe(false);
     });
   });
 
   describe('QUALITY_PRESETS constant', () => {
     it('includes all preset names', () => {
-      expect(QUALITY_PRESETS).toContain('lossless');
       expect(QUALITY_PRESETS).toContain('max');
       expect(QUALITY_PRESETS).toContain('high');
       expect(QUALITY_PRESETS).toContain('medium');
       expect(QUALITY_PRESETS).toContain('low');
-      expect(QUALITY_PRESETS).toContain('high-cbr');
+    });
+
+    it('only includes valid preset names', () => {
+      expect(QUALITY_PRESETS).not.toContain('lossless');
+      expect(QUALITY_PRESETS).not.toContain('high-cbr');
+      expect(QUALITY_PRESETS).not.toContain('max-cbr');
+      expect(QUALITY_PRESETS).not.toContain('medium-cbr');
+      expect(QUALITY_PRESETS).not.toContain('low-cbr');
     });
 
     it('has correct length', () => {
-      expect(QUALITY_PRESETS.length).toBe(9);
+      expect(QUALITY_PRESETS.length).toBe(4);
     });
   });
 

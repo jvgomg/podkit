@@ -19,6 +19,11 @@
 
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { ContentType } from '../video/metadata.js';
+import {
+  buildVideoSyncTag,
+  parseSyncTag,
+  syncTagMatchesConfig,
+} from './sync-tags.js';
 import { detectBitratePresetMismatch } from './upgrades.js';
 
 // =============================================================================
@@ -61,6 +66,9 @@ export interface IPodVideo {
 
   /** Combined video+audio bitrate in kbps (from iPod database) */
   bitrate?: number;
+
+  /** Comment field from iPod database (may contain sync tags) */
+  comment?: string;
 }
 
 /**
@@ -103,6 +111,12 @@ export interface VideoDiffOptions {
    * this target are moved to `toReplace` for re-transcoding.
    */
   presetBitrate?: number;
+
+  /**
+   * Resolved video quality preset name for sync tag comparison.
+   * When set, enables sync tag-based preset change detection for video.
+   */
+  resolvedVideoQuality?: string;
 }
 
 // =============================================================================
@@ -271,14 +285,30 @@ export function diffVideos(
   }
 
   // Post-processing: detect quality preset changes on existing videos.
-  // Uses the same bitrate comparison as audio preset detection.
+  // Sync tag priority: if a video has a sync tag, use exact comparison.
+  // Otherwise fall back to bitrate comparison.
   const toReplace: MatchedVideo[] = [];
   if (_options?.presetBitrate) {
     const presetBitrate = _options.presetBitrate;
+    const resolvedVideoQuality = _options.resolvedVideoQuality;
+    const expectedSyncTag = resolvedVideoQuality
+      ? buildVideoSyncTag(resolvedVideoQuality)
+      : undefined;
     const stillExisting: MatchedVideo[] = [];
 
     for (const match of existing) {
-      const mismatch = detectBitratePresetMismatch(match.ipod.bitrate, presetBitrate);
+      // Try sync tag comparison first
+      const syncTag = parseSyncTag(match.ipod.comment);
+      let mismatch = false;
+
+      if (syncTag && expectedSyncTag) {
+        // Sync tag exists — use exact comparison
+        mismatch = !syncTagMatchesConfig(syncTag, expectedSyncTag);
+      } else {
+        // No sync tag — fall back to bitrate comparison
+        mismatch = detectBitratePresetMismatch(match.ipod.bitrate, presetBitrate) !== null;
+      }
+
       if (mismatch) {
         toReplace.push(match);
       } else {

@@ -9,7 +9,7 @@ Now that you've completed your [first sync](/getting-started/quick-start), here 
 
 ## Setting Quality
 
-podkit transcodes lossless files (FLAC, WAV, ALAC) to AAC. The default is `high` (~192 kbps VBR), but you can change it:
+podkit transcodes lossless files (FLAC, WAV, ALAC) to AAC. The default is `high` (~256 kbps VBR), but you can change it:
 
 ```bash
 # Override quality for a single sync
@@ -19,7 +19,7 @@ podkit sync --quality medium
 podkit device add -d nano --quality medium --no-artwork
 
 # Change quality on an existing device
-podkit device set -d classic --audio-quality lossless --video-quality high
+podkit device set -d classic --audio-quality max --video-quality high
 
 # Clear device quality (use global default instead)
 podkit device set -d classic --clear-quality
@@ -27,11 +27,10 @@ podkit device set -d classic --clear-quality
 
 | Preset | Bitrate | Best for |
 |--------|---------|----------|
-| `lossless` | Lossless | Audiophiles with high-capacity iPods |
-| `max` | ~256 kbps VBR | Best AAC quality |
-| `high` | ~192 kbps VBR | Good quality, reasonable size (**default**) |
-| `medium` | ~128 kbps VBR | Saving space |
-| `low` | ~96 kbps VBR | Maximum compression |
+| `max` | Lossless or ~256 kbps | ALAC on supported devices, otherwise same as `high` |
+| `high` | ~256 kbps VBR | Good quality, reasonable size (**default**) |
+| `medium` | ~192 kbps VBR | Saving space |
+| `low` | ~128 kbps VBR | Maximum compression |
 
 Set it permanently in your config or per device — see [Audio Transcoding](/user-guide/transcoding/audio) for full details.
 
