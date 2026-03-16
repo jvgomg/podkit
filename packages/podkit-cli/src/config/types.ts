@@ -188,6 +188,8 @@ export interface PodkitConfig {
   artwork: boolean;
   /** Skip file-replacement upgrades during sync (global default, can be overridden per-device) */
   skipUpgrades?: boolean;
+  /** Show contextual tips (default: true) */
+  tips: boolean;
   /** Force re-transcoding of all lossless-source tracks (CLI/env only, not saved in config) */
   forceTranscode?: boolean;
   /** Write sync tags to all matched transcoded tracks without re-transcoding (CLI/env only) */
@@ -221,6 +223,8 @@ export interface GlobalOptions {
   json: boolean;
   /** Disable colored output */
   color: boolean;
+  /** Show contextual tips */
+  tips: boolean;
   /** Custom config file path */
   config?: string;
   /** iPod device path (CLI override) */
@@ -340,6 +344,7 @@ export interface ConfigFileContent {
   customBitrate?: number;
   bitrateTolerance?: number;
   artwork?: boolean;
+  tips?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
 

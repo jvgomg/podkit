@@ -1049,6 +1049,21 @@ describe('formatStatsText', () => {
     expect(fileTypesIdx).toBeGreaterThan(-1);
     expect(tipsIdx).toBeGreaterThan(fileTypesIdx);
   });
+
+  it('suppresses tips when tips option is false', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 80,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).not.toContain('Tip:');
+  });
 });
 
 // =============================================================================

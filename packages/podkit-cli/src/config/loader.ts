@@ -148,6 +148,10 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     config.artwork = parsed.artwork;
   }
 
+  if (typeof parsed.tips === 'boolean') {
+    config.tips = parsed.tips;
+  }
+
   if (typeof parsed.skipUpgrades === 'boolean') {
     config.skipUpgrades = parsed.skipUpgrades;
   }
@@ -706,6 +710,11 @@ export function loadEnvConfig(): PartialConfig {
     config.artwork = parseBoolEnv(artwork);
   }
 
+  const tips = process.env[ENV_KEYS.tips];
+  if (tips !== undefined) {
+    config.tips = parseBoolEnv(tips);
+  }
+
   // Clean artists env vars
   const cleanArtists = process.env[ENV_KEYS.cleanArtists];
   const cleanArtistsDrop = process.env[ENV_KEYS.cleanArtistsDrop];
@@ -837,6 +846,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.artwork !== undefined) {
       merged.artwork = config.artwork;
+    }
+    if (config.tips !== undefined) {
+      merged.tips = config.tips;
     }
     if (config.skipUpgrades !== undefined) {
       merged.skipUpgrades = config.skipUpgrades;

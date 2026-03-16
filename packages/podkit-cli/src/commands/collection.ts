@@ -612,8 +612,8 @@ const musicSubcommand = new Command('music')
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: ContentListOptions & { collection?: string }) => {
     const name = options.collection;
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const { config, globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
     const fields = parseFields(options.fields);
     const mode = options.tracks
@@ -702,6 +702,7 @@ const musicSubcommand = new Command('music')
           out.stdout(
             formatStatsText(stats, heading, {
               verbose: out.isVerbose,
+              tips: out.tipsEnabled,
               source: sourceInfo,
             })
           );
@@ -769,8 +770,8 @@ const videoSubcommand = new Command('video')
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: ContentListOptions & { collection?: string }) => {
     const name = options.collection;
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const { config, globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
     const fields = parseFields(options.fields);
     const mode = options.tracks
@@ -841,7 +842,7 @@ const videoSubcommand = new Command('video')
         if (format === 'json') {
           out.stdout(JSON.stringify(stats, null, 2));
         } else {
-          out.stdout(formatStatsText(stats, heading));
+          out.stdout(formatStatsText(stats, heading, { tips: out.tipsEnabled }));
         }
       } else if (mode === 'albums') {
         const albums = aggregateAlbums(displayTracks);

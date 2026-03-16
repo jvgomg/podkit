@@ -21,6 +21,7 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |
 | `PODKIT_FORCE_SYNC_TAGS` | Write sync tags to all matched transcoded tracks without re-transcoding (`true`/`false`) |
 | `PODKIT_ARTWORK` | Default artwork setting (overrides config file `artwork`) |
+| `PODKIT_TIPS` | Show contextual tips (`true`/`false`, overrides config file `tips`) |
 | `PODKIT_CLEAN_ARTISTS` | Enable/disable clean artists (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |

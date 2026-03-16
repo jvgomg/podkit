@@ -19,7 +19,7 @@ import {
   parseCliDeviceArg,
   resolveEffectiveDevice,
 } from '../device-resolver.js';
-import { OutputContext, bold, printTips } from '../output/index.js';
+import { OutputContext, bold } from '../output/index.js';
 import type { DeviceAssessment } from '@podkit/core';
 
 export interface MountOutput {
@@ -43,7 +43,7 @@ export const mountCommand = new Command('mount')
   .option('--dry-run', 'show mount command without executing')
   .action(async (options: MountOptions) => {
     const { config, globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const explicitDisk = options.disk;
     const dryRun = options.dryRun ?? false;
 
@@ -216,7 +216,7 @@ export const mountCommand = new Command('mount')
           out.error('Run:');
           out.error(`  ${bold('sudo')} podkit mount`);
 
-          printTips(out, { mountRequiresSudo: true });
+          out.printTips({ mountRequiresSudo: true });
         }
       );
       process.exitCode = 1;

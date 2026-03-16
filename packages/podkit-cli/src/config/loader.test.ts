@@ -43,6 +43,7 @@ describe('config loader', () => {
     it('has expected default values', () => {
       expect(DEFAULT_CONFIG.quality).toBe('high');
       expect(DEFAULT_CONFIG.artwork).toBe(true);
+      expect(DEFAULT_CONFIG.tips).toBe(true);
     });
   });
 
@@ -50,6 +51,14 @@ describe('config loader', () => {
     it('returns undefined for non-existent file', () => {
       const result = loadConfigFile(path.join(tempDir, 'nonexistent.toml'));
       expect(result).toBeUndefined();
+    });
+
+    it('parses tips option from config file', () => {
+      const configPath = path.join(tempDir, 'tips.toml');
+      fs.writeFileSync(configPath, 'tips = false\n');
+
+      const result = loadConfigFile(configPath);
+      expect(result).toEqual({ tips: false });
     });
 
     it('parses valid config with quality and artwork', () => {

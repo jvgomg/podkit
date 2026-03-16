@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, jest, beforeEach, afterEach } from 'bun:test';
 import { collectTips, formatTips, printTips } from './tips.js';
+import { OutputContext } from './context.js';
 
 // =============================================================================
 // collectTips
@@ -139,5 +140,110 @@ describe('printTips', () => {
     expect(newlines).toBe(1);
     expect(printed.length).toBeGreaterThan(0);
     expect(printed[0]).toMatch(/^Tip:/);
+  });
+});
+
+// =============================================================================
+// OutputContext.tip and OutputContext.printTips
+// =============================================================================
+
+describe('OutputContext tip methods', () => {
+  let logSpy: ReturnType<typeof jest.fn>;
+  let originalLog: typeof console.log;
+
+  beforeEach(() => {
+    originalLog = console.log;
+    logSpy = jest.fn();
+    console.log = logSpy;
+  });
+
+  afterEach(() => {
+    console.log = originalLog;
+  });
+
+  function makeOut(opts: { tips?: boolean; quiet?: boolean; json?: boolean } = {}) {
+    return OutputContext.fromGlobalOpts({
+      json: opts.json ?? false,
+      quiet: opts.quiet ?? false,
+      verbose: 0,
+      color: true,
+      tips: opts.tips ?? true,
+    });
+  }
+
+  describe('tip()', () => {
+    it('prints tip in text mode with tips enabled', () => {
+      const out = makeOut();
+      out.tip('Use --eject next time.');
+      expect(logSpy).toHaveBeenCalledWith('Tip: Use --eject next time.');
+    });
+
+    it('prints tip with url', () => {
+      const out = makeOut();
+      out.tip('Learn more.', 'https://example.com');
+      expect(logSpy).toHaveBeenCalledWith('Tip: Learn more.');
+      expect(logSpy).toHaveBeenCalledWith('  See: https://example.com');
+    });
+
+    it('suppresses tip when tips disabled', () => {
+      const out = makeOut({ tips: false });
+      out.tip('Use --eject next time.');
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it('suppresses tip in quiet mode', () => {
+      const out = makeOut({ quiet: true });
+      out.tip('Use --eject next time.');
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it('suppresses tip in json mode', () => {
+      const out = makeOut({ json: true });
+      out.tip('Use --eject next time.');
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('printTips()', () => {
+    it('prints matching tips with leading newline', () => {
+      const out = makeOut();
+      out.printTips({ mountRequiresSudo: true });
+      // First call is newline, then at least one tip line
+      expect(logSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(logSpy.mock.calls[0]![0]).toBe('');
+      expect(logSpy.mock.calls[1]![0]).toMatch(/^Tip:/);
+    });
+
+    it('suppresses tips when tips disabled', () => {
+      const out = makeOut({ tips: false });
+      out.printTips({ mountRequiresSudo: true });
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+
+    it('prints nothing when no tips match', () => {
+      const out = makeOut();
+      out.printTips({});
+      expect(logSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('tipsEnabled', () => {
+    it('returns true by default', () => {
+      const out = makeOut();
+      expect(out.tipsEnabled).toBe(true);
+    });
+
+    it('returns false when tips disabled via CLI', () => {
+      const out = makeOut({ tips: false });
+      expect(out.tipsEnabled).toBe(false);
+    });
+
+    it('returns false when tips disabled via config', () => {
+      const out = OutputContext.fromGlobalOpts(
+        { json: false, quiet: false, verbose: 0, color: true },
+        { tips: false }
+      );
+      expect(out.tipsEnabled).toBe(false);
+    });
   });
 });

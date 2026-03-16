@@ -22,6 +22,7 @@ audioQuality = "high"        # Audio override: max | high | medium | low
 videoQuality = "high"        # Video override: max | high | medium | low
 encoding = "vbr"             # Encoding mode: vbr | cbr
 artwork = true               # Include album artwork
+tips = true                  # Show contextual tips
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 
 # Clean up featured artist credits (simple form)
@@ -76,6 +77,7 @@ These apply to all devices unless overridden at the device level.
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
 | `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
 | `artwork` | boolean | `true` | Include album artwork during sync |
+| `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
 
 ## Music Collections

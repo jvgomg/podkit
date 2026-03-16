@@ -24,6 +24,8 @@
 
 import type { OutputContextConfig, SpinnerControl, TableOptions } from './types.js';
 import { nullSpinner } from './types.js';
+import type { TipContext } from './tips.js';
+import { collectTips, formatTips } from './tips.js';
 
 /**
  * Simple spinner for CLI progress
@@ -70,28 +72,37 @@ export class OutputContext {
   private readonly quiet: boolean;
   private readonly verbose: number;
   private readonly useColor: boolean;
+  private readonly showTips: boolean;
 
   constructor(config: OutputContextConfig) {
     this.mode = config.mode;
     this.quiet = config.quiet;
     this.verbose = config.verbose;
     this.useColor = config.color;
+    this.showTips = config.tips;
   }
 
   /**
-   * Create an OutputContext from global CLI options
+   * Create an OutputContext from global CLI options and config
    */
-  static fromGlobalOpts(opts: {
-    json: boolean;
-    quiet: boolean;
-    verbose: number;
-    color: boolean;
-  }): OutputContext {
+  static fromGlobalOpts(
+    opts: {
+      json: boolean;
+      quiet: boolean;
+      verbose: number;
+      color: boolean;
+      tips?: boolean;
+    },
+    config?: { tips?: boolean }
+  ): OutputContext {
+    // Tips are enabled only if both CLI (--no-tips) and config (tips = false) allow them
+    const tips = (opts.tips ?? true) && (config?.tips ?? true);
     return new OutputContext({
       mode: opts.json ? 'json' : 'text',
       quiet: opts.quiet,
       verbose: opts.verbose,
       color: opts.color,
+      tips,
     });
   }
 
@@ -191,6 +202,42 @@ export class OutputContext {
   success(message: string): void {
     if (this.isText && !this.quiet) {
       console.log(message);
+    }
+  }
+
+  /**
+   * Whether tips are enabled
+   */
+  get tipsEnabled(): boolean {
+    return this.showTips;
+  }
+
+  /**
+   * Print a tip message (text mode only, respects quiet and --no-tips)
+   */
+  tip(message: string, url?: string): void {
+    if (this.isText && !this.quiet && this.showTips) {
+      console.log(`Tip: ${message}`);
+      if (url) {
+        console.log(`  See: ${url}`);
+      }
+    }
+  }
+
+  /**
+   * Collect and print tips for a given context.
+   * Prints nothing if no tips match or tips are disabled.
+   * Adds a leading newline before tips.
+   */
+  printTips(context: TipContext): void {
+    if (!this.showTips || this.quiet || this.isJson) return;
+    const tips = collectTips(context);
+    const lines = formatTips(tips);
+    if (lines.length > 0) {
+      this.newline();
+      for (const line of lines) {
+        this.print(line);
+      }
     }
   }
 

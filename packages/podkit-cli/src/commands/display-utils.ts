@@ -434,6 +434,7 @@ export type { Tip, TipContext, TipDefinition } from '../output/tips.js';
 
 export interface StatsFormatOptions {
   verbose?: boolean;
+  tips?: boolean;
   source?: {
     adapterType: string;
     location: string;
@@ -512,10 +513,12 @@ export function formatStatsText(
     }
   }
 
-  const tipLines = formatTips(collectTips({ stats }));
-  if (tipLines.length > 0) {
-    lines.push('');
-    lines.push(...tipLines);
+  if (options?.tips !== false) {
+    const tipLines = formatTips(collectTips({ stats }));
+    if (tipLines.length > 0) {
+      lines.push('');
+      lines.push(...tipLines);
+    }
   }
 
   return lines.join('\n');

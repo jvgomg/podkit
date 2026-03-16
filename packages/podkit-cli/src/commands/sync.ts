@@ -1301,7 +1301,7 @@ export const syncCommand = new Command('sync')
   .action(async (options: SyncOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const startTime = Date.now();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
 
     const dryRun = options.dryRun ?? false;
     const removeOrphans = options.delete ?? false;
@@ -1759,7 +1759,7 @@ export const syncCommand = new Command('sync')
           }
         } else {
           out.newline();
-          out.print("Tip: Run 'podkit eject' to safely disconnect, or use --eject next time.");
+          out.tip("Run 'podkit eject' to safely disconnect, or use --eject next time.");
         }
       }
 

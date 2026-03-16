@@ -56,7 +56,7 @@ import {
   formatArtistsTable,
   escapeCsv,
 } from './display-utils.js';
-import { OutputContext, formatBytes, formatNumber, bold, printTips } from '../output/index.js';
+import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
 import { formatGeneration, validateDevice, formatValidationMessages, parseSyncTag } from '@podkit/core';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
@@ -1507,8 +1507,8 @@ const musicSubcommand = new Command('music')
   .option('--format <fmt>', 'output format: table, json, csv', 'table')
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: MusicVideoOptions) => {
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const { config, globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
     const fields = parseFields(options.fields);
     const mode = options.tracks
@@ -1599,7 +1599,7 @@ const musicSubcommand = new Command('music')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose }));
+            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled }));
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);
@@ -1662,8 +1662,8 @@ const videoSubcommand = new Command('video')
   .option('--format <fmt>', 'output format: table, json, csv', 'table')
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: MusicVideoOptions) => {
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const { config, globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
     const fields = parseFields(options.fields);
     const mode = options.tracks
@@ -1753,7 +1753,7 @@ const videoSubcommand = new Command('video')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose }));
+            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled }));
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);
@@ -2371,8 +2371,8 @@ const mountSubcommand = new Command('mount')
   .option('--disk <identifier>', 'disk identifier (e.g., /dev/disk4s2)')
   .option('--dry-run', 'show mount command without executing')
   .action(async (options: MountOptions) => {
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
+    const { config, globalOpts } = getContext();
+    const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const explicitDisk = options.disk;
     const dryRun = options.dryRun ?? false;
 
@@ -2538,7 +2538,7 @@ const mountSubcommand = new Command('mount')
           out.error('Run:');
           out.error(`  ${bold('sudo')} podkit device mount`);
 
-          printTips(out, { mountRequiresSudo: true });
+          out.printTips({ mountRequiresSudo: true });
         }
       );
       process.exitCode = 1;

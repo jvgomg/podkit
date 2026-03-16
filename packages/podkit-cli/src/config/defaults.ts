@@ -20,6 +20,7 @@ export const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.config', 'podkit', 
 export const DEFAULT_CONFIG: PodkitConfig = {
   quality: 'high',
   artwork: true,
+  tips: true,
   transforms: DEFAULT_TRANSFORMS_CONFIG,
 };
 
@@ -41,6 +42,7 @@ export const ENV_KEYS = {
   forceTranscode: `${ENV_PREFIX}FORCE_TRANSCODE`,
   forceSyncTags: `${ENV_PREFIX}FORCE_SYNC_TAGS`,
   artwork: `${ENV_PREFIX}ARTWORK`,
+  tips: `${ENV_PREFIX}TIPS`,
   cleanArtists: `${ENV_PREFIX}CLEAN_ARTISTS`,
   cleanArtistsDrop: `${ENV_PREFIX}CLEAN_ARTISTS_DROP`,
   cleanArtistsFormat: `${ENV_PREFIX}CLEAN_ARTISTS_FORMAT`,

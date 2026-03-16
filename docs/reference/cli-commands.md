@@ -19,6 +19,7 @@ These options work with all commands:
 | `-q, --quiet` | Suppress non-essential output |
 | `--json` | Output in JSON format |
 | `--no-color` | Disable colored output |
+| `--no-tips` | Suppress contextual tips |
 | `--help` | Show help for command |
 | `--version` | Show version number |
 

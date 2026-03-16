@@ -28,6 +28,8 @@ export interface OutputOptions {
 export interface OutputContextConfig extends OutputOptions {
   /** Whether colors are enabled */
   color: boolean;
+  /** Whether contextual tips are enabled */
+  tips: boolean;
 }
 
 /**
