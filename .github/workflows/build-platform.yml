@@ -287,7 +287,7 @@ jobs:
 
       - name: Install Bun
         run: |
-          apk add --no-cache bash curl unzip
+          apk add --no-cache bash curl unzip jq
           export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
 
@@ -448,7 +448,7 @@ jobs:
             -w /workspace \
             alpine:3.21 sh -c '
               set -e
-              apk add --no-cache bash curl unzip glib gdk-pixbuf libplist libpng libjpeg-turbo tiff
+              apk add --no-cache bash curl unzip jq glib gdk-pixbuf libplist libpng libjpeg-turbo tiff
 
               echo "==> Installing Bun..."
               export BUN_INSTALL=/usr/local
