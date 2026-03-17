@@ -32,6 +32,12 @@ export interface SubsonicAdapterConfig {
 }
 
 /**
+ * Minimum response size (bytes) to consider a getCoverArt response as a real image.
+ * Responses smaller than this are likely error pages or corrupt data.
+ */
+const MIN_ARTWORK_BYTES = 100;
+
+/**
  * Map file suffix to AudioFileType
  */
 function suffixToFileType(suffix: string | undefined): AudioFileType {
@@ -110,6 +116,19 @@ function getCodec(suffix: string | undefined, contentType: string | undefined): 
  *
  * Supports Navidrome, Airsonic, Gonic, and other Subsonic API implementations.
  * Tracks are fetched by paginating through albums and extracting songs.
+ *
+ * ## Artwork presence detection
+ *
+ * The Subsonic API provides no reliable metadata field for artwork presence.
+ * Navidrome always populates the `coverArt` field and serves a static placeholder
+ * image for albums without real artwork. Gonic only populates `coverArt` when
+ * artwork exists and returns error code 70 for missing artwork.
+ *
+ * To handle both servers correctly, the adapter probes for placeholder images
+ * at connect time by requesting `getCoverArt` with an empty `id`. If the server
+ * returns an image (as Navidrome does), its hash is stored and used to filter
+ * placeholder responses during scanning. Servers that return errors for missing
+ * artwork (like Gonic) simply have no placeholder hash, and filtering is a no-op.
  */
 export class SubsonicAdapter implements CollectionAdapter {
   readonly name = 'subsonic';
@@ -120,7 +139,17 @@ export class SubsonicAdapter implements CollectionAdapter {
   private tracks: CollectionTrack[] | null = null;
   private connected = false;
   private checkArtwork: boolean;
-  private artworkHashCache = new Map<string, string>();
+
+  /** Artwork cache: coverArtId → hash (artwork exists) or null (no artwork / placeholder) */
+  private artworkCache = new Map<string, string | null>();
+
+  /**
+   * Hash of the server's placeholder artwork image, detected during connect().
+   * Used to filter placeholder responses from servers like Navidrome that return
+   * a static image instead of an error for albums without artwork.
+   * Null when the server doesn't serve placeholders (e.g., Gonic).
+   */
+  private placeholderHash: string | null = null;
 
   constructor(config: SubsonicAdapterConfig) {
     this.config = config;
@@ -135,7 +164,7 @@ export class SubsonicAdapter implements CollectionAdapter {
   }
 
   /**
-   * Connect to the Subsonic server and validate credentials
+   * Connect to the Subsonic server, validate credentials, and detect placeholder artwork.
    */
   async connect(): Promise<void> {
     try {
@@ -147,6 +176,43 @@ export class SubsonicAdapter implements CollectionAdapter {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to connect to Subsonic server at ${this.config.url}: ${message}`);
+    }
+
+    // Probe for placeholder artwork when --check-artwork is enabled.
+    // Navidrome returns a static placeholder image for getCoverArt with an empty id;
+    // Gonic and others return an error. The hash is stored for filtering during scans.
+    if (this.checkArtwork) {
+      this.placeholderHash = await this.detectPlaceholderArtwork();
+    }
+  }
+
+  /**
+   * Probe the server for placeholder artwork by requesting getCoverArt with an empty id.
+   *
+   * Navidrome serves a static WebP placeholder image for any coverArt request that
+   * doesn't resolve to real artwork. By fetching with an empty id, we capture that
+   * placeholder's hash. During scanning, any artwork matching this hash is treated
+   * as "no artwork".
+   *
+   * Servers that return errors for invalid ids (Gonic, Airsonic) will simply cause
+   * this method to return null, disabling placeholder filtering.
+   *
+   * @returns Hash of the placeholder image, or null if the server doesn't serve one
+   */
+  private async detectPlaceholderArtwork(): Promise<string | null> {
+    try {
+      const response = await this.api.getCoverArt({ id: '' });
+      if (!response.ok) return null;
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.startsWith('image/')) return null;
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (buffer.length < MIN_ARTWORK_BYTES) return null;
+
+      return hashArtwork(buffer);
+    } catch {
+      return null;
     }
   }
 
@@ -244,7 +310,8 @@ export class SubsonicAdapter implements CollectionAdapter {
   async disconnect(): Promise<void> {
     this.tracks = null;
     this.connected = false;
-    this.artworkHashCache.clear();
+    this.artworkCache.clear();
+    this.placeholderHash = null;
   }
 
   /**
@@ -255,31 +322,64 @@ export class SubsonicAdapter implements CollectionAdapter {
   }
 
   /**
-   * Fetch and hash artwork from the Subsonic server for a given coverArt ID.
+   * Fetch artwork from the Subsonic server and determine if it represents real artwork.
    *
-   * Caches results by coverArt ID to avoid redundant downloads
-   * (multiple tracks on the same album share the same cover art).
+   * Validates the response (HTTP status, content-type, minimum size) and filters
+   * server-generated placeholder images using the hash detected during connect().
    *
-   * @returns Artwork hash (8-char hex), or undefined on error
+   * Results are cached by coverArt ID — multiple tracks on the same album share
+   * a single fetch.
+   *
+   * @returns hasArtwork (always set), hash (only when checkArtwork is enabled and artwork exists)
    */
-  private async fetchArtworkHash(coverArtId: string): Promise<string | undefined> {
+  private async fetchArtworkInfo(
+    coverArtId: string
+  ): Promise<{ hasArtwork: boolean; hash?: string }> {
     // Check cache first (many tracks share the same album cover)
-    const cached = this.artworkHashCache.get(coverArtId);
-    if (cached !== undefined) {
-      return cached;
+    if (this.artworkCache.has(coverArtId)) {
+      const cached = this.artworkCache.get(coverArtId);
+      if (cached === null) return { hasArtwork: false };
+      return { hasArtwork: true, hash: cached };
     }
 
     try {
-      // Fetch full-size cover art (no size param = original resolution)
       const response = await this.api.getCoverArt({ id: coverArtId });
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
+
+      // Non-2xx response means no artwork (Gonic returns error code 70)
+      if (!response.ok) {
+        this.artworkCache.set(coverArtId, null);
+        return { hasArtwork: false };
+      }
+
+      // Non-image content-type means an error response (XML/JSON/text)
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.startsWith('image/')) {
+        this.artworkCache.set(coverArtId, null);
+        return { hasArtwork: false };
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      // Very small responses are likely corrupt or empty
+      if (buffer.length < MIN_ARTWORK_BYTES) {
+        this.artworkCache.set(coverArtId, null);
+        return { hasArtwork: false };
+      }
+
       const hash = hashArtwork(buffer);
-      this.artworkHashCache.set(coverArtId, hash);
-      return hash;
+
+      // Filter server-generated placeholder images (e.g., Navidrome's static WebP)
+      if (this.placeholderHash !== null && hash === this.placeholderHash) {
+        this.artworkCache.set(coverArtId, null);
+        return { hasArtwork: false };
+      }
+
+      this.artworkCache.set(coverArtId, hash);
+      return { hasArtwork: true, hash };
     } catch {
-      // Non-fatal: artwork hash is optional
-      return undefined;
+      // Fetch error (network, server error) — conservatively treat as no artwork
+      this.artworkCache.set(coverArtId, null);
+      return { hasArtwork: false };
     }
   }
 
@@ -291,19 +391,24 @@ export class SubsonicAdapter implements CollectionAdapter {
     const codec = getCodec(song.suffix, song.contentType);
     const lossless = isLosslessSuffix(song.suffix);
 
-    // The Subsonic API's coverArt field is an opaque ID that Navidrome always populates,
-    // even for tracks/albums without actual artwork. We cannot reliably determine artwork
-    // presence from coverArt alone — set hasArtwork to undefined (unknown) to avoid
-    // false artwork-added detections. Artwork is still transferred when available during
-    // sync via extractArtwork() on the downloaded file.
-    // See TASK-141 for planned sidecar artwork support.
-    const hasArtwork = undefined;
-
-    // Compute artwork hash when check-artwork is enabled and coverArt ID is present.
-    // fetchArtworkHash returns undefined if getCoverArt fails (no actual artwork).
+    // Artwork detection is gated behind --check-artwork for Subsonic sources,
+    // matching the directory adapter pattern: without the flag, syncs are fast
+    // (no getCoverArt calls). With it, fetchArtworkInfo validates the response,
+    // filters server-generated placeholders (detected during connect), and
+    // enables artwork-added, artwork-removed, and artwork-updated detection.
+    //
+    // The artworkHash is always returned when artwork is fetched, enabling
+    // progressive sync tag writes that prevent infinite artwork-added loops
+    // for tracks where the server has album-level artwork but the audio file
+    // has no embedded artwork (see TASK-142).
+    let hasArtwork: boolean | undefined;
     let artworkHash: string | undefined;
     if (this.checkArtwork && song.coverArt) {
-      artworkHash = await this.fetchArtworkHash(song.coverArt);
+      const artworkInfo = await this.fetchArtworkInfo(song.coverArt);
+      hasArtwork = artworkInfo.hasArtwork;
+      artworkHash = artworkInfo.hash;
+    } else if (!song.coverArt) {
+      hasArtwork = false;
     }
 
     return {

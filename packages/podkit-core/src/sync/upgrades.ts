@@ -265,8 +265,21 @@ export function detectUpgrades(source: CollectionTrack, ipod: IPodTrack): Upgrad
   // Artwork added: source has artwork and iPod track does not.
   // Only trigger when source.hasArtwork is explicitly true (not undefined),
   // so adapters that don't populate the field never produce false positives.
+  //
+  // Skip when the sync tag already has an artworkHash matching the source — this
+  // means a previous sync already attempted artwork transfer but extractArtwork()
+  // returned null (e.g., Subsonic server has album-level artwork but the specific
+  // audio file has no embedded artwork). Re-downloading won't help; the executor
+  // adapter fallback (TASK-142) will address this.
   if (source.hasArtwork === true && ipod.hasArtwork === false) {
-    reasons.push('artwork-added');
+    if (source.artworkHash) {
+      const syncTag = parseSyncTag(ipod.comment);
+      if (!syncTag?.artworkHash || syncTag.artworkHash !== source.artworkHash) {
+        reasons.push('artwork-added');
+      }
+    } else {
+      reasons.push('artwork-added');
+    }
   }
 
   // Artwork removed: source no longer has artwork but iPod does.

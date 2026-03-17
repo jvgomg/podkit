@@ -9,11 +9,9 @@
  * 3. Trigger Navidrome rescan so getCoverArt returns new bytes
  * 4. Dry-run sync with --check-artwork to verify artwork-updated is detected
  *
- * Also tests artwork-removed detection:
- * 1. Sync collection to iPod with --check-artwork (artwork present)
- * 2. Strip ALL embedded artwork from the FLAC files
- * 3. Trigger Navidrome rescan so getCoverArt returns no artwork
- * 4. Dry-run sync with --check-artwork to verify artwork-removed is detected
+ * Also tests artwork-removed and artwork-added detection:
+ * - artwork-removed: Strip all embedded artwork, rescan, detect removal
+ * - artwork-added: Start with a track without artwork, add artwork, detect addition
  *
  * These tests require Docker to run Navidrome.
  *
@@ -77,19 +75,19 @@ function isFfmpegAvailable(): boolean {
 /**
  * Create test fixtures for artwork change detection.
  *
- * Copies FLAC files with embedded artwork into a Navidrome-scannable directory.
- * Uses goldberg-selections tracks which have cover.jpg and embedded artwork.
+ * Copies goldberg-selections FLAC files (all with embedded artwork) into a
+ * Navidrome-scannable directory. The dual-tone track (no artwork) is NOT
+ * included here — the artwork-added test copies it in dynamically to avoid
+ * interference with artwork-updated/removed tests.
  */
 async function createArtworkFixtures(targetMusicDir: string): Promise<void> {
-  // Create album directory matching the fixture metadata
-  const albumDir = join(targetMusicDir, 'Synthetic Classics', 'Goldberg Selections');
-  await mkdir(albumDir, { recursive: true });
+  const goldbergDir = join(targetMusicDir, 'Synthetic Classics', 'Goldberg Selections');
+  await mkdir(goldbergDir, { recursive: true });
 
-  // Copy the three goldberg-selections tracks (all have embedded artwork)
-  const tracks = [Tracks.HARMONY, Tracks.VIBRATO, Tracks.TREMOLO];
-  for (const track of tracks) {
+  const goldbergTracks = [Tracks.HARMONY, Tracks.VIBRATO, Tracks.TREMOLO];
+  for (const track of goldbergTracks) {
     const srcPath = getTrackPath(track.album, track.filename);
-    const dstPath = join(albumDir, track.filename);
+    const dstPath = join(goldbergDir, track.filename);
     await copyFile(srcPath, dstPath);
   }
 }
@@ -105,10 +103,9 @@ async function replaceArtworkInFixtures(targetMusicDir: string): Promise<void> {
   const newCoverPath = join(albumDir, 'cover-new.jpg');
 
   // Generate a visually distinct replacement image (solid red)
-  execSync(
-    `ffmpeg -y -f lavfi -i color=c=red:s=500x500:d=1 -frames:v 1 "${newCoverPath}"`,
-    { stdio: 'ignore' }
-  );
+  execSync(`ffmpeg -y -f lavfi -i color=c=red:s=500x500:d=1 -frames:v 1 "${newCoverPath}"`, {
+    stdio: 'ignore',
+  });
 
   // Re-embed the new artwork in each FLAC file
   const trackFiles = ['01-harmony.flac', '02-vibrato.flac', '03-tremolo.flac'];
@@ -119,6 +116,56 @@ async function replaceArtworkInFixtures(targetMusicDir: string): Promise<void> {
       `metaflac --remove --block-type=PICTURE "${trackPath}" && metaflac --import-picture-from="${newCoverPath}" "${trackPath}"`,
       { stdio: 'ignore' }
     );
+  }
+}
+
+/**
+ * Strip all embedded artwork from FLAC files in the goldberg album directory.
+ *
+ * After stripping, Navidrome's getCoverArt for these tracks will return no artwork,
+ * allowing the adapter to detect artwork-removed.
+ */
+function stripArtworkFromFixtures(targetMusicDir: string): void {
+  const albumDir = join(targetMusicDir, 'Synthetic Classics', 'Goldberg Selections');
+  const trackFiles = ['01-harmony.flac', '02-vibrato.flac', '03-tremolo.flac'];
+  for (const filename of trackFiles) {
+    const trackPath = join(albumDir, filename);
+    execSync(`metaflac --remove --block-type=PICTURE "${trackPath}"`, { stdio: 'ignore' });
+  }
+}
+
+/**
+ * Add embedded artwork to a FLAC file that previously had none.
+ *
+ * Generates a 500x500 blue JPEG and embeds it. After Navidrome rescans,
+ * the adapter will detect artwork-added for this track.
+ */
+function addArtworkToTrack(trackPath: string, tempDir: string): void {
+  const coverPath = join(tempDir, 'cover-added.jpg');
+  execSync(`ffmpeg -y -f lavfi -i color=c=blue:s=500x500:d=1 -frames:v 1 "${coverPath}"`, {
+    stdio: 'ignore',
+  });
+  execSync(`metaflac --import-picture-from="${coverPath}" "${trackPath}"`, { stdio: 'ignore' });
+}
+
+/**
+ * Re-embed artwork into goldberg FLAC files (restores artwork after stripping).
+ *
+ * Used to restore fixture state between tests that share the same musicDir.
+ */
+function restoreArtworkInFixtures(targetMusicDir: string): void {
+  const albumDir = join(targetMusicDir, 'Synthetic Classics', 'Goldberg Selections');
+  const coverPath = join(albumDir, 'cover-restore.jpg');
+
+  // Generate a green image to distinguish from original blue and replacement red
+  execSync(`ffmpeg -y -f lavfi -i color=c=green:s=500x500:d=1 -frames:v 1 "${coverPath}"`, {
+    stdio: 'ignore',
+  });
+
+  const trackFiles = ['01-harmony.flac', '02-vibrato.flac', '03-tremolo.flac'];
+  for (const filename of trackFiles) {
+    const trackPath = join(albumDir, filename);
+    execSync(`metaflac --import-picture-from="${coverPath}" "${trackPath}"`, { stdio: 'ignore' });
   }
 }
 
@@ -151,11 +198,7 @@ async function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
 /**
  * Wait for Navidrome to finish scanning and have at least the expected album count.
  */
-async function waitForLibraryScan(
-  port: number,
-  minAlbums = 1,
-  timeoutMs = 60000
-): Promise<void> {
+async function waitForLibraryScan(port: number, minAlbums = 1, timeoutMs = 60000): Promise<void> {
   const startTime = Date.now();
   const albumsUrl = `http://localhost:${port}/rest/getAlbumList2?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json&type=alphabeticalByName&size=10`;
 
@@ -182,57 +225,24 @@ async function waitForLibraryScan(
 }
 
 /**
- * Trigger a Navidrome library rescan via its API.
+ * Restart the Navidrome container with a fresh database.
  *
- * Uses the Navidrome REST API to initiate a full rescan, then waits for
- * it to complete by polling the scan status.
+ * Clears the data directory (database + artwork cache) and restarts the container.
+ * On restart, Navidrome creates a fresh database and rescans all files, including
+ * re-extracting artwork. This is the most reliable way to force Navidrome to serve
+ * updated artwork after modifying source files.
  */
-async function triggerNavidromeRescan(port: number): Promise<void> {
-  // Navidrome exposes a scan trigger via its internal API.
-  // First, get an auth token via the Subsonic API's getUser to confirm auth works,
-  // then use the Navidrome-specific scan endpoint.
-  //
-  // The simplest approach: restart the container. Navidrome rescans at startup
-  // because we set ND_SCANSCHEDULE=@startup. But that's slow.
-  //
-  // Instead, use the Subsonic startScan extension that Navidrome supports.
-  // Use fullScan=true to force Navidrome to re-read all file metadata including artwork
-  const scanUrl = `http://localhost:${port}/rest/startScan?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json&fullScan=true`;
+async function restartNavidrome(): Promise<void> {
+  // Clear data directory so Navidrome starts from scratch
+  await rm(dataDir, { recursive: true, force: true });
+  await mkdir(dataDir, { recursive: true });
 
-  try {
-    await fetch(scanUrl);
-  } catch {
-    // startScan might not return cleanly, that's ok
-  }
+  // Restart the container
+  execSync(`docker restart ${containerId}`, { stdio: 'ignore', timeout: 30000 });
 
-  // Wait for the scan to complete by polling getScanStatus
-  const statusUrl = `http://localhost:${port}/rest/getScanStatus?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json`;
-  const startTime = Date.now();
-  const timeoutMs = 60000;
-
-  // Give Navidrome a moment to start the scan
-  await new Promise((resolve) => setTimeout(resolve, 2000));
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(statusUrl);
-      if (response.ok) {
-        const data = (await response.json()) as Record<string, unknown>;
-        const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
-        const scanStatus = subsonicResponse?.scanStatus as Record<string, unknown> | undefined;
-
-        if (scanStatus && scanStatus.scanning === false) {
-          // Scan is complete
-          return;
-        }
-      }
-    } catch {
-      // Keep trying
-    }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-  }
-
-  throw new Error(`Navidrome rescan did not complete within ${timeoutMs}ms`);
+  // Wait for fresh server + library scan
+  await waitForServer(serverPort);
+  await waitForLibraryScan(serverPort);
 }
 
 /**
@@ -366,15 +376,7 @@ describe('artwork change detection (Subsonic)', () => {
           // ------------------------------------------------------------------
           console.log('Step 1: Initial sync with --check-artwork...');
           const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>(
-            [
-              '--config',
-              configPath,
-              'sync',
-              '--device',
-              target.path,
-              '--check-artwork',
-              '--json',
-            ],
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
             {
               env: { SUBSONIC_PASSWORD: password },
               timeout: 180000,
@@ -451,17 +453,12 @@ describe('artwork change detection (Subsonic)', () => {
           // The new embedded artwork will be picked up by Navidrome,
           // making getCoverArt return different bytes.
           // ------------------------------------------------------------------
-          // Clear Navidrome's artwork cache to force re-read from files
-          console.log('Step 4: Clearing Navidrome artwork cache and triggering rescan...');
-          try {
-            await rm(join(dataDir, 'cache'), { recursive: true, force: true });
-          } catch {
-            // Cache dir may not exist
-          }
-          await triggerNavidromeRescan(serverPort);
-
-          // Give Navidrome time to fully process the rescan and regenerate artwork
-          await new Promise((resolve) => setTimeout(resolve, 5000));
+          // Restart Navidrome with a fresh database to force artwork re-extraction.
+          // A simple rescan is not sufficient — Navidrome caches artwork aggressively
+          // and getCoverArt may serve stale data even after a fullScan. Restarting
+          // with a clean data directory guarantees fresh artwork.
+          console.log('Step 4: Restarting Navidrome with fresh database...');
+          await restartNavidrome();
 
           // ------------------------------------------------------------------
           // Step 5: Dry-run sync with --check-artwork to detect changes
@@ -514,15 +511,7 @@ describe('artwork change detection (Subsonic)', () => {
           // ------------------------------------------------------------------
           console.log('Step 6: Syncing artwork updates...');
           const { result: updateResult, json: updateJson } = await runCliJson<SyncOutput>(
-            [
-              '--config',
-              configPath,
-              'sync',
-              '--device',
-              target.path,
-              '--check-artwork',
-              '--json',
-            ],
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
             {
               env: { SUBSONIC_PASSWORD: password },
               timeout: 180000,
@@ -567,12 +556,196 @@ describe('artwork change detection (Subsonic)', () => {
     600000 // 10 min timeout for full workflow (sync + rescan + verify)
   );
 
-  // Note: artwork-removed detection via Subsonic is not currently supported.
-  // The Subsonic adapter sets hasArtwork=undefined (unknown) because the API's
-  // coverArt field is unreliable for detecting artwork presence. artwork-removed
-  // requires source.hasArtwork===false which never occurs with undefined.
-  // The directory-source artwork-removed test covers this detection path.
-  // See TASK-141 for planned sidecar/server artwork support.
-  //
-  // When TASK-141 is implemented, add a Subsonic artwork-removed test here.
+  it.skipIf(!subsonicE2eEnabled)(
+    'detects artwork-removed via Subsonic after stripping embedded artwork',
+    async () => {
+      if (!shouldRun()) {
+        console.log('Skipping: Docker not available or setup failed');
+        return;
+      }
+
+      // The adapter probes for Navidrome's placeholder image at connect time.
+      // After stripping artwork, getCoverArt returns the placeholder, which is
+      // filtered out → hasArtwork=false → artwork-removed correctly detected.
+
+      await withTarget(async (target) => {
+        const configPath = await createArtworkCheckConfig(serverPort);
+
+        try {
+          // Step 1: Ensure goldberg tracks have artwork
+          console.log('artwork-removed Step 1: Restoring artwork in goldberg fixtures...');
+          restoreArtworkInFixtures(musicDir);
+          await restartNavidrome();
+
+          // Step 2: Initial sync (artwork present)
+          console.log('artwork-removed Step 2: Initial sync with artwork present...');
+          const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>(
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
+          );
+          expect(syncResult.exitCode).toBe(0);
+          expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(3);
+
+          // Step 3: Strip all artwork from goldberg FLACs
+          console.log('artwork-removed Step 3: Stripping artwork from source files...');
+          stripArtworkFromFixtures(musicDir);
+
+          // Step 4: Restart Navidrome (fresh DB, rescans artworkless files)
+          console.log('artwork-removed Step 4: Restarting Navidrome...');
+          await restartNavidrome();
+
+          // Step 5: Dry-run to detect artwork-removed
+          console.log('artwork-removed Step 5: Dry-run to detect artwork-removed...');
+          const { result: dryRunResult, json: dryRunJson } = await runCliJson<SyncOutput>(
+            [
+              '--config',
+              configPath,
+              'sync',
+              '--device',
+              target.path,
+              '--check-artwork',
+              '--dry-run',
+              '--json',
+            ],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 120000 }
+          );
+          expect(dryRunResult.exitCode).toBe(0);
+
+          const breakdown = dryRunJson?.plan?.updateBreakdown as
+            | Record<string, number | undefined>
+            | undefined;
+          console.log(`artwork-removed result: ${JSON.stringify(breakdown)}`);
+          expect(breakdown?.['artwork-removed']).toBeGreaterThanOrEqual(3);
+
+          // Step 6: Apply
+          console.log('artwork-removed Step 6: Applying...');
+          const { result: applyResult } = await runCliJson<SyncOutput>(
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
+          );
+          expect(applyResult.exitCode).toBe(0);
+
+          // Step 7: Verify idempotency
+          console.log('artwork-removed Step 7: Verifying idempotency...');
+          const { json: idempotentJson } = await runCliJson<SyncOutput>(
+            [
+              '--config',
+              configPath,
+              'sync',
+              '--device',
+              target.path,
+              '--check-artwork',
+              '--dry-run',
+              '--json',
+            ],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 60000 }
+          );
+          expect(idempotentJson?.plan?.tracksToUpdate).toBe(0);
+          console.log('artwork-removed: idempotency verified');
+        } finally {
+          await cleanupTempConfig(configPath);
+        }
+      });
+    },
+    600000
+  );
+
+  it.skipIf(!subsonicE2eEnabled)(
+    'detects artwork-added via Subsonic after embedding artwork in a bare track',
+    async () => {
+      if (!shouldRun()) {
+        console.log('Skipping: Docker not available or setup failed');
+        return;
+      }
+
+      // The dual-tone fixture has no embedded artwork. After initial sync, the
+      // adapter detects Navidrome's placeholder and sets hasArtwork=false. Then
+      // we embed artwork, restart Navidrome, and the adapter sees real artwork
+      // (different hash from placeholder) → artwork-added.
+
+      await withTarget(async (target) => {
+        const configPath = await createArtworkCheckConfig(serverPort);
+
+        try {
+          // Step 1: Copy dual-tone track (no artwork) into music dir
+          console.log('artwork-added Step 1: Adding dual-tone track to Navidrome library...');
+          const syntheticDir = join(musicDir, 'Test Tones', 'Synthetic Tests');
+          await mkdir(syntheticDir, { recursive: true });
+          const dualToneSrc = getTrackPath(Tracks.DUAL_TONE.album, Tracks.DUAL_TONE.filename);
+          const dualTonePath = join(syntheticDir, Tracks.DUAL_TONE.filename);
+          await copyFile(dualToneSrc, dualTonePath);
+          await restartNavidrome();
+
+          // Step 2: Initial sync (dual-tone has no artwork, placeholder is filtered)
+          console.log('artwork-added Step 2: Initial sync (no artwork)...');
+          const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>(
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
+          );
+          expect(syncResult.exitCode).toBe(0);
+          expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(1);
+
+          // Step 3: Add artwork to the dual-tone track
+          console.log('artwork-added Step 3: Adding artwork to dual-tone track...');
+          addArtworkToTrack(dualTonePath, tempDir);
+
+          // Step 4: Restart Navidrome (fresh DB, rescans file with new artwork)
+          console.log('artwork-added Step 4: Restarting Navidrome...');
+          await restartNavidrome();
+
+          // Step 5: Dry-run to detect artwork-added
+          console.log('artwork-added Step 5: Dry-run to detect artwork-added...');
+          const { result: dryRunResult, json: dryRunJson } = await runCliJson<SyncOutput>(
+            [
+              '--config',
+              configPath,
+              'sync',
+              '--device',
+              target.path,
+              '--check-artwork',
+              '--dry-run',
+              '--json',
+            ],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 120000 }
+          );
+          expect(dryRunResult.exitCode).toBe(0);
+
+          const breakdown = dryRunJson?.plan?.updateBreakdown as
+            | Record<string, number | undefined>
+            | undefined;
+          console.log(`artwork-added result: ${JSON.stringify(breakdown)}`);
+          expect(breakdown?.['artwork-added']).toBeGreaterThanOrEqual(1);
+
+          // Step 6: Apply
+          console.log('artwork-added Step 6: Applying...');
+          const { result: applyResult } = await runCliJson<SyncOutput>(
+            ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
+          );
+          expect(applyResult.exitCode).toBe(0);
+
+          // Step 7: Verify idempotency
+          console.log('artwork-added Step 7: Verifying idempotency...');
+          const { json: idempotentJson } = await runCliJson<SyncOutput>(
+            [
+              '--config',
+              configPath,
+              'sync',
+              '--device',
+              target.path,
+              '--check-artwork',
+              '--dry-run',
+              '--json',
+            ],
+            { env: { SUBSONIC_PASSWORD: password }, timeout: 60000 }
+          );
+          expect(idempotentJson?.plan?.tracksToUpdate).toBe(0);
+          console.log('artwork-added: idempotency verified');
+        } finally {
+          await cleanupTempConfig(configPath);
+        }
+      });
+    },
+    600000
+  );
 });

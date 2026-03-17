@@ -1131,6 +1131,50 @@ describe('detectUpgrades', () => {
       const reasons = detectUpgrades(source, ipodWithArtwork);
       expect(reasons).not.toContain('artwork-added');
     });
+
+    it('artwork-added is not re-triggered when sync tag already has matching artworkHash', () => {
+      // This prevents infinite artwork-added loops for Subsonic tracks where the
+      // server has album-level artwork but the audio file has no embedded artwork.
+      // After the first sync attempt, the artworkHash is written to the sync tag.
+      // On subsequent syncs, we skip artwork-added since re-downloading won't help.
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        hasArtwork: true,
+        artworkHash: 'aabb1122',
+      });
+      const ipodNoArtworkButHasHash = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        hasArtwork: false,
+        comment: '[podkit:v1 quality=high encoding=vbr art=aabb1122]',
+      });
+
+      const reasons = detectUpgrades(source, ipodNoArtworkButHasHash);
+      expect(reasons).not.toContain('artwork-added');
+    });
+
+    it('artwork-added IS triggered when sync tag has a different artworkHash', () => {
+      // If the source artworkHash differs from what was previously attempted,
+      // the artwork may have changed — re-attempt the transfer.
+      const source = createCollectionTrack('Artist', 'Song', 'Album', {
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        hasArtwork: true,
+        artworkHash: 'newart99',
+      });
+      const ipodNoArtworkOldHash = createIPodTrack('Artist', 'Song', 'Album', {
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        hasArtwork: false,
+        comment: '[podkit:v1 quality=high encoding=vbr art=oldart11]',
+      });
+
+      const reasons = detectUpgrades(source, ipodNoArtworkOldHash);
+      expect(reasons).toContain('artwork-added');
+    });
   });
 
   describe('bitrate 0 edge cases', () => {
@@ -1916,9 +1960,7 @@ describe('detectPresetChange', () => {
       // VBR tolerance = 256 * 0.3 = 76.8 → within tolerance
       expect(detectPresetChange(source, ipod, 256)).toBeNull();
       // CBR tolerance = 256 * 0.1 = 25.6 → outside tolerance
-      expect(detectPresetChange(source, ipod, 256, { encodingMode: 'cbr' })).toBe(
-        'preset-upgrade'
-      );
+      expect(detectPresetChange(source, ipod, 256, { encodingMode: 'cbr' })).toBe('preset-upgrade');
     });
   });
 

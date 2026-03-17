@@ -49,13 +49,21 @@ Scanning and diffing artwork hashes is opt-in via the `--check-artwork` flag.
 
 **Establishing baselines:** Users with existing synced libraries can populate artwork hashes by running `podkit sync --force-sync-tags --check-artwork`. This writes hashes for all tracks without re-transferring any files.
 
-### 4. Subsonic Adapter: hasArtwork Set to undefined
+### 4. Subsonic Adapter: Artwork Presence via Placeholder Detection
 
-The Subsonic API's `coverArt` field is always populated by servers like Navidrome, even for tracks that have no actual artwork. This means the presence of `coverArt` cannot be used to reliably determine whether a track has artwork.
+The Subsonic API's `coverArt` field is always populated by servers like Navidrome, even for tracks with no actual artwork. Navidrome also generates a static placeholder image (WebP) for albums without real artwork, making `getCoverArt` unreliable for presence detection without additional filtering. Gonic, by contrast, only populates `coverArt` when artwork exists and returns error code 70 for missing artwork.
 
-**Decision:** The Subsonic adapter sets `hasArtwork` to `undefined` (unknown) rather than `true` or `false`. This prevents false `artwork-added` and `artwork-removed` detections during sync. The `artwork-updated` operation still works correctly via hash comparison when `--check-artwork` is enabled, because it compares actual artwork bytes rather than relying on presence metadata.
+**Decision:** At connect time, the adapter probes for placeholder images by requesting `getCoverArt` with an empty `id`. If the server returns an image (Navidrome does; Gonic returns an error), its hash is stored. During scanning, any `getCoverArt` response whose hash matches the placeholder is treated as "no artwork" (`hasArtwork=false`). This enables reliable `artwork-added`, `artwork-removed`, and `artwork-updated` detection across all Subsonic servers.
 
-**Future improvement:** TASK-141 tracks planned work to fetch artwork from the `getCoverArt` endpoint to verify presence, which would enable `artwork-added`/`artwork-removed` detection for Subsonic sources.
+All Subsonic artwork operations (presence detection, hash computation, placeholder filtering) are gated behind `--check-artwork`. This matches the directory adapter pattern: without the flag, syncs are fast (no `getCoverArt` calls). With it, one HTTP request per unique album is made during scanning, enabling `artwork-added`, `artwork-removed`, and `artwork-updated` detection. The artwork hash is written to sync tags (progressive writes), which prevents infinite `artwork-added` loops for tracks where the server has album-level artwork but the audio file has no embedded artwork (see TASK-142 for the executor adapter fallback that will resolve this).
+
+**Server compatibility:**
+
+| Server | Placeholder probe result | Behavior |
+|--------|------------------------|----------|
+| Navidrome | Placeholder WebP image → hash stored | Placeholder filtered, all artwork operations work |
+| Gonic | Error (code 70) → no hash stored | No filtering needed, `coverArt` absence is reliable |
+| Other servers | Error → no hash stored | Falls back to basic validation (status, content-type, size) |
 
 ### 5. Adapter Hash Preference for Sync Tags
 
@@ -93,7 +101,7 @@ Tracks without artwork do not need an `art=` hash in their sync tag. They are co
 
 ### Negative
 
-- Subsonic `artwork-added`/`artwork-removed` detection is deferred until TASK-141
+- Subsonic artwork presence verification adds one HTTP request per unique `coverArtId` (typically per album) during every scan, plus one placeholder probe at connect time
 - Users must opt in to `--check-artwork` to detect changes (writes are automatic, reads are not)
 - 32-bit hash has a theoretical (though negligible) collision risk
 

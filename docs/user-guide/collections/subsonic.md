@@ -76,6 +76,14 @@ Classic Subsonic and Airsonic servers do not expose ReplayGain data. Tracks sync
 
 See [Sound Check](/user-guide/syncing/sound-check) for more details.
 
+## Artwork
+
+Album artwork embedded in audio files is automatically transferred to the iPod during sync.
+
+With `--check-artwork` enabled, podkit fetches cover art from the server to detect artwork changes — including artwork being added, removed, or replaced with a different image. Navidrome generates placeholder images for albums without real artwork; podkit detects and filters these automatically.
+
+See [Track Upgrades](/user-guide/syncing/upgrades#artwork-change-detection) for details.
+
 ## Limitations
 
 - **No playlist sync** (yet) - only tracks are synced

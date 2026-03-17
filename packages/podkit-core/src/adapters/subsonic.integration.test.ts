@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test';
 import { SubsonicAdapter } from './subsonic.js';
+import { hashArtwork } from '../artwork/hash.js';
 
 // =============================================================================
 // Mock HTTP Server
@@ -19,6 +20,12 @@ import { SubsonicAdapter } from './subsonic.js';
 interface MockServerState {
   albums: MockAlbum[];
   songs: Record<string, MockSong[]>;
+  /** Map of coverArt ID → image bytes. If absent, getCoverArt returns 404. */
+  coverArt: Record<string, Buffer>;
+  /** Placeholder image served for empty coverArt ID (simulates Navidrome). Undefined = 404. */
+  placeholder?: Buffer;
+  /** Track getCoverArt request count per coverArt ID */
+  coverArtRequests: Record<string, number>;
   authError: boolean;
   serverError: boolean;
   pingCount: number;
@@ -47,6 +54,7 @@ interface MockSong {
   bitRate?: number;
   suffix?: string;
   contentType?: string;
+  coverArt?: string;
   size?: number;
   genre?: string;
   year?: number;
@@ -60,6 +68,8 @@ function resetServerState(): void {
   serverState = {
     albums: [],
     songs: {},
+    coverArt: {},
+    coverArtRequests: {},
     authError: false,
     serverError: false,
     pingCount: 0,
@@ -151,6 +161,44 @@ function createMockServer(port: number) {
             'Content-Length': String(mockAudioData.length),
           },
         });
+      }
+
+      if (path.endsWith('/rest/getCoverArt') || path.endsWith('/rest/getCoverArt.view')) {
+        const coverArtId = url.searchParams.get('id') ?? '';
+
+        // Empty id: serve placeholder if configured (Navidrome behavior), else 404 (Gonic)
+        if (!coverArtId) {
+          if (serverState.placeholder) {
+            return new Response(new Uint8Array(serverState.placeholder), {
+              status: 200,
+              headers: { 'Content-Type': 'image/webp' },
+            });
+          }
+          return new Response('Cover art not found', { status: 404 });
+        }
+
+        // Track requests per coverArt ID
+        serverState.coverArtRequests[coverArtId] =
+          (serverState.coverArtRequests[coverArtId] ?? 0) + 1;
+
+        const artworkData = serverState.coverArt[coverArtId];
+        if (artworkData) {
+          return new Response(new Uint8Array(artworkData), {
+            status: 200,
+            headers: { 'Content-Type': 'image/jpeg' },
+          });
+        }
+
+        // No artwork for this ID — return 404 (Gonic) or placeholder (Navidrome)
+        if (serverState.placeholder) {
+          // Navidrome: serves placeholder for existing entities without artwork too
+          serverState.coverArtRequests[coverArtId] = serverState.coverArtRequests[coverArtId] ?? 0;
+          return new Response(new Uint8Array(serverState.placeholder), {
+            status: 200,
+            headers: { 'Content-Type': 'image/webp' },
+          });
+        }
+        return new Response('Cover art not found', { status: 404 });
       }
 
       return new Response('Not Found', { status: 404 });
@@ -588,5 +636,244 @@ describe('SubsonicAdapter disconnect', () => {
     // Disconnect
     await adapter.disconnect();
     expect(adapter.getTrackCount()).toBe(0);
+  });
+});
+
+// =============================================================================
+// Artwork Presence Detection Tests
+// =============================================================================
+
+// Distinct fake images so hashes differ
+const realArtwork = Buffer.alloc(200, 0x42);
+const placeholderImage = Buffer.alloc(200, 0xaa);
+
+describe('SubsonicAdapter artwork presence detection', () => {
+  /** Helper: set up a single album with one song that has a coverArt ID */
+  function setupSingleTrack(coverArtId?: string) {
+    serverState.albums = [
+      {
+        id: 'album1',
+        name: 'Album',
+        artist: 'Artist',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
+    ];
+    serverState.songs = {
+      album1: [
+        {
+          id: 'song1',
+          title: 'Track 1',
+          artist: 'Artist',
+          album: 'Album',
+          suffix: 'flac',
+          coverArt: coverArtId,
+        },
+      ],
+    };
+  }
+
+  function createAdapter(checkArtwork = false): SubsonicAdapter {
+    return new SubsonicAdapter({
+      url: `http://localhost:${mockServerPort}`,
+      username: 'testuser',
+      password: 'testpass',
+      checkArtwork,
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fast path (checkArtwork=false): no getCoverArt calls
+  // ---------------------------------------------------------------------------
+
+  it('skips artwork detection when checkArtwork is false', async () => {
+    setupSingleTrack('al-1');
+    serverState.coverArt = { 'al-1': realArtwork };
+
+    const adapter = createAdapter(false);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBeUndefined();
+    expect(tracks[0]?.artworkHash).toBeUndefined();
+    expect(serverState.coverArtRequests['al-1']).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------------
+  // Presence detection (checkArtwork=true)
+  // ---------------------------------------------------------------------------
+
+  it('sets hasArtwork=true when getCoverArt returns a valid image', async () => {
+    setupSingleTrack('al-1');
+    serverState.coverArt = { 'al-1': realArtwork };
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(true);
+  });
+
+  it('sets hasArtwork=false when getCoverArt returns 404', async () => {
+    setupSingleTrack('al-missing');
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(false);
+  });
+
+  it('sets hasArtwork=false when song has no coverArt ID', async () => {
+    setupSingleTrack(undefined);
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // Placeholder filtering (Navidrome behavior)
+  // ---------------------------------------------------------------------------
+
+  it('connect() detects placeholder hash from empty-id probe', async () => {
+    serverState.placeholder = placeholderImage;
+
+    const adapter = createAdapter(true);
+    await adapter.connect();
+
+    expect((adapter as any).placeholderHash).toBe(hashArtwork(placeholderImage));
+  });
+
+  it('connect() sets null placeholderHash when server returns error for empty id', async () => {
+    serverState.placeholder = undefined;
+
+    const adapter = createAdapter(true);
+    await adapter.connect();
+
+    expect((adapter as any).placeholderHash).toBeNull();
+  });
+
+  it('filters placeholder artwork and sets hasArtwork=false', async () => {
+    setupSingleTrack('al-placeholder');
+    serverState.coverArt = { 'al-placeholder': placeholderImage };
+    serverState.placeholder = placeholderImage;
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(false);
+  });
+
+  it('does not filter real artwork even when placeholder is detected', async () => {
+    setupSingleTrack('al-real');
+    serverState.coverArt = { 'al-real': realArtwork };
+    serverState.placeholder = placeholderImage;
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(true);
+  });
+
+  it('handles mixed albums — real artwork vs placeholder', async () => {
+    serverState.albums = [
+      {
+        id: 'album-real',
+        name: 'Real Art',
+        artist: 'A',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
+      {
+        id: 'album-none',
+        name: 'No Art',
+        artist: 'A',
+        songCount: 1,
+        duration: 180,
+        created: '2024-01-01T00:00:00Z',
+      },
+    ];
+    serverState.songs = {
+      'album-real': [
+        { id: 'song1', title: 'T1', artist: 'A', album: 'Real Art', coverArt: 'al-real' },
+      ],
+      'album-none': [
+        { id: 'song2', title: 'T2', artist: 'A', album: 'No Art', coverArt: 'al-none' },
+      ],
+    };
+    serverState.coverArt = { 'al-real': realArtwork, 'al-none': placeholderImage };
+    serverState.placeholder = placeholderImage;
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks.find((t) => t.id === 'song1')?.hasArtwork).toBe(true);
+    expect(tracks.find((t) => t.id === 'song2')?.hasArtwork).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------------
+  // artworkHash is always populated (enables progressive sync tag writes)
+  // ---------------------------------------------------------------------------
+
+  it('includes artworkHash when checkArtwork is true', async () => {
+    setupSingleTrack('al-1');
+    serverState.coverArt = { 'al-1': realArtwork };
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks[0]?.hasArtwork).toBe(true);
+    expect(tracks[0]?.artworkHash).toBe(hashArtwork(realArtwork));
+  });
+
+  // ---------------------------------------------------------------------------
+  // Caching
+  // ---------------------------------------------------------------------------
+
+  it('caches per coverArtId — one HTTP request per album', async () => {
+    serverState.albums = [
+      {
+        id: 'album1',
+        name: 'Album',
+        artist: 'A',
+        songCount: 3,
+        duration: 540,
+        created: '2024-01-01T00:00:00Z',
+      },
+    ];
+    serverState.songs = {
+      album1: [
+        { id: 'song1', title: 'T1', artist: 'A', album: 'Album', coverArt: 'al-1' },
+        { id: 'song2', title: 'T2', artist: 'A', album: 'Album', coverArt: 'al-1' },
+        { id: 'song3', title: 'T3', artist: 'A', album: 'Album', coverArt: 'al-1' },
+      ],
+    };
+    serverState.coverArt = { 'al-1': realArtwork };
+
+    const adapter = createAdapter(true);
+    const tracks = await adapter.getTracks();
+
+    expect(tracks).toHaveLength(3);
+    for (const track of tracks) expect(track.hasArtwork).toBe(true);
+    expect(serverState.coverArtRequests['al-1']).toBe(1);
+  });
+
+  it('clears artwork cache and placeholder hash on disconnect', async () => {
+    setupSingleTrack('al-1');
+    serverState.coverArt = { 'al-1': realArtwork };
+    serverState.placeholder = placeholderImage;
+
+    const adapter = createAdapter(true);
+    await adapter.getTracks();
+    expect(serverState.coverArtRequests['al-1']).toBe(1);
+
+    await adapter.disconnect();
+    expect((adapter as any).placeholderHash).toBeNull();
+
+    // Re-fetch makes fresh requests (including placeholder probe on reconnect)
+    serverState.coverArtRequests = {};
+    await adapter.getTracks();
+    expect(serverState.coverArtRequests['al-1']).toBe(1);
   });
 });

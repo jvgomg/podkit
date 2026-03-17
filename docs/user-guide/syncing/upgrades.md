@@ -23,9 +23,9 @@ podkit recognizes several types of improvements:
 | **Quality upgrade** | 128 kbps re-ripped at 320 kbps | New file transcoded and copied to iPod |
 | **Preset upgrade** | Quality preset changed from low to high | Re-transcoded at new (higher) bitrate |
 | **Preset downgrade** | Quality preset changed from high to low | Re-transcoded at new (lower) bitrate |
-| **Artwork added** | Artwork embedded into previously bare files (directory sources only) | New file copied with artwork |
+| **Artwork added** | Artwork embedded into previously bare files | New file copied with artwork |
 | **Artwork updated** | Album artwork changed in source (requires `--check-artwork`) | Metadata updated (no file transfer) |
-| **Artwork removed** | Artwork removed from source files (directory sources only) | Artwork removed from iPod |
+| **Artwork removed** | Artwork removed from source files | Artwork removed from iPod |
 | **Sound Check update** | ReplayGain tags added to collection | Metadata updated (no file transfer) |
 | **Metadata correction** | Genre, year, or track numbers fixed | Metadata updated (no file transfer) |
 
@@ -116,23 +116,21 @@ This writes artwork fingerprints for all existing tracks so that future changes 
 
 ### Performance
 
-For directory sources, artwork change detection adds minimal overhead — artwork bytes are already read during scanning, and hashing adds only microseconds per track.
+For directory sources, artwork detection adds minimal overhead — artwork bytes are already read during scanning, and hashing adds only microseconds per track.
 
-For Subsonic sources, enabling `--check-artwork` adds one HTTP request per unique album artwork during the scan phase. On large libraries this can slow down scanning significantly. Artwork is cached by cover art ID, so albums sharing the same artwork only require one request, but the total number of requests still scales with the number of distinct album covers.
+For directory sources, `--check-artwork` reads artwork bytes from files for hashing — adding minimal overhead since the files are already being read.
 
-For this reason, consider using `--check-artwork` as an occasional manual check rather than enabling it permanently — especially with Subsonic sources. The `checkArtwork` config option exists for users who want it always-on, but the CLI flag is a better fit for most workflows.
+For Subsonic sources, `--check-artwork` adds one HTTP request per unique album cover during scanning. Results are cached by cover art ID, so albums sharing the same artwork only require one request. On large libraries (thousands of albums), this can add noticeable time to the scan phase. Consider using the CLI flag for periodic checks rather than enabling permanently.
 
-### Subsonic Limitations
+### Subsonic Artwork Detection
 
-Artwork **change** detection (`--check-artwork`) works with both directory and Subsonic sources. However, artwork **added** and **removed** detection currently only works with directory sources.
+With `--check-artwork` enabled, podkit fetches cover art for each unique album from the Subsonic server during scanning. All three artwork operations work with both directory and Subsonic sources:
 
-The Subsonic API does not reliably indicate whether a track has artwork — servers like Navidrome always populate the `coverArt` field regardless of whether actual artwork exists. To avoid false positives, podkit treats artwork presence as unknown for Subsonic tracks. This means:
+- **Artwork added**: Detected when artwork appears in a previously bare track
+- **Artwork updated**: Detected when artwork fingerprints differ between syncs
+- **Artwork removed**: Detected when artwork is stripped from source files
 
-- **Artwork updated**: Detected with `--check-artwork` (compares fingerprints)
-- **Artwork added**: Not detected (requires reliable artwork presence information)
-- **Artwork removed**: Not detected (same reason)
-
-Artwork is still transferred during initial sync when embedded in the source files. This limitation only affects the self-healing upgrade detection between syncs.
+**Navidrome compatibility:** Navidrome generates placeholder images for albums without real artwork. podkit detects this placeholder at connect time and filters it out, so tracks with only placeholder artwork are correctly identified as having no artwork. This works automatically when `--check-artwork` is enabled.
 
 ### Sync Tags
 

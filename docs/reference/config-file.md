@@ -78,7 +78,7 @@ These apply to all devices unless overridden at the device level.
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
 | `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
 | `artwork` | boolean | `true` | Include album artwork during sync |
-| `checkArtwork` | boolean | `false` | Detect changed artwork by comparing fingerprints between syncs. For Subsonic sources this adds one HTTP request per unique album during scanning, which can be slow on large libraries — consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently. |
+| `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
 
