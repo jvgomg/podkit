@@ -139,19 +139,12 @@ jobs:
           retention-days: 30
 
   # musl prebuilds (Alpine Linux)
-  prebuild-musl:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
+  # x64: container: alpine (JS actions work on x64)
+  # arm64: docker run (GH Actions limitation — no JS actions in Alpine on ARM)
+  prebuild-musl-x64:
+    runs-on: ubuntu-24.04
     container: alpine:3.21
-    name: Build linux-${{ matrix.arch }}-musl
+    name: Build linux-x64-musl
 
     steps:
       - name: Install git
@@ -169,7 +162,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-linux-${{ matrix.arch }}-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-x64-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
 
       - name: Install Alpine build deps (full)
         if: steps.cache.outputs.cache-hit != 'true'
@@ -211,17 +204,15 @@ jobs:
         working-directory: packages/libgpod-node
         run: |
           npx prebuildify --napi --strip
-          mv prebuilds/linux-${{ matrix.arch }} prebuilds/linux-${{ matrix.arch }}-musl
+          mv prebuilds/linux-x64 prebuilds/linux-x64-musl
 
       - name: Verify static linking
         working-directory: packages/libgpod-node
         run: |
-          echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD" || true
           if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
-            echo "ERROR: Found unexpected dynamic dependencies"
-            exit 1
+            echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
       - name: Run tests
@@ -231,13 +222,64 @@ jobs:
       - name: Upload prebuild
         uses: actions/upload-artifact@v4
         with:
-          name: prebuild-linux-${{ matrix.arch }}-musl
+          name: prebuild-linux-x64-musl
+          path: packages/libgpod-node/prebuilds/
+          retention-days: 30
+
+  prebuild-musl-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: Build linux-arm64-musl
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build prebuild in Alpine
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            -e STATIC_DEPS_DIR=/workspace/static-deps \
+            -e WORK_DIR=/tmp/prebuild-work \
+            alpine:3.21 sh -c '
+              set -e
+              apk add --no-cache \
+                bash build-base pkgconf python3 curl git \
+                glib-dev gdk-pixbuf-dev \
+                libplist-dev libffi-dev sqlite-dev \
+                libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+                intltool autoconf automake libtool gtk-doc \
+                meson ninja perl-xml-parser linux-headers \
+                nodejs npm
+
+              bash tools/prebuild/build-static-deps.sh
+
+              curl -fsSL https://bun.sh/install | bash
+              export PATH="$HOME/.bun/bin:$PATH"
+              bun install
+
+              cd packages/libgpod-node
+              npx prebuildify --napi --strip
+              mv prebuilds/linux-arm64 prebuilds/linux-arm64-musl
+
+              PREBUILD=$(find prebuilds -name "*.node" | head -1)
+              ldd "$PREBUILD" || true
+              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+                echo "ERROR: Found unexpected dynamic dependencies"; exit 1
+              fi
+
+              bun run test:unit
+            '
+
+      - name: Upload prebuild
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-linux-arm64-musl
           path: packages/libgpod-node/prebuilds/
           retention-days: 30
 
   # Collect all prebuilds into a single artifact
   collect:
-    needs: [prebuild, prebuild-musl]
+    needs: [prebuild, prebuild-musl-x64, prebuild-musl-arm64]
     runs-on: ubuntu-latest
     name: Collect prebuilds
 

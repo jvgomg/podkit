@@ -220,20 +220,15 @@ jobs:
 
   # ===================================================================
   # musl builds (Alpine Linux — for Docker and musl-based distros)
+  #
+  # x64: uses container: alpine (JS actions work on x64)
+  # arm64: uses docker run (GH Actions doesn't support JS actions
+  #        in Alpine containers on ARM64 runners)
   # ===================================================================
-  build-musl:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-24.04
-            arch: x64
-          - os: ubuntu-24.04-arm
-            arch: arm64
-
-    runs-on: ${{ matrix.os }}
+  build-musl-x64:
+    runs-on: ubuntu-24.04
     container: alpine:3.21
-    name: Build linux-${{ matrix.arch }}-musl
+    name: Build linux-x64-musl
 
     steps:
       - name: Install git
@@ -241,14 +236,12 @@ jobs:
 
       - uses: actions/checkout@v4
 
-      # ---- Prebuild: native .napi.node binary ----
-
       - name: Cache prebuild
         id: prebuild-cache
         uses: actions/cache@v4
         with:
           path: packages/libgpod-node/prebuilds/
-          key: prebuild-linux-${{ matrix.arch }}-musl-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
+          key: prebuild-linux-x64-musl-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
 
       - name: Set environment
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -262,7 +255,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-linux-${{ matrix.arch }}-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-x64-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
 
       - name: Install Alpine build deps (full)
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -307,8 +300,7 @@ jobs:
         working-directory: packages/libgpod-node
         run: |
           npx prebuildify --napi --strip
-          # Rename to musl-specific directory (prebuildify uses os.platform()-os.arch())
-          mv prebuilds/linux-${{ matrix.arch }} prebuilds/linux-${{ matrix.arch }}-musl
+          mv prebuilds/linux-x64 prebuilds/linux-x64-musl
 
       - name: Verify static linking
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -316,7 +308,6 @@ jobs:
         run: |
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
-          # Alpine uses ldd from musl which outputs differently
           ldd "$PREBUILD" || true
           if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
             echo "ERROR: Found unexpected dynamic dependencies"
@@ -325,8 +316,6 @@ jobs:
 
       - name: List prebuilds
         run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
-
-      # ---- Compile: TypeScript build + standalone CLI binary ----
 
       - name: Install dependencies (cached prebuild)
         if: steps.prebuild-cache.outputs.cache-hit == 'true'
@@ -338,51 +327,172 @@ jobs:
       - name: Compile CLI binary
         run: $HOME/.bun/bin/bun run compile
 
-      # ---- Smoke tests ----
-
       - name: Smoke test - version
         run: |
           VERSION=$(packages/podkit-cli/bin/podkit --version)
           echo "Version: $VERSION"
-          if [ -z "$VERSION" ]; then
-            echo "ERROR: --version produced no output"
-            exit 1
-          fi
+          [ -n "$VERSION" ] || { echo "ERROR: --version produced no output"; exit 1; }
 
       - name: Smoke test - help
         run: packages/podkit-cli/bin/podkit --help
 
       - name: Smoke test - dynamic deps
         run: |
-          echo "Dynamic dependencies:"
           ldd packages/podkit-cli/bin/podkit || true
           if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
-            echo "ERROR: Found unexpected dynamic dependencies"
-            exit 1
+            echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
-      - name: Smoke test - dummy iPod device info
+      - name: Smoke test - dummy iPod
         run: |
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
           OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
           if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"
-            exit 1
+            echo "ERROR: Native addon failed to load"; exit 1
           fi
-
-      # ---- Upload (release only) ----
 
       - name: Create tarball
         if: inputs.upload-artifacts
         run: |
           cd packages/podkit-cli/bin
-          tar czf "${GITHUB_WORKSPACE}/podkit-linux-${{ matrix.arch }}-musl.tar.gz" podkit
+          tar czf "${GITHUB_WORKSPACE}/podkit-linux-x64-musl.tar.gz" podkit
 
       - name: Upload tarball
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: podkit-linux-${{ matrix.arch }}-musl
-          path: podkit-linux-${{ matrix.arch }}-musl.tar.gz
+          name: podkit-linux-x64-musl
+          path: podkit-linux-x64-musl.tar.gz
+          retention-days: 30
+
+  # arm64 musl: can't use container: alpine on ARM runners (GH Actions limitation)
+  # Instead, run checkout/cache on host, build steps via docker run.
+  build-musl-arm64:
+    runs-on: ubuntu-24.04-arm
+    name: Build linux-arm64-musl
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache prebuild
+        id: prebuild-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/libgpod-node/prebuilds/
+          key: prebuild-linux-arm64-musl-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
+
+      - name: Cache static dependencies
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        id: static-cache
+        uses: actions/cache@v4
+        with:
+          path: static-deps
+          key: static-deps-linux-arm64-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+
+      - name: Build prebuild in Alpine
+        if: steps.prebuild-cache.outputs.cache-hit != 'true'
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            -e STATIC_DEPS_DIR=/workspace/static-deps \
+            -e WORK_DIR=/tmp/prebuild-work \
+            alpine:3.21 sh -c '
+              set -e
+              echo "==> Installing build dependencies..."
+              apk add --no-cache \
+                bash build-base pkgconf python3 curl git \
+                glib-dev gdk-pixbuf-dev \
+                libplist-dev libffi-dev sqlite-dev \
+                libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+                intltool autoconf automake libtool gtk-doc \
+                meson ninja perl-xml-parser linux-headers \
+                nodejs npm
+
+              if [ ! -f /workspace/static-deps/lib/libgpod.a ] || [ ! -f /workspace/static-deps/lib/libgdk_pixbuf-2.0.a ]; then
+                echo "==> Building static dependencies..."
+                bash tools/prebuild/build-static-deps.sh
+              else
+                echo "==> Static dependencies cached, skipping build"
+              fi
+
+              echo "==> Installing Bun..."
+              curl -fsSL https://bun.sh/install | bash
+              export PATH="$HOME/.bun/bin:$PATH"
+
+              echo "==> Installing Node.js dependencies..."
+              bun install
+
+              echo "==> Creating prebuild..."
+              cd packages/libgpod-node
+              npx prebuildify --napi --strip
+              mv prebuilds/linux-arm64 prebuilds/linux-arm64-musl
+
+              echo "==> Verifying static linking..."
+              PREBUILD=$(find prebuilds -name "*.node" | head -1)
+              ldd "$PREBUILD" || true
+              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+                echo "ERROR: Found unexpected dynamic dependencies"
+                exit 1
+              fi
+            '
+
+      - name: List prebuilds
+        run: find packages/libgpod-node/prebuilds -type f -name "*.node" | sort
+
+      - name: Build and compile in Alpine
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            alpine:3.21 sh -c '
+              set -e
+              apk add --no-cache bash curl unzip glib gdk-pixbuf libplist libpng libjpeg-turbo tiff
+
+              echo "==> Installing Bun..."
+              curl -fsSL https://bun.sh/install | bash
+              export PATH="$HOME/.bun/bin:$PATH"
+
+              echo "==> Installing dependencies..."
+              bun install --frozen-lockfile --ignore-scripts
+
+              echo "==> Building packages..."
+              bunx turbo run build --filter=!@podkit/docs-site
+
+              echo "==> Compiling CLI binary..."
+              bun run compile
+
+              echo "==> Smoke tests..."
+              VERSION=$(packages/podkit-cli/bin/podkit --version)
+              echo "Version: $VERSION"
+              [ -n "$VERSION" ] || { echo "ERROR: --version produced no output"; exit 1; }
+
+              packages/podkit-cli/bin/podkit --help
+
+              ldd packages/podkit-cli/bin/podkit || true
+              if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+                echo "ERROR: Found unexpected dynamic dependencies"; exit 1
+              fi
+
+              mkdir -p /tmp/test-ipod/iPod_Control/iTunes
+              OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+              echo "$OUTPUT"
+              if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
+                echo "ERROR: Native addon failed to load"; exit 1
+              fi
+            '
+
+      - name: Create tarball
+        if: inputs.upload-artifacts
+        run: |
+          cd packages/podkit-cli/bin
+          tar czf "${GITHUB_WORKSPACE}/podkit-linux-arm64-musl.tar.gz" podkit
+
+      - name: Upload tarball
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podkit-linux-arm64-musl
+          path: podkit-linux-arm64-musl.tar.gz
           retention-days: 30

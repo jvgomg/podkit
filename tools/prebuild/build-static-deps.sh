@@ -199,7 +199,9 @@ elif [ "$OS" = "Linux" ]; then
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
 
-    export CFLAGS="-fPIC $(pkg-config --cflags glib-2.0 gdk-pixbuf-2.0 libplist-2.0)"
+    # -Wno-incompatible-pointer-types: libgpod 0.8.3's ithumb-writer.c triggers
+    # -Werror=incompatible-pointer-types in GCC 14+ (newer GLib g_object_ref macro)
+    export CFLAGS="-fPIC -Wno-incompatible-pointer-types $(pkg-config --cflags glib-2.0 gdk-pixbuf-2.0 libplist-2.0)"
     export LDFLAGS="$(pkg-config --libs glib-2.0)"
 
     autoreconf -fi
