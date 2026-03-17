@@ -31,6 +31,8 @@ import { createMinimalJpeg } from './fixtures/images';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Path to the real test fixture cover images (visually distinct)
+// COVER_ALBUM_A: goldberg-selections cover (blue gradient, committed to git)
+// COVER_ALBUM_B: synthetic-tests cover (green gradient, committed to git)
 const FIXTURES_PATH = join(__dirname, '..', '..', '..', '..', 'test', 'fixtures', 'audio');
 const COVER_ALBUM_A = join(FIXTURES_PATH, 'goldberg-selections', 'cover.jpg');
 const COVER_ALBUM_B = join(FIXTURES_PATH, 'synthetic-tests', 'cover.jpg');
@@ -195,11 +197,13 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
           album: 'Album B',
         });
 
-        // Set different artwork for each album using real fixture images
-        db.setTrackArtwork(handleA1, COVER_ALBUM_A);
-        db.setTrackArtwork(handleA2, COVER_ALBUM_A);
-        db.setTrackArtwork(handleB1, COVER_ALBUM_B);
-        db.setTrackArtwork(handleB2, COVER_ALBUM_B);
+        // Set different artwork for each album using real fixture images (as data buffers)
+        const imageDataA = await readFile(COVER_ALBUM_A);
+        const imageDataB = await readFile(COVER_ALBUM_B);
+        db.setTrackArtworkFromData(handleA1, imageDataA);
+        db.setTrackArtworkFromData(handleA2, imageDataA);
+        db.setTrackArtworkFromData(handleB1, imageDataB);
+        db.setTrackArtworkFromData(handleB2, imageDataB);
 
         // All tracks should have artwork before save
         expect(db.hasTrackArtwork(handleA1)).toBe(true);
