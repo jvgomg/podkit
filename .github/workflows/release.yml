@@ -200,6 +200,7 @@ jobs:
       version: ${{ needs.release.outputs.version }}
       push: true
     permissions:
+      contents: read
       packages: write
 
   # Step 5: Update the Homebrew formula in the tap repository
