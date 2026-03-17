@@ -1,7 +1,7 @@
 {
   "name": "@podkit/compatibility",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "description": "iPod model compatibility data — single source of truth for E2E tests and docs",
   "type": "module",
   "main": "./src/index.ts",
