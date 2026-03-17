@@ -156,6 +156,7 @@ Keep this table updated when creating or closing discussions.
 | 24 | Star rating sync | Library Sync | Later |
 | 25 | Play count and scrobble sync | Library Sync | Later |
 | 32 | Sound Check (volume normalization) support | Library Sync | Later |
+| 34 | Rockbox and non-iTunesDB device support | Device Support | Later |
 
 ## Documentation
 
@@ -173,6 +174,8 @@ These files contain callouts or links to specific discussions. When a feature's 
 | `docs/user-guide/collections/subsonic.md` | #11 Keychain/secret manager | Callout at line ~50 |
 | `docs/user-guide/devices/mounting-ejecting.md` | #9 Linux mount/eject | Callout at line ~61 |
 | `docs/user-guide/devices/formatting.md` | #10 Device formatting | Caution block at line ~8 |
+| `docs/devices/rockbox.md` | #34 Rockbox/non-iTunesDB support | Callout near top of page |
+| `docs/devices/other-devices.md` | #34 Rockbox/non-iTunesDB support | Inline link in Rockbox section |
 | `docs/getting-started/installation.mdx` | #8 Windows support | Callout at line ~51 |
 
 ### Updating the roadmap doc

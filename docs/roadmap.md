@@ -64,6 +64,12 @@ These features are on the roadmap but not yet scheduled. Votes and comments help
 | **Windows** | Full Windows platform support | [#8](https://github.com/jvgomg/podkit/discussions/8) |
 | **Linux mount/eject** | Native mount and eject commands for Linux | [#9](https://github.com/jvgomg/podkit/discussions/9) |
 
+### Device Support
+
+| Feature | Description | Discussion |
+|---------|-------------|------------|
+| **Rockbox and non-iTunesDB devices** | Folder-based sync mode for Rockbox firmware and standalone DAPs | [#34](https://github.com/jvgomg/podkit/discussions/34) |
+
 ### Device Management
 
 | Feature | Description | Discussion |

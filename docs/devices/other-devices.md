@@ -9,15 +9,9 @@ podkit's primary focus is Apple's stock iPod firmware — the hardest sync targe
 
 ## Rockbox
 
-iPods running [Rockbox](https://www.rockbox.org/) firmware work differently from stock firmware:
+iPods running [Rockbox](https://www.rockbox.org/) firmware can play music synced by podkit, but Rockbox doesn't read the iTunesDB — you'll need to enable Rockbox's Database feature to browse your library. See the [Rockbox compatibility guide](/devices/rockbox) for setup steps and caveats.
 
-- **Database not required**: Rockbox can browse files directly on the filesystem
-- **Dual-boot friendly**: Tracks synced via podkit are visible in both firmwares
-- **Rockbox database**: Rockbox maintains its own database separate from iTunesDB
-
-If you use Rockbox, you can still use podkit to organize and sync your music. The tracks will be playable through Rockbox's file browser or after building Rockbox's database.
-
-Since Rockbox reads files directly from the filesystem without needing a database, it's a much simpler sync target than stock firmware. Dedicated Rockbox support (syncing without the iTunesDB overhead) is a future possibility.
+Native Rockbox support (folder-based sync without iTunesDB) is a [planned feature](https://github.com/jvgomg/podkit/discussions/34).
 
 ## Standalone DAPs
 
