@@ -194,11 +194,11 @@ jobs:
       - name: Install Bun
         run: |
           apk add --no-cache bash curl unzip
+          export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
-          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies
-        run: $HOME/.bun/bin/bun install
+        run: bun install
 
       - name: Create prebuild
         working-directory: packages/libgpod-node
@@ -217,7 +217,7 @@ jobs:
 
       - name: Run tests
         working-directory: packages/libgpod-node
-        run: $HOME/.bun/bin/bun run test:unit
+        run: bun run test:unit
 
       - name: Upload prebuild
         uses: actions/upload-artifact@v4
@@ -253,8 +253,8 @@ jobs:
 
               bash tools/prebuild/build-static-deps.sh
 
+              export BUN_INSTALL=/usr/local
               curl -fsSL https://bun.sh/install | bash
-              export PATH="$HOME/.bun/bin:$PATH"
               bun install
 
               cd packages/libgpod-node

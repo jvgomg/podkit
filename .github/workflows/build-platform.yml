@@ -288,12 +288,12 @@ jobs:
       - name: Install Bun
         run: |
           apk add --no-cache bash curl unzip
+          export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
-          echo "$HOME/.bun/bin" >> "$GITHUB_PATH"
 
       - name: Install dependencies (with scripts for prebuild)
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
-        run: $HOME/.bun/bin/bun install
+        run: bun install
 
       - name: Create prebuild
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -319,13 +319,13 @@ jobs:
 
       - name: Install dependencies (cached prebuild)
         if: steps.prebuild-cache.outputs.cache-hit == 'true'
-        run: $HOME/.bun/bin/bun install --frozen-lockfile --ignore-scripts
+        run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Build packages
-        run: $HOME/.bun/bin/bunx turbo run build --filter=!@podkit/docs-site
+        run: bunx turbo run build --filter=!@podkit/docs-site
 
       - name: Compile CLI binary
-        run: $HOME/.bun/bin/bun run compile
+        run: bun run compile
 
       - name: Smoke test - version
         run: |
@@ -418,8 +418,8 @@ jobs:
               fi
 
               echo "==> Installing Bun..."
+              export BUN_INSTALL=/usr/local
               curl -fsSL https://bun.sh/install | bash
-              export PATH="$HOME/.bun/bin:$PATH"
 
               echo "==> Installing Node.js dependencies..."
               bun install
@@ -451,8 +451,8 @@ jobs:
               apk add --no-cache bash curl unzip glib gdk-pixbuf libplist libpng libjpeg-turbo tiff
 
               echo "==> Installing Bun..."
+              export BUN_INSTALL=/usr/local
               curl -fsSL https://bun.sh/install | bash
-              export PATH="$HOME/.bun/bin:$PATH"
 
               echo "==> Installing dependencies..."
               bun install --frozen-lockfile --ignore-scripts
