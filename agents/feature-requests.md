@@ -142,7 +142,7 @@ Keep this table updated when creating or closing discussions.
 | 9 | Linux mount and eject commands | Platform Support | Later |
 | 10 | Device formatting command | Device Management | Later |
 | 11 | Keychain and secret manager integration | Security | Later |
-| 12 | Docker distribution | Distribution | Next |
+| 12 | Docker distribution | Distribution | Shipped |
 | 13 | TUI (Terminal UI) experience | Interfaces | Later |
 | 14 | Desktop app (GUI) | Interfaces | Later |
 | 15 | Daemon mode: auto-sync on device plug-in | Daemon & Automation | Next |

@@ -13,6 +13,10 @@ Get your music on your iPod in 5 minutes. This guide walks you through each step
 - A supported iPod connected to your computer
 - Music files on your computer (or a Subsonic-compatible server)
 
+:::note[Using Docker?]
+This guide covers native CLI usage. If you'd prefer to run podkit in a container, see the [Docker guide](/getting-started/docker) instead.
+:::
+
 ## 1. Initialize Configuration
 
 Create your config file:

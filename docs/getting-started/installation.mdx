@@ -1,6 +1,6 @@
 ---
 title: Installation
-description: Install podkit via Homebrew or manual download.
+description: Install podkit via Homebrew, Docker, or manual download.
 sidebar:
   order: 1
 ---
@@ -107,6 +107,16 @@ podkit works with classic iPods that use USB Mass Storage mode. iOS devices (iPo
 :::note[Windows support]
 Windows is not currently supported. This feature is on the [roadmap](/roadmap/) — vote and comment on the [discussion](https://github.com/jvgomg/podkit/discussions/8) to help us prioritise.
 :::
+
+## Docker
+
+podkit is available as a Docker image for `linux/amd64` and `linux/arm64`, based on Alpine Linux with FFmpeg included.
+
+```bash
+docker run --rm -v ./config:/config ghcr.io/jvgomg/podkit:latest init
+```
+
+See the [Docker guide](/getting-started/docker) for full setup instructions with Docker Compose examples.
 
 ## Building from Source
 

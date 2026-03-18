@@ -24,7 +24,6 @@ Features planned for upcoming development.
 | **Daemon mode** | Background service that auto-syncs when an iPod is connected, with optional auto-eject | [#15](https://github.com/jvgomg/podkit/discussions/15) |
 | **Sync selection and filtering** | Fine-grained control over what gets synced — by genre, artist, playlist, or custom filters | [#16](https://github.com/jvgomg/podkit/discussions/16) |
 | **npm distribution** | Install podkit via `npm install -g podkit` or `npx podkit` | [#20](https://github.com/jvgomg/podkit/discussions/20) |
-| **Docker distribution** | Official Docker image with all dependencies included | [#12](https://github.com/jvgomg/podkit/discussions/12) |
 
 Even features in **Next** benefit from your input. If you have thoughts on how any of these should work — what your ideal workflow looks like, what would make it click for you — please share them in the discussion thread.
 
@@ -102,6 +101,7 @@ Features that have been completed and released.
 
 | Feature | Description | Discussion |
 |---------|-------------|------------|
+| **Docker distribution** | Official Docker image (`ghcr.io/jvgomg/podkit`) for linux/amd64 and linux/arm64, with musl release binaries | [#12](https://github.com/jvgomg/podkit/discussions/12) |
 | **Homebrew distribution** | Install podkit via `brew install jvgomg/podkit/podkit` with automatic dependency management | [#19](https://github.com/jvgomg/podkit/discussions/19) |
 
 ## Help Shape podkit
