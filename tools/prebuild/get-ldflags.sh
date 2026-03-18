@@ -67,7 +67,7 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
     add_static "${STATIC_DEPS_DIR}/lib/libplist-2.0.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libxml2.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libsqlite3.a" ""
-    add_static "${STATIC_DEPS_DIR}/lib/libintl.a" "-lintl"
+    add_static "${STATIC_DEPS_DIR}/lib/libintl.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libffi.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libpcre2-8.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libpng16.a" ""

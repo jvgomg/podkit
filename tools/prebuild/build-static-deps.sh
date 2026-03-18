@@ -189,11 +189,27 @@ elif [ "$OS" = "Linux" ]; then
   # Consolidated PKG_CONFIG_PATH for our static deps (updated as libs are built)
   STATIC_PKG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$STATIC_DEPS_DIR/lib/$MULTIARCH/pkgconfig"
 
-  # On Alpine/musl, copy libintl.a from system (gettext-static package).
-  # glib requires it, and it's not built from source.
-  if [ -f /usr/lib/libintl.a ] && [ ! -f "$STATIC_DEPS_DIR/lib/libintl.a" ]; then
-    log "Copying libintl.a from system..."
-    cp /usr/lib/libintl.a "$STATIC_DEPS_DIR/lib/"
+  # On musl (Alpine), glib references libintl_* symbols even with -Dnls=disabled
+  # because the musl-libintl header maps dcgettext -> libintl_dcgettext.
+  # Alpine's gettext-static libintl.a lacks -fPIC on x86_64, so build from source.
+  IS_MUSL=false
+  if ldd /bin/sh 2>/dev/null | grep -q musl; then IS_MUSL=true; fi
+  if $IS_MUSL && [ ! -f "$STATIC_DEPS_DIR/lib/libintl.a" ]; then
+    log "Building gettext libintl (static, -fPIC) for musl..."
+    cd "$WORK_DIR"
+    GETTEXT_VERSION="0.22.5"
+    if [ ! -f "gettext-${GETTEXT_VERSION}.tar.gz" ]; then
+      curl -L -o "gettext-${GETTEXT_VERSION}.tar.gz" \
+        "https://ftp.gnu.org/pub/gnu/gettext/gettext-${GETTEXT_VERSION}.tar.gz"
+    fi
+    rm -rf "gettext-${GETTEXT_VERSION}"
+    tar xzf "gettext-${GETTEXT_VERSION}.tar.gz"
+    cd "gettext-${GETTEXT_VERSION}/gettext-runtime"
+    ./configure --prefix="$STATIC_DEPS_DIR" --enable-static --disable-shared \
+      --disable-java --disable-csharp --disable-libasprintf \
+      CFLAGS="-fPIC"
+    make -C intl -j"$NPROC"
+    make -C intl install
   fi
 
   # -----------------------------------------------------------------------
