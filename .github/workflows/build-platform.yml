@@ -1,6 +1,13 @@
 name: Build Platform Binaries
 
 on:
+  workflow_dispatch:
+    inputs:
+      upload-artifacts:
+        description: 'Create tarballs and upload as artifacts'
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       upload-artifacts:
