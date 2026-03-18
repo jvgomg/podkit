@@ -21,7 +21,8 @@ packages/
 
 tools/
 ├── gpod-tool/       # C CLI for iPod database operations
-└── libgpod-macos/   # macOS build scripts for libgpod
+├── libgpod-macos/   # macOS build scripts for libgpod
+└── lima/            # Lima VM configs for cross-platform testing (Debian + Alpine)
 ```
 
 ## Quick Reference
@@ -37,6 +38,7 @@ bun run test:unit                # Run unit tests only
 bun run test:integration         # Run integration tests only
 bun run test:e2e                 # Run E2E tests (dummy iPod)
 bun run test --filter podkit-core # Run tests for specific package
+mise run lima:test                # Run tests on Debian + Alpine VMs
 
 # Build
 bun run build                    # Build all packages for Node.js
@@ -59,11 +61,13 @@ podkit device music --format json       # List music on device
 
 **For end users:** Only FFmpeg is required. libgpod is statically linked into prebuilt binaries.
 
-| Dependency | Debian/Ubuntu | macOS | Required for |
-|------------|---------------|-------|--------------|
-| FFmpeg | `ffmpeg` | `brew install ffmpeg` | Users + developers |
-| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | Development only |
-| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | Development only |
+| Dependency | Debian/Ubuntu | macOS | Alpine | Required for |
+|------------|---------------|-------|--------|--------------|
+| FFmpeg | `ffmpeg` | `brew install ffmpeg` | `ffmpeg` | Users + developers |
+| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | `libgpod-dev` (community) | Development only |
+| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | `glib-dev` | Development only |
+| util-linux | Pre-installed | N/A | `lsblk` | Linux device manager |
+| Lima | N/A | `brew install lima` | N/A | Cross-platform testing |
 
 See [docs/developers/development.md](docs/developers/development.md) for full setup instructions.
 
@@ -116,6 +120,7 @@ Read these documents based on what you're working on:
 | Clean Artists | [docs/reference/clean-artists.md](docs/reference/clean-artists.md) |
 | Sync tags | [docs/reference/sync-tags.md](docs/reference/sync-tags.md) |
 | Demo GIF package | [packages/demo/README.md](packages/demo/README.md) |
+| Lima VMs (cross-platform testing) | [tools/lima/README.md](tools/lima/README.md) |
 | Package READMEs | `packages/*/README.md` |
 | Feature requests | [agents/feature-requests.md](agents/feature-requests.md) |
 | About the project | [docs/about.md](docs/about.md) |
@@ -262,6 +267,13 @@ bun run test:integration  # Integration tests only
 bun run test:e2e          # E2E tests (dummy iPod)
 bun run test:e2e:real     # E2E tests (real iPod, requires IPOD_MOUNT)
 bun run test:e2e:docker   # E2E tests requiring Docker (Subsonic, etc.)
+
+# Cross-platform testing (Lima VMs)
+mise run lima:test         # Run tests on Debian + Alpine VMs
+mise run lima:test:debian  # Debian only
+mise run lima:test:alpine  # Alpine only
+mise run lima:stop         # Stop VMs
+mise run lima:destroy      # Delete VMs
 
 # Container cleanup (in packages/e2e-tests/)
 cd packages/e2e-tests && bun run cleanup:docker
@@ -585,3 +597,6 @@ Key files to understand:
 | Test fixture generator | `packages/test-fixtures/src/index.ts` |
 | Docker entrypoint | `docker/entrypoint.sh` |
 | Dockerfile | `docker/Dockerfile` |
+| Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |
+| Lima VM configs | `tools/lima/` |
+| Lima test runner | `tools/lima/run-tests.sh` |

@@ -1,0 +1,74 @@
+# Lima VM: Alpine 3.23
+#
+# Used for cross-platform testing of podkit on Alpine/musl systems.
+# Uses Alpine 3.23 (closest version with Lima-compatible cloud images).
+# Docker image uses Alpine 3.21 — the minor version difference is acceptable
+# for device manager and test suite validation.
+#
+# Usage:
+#   limactl start tools/lima/alpine.yaml --name=podkit-alpine
+#   limactl shell podkit-alpine
+#
+# Note: Bun has experimental musl/Alpine support. If Bun fails to install,
+# use Node.js + npm as the test runner fallback.
+
+images:
+  - location: 'https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/nocloud_alpine-3.23.3-aarch64-uefi-cloudinit-r0.qcow2'
+    arch: 'aarch64'
+  - location: 'https://dl-cdn.alpinelinux.org/alpine/v3.23/releases/cloud/nocloud_alpine-3.23.3-x86_64-uefi-cloudinit-r0.qcow2'
+    arch: 'x86_64'
+
+# Alpine uses OpenRC, not systemd — disable containerd (we don't need it)
+containerd:
+  system: false
+  user: false
+
+# Share the host filesystem into the VM for running tests against the repo
+mounts:
+  - location: '~'
+    writable: true
+
+# VM resources
+cpus: 4
+memory: '4GiB'
+disk: '10GiB'
+
+provision:
+  # System-level dependencies (run as root)
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+
+      echo "=== Enabling community repository ==="
+      sed -i 's/^#\(.*\/community\)/\1/' /etc/apk/repositories
+
+      echo "=== Installing system dependencies ==="
+      apk update
+      apk add \
+        build-base \
+        python3 \
+        pkgconf \
+        libgpod-dev \
+        glib-dev \
+        ffmpeg \
+        lsblk \
+        git \
+        curl \
+        bash \
+        nodejs \
+        npm
+
+  # Install Bun as the Lima user (not root — Bun installs to $HOME/.bun/)
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux
+
+      echo "=== Installing Bun ==="
+      # Bun has experimental musl support — this may fail on some architectures
+      curl -fsSL https://bun.sh/install | bash || echo "WARN: Bun install failed (musl not supported?). Use node/npm fallback."
+
+      # Add Bun to PATH for future shells
+      echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+      echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.profile

@@ -97,15 +97,47 @@ For the full iFlash troubleshooting guide — including manual workarounds and a
 
 ## Linux
 
-Linux support for mount and eject commands is not yet implemented. While podkit's core sync functionality works on Linux, the `podkit device mount` and `podkit device eject` commands are not available.
+podkit supports mounting and ejecting iPods on Linux (Debian, Ubuntu, Alpine, and other distributions).
 
-In the meantime, use standard Linux tools:
+### Automatic Mount
 
 ```bash
-# Mount
+podkit mount
+```
+
+podkit tries the best available method:
+
+1. **udisks2** (if installed) — mounts without root via `udisksctl mount`. The mount point is chosen by udisks2 (typically `/media/$USER/LABEL`).
+2. **Manual mount** — falls back to `mount -t vfat`, which requires root. podkit will prompt you to re-run with `sudo`.
+
+The default mount point for manual mounts is `/tmp/podkit-{volumeName}`. Override it with `--mount-point`:
+
+```bash
+podkit mount --mount-point /mnt/ipod
+```
+
+### Eject
+
+```bash
+podkit eject
+podkit eject --force   # Lazy unmount if device is busy
+```
+
+Like mounting, eject tries `udisksctl unmount` first, falling back to `umount`. The `--force` flag uses `umount -l` (lazy unmount) which detaches even if files are open.
+
+### Manual Commands
+
+If you prefer to use system tools directly:
+
+```bash
+# Find your device
+lsblk -o NAME,UUID,LABEL,FSTYPE,SIZE,MOUNTPOINT
+
+# Mount (with udisks2, no root needed)
 udisksctl mount -b /dev/sdX1
-# or
-sudo mount /dev/sdX1 /mnt/ipod
+
+# Mount (without udisks2, requires root)
+sudo mount -t vfat /dev/sdX1 /tmp/podkit-ipod
 
 # Unmount
 udisksctl unmount -b /dev/sdX1
@@ -113,9 +145,10 @@ udisksctl unmount -b /dev/sdX1
 sudo umount /mnt/ipod
 ```
 
-:::note[Want Linux mount/eject support?]
-This feature is on the [roadmap](/roadmap/). Vote and comment on the [discussion](https://github.com/jvgomg/podkit/discussions/9) to help prioritise it.
-:::
+### Requirements
+
+- **`lsblk`** (from `util-linux`) is required for device detection. It's pre-installed on Debian/Ubuntu. On Alpine: `apk add util-linux`.
+- **`udisks2`** is optional but recommended for unprivileged mount/eject. Install with `apt install udisks2` (Debian) or `apk add udisks2` (Alpine).
 
 ---
 

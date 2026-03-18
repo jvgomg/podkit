@@ -256,6 +256,21 @@ The build is layered for speed: system deps, Homebrew, and ffmpeg are cached bui
 
 Source: `tools/brew-test/`
 
+## Cross-Platform Testing (Lima VMs)
+
+The test suite can be run on Linux via Lima VMs to validate platform-specific code (e.g., the Linux device manager).
+
+```bash
+# Run tests on both Debian and Alpine
+mise run lima:test
+
+# Run on a specific distro
+mise run lima:test:debian
+mise run lima:test:alpine
+```
+
+VMs are created automatically on first run. See [Development Setup](/developers/development#cross-platform-testing-with-lima) for setup instructions and `tools/lima/README.md` for VM details.
+
 ## Quality Preset Device Testing
 
 See [Quality Preset Device Testing](/developers/quality-preset-testing) for the methodology and results of testing preset change detection with real iPod hardware.

@@ -36,6 +36,7 @@ RUN echo "**** install runtime dependencies ****" && \
     apk add --no-cache \
       bash \
       ffmpeg \
+      lsblk \
       su-exec \
       shadow \
       tzdata && \

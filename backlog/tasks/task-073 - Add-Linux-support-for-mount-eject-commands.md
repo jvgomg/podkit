@@ -1,14 +1,15 @@
 ---
 id: TASK-073
 title: Add Linux support for mount/eject commands
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-09 14:41'
-updated_date: '2026-03-18 02:33'
+updated_date: '2026-03-18 12:53'
 labels:
   - cli
   - linux
   - cross-platform
+milestone: Linux Device Manager
 dependencies: []
 priority: low
 ---
@@ -33,14 +34,14 @@ Reference: TASK-068 implemented macOS support.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-## UUID validation dependency
+Parent task. Implementation broken into TASK-148 through TASK-158 under the Linux Device Manager milestone.
 
-UUID validation during sync (implemented for macOS via `findByVolumeUuid`) is a no-op on Linux because `UnsupportedDeviceManager` always returns `null`. This means Docker users who configure a `volumeUuid` get no protection against syncing to the wrong iPod.
+## 2026-03-18: Work started
 
-The `LinuxDeviceManager` needs to implement `findByVolumeUuid()` — likely using `lsblk --json -o UUID,MOUNTPOINT,FSTYPE` or parsing `/dev/disk/by-uuid/` symlinks — to enable UUID validation on Linux and in Docker containers.
+Broken into 11 subtasks (TASK-148 through TASK-158) across 3 phases:
+- Phase 1: Implementation (TASK-148–156)
+- Phase 2: Infrastructure — Lima VMs + CI matrix (TASK-150, TASK-157)
+- Phase 3: Manual hardware test procedure (TASK-158)
 
-Related tasks:
-- TASK-146: Show filesystem UUID in `device info` for path-mode devices
-- TASK-144: Docker daemon mode (UUID is primary mechanism for device matching)
-- TASK-145: Docker USB auto-mount (UUID distinguishes multiple connected iPods)
+Design decisions documented in conversation. Key choices: single LinuxDeviceManager class, lsblk as required dependency, udisksctl→mount fallback for privilege escalation, /tmp/podkit-{volumeName} default mount path.
 <!-- SECTION:NOTES:END -->

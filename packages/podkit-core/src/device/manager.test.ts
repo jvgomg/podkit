@@ -10,6 +10,7 @@ import {
   isPlatformSupported,
 } from './manager.js';
 import { UnsupportedDeviceManager } from './platforms/unsupported.js';
+import { LinuxDeviceManager } from './platforms/linux.js';
 
 describe('createDeviceManager', () => {
   it('creates macOS manager for darwin platform', () => {
@@ -18,11 +19,11 @@ describe('createDeviceManager', () => {
     expect(manager.isSupported).toBe(true);
   });
 
-  it('creates unsupported manager for linux platform', () => {
+  it('creates Linux manager for linux platform', () => {
     const manager = createDeviceManager('linux');
     expect(manager.platform).toBe('linux');
-    expect(manager.isSupported).toBe(false);
-    expect(manager).toBeInstanceOf(UnsupportedDeviceManager);
+    expect(manager.isSupported).toBe(true);
+    expect(manager).toBeInstanceOf(LinuxDeviceManager);
   });
 
   it('creates unsupported manager for win32 platform', () => {
