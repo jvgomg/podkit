@@ -211,12 +211,15 @@ jobs:
           echo "$OUTPUT"
           rm -rf "$ISOLATED_DIR"
 
-          # The empty iPod has no iTunesDB, so libgpod returns a database error.
-          # This error message proves the native binding loaded and executed —
-          # if it hadn't, we'd see "Failed to load native binding" instead.
+          # The empty iPod has no iTunesDB, so libgpod returns "Couldn't find an iPod database".
+          # This proves the native binding loaded and executed C++ code.
+          # If the binding failed, we'd see "Failed to load native binding" instead.
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
           if ! echo "$OUTPUT" | grep -q "Could not read"; then
             echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-            echo "If output mentions 'native binding' or 'Failed to load', the .node addon is not embedded."
             exit 1
           fi
 
@@ -371,9 +374,12 @@ jobs:
           echo "$OUTPUT"
           rm -rf "$ISOLATED_DIR"
 
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
           if ! echo "$OUTPUT" | grep -q "Could not read"; then
             echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-            echo "If output mentions 'native binding' or 'Failed to load', the .node addon is not embedded."
             exit 1
           fi
 
@@ -508,9 +514,12 @@ jobs:
               echo "$OUTPUT"
               rm -rf "$ISOLATED_DIR"
 
+              if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+                echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+                exit 1
+              fi
               if ! echo "$OUTPUT" | grep -q "Could not read"; then
                 echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
-                echo "If output mentions native binding or Failed to load, the .node addon is not embedded."
                 exit 1
               fi
             '

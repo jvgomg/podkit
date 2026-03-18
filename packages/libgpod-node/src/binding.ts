@@ -346,33 +346,16 @@ function findAddon(): string | null {
 }
 
 /**
- * Try to load the native binding embedded in a compiled Bun binary.
- *
- * When compiled with `bun build --compile`, Bun detects static require()
- * calls to .node files and embeds them in the binary. At runtime, the
- * file is extracted to a temp location and dlopen'd, then cleaned up.
- *
- * The staged file at ../gpod_binding.node is created by the compile script
- * (packages/podkit-cli/scripts/compile.sh) before compilation.
- */
-function loadEmbeddedBinding(): NativeBinding | null {
-  try {
-    const require = createRequire(import.meta.url);
-    // Static require path — Bun's compiler detects this and embeds the .node file.
-    // In development this file doesn't exist and the require throws, which is fine.
-    return require('../gpod_binding.node') as NativeBinding;
-  } catch {
-    return null;
-  }
-}
-
-/**
  * Load the native binding.
  *
  * Resolution order:
- * 1. Embedded binding (compiled Bun binary — single-file distribution)
+ * 1. Embedded binding via globalThis (compiled Bun binary)
  * 2. prebuilds/{platform}-{arch}/ (prebuildify convention)
  * 3. build/Release/ (local node-gyp build)
+ *
+ * For compiled binaries, the .node file is embedded by the CJS compile entry
+ * point (packages/podkit-cli/src/compile-entry.js) which stores the loaded
+ * binding on globalThis.__podkit_native_binding.
  *
  * @throws Error if the native binding cannot be loaded
  */
@@ -386,8 +369,10 @@ function loadBinding(): NativeBinding {
   }
 
   try {
-    // 1. Try embedded binding (compiled Bun binary)
-    const embedded = loadEmbeddedBinding();
+    // 1. Check for embedded binding (compiled Bun binary)
+    const embedded = (globalThis as Record<string, unknown>).__podkit_native_binding as
+      | NativeBinding
+      | undefined;
     if (embedded) {
       cachedBinding = embedded;
       return cachedBinding;

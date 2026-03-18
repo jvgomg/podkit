@@ -14,7 +14,7 @@ set -euo pipefail
 CLI_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LIBGPOD_DIR="$CLI_DIR/../libgpod-node"
 
-STAGED="$LIBGPOD_DIR/gpod_binding.node"
+STAGED="$CLI_DIR/gpod_binding.node"
 
 # Detect platform and arch using bun (always available) instead of node (may not be).
 PLATFORM=$(bun -e 'console.log(process.platform)')
@@ -54,6 +54,6 @@ trap cleanup EXIT
 # Compile the CLI binary
 cd "$CLI_DIR"
 VERSION=$(bun -e "console.log(require('./package.json').version)")
-bun build --compile src/main.ts --outfile bin/podkit --define "PODKIT_VERSION='$VERSION'"
+bun build --compile src/compile-entry.js --outfile bin/podkit --define "PODKIT_VERSION='$VERSION'"
 
 echo "Compiled: bin/podkit (v$VERSION)"
