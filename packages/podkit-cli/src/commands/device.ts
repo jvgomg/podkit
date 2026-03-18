@@ -272,6 +272,7 @@ export interface DeviceInfoOutput {
     syncTagCount?: number;
     syncTagComplete?: number;
     syncTagMissingArt?: number;
+    databaseError?: string;
   };
   error?: string;
 }
@@ -1321,6 +1322,7 @@ const infoSubcommand = new Command('info')
 
     // Try to get live status if device is connected
     let liveStatus: DeviceInfoOutput['status'] | undefined;
+    let databaseErrorIsUnexpected = false;
 
     try {
       const core = await import('@podkit/core');
@@ -1392,15 +1394,26 @@ const infoSubcommand = new Command('info')
             } finally {
               ipod.close();
             }
-          } catch {
+          } catch (err) {
             liveStatus = { mounted: true, mountPoint: resolveResult.path };
+            const message = err instanceof Error ? err.message : String(err);
+            if (err instanceof core.IpodError) {
+              // Database not found or corrupt — expected on empty/uninitialized iPods
+              liveStatus.databaseError = message;
+            } else {
+              // Unexpected error (e.g., native binding failed to load) — surface it
+              liveStatus.databaseError = message;
+              databaseErrorIsUnexpected = true;
+            }
           }
         } else if (resolveResult.deviceInfo) {
           liveStatus = { mounted: false };
         }
       }
-    } catch {
-      // podkit-core not available, skip live status
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      liveStatus = { mounted: false, databaseError: message };
+      databaseErrorIsUnexpected = true;
     }
 
     out.result<DeviceInfoOutput>(
@@ -1505,6 +1518,15 @@ const infoSubcommand = new Command('info')
           if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {
             out.print(`  Video:         ${formatNumber(liveStatus.videoCount)} videos`);
           }
+
+          if (liveStatus.databaseError) {
+            out.newline();
+            if (databaseErrorIsUnexpected) {
+              out.error(`Cannot read iPod database: ${liveStatus.databaseError}`);
+            } else {
+              out.print(`  Database:      Could not read (${liveStatus.databaseError})`);
+            }
+          }
         }
 
         if (device) {
@@ -1553,6 +1575,10 @@ const infoSubcommand = new Command('info')
         }
       }
     );
+
+    if (databaseErrorIsUnexpected) {
+      process.exitCode = 1;
+    }
   });
 
 // =============================================================================
