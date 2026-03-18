@@ -2,6 +2,9 @@
 #
 # Run the podkit test suite inside Lima VMs.
 #
+# The repo is rsynced to a VM-local directory to avoid overwriting
+# macOS native binaries (the Lima filesystem mount is shared).
+#
 # Usage:
 #   ./tools/lima/run-tests.sh              # Both VMs
 #   ./tools/lima/run-tests.sh debian       # Debian only
@@ -11,6 +14,7 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 LIMA_DIR="$REPO_DIR/tools/lima"
+VM_WORK_DIR="/tmp/podkit-test"
 
 ensure_vm() {
   local name=$1 config=$2
@@ -49,7 +53,32 @@ run_tests() {
   local name=$1
   echo ""
   echo "=== Running tests on $name ==="
-  limactl shell "$name" -- bash -c "export PATH=\$HOME/.bun/bin:\$PATH && cd '$REPO_DIR' && bun install --frozen-lockfile && bun run test --filter @podkit/core"
+  echo "Syncing repo to VM-local directory..."
+
+  # rsync source to VM-local disk to avoid overwriting macOS native binaries.
+  # Excludes node_modules and build artifacts — bun install runs fresh in the VM.
+  limactl shell "$name" -- bash -c "
+    set -e
+    export PATH=\$HOME/.bun/bin:\$PATH
+
+    mkdir -p $VM_WORK_DIR
+    rsync -a --delete \
+      --exclude node_modules \
+      --exclude .turbo \
+      --exclude dist \
+      --exclude build \
+      --exclude 'packages/*/dist' \
+      --exclude 'packages/libgpod-node/build' \
+      --exclude 'packages/libgpod-node/prebuilds' \
+      --exclude 'packages/demo/bin' \
+      --exclude 'packages/podkit-cli/bin' \
+      '$REPO_DIR/' '$VM_WORK_DIR/'
+
+    cd '$VM_WORK_DIR'
+    bun install
+    bun run test --filter @podkit/core
+  "
+
   echo "=== $name: PASSED ==="
 }
 
