@@ -58,4 +58,5 @@ export {
 
 // Platform-specific managers (for testing)
 export { MacOSDeviceManager, createMacOSManager } from './platforms/macos.js';
+export { LinuxDeviceManager, createLinuxManager } from './platforms/linux.js';
 export { UnsupportedDeviceManager, createUnsupportedManager } from './platforms/unsupported.js';

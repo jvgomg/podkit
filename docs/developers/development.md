@@ -266,6 +266,7 @@ podkit/
 +-- tools/
 |   +-- gpod-tool/       # C CLI for iPod database operations
 |   +-- libgpod-macos/   # macOS build scripts for libgpod
+|   +-- lima/            # Lima VM configs for cross-platform testing
 |
 +-- docs/                # Documentation
 +-- test/                # Shared test fixtures
@@ -276,6 +277,35 @@ podkit/
 - [Testing](/developers/testing) - Testing strategy and conventions
 - [Architecture](/developers/architecture) - Component design
 - [ADRs](https://github.com/jvgomg/podkit/tree/main/adr) - Architecture decision records
+
+## Cross-Platform Testing with Lima
+
+[Lima](https://lima-vm.io) runs Linux VMs on macOS for testing podkit on Debian and Alpine. This is used to validate the Linux device manager and ensure the test suite passes on Linux.
+
+### Setup
+
+```bash
+brew install lima
+```
+
+### Running Tests on Linux
+
+```bash
+# Run tests on both Debian and Alpine (creates VMs on first run)
+mise run lima:test
+
+# Run on a specific distro
+mise run lima:test:debian
+mise run lima:test:alpine
+
+# Stop VMs when done (preserves state for fast restart)
+mise run lima:stop
+
+# Delete VMs entirely
+mise run lima:destroy
+```
+
+VMs are created and provisioned automatically on first run. Subsequent runs reuse the existing VMs. See `tools/lima/README.md` for VM details and troubleshooting.
 
 ## Troubleshooting
 

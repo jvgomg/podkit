@@ -7,10 +7,12 @@ import {
   resolveDevice,
   parseCliDeviceArg,
   resolveEffectiveDevice,
+  resolveDevicePath,
   getDeviceIdentity,
 } from './device.js';
 import type { PodkitConfig } from '../config/types.js';
-import { DEFAULT_TRANSFORMS_CONFIG } from '../config/types.js';
+import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from '../config/types.js';
+import type { DeviceManager, PlatformDeviceInfo } from '@podkit/core';
 
 // Minimal config for testing
 function makeConfig(overrides: Partial<PodkitConfig> = {}): PodkitConfig {
@@ -19,6 +21,7 @@ function makeConfig(overrides: Partial<PodkitConfig> = {}): PodkitConfig {
     artwork: true,
     tips: true,
     transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
     ...overrides,
   };
 }
@@ -208,5 +211,134 @@ describe('getDeviceIdentity', () => {
   it('returns undefined for undefined device', () => {
     const identity = getDeviceIdentity(undefined);
     expect(identity).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// resolveDevicePath — UUID validation
+// =============================================================================
+
+/**
+ * Create a mock DeviceManager for testing
+ */
+function mockManager(devices: PlatformDeviceInfo[] = []): DeviceManager {
+  return {
+    platform: 'darwin',
+    isSupported: true,
+    listDevices: async () => devices,
+    findIpodDevices: async () => devices,
+    findByVolumeUuid: async (uuid: string) => devices.find((d) => d.volumeUuid === uuid) ?? null,
+    eject: async () => ({ success: false, error: 'mock' }),
+    mount: async () => ({ success: false, error: 'mock' }),
+    getManualInstructions: () => ({ success: false, error: 'mock' }),
+  };
+}
+
+function mockDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDeviceInfo {
+  return {
+    identifier: 'disk2s2',
+    volumeName: 'IPOD',
+    volumeUuid: 'ABC-123',
+    size: 160_000_000_000,
+    isMounted: true,
+    mountPoint: '/Volumes/IPOD',
+    fileSystem: 'FAT32',
+    ...overrides,
+  };
+}
+
+describe('resolveDevicePath', () => {
+  it('returns CLI path directly when no UUID configured', async () => {
+    const result = await resolveDevicePath({
+      cliPath: '/media/ipod',
+      manager: mockManager(),
+    });
+    expect(result.path).toBe('/media/ipod');
+    expect(result.source).toBe('cli');
+  });
+
+  it('returns CLI path when UUID matches device at same path', async () => {
+    const device = mockDevice({ volumeUuid: 'ABC-123', mountPoint: '/media/ipod' });
+    const result = await resolveDevicePath({
+      cliPath: '/media/ipod',
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([device]),
+    });
+    expect(result.path).toBe('/media/ipod');
+    expect(result.source).toBe('cli');
+    expect(result.deviceInfo).toBeDefined();
+  });
+
+  it('returns error when UUID resolves to different mount point', async () => {
+    const device = mockDevice({ volumeUuid: 'ABC-123', mountPoint: '/Volumes/IPOD' });
+    const result = await resolveDevicePath({
+      cliPath: '/media/ipod',
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([device]),
+    });
+    expect(result.path).toBeUndefined();
+    expect(result.error).toContain('UUID mismatch');
+    expect(result.error).toContain('ABC-123');
+    expect(result.error).toContain('/media/ipod');
+    expect(result.error).toContain('/Volumes/IPOD');
+  });
+
+  it('proceeds with CLI path when UUID not found (no device detection)', async () => {
+    const result = await resolveDevicePath({
+      cliPath: '/media/ipod',
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([]), // No devices found (e.g., Linux)
+    });
+    expect(result.path).toBe('/media/ipod');
+    expect(result.source).toBe('cli');
+  });
+
+  it('auto-detects device by UUID when no CLI path', async () => {
+    const device = mockDevice({ volumeUuid: 'ABC-123', mountPoint: '/Volumes/IPOD' });
+    const result = await resolveDevicePath({
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([device]),
+    });
+    expect(result.path).toBe('/Volumes/IPOD');
+    expect(result.source).toBe('uuid');
+  });
+
+  it('returns error when UUID auto-detect finds no device', async () => {
+    const result = await resolveDevicePath({
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([]),
+    });
+    expect(result.path).toBeUndefined();
+    expect(result.error).toContain('ABC-123');
+    expect(result.error).toContain('not found');
+  });
+
+  it('returns helpful error for device without UUID', async () => {
+    const result = await resolveDevicePath({
+      deviceIdentity: { volumeName: 'IPOD' },
+      manager: mockManager(),
+    });
+    expect(result.path).toBeUndefined();
+    expect(result.error).toContain('no volumeUuid');
+  });
+
+  it('returns generic error when no device identity at all', async () => {
+    const result = await resolveDevicePath({
+      manager: mockManager(),
+    });
+    expect(result.path).toBeUndefined();
+    expect(result.error).toContain('No iPod configured');
+  });
+
+  it('handles trailing slash normalization in path comparison', async () => {
+    const device = mockDevice({ volumeUuid: 'ABC-123', mountPoint: '/media/ipod/' });
+    const result = await resolveDevicePath({
+      cliPath: '/media/ipod',
+      deviceIdentity: { volumeUuid: 'ABC-123', volumeName: 'IPOD' },
+      manager: mockManager([device]),
+    });
+    // Should match despite trailing slash difference
+    expect(result.path).toBe('/media/ipod');
+    expect(result.error).toBeUndefined();
   });
 });

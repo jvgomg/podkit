@@ -8,7 +8,7 @@ import {
   type CliContext,
 } from './context.js';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from './config/index.js';
-import { DEFAULT_TRANSFORMS_CONFIG } from './config/index.js';
+import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './config/index.js';
 
 describe('CLI context', () => {
   const mockConfig: PodkitConfig = {
@@ -16,6 +16,7 @@ describe('CLI context', () => {
     artwork: true,
     tips: true,
     transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
     music: {
       main: { path: '/test/music' },
     },

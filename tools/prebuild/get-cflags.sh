@@ -3,7 +3,7 @@
 #
 # When STATIC_DEPS_DIR is set (CI prebuild):
 #   macOS: Use Homebrew pkg-config for headers (we don't copy headers to STATIC_DEPS_DIR)
-#   Linux: Use system pkg-config for headers
+#   Linux: Use STATIC_DEPS_DIR pkg-config for headers (everything built from source)
 # Otherwise: falls back to local pkg-config (development build).
 
 set -e
@@ -16,8 +16,15 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
     PKG_CONFIG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$HOMEBREW_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig" \
       pkg-config --cflags libgpod-1.0 glib-2.0 gdk-pixbuf-2.0
   else
-    # Linux: libgpod headers from STATIC_DEPS_DIR (built from source), rest from system
-    PKG_CONFIG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:${PKG_CONFIG_PATH}" \
+    # Linux: headers from STATIC_DEPS_DIR (everything built from source)
+    # Include multi-arch path since meson may install glib to lib/{arch}-linux-gnu/
+    LINUX_ARCH="$(uname -m)"
+    case "$LINUX_ARCH" in
+      x86_64)  MULTIARCH="x86_64-linux-gnu" ;;
+      aarch64) MULTIARCH="aarch64-linux-gnu" ;;
+      *)       MULTIARCH="$LINUX_ARCH-linux-gnu" ;;
+    esac
+    PKG_CONFIG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$STATIC_DEPS_DIR/lib/$MULTIARCH/pkgconfig" \
       pkg-config --cflags libgpod-1.0 glib-2.0 gdk-pixbuf-2.0
   fi
 else

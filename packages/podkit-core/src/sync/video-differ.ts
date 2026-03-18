@@ -19,11 +19,12 @@
 
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { ContentType } from '../video/metadata.js';
+import type { VideoTransformsConfig } from '../transforms/types.js';
 import {
-  buildVideoSyncTag,
-  parseSyncTag,
-  syncTagMatchesConfig,
-} from './sync-tags.js';
+  getVideoTransformMatchKeys,
+  hasEnabledVideoTransforms,
+} from '../transforms/video-pipeline.js';
+import { buildVideoSyncTag, parseSyncTag, syncTagMatchesConfig } from './sync-tags.js';
 import { detectBitratePresetMismatch } from './upgrades.js';
 
 // =============================================================================
@@ -82,6 +83,25 @@ export interface MatchedVideo {
 }
 
 /**
+ * Reason why a video needs a metadata-only update
+ */
+export type VideoUpdateReason = 'transform-apply' | 'transform-remove';
+
+/**
+ * A video that needs a metadata-only update (no file re-transfer)
+ */
+export interface VideoUpdateTrack {
+  /** Video from collection source */
+  collection: CollectionVideo;
+  /** Video on iPod */
+  ipod: IPodVideo;
+  /** Why the update is needed */
+  reason: VideoUpdateReason;
+  /** The transformed series title to write (or original to revert to) */
+  newSeriesTitle?: string;
+}
+
+/**
  * Result of comparing video collection to iPod
  */
 export interface VideoSyncDiff {
@@ -93,6 +113,8 @@ export interface VideoSyncDiff {
   existing: MatchedVideo[];
   /** Videos that need re-transcoding due to quality preset change */
   toReplace: MatchedVideo[];
+  /** Videos that need metadata-only updates (e.g., transform changes) */
+  toUpdate: VideoUpdateTrack[];
 }
 
 /**
@@ -117,6 +139,12 @@ export interface VideoDiffOptions {
    * When set, enables sync tag-based preset change detection for video.
    */
   resolvedVideoQuality?: string;
+
+  /**
+   * Video transform configuration for show language, etc.
+   * When set, enables dual-key matching for transform-aware sync.
+   */
+  videoTransforms?: VideoTransformsConfig;
 }
 
 // =============================================================================
@@ -257,15 +285,55 @@ export function diffVideos(
   // Output arrays
   const toAdd: CollectionVideo[] = [];
   const existing: MatchedVideo[] = [];
+  const toUpdate: VideoUpdateTrack[] = [];
+
+  // Check if video transforms are configured
+  const videoTransforms = _options?.videoTransforms;
+  const transformsEnabled = videoTransforms && hasEnabledVideoTransforms(videoTransforms);
 
   // Process each collection video
   for (const collectionVideo of collectionVideos) {
-    const key = generateVideoMatchKey(collectionVideo);
-    const ipodMatch = ipodIndex.get(key);
+    // Get both original and transformed keys for dual-key matching
+    const { originalKey, transformedKey, transformApplied, transformedSeriesTitle } =
+      getVideoTransformMatchKeys(collectionVideo, generateVideoMatchKey, videoTransforms);
+
+    // Try to find iPod match - check original key first, then transformed
+    let ipodMatch = ipodIndex.get(originalKey);
+    let matchedByOriginalKey = !!ipodMatch;
+
+    // If no match by original key and transform was applied, try transformed key
+    if (!ipodMatch && transformApplied) {
+      ipodMatch = ipodIndex.get(transformedKey);
+      matchedByOriginalKey = false;
+    }
 
     if (ipodMatch) {
       // Video exists on iPod - mark as matched
       matchedIpodIds.add(ipodMatch.id);
+
+      // Determine if update is needed for transforms
+      if (transformApplied) {
+        if (matchedByOriginalKey && transformsEnabled) {
+          // iPod has original metadata, transforms are enabled → apply transform
+          toUpdate.push({
+            collection: collectionVideo,
+            ipod: ipodMatch,
+            reason: 'transform-apply',
+            newSeriesTitle: transformedSeriesTitle,
+          });
+          continue;
+        } else if (!matchedByOriginalKey && !transformsEnabled) {
+          // iPod has transformed metadata, transforms are disabled → revert
+          toUpdate.push({
+            collection: collectionVideo,
+            ipod: ipodMatch,
+            reason: 'transform-remove',
+            newSeriesTitle: collectionVideo.seriesTitle,
+          });
+          continue;
+        }
+      }
+
       existing.push({
         collection: collectionVideo,
         ipod: ipodMatch,
@@ -325,6 +393,7 @@ export function diffVideos(
     toRemove,
     existing,
     toReplace,
+    toUpdate,
   };
 }
 

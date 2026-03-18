@@ -7,7 +7,7 @@
 
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { arch as osArch, platform as osPlatform } from 'os';
@@ -225,7 +225,22 @@ function getPackageRootCandidates(): string[] {
   const __dirname = dirname(__filename);
   candidates.push(dirname(__dirname));
 
-  // 3. Walk up from this file looking for node_modules
+  // 3. Relative to the executable (for compiled/standalone installs like Homebrew)
+  // In a compiled Bun binary, import.meta.url resolves to /$bunfs, so we need
+  // to search relative to the actual executable on the real filesystem.
+  try {
+    const execDir = dirname(process.execPath);
+    candidates.push(execDir);
+    // Also try resolved path in case process.execPath is a symlink
+    const realExecDir = dirname(realpathSync(process.execPath));
+    if (realExecDir !== execDir) {
+      candidates.push(realExecDir);
+    }
+  } catch {
+    // process.execPath may not be available in all environments
+  }
+
+  // 4. Walk up from this file looking for node_modules
   let searchDir = __dirname;
   const visited = new Set<string>();
   while (searchDir && !visited.has(searchDir)) {
@@ -334,8 +349,13 @@ function findAddon(): string | null {
  * Load the native binding.
  *
  * Resolution order:
- * 1. prebuilds/{platform}-{arch}/ (prebuildify convention)
- * 2. build/Release/ (local node-gyp build)
+ * 1. Embedded binding via globalThis (compiled Bun binary)
+ * 2. prebuilds/{platform}-{arch}/ (prebuildify convention)
+ * 3. build/Release/ (local node-gyp build)
+ *
+ * For compiled binaries, the .node file is embedded by the CJS compile entry
+ * point (packages/podkit-cli/src/compile-entry.js) which stores the loaded
+ * binding on globalThis.__podkit_native_binding.
  *
  * @throws Error if the native binding cannot be loaded
  */
@@ -349,10 +369,25 @@ function loadBinding(): NativeBinding {
   }
 
   try {
+    // 1. Check for embedded binding (compiled Bun binary)
+    const embedded = (globalThis as Record<string, unknown>).__podkit_native_binding as
+      | NativeBinding
+      | undefined;
+    if (embedded) {
+      cachedBinding = embedded;
+      return cachedBinding;
+    }
+
+    // 2. Try filesystem resolution (development, npm install)
     const require = createRequire(import.meta.url);
     const addonPath = findAddon();
 
     if (!addonPath) {
+      // Check for a stored error from the compile-entry.js shim (embedded binary)
+      const shimError = (globalThis as Record<string, unknown>).__podkit_native_binding_error;
+      if (shimError) {
+        throw shimError instanceof Error ? shimError : new Error(String(shimError));
+      }
       const candidates = getPackageRootCandidates();
       throw new Error(
         'Native binding not found. Searched package roots:\n' +

@@ -21,7 +21,8 @@ packages/
 
 tools/
 ├── gpod-tool/       # C CLI for iPod database operations
-└── libgpod-macos/   # macOS build scripts for libgpod
+├── libgpod-macos/   # macOS build scripts for libgpod
+└── lima/            # Lima VM configs for cross-platform testing (Debian + Alpine)
 ```
 
 ## Quick Reference
@@ -37,6 +38,7 @@ bun run test:unit                # Run unit tests only
 bun run test:integration         # Run integration tests only
 bun run test:e2e                 # Run E2E tests (dummy iPod)
 bun run test --filter podkit-core # Run tests for specific package
+mise run lima:test                # Run tests on Debian + Alpine VMs
 
 # Build
 bun run build                    # Build all packages for Node.js
@@ -59,11 +61,13 @@ podkit device music --format json       # List music on device
 
 **For end users:** Only FFmpeg is required. libgpod is statically linked into prebuilt binaries.
 
-| Dependency | Debian/Ubuntu | macOS | Required for |
-|------------|---------------|-------|--------------|
-| FFmpeg | `ffmpeg` | `brew install ffmpeg` | Users + developers |
-| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | Development only |
-| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | Development only |
+| Dependency | Debian/Ubuntu | macOS | Alpine | Required for |
+|------------|---------------|-------|--------|--------------|
+| FFmpeg | `ffmpeg` | `brew install ffmpeg` | `ffmpeg` | Users + developers |
+| libgpod | `libgpod-dev` | Build from source (see `tools/libgpod-macos/`) | `libgpod-dev` (community) | Development only |
+| GLib | `libglib2.0-dev` | `brew install glib` (installed as libgpod dep) | `glib-dev` | Development only |
+| util-linux | Pre-installed | N/A | `lsblk` | Linux device manager |
+| Lima | N/A | `brew install lima` | N/A | Cross-platform testing |
 
 See [docs/developers/development.md](docs/developers/development.md) for full setup instructions.
 
@@ -114,15 +118,18 @@ Read these documents based on what you're working on:
 | Sound Check | [docs/user-guide/syncing/sound-check.md](docs/user-guide/syncing/sound-check.md) |
 | Track upgrades | [docs/user-guide/syncing/upgrades.md](docs/user-guide/syncing/upgrades.md) |
 | Clean Artists | [docs/reference/clean-artists.md](docs/reference/clean-artists.md) |
+| Show Language (video) | [docs/reference/show-language.md](docs/reference/show-language.md) |
 | Sync tags | [docs/reference/sync-tags.md](docs/reference/sync-tags.md) |
 | Demo GIF package | [packages/demo/README.md](packages/demo/README.md) |
+| Lima VMs (cross-platform testing) | [tools/lima/README.md](tools/lima/README.md) |
+| Device hardware testing | [docs/developers/device-hardware-testing.md](docs/developers/device-hardware-testing.md) |
 | Package READMEs | `packages/*/README.md` |
 | Feature requests | [agents/feature-requests.md](agents/feature-requests.md) |
-| About the project | [docs/about.md](docs/about.md) |
+| About the project | [docs/project/about.md](docs/project/about.md) |
 | Rockbox compatibility | [docs/devices/rockbox.md](docs/devices/rockbox.md) |
-| Similar projects | [docs/similar-projects.md](docs/similar-projects.md) |
-| Roadmap | [docs/roadmap.md](docs/roadmap.md) |
-| Feedback & feature requests (user-facing) | [docs/feedback.md](docs/feedback.md) |
+| Similar projects | [docs/project/similar-projects.md](docs/project/similar-projects.md) |
+| Roadmap | [docs/project/roadmap.md](docs/project/roadmap.md) |
+| Feedback & feature requests (user-facing) | [docs/project/feedback.md](docs/project/feedback.md) |
 | Docker | [docs/getting-started/docker.md](docs/getting-started/docker.md) |
 
 ## Feature Requests & GitHub Discussions
@@ -255,13 +262,42 @@ See [docs/developers/testing.md](docs/developers/testing.md) for full testing st
 - **Integration tests** (`*.integration.test.ts`): Require gpod-tool, FFmpeg, etc.
 - **E2E tests** (`packages/e2e-tests/`): Full CLI workflow tests
 
+### Full Local Validation
+
+Run this sequence before submitting a PR:
+
 ```bash
-bun run test              # All tests
+# 1. Build, type check, lint
+bun run build
+bun run typecheck
+bun run lint
+
+# 2. macOS tests
+bun run test              # Unit + integration
+bun run test:e2e          # E2E with dummy iPod
+
+# 3. Linux tests (cross-platform or device-related changes)
+mise run lima:test         # Runs on Debian + Alpine VMs (requires: brew install lima)
+
+# 4. Docker E2E (Subsonic changes only)
+bun run test:e2e:docker
+```
+
+### All Test Commands
+
+```bash
+bun run test              # All tests (unit + integration)
 bun run test:unit         # Unit tests only
 bun run test:integration  # Integration tests only
 bun run test:e2e          # E2E tests (dummy iPod)
 bun run test:e2e:real     # E2E tests (real iPod, requires IPOD_MOUNT)
 bun run test:e2e:docker   # E2E tests requiring Docker (Subsonic, etc.)
+mise run lima:test         # Run tests on Debian + Alpine VMs
+mise run lima:test:debian  # Debian only
+mise run lima:test:alpine  # Alpine only
+mise run lima:stop         # Stop VMs (preserves state)
+mise run lima:destroy      # Delete VMs entirely
+mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
 # Container cleanup (in packages/e2e-tests/)
 cd packages/e2e-tests && bun run cleanup:docker
@@ -270,9 +306,21 @@ cd packages/e2e-tests && bun run cleanup:docker
 ### Prerequisites for Integration Tests
 
 ```bash
-mise run tools:build   # Build gpod-tool CLI
 mise trust             # Trust mise config (first time only)
+mise run tools:build   # Build gpod-tool CLI
 ```
+
+### Working in Git Worktrees
+
+When working in a git worktree (e.g., `.claude/worktrees/`), you must run these setup steps — worktrees are independent working directories and don't share the main repo's build artifacts or mise trust state:
+
+```bash
+bun install            # Install dependencies (worktree has its own node_modules)
+mise trust             # Trust mise config for this worktree
+mise run tools:build   # Build gpod-tool (needed for iPod database tests)
+```
+
+Without these steps, integration and E2E tests that use `@podkit/gpod-testing` will fail with "Missing iTunesDB file" errors because `gpod-tool` won't be in PATH.
 
 ### Writing Tests with iPod Databases
 
@@ -461,8 +509,9 @@ podkit is distributed as a Docker image at `ghcr.io/jvgomg/podkit`. See [docs/ge
 **Entrypoint behavior:**
 1. Creates user/group matching PUID/PGID
 2. `init` command generates a config file into the mounted /config volume
-3. `sync` command auto-injects `--device /ipod` and checks for config file
-4. Fails with helpful instructions if no config file exists
+3. `sync` command auto-injects `--device /ipod`
+
+Collections can be configured via environment variables (e.g., `PODKIT_MUSIC_PATH=/music`) — no config file required. See [docs/reference/environment-variables.md](docs/reference/environment-variables.md) for details.
 
 **Impact on CLI changes:**
 - New CLI commands need to be added to the `PODKIT_COMMANDS` list in `docker/entrypoint.sh`
@@ -584,3 +633,6 @@ Key files to understand:
 | Test fixture generator | `packages/test-fixtures/src/index.ts` |
 | Docker entrypoint | `docker/entrypoint.sh` |
 | Dockerfile | `docker/Dockerfile` |
+| Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |
+| Lima VM configs | `tools/lima/` |
+| Lima test runner | `tools/lima/run-tests.sh` |

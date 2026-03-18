@@ -600,6 +600,64 @@ describe('parseFilename', () => {
       expect(result.year).toBe(1952);
     });
   });
+
+  describe('anime fansub patterns', () => {
+    it('parses [RyRo] fansub naming with codec and CRC', () => {
+      const result = parseFilename('/path/to/[RyRo]_Digimon_Adventure_15_(h264)_[8FBCA82D].mkv');
+      expect(result.title).toBe('Digimon Adventure');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(15);
+    });
+
+    it('parses fansub naming with spaces', () => {
+      const result = parseFilename('/path/to/[SubGroup] Show Name - 03 [ABCD1234].mkv');
+      expect(result.title).toBe('Show Name');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(3);
+    });
+
+    it('parses fansub naming with version suffix', () => {
+      const result = parseFilename('/path/to/[Group] Show - 01v2.mkv');
+      expect(result.title).toBe('Show');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(1);
+    });
+
+    it('parses fansub naming with triple-digit episode', () => {
+      const result = parseFilename('/path/to/[Group]_Long_Show_-_100_(1080p)_[DEADBEEF].mkv');
+      expect(result.title).toBe('Long Show');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(100);
+    });
+  });
+
+  describe('scene release cruft cleanup', () => {
+    it('discards scene release cruft from episode title', () => {
+      const result = parseFilename('/path/to/Show.S01E01.DVDRip.XviD-DEiMOS.avi');
+      expect(result.title).toBe('Show');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(1);
+    });
+
+    it('discards quality and codec cruft', () => {
+      const result = parseFilename('/path/to/Show.S01E05.720p.BluRay.x264-GROUP.mkv');
+      expect(result.title).toBe('Show');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(5);
+    });
+
+    it('keeps real episode title when present', () => {
+      const result = parseFilename('/path/to/Show Name - S01E01 - The Pilot Episode.mp4');
+      expect(result.title).toBe('The Pilot Episode');
+    });
+
+    it('discards language tags from episode title', () => {
+      const result = parseFilename('/path/to/Digimon S01E01 Part Chinese.mp4');
+      expect(result.title).toBe('Digimon');
+      expect(result.seasonNumber).toBe(1);
+      expect(result.episodeNumber).toBe(1);
+    });
+  });
 });
 
 describe('VideoMetadataError', () => {

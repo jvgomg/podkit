@@ -2,7 +2,7 @@
 title: Tips & Next Steps
 description: Common tasks and use cases to explore after your first sync with podkit.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 Now that you've completed your [first sync](/getting-started/quick-start), here are some common things you'll want to do.

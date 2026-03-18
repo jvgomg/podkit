@@ -34,6 +34,8 @@ import { checkVideoCompatibility } from '../video/compatibility.js';
 import { calculateEffectiveSettings } from '../video/quality.js';
 import type { SyncOperation, SyncWarning } from './types.js';
 import type { VideoSyncDiff, IPodVideo } from './video-differ.js';
+import type { VideoTransformsConfig } from '../transforms/types.js';
+import { applyVideoTransforms } from '../transforms/video-pipeline.js';
 import { estimateTransferTime } from './estimation.js';
 
 // =============================================================================
@@ -58,6 +60,9 @@ export interface VideoSyncPlanOptions {
 
   /** Whether to use hardware acceleration for transcoding */
   useHardwareAcceleration?: boolean;
+
+  /** Video transform configuration for applying transforms on add */
+  videoTransforms?: import('../transforms/types.js').VideoTransformsConfig;
 }
 
 /**
@@ -103,6 +108,8 @@ export interface VideoPlanSummary {
   copyCount: number;
   /** Number of videos that will be removed */
   removeCount: number;
+  /** Number of videos that need metadata updates */
+  updateCount: number;
   /** Number of unsupported videos skipped */
   skippedCount: number;
 }
@@ -249,7 +256,10 @@ function estimateTranscodeTime(durationSeconds: number, useHardwareAcceleration:
  * Used by the audio planner to handle video operations in mixed plans.
  */
 export function calculateVideoOperationSize(
-  operation: Extract<SyncOperation, { type: 'video-transcode' | 'video-copy' | 'video-remove' }>
+  operation: Extract<
+    SyncOperation,
+    { type: 'video-transcode' | 'video-copy' | 'video-remove' | 'video-update-metadata' }
+  >
 ): number {
   switch (operation.type) {
     case 'video-transcode': {
@@ -266,7 +276,8 @@ export function calculateVideoOperationSize(
       return Math.round((duration * 2000 * 1000) / 8); // ~2 Mbps estimate
     }
     case 'video-remove':
-      // Removal frees space rather than consuming it
+    case 'video-update-metadata':
+      // Removal frees space rather than consuming it; metadata updates have no size
       return 0;
   }
 }
@@ -278,7 +289,10 @@ export function calculateVideoOperationSize(
  * Assumes hardware acceleration is available (the default).
  */
 export function calculateVideoOperationTime(
-  operation: Extract<SyncOperation, { type: 'video-transcode' | 'video-copy' | 'video-remove' }>
+  operation: Extract<
+    SyncOperation,
+    { type: 'video-transcode' | 'video-copy' | 'video-remove' | 'video-update-metadata' }
+  >
 ): number {
   switch (operation.type) {
     case 'video-transcode': {
@@ -297,6 +311,9 @@ export function calculateVideoOperationTime(
     case 'video-remove':
       // Removal is nearly instant
       return 0.1;
+    case 'video-update-metadata':
+      // Metadata update is nearly instant (database update only)
+      return 0.1;
   }
 }
 
@@ -311,7 +328,8 @@ function planAddOperations(
   videos: CollectionVideo[],
   device: VideoDeviceProfile,
   preset: VideoQualityPreset,
-  useHardwareAcceleration: boolean
+  useHardwareAcceleration: boolean,
+  videoTransforms?: VideoTransformsConfig
 ): {
   operations: SyncOperation[];
   lowQualityVideos: CollectionVideo[];
@@ -328,11 +346,21 @@ function planAddOperations(
       continue;
     }
 
+    // Compute transformed series title if video transforms are configured
+    let transformedSeriesTitle: string | undefined;
+    if (videoTransforms) {
+      const result = applyVideoTransforms(video, videoTransforms);
+      if (result.applied) {
+        transformedSeriesTitle = result.transformed.seriesTitle;
+      }
+    }
+
     // Check if passthrough is possible
     if (canPassthrough(video, device)) {
       operations.push({
         type: 'video-copy',
         source: video,
+        transformedSeriesTitle,
       });
     } else {
       // Calculate transcode settings
@@ -342,6 +370,7 @@ function planAddOperations(
         type: 'video-transcode',
         source: video,
         settings,
+        transformedSeriesTitle,
       });
 
       // Track low quality sources for warnings
@@ -402,6 +431,10 @@ function calculateOperationEstimates(
       // Removal is nearly instant (database update + file delete)
       return { size: 0, time: 0.1 };
 
+    case 'video-update-metadata':
+      // Metadata updates are instant (database update only, no file transfer)
+      return { size: 0, time: 0.1 };
+
     default:
       return { size: 0, time: 0 };
   }
@@ -417,6 +450,7 @@ function calculateOperationEstimates(
  */
 function orderOperations(operations: SyncOperation[]): SyncOperation[] {
   const removes: SyncOperation[] = [];
+  const updates: SyncOperation[] = [];
   const copies: SyncOperation[] = [];
   const transcodes: SyncOperation[] = [];
 
@@ -424,6 +458,9 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
     switch (op.type) {
       case 'video-remove':
         removes.push(op);
+        break;
+      case 'video-update-metadata':
+        updates.push(op);
         break;
       case 'video-copy':
         copies.push(op);
@@ -434,7 +471,7 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
     }
   }
 
-  return [...removes, ...copies, ...transcodes];
+  return [...removes, ...updates, ...copies, ...transcodes];
 }
 
 // =============================================================================
@@ -468,6 +505,7 @@ export function planVideoSync(
     qualityPreset = DEFAULT_QUALITY_PRESET,
     removeOrphans = false,
     useHardwareAcceleration = true,
+    videoTransforms,
   } = options;
 
   // Plan add operations
@@ -475,7 +513,13 @@ export function planVideoSync(
     operations: addOperations,
     lowQualityVideos,
     unsupportedVideos,
-  } = planAddOperations(diff.toAdd, deviceProfile, qualityPreset, useHardwareAcceleration);
+  } = planAddOperations(
+    diff.toAdd,
+    deviceProfile,
+    qualityPreset,
+    useHardwareAcceleration,
+    videoTransforms
+  );
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
@@ -494,15 +538,30 @@ export function planVideoSync(
       replaceSources,
       deviceProfile,
       qualityPreset,
-      useHardwareAcceleration
+      useHardwareAcceleration,
+      videoTransforms
     );
     replaceAddOps.push(...replaceTranscodeOps);
+  }
+
+  // Plan metadata update operations (from transform changes)
+  const updateOperations: SyncOperation[] = [];
+  if (diff.toUpdate && diff.toUpdate.length > 0) {
+    for (const update of diff.toUpdate) {
+      updateOperations.push({
+        type: 'video-update-metadata',
+        source: update.collection,
+        video: update.ipod,
+        newSeriesTitle: update.newSeriesTitle,
+      });
+    }
   }
 
   // Combine and order operations (removes first, then adds/transcodes)
   const allOperations = [
     ...removeOperations,
     ...replaceRemoveOps,
+    ...updateOperations,
     ...addOperations,
     ...replaceAddOps,
   ];
@@ -559,6 +618,7 @@ export function getVideoPlanSummary(plan: VideoSyncPlan): VideoPlanSummary {
   let transcodeCount = 0;
   let copyCount = 0;
   let removeCount = 0;
+  let updateCount = 0;
 
   for (const op of plan.operations) {
     switch (op.type) {
@@ -571,6 +631,9 @@ export function getVideoPlanSummary(plan: VideoSyncPlan): VideoPlanSummary {
       case 'video-remove':
         removeCount++;
         break;
+      case 'video-update-metadata':
+        updateCount++;
+        break;
     }
   }
 
@@ -578,6 +641,7 @@ export function getVideoPlanSummary(plan: VideoSyncPlan): VideoPlanSummary {
     transcodeCount,
     copyCount,
     removeCount,
+    updateCount,
     skippedCount: 0, // Would track unsupported videos if needed
   };
 }

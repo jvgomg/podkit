@@ -43,6 +43,30 @@ set -e
 docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from smoke-test
 """
 
+# ---------------------------------------------------------------------------
+# Lima VMs (cross-platform testing on Debian + Alpine)
+# ---------------------------------------------------------------------------
+
+[tasks."lima:test"]
+description = "Run test suite on both Linux VMs (Debian + Alpine)"
+run = "tools/lima/run-tests.sh all"
+
+[tasks."lima:test:debian"]
+description = "Run test suite on Debian VM"
+run = "tools/lima/run-tests.sh debian"
+
+[tasks."lima:test:alpine"]
+description = "Run test suite on Alpine VM"
+run = "tools/lima/run-tests.sh alpine"
+
+[tasks."lima:stop"]
+description = "Stop Lima VMs (preserves state for fast restart)"
+run = "limactl stop podkit-debian 2>/dev/null; limactl stop podkit-alpine 2>/dev/null; echo Done."
+
+[tasks."lima:destroy"]
+description = "Delete Lima VMs entirely"
+run = "limactl delete podkit-debian --force 2>/dev/null; limactl delete podkit-alpine --force 2>/dev/null; echo Done."
+
 [tasks."tools:check"]
 description = "Build and test all native tools"
 depends = ["tools:build"]

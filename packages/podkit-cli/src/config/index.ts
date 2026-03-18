@@ -26,6 +26,8 @@ export type {
   ConfigFileContent,
   TransformsConfig,
   VideoQualityPreset,
+  VideoTransformsConfig,
+  ShowLanguageConfig,
   // Multi-collection/device types (ADR-008)
   MusicCollectionConfig,
   VideoCollectionConfig,
@@ -33,12 +35,18 @@ export type {
   DefaultsConfig,
   // Raw config file types
   ConfigFileCleanArtists,
+  ConfigFileShowLanguage,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,
   ConfigFileDefaults,
 } from './types.js';
-export { QUALITY_PRESETS, DEFAULT_TRANSFORMS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
+export {
+  QUALITY_PRESETS,
+  DEFAULT_TRANSFORMS_CONFIG,
+  DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  VIDEO_QUALITY_PRESETS,
+} from './types.js';
 
 // Defaults
 export { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_PREFIX, ENV_KEYS } from './defaults.js';

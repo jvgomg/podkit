@@ -2,7 +2,7 @@
 title: Compilation Albums
 description: How podkit handles compilation albums during sync, including metadata detection and iPod browsing behavior.
 sidebar:
-  order: 3
+  order: 4
 ---
 
 podkit syncs the compilation flag from your source metadata to the iPod database. This ensures compilation albums (soundtracks, "Various Artists" collections, "Best Of" compilations) appear correctly in the iPod's Compilations browser rather than cluttering individual artist lists.

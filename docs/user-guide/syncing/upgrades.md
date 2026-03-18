@@ -2,7 +2,7 @@
 title: Track Upgrades
 description: How podkit detects and upgrades improved source files during sync.
 sidebar:
-  order: 6
+  order: 7
 ---
 
 When you improve your music collection — replacing MP3s with lossless files, adding artwork, or fixing metadata — podkit detects these changes and upgrades the tracks on your iPod automatically. Play counts, star ratings, and playlist membership are preserved.

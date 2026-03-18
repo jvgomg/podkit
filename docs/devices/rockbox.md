@@ -8,7 +8,7 @@ sidebar:
 podkit syncs music using Apple's iTunesDB format, which Rockbox does not read. Your music is still fully accessible on Rockbox — it just requires a one-time setup step.
 
 :::note[Want first-class Rockbox support?]
-Native Rockbox support (folder-based sync without iTunesDB) is on the [roadmap](/roadmap/). Vote and comment on the [discussion](https://github.com/jvgomg/podkit/discussions/34) to help us prioritise.
+Native Rockbox support (folder-based sync without iTunesDB) is on the [roadmap](/project/roadmap/). Vote and comment on the [discussion](https://github.com/jvgomg/podkit/discussions/34) to help us prioritise.
 :::
 
 ## Why Rockbox Can't Read iTunesDB-Synced Music Directly

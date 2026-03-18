@@ -18,7 +18,7 @@ import {
 } from '@podkit/core';
 import { setContext, clearContext } from '../context.js';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from '../config/index.js';
-import { DEFAULT_TRANSFORMS_CONFIG } from '../config/index.js';
+import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from '../config/index.js';
 
 // Test helpers
 
@@ -37,6 +37,7 @@ function createTestContext(
     artwork: true,
     tips: true,
     transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
     devices: {},
     music: {},
     video: {},

@@ -8,10 +8,18 @@
  * - Auto-detection via Volume UUID
  */
 
+import * as path from 'node:path';
 import type { PodkitConfig, DeviceConfig } from '../config/types.js';
 import type { DeviceManager, PlatformDeviceInfo } from '@podkit/core';
 import type { ResolvedDevice, DeviceIdentity, CliDeviceArg, ResolutionResult } from './types.js';
 import { resolveNamedEntity, isPathLike, formatNotFoundError } from './core.js';
+
+/**
+ * Normalize a path for comparison (resolve and remove trailing slashes)
+ */
+function normalizePath(p: string): string {
+  return path.resolve(p);
+}
 
 // =============================================================================
 // Named Device Resolution
@@ -228,6 +236,33 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
 
   // Priority 1: CLI path takes precedence
   if (cliPath) {
+    // If device has a UUID configured, validate that the device at this path
+    // matches the expected UUID. Protects against syncing to the wrong iPod
+    // when multiple devices share the same mount point.
+    if (deviceIdentity?.volumeUuid) {
+      const device = await manager.findByVolumeUuid(deviceIdentity.volumeUuid);
+      if (device) {
+        // UUID device found — check if it's at the expected path
+        if (device.mountPoint && normalizePath(device.mountPoint) !== normalizePath(cliPath)) {
+          return {
+            source: 'cli',
+            error:
+              `UUID mismatch: expected device with UUID ${deviceIdentity.volumeUuid}` +
+              ` at ${cliPath}, but it is mounted at ${device.mountPoint}.` +
+              ` A different iPod may be connected at ${cliPath}.`,
+          };
+        }
+        // UUID matches the device at this path — proceed with device info
+        return {
+          path: cliPath,
+          source: 'cli',
+          deviceInfo: device,
+        };
+      }
+      // UUID not found among connected devices — can't validate, proceed with path.
+      // This is expected on platforms without device detection (e.g., Linux/Docker).
+    }
+
     return {
       path: cliPath,
       source: 'cli',
@@ -268,7 +303,17 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
     };
   }
 
-  // No device configured
+  // No UUID available — either no device configured or device has no UUID
+  if (deviceIdentity) {
+    // Device exists in config but has no volumeUuid
+    return {
+      source: 'none',
+      error:
+        'Device has no volumeUuid for auto-detection. ' +
+        'Use --device <path> to specify the mount point, or run "podkit device add" to register the device.',
+    };
+  }
+
   return {
     source: 'none',
     error: 'No iPod configured. Run: podkit device add -d <name>',

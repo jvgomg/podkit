@@ -19,12 +19,14 @@ import type {
   VideoQualityPreset,
   ConfigFileContent,
   ConfigFileCleanArtists,
+  ConfigFileShowLanguage,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,
   ConfigFileDefaults,
   GlobalOptions,
   CleanArtistsConfig,
+  ShowLanguageConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
   DeviceConfig,
@@ -33,6 +35,7 @@ import type {
 import {
   QUALITY_PRESETS,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
+  DEFAULT_SHOW_LANGUAGE_CONFIG,
   VIDEO_QUALITY_PRESETS,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
@@ -118,14 +121,18 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
       config.encoding = parsed.encoding;
     } else {
       throw new Error(
-        `Invalid encoding value "${parsed.encoding}" in config. ` +
-          `Valid values: vbr, cbr`
+        `Invalid encoding value "${parsed.encoding}" in config. ` + `Valid values: vbr, cbr`
       );
     }
   }
 
   if (parsed.customBitrate !== undefined) {
-    if (typeof parsed.customBitrate !== 'number' || !Number.isInteger(parsed.customBitrate) || parsed.customBitrate < 64 || parsed.customBitrate > 320) {
+    if (
+      typeof parsed.customBitrate !== 'number' ||
+      !Number.isInteger(parsed.customBitrate) ||
+      parsed.customBitrate < 64 ||
+      parsed.customBitrate > 320
+    ) {
       throw new Error(
         `Invalid customBitrate value "${parsed.customBitrate}" in config. ` +
           `Must be an integer between 64 and 320.`
@@ -135,7 +142,11 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
   }
 
   if (parsed.bitrateTolerance !== undefined) {
-    if (typeof parsed.bitrateTolerance !== 'number' || parsed.bitrateTolerance < 0.0 || parsed.bitrateTolerance > 1.0) {
+    if (
+      typeof parsed.bitrateTolerance !== 'number' ||
+      parsed.bitrateTolerance < 0.0 ||
+      parsed.bitrateTolerance > 1.0
+    ) {
       throw new Error(
         `Invalid bitrateTolerance value "${parsed.bitrateTolerance}" in config. ` +
           `Must be a number between 0.0 and 1.0.`
@@ -164,6 +175,13 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
   if (parsed.cleanArtists !== undefined) {
     config.transforms = {
       cleanArtists: parseCleanArtistsConfig(parsed.cleanArtists),
+    };
+  }
+
+  // Parse showLanguage (boolean or table)
+  if (parsed.showLanguage !== undefined) {
+    config.videoTransforms = {
+      showLanguage: parseShowLanguageConfig(parsed.showLanguage),
     };
   }
 
@@ -282,6 +300,75 @@ function parseCleanArtistsConfig(
       }
     }
     config.ignore = raw.ignore;
+  }
+
+  return config;
+}
+
+/**
+ * Parse and validate showLanguage config from TOML
+ *
+ * Accepts either a boolean (simple enable/disable) or a table with options.
+ * When provided as a table, enabled defaults to true unless explicitly set to false.
+ *
+ * @param raw - The raw TOML value for showLanguage
+ * @param context - Config path context for error messages (e.g., "showLanguage" or "devices.nano.showLanguage")
+ */
+function parseShowLanguageConfig(
+  raw: ConfigFileShowLanguage,
+  context: string = 'showLanguage'
+): ShowLanguageConfig {
+  // Boolean shorthand: showLanguage = true/false
+  if (typeof raw === 'boolean') {
+    return {
+      ...DEFAULT_SHOW_LANGUAGE_CONFIG,
+      enabled: raw,
+    };
+  }
+
+  // Table form: [showLanguage] with options — enabled defaults to true
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`Invalid type for "${context}". Expected boolean or table, got ${typeof raw}.`);
+  }
+
+  const config: ShowLanguageConfig = {
+    ...DEFAULT_SHOW_LANGUAGE_CONFIG,
+    enabled: true, // Table form implies enabled
+  };
+
+  // Validate types and set values
+  if (raw.enabled !== undefined) {
+    if (typeof raw.enabled !== 'boolean') {
+      throw new Error(
+        `Invalid type for "enabled" in [${context}]. ` +
+          `Expected boolean, got ${typeof raw.enabled}.`
+      );
+    }
+    config.enabled = raw.enabled;
+  }
+  if (raw.format !== undefined) {
+    if (typeof raw.format !== 'string') {
+      throw new Error(
+        `Invalid type for "format" in [${context}]. ` + `Expected string, got ${typeof raw.format}.`
+      );
+    }
+    // Validate format contains placeholder
+    if (!raw.format.includes('{}')) {
+      throw new Error(
+        `Invalid format "${raw.format}" in [${context}]. ` +
+          'Format must contain "{}" placeholder for language code.'
+      );
+    }
+    config.format = raw.format;
+  }
+  if (raw.expand !== undefined) {
+    if (typeof raw.expand !== 'boolean') {
+      throw new Error(
+        `Invalid type for "expand" in [${context}]. ` +
+          `Expected boolean, got ${typeof raw.expand}.`
+      );
+    }
+    config.expand = raw.expand;
   }
 
   return config;
@@ -419,24 +506,17 @@ function parseDevices(
       continue;
     }
 
-    // Validate required fields
-    if (typeof rawDevice.volumeUuid !== 'string') {
-      throw new Error(
-        `Missing or invalid "volumeUuid" in [devices.${name}]. ` +
-          `Devices require a volumeUuid for auto-detection.`
-      );
-    }
-    if (typeof rawDevice.volumeName !== 'string') {
-      throw new Error(
-        `Missing or invalid "volumeName" in [devices.${name}]. ` +
-          `Devices require a volumeName for display.`
-      );
+    const device: DeviceConfig = {};
+
+    // Parse optional volumeUuid (required only for auto-detection)
+    if (typeof rawDevice.volumeUuid === 'string') {
+      device.volumeUuid = rawDevice.volumeUuid.trim();
     }
 
-    const device: DeviceConfig = {
-      volumeUuid: rawDevice.volumeUuid.trim(),
-      volumeName: rawDevice.volumeName.trim(),
-    };
+    // Parse optional volumeName (for display)
+    if (typeof rawDevice.volumeName === 'string') {
+      device.volumeName = rawDevice.volumeName.trim();
+    }
 
     // Parse optional quality
     if (rawDevice.quality !== undefined) {
@@ -502,7 +582,12 @@ function parseDevices(
 
     // Parse optional customBitrate
     if (rawDevice.customBitrate !== undefined) {
-      if (typeof rawDevice.customBitrate !== 'number' || !Number.isInteger(rawDevice.customBitrate) || rawDevice.customBitrate < 64 || rawDevice.customBitrate > 320) {
+      if (
+        typeof rawDevice.customBitrate !== 'number' ||
+        !Number.isInteger(rawDevice.customBitrate) ||
+        rawDevice.customBitrate < 64 ||
+        rawDevice.customBitrate > 320
+      ) {
         throw new Error(
           `Invalid customBitrate value "${rawDevice.customBitrate}" in [devices.${name}]. ` +
             `Must be an integer between 64 and 320.`
@@ -513,7 +598,11 @@ function parseDevices(
 
     // Parse optional bitrateTolerance
     if (rawDevice.bitrateTolerance !== undefined) {
-      if (typeof rawDevice.bitrateTolerance !== 'number' || rawDevice.bitrateTolerance < 0.0 || rawDevice.bitrateTolerance > 1.0) {
+      if (
+        typeof rawDevice.bitrateTolerance !== 'number' ||
+        rawDevice.bitrateTolerance < 0.0 ||
+        rawDevice.bitrateTolerance > 1.0
+      ) {
         throw new Error(
           `Invalid bitrateTolerance value "${rawDevice.bitrateTolerance}" in [devices.${name}]. ` +
             `Must be a number between 0.0 and 1.0.`
@@ -561,6 +650,16 @@ function parseDevices(
         cleanArtists: parseCleanArtistsConfig(
           rawDevice.cleanArtists,
           `devices.${name}.cleanArtists`
+        ),
+      };
+    }
+
+    // Parse optional showLanguage (boolean or table)
+    if (rawDevice.showLanguage !== undefined) {
+      device.videoTransforms = {
+        showLanguage: parseShowLanguageConfig(
+          rawDevice.showLanguage,
+          `devices.${name}.showLanguage`
         ),
       };
     }
@@ -774,7 +873,241 @@ export function loadEnvConfig(): PartialConfig {
     config.transforms = { cleanArtists: ca };
   }
 
+  // Show language env vars
+  const showLanguage = process.env[ENV_KEYS.showLanguage];
+  const showLanguageFormat = process.env[ENV_KEYS.showLanguageFormat];
+  const showLanguageExpand = process.env[ENV_KEYS.showLanguageExpand];
+
+  if (
+    showLanguage !== undefined ||
+    showLanguageFormat !== undefined ||
+    showLanguageExpand !== undefined
+  ) {
+    const sl: ShowLanguageConfig = { ...DEFAULT_SHOW_LANGUAGE_CONFIG };
+
+    if (showLanguage !== undefined) {
+      sl.enabled = parseBoolEnv(showLanguage);
+    }
+    if (showLanguageFormat !== undefined) {
+      sl.format = showLanguageFormat;
+    }
+    if (showLanguageExpand !== undefined) {
+      sl.expand = parseBoolEnv(showLanguageExpand);
+    }
+
+    config.videoTransforms = { showLanguage: sl };
+  }
+
+  // Parse collection env vars
+  const envCollections = loadEnvCollections();
+  if (envCollections.music) {
+    config.music = envCollections.music;
+  }
+  if (envCollections.video) {
+    config.video = envCollections.video;
+  }
+  if (envCollections.defaults) {
+    config.defaults = envCollections.defaults;
+  }
+
   return config;
+}
+
+// =============================================================================
+// Collection Environment Variable Parsing
+// =============================================================================
+
+/** Known field suffixes for music collection env vars */
+const MUSIC_COLLECTION_FIELDS = ['PATH', 'TYPE', 'URL', 'USERNAME', 'PASSWORD'] as const;
+type MusicCollectionField = (typeof MUSIC_COLLECTION_FIELDS)[number];
+
+/** Known field suffixes for video collection env vars */
+const VIDEO_COLLECTION_FIELDS = ['PATH'] as const;
+
+const MUSIC_ENV_PREFIX = 'PODKIT_MUSIC_';
+const VIDEO_ENV_PREFIX = 'PODKIT_VIDEO_';
+
+/**
+ * Convert an env var name segment to a collection config name
+ *
+ * Env var segments are UPPER_SNAKE_CASE. Config names are lower-kebab-case.
+ *
+ * @example envNameToConfigName('MY_SERVER') // => 'my-server'
+ * @example envNameToConfigName('MAIN') // => 'main'
+ */
+function envNameToConfigName(envSegment: string): string {
+  return envSegment.toLowerCase().replace(/_/g, '-');
+}
+
+/**
+ * Parse a PODKIT_MUSIC_* or PODKIT_VIDEO_* env var key
+ *
+ * Returns the collection name (or undefined for unnamed/default) and the field name.
+ * Returns undefined if the key doesn't match a known field pattern.
+ *
+ * Strategy: check if the remainder after the prefix IS a known field (unnamed collection),
+ * otherwise find the known field suffix and extract the collection name from the middle.
+ *
+ * @example parseMusicEnvKey('PODKIT_MUSIC_PATH') // => { name: undefined, field: 'PATH' }
+ * @example parseMusicEnvKey('PODKIT_MUSIC_MAIN_PATH') // => { name: 'MAIN', field: 'PATH' }
+ * @example parseMusicEnvKey('PODKIT_MUSIC_MY_SERVER_URL') // => { name: 'MY_SERVER', field: 'URL' }
+ */
+function parseCollectionEnvKey(
+  key: string,
+  prefix: string,
+  knownFields: readonly string[]
+): { name: string | undefined; field: string } | undefined {
+  if (!key.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const remainder = key.slice(prefix.length);
+
+  // Check if the entire remainder is a known field (unnamed collection)
+  if (knownFields.includes(remainder)) {
+    return { name: undefined, field: remainder };
+  }
+
+  // Find which known field suffix it ends with
+  for (const field of knownFields) {
+    const suffix = `_${field}`;
+    if (remainder.endsWith(suffix)) {
+      const namePart = remainder.slice(0, -suffix.length);
+      if (namePart.length > 0) {
+        return { name: namePart, field };
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Load music and video collections from environment variables
+ *
+ * Supports two patterns:
+ *
+ * **Unnamed (default) collections:**
+ * - PODKIT_MUSIC_PATH=/music — creates a directory collection named "default"
+ * - PODKIT_MUSIC_TYPE=subsonic — sets type (default: "directory")
+ * - PODKIT_MUSIC_URL, PODKIT_MUSIC_USERNAME, PODKIT_MUSIC_PASSWORD — subsonic fields
+ * - PODKIT_VIDEO_PATH=/videos — creates a video collection named "default"
+ *
+ * **Named collections:**
+ * - PODKIT_MUSIC_MAIN_PATH=/music — creates collection named "main"
+ * - PODKIT_MUSIC_NAVIDROME_TYPE=subsonic — creates collection named "navidrome"
+ * - PODKIT_MUSIC_NAVIDROME_URL, _USERNAME, _PASSWORD — subsonic fields
+ * - PODKIT_VIDEO_MOVIES_PATH=/movies — creates video collection named "movies"
+ *
+ * Collection names in env vars use UPPER_SNAKE_CASE, converted to lower-kebab-case
+ * in config (e.g., MY_SERVER → my-server).
+ *
+ * When exactly one collection exists per type with no file-based default, it is
+ * automatically set as the default.
+ */
+function loadEnvCollections(): {
+  music?: Record<string, MusicCollectionConfig>;
+  video?: Record<string, VideoCollectionConfig>;
+  defaults?: DefaultsConfig;
+} {
+  // Collect raw field values grouped by collection name
+  // undefined name = unnamed/default collection (stored under key "default")
+  const musicRaw: Record<string, Partial<Record<MusicCollectionField, string>>> = {};
+  const videoRaw: Record<string, Partial<Record<string, string>>> = {};
+
+  for (const key of Object.keys(process.env)) {
+    // Try music prefix
+    const musicParsed = parseCollectionEnvKey(key, MUSIC_ENV_PREFIX, MUSIC_COLLECTION_FIELDS);
+    if (musicParsed) {
+      const configName = musicParsed.name ? envNameToConfigName(musicParsed.name) : 'default';
+      if (!musicRaw[configName]) {
+        musicRaw[configName] = {};
+      }
+      musicRaw[configName][musicParsed.field as MusicCollectionField] = process.env[key];
+      continue;
+    }
+
+    // Try video prefix
+    const videoParsed = parseCollectionEnvKey(key, VIDEO_ENV_PREFIX, VIDEO_COLLECTION_FIELDS);
+    if (videoParsed) {
+      const configName = videoParsed.name ? envNameToConfigName(videoParsed.name) : 'default';
+      if (!videoRaw[configName]) {
+        videoRaw[configName] = {};
+      }
+      videoRaw[configName][videoParsed.field] = process.env[key];
+    }
+  }
+
+  // Build music collection configs
+  const music: Record<string, MusicCollectionConfig> = {};
+  for (const [name, fields] of Object.entries(musicRaw)) {
+    const collectionType = fields.TYPE === 'subsonic' ? 'subsonic' : 'directory';
+
+    if (collectionType === 'directory') {
+      if (!fields.PATH) continue; // PATH is required for directory collections
+      music[name] = {
+        path: fields.PATH,
+        type: 'directory',
+      };
+    } else {
+      // Subsonic collection — URL and username required, path and password optional
+      if (!fields.URL || !fields.USERNAME) continue;
+      music[name] = {
+        path: fields.PATH ?? '',
+        type: 'subsonic',
+        url: fields.URL,
+        username: fields.USERNAME,
+        password: fields.PASSWORD,
+      };
+    }
+  }
+
+  // Build video collection configs
+  const video: Record<string, VideoCollectionConfig> = {};
+  for (const [name, fields] of Object.entries(videoRaw)) {
+    if (!fields.PATH) continue; // PATH is required
+    video[name] = {
+      path: fields.PATH,
+    };
+  }
+
+  const hasMusic = Object.keys(music).length > 0;
+  const hasVideo = Object.keys(video).length > 0;
+
+  if (!hasMusic && !hasVideo) {
+    return {};
+  }
+
+  const result: {
+    music?: Record<string, MusicCollectionConfig>;
+    video?: Record<string, VideoCollectionConfig>;
+    defaults?: DefaultsConfig;
+  } = {};
+
+  if (hasMusic) {
+    result.music = music;
+  }
+  if (hasVideo) {
+    result.video = video;
+  }
+
+  // Auto-default: if exactly one collection per type, set it as default
+  const defaults: DefaultsConfig = {};
+  const musicNames = Object.keys(music);
+  const videoNames = Object.keys(video);
+
+  if (musicNames.length === 1) {
+    defaults.music = musicNames[0];
+  }
+  if (videoNames.length === 1) {
+    defaults.video = videoNames[0];
+  }
+
+  if (defaults.music || defaults.video) {
+    result.defaults = defaults;
+  }
+
+  return result;
 }
 
 /**
@@ -847,6 +1180,7 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
   const merged: PodkitConfig = {
     ...DEFAULT_CONFIG,
     transforms: { ...DEFAULT_CONFIG.transforms },
+    videoTransforms: { ...DEFAULT_CONFIG.videoTransforms },
   };
 
   for (const config of configs) {
@@ -888,6 +1222,15 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
         cleanArtists: {
           ...merged.transforms.cleanArtists,
           ...config.transforms.cleanArtists,
+        },
+      };
+    }
+    if (config.videoTransforms !== undefined) {
+      // Deep merge video transforms config
+      merged.videoTransforms = {
+        showLanguage: {
+          ...merged.videoTransforms.showLanguage,
+          ...config.videoTransforms.showLanguage,
         },
       };
     }
@@ -934,6 +1277,15 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
                   },
                 }
               : existingDevice.transforms,
+            // Deep merge video transforms if both exist
+            videoTransforms: deviceConfig.videoTransforms
+              ? {
+                  showLanguage: {
+                    ...existingDevice.videoTransforms?.showLanguage,
+                    ...deviceConfig.videoTransforms.showLanguage,
+                  },
+                }
+              : existingDevice.videoTransforms,
           };
         } else {
           merged.devices[name] = deviceConfig;

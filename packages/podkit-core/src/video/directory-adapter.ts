@@ -11,41 +11,7 @@ import type { ContentType, VideoMetadata, VideoMetadataAdapter } from './metadat
 import type { VideoSourceAnalysis } from './types.js';
 import { EmbeddedVideoMetadataAdapter } from './metadata-embedded.js';
 import { probeVideo, VideoProbeError } from './probe.js';
-import { detectContentType } from './content-type.js';
-
-// =============================================================================
-// Helper Functions
-// =============================================================================
-
-/**
- * Check if a title looks like a scene release name
- *
- * Scene releases typically have:
- * - Dots separating words instead of spaces
- * - Quality indicators (720p, 1080p, BluRay, etc.)
- * - Release group names
- *
- * We want to detect these so we can prefer filename-parsed titles instead.
- */
-function looksLikeSceneRelease(title: string): boolean {
-  // If it has multiple dots with words between them (e.g., "Movie.Name.2020")
-  const dotCount = (title.match(/\./g) || []).length;
-  if (dotCount >= 3) {
-    return true;
-  }
-
-  // Quality/release indicators
-  const scenePatterns = [
-    /\b(720p|1080p|2160p|4K|480p|576p)\b/i,
-    /\b(HDTV|WEB-?DL|WEB-?Rip|BluRay|BRRip|DVDRip|BDRip)\b/i,
-    /\b(x264|x265|h\.?264|h\.?265|HEVC|XviD|DivX|AVC)\b/i,
-    /\b(AAC|AC3|DTS|DTS-HD|DD5\.1|FLAC|TrueHD)\b/i,
-    /\b(REMUX|REPACK|PROPER|INTERNAL)\b/i,
-    /-[A-Z0-9]+$/i, // Release group suffix like "-FraMeSToR"
-  ];
-
-  return scenePatterns.some((pattern) => pattern.test(title));
-}
+import { detectContentType, looksLikeSceneRelease } from './content-type.js';
 
 // =============================================================================
 // Types
@@ -105,6 +71,12 @@ export interface CollectionVideo {
 
   /** Network or streaming service */
   network?: string;
+
+  /** Language tag if detected from filename/folder (e.g., 'Chinese', 'Japanese') */
+  language?: string;
+
+  /** Edition/variant tag (e.g., 'Dubbed', 'Subbed', 'Remastered') */
+  edition?: string;
 
   // From VideoSourceAnalysis
   /** Container format (e.g., 'mkv', 'mp4') */
@@ -401,6 +373,10 @@ export class VideoDirectoryAdapter {
       episodeId:
         metadata?.contentType === 'tvshow' ? metadata.episodeId : contentTypeResult.episodeId,
       network: metadata?.contentType === 'tvshow' ? metadata.network : undefined,
+
+      // Language/edition from content type detection
+      language: contentTypeResult.language,
+      edition: contentTypeResult.edition,
 
       // Technical info from probe
       container: analysis.container,

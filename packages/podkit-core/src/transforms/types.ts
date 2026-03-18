@@ -108,3 +108,96 @@ export interface TransformsConfig {
 export const DEFAULT_TRANSFORMS_CONFIG: TransformsConfig = {
   cleanArtists: DEFAULT_CLEAN_ARTISTS_CONFIG,
 };
+
+// =============================================================================
+// Video Transform Types
+// =============================================================================
+
+/**
+ * A video track transform that modifies metadata
+ *
+ * Video transforms are pure functions that take a video track and config,
+ * returning a new track with modified metadata. They follow the same pattern
+ * as audio TrackTransform but operate on VideoTransformableTrack.
+ *
+ * @template TConfig - Configuration type for this transform
+ */
+export interface VideoTrackTransform<TConfig = unknown> {
+  /** Unique identifier for this transform */
+  name: string;
+
+  /** Default configuration values */
+  defaultConfig: TConfig;
+
+  /**
+   * Apply the transform to a video track
+   *
+   * @param track - The video track to transform
+   * @param config - Transform configuration
+   * @returns The transformed track (may be same object if no changes)
+   */
+  apply(track: VideoTransformableTrack, config: TConfig): VideoTransformableTrack;
+}
+
+/**
+ * Minimal video track interface for video transforms
+ *
+ * Contains only the metadata fields that video transforms can read and modify.
+ */
+export interface VideoTransformableTrack {
+  seriesTitle?: string;
+  title: string;
+}
+
+/**
+ * Result of applying video transforms
+ */
+export interface VideoTransformResult<T extends VideoTransformableTrack = VideoTransformableTrack> {
+  /** The original video track metadata (unchanged) */
+  original: T;
+  /** The transformed video track metadata */
+  transformed: T;
+  /** True if any changes were made during transformation */
+  applied: boolean;
+}
+
+/**
+ * Configuration for the show language transform
+ *
+ * Controls how language/region markers in series titles are displayed on iPod.
+ * When enabled, markers like "(JPN)" are reformatted according to the format string.
+ * When disabled, markers are stripped from the display title.
+ */
+export interface ShowLanguageConfig {
+  /** Whether the transform is enabled (default: true — show language markers) */
+  enabled: boolean;
+  /** Format string for language marker. {} is replaced with the language code/name */
+  format: string;
+  /** When true, expand abbreviations to full names (JPN → Japanese) */
+  expand: boolean;
+}
+
+/**
+ * Default show language configuration
+ *
+ * Enabled by default — language markers are shown using their abbreviated form.
+ */
+export const DEFAULT_SHOW_LANGUAGE_CONFIG: ShowLanguageConfig = {
+  enabled: true,
+  format: '({})',
+  expand: false,
+};
+
+/**
+ * Configuration for all video transforms
+ */
+export interface VideoTransformsConfig {
+  showLanguage: ShowLanguageConfig;
+}
+
+/**
+ * Default configuration for all video transforms
+ */
+export const DEFAULT_VIDEO_TRANSFORMS_CONFIG: VideoTransformsConfig = {
+  showLanguage: DEFAULT_SHOW_LANGUAGE_CONFIG,
+};

@@ -2,18 +2,18 @@
 title: Feedback & Feature Requests
 description: How to request features, report bugs, and participate in podkit development.
 sidebar:
-  order: 2
+  order: 3
 ---
 
 podkit is a one-person project and I rely on hearing from the people who use it to build the right things. Whether you have a feature idea, a bug to report, or just want to tell me how you use your iPod — I'd love to hear from you.
 
 ## Feature Requests
 
-The best way to suggest a feature is through [GitHub Discussions](https://github.com/jvgomg/podkit/discussions/categories/ideas). Check the [roadmap](/roadmap/) first — your idea might already be there and ready for your vote.
+The best way to suggest a feature is through [GitHub Discussions](https://github.com/jvgomg/podkit/discussions/categories/ideas). Check the [roadmap](/project/roadmap/) first — your idea might already be there and ready for your vote.
 
 ### How to get involved
 
-1. **Browse the [roadmap](/roadmap/)** — see what's planned and find features you care about
+1. **Browse the [roadmap](/project/roadmap/)** — see what's planned and find features you care about
 2. **Vote** on discussions — upvotes directly influence what I work on next
 3. **Tell me your use case** — this is the most helpful thing you can do. Even a short comment like *"I keep my podcasts as local files and would love to sync them alongside my music"* gives me real insight into how a feature should work
 4. **[Start a new discussion](https://github.com/jvgomg/podkit/discussions/new?category=ideas)** if your idea isn't already listed

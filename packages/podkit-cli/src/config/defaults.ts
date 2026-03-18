@@ -5,7 +5,7 @@
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PodkitConfig } from './types.js';
-import { DEFAULT_TRANSFORMS_CONFIG } from './types.js';
+import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './types.js';
 
 /**
  * Default location for config file
@@ -22,6 +22,7 @@ export const DEFAULT_CONFIG: PodkitConfig = {
   artwork: true,
   tips: true,
   transforms: DEFAULT_TRANSFORMS_CONFIG,
+  videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
 };
 
 /**
@@ -49,4 +50,7 @@ export const ENV_KEYS = {
   cleanArtistsDrop: `${ENV_PREFIX}CLEAN_ARTISTS_DROP`,
   cleanArtistsFormat: `${ENV_PREFIX}CLEAN_ARTISTS_FORMAT`,
   cleanArtistsIgnore: `${ENV_PREFIX}CLEAN_ARTISTS_IGNORE`,
+  showLanguage: `${ENV_PREFIX}SHOW_LANGUAGE`,
+  showLanguageFormat: `${ENV_PREFIX}SHOW_LANGUAGE_FORMAT`,
+  showLanguageExpand: `${ENV_PREFIX}SHOW_LANGUAGE_EXPAND`,
 } as const;

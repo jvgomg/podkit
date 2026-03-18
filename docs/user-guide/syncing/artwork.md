@@ -2,7 +2,7 @@
 title: Artwork
 description: How podkit handles album artwork during sync, including change detection and upgrades.
 sidebar:
-  order: 4
+  order: 5
 ---
 
 Album artwork is synced to your iPod automatically. If your source files have embedded artwork, it transfers during sync with no extra configuration needed.

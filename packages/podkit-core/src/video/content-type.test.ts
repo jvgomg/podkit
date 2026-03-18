@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { detectContentType } from './content-type.js';
+import { detectContentType, extractLanguageAndEdition } from './content-type.js';
 
 // =============================================================================
 // Episode Pattern Detection Tests
@@ -631,5 +631,173 @@ describe('detectContentType - scene release parsing', () => {
       expect(result.confidence).toBe('medium');
       expect(result.parsedTitle).toBe('Random Video');
     });
+  });
+});
+
+// =============================================================================
+// Anime Fansub Pattern Tests
+// =============================================================================
+
+describe('detectContentType - anime fansub filenames', () => {
+  it('detects [RyRo] fansub naming with codec and CRC', () => {
+    const result = detectContentType('/Anime/[RyRo]_Digimon_Adventure_15_(h264)_[8FBCA82D].mkv');
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Digimon Adventure');
+    expect(result.seasonNumber).toBe(1);
+    expect(result.episodeNumber).toBe(15);
+    expect(result.episodeId).toBe('S01E15');
+  });
+
+  it('detects fansub naming with spaces and dash separator', () => {
+    const result = detectContentType('/Anime/[SubGroup] Show Name - 03 [ABCD1234].mkv');
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Show Name');
+    expect(result.episodeNumber).toBe(3);
+  });
+
+  it('detects fansub naming with version suffix', () => {
+    const result = detectContentType('/Anime/[Group] Show Name - 01v2.mkv');
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Show Name');
+    expect(result.episodeNumber).toBe(1);
+  });
+
+  it('detects fansub naming with triple-digit episode', () => {
+    const result = detectContentType('/Anime/[Group]_Long_Show_Name_-_100_(1080p)_[DEADBEEF].mkv');
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Long Show Name');
+    expect(result.episodeNumber).toBe(100);
+  });
+
+  it('detects fansub naming with underscore dash separator', () => {
+    const result = detectContentType('/Anime/[Fansub]_Show_Name_-_07_(720p)_[AABBCCDD].mkv');
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Show Name');
+    expect(result.episodeNumber).toBe(7);
+  });
+
+  it('defaults season to 1 for fansub files', () => {
+    const result = detectContentType('/Anime/[RyRo]_Digimon_Adventure_26_(h264)_[9ADB780A].mkv');
+
+    expect(result.seasonNumber).toBe(1);
+  });
+});
+
+// =============================================================================
+// Folder-Based Series Title Priority Tests
+// =============================================================================
+
+describe('detectContentType - folder-based series title', () => {
+  it('extracts series title from scene release folder name', () => {
+    const result = detectContentType(
+      '/Media/Digimon.Digital.Monsters.S01E01-54.DUBBED.DVDRip.XviD-DEiMOS/Digimon.S01E01.DVDRip.XviD-DEiMOS.avi'
+    );
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Digimon Digital Monsters');
+  });
+
+  it('still extracts from filename when parent is a generic folder', () => {
+    // /Videos/ is a generic folder, so fall through to library parser
+    const result = detectContentType('/Videos/Game.of.Thrones.S01E01.720p.mp4');
+
+    expect(result.seriesTitle).toBe('Game of Thrones');
+  });
+
+  it('preserves language marker in folder-derived series title', () => {
+    const result = detectContentType(
+      '/Media/Digimon Adventure (JPN)/Season 01/Digimon Adventure - S01E01.mkv'
+    );
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Digimon Adventure (JPN)');
+  });
+
+  it('preserves CHN marker in folder-derived series title', () => {
+    const result = detectContentType(
+      '/Media/Digimon Adventure (CHN)/Season 01/Digimon Adventure - S01E01.mp4'
+    );
+
+    expect(result.type).toBe('tvshow');
+    expect(result.seriesTitle).toBe('Digimon Adventure (CHN)');
+  });
+
+  it('prefers Season folder parent over parent folder', () => {
+    const result = detectContentType('/Media/Breaking Bad/Season 1/Breaking.Bad.S01E01.720p.mp4');
+
+    expect(result.seriesTitle).toBe('Breaking Bad');
+  });
+});
+
+// =============================================================================
+// Language & Edition Detection Tests
+// =============================================================================
+
+describe('detectContentType - language and edition detection', () => {
+  it('detects language from folder name', () => {
+    const result = detectContentType(
+      '/Media/Digimon Adventure Chinese/Season 01/Digimon Adventure - S01E01.mp4'
+    );
+
+    expect(result.language).toBe('Chinese');
+  });
+
+  it('detects DUBBED edition from filename', () => {
+    const result = detectContentType('/Media/Show.S01E01.DUBBED.DVDRip.mp4');
+
+    expect(result.edition).toBe('Dubbed');
+  });
+
+  it('detects JPN language from filename', () => {
+    const result = detectContentType('/Media/Show.JPN.S01E01.mkv');
+
+    expect(result.language).toBe('Japanese');
+  });
+
+  it('detects language from folder path', () => {
+    const result = detectContentType('/Media/Show (JPN)/Season 01/Show - S01E01.mkv');
+
+    expect(result.language).toBe('Japanese');
+  });
+
+  it('detects both language and edition', () => {
+    const result = detectContentType('/Media/Show.S01E01.DUBBED.JPN.mkv');
+
+    expect(result.language).toBe('Japanese');
+    expect(result.edition).toBe('Dubbed');
+  });
+});
+
+describe('extractLanguageAndEdition', () => {
+  it('detects Chinese from folder name', () => {
+    const result = extractLanguageAndEdition(
+      '/Media/Digimon Adventure Chinese/Season 01/Episode.mp4'
+    );
+
+    expect(result.language).toBe('Chinese');
+  });
+
+  it('detects DUBBED edition', () => {
+    const result = extractLanguageAndEdition('/Media/Show.DUBBED.S01E01.avi');
+
+    expect(result.edition).toBe('Dubbed');
+  });
+
+  it('detects REMASTERED edition', () => {
+    const result = extractLanguageAndEdition('/Media/Movie.REMASTERED.2020.mp4');
+
+    expect(result.edition).toBe('Remastered');
+  });
+
+  it('returns empty when no tags found', () => {
+    const result = extractLanguageAndEdition('/Media/Regular Movie.mp4');
+
+    expect(result.language).toBeUndefined();
+    expect(result.edition).toBeUndefined();
   });
 });

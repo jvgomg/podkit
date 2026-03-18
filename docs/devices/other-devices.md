@@ -22,5 +22,5 @@ There is no timeline for DAP support, but the architecture is designed to accomm
 ## See Also
 
 - [Supported Devices](/devices/supported-devices) - Stock firmware iPod compatibility
-- [Roadmap](/roadmap) - Planned features and priorities
-- [Feedback](/feedback) - Request device support
+- [Roadmap](/project/roadmap) - Planned features and priorities
+- [Feedback](/project/feedback) - Request device support

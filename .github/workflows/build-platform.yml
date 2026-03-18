@@ -74,12 +74,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            build-essential pkg-config python3-pip \
-            libglib2.0-dev libgdk-pixbuf-2.0-dev \
-            libplist-dev libffi-dev libsqlite3-dev \
-            libpng-dev libjpeg-dev libtiff-dev libxml2-dev \
-            intltool autoconf automake libtool gtk-doc-tools \
-            meson ninja-build curl
+            build-essential pkg-config cmake ninja-build \
+            python3 python3-pip curl gettext \
+            intltool autoconf automake libtool gtk-doc-tools
+          # Debian 12 ships meson 1.0.1, glib 2.82+ needs >= 1.2.0
+          sudo pip3 install --upgrade meson --break-system-packages
 
       - name: Build static dependencies
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -96,10 +95,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
-            build-essential pkg-config \
-            libglib2.0-dev libgdk-pixbuf-2.0-dev \
-            libplist-dev libffi-dev \
-            libpng-dev libjpeg-dev libtiff-dev
+            build-essential pkg-config
 
       - uses: actions/setup-node@v4
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -110,9 +106,9 @@ jobs:
         with:
           bun-version: latest
 
-      - name: Install dependencies (with scripts for prebuild)
+      - name: Install dependencies (for prebuild)
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
-        run: bun install
+        run: bun install --ignore-scripts
 
       - name: Create prebuild
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -138,7 +134,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD"
-          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf'; then
+          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -192,13 +188,22 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test - dummy iPod device info
+      - name: Smoke test - native binding loads (isolated)
         run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "Could not read"; then
+            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
             exit 1
           fi
 
@@ -261,12 +266,20 @@ jobs:
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
         run: |
           apk add --no-cache \
-            bash build-base pkgconf python3 curl \
-            glib-dev gdk-pixbuf-dev \
-            libplist-dev libffi-dev sqlite-dev \
-            libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+            bash build-base pkgconf python3 curl git cmake meson ninja \
+            glib-dev glib-static \
+            libffi-dev \
+            pcre2-dev \
+            sqlite-dev sqlite-static \
+            libplist-dev libplist-static \
+            libxml2-dev libxml2-static \
+            libpng-dev libpng-static \
+            libjpeg-turbo-dev libjpeg-turbo-static \
+            tiff-dev \
+            zlib-dev zlib-static \
+            gettext-static gettext-dev \
             intltool autoconf automake libtool gtk-doc \
-            meson ninja perl-xml-parser linux-headers
+            perl-xml-parser linux-headers
 
       - name: Build static dependencies
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -277,9 +290,16 @@ jobs:
         run: |
           apk add --no-cache \
             bash build-base pkgconf python3 \
-            glib-dev gdk-pixbuf-dev \
-            libplist-dev libffi-dev \
-            libpng-dev libjpeg-turbo-dev tiff-dev
+            glib-dev glib-static \
+            libffi-dev pcre2-dev \
+            sqlite-dev sqlite-static \
+            libplist-dev libplist-static \
+            libxml2-dev libxml2-static \
+            libpng-dev libpng-static \
+            libjpeg-turbo-dev libjpeg-turbo-static \
+            tiff-dev \
+            zlib-dev zlib-static \
+            gettext-static gettext-dev
 
       - name: Install Node.js
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -291,9 +311,9 @@ jobs:
           export BUN_INSTALL=/usr/local
           curl -fsSL https://bun.sh/install | bash
 
-      - name: Install dependencies (with scripts for prebuild)
+      - name: Install dependencies (for prebuild)
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
-        run: bun install
+        run: bun install --ignore-scripts
 
       - name: Create prebuild
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -309,7 +329,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD" || true
-          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
+          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -343,13 +363,23 @@ jobs:
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
-      - name: Smoke test - dummy iPod
+      - name: Smoke test - native binding loads (isolated)
         run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"; exit 1
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "Could not read"; then
+            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
+            exit 1
           fi
 
       - name: Create tarball
@@ -402,12 +432,19 @@ jobs:
               set -e
               echo "==> Installing build dependencies..."
               apk add --no-cache \
-                bash build-base pkgconf python3 curl git \
-                glib-dev gdk-pixbuf-dev \
-                libplist-dev libffi-dev sqlite-dev \
-                libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+                bash build-base pkgconf python3 curl git cmake meson ninja \
+                glib-dev glib-static \
+                libffi-dev \
+                pcre2-dev \
+                sqlite-dev sqlite-static \
+                libplist-dev libplist-static \
+                libxml2-dev libxml2-static \
+                libpng-dev libpng-static \
+                libjpeg-turbo-dev libjpeg-turbo-static \
+                tiff-dev \
+                zlib-dev zlib-static \
                 intltool autoconf automake libtool gtk-doc \
-                meson ninja perl-xml-parser linux-headers \
+                perl-xml-parser linux-headers \
                 nodejs npm
 
               if [ ! -f /workspace/static-deps/lib/libgpod.a ] || [ ! -f /workspace/static-deps/lib/libgdk_pixbuf-2.0.a ]; then
@@ -422,7 +459,7 @@ jobs:
               curl -fsSL https://bun.sh/install | bash
 
               echo "==> Installing Node.js dependencies..."
-              bun install
+              bun install --ignore-scripts
 
               echo "==> Creating prebuild..."
               cd packages/libgpod-node
@@ -432,7 +469,7 @@ jobs:
               echo "==> Verifying static linking..."
               PREBUILD=$(find prebuilds -name "*.node" | head -1)
               ldd "$PREBUILD" || true
-              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff"; then
                 echo "ERROR: Found unexpected dynamic dependencies"
                 exit 1
               fi
@@ -448,7 +485,7 @@ jobs:
             -w /workspace \
             alpine:3.21 sh -c '
               set -e
-              apk add --no-cache bash curl unzip jq glib gdk-pixbuf libplist libpng libjpeg-turbo tiff
+              apk add --no-cache bash curl unzip jq libstdc++
 
               echo "==> Installing Bun..."
               export BUN_INSTALL=/usr/local
@@ -471,15 +508,25 @@ jobs:
               packages/podkit-cli/bin/podkit --help
 
               ldd packages/podkit-cli/bin/podkit || true
-              if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+              if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff"; then
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
 
+              ISOLATED_DIR=$(mktemp -d)
+              cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
               mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-              OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+              OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
               echo "$OUTPUT"
-              if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-                echo "ERROR: Native addon failed to load"; exit 1
+              rm -rf "$ISOLATED_DIR"
+
+              if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+                echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+                exit 1
+              fi
+              if ! echo "$OUTPUT" | grep -q "Could not read"; then
+                echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
+                exit 1
               fi
             '
 

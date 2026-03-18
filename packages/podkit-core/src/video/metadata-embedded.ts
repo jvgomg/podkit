@@ -204,6 +204,53 @@ interface FilenameParsed {
 }
 
 /**
+ * Scene release token patterns used to detect cruft in episode title parts
+ *
+ * When a filename like "Show.S01E01.DVDRip.XviD-DEiMOS.avi" is parsed,
+ * the part after the episode ID ("DVDRip.XviD-DEiMOS") should be discarded
+ * as scene release cruft rather than used as the episode title.
+ */
+const SCENE_TOKEN_PATTERNS: RegExp[] = [
+  /^(720p|1080p|2160p|4K|480p|576p)$/i,
+  /^(HDTV|WEB-?DL|WEB-?Rip|BluRay|BRRip|DVDRip|BDRip|REMUX|REPACK|PROPER|INTERNAL)$/i,
+  /^(x264|x265|h\.?264|h\.?265|HEVC|XviD|DivX|AVC)$/i,
+  /^(AAC|AC3|DTS|DTS-?HD|DD5\.?1|FLAC|TrueHD|5\.1|7\.1)$/i,
+  /^(DUBBED|SUBBED|MULTI|DUAL[.-]?AUDIO)$/i,
+];
+
+/**
+ * Language tokens to strip from episode title parts
+ */
+const LANGUAGE_TOKEN_PATTERN =
+  /\b(?:Part\s+)?(Chinese|Japanese|English|Korean|French|German|Spanish|Italian|JPN|ENG|CHN|KOR|FRE|GER|SPA|ITA)\b/gi;
+
+/**
+ * Check if a title part from a parsed filename is entirely scene release cruft
+ *
+ * Returns the cleaned title if it contains real content, or null if it's all cruft.
+ */
+function cleanEpisodeTitlePart(titlePart: string): string | null {
+  // Replace dots with spaces and strip release group suffix (e.g., "-DEiMOS")
+  let cleaned = titlePart
+    .replace(/\./g, ' ')
+    .replace(/\s*-\s*[A-Za-z0-9]+$/, '')
+    .trim();
+
+  // Strip language tokens
+  cleaned = cleaned.replace(LANGUAGE_TOKEN_PATTERN, '').trim();
+
+  // Check if remaining words are all scene tokens
+  const words = cleaned.split(/\s+/).filter((w) => w.length > 0);
+  if (words.length === 0) return null;
+
+  const allSceneCruft = words.every((word) =>
+    SCENE_TOKEN_PATTERNS.some((pattern) => pattern.test(word))
+  );
+
+  return allSceneCruft ? null : cleaned;
+}
+
+/**
  * Parse metadata from filename
  *
  * Handles patterns like:
@@ -212,19 +259,34 @@ interface FilenameParsed {
  * - "Show.S01E05.Episode.Title.mp4" -> TV show pattern
  * - "Show.1x05.Episode.Title.mp4" -> TV show pattern
  * - "Show - S01E05 - Episode Title.mp4" -> TV show pattern
+ * - "[Group]_Show_Name_15_(h264)_[CRC].mkv" -> Anime fansub pattern
  */
 export function parseFilename(filePath: string): FilenameParsed {
   const basename = path.basename(filePath);
   const ext = path.extname(basename);
   const nameWithoutExt = basename.slice(0, -ext.length);
 
-  // Try to parse TV show patterns first
+  // Try anime fansub pattern first (before SxxExx since fansub files never have SxxExx)
+  // Match: "[Group]_Show_Name_15_(h264)_[8FBCA82D]" or "[Group] Show - 03 [CRC]"
+  const fansubMatch = nameWithoutExt.match(
+    /^\[([^\]]+)\][_ ]+(.+?)[_ ]+(?:-[_ ]+)?(\d{2,3})(?:v\d+)?(?:[_ ]*\([^)]*\))?(?:[_ ]*\[[0-9A-Fa-f]{8}\])?$/
+  );
+  if (fansubMatch) {
+    return {
+      title: fansubMatch[2]!.replace(/[_]/g, ' ').trim(),
+      seasonNumber: 1,
+      episodeNumber: parseInt(fansubMatch[3]!, 10),
+    };
+  }
+
+  // Try to parse TV show patterns
   // Match: "Show.S01E05.Title" or "Show - S01E05 - Title" or "Show S01E05 Title"
   const sxxexxMatch = nameWithoutExt.match(/^(.+?)[.\s-]+[Ss](\d+)[Ee](\d+)(?:[.\s-]+(.*))?$/);
   if (sxxexxMatch) {
     const [, showPart, season, episode, titlePart] = sxxexxMatch;
+    const cleanedTitle = titlePart ? cleanEpisodeTitlePart(titlePart) : null;
     return {
-      title: (titlePart || showPart || '').replace(/\./g, ' ').trim(),
+      title: cleanedTitle || (showPart || '').replace(/\./g, ' ').trim(),
       seasonNumber: parseInt(season!, 10),
       episodeNumber: parseInt(episode!, 10),
     };
@@ -234,8 +296,9 @@ export function parseFilename(filePath: string): FilenameParsed {
   const nxnnMatch = nameWithoutExt.match(/^(.+?)[.\s-]+(\d+)x(\d+)(?:[.\s-]+(.*))?$/);
   if (nxnnMatch) {
     const [, showPart, season, episode, titlePart] = nxnnMatch;
+    const cleanedTitle = titlePart ? cleanEpisodeTitlePart(titlePart) : null;
     return {
-      title: (titlePart || showPart || '').replace(/\./g, ' ').trim(),
+      title: cleanedTitle || (showPart || '').replace(/\./g, ' ').trim(),
       seasonNumber: parseInt(season!, 10),
       episodeNumber: parseInt(episode!, 10),
     };

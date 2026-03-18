@@ -2,7 +2,7 @@
 title: Similar Projects
 description: Other tools for syncing music to iPod devices, and how they compare to podkit.
 sidebar:
-  order: 2
+  order: 4
 ---
 
 The iPod community has produced some great tools over the years. If you're looking for a way to manage your iPod without iTunes, here's an overview of the options — what they do well, and when you might prefer one over another.

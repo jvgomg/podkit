@@ -17,6 +17,10 @@ export default defineConfig({
   base,
   redirects: {
     '/reference/transforms/': '/reference/clean-artists/',
+    '/about/': '/project/about/',
+    '/roadmap/': '/project/roadmap/',
+    '/feedback/': '/project/feedback/',
+    '/similar-projects/': '/project/similar-projects/',
   },
   markdown: {
     remarkPlugins: [remarkBaseUrl({ base }), remarkEmoji],
@@ -108,22 +112,11 @@ export default defineConfig({
       sidebar: [
         {
           label: 'Getting Started',
-          items: [
-            { label: 'Introduction', slug: 'index' },
-            { label: 'Installation', slug: 'getting-started/installation' },
-            { label: 'Quick Start', slug: 'getting-started/quick-start' },
-            { label: 'Docker', slug: 'getting-started/docker' },
-            { label: 'Tips & Next Steps', slug: 'getting-started/tips' },
-          ],
+          autogenerate: { directory: 'getting-started' },
         },
         {
           label: 'The Project',
-          items: [
-            { slug: 'about' },
-            { slug: 'roadmap' },
-            { slug: 'feedback' },
-            { slug: 'similar-projects' },
-          ],
+          autogenerate: { directory: 'project' },
         },
         {
           label: 'User Guide',
@@ -131,45 +124,19 @@ export default defineConfig({
             { slug: 'user-guide/configuration' },
             {
               label: 'Collections',
-              items: [
-                { slug: 'user-guide/collections' },
-                { slug: 'user-guide/collections/directory' },
-                { slug: 'user-guide/collections/subsonic' },
-                { slug: 'user-guide/collections/additional-sources' },
-              ],
+              autogenerate: { directory: 'user-guide/collections' },
             },
             {
               label: 'Syncing',
-              items: [
-                { slug: 'user-guide/syncing' },
-                { slug: 'user-guide/syncing/music' },
-                { slug: 'user-guide/syncing/video' },
-                { slug: 'user-guide/syncing/compilation-albums' },
-                { slug: 'user-guide/syncing/artwork' },
-                { slug: 'user-guide/syncing/sound-check' },
-                { slug: 'user-guide/syncing/upgrades' },
-              ],
+              autogenerate: { directory: 'user-guide/syncing' },
             },
             {
               label: 'Devices',
-              items: [
-                { slug: 'user-guide/devices' },
-                { slug: 'user-guide/devices/adding-devices' },
-                { slug: 'user-guide/devices/quality' },
-                { slug: 'user-guide/devices/artist-transforms' },
-                { slug: 'user-guide/devices/mounting-ejecting' },
-                { slug: 'user-guide/devices/clearing' },
-                { slug: 'user-guide/devices/resetting' },
-                { slug: 'user-guide/devices/formatting' },
-              ],
+              autogenerate: { directory: 'user-guide/devices' },
             },
             {
               label: 'Transcoding',
-              items: [
-                { slug: 'user-guide/transcoding' },
-                { slug: 'user-guide/transcoding/audio' },
-                { slug: 'user-guide/transcoding/video' },
-              ],
+              autogenerate: { directory: 'user-guide/transcoding' },
             },
           ],
         },

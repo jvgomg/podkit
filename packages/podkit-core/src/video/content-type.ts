@@ -49,6 +49,12 @@ export interface ContentTypeResult {
 
   /** Parsed year from filename (for movies) */
   parsedYear?: number;
+
+  /** Detected language tag (e.g., 'Japanese', 'English', 'Chinese') */
+  language?: string;
+
+  /** Detected edition/variant tag (e.g., 'Dubbed', 'Subbed') */
+  edition?: string;
 }
 
 /**
@@ -59,6 +65,19 @@ interface EpisodePatternMatch {
   episodeNumber: number;
   matchIndex: number;
   matchLength: number;
+}
+
+/**
+ * Result from anime fansub pattern matching
+ *
+ * Extends episode match with series title and fansub group,
+ * since these are integral to the fansub naming format.
+ */
+interface FansubPatternMatch {
+  seriesTitle: string;
+  fansubGroup: string;
+  seasonNumber: number;
+  episodeNumber: number;
 }
 
 // =============================================================================
@@ -116,12 +135,123 @@ const CLEANUP_PATTERNS: RegExp[] = [
   /\b(x264|x265|h\.?264|h\.?265|HEVC|XviD|DivX)\b/gi,
   // Audio info
   /\b(AAC|AC3|DTS|DD5\.1|5\.1|7\.1)\b/gi,
+  // Episode range markers (e.g., S01E01-54, S01E01-E54)
+  /\b[Ss]\d{1,2}[Ee]\d{1,3}(?:-[Ee]?\d{1,3})?\b/g,
+  // Edition/dub indicators (NOT language codes — those are identity markers preserved in seriesTitle)
+  /\b(DUBBED|SUBBED|MULTI|DUAL[.-]?AUDIO)\b/gi,
   // Release groups (in brackets or after dash at end)
   /\[.*?\]/g,
   /\s*-\s*[A-Za-z0-9]+$/,
   // Year in parentheses (but keep the year for potential use)
   /\(\d{4}\)/g,
 ];
+
+/**
+ * Generic folder names that should not be used as series titles
+ *
+ * When extracting series title from parent folder, skip these
+ * since they are container directories, not show names.
+ */
+const GENERIC_FOLDER_NAMES = new Set([
+  'videos',
+  'movies',
+  'media',
+  'downloads',
+  'tv',
+  'tv shows',
+  'tv show',
+  'series',
+  'television',
+  'anime',
+  'shows',
+  'content',
+  'library',
+  'home',
+  'share',
+  'shared',
+  'public',
+  'torrents',
+  'completed',
+]);
+
+// =============================================================================
+// Language & Edition Detection
+// =============================================================================
+
+/**
+ * Known language tags mapped to their normalized full names
+ */
+const LANGUAGE_TAGS: Record<string, string> = {
+  jpn: 'Japanese',
+  japanese: 'Japanese',
+  eng: 'English',
+  english: 'English',
+  chn: 'Chinese',
+  chinese: 'Chinese',
+  mandarin: 'Chinese',
+  kor: 'Korean',
+  korean: 'Korean',
+  fre: 'French',
+  french: 'French',
+  ger: 'German',
+  german: 'German',
+  spa: 'Spanish',
+  spanish: 'Spanish',
+  ita: 'Italian',
+  italian: 'Italian',
+};
+
+/**
+ * Known edition/variant tags
+ */
+const EDITION_TAGS = [
+  'DUBBED',
+  'SUBBED',
+  'HARDSUBBED',
+  'DIRECTORS CUT',
+  'EXTENDED',
+  'UNRATED',
+  'THEATRICAL',
+  'REMASTERED',
+];
+
+/**
+ * Extract language and edition tags from file path
+ *
+ * Scans both the filename and parent folder names for recognized
+ * language and edition indicators.
+ */
+export function extractLanguageAndEdition(filePath: string): {
+  language?: string;
+  edition?: string;
+} {
+  const fileName = path.basename(filePath, path.extname(filePath));
+  const dirPath = path.dirname(filePath);
+
+  // Combine filename and folder path, normalized for matching
+  const combined = `${dirPath}/${fileName}`.replace(/[._]/g, ' ');
+
+  let language: string | undefined;
+  let edition: string | undefined;
+
+  // Check for language tags
+  for (const [tag, name] of Object.entries(LANGUAGE_TAGS)) {
+    if (new RegExp(`\\b${tag}\\b`, 'i').test(combined)) {
+      language = name;
+      break;
+    }
+  }
+
+  // Check for edition tags
+  for (const tag of EDITION_TAGS) {
+    if (new RegExp(`\\b${tag.replace(/ /g, '\\s+')}\\b`, 'i').test(combined)) {
+      edition = tag.charAt(0).toUpperCase() + tag.slice(1).toLowerCase();
+      break;
+    }
+  }
+
+  return { language, edition };
+}
 
 // =============================================================================
 // Detection Functions
@@ -147,6 +277,10 @@ export function detectContentType(
 ): ContentTypeResult {
   const fileName = path.basename(filePath);
 
+  // Pre-compute folder-derived series title (most reliable, includes language markers)
+  const dirPath = path.dirname(filePath);
+  const folderSeriesTitle = extractSeriesTitleFromSeasonFolder(dirPath);
+
   // Priority 1: Explicit content type in metadata
   if (metadata?.contentType) {
     if (metadata.contentType === 'tvshow') {
@@ -158,10 +292,10 @@ export function detectContentType(
         episodeId: string;
       }>;
 
-      // Try to get series title from metadata, but use library if metadata looks like scene release
-      let seriesTitle = tvMetadata.seriesTitle;
-      const metadataSeriesTitleIsSceneRelease =
-        seriesTitle && looksLikeSceneReleaseSeriesTitle(seriesTitle);
+      // Prefer folder-derived series title (includes language markers like "(JPN)"),
+      // then fall back to metadata, then library parser
+      let seriesTitle = folderSeriesTitle ?? tvMetadata.seriesTitle;
+      const metadataSeriesTitleIsSceneRelease = seriesTitle && looksLikeSceneRelease(seriesTitle);
 
       if (!seriesTitle || metadataSeriesTitleIsSceneRelease) {
         // Try to parse series title from filename
@@ -212,7 +346,7 @@ export function detectContentType(
     return {
       type: 'tvshow',
       confidence: 'high',
-      seriesTitle: tvMetadata.seriesTitle,
+      seriesTitle: folderSeriesTitle ?? tvMetadata.seriesTitle,
       seasonNumber: tvMetadata.seasonNumber,
       episodeNumber: tvMetadata.episodeNumber,
       episodeId:
@@ -224,7 +358,7 @@ export function detectContentType(
   }
 
   // Priority 3 & 4: Analyze path for TV patterns
-  const dirPath = path.dirname(filePath);
+  const langEdition = extractLanguageAndEdition(filePath);
 
   const episodeMatch = matchEpisodePattern(fileName);
   const hasTVFolder = hasTVFolderPattern(dirPath);
@@ -242,6 +376,23 @@ export function detectContentType(
       seasonNumber: episodeMatch.seasonNumber,
       episodeNumber: episodeMatch.episodeNumber,
       episodeId: formatEpisodeId(episodeMatch.seasonNumber, episodeMatch.episodeNumber),
+      ...langEdition,
+    };
+  }
+
+  // Priority 3b: Anime fansub pattern (no SxxExx, uses standalone episode numbers)
+  const fansubMatch = matchAnimeFansubPattern(fileName);
+  if (fansubMatch) {
+    const confidence: ContentTypeConfidence = hasTVFolder || seasonInfo ? 'high' : 'medium';
+
+    return {
+      type: 'tvshow',
+      confidence,
+      seriesTitle: fansubMatch.seriesTitle,
+      seasonNumber: fansubMatch.seasonNumber,
+      episodeNumber: fansubMatch.episodeNumber,
+      episodeId: formatEpisodeId(fansubMatch.seasonNumber, fansubMatch.episodeNumber),
+      ...langEdition,
     };
   }
 
@@ -257,6 +408,7 @@ export function detectContentType(
       confidence: 'medium',
       seriesTitle: seriesTitle ?? undefined,
       seasonNumber: seasonInfo?.seasonNumber,
+      ...langEdition,
     };
   }
 
@@ -269,10 +421,11 @@ export function detectContentType(
       confidence: 'medium',
       parsedTitle: parsed.title,
       parsedYear: parsed.year,
+      ...langEdition,
     };
   }
 
-  return { type: 'movie', confidence: 'low' };
+  return { type: 'movie', confidence: 'low', ...langEdition };
 }
 
 // =============================================================================
@@ -295,6 +448,36 @@ function matchEpisodePattern(fileName: string): EpisodePatternMatch | null {
     }
   }
   return null;
+}
+
+/**
+ * Match anime fansub naming pattern in filename
+ *
+ * Handles patterns like:
+ * - [RyRo]_Digimon_Adventure_15_(h264)_[8FBCA82D].mkv
+ * - [SubGroup] Show Name - 03 [720p] [ABCD1234].mkv
+ * - [Group]_Show_-_100_(1080p)_[DEADBEEF].mkv
+ * - [Group] Show - 01v2.mkv (version releases)
+ *
+ * Requires square brackets at start (fansub group) to avoid false positives.
+ * Season defaults to 1 since anime typically uses different series names per season.
+ */
+function matchAnimeFansubPattern(fileName: string): FansubPatternMatch | null {
+  const ext = path.extname(fileName);
+  const nameWithoutExt = fileName.slice(0, -ext.length);
+
+  const match = nameWithoutExt.match(
+    /^\[([^\]]+)\][_ ]+(.+?)[_ ]+(?:-[_ ]+)?(\d{2,3})(?:v\d+)?(?:[_ ]*\([^)]*\))?(?:[_ ]*\[[0-9A-Fa-f]{8}\])?$/
+  );
+
+  if (!match) return null;
+
+  return {
+    fansubGroup: match[1]!,
+    seriesTitle: match[2]!.replace(/[_]/g, ' ').trim(),
+    seasonNumber: 1,
+    episodeNumber: parseInt(match[3]!, 10),
+  };
 }
 
 /**
@@ -329,6 +512,12 @@ function extractSeasonFromFolder(dirPath: string): { seasonNumber: number } | nu
 
 /**
  * Extract series title from file path when episode pattern is found
+ *
+ * Priority order:
+ * 1. Season folder parent (e.g., /Breaking Bad/Season 1/ → "Breaking Bad")
+ * 2. Parent folder if not generic (e.g., /Digimon.Digital.Monsters.DUBBED/ → "Digimon Digital Monsters")
+ * 3. Library parser from filename (e.g., "Game.of.Thrones.S01E01.720p.mp4" → "Game of Thrones")
+ * 4. "Unknown Series" fallback
  */
 function extractSeriesTitle(filePath: string, _episodeMatch: EpisodePatternMatch): string {
   const fileName = path.basename(filePath);
@@ -340,24 +529,29 @@ function extractSeriesTitle(filePath: string, _episodeMatch: EpisodePatternMatch
     return folderTitle;
   }
 
-  // Second, try using the library for scene release parsing (better than regex)
+  // Second, try parent folder (often has full series name, e.g. release folder)
+  // Skip generic container folders like "Videos", "Movies", "Downloads"
+  const parts = dirPath.split(path.sep);
+  const lastFolder = parts[parts.length - 1];
+  if (lastFolder) {
+    const isSeasonFolder = SEASON_FOLDER_PATTERNS.some((p) => p.test(lastFolder));
+    const isGenericFolder = GENERIC_FOLDER_NAMES.has(lastFolder.toLowerCase());
+
+    if (!isSeasonFolder && !isGenericFolder) {
+      const cleaned = cleanupTitle(lastFolder);
+      if (cleaned && cleaned.length > 0 && !looksLikeSceneRelease(cleaned)) {
+        return cleaned;
+      }
+    }
+  }
+
+  // Third, try using the library for scene release parsing
   const libraryResult = parseSeason(fileName);
   if (libraryResult?.seriesTitle && libraryResult.seriesTitle.length > 0) {
     // Clean up any trailing brackets or artifacts from the library
     const cleaned = cleanupSeriesTitle(libraryResult.seriesTitle);
     if (cleaned.length > 0) {
       return cleaned;
-    }
-  }
-
-  // Third, try extracting from parent folder (for files like "S01E01.mkv")
-  const parts = dirPath.split(path.sep);
-  const lastFolder = parts[parts.length - 1];
-  if (lastFolder) {
-    // Check if the folder looks like a series name (not a season folder)
-    const isSeasonFolder = SEASON_FOLDER_PATTERNS.some((p) => p.test(lastFolder));
-    if (!isSeasonFolder) {
-      return cleanupTitle(lastFolder) || lastFolder;
     }
   }
 
@@ -462,14 +656,29 @@ function cleanupSeriesTitle(raw: string): string {
 }
 
 /**
- * Check if a series title from embedded metadata looks like scene release garbage
+ * Check if a title looks like a scene release name
  *
- * Examples of bad series titles:
+ * Scene releases typically have:
+ * - Dots separating words instead of spaces (e.g., "Movie.Name.2020")
+ * - Quality indicators (720p, 1080p, BluRay, etc.)
+ * - Release group names
+ *
+ * Used by both content-type detection (for series titles from metadata)
+ * and directory-adapter (for embedded metadata titles).
+ *
+ * Examples of bad titles:
  * - "DVDRip XviD-KIDSROCK"
  * - "WEB-DL 1080p"
+ * - "Movie.Name.2020.1080p.BluRay"
  */
-function looksLikeSceneReleaseSeriesTitle(title: string): boolean {
-  // Quality/release indicators that shouldn't be in a real series title
+export function looksLikeSceneRelease(title: string): boolean {
+  // If it has multiple dots with words between them (e.g., "Movie.Name.2020")
+  const dotCount = (title.match(/\./g) || []).length;
+  if (dotCount >= 3) {
+    return true;
+  }
+
+  // Quality/release indicators that shouldn't be in a real title
   const scenePatterns = [
     /\b(720p|1080p|2160p|4K|480p|576p)\b/i,
     /\b(HDTV|WEB-?DL|WEB-?Rip|BluRay|BRRip|DVDRip|BDRip)\b/i,

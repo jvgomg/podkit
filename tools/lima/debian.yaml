@@ -1,0 +1,63 @@
+# Lima VM: Debian 12 (Bookworm)
+#
+# Used for cross-platform testing of podkit on Debian/Ubuntu-like systems.
+# Matches the environment of Homebrew Linux users.
+#
+# Usage:
+#   limactl start tools/lima/debian.yaml --name=podkit-debian
+#   limactl shell podkit-debian
+#   # Inside VM: cd /Users/james/Development/projects/podkit && bun install && bun run test
+
+images:
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2'
+    arch: 'aarch64'
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-amd64.qcow2'
+    arch: 'x86_64'
+
+# Share the host filesystem into the VM for running tests against the repo
+mounts:
+  - location: '~'
+    writable: true
+
+# VM resources
+cpus: 4
+memory: '4GiB'
+disk: '10GiB'
+
+provision:
+  # System-level dependencies (run as root)
+  - mode: system
+    script: |
+      #!/bin/bash
+      set -eux
+
+      echo "=== Installing system dependencies ==="
+      apt-get update
+      apt-get install -y \
+        build-essential \
+        python3 \
+        pkg-config \
+        libgpod-dev \
+        libglib2.0-dev \
+        ffmpeg \
+        util-linux \
+        git \
+        curl \
+        unzip
+
+      echo "=== Installing Node.js 22 LTS ==="
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+
+  # Install Bun as the Lima user (not root — Bun installs to $HOME/.bun/)
+  - mode: user
+    script: |
+      #!/bin/bash
+      set -eux
+
+      echo "=== Installing Bun ==="
+      curl -fsSL https://bun.sh/install | bash
+
+      # Add Bun to PATH for future shells
+      echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.bashrc
+      echo 'export PATH="$HOME/.bun/bin:$PATH"' >> ~/.profile

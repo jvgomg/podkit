@@ -2,7 +2,7 @@
 title: Sound Check
 description: How podkit reads volume normalization data (ReplayGain, iTunNORM) and writes Sound Check values to the iPod database.
 sidebar:
-  order: 5
+  order: 6
 ---
 
 Sound Check is the iPod's built-in volume normalization feature. It adjusts playback volume so that all tracks play at a similar perceived loudness, regardless of how they were mastered.

@@ -9,7 +9,7 @@ Feature requests live in three places that must stay in sync:
 | Location | Purpose | Audience |
 |----------|---------|----------|
 | **GitHub Discussions** (Ideas category) | Public voting, comments, and status updates | Users and contributors |
-| **Documentation** (`docs/roadmap.md`, callouts in other docs) | Communicates what's planned and links to discussions | Users reading the docs |
+| **Documentation** (`docs/project/roadmap.md`, callouts in other docs) | Communicates what's planned and links to discussions | Users reading the docs |
 | **Backlog tasks** (Backlog.md) | Internal tracking, implementation plans, acceptance criteria | Developers |
 
 The GitHub Discussion is the **source of truth** for public-facing feature status. The roadmap doc page and the pinned Roadmap discussion (#17) are derived views. The backlog task tracks implementation details.
@@ -167,8 +167,8 @@ These files contain callouts or links to specific discussions. When a feature's 
 
 | Doc File | Features Referenced | What to Update |
 |----------|-------------------|----------------|
-| `docs/roadmap.md` | All features | Move between Now/Next/Later tiers |
-| `docs/feedback.md` | General guidance | Rarely changes |
+| `docs/project/roadmap.md` | All features | Move between Now/Next/Later tiers |
+| `docs/project/feedback.md` | General guidance | Rarely changes |
 | `docs/user-guide/syncing/music.md` | #2 Podcasts, #3 Audiobooks, #4 Music Videos | Callout at line ~50 |
 | `docs/user-guide/syncing/video.md` | #4 Music Videos, #5 Video Podcasts | Callout at line ~42 |
 | `docs/user-guide/collections/additional-sources.md` | #35 iTunes/Apple Music, #6 Plex, #7 Jellyfin | Inline links + "Request a Source" section |
@@ -181,20 +181,20 @@ These files contain callouts or links to specific discussions. When a feature's 
 
 ### Updating the roadmap doc
 
-`docs/roadmap.md` has three tiers: **Now**, **Next**, and **Later**. Each feature is a row in a table with a link to its discussion.
+`docs/project/roadmap.md` has three tiers: **Now**, **Next**, and **Later**. Each feature is a row in a table with a link to its discussion.
 
 **When moving a feature between tiers:**
 1. Move the table row to the correct tier section
 2. If moving to **Now**, consider adding a brief note about what's actively happening
 
 **When a feature ships:**
-1. Remove it from `docs/roadmap.md`
+1. Remove it from `docs/project/roadmap.md`
 2. Update or remove the callout in the relevant doc file (e.g., replace the "not yet implemented" callout with actual documentation for the feature)
 3. Close the GitHub Discussion with a comment linking to the release or relevant docs
 
 ### Updating the pinned Roadmap discussion
 
-Discussion [#17](https://github.com/jvgomg/podkit/discussions/17) mirrors `docs/roadmap.md` in a more concise format. When the roadmap doc changes, update this discussion to match.
+Discussion [#17](https://github.com/jvgomg/podkit/discussions/17) mirrors `docs/project/roadmap.md` in a more concise format. When the roadmap doc changes, update this discussion to match.
 
 ### Adding callouts for new features
 
@@ -236,7 +236,7 @@ Features in **Later** generally don't need backlog tasks — the discussion is s
 
 ### Workflow: feature moves from Later to Next
 
-1. Update `docs/roadmap.md` — move the row to the **Next** section
+1. Update `docs/project/roadmap.md` — move the row to the **Next** section
 2. Update Discussion #17 (Roadmap) — move the entry
 3. Update the individual discussion's Status section to say **Next**
 4. Create a backlog task if one doesn't exist, with the discussion URL as a reference
@@ -244,7 +244,7 @@ Features in **Later** generally don't need backlog tasks — the discussion is s
 
 ### Workflow: feature moves from Next to Now (active development)
 
-1. Update `docs/roadmap.md` — move the row to the **Now** section
+1. Update `docs/project/roadmap.md` — move the row to the **Now** section
 2. Update Discussion #17 (Roadmap)
 3. Update the individual discussion's Status section to say **Now — actively in development**
 4. Ensure a backlog task exists with status "In Progress"
@@ -252,7 +252,7 @@ Features in **Later** generally don't need backlog tasks — the discussion is s
 
 ### Workflow: feature ships
 
-1. Remove from `docs/roadmap.md`
+1. Remove from `docs/project/roadmap.md`
 2. Update Discussion #17 (Roadmap) — remove the entry
 3. Close the discussion with reason RESOLVED and a comment linking to the release/docs
 4. Update doc callouts — replace "not yet" notes with actual feature documentation
@@ -279,7 +279,7 @@ The roadmap and feedback pages are in the Astro sidebar config at `packages/docs
 
 1. Create a GitHub Discussion in the Ideas category using the template above
 2. Determine the roadmap tier (Next or Later) based on user input
-3. Add a row to the appropriate tier in `docs/roadmap.md`
+3. Add a row to the appropriate tier in `docs/project/roadmap.md`
 4. Update Discussion #17 (Roadmap)
 5. Add the discussion to the registry table in this file
 6. If the feature relates to existing docs, add a callout linking to the discussion
@@ -287,7 +287,7 @@ The roadmap and feedback pages are in the Astro sidebar config at `packages/docs
 
 ### User asks to update a feature's priority/tier
 
-1. Move the row in `docs/roadmap.md`
+1. Move the row in `docs/project/roadmap.md`
 2. Update Discussion #17
 3. Update the individual discussion's Status section
 4. Update the registry table in this file
@@ -297,7 +297,7 @@ The roadmap and feedback pages are in the Astro sidebar config at `packages/docs
 ### User asks to close/remove a feature request
 
 1. Close the discussion with reason RESOLVED or OUTDATED
-2. Remove from `docs/roadmap.md`
+2. Remove from `docs/project/roadmap.md`
 3. Update Discussion #17
 4. Remove any related callouts from docs
 5. Update the registry table in this file

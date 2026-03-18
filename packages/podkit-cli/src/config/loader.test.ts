@@ -37,6 +37,13 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.cleanArtistsDrop];
     delete process.env[ENV_KEYS.cleanArtistsFormat];
     delete process.env[ENV_KEYS.cleanArtistsIgnore];
+
+    // Clear collection env vars (dynamic names)
+    for (const key of Object.keys(process.env)) {
+      if (key.startsWith('PODKIT_MUSIC_') || key.startsWith('PODKIT_VIDEO_')) {
+        delete process.env[key];
+      }
+    }
   });
 
   describe('DEFAULT_CONFIG', () => {
@@ -91,12 +98,7 @@ quality = "invalid"
     });
 
     // Quality preset tests
-    const validPresets = [
-      'max',
-      'high',
-      'medium',
-      'low',
-    ] as const;
+    const validPresets = ['max', 'high', 'medium', 'low'] as const;
     for (const preset of validPresets) {
       it(`accepts quality = "${preset}"`, () => {
         const configPath = path.join(tempDir, 'config.toml');
@@ -728,7 +730,7 @@ artwork = false
         expect(result?.devices?.nano!.artwork).toBe(false);
       });
 
-      it('throws on missing volumeUuid', () => {
+      it('allows device without volumeUuid', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -738,10 +740,12 @@ volumeName = "TERAPOD"
 `
         );
 
-        expect(() => loadConfigFile(configPath)).toThrow(/Missing or invalid "volumeUuid"/);
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.terapod!.volumeUuid).toBeUndefined();
+        expect(result?.devices?.terapod!.volumeName).toBe('TERAPOD');
       });
 
-      it('throws on missing volumeName', () => {
+      it('allows device without volumeName', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -751,7 +755,25 @@ volumeUuid = "ABC-123"
 `
         );
 
-        expect(() => loadConfigFile(configPath)).toThrow(/Missing or invalid "volumeName"/);
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.terapod!.volumeUuid).toBe('ABC-123');
+        expect(result?.devices?.terapod!.volumeName).toBeUndefined();
+      });
+
+      it('allows device with no volumeUuid or volumeName', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          `
+[devices.terapod]
+quality = "high"
+`
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.terapod!.volumeUuid).toBeUndefined();
+        expect(result?.devices?.terapod!.volumeName).toBeUndefined();
+        expect(result?.devices?.terapod!.quality).toBe('high');
       });
 
       it('throws on invalid quality', () => {
@@ -970,12 +992,7 @@ device = "terapod"
     });
 
     // All quality presets via env
-    const envPresets = [
-      'max',
-      'high',
-      'medium',
-      'low',
-    ] as const;
+    const envPresets = ['max', 'high', 'medium', 'low'] as const;
     for (const preset of envPresets) {
       it(`reads PODKIT_QUALITY=${preset}`, () => {
         process.env[ENV_KEYS.quality] = preset;
@@ -1122,6 +1139,168 @@ device = "terapod"
       expect(result.transforms?.cleanArtists.drop).toBe(true);
       expect(result.transforms?.cleanArtists.enabled).toBe(false);
     });
+
+    // =========================================================================
+    // Collection env vars
+    // =========================================================================
+
+    describe('music collection env vars', () => {
+      it('creates unnamed directory collection from PODKIT_MUSIC_PATH', () => {
+        process.env.PODKIT_MUSIC_PATH = '/music';
+        const result = loadEnvConfig();
+        expect(result.music).toEqual({
+          default: { path: '/music', type: 'directory' },
+        });
+        expect(result.defaults?.music).toBe('default');
+      });
+
+      it('creates named directory collection from PODKIT_MUSIC_MAIN_PATH', () => {
+        process.env.PODKIT_MUSIC_MAIN_PATH = '/music';
+        const result = loadEnvConfig();
+        expect(result.music).toEqual({
+          main: { path: '/music', type: 'directory' },
+        });
+        expect(result.defaults?.music).toBe('main');
+      });
+
+      it('creates unnamed subsonic collection', () => {
+        process.env.PODKIT_MUSIC_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_URL = 'https://navidrome.example.com';
+        process.env.PODKIT_MUSIC_USERNAME = 'user';
+        process.env.PODKIT_MUSIC_PASSWORD = 'secret';
+        const result = loadEnvConfig();
+        expect(result.music).toEqual({
+          default: {
+            path: '',
+            type: 'subsonic',
+            url: 'https://navidrome.example.com',
+            username: 'user',
+            password: 'secret',
+          },
+        });
+      });
+
+      it('creates named subsonic collection', () => {
+        process.env.PODKIT_MUSIC_NAVIDROME_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_NAVIDROME_URL = 'https://navidrome.example.com';
+        process.env.PODKIT_MUSIC_NAVIDROME_USERNAME = 'user';
+        process.env.PODKIT_MUSIC_NAVIDROME_PASSWORD = 'secret';
+        const result = loadEnvConfig();
+        expect(result.music?.navidrome).toEqual({
+          path: '',
+          type: 'subsonic',
+          url: 'https://navidrome.example.com',
+          username: 'user',
+          password: 'secret',
+        });
+      });
+
+      it('creates multiple named collections', () => {
+        process.env.PODKIT_MUSIC_MAIN_PATH = '/music/library';
+        process.env.PODKIT_MUSIC_VINYL_PATH = '/music/vinyl';
+        const result = loadEnvConfig();
+        expect(result.music).toEqual({
+          main: { path: '/music/library', type: 'directory' },
+          vinyl: { path: '/music/vinyl', type: 'directory' },
+        });
+        // Multiple collections: no auto-default
+        expect(result.defaults?.music).toBeUndefined();
+      });
+
+      it('converts env var name to kebab-case config name', () => {
+        process.env.PODKIT_MUSIC_MY_SERVER_PATH = '/music';
+        const result = loadEnvConfig();
+        expect(result.music?.['my-server']).toEqual({
+          path: '/music',
+          type: 'directory',
+        });
+      });
+
+      it('skips directory collection without PATH', () => {
+        process.env.PODKIT_MUSIC_TYPE = 'directory';
+        const result = loadEnvConfig();
+        expect(result.music).toBeUndefined();
+      });
+
+      it('skips subsonic collection without URL', () => {
+        process.env.PODKIT_MUSIC_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_USERNAME = 'user';
+        const result = loadEnvConfig();
+        expect(result.music).toBeUndefined();
+      });
+
+      it('skips subsonic collection without USERNAME', () => {
+        process.env.PODKIT_MUSIC_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_URL = 'https://example.com';
+        const result = loadEnvConfig();
+        expect(result.music).toBeUndefined();
+      });
+
+      it('ignores env vars that do not match known fields', () => {
+        process.env.PODKIT_MUSIC_FOO = 'bar';
+        const result = loadEnvConfig();
+        expect(result.music).toBeUndefined();
+      });
+
+      it('subsonic collection with path', () => {
+        process.env.PODKIT_MUSIC_TYPE = 'subsonic';
+        process.env.PODKIT_MUSIC_URL = 'https://example.com';
+        process.env.PODKIT_MUSIC_USERNAME = 'user';
+        process.env.PODKIT_MUSIC_PATH = '/cache';
+        const result = loadEnvConfig();
+        expect(result.music?.default?.path).toBe('/cache');
+      });
+    });
+
+    describe('video collection env vars', () => {
+      it('creates unnamed video collection from PODKIT_VIDEO_PATH', () => {
+        process.env.PODKIT_VIDEO_PATH = '/videos';
+        const result = loadEnvConfig();
+        expect(result.video).toEqual({
+          default: { path: '/videos' },
+        });
+        expect(result.defaults?.video).toBe('default');
+      });
+
+      it('creates named video collection from PODKIT_VIDEO_MOVIES_PATH', () => {
+        process.env.PODKIT_VIDEO_MOVIES_PATH = '/movies';
+        const result = loadEnvConfig();
+        expect(result.video).toEqual({
+          movies: { path: '/movies' },
+        });
+      });
+
+      it('auto-defaults single video collection', () => {
+        process.env.PODKIT_VIDEO_MOVIES_PATH = '/movies';
+        const result = loadEnvConfig();
+        expect(result.defaults?.video).toBe('movies');
+      });
+
+      it('does not auto-default multiple video collections', () => {
+        process.env.PODKIT_VIDEO_MOVIES_PATH = '/movies';
+        process.env.PODKIT_VIDEO_SHOWS_PATH = '/shows';
+        const result = loadEnvConfig();
+        expect(result.defaults?.video).toBeUndefined();
+      });
+    });
+
+    describe('mixed collection env vars', () => {
+      it('creates both music and video collections', () => {
+        process.env.PODKIT_MUSIC_PATH = '/music';
+        process.env.PODKIT_VIDEO_PATH = '/videos';
+        const result = loadEnvConfig();
+        expect(result.music?.default?.path).toBe('/music');
+        expect(result.video?.default?.path).toBe('/videos');
+        expect(result.defaults?.music).toBe('default');
+        expect(result.defaults?.video).toBe('default');
+      });
+
+      it('returns no collections when no collection env vars set', () => {
+        const result = loadEnvConfig();
+        expect(result.music).toBeUndefined();
+        expect(result.video).toBeUndefined();
+      });
+    });
   });
 
   describe('loadCliConfig', () => {
@@ -1190,12 +1369,7 @@ device = "terapod"
     });
 
     // All quality presets via CLI
-    const cliPresets = [
-      'max',
-      'high',
-      'medium',
-      'low',
-    ] as const;
+    const cliPresets = ['max', 'high', 'medium', 'low'] as const;
     for (const preset of cliPresets) {
       it(`extracts quality = "${preset}" from command options`, () => {
         const globalOpts: GlobalOptions = {

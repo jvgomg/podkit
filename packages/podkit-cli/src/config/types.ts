@@ -12,12 +12,16 @@ export type {
   TransformsConfig,
   CleanArtistsConfig,
   VideoQualityPreset,
+  ShowLanguageConfig,
+  VideoTransformsConfig,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   VIDEO_QUALITY_PRESETS,
+  DEFAULT_SHOW_LANGUAGE_CONFIG,
+  DEFAULT_VIDEO_TRANSFORMS_CONFIG,
 } from '@podkit/core';
 
 // Import type for local use
@@ -26,6 +30,7 @@ import type {
   EncodingMode,
   TransformsConfig,
   VideoQualityPreset,
+  VideoTransformsConfig,
 } from '@podkit/core';
 
 // =============================================================================
@@ -104,10 +109,10 @@ export interface VideoCollectionConfig {
  * ```
  */
 export interface DeviceConfig {
-  /** Volume UUID for device auto-detection */
-  volumeUuid: string;
-  /** Volume name for display and detection */
-  volumeName: string;
+  /** Volume UUID for device auto-detection (optional — required only for auto-detection) */
+  volumeUuid?: string;
+  /** Volume name for display and detection (optional — derived from device name if omitted) */
+  volumeName?: string;
   /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
   /** Audio transcoding quality preset (overrides quality) */
@@ -128,6 +133,8 @@ export interface DeviceConfig {
   skipUpgrades?: boolean;
   /** Device-specific transform settings */
   transforms?: TransformsConfig;
+  /** Device-specific video transform settings */
+  videoTransforms?: VideoTransformsConfig;
 }
 
 /**
@@ -200,6 +207,8 @@ export interface PodkitConfig {
   checkArtwork?: boolean;
   /** Transform configuration (global default, can be overridden per-device) */
   transforms: TransformsConfig;
+  /** Video transform configuration (global default, can be overridden per-device) */
+  videoTransforms: VideoTransformsConfig;
 
   // ===========================================================================
   // Multi-collection/device fields (ADR-008)
@@ -260,6 +269,20 @@ export type ConfigFileCleanArtists =
     };
 
 /**
+ * Raw showLanguage configuration as parsed from TOML
+ *
+ * Can be either a boolean (simple enable/disable) or a table with options.
+ * When provided as a table, enabled defaults to true unless explicitly set to false.
+ */
+export type ConfigFileShowLanguage =
+  | boolean
+  | {
+      enabled?: boolean;
+      format?: string;
+      expand?: boolean;
+    };
+
+/**
  * Raw music collection config as parsed from TOML
  */
 export interface ConfigFileMusicCollection {
@@ -293,6 +316,7 @@ export interface ConfigFileDevice {
   checkArtwork?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
+  showLanguage?: ConfigFileShowLanguage;
 }
 
 /**
@@ -353,6 +377,7 @@ export interface ConfigFileContent {
   tips?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
+  showLanguage?: ConfigFileShowLanguage;
 
   /** Named music collections: [music.{name}] */
   music?: Record<string, ConfigFileMusicCollection>;

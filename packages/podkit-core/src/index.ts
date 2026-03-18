@@ -274,6 +274,30 @@ export {
   titleContainsFeat,
 } from './transforms/ftintitle/index.js';
 
+// Video transforms
+export type {
+  VideoTrackTransform,
+  VideoTransformableTrack,
+  VideoTransformResult,
+  ShowLanguageConfig,
+  VideoTransformsConfig,
+} from './transforms/types.js';
+export {
+  DEFAULT_SHOW_LANGUAGE_CONFIG,
+  DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+} from './transforms/types.js';
+export {
+  applyVideoTransforms,
+  hasEnabledVideoTransforms,
+  getEnabledVideoTransformsSummary,
+  getVideoTransformMatchKeys,
+} from './transforms/video-pipeline.js';
+export {
+  applyShowLanguage,
+  parseLanguageMarker,
+  showLanguageTransform,
+} from './transforms/video-show-language.js';
+
 // Video transcoding
 export type {
   VideoQualityPreset,
@@ -368,6 +392,8 @@ export type {
   VideoSyncDiff,
   VideoDiffOptions,
   VideoSyncDiffer,
+  VideoUpdateTrack,
+  VideoUpdateReason,
 } from './sync/video-differ.js';
 export {
   diffVideos,

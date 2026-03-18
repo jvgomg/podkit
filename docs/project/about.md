@@ -45,6 +45,6 @@ My personal end goal is this: I plug my iPod into a headless computer, get a not
 
 The bigger vision is for podkit to become the go-to project for syncing music to iPod devices, and a library that lets other developers build iPod syncing into their own apps. I'm hoping that the iPod community can help develop this into something robust, well-documented, and always up to date.
 
-That's a big goal for a one-person project, which is why community involvement matters so much. The [roadmap](/roadmap/) is shaped by real feedback from real users, and I'm actively looking for [beta testers](https://github.com/jvgomg/podkit/discussions/22) to help get podkit to where it needs to be.
+That's a big goal for a one-person project, which is why community involvement matters so much. The [roadmap](/project/roadmap/) is shaped by real feedback from real users, and I'm actively looking for [beta testers](https://github.com/jvgomg/podkit/discussions/22) to help get podkit to where it needs to be.
 
 If any of this resonates with you, I'd love to hear from you. [Come say hello](https://github.com/jvgomg/podkit/discussions) and help shape what podkit becomes.

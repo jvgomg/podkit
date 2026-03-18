@@ -2,7 +2,7 @@
 title: Roadmap
 description: Planned features and what's coming next for podkit.
 sidebar:
-  order: 1
+  order: 2
 ---
 
 This is a living overview of where podkit is headed. Features move through stages as they're prioritised and developed.

@@ -49,8 +49,8 @@ export type ResolvedDevice = ResolvedEntity<DeviceConfig>;
  * Device identity for path resolution (UUID-based detection)
  */
 export interface DeviceIdentity {
-  volumeUuid: string;
-  volumeName: string;
+  volumeUuid?: string;
+  volumeName?: string;
 }
 
 /**
