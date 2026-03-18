@@ -1,10 +1,10 @@
 ---
 id: TASK-159
 title: 'Fix: Native .node binding not found in compiled CLI binary (Homebrew broken)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-18 15:28'
-updated_date: '2026-03-18 16:19'
+updated_date: '2026-03-18 19:06'
 labels:
   - bug
   - release
@@ -177,4 +177,38 @@ All 6 platform builds pass with isolated smoke tests:
 - linux-arm64-musl ✓
 
 PR: https://github.com/jvgomg/podkit/pull/38
+
+### Final CI Verification (Run 23261955296)
+
+All 6 platform builds pass with isolated smoke tests:
+- darwin-arm64 ✓
+- darwin-x64 ✓
+- linux-x64 ✓
+- linux-arm64 ✓
+- linux-x64-musl ✓
+- linux-arm64-musl ✓
+
+Each binary is a true single-file executable with the native .node addon embedded. The isolated smoke test copies the binary to a temp directory and runs `device info` — proving the native binding loads and executes libgpod C++ code with zero external library dependencies.
+
+### Summary of all changes
+
+**Embedding (.node in compiled binary):**
+- CJS compile-entry.js shim that require()'s the .node for Bun's compiler
+- globalThis handoff to binding loader
+- compile.sh stages correct platform's .node before compilation
+
+**Full static linking (Linux):**
+- Build ALL deps from source with -fPIC on glibc (zlib, libffi, pcre2, sqlite3, glib, libplist, libxml2, libpng, libjpeg-turbo, libtiff)
+- Alpine: use -static packages + build libintl from source with -fPIC
+- macOS: add -lffi fallback when Homebrew libffi.a missing
+
+**Error handling:**
+- device info no longer silently catches all errors
+- IpodError (expected): shown as informational note
+- Unexpected errors (binding failure): shown as error with exit 1
+
+**CI:**
+- Isolated smoke test on all 6 platforms
+- Expanded ldd/otool verification
+- workflow_dispatch trigger for manual builds
 <!-- SECTION:NOTES:END -->
