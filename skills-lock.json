@@ -5,6 +5,26 @@
       "source": "astrolicious/agent-skills",
       "sourceType": "github",
       "computedHash": "597a4587f30f1152d3ab2923e84db842a18604e09e16885ffa067730fb435d9d"
+    },
+    "grill-me": {
+      "source": "jvgomg/skills",
+      "sourceType": "github",
+      "computedHash": "e02446c0912decc73472ab3392af040fac223fb93b46fd101bce27686d717136"
+    },
+    "prd-to-tasks": {
+      "source": "jvgomg/skills",
+      "sourceType": "github",
+      "computedHash": "76315e2040da9eed890fbafcbd11e2007d4debd99ba080d7ef012bc707d5e2c9"
+    },
+    "team-lead": {
+      "source": "jvgomg/skills",
+      "sourceType": "github",
+      "computedHash": "9723d44b79e8f559cdb476d99df583e59b31e9f260cda070f2554a40869de320"
+    },
+    "write-a-prd": {
+      "source": "jvgomg/skills",
+      "sourceType": "github",
+      "computedHash": "224aa85cae811510df19780a3275f70b914f0cd93bf79f0521c08e6e7b6919bc"
     }
   }
 }
