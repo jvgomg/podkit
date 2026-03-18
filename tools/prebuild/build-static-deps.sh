@@ -69,12 +69,10 @@ build_gdk_pixbuf_static() {
   cp _build/gdk-pixbuf/libgdk_pixbuf-2.0.a "$STATIC_DEPS_DIR/lib/"
   # Install headers and pkgconfig (ninja install would build executables that fail to link)
   mkdir -p "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf"
-  cp gdk-pixbuf/gdk-pixbuf.h gdk-pixbuf/gdk-pixbuf-core.h gdk-pixbuf/gdk-pixbuf-transform.h \
-     gdk-pixbuf/gdk-pixbuf-io.h gdk-pixbuf/gdk-pixbuf-animation.h gdk-pixbuf/gdk-pixbuf-simple-anim.h \
-     gdk-pixbuf/gdk-pixbuf-loader.h gdk-pixbuf/gdk-pixbuf-marshal.h gdk-pixbuf/gdk-pixbuf-enum-types.h \
-     gdk-pixbuf/gdk-pixbuf-macros.h gdk-pixbuf/gdk-pixdata.h \
-     _build/gdk-pixbuf/gdk-pixbuf-features.h \
-     "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/" 2>/dev/null || true
+  # Copy all public headers from source dir
+  cp gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/" 2>/dev/null || true
+  # Copy generated headers from build dir (gdk-pixbuf-features.h, gdk-pixbuf-enum-types.h, etc.)
+  cp _build/gdk-pixbuf/*.h "$STATIC_DEPS_DIR/include/gdk-pixbuf-2.0/gdk-pixbuf/" 2>/dev/null || true
   # Install pkgconfig file
   cp _build/meson-private/gdk-pixbuf-2.0.pc "$STATIC_DEPS_DIR/lib/pkgconfig/" 2>/dev/null || true
   cd "$WORK_DIR"
