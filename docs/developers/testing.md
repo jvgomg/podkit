@@ -83,11 +83,68 @@ IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 bun run test:e2e:docker
 
 # Run tests for a specific package
-bun test packages/podkit-core
+bun run test --filter @podkit/core
 
 # Run a specific test file
 bun test packages/podkit-core/src/adapter.test.ts
 ```
+
+## Full Local Validation
+
+Before submitting a PR, run the full validation sequence. This covers everything that CI would check.
+
+### Quick check (most changes)
+
+```bash
+bun run build             # Build all packages
+bun run typecheck         # Type check all packages
+bun run lint              # Lint all files
+bun run test              # Unit + integration tests (macOS)
+```
+
+### Full check (cross-platform or device-related changes)
+
+```bash
+# 1. Build, type check, lint
+bun run build
+bun run typecheck
+bun run lint
+
+# 2. macOS tests
+bun run test              # Unit + integration
+bun run test:e2e          # E2E with dummy iPod
+
+# 3. Linux tests (requires Lima — brew install lima)
+mise run lima:test         # Runs on both Debian + Alpine VMs
+
+# 4. Docker E2E (requires Docker — for Subsonic tests)
+bun run test:e2e:docker
+```
+
+### Real hardware validation (device changes only)
+
+```bash
+# macOS with real iPod connected
+IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
+```
+
+### Summary of all test commands
+
+| Command | What it tests | When to run |
+|---------|--------------|-------------|
+| `bun run test` | Unit + integration tests on macOS | Every change |
+| `bun run test:unit` | Unit tests only | Quick iteration |
+| `bun run test:integration` | Integration tests only (needs gpod-tool, FFmpeg) | After changing sync/transcode logic |
+| `bun run test:e2e` | E2E with dummy iPod | After CLI changes |
+| `bun run test:e2e:real` | E2E with real iPod (needs `IPOD_MOUNT`) | Device-related changes |
+| `bun run test:e2e:docker` | Docker-based E2E (Subsonic) | Subsonic adapter changes |
+| `mise run lima:test` | Full suite on Debian + Alpine VMs | Linux/device manager changes |
+| `mise run lima:test:debian` | Full suite on Debian VM only | Quick Linux check |
+| `mise run lima:test:alpine` | Full suite on Alpine VM only | Docker image compatibility |
+| `mise run tools:brew-test` | Homebrew install smoke test | After releases |
+| `bun run build` | Build all packages | Every change |
+| `bun run typecheck` | TypeScript type checking | Every change |
+| `bun run lint` | Linting (oxlint) | Every change |
 
 ## Writing Tests
 

@@ -260,20 +260,42 @@ See [docs/developers/testing.md](docs/developers/testing.md) for full testing st
 - **Integration tests** (`*.integration.test.ts`): Require gpod-tool, FFmpeg, etc.
 - **E2E tests** (`packages/e2e-tests/`): Full CLI workflow tests
 
+### Full Local Validation
+
+Run this sequence before submitting a PR:
+
 ```bash
-bun run test              # All tests
+# 1. Build, type check, lint
+bun run build
+bun run typecheck
+bun run lint
+
+# 2. macOS tests
+bun run test              # Unit + integration
+bun run test:e2e          # E2E with dummy iPod
+
+# 3. Linux tests (cross-platform or device-related changes)
+mise run lima:test         # Runs on Debian + Alpine VMs (requires: brew install lima)
+
+# 4. Docker E2E (Subsonic changes only)
+bun run test:e2e:docker
+```
+
+### All Test Commands
+
+```bash
+bun run test              # All tests (unit + integration)
 bun run test:unit         # Unit tests only
 bun run test:integration  # Integration tests only
 bun run test:e2e          # E2E tests (dummy iPod)
 bun run test:e2e:real     # E2E tests (real iPod, requires IPOD_MOUNT)
 bun run test:e2e:docker   # E2E tests requiring Docker (Subsonic, etc.)
-
-# Cross-platform testing (Lima VMs)
 mise run lima:test         # Run tests on Debian + Alpine VMs
 mise run lima:test:debian  # Debian only
 mise run lima:test:alpine  # Alpine only
-mise run lima:stop         # Stop VMs
-mise run lima:destroy      # Delete VMs
+mise run lima:stop         # Stop VMs (preserves state)
+mise run lima:destroy      # Delete VMs entirely
+mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
 # Container cleanup (in packages/e2e-tests/)
 cd packages/e2e-tests && bun run cleanup:docker

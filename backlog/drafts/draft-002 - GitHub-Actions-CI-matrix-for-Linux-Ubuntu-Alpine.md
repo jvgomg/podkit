@@ -1,9 +1,10 @@
 ---
-id: TASK-157
+id: DRAFT-002
 title: GitHub Actions CI matrix for Linux (Ubuntu + Alpine)
-status: To Do
+status: Draft
 assignee: []
 created_date: '2026-03-18 12:25'
+updated_date: '2026-03-18 14:36'
 labels:
   - infra
   - ci
@@ -35,3 +36,11 @@ Depends on Lima infrastructure (TASK-150) being validated first to confirm the d
 - [ ] #4 Platform-conditional tests skip correctly on non-matching OS
 - [ ] #5 Native addon builds on all CI platforms
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## 2026-03-18: Descoped
+
+No existing CI test workflow exists — creating one is out of scope for this milestone. Task moved to Draft for future consideration.
+<!-- SECTION:NOTES:END -->

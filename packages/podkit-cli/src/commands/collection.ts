@@ -99,13 +99,12 @@ export interface CollectionModifyOutput {
   error?: string;
 }
 
-
 /**
  * Format collections as a table
  */
 function formatCollectionTable(collections: CollectionInfo[]): string {
   if (collections.length === 0) {
-    return "No collections configured. Run 'podkit collection add' to add one.";
+    return "No collections configured. Run 'podkit collection add' to add one, or set PODKIT_MUSIC_PATH via environment variable.";
   }
 
   const lines: string[] = ['Collections:', ''];

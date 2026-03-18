@@ -661,7 +661,12 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
     encoding: effectiveEncoding,
     customBitrate: effectiveCustomBitrate,
   };
-  const plan = core.createPlan(diff, { removeOrphans, transcodeConfig, deviceSupportsAlac, artworkEnabled: effectiveArtwork });
+  const plan = core.createPlan(diff, {
+    removeOrphans,
+    transcodeConfig,
+    deviceSupportsAlac,
+    artworkEnabled: effectiveArtwork,
+  });
   const summary = core.getPlanSummary(plan);
   const storage = getStorageInfo(devicePath);
   const hasEnoughSpace = storage ? core.willFitInSpace(plan, storage.free) : true;
@@ -685,7 +690,13 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
       core,
     });
     await adapter.disconnect();
-    return { success: true, completed: 0, failed: 0, jsonOutput: out.isJson ? result : undefined, artworkMissingBaseline };
+    return {
+      success: true,
+      completed: 0,
+      failed: 0,
+      jsonOutput: out.isJson ? result : undefined,
+      artworkMissingBaseline,
+    };
   }
 
   // Check space
@@ -783,9 +794,10 @@ async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicSyncResu
       out.raw('\r\x1b[KSaving iPod database...');
     } else if (progress.phase !== 'preparing') {
       const bar = renderProgressBar(progress.current + 1, progress.total);
-      const phaseStr = progress.phase === 'updating-metadata'
-        ? 'Updating metadata'
-        : progress.phase.charAt(0).toUpperCase() + progress.phase.slice(1);
+      const phaseStr =
+        progress.phase === 'updating-metadata'
+          ? 'Updating metadata'
+          : progress.phase.charAt(0).toUpperCase() + progress.phase.slice(1);
       const line = formatProgressLine({
         bar,
         phase: phaseStr,
@@ -1249,7 +1261,10 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
   let videoCompleted = 0;
 
   try {
-    for await (const progress of videoExecutor.execute(videoPlan, { dryRun: false, videoQuality: effectiveVideoQuality })) {
+    for await (const progress of videoExecutor.execute(videoPlan, {
+      dryRun: false,
+      videoQuality: effectiveVideoQuality,
+    })) {
       if (progress.skipped) {
         // Skip tracking for skipped operations
       } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
@@ -1271,9 +1286,10 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
       } else {
         const bar = renderProgressBar(progress.current + 1, progress.total);
         const phaseStr = progress.phase.replace('video-', '');
-        const phaseFormatted = phaseStr === 'updating-metadata'
-          ? 'Updating metadata'
-          : phaseStr.charAt(0).toUpperCase() + phaseStr.slice(1);
+        const phaseFormatted =
+          phaseStr === 'updating-metadata'
+            ? 'Updating metadata'
+            : phaseStr.charAt(0).toUpperCase() + phaseStr.slice(1);
         const line = formatProgressLine({
           bar,
           phase: phaseFormatted,
@@ -1331,7 +1347,10 @@ export const syncCommand = new Command('sync')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--skip-upgrades', 'skip file-replacement upgrades for changed source files')
   .option('--force-transcode', 're-transcode all lossless-source tracks regardless of bitrate')
-  .option('--force-sync-tags', 'ensure sync tag consistency by writing tags to all matched transcoded tracks without re-transcoding')
+  .option(
+    '--force-sync-tags',
+    'ensure sync tag consistency by writing tags to all matched transcoded tracks without re-transcoding'
+  )
   .option('--check-artwork', 'detect artwork changes by comparing content hashes')
   .option('--delete', 'remove tracks from iPod not in source')
   .option('--eject', 'eject iPod after successful sync')
@@ -1439,7 +1458,9 @@ export const syncCommand = new Command('sync')
             out.error(`Available video collections: ${videoNames.join(', ')}`);
           }
           if (musicNames.length === 0 && videoNames.length === 0) {
-            out.error('No collections configured. Add collections to your config file.');
+            out.error(
+              'No collections configured. Add collections to your config file or set PODKIT_MUSIC_PATH via environment variable.'
+            );
           }
         } else {
           out.error('No collections configured to sync.');
@@ -1452,6 +1473,9 @@ export const syncCommand = new Command('sync')
           out.error('Example:');
           out.error('  [music.main]');
           out.error('  path = "/path/to/music"');
+          out.error('');
+          out.error('Or set via environment variable:');
+          out.error('  PODKIT_MUSIC_PATH=/path/to/music');
         }
       });
       process.exitCode = 1;
@@ -1666,7 +1690,8 @@ export const syncCommand = new Command('sync')
             skipUpgrades: effectiveSkipUpgrades,
             forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
             forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
-            checkArtwork: options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
+            checkArtwork:
+              options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
             ipod,
             transcoder,
             core,

@@ -1,9 +1,10 @@
 ---
 id: TASK-147
 title: Update "no collections" error to mention env var alternative
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-18 02:40'
+updated_date: '2026-03-18 14:26'
 labels:
   - ux
 dependencies: []
