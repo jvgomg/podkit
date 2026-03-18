@@ -30,6 +30,8 @@ Thumbs.db
 # Prebuild artifacts
 static-deps/
 .prebuild-work/
+# Staged native addon for bun compile (created by scripts/compile.sh)
+gpod_binding.node
 
 # Test coverage
 coverage/

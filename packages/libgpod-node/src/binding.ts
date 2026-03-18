@@ -7,7 +7,7 @@
 
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
-import { existsSync, readdirSync, readFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { arch as osArch, platform as osPlatform } from 'os';
@@ -225,7 +225,22 @@ function getPackageRootCandidates(): string[] {
   const __dirname = dirname(__filename);
   candidates.push(dirname(__dirname));
 
-  // 3. Walk up from this file looking for node_modules
+  // 3. Relative to the executable (for compiled/standalone installs like Homebrew)
+  // In a compiled Bun binary, import.meta.url resolves to /$bunfs, so we need
+  // to search relative to the actual executable on the real filesystem.
+  try {
+    const execDir = dirname(process.execPath);
+    candidates.push(execDir);
+    // Also try resolved path in case process.execPath is a symlink
+    const realExecDir = dirname(realpathSync(process.execPath));
+    if (realExecDir !== execDir) {
+      candidates.push(realExecDir);
+    }
+  } catch {
+    // process.execPath may not be available in all environments
+  }
+
+  // 4. Walk up from this file looking for node_modules
   let searchDir = __dirname;
   const visited = new Set<string>();
   while (searchDir && !visited.has(searchDir)) {
@@ -331,11 +346,33 @@ function findAddon(): string | null {
 }
 
 /**
+ * Try to load the native binding embedded in a compiled Bun binary.
+ *
+ * When compiled with `bun build --compile`, Bun detects static require()
+ * calls to .node files and embeds them in the binary. At runtime, the
+ * file is extracted to a temp location and dlopen'd, then cleaned up.
+ *
+ * The staged file at ../gpod_binding.node is created by the compile script
+ * (packages/podkit-cli/scripts/compile.sh) before compilation.
+ */
+function loadEmbeddedBinding(): NativeBinding | null {
+  try {
+    const require = createRequire(import.meta.url);
+    // Static require path — Bun's compiler detects this and embeds the .node file.
+    // In development this file doesn't exist and the require throws, which is fine.
+    return require('../gpod_binding.node') as NativeBinding;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load the native binding.
  *
  * Resolution order:
- * 1. prebuilds/{platform}-{arch}/ (prebuildify convention)
- * 2. build/Release/ (local node-gyp build)
+ * 1. Embedded binding (compiled Bun binary — single-file distribution)
+ * 2. prebuilds/{platform}-{arch}/ (prebuildify convention)
+ * 3. build/Release/ (local node-gyp build)
  *
  * @throws Error if the native binding cannot be loaded
  */
@@ -349,6 +386,14 @@ function loadBinding(): NativeBinding {
   }
 
   try {
+    // 1. Try embedded binding (compiled Bun binary)
+    const embedded = loadEmbeddedBinding();
+    if (embedded) {
+      cachedBinding = embedded;
+      return cachedBinding;
+    }
+
+    // 2. Try filesystem resolution (development, npm install)
     const require = createRequire(import.meta.url);
     const addonPath = findAddon();
 
