@@ -10,9 +10,10 @@
 // needing to require() the .node file again (which fails from /$bunfs).
 try {
   globalThis.__podkit_native_binding = require('../gpod_binding.node');
-} catch {
+} catch (err) {
   // dlopen may fail if runtime deps are missing — that's fine for commands
   // that don't touch the iPod database (--version, --help, completions).
-  // The binding loader will report the real error when needed.
+  // Store the error so the binding loader can report it accurately.
+  globalThis.__podkit_native_binding_error = err;
 }
 import('./main.ts');
