@@ -401,6 +401,8 @@ export function getOperationDisplayName(operation: SyncOperation): string {
       return operation.source.title;
     case 'video-remove':
       return operation.video.title;
+    case 'video-update-metadata':
+      return operation.video.title;
   }
 }
 
@@ -800,8 +802,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
 
           if (operation.type === 'transcode') {
             result = await this.prepareWithRetry(
-              () =>
-                this.prepareTranscode(operation, transcodeDir, adapter, signal, fileAccess),
+              () => this.prepareTranscode(operation, transcodeDir, adapter, signal, fileAccess),
               operation,
               retryConfig
             );
@@ -814,8 +815,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
           } else {
             // upgrade
             result = await this.prepareWithRetry(
-              () =>
-                this.prepareUpgrade(operation, transcodeDir, adapter, signal, fileAccess),
+              () => this.prepareUpgrade(operation, transcodeDir, adapter, signal, fileAccess),
               operation,
               retryConfig
             );
@@ -1133,6 +1133,7 @@ export class DefaultSyncExecutor implements SyncExecutor {
       case 'video-transcode':
       case 'video-copy':
       case 'video-remove':
+      case 'video-update-metadata':
         // Video operations are handled by VideoSyncExecutor, not this executor
         throw new Error(
           `Video operations (${operation.type}) should be handled by VideoSyncExecutor`
@@ -1149,7 +1150,10 @@ export class DefaultSyncExecutor implements SyncExecutor {
    *
    * @returns Artwork hash (8-char hex) if artwork was transferred, undefined otherwise
    */
-  private async transferArtwork(track: IpodDatabaseTrack, sourceFilePath: string): Promise<string | undefined> {
+  private async transferArtwork(
+    track: IpodDatabaseTrack,
+    sourceFilePath: string
+  ): Promise<string | undefined> {
     try {
       const artwork = await extractArtwork(sourceFilePath);
       if (artwork) {
@@ -1772,6 +1776,8 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
       return 'video-copying';
     case 'video-remove':
       return 'removing';
+    case 'video-update-metadata':
+      return 'video-updating-metadata';
   }
 }
 

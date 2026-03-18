@@ -24,6 +24,7 @@ import {
 } from './video-differ.js';
 import type { IPodVideo } from './video-differ.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
+import { getVideoTransformMatchKeys } from '../transforms/video-pipeline.js';
 
 // =============================================================================
 // Test Fixtures
@@ -471,5 +472,176 @@ describe('video preset change detection', () => {
 
     expect(diff.toReplace).toHaveLength(2);
     expect(diff.existing).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// Video Transform Dual-Key Matching Tests
+// =============================================================================
+
+describe('diffVideos - video transform dual-key matching', () => {
+  it('queues transform-apply when iPod has original metadata and transform is enabled', () => {
+    const collection = [
+      createCollectionVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (JPN)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+    const ipod = [
+      createIPodVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (JPN)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+
+    const diff = diffVideos(collection, ipod, {
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transform-apply');
+    expect(diff.toUpdate[0]!.newSeriesTitle).toBe('Digimon Adventure (Japanese)');
+  });
+
+  it('queues transform-remove when iPod has transformed metadata and transform is disabled', () => {
+    const collection = [
+      createCollectionVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (JPN)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+    // iPod has the expanded name (previously synced with transform enabled)
+    const ipod = [
+      createIPodVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (Japanese)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+
+    const diff = diffVideos(collection, ipod, {
+      videoTransforms: {
+        showLanguage: { enabled: false, format: '({})', expand: true },
+      },
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transform-remove');
+    expect(diff.toUpdate[0]!.newSeriesTitle).toBe('Digimon Adventure (JPN)');
+  });
+
+  it('marks as existing when transform is enabled and iPod already has transformed data', () => {
+    const collection = [
+      createCollectionVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (JPN)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+    // iPod already has the expanded name
+    const ipod = [
+      createIPodVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Digimon Adventure (Japanese)',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+
+    const diff = diffVideos(collection, ipod, {
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
+    });
+
+    // Matched by transformed key, transform still enabled → already in sync
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('no transform changes when no language marker present', () => {
+    const collection = [
+      createCollectionVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+    const ipod = [
+      createIPodVideo('S01E01', 'tvshow', {
+        seriesTitle: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      }),
+    ];
+
+    const diff = diffVideos(collection, ipod, {
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('initializes toUpdate as empty array when no transforms configured', () => {
+    const diff = diffVideos([], []);
+
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// getVideoTransformMatchKeys Tests
+// =============================================================================
+
+describe('getVideoTransformMatchKeys', () => {
+  it('generates different keys when transform would apply', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Show (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey, {
+      showLanguage: { enabled: true, format: '({})', expand: true },
+    });
+    expect(result.originalKey).not.toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(true);
+    expect(result.transformedSeriesTitle).toBe('Show (Japanese)');
+  });
+
+  it('generates same keys when no language marker', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey, {
+      showLanguage: { enabled: true, format: '({})', expand: true },
+    });
+    expect(result.originalKey).toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(false);
+  });
+
+  it('returns original key when no transforms configured', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Show (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey);
+    expect(result.originalKey).toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(false);
   });
 });

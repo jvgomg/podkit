@@ -118,6 +118,7 @@ Read these documents based on what you're working on:
 | Sound Check | [docs/user-guide/syncing/sound-check.md](docs/user-guide/syncing/sound-check.md) |
 | Track upgrades | [docs/user-guide/syncing/upgrades.md](docs/user-guide/syncing/upgrades.md) |
 | Clean Artists | [docs/reference/clean-artists.md](docs/reference/clean-artists.md) |
+| Show Language (video) | [docs/reference/show-language.md](docs/reference/show-language.md) |
 | Sync tags | [docs/reference/sync-tags.md](docs/reference/sync-tags.md) |
 | Demo GIF package | [packages/demo/README.md](packages/demo/README.md) |
 | Lima VMs (cross-platform testing) | [tools/lima/README.md](tools/lima/README.md) |
@@ -305,9 +306,21 @@ cd packages/e2e-tests && bun run cleanup:docker
 ### Prerequisites for Integration Tests
 
 ```bash
-mise run tools:build   # Build gpod-tool CLI
 mise trust             # Trust mise config (first time only)
+mise run tools:build   # Build gpod-tool CLI
 ```
+
+### Working in Git Worktrees
+
+When working in a git worktree (e.g., `.claude/worktrees/`), you must run these setup steps — worktrees are independent working directories and don't share the main repo's build artifacts or mise trust state:
+
+```bash
+bun install            # Install dependencies (worktree has its own node_modules)
+mise trust             # Trust mise config for this worktree
+mise run tools:build   # Build gpod-tool (needed for iPod database tests)
+```
+
+Without these steps, integration and E2E tests that use `@podkit/gpod-testing` will fail with "Missing iTunesDB file" errors because `gpod-tool` won't be in PATH.
 
 ### Writing Tests with iPod Databases
 

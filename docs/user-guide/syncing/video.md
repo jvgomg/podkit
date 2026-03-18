@@ -45,15 +45,18 @@ These content types are on the [roadmap](/project/roadmap/). Vote and comment on
 
 ## Content Type Detection
 
-podkit automatically determines whether a video is a movie or TV show using:
+podkit automatically determines whether a video is a movie or TV show using (in priority order):
 
-1. **Embedded tags** — If the file contains episode/season metadata
-2. **Folder structure** — `TV Shows/Series Name/Season 01/`
-3. **Filename patterns** — `S01E01`, `1x01`, etc.
+1. **Embedded tags** — Episode/season metadata in the file container
+2. **Folder structure** — `Show Name/Season 01/` pattern
+3. **Filename patterns** — `S01E01`, `1x01`, anime fansub `[Group]_Show_EP`, etc.
+4. **Scene release parsing** — Extracts title and year from dot-separated scene release names
 
 If none of these match, the video is treated as a movie.
 
-### Folder Organization
+### Recommended Folder Organization
+
+The most reliable approach is the **Plex naming standard** — podkit extracts the series title from the folder name, so it captures the full show name including any language or region markers.
 
 **Movies:**
 
@@ -72,11 +75,66 @@ Movies/
 TV Shows/
 └── Breaking Bad/
     ├── Season 1/
-    │   ├── S01E01 - Pilot.mkv
-    │   └── S01E02 - Cat's in the Bag.mkv
+    │   ├── Breaking Bad - S01E01 - Pilot.mkv
+    │   └── Breaking Bad - S01E02 - Cat's in the Bag.mkv
     └── Season 2/
-        └── S02E01 - Seven Thirty-Seven.mkv
+        └── Breaking Bad - S02E01 - Seven Thirty-Seven.mkv
 ```
+
+**Multi-language collections** — use a language/region marker in the show folder name to keep versions separate:
+
+```
+Anime/
+├── Digimon Adventure (JPN)/
+│   └── Season 01/
+│       ├── Digimon Adventure - S01E01.mkv
+│       └── Digimon Adventure - S01E02.mkv
+├── Digimon Adventure (CHN)/
+│   └── Season 01/
+│       └── Digimon Adventure - S01E01.mp4
+└── Digimon Digital Monsters (USA Dub)/
+    └── Season 01/
+        ├── Digimon Digital Monsters - S01E01.avi
+        └── Digimon Digital Monsters - S01E02.avi
+```
+
+The language marker (e.g., `(JPN)`) is preserved in the series title on the iPod. See [Show Language](/reference/show-language) to control how it's displayed.
+
+### Supported Filename Patterns
+
+podkit recognizes several naming conventions commonly used by media libraries, scene releases, and anime fansub groups.
+
+#### Standard TV patterns
+
+| Pattern | Example |
+|---------|---------|
+| `SxxExx` | `Show.S01E01.720p.mkv` |
+| `sxxexx` (lowercase) | `show.s01e05.mkv` |
+| `NxNN` | `Show.1x01.mkv` |
+| `Season X Episode Y` | `Show - Season 1 Episode 1.mp4` |
+| Plex style | `Show Name - S01E01 - Episode Title.mkv` |
+
+#### Anime fansub patterns
+
+Fansub releases use a distinct naming convention with the group name in brackets and a standalone episode number:
+
+| Pattern | Example |
+|---------|---------|
+| `[Group]_Show_EP_(codec)_[CRC]` | `[RyRo]_Digimon_Adventure_15_(h264)_[8FBCA82D].mkv` |
+| `[Group] Show - EP [CRC]` | `[SubGroup] Show Name - 03 [ABCD1234].mkv` |
+| `[Group] Show - EPvN` | `[Group] Show - 01v2.mkv` (version 2 release) |
+
+Fansub files default to Season 1, since anime typically uses different series names for each season (e.g., "Digimon Adventure" vs "Digimon Adventure 02").
+
+#### Scene release cleanup
+
+Scene release filenames like `Show.S01E01.DVDRip.XviD-DEiMOS.avi` are handled automatically — quality tags (`720p`, `BluRay`, `DVDRip`), codecs (`x264`, `XviD`), and release group names (`-DEiMOS`) are stripped from the episode title so your iPod shows clean metadata.
+
+#### Series title from folders
+
+When files are inside a `Show Name/Season XX/` folder structure, podkit uses the folder name as the series title. This is preferred over filename-based parsing because folder names typically contain the full show name. This means a file like `S01E01.avi` inside `Breaking Bad/Season 1/` correctly gets "Breaking Bad" as its series title.
+
+For scene release folders like `Show.Name.S01E01-54.DUBBED.DVDRip.XviD-GROUP/`, podkit cleans up the folder name by stripping quality indicators, codecs, episode ranges, and edition tags to extract the clean series title.
 
 ## Setting Up Video Collections
 
@@ -134,5 +192,6 @@ podkit device video --format json
 
 - [Syncing Overview](/user-guide/syncing) — How syncing works
 - [Video Transcoding](/user-guide/transcoding/video) — Quality presets, device profiles, and resolution handling
+- [Show Language](/reference/show-language) — Configure how language markers appear on iPod
 - [Quality Settings](/user-guide/devices/quality) — Per-device video quality configuration
 - [Supported Devices](/devices/supported-devices) — Video-capable iPod models

@@ -245,6 +245,14 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
             }
           } else if (operation.type === 'video-remove') {
             yield* this.executeRemove(operation, index, total, bytesProcessed, plan.estimatedSize);
+          } else if (operation.type === 'video-update-metadata') {
+            yield* this.executeUpdateMetadata(
+              operation,
+              index,
+              total,
+              bytesProcessed,
+              plan.estimatedSize
+            );
           }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -309,7 +317,9 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
             ? 'video-copying'
             : operation.type === 'video-remove'
               ? 'removing'
-              : 'preparing';
+              : operation.type === 'video-update-metadata'
+                ? 'video-updating-metadata'
+                : 'preparing';
 
       yield {
         phase,
@@ -420,6 +430,15 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       bitrate: outputAnalysis.videoBitrate + outputAnalysis.audioBitrate,
     });
 
+    // Apply transformed series title if set by video transforms
+    if (operation.transformedSeriesTitle) {
+      trackInput.artist = operation.transformedSeriesTitle;
+      trackInput.tvShow = operation.transformedSeriesTitle;
+      if (trackInput.album && source.contentType === 'tvshow') {
+        trackInput.album = `${operation.transformedSeriesTitle}, Season ${source.seasonNumber ?? 1}`;
+      }
+    }
+
     // Write sync tag for video quality if configured
     if (this.videoQuality) {
       const syncTag = buildVideoSyncTag(this.videoQuality);
@@ -477,6 +496,15 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
     const trackInput = createVideoTrackInput(source, analysis, {
       size: fileStats.size,
     });
+
+    // Apply transformed series title if set by video transforms
+    if (operation.transformedSeriesTitle) {
+      trackInput.artist = operation.transformedSeriesTitle;
+      trackInput.tvShow = operation.transformedSeriesTitle;
+      if (trackInput.album && source.contentType === 'tvshow') {
+        trackInput.album = `${operation.transformedSeriesTitle}, Season ${source.seasonNumber ?? 1}`;
+      }
+    }
 
     // Add track to iPod and copy file
     const track = this.ipod.addTrack(trackInput);
@@ -545,6 +573,62 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       bytesTotal,
     };
   }
+  /**
+   * Execute a video metadata update operation
+   */
+  private async *executeUpdateMetadata(
+    operation: Extract<SyncOperation, { type: 'video-update-metadata' }>,
+    index: number,
+    total: number,
+    bytesProcessed: number,
+    bytesTotal: number
+  ): AsyncIterable<VideoExecutorProgress> {
+    const { video, newSeriesTitle } = operation;
+
+    // Yield start progress
+    yield {
+      phase: 'video-updating-metadata',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: video.title,
+      bytesProcessed,
+      bytesTotal,
+    };
+
+    // Find the matching track in the database by file path or metadata
+    const tracks = this.ipod.getTracks();
+    const foundTrack = tracks.find(
+      (t) =>
+        t.filePath === video.filePath || (t.title === video.title && t.tvShow === video.seriesTitle)
+    );
+
+    if (!foundTrack) {
+      throw new Error(`Video track not found in database: ${video.title}`);
+    }
+
+    // Update metadata fields — only TV shows have series title transforms
+    if (newSeriesTitle !== undefined && video.contentType === 'tvshow') {
+      foundTrack.update({
+        artist: newSeriesTitle,
+        album: `${newSeriesTitle}, Season ${video.seasonNumber ?? 1}`,
+        tvShow: newSeriesTitle,
+      });
+    }
+
+    // Yield completion progress
+    yield {
+      phase: 'video-updating-metadata',
+      operation,
+      index,
+      current: index,
+      total,
+      currentTrack: video.title,
+      bytesProcessed,
+      bytesTotal,
+    };
+  }
 }
 
 /**
@@ -582,7 +666,9 @@ export class PlaceholderVideoSyncExecutor implements VideoSyncExecutor {
             ? 'video-copying'
             : operation.type === 'video-remove'
               ? 'removing'
-              : 'preparing';
+              : operation.type === 'video-update-metadata'
+                ? 'video-updating-metadata'
+                : 'preparing';
 
       yield {
         phase,
@@ -633,6 +719,19 @@ export function getVideoOperationDisplayName(operation: SyncOperation): string {
       return video.title;
     }
     case 'video-remove': {
+      const video = operation.video;
+      if (
+        video.contentType === 'tvshow' &&
+        video.seasonNumber !== undefined &&
+        video.episodeNumber !== undefined
+      ) {
+        const showName = video.seriesTitle || video.title;
+        const episodeId = `S${String(video.seasonNumber).padStart(2, '0')}E${String(video.episodeNumber).padStart(2, '0')}`;
+        return `${showName} - ${episodeId}`;
+      }
+      return video.title;
+    }
+    case 'video-update-metadata': {
       const video = operation.video;
       if (
         video.contentType === 'tvshow' &&

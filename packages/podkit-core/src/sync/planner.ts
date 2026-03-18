@@ -28,11 +28,7 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
-import {
-  type QualityPreset,
-  type TranscodeConfig,
-  getPresetBitrate,
-} from '../transcode/types.js';
+import { type QualityPreset, type TranscodeConfig, getPresetBitrate } from '../transcode/types.js';
 import type {
   IPodTrack,
   MetadataChange,
@@ -411,7 +407,10 @@ function resolveIncompatibleLossyBitrate(track: CollectionTrack, config: Transco
  * @param preset - The resolved preset ('lossless' | 'high' | 'medium' | 'low')
  * @param bitrateOverride - Optional bitrate override (for incompatible lossy capping or custom bitrate)
  */
-function makePresetRef(preset: Exclude<QualityPreset, 'max'> | 'lossless', bitrateOverride?: number): TranscodePresetRef {
+function makePresetRef(
+  preset: Exclude<QualityPreset, 'max'> | 'lossless',
+  bitrateOverride?: number
+): TranscodePresetRef {
   return {
     name: preset,
     ...(bitrateOverride !== undefined && { bitrateOverride }),
@@ -627,6 +626,7 @@ export function calculateOperationSize(operation: SyncOperation): number {
     case 'video-transcode':
     case 'video-copy':
     case 'video-remove':
+    case 'video-update-metadata':
       return calculateVideoOperationSize(operation);
   }
 }
@@ -670,6 +670,7 @@ function calculateOperationTime(operation: SyncOperation): number {
     case 'video-transcode':
     case 'video-copy':
     case 'video-remove':
+    case 'video-update-metadata':
       return calculateVideoOperationTime(operation);
   }
 }

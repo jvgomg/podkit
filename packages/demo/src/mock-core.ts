@@ -1049,7 +1049,7 @@ export function getVideoPlanSummary(plan: any) {
     else if (op.type === 'video-copy') copyCount++;
     else if (op.type === 'video-remove') removeCount++;
   }
-  return { transcodeCount, copyCount, removeCount, skippedCount: 0 };
+  return { transcodeCount, copyCount, removeCount, updateCount: 0, skippedCount: 0 };
 }
 
 export class DefaultVideoSyncPlanner {
@@ -1282,12 +1282,7 @@ export function parseTimeString(_str: string): number {
 // Quality presets (constants)
 // =============================================================================
 
-export const QUALITY_PRESETS = [
-  'max',
-  'high',
-  'medium',
-  'low',
-] as const;
+export const QUALITY_PRESETS = ['max', 'high', 'medium', 'low'] as const;
 
 export const AAC_PRESETS = {
   high: { mode: 'vbr', quality: 5, targetKbps: 256 },

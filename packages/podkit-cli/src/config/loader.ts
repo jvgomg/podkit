@@ -19,18 +19,25 @@ import type {
   VideoQualityPreset,
   ConfigFileContent,
   ConfigFileCleanArtists,
+  ConfigFileShowLanguage,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,
   ConfigFileDefaults,
   GlobalOptions,
   CleanArtistsConfig,
+  ShowLanguageConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
   DeviceConfig,
   DefaultsConfig,
 } from './types.js';
-import { QUALITY_PRESETS, DEFAULT_CLEAN_ARTISTS_CONFIG, VIDEO_QUALITY_PRESETS } from './types.js';
+import {
+  QUALITY_PRESETS,
+  DEFAULT_CLEAN_ARTISTS_CONFIG,
+  DEFAULT_SHOW_LANGUAGE_CONFIG,
+  VIDEO_QUALITY_PRESETS,
+} from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 
 /**
@@ -171,6 +178,13 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     };
   }
 
+  // Parse showLanguage (boolean or table)
+  if (parsed.showLanguage !== undefined) {
+    config.videoTransforms = {
+      showLanguage: parseShowLanguageConfig(parsed.showLanguage),
+    };
+  }
+
   // ==========================================================================
   // Parse multi-collection/device fields (ADR-008)
   // ==========================================================================
@@ -286,6 +300,75 @@ function parseCleanArtistsConfig(
       }
     }
     config.ignore = raw.ignore;
+  }
+
+  return config;
+}
+
+/**
+ * Parse and validate showLanguage config from TOML
+ *
+ * Accepts either a boolean (simple enable/disable) or a table with options.
+ * When provided as a table, enabled defaults to true unless explicitly set to false.
+ *
+ * @param raw - The raw TOML value for showLanguage
+ * @param context - Config path context for error messages (e.g., "showLanguage" or "devices.nano.showLanguage")
+ */
+function parseShowLanguageConfig(
+  raw: ConfigFileShowLanguage,
+  context: string = 'showLanguage'
+): ShowLanguageConfig {
+  // Boolean shorthand: showLanguage = true/false
+  if (typeof raw === 'boolean') {
+    return {
+      ...DEFAULT_SHOW_LANGUAGE_CONFIG,
+      enabled: raw,
+    };
+  }
+
+  // Table form: [showLanguage] with options — enabled defaults to true
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`Invalid type for "${context}". Expected boolean or table, got ${typeof raw}.`);
+  }
+
+  const config: ShowLanguageConfig = {
+    ...DEFAULT_SHOW_LANGUAGE_CONFIG,
+    enabled: true, // Table form implies enabled
+  };
+
+  // Validate types and set values
+  if (raw.enabled !== undefined) {
+    if (typeof raw.enabled !== 'boolean') {
+      throw new Error(
+        `Invalid type for "enabled" in [${context}]. ` +
+          `Expected boolean, got ${typeof raw.enabled}.`
+      );
+    }
+    config.enabled = raw.enabled;
+  }
+  if (raw.format !== undefined) {
+    if (typeof raw.format !== 'string') {
+      throw new Error(
+        `Invalid type for "format" in [${context}]. ` + `Expected string, got ${typeof raw.format}.`
+      );
+    }
+    // Validate format contains placeholder
+    if (!raw.format.includes('{}')) {
+      throw new Error(
+        `Invalid format "${raw.format}" in [${context}]. ` +
+          'Format must contain "{}" placeholder for language code.'
+      );
+    }
+    config.format = raw.format;
+  }
+  if (raw.expand !== undefined) {
+    if (typeof raw.expand !== 'boolean') {
+      throw new Error(
+        `Invalid type for "expand" in [${context}]. ` +
+          `Expected boolean, got ${typeof raw.expand}.`
+      );
+    }
+    config.expand = raw.expand;
   }
 
   return config;
@@ -571,6 +654,16 @@ function parseDevices(
       };
     }
 
+    // Parse optional showLanguage (boolean or table)
+    if (rawDevice.showLanguage !== undefined) {
+      device.videoTransforms = {
+        showLanguage: parseShowLanguageConfig(
+          rawDevice.showLanguage,
+          `devices.${name}.showLanguage`
+        ),
+      };
+    }
+
     devices[name] = device;
     hasAnyDevice = true;
   }
@@ -778,6 +871,31 @@ export function loadEnvConfig(): PartialConfig {
     }
 
     config.transforms = { cleanArtists: ca };
+  }
+
+  // Show language env vars
+  const showLanguage = process.env[ENV_KEYS.showLanguage];
+  const showLanguageFormat = process.env[ENV_KEYS.showLanguageFormat];
+  const showLanguageExpand = process.env[ENV_KEYS.showLanguageExpand];
+
+  if (
+    showLanguage !== undefined ||
+    showLanguageFormat !== undefined ||
+    showLanguageExpand !== undefined
+  ) {
+    const sl: ShowLanguageConfig = { ...DEFAULT_SHOW_LANGUAGE_CONFIG };
+
+    if (showLanguage !== undefined) {
+      sl.enabled = parseBoolEnv(showLanguage);
+    }
+    if (showLanguageFormat !== undefined) {
+      sl.format = showLanguageFormat;
+    }
+    if (showLanguageExpand !== undefined) {
+      sl.expand = parseBoolEnv(showLanguageExpand);
+    }
+
+    config.videoTransforms = { showLanguage: sl };
   }
 
   // Parse collection env vars
@@ -1062,6 +1180,7 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
   const merged: PodkitConfig = {
     ...DEFAULT_CONFIG,
     transforms: { ...DEFAULT_CONFIG.transforms },
+    videoTransforms: { ...DEFAULT_CONFIG.videoTransforms },
   };
 
   for (const config of configs) {
@@ -1103,6 +1222,15 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
         cleanArtists: {
           ...merged.transforms.cleanArtists,
           ...config.transforms.cleanArtists,
+        },
+      };
+    }
+    if (config.videoTransforms !== undefined) {
+      // Deep merge video transforms config
+      merged.videoTransforms = {
+        showLanguage: {
+          ...merged.videoTransforms.showLanguage,
+          ...config.videoTransforms.showLanguage,
         },
       };
     }
@@ -1149,6 +1277,15 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
                   },
                 }
               : existingDevice.transforms,
+            // Deep merge video transforms if both exist
+            videoTransforms: deviceConfig.videoTransforms
+              ? {
+                  showLanguage: {
+                    ...existingDevice.videoTransforms?.showLanguage,
+                    ...deviceConfig.videoTransforms.showLanguage,
+                  },
+                }
+              : existingDevice.videoTransforms,
           };
         } else {
           merged.devices[name] = deviceConfig;

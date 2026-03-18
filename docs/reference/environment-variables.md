@@ -28,6 +28,9 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |
 | `PODKIT_CLEAN_ARTISTS_IGNORE` | Comma-separated artist names to skip (e.g., `Simon & Garfunkel,Hall & Oates`) |
+| `PODKIT_SHOW_LANGUAGE` | Enable/disable language markers in video series titles (`true`/`false`) |
+| `PODKIT_SHOW_LANGUAGE_FORMAT` | Format string for language marker (e.g., `({})`, `[{}]`) |
+| `PODKIT_SHOW_LANGUAGE_EXPAND` | Expand language abbreviations to full names (`true`/`false`) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
 
 ## Collection Variables

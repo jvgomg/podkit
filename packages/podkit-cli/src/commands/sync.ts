@@ -31,6 +31,7 @@ import type {
   QualityPreset,
   TransformsConfig,
   VideoQualityPreset,
+  VideoTransformsConfig,
   PodkitConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
@@ -192,7 +193,8 @@ export interface SyncOutput {
       | 'upgrade'
       | 'video-transcode'
       | 'video-copy'
-      | 'video-remove';
+      | 'video-remove'
+      | 'video-update-metadata';
     track: string;
     status?: 'pending' | 'completed' | 'failed' | 'skipped';
     error?: string;
@@ -356,6 +358,44 @@ function getEffectiveTransforms(
       ...deviceConfig.transforms.cleanArtists,
     },
   };
+}
+
+/**
+ * Get effective video transforms config for a device
+ */
+function getEffectiveVideoTransforms(
+  globalVideoTransforms: VideoTransformsConfig,
+  deviceConfig?: DeviceConfig
+): VideoTransformsConfig {
+  if (!deviceConfig?.videoTransforms) {
+    return globalVideoTransforms;
+  }
+
+  return {
+    showLanguage: {
+      ...globalVideoTransforms.showLanguage,
+      ...deviceConfig.videoTransforms.showLanguage,
+    },
+  };
+}
+
+/**
+ * Format video transforms configuration for display
+ *
+ * Returns a human-readable string describing enabled video transforms.
+ * Returns null if no video transforms are enabled.
+ */
+function formatVideoTransformsConfig(videoTransforms: VideoTransformsConfig): string | null {
+  const parts: string[] = [];
+
+  if (videoTransforms.showLanguage.enabled) {
+    const expandStr = videoTransforms.showLanguage.expand ? ', expand' : '';
+    parts.push(
+      `Show language: enabled (format: "${videoTransforms.showLanguage.format}"${expandStr})`
+    );
+  }
+
+  return parts.length > 0 ? parts.join(', ') : null;
 }
 
 /**
@@ -1082,6 +1122,7 @@ interface VideoSyncContext {
   dryRun: boolean;
   removeOrphans: boolean;
   effectiveVideoQuality: VideoQualityPreset;
+  effectiveVideoTransforms: VideoTransformsConfig;
   ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
   core: typeof import('@podkit/core');
 }
@@ -1105,6 +1146,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
     dryRun,
     removeOrphans,
     effectiveVideoQuality,
+    effectiveVideoTransforms,
     ipod,
     core,
   } = ctx;
@@ -1182,6 +1224,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
   const videoDiff = core.diffVideos(collectionVideos, ipodVideos, {
     presetBitrate: videoPresetBitrate,
     resolvedVideoQuality: effectiveVideoQuality,
+    videoTransforms: effectiveVideoTransforms,
   });
   diffSpinner.stop('Video diff computed');
 
@@ -1191,6 +1234,7 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
     qualityPreset: effectiveVideoQuality,
     removeOrphans,
     useHardwareAcceleration: true,
+    videoTransforms: effectiveVideoTransforms,
   });
 
   const videoSummary = core.getVideoPlanSummary(videoPlan);
@@ -1205,6 +1249,10 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
     out.print(`Quality: ${effectiveVideoQuality}`);
+    const videoTransformsDisplay = formatVideoTransformsConfig(effectiveVideoTransforms);
+    if (videoTransformsDisplay) {
+      out.print(`Transforms: ${videoTransformsDisplay}`);
+    }
     out.newline();
     out.print('Collection:');
     out.print(`  Total videos: ${formatNumber(collectionVideos.length)}`);
@@ -1223,6 +1271,20 @@ async function syncVideoCollection(ctx: VideoSyncContext): Promise<VideoSyncResu
       out.print(`  Videos to remove: ${formatNumber(videoDiff.toRemove.length)}`);
     }
     out.print(`  Already synced: ${formatNumber(videoDiff.existing.length)}`);
+    if (videoDiff.toUpdate.length > 0) {
+      const updatesByReason = new Map<string, number>();
+      for (const update of videoDiff.toUpdate) {
+        const count = updatesByReason.get(update.reason) ?? 0;
+        updatesByReason.set(update.reason, count + 1);
+      }
+      const reasonParts: string[] = [];
+      for (const [reason, count] of updatesByReason) {
+        reasonParts.push(`${formatUpdateReason(reason)}: ${count}`);
+      }
+      out.print(
+        `  Videos to update: ${formatNumber(videoDiff.toUpdate.length)} (${reasonParts.join(', ')})`
+      );
+    }
     out.newline();
     out.print('Estimates:');
     out.print(`  Size: ${formatBytes(videoPlan.estimatedSize)}`);
@@ -1403,6 +1465,10 @@ export const syncCommand = new Command('sync')
     // Get effective settings from device config
     const deviceConfig = resolvedDevice?.config;
     const effectiveTransforms = getEffectiveTransforms(config.transforms, deviceConfig);
+    const effectiveVideoTransforms = getEffectiveVideoTransforms(
+      config.videoTransforms,
+      deviceConfig
+    );
 
     // Audio quality: CLI --audio-quality > CLI --quality > device/global resolution
     const effectiveQuality = options.audioQuality
@@ -1738,6 +1804,7 @@ export const syncCommand = new Command('sync')
               dryRun,
               removeOrphans,
               effectiveVideoQuality,
+              effectiveVideoTransforms,
               ipod,
               core,
             });

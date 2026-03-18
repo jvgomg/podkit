@@ -23,7 +23,7 @@ import {
   estimateTranscodedSize,
   estimatePassthroughSize,
 } from './video-planner.js';
-import type { VideoSyncDiff, IPodVideo } from './video-differ.js';
+import type { VideoSyncDiff, IPodVideo, VideoUpdateTrack } from './video-differ.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import { getDefaultDeviceProfile } from '../video/types.js';
 
@@ -59,15 +59,85 @@ function createVideo(title: string, options: Partial<CollectionVideo> = {}): Col
   };
 }
 
+// Counter for unique iPod video IDs in planner tests
+let plannerIpodVideoIdCounter = 0;
+
+/**
+ * Create a minimal IPodVideo for planner testing
+ */
+function createIPodVideo(
+  title: string,
+  contentType: 'movie' | 'tvshow',
+  options: Partial<IPodVideo> = {}
+): IPodVideo {
+  return {
+    id: options.id ?? `planner-ipod-video-${plannerIpodVideoIdCounter++}`,
+    filePath: options.filePath ?? `:iPod_Control:Videos:V00:VIDEO${plannerIpodVideoIdCounter}.m4v`,
+    contentType,
+    title,
+    year: options.year,
+    seriesTitle: options.seriesTitle,
+    seasonNumber: options.seasonNumber,
+    episodeNumber: options.episodeNumber,
+    duration: options.duration,
+    bitrate: options.bitrate,
+  };
+}
+
+/**
+ * Create a CollectionVideo for planner testing (TV show variant)
+ */
+function createCollectionVideo(
+  title: string,
+  contentType: 'movie' | 'tvshow',
+  options: Partial<CollectionVideo> = {}
+): CollectionVideo {
+  return createVideo(title, { contentType, ...options });
+}
+
 /**
  * Create a VideoSyncDiff for testing
  */
+function createDiff(options: {
+  toAdd?: CollectionVideo[];
+  toRemove?: IPodVideo[];
+  existing?: { collection: CollectionVideo; ipod: IPodVideo }[];
+  toUpdate?: VideoUpdateTrack[];
+}): VideoSyncDiff;
 function createDiff(
-  toAdd: CollectionVideo[] = [],
+  toAdd?: CollectionVideo[],
+  toRemove?: IPodVideo[],
+  existing?: { collection: CollectionVideo; ipod: IPodVideo }[]
+): VideoSyncDiff;
+function createDiff(
+  toAddOrOptions:
+    | CollectionVideo[]
+    | {
+        toAdd?: CollectionVideo[];
+        toRemove?: IPodVideo[];
+        existing?: { collection: CollectionVideo; ipod: IPodVideo }[];
+        toUpdate?: VideoUpdateTrack[];
+      }
+    | undefined = [],
   toRemove: IPodVideo[] = [],
   existing: { collection: CollectionVideo; ipod: IPodVideo }[] = []
 ): VideoSyncDiff {
-  return { toAdd, toRemove, toReplace: [], existing };
+  if (toAddOrOptions && !Array.isArray(toAddOrOptions)) {
+    return {
+      toAdd: toAddOrOptions.toAdd ?? [],
+      toRemove: toAddOrOptions.toRemove ?? [],
+      toReplace: [],
+      toUpdate: toAddOrOptions.toUpdate ?? [],
+      existing: toAddOrOptions.existing ?? [],
+    };
+  }
+  return {
+    toAdd: (toAddOrOptions as CollectionVideo[] | undefined) ?? [],
+    toRemove,
+    toReplace: [],
+    toUpdate: [],
+    existing,
+  };
 }
 
 // =============================================================================
@@ -424,5 +494,36 @@ describe('VideoSyncPlanOptions', () => {
     if (plan.operations[0]?.type === 'video-transcode') {
       expect(plan.operations[0].settings.useHardwareAcceleration).toBe(false);
     }
+  });
+});
+
+// =============================================================================
+// Video Update Metadata Tests
+// =============================================================================
+
+describe('planVideoSync - toUpdate', () => {
+  it('converts toUpdate entries to video-update-metadata operations', () => {
+    const diff = createDiff({
+      toUpdate: [
+        {
+          collection: createCollectionVideo('S01E01', 'tvshow', {
+            seriesTitle: 'Show (JPN)',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          ipod: createIPodVideo('S01E01', 'tvshow', {
+            seriesTitle: 'Show (JPN)',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          reason: 'transform-apply' as const,
+          newSeriesTitle: 'Show (Japanese)',
+        },
+      ],
+    });
+    const plan = planVideoSync(diff);
+    const updateOps = plan.operations.filter((op) => op.type === 'video-update-metadata');
+    expect(updateOps).toHaveLength(1);
+    expect(updateOps[0]!.newSeriesTitle).toBe('Show (Japanese)');
   });
 });

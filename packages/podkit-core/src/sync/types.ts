@@ -203,14 +203,22 @@ export type SyncOperation =
       type: 'video-transcode';
       source: CollectionVideo;
       settings: VideoTranscodeSettings;
+      transformedSeriesTitle?: string;
     }
   | {
       type: 'video-copy';
       source: CollectionVideo;
+      transformedSeriesTitle?: string;
     }
   | {
       type: 'video-remove';
       video: IPodVideo;
+    }
+  | {
+      type: 'video-update-metadata';
+      source: CollectionVideo;
+      video: IPodVideo;
+      newSeriesTitle?: string;
     };
 
 /**
@@ -254,6 +262,7 @@ export interface SyncProgress {
     | 'upgrading'
     | 'video-transcoding'
     | 'video-copying'
+    | 'video-updating-metadata'
     | 'updating-db'
     | 'complete';
   current: number;
