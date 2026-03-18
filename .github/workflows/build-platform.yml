@@ -11,7 +11,7 @@ on:
 
 jobs:
   # ===================================================================
-  # glibc builds (macOS + Linux)
+  # macOS builds
   # ===================================================================
   build:
     strategy:
@@ -24,12 +24,6 @@ jobs:
           - os: macos-15-intel
             arch: x64
             platform: darwin
-          - os: ubuntu-24.04
-            arch: x64
-            platform: linux
-          - os: ubuntu-24.04-arm
-            arch: arm64
-            platform: linux
 
     runs-on: ${{ matrix.os }}
     name: Build ${{ matrix.platform }}-${{ matrix.arch }}
@@ -69,33 +63,13 @@ jobs:
             gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja 2>/dev/null
           sudo cpan -T XML::Parser
 
-      - name: Install Linux build deps
-        if: steps.prebuild-cache.outputs.cache-hit != 'true' && matrix.platform == 'linux' && steps.static-cache.outputs.cache-hit != 'true'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            build-essential pkg-config cmake ninja-build \
-            python3 python3-pip curl gettext \
-            intltool autoconf automake libtool gtk-doc-tools
-          # Debian 12 ships meson 1.0.1, glib 2.82+ needs >= 1.2.0
-          sudo pip3 install --upgrade meson --break-system-packages
-
       - name: Build static dependencies
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
         run: bash tools/prebuild/build-static-deps.sh
 
-      # Install only headers when static deps are cached but prebuild needs building
-
       - name: Install macOS prebuild deps
-        if: steps.prebuild-cache.outputs.cache-hit != 'true' && matrix.platform == 'darwin' && steps.static-cache.outputs.cache-hit == 'true'
+        if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit == 'true'
         run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff 2>/dev/null
-
-      - name: Install Linux prebuild deps
-        if: steps.prebuild-cache.outputs.cache-hit != 'true' && matrix.platform == 'linux' && steps.static-cache.outputs.cache-hit == 'true'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            build-essential pkg-config
 
       - uses: actions/setup-node@v4
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -123,18 +97,6 @@ jobs:
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           otool -L "$PREBUILD"
           if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
-            echo "ERROR: Found unexpected dynamic dependencies"
-            exit 1
-          fi
-
-      - name: Verify static linking (Linux)
-        if: steps.prebuild-cache.outputs.cache-hit != 'true' && matrix.platform == 'linux'
-        working-directory: packages/libgpod-node
-        run: |
-          echo "Dynamic dependencies:"
-          PREBUILD=$(find prebuilds -name "*.node" | head -1)
-          ldd "$PREBUILD"
-          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -178,16 +140,6 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test - dynamic deps (Linux)
-        if: matrix.platform == 'linux'
-        run: |
-          echo "Dynamic dependencies:"
-          ldd packages/podkit-cli/bin/podkit || true
-          if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
-            echo "ERROR: Found unexpected dynamic dependencies"
-            exit 1
-          fi
-
       - name: Smoke test - native binding loads (isolated)
         run: |
           ISOLATED_DIR=$(mktemp -d)
@@ -224,7 +176,7 @@ jobs:
           retention-days: 30
 
   # ===================================================================
-  # musl builds (Alpine Linux — for Docker and musl-based distros)
+  # Linux builds (Alpine/musl — fully static, works on all Linux distros)
   #
   # x64: uses container: alpine (JS actions work on x64)
   # arm64: uses docker run (GH Actions doesn't support JS actions
@@ -233,7 +185,7 @@ jobs:
   build-musl-x64:
     runs-on: ubuntu-24.04
     container: alpine:3.21
-    name: Build linux-x64-musl
+    name: Build linux-x64
 
     steps:
       - name: Install git
@@ -386,21 +338,21 @@ jobs:
         if: inputs.upload-artifacts
         run: |
           cd packages/podkit-cli/bin
-          tar czf "${GITHUB_WORKSPACE}/podkit-linux-x64-musl.tar.gz" podkit
+          tar czf "${GITHUB_WORKSPACE}/podkit-linux-x64.tar.gz" podkit
 
       - name: Upload tarball
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: podkit-linux-x64-musl
-          path: podkit-linux-x64-musl.tar.gz
+          name: podkit-linux-x64
+          path: podkit-linux-x64.tar.gz
           retention-days: 30
 
   # arm64 musl: can't use container: alpine on ARM runners (GH Actions limitation)
   # Instead, run checkout/cache on host, build steps via docker run.
   build-musl-arm64:
     runs-on: ubuntu-24.04-arm
-    name: Build linux-arm64-musl
+    name: Build linux-arm64
 
     steps:
       - uses: actions/checkout@v4
@@ -534,12 +486,12 @@ jobs:
         if: inputs.upload-artifacts
         run: |
           cd packages/podkit-cli/bin
-          tar czf "${GITHUB_WORKSPACE}/podkit-linux-arm64-musl.tar.gz" podkit
+          tar czf "${GITHUB_WORKSPACE}/podkit-linux-arm64.tar.gz" podkit
 
       - name: Upload tarball
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: podkit-linux-arm64-musl
-          path: podkit-linux-arm64-musl.tar.gz
+          name: podkit-linux-arm64
+          path: podkit-linux-arm64.tar.gz
           retention-days: 30

@@ -25,23 +25,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download Linux amd64 musl binary
+      - name: Download Linux amd64 binary
         uses: actions/download-artifact@v4
         with:
-          name: podkit-linux-x64-musl
+          name: podkit-linux-x64
           path: docker-artifacts/
 
-      - name: Download Linux arm64 musl binary
+      - name: Download Linux arm64 binary
         uses: actions/download-artifact@v4
         with:
-          name: podkit-linux-arm64-musl
+          name: podkit-linux-arm64
           path: docker-artifacts/
 
       - name: Prepare binaries for multi-arch build
         run: |
           mkdir -p bin/amd64 bin/arm64
-          tar xzf docker-artifacts/podkit-linux-x64-musl.tar.gz -C bin/amd64/
-          tar xzf docker-artifacts/podkit-linux-arm64-musl.tar.gz -C bin/arm64/
+          tar xzf docker-artifacts/podkit-linux-x64.tar.gz -C bin/amd64/
+          tar xzf docker-artifacts/podkit-linux-arm64.tar.gz -C bin/arm64/
           chmod +x bin/amd64/podkit bin/arm64/podkit
           echo "--- amd64 binary ---"
           file bin/amd64/podkit
