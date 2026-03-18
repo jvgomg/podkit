@@ -68,6 +68,15 @@ limactl shell podkit-debian -- bash -c "cd /path/to/podkit && bun run test"
 
 ## Troubleshooting
 
+### Native binary overwritten (macOS broken after VM tests)
+
+Lima VMs share your macOS filesystem. Running `bun install` inside a VM recompiles the native `gpod_binding.node` for Linux, overwriting the macOS binary. Fix by rebuilding on macOS:
+
+```bash
+cd packages/libgpod-node
+bun run build:native
+```
+
 ### Native modules fail to build
 
 The native addon (`libgpod-node`) compiles inside the VM. If `bun install` fails:
