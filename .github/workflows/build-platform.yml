@@ -264,7 +264,7 @@ jobs:
             libxml2-dev libxml2-static \
             libpng-dev libpng-static \
             libjpeg-turbo-dev libjpeg-turbo-static \
-            tiff-dev tiff-static \
+            tiff-dev \
             zlib-dev zlib-static \
             intltool autoconf automake libtool gtk-doc \
             perl-xml-parser linux-headers
@@ -285,7 +285,7 @@ jobs:
             libxml2-dev libxml2-static \
             libpng-dev libpng-static \
             libjpeg-turbo-dev libjpeg-turbo-static \
-            tiff-dev tiff-static \
+            tiff-dev \
             zlib-dev zlib-static
 
       - name: Install Node.js
@@ -418,7 +418,7 @@ jobs:
                 libxml2-dev libxml2-static \
                 libpng-dev libpng-static \
                 libjpeg-turbo-dev libjpeg-turbo-static \
-                tiff-dev tiff-static \
+                tiff-dev \
                 zlib-dev zlib-static \
                 intltool autoconf automake libtool gtk-doc \
                 perl-xml-parser linux-headers \

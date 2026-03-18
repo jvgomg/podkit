@@ -429,6 +429,8 @@ elif [ "$OS" = "Linux" ]; then
   # -----------------------------------------------------------------------
   # Phase 4: gdk-pixbuf (needs glib, libpng, libjpeg-turbo, libtiff)
   # -----------------------------------------------------------------------
+  # gdk-pixbuf's meson build needs glib-compile-resources from our glib build
+  export PATH="$STATIC_DEPS_DIR/bin:$PATH"
   build_gdk_pixbuf_static \
     "$STATIC_PKG_PATH" \
     "-fPIC" \
