@@ -12,7 +12,8 @@ set -e
 # Platforms:
 #   macOS: Uses Homebrew headers for compilation, collects .a files for linking,
 #          builds gdk-pixbuf and libgpod from source (Homebrew doesn't ship .a for these)
-#   Linux: Uses system -dev packages (incl. libgpod-dev), builds gdk-pixbuf from source
+#   Linux: Builds ALL dependencies from source with -fPIC for full static linking.
+#          Requires: cmake, meson, ninja-build, autoconf, automake, libtool
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -163,22 +164,279 @@ if [ "$OS" = "Darwin" ]; then
   log "macOS static dependencies built to $STATIC_DEPS_DIR"
 
 # ---------------------------------------------------------------------------
-# Linux: build libgpod + gdk-pixbuf from source with -fPIC, use system glib
+# Linux: build ALL dependencies from source with -fPIC for full static linking
 # ---------------------------------------------------------------------------
 elif [ "$OS" = "Linux" ]; then
   # On Linux, system .a files lack -fPIC so can't be statically linked into
-  # a .node shared object. Only build libgpod and gdk-pixbuf from source
-  # with -fPIC. Everything else (glib, libffi, etc.) links dynamically —
-  # they're standard system libs present on any Linux install.
+  # a .node shared object. Build everything from source with -fPIC.
 
-  # Build gdk-pixbuf .a from source with -fPIC (Ubuntu doesn't ship it)
-  SYS_PKG_PATH=$(pkg-config --variable pc_path pkg-config 2>/dev/null || echo "/usr/lib/pkgconfig:/usr/share/pkgconfig")
+  # Detect architecture for multi-arch pkgconfig paths
+  LINUX_ARCH="$(uname -m)"
+  case "$LINUX_ARCH" in
+    x86_64)  MULTIARCH="x86_64-linux-gnu" ;;
+    aarch64) MULTIARCH="aarch64-linux-gnu" ;;
+    *)       MULTIARCH="$LINUX_ARCH-linux-gnu" ;;
+  esac
+
+  # Consolidated PKG_CONFIG_PATH for our static deps (updated as libs are built)
+  STATIC_PKG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$STATIC_DEPS_DIR/lib/$MULTIARCH/pkgconfig"
+
+  # -----------------------------------------------------------------------
+  # Phase 1: No-dependency libraries (zlib, libffi, pcre2, sqlite3)
+  # -----------------------------------------------------------------------
+
+  # --- zlib 1.3.1 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libz.a" ]; then
+    log "Building zlib 1.3.1 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "zlib-1.3.1.tar.gz" ]; then
+      curl -L -o zlib-1.3.1.tar.gz https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz
+    fi
+    rm -rf zlib-1.3.1
+    tar xzf zlib-1.3.1.tar.gz
+    cd zlib-1.3.1
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DBUILD_SHARED_LIBS=OFF
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "zlib already built, skipping"
+  fi
+
+  # --- libffi 3.4.6 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libffi.a" ]; then
+    log "Building libffi 3.4.6 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "libffi-3.4.6.tar.gz" ]; then
+      curl -L -o libffi-3.4.6.tar.gz https://github.com/libffi/libffi/releases/download/v3.4.6/libffi-3.4.6.tar.gz
+    fi
+    rm -rf libffi-3.4.6
+    tar xzf libffi-3.4.6.tar.gz
+    cd libffi-3.4.6
+    ./configure --prefix="$STATIC_DEPS_DIR" --enable-static --disable-shared CFLAGS="-fPIC"
+    make -j"$NPROC"
+    make install
+  else
+    log "libffi already built, skipping"
+  fi
+
+  # --- pcre2 10.44 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libpcre2-8.a" ]; then
+    log "Building pcre2 10.44 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "pcre2-10.44.tar.gz" ]; then
+      curl -L -o pcre2-10.44.tar.gz https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.44/pcre2-10.44.tar.gz
+    fi
+    rm -rf pcre2-10.44
+    tar xzf pcre2-10.44.tar.gz
+    cd pcre2-10.44
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DPCRE2_BUILD_PCRE2_8=ON \
+      -DPCRE2_BUILD_PCRE2_16=OFF \
+      -DPCRE2_BUILD_PCRE2_32=OFF \
+      -DPCRE2_BUILD_TESTS=OFF \
+      -DPCRE2_BUILD_PCRE2GREP=OFF
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "pcre2 already built, skipping"
+  fi
+
+  # --- sqlite3 3.45.3 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libsqlite3.a" ]; then
+    log "Building sqlite3 3.45.3 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "sqlite-autoconf-3450300.tar.gz" ]; then
+      curl -L -o sqlite-autoconf-3450300.tar.gz https://www.sqlite.org/2024/sqlite-autoconf-3450300.tar.gz
+    fi
+    rm -rf sqlite-autoconf-3450300
+    tar xzf sqlite-autoconf-3450300.tar.gz
+    cd sqlite-autoconf-3450300
+    ./configure --prefix="$STATIC_DEPS_DIR" --enable-static --disable-shared CFLAGS="-fPIC"
+    make -j"$NPROC"
+    make install
+  else
+    log "sqlite3 already built, skipping"
+  fi
+
+  # -----------------------------------------------------------------------
+  # Phase 2: glib (needs libffi, pcre2, zlib)
+  # -----------------------------------------------------------------------
+
+  # --- glib 2.82.4 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libglib-2.0.a" ] && [ ! -f "$STATIC_DEPS_DIR/lib/$MULTIARCH/libglib-2.0.a" ]; then
+    log "Building glib 2.82.4 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "glib-2.82.4.tar.xz" ]; then
+      curl -L -o glib-2.82.4.tar.xz https://download.gnome.org/sources/glib/2.82/glib-2.82.4.tar.xz
+    fi
+    rm -rf glib-2.82.4
+    tar xJf glib-2.82.4.tar.xz
+    cd glib-2.82.4
+    meson setup _build --prefix="$STATIC_DEPS_DIR" --default-library=static \
+      --pkg-config-path="$STATIC_PKG_PATH" \
+      -Dc_args="-fPIC" \
+      -Dlibmount=disabled \
+      -Dtests=false \
+      -Dintrospection=disabled \
+      -Dnls=disabled \
+      -Ddtrace=false \
+      -Dsystemtap=false \
+      -Dglib_debug=disabled
+    ninja -C _build -j"$NPROC"
+    ninja -C _build install
+  else
+    log "glib already built, skipping"
+  fi
+
+  # After glib install, .a files may land in lib/ or lib/$MULTIARCH/.
+  # Ensure pkgconfig from both locations is included.
+  STATIC_PKG_PATH="$STATIC_DEPS_DIR/lib/pkgconfig:$STATIC_DEPS_DIR/lib/$MULTIARCH/pkgconfig"
+
+  # -----------------------------------------------------------------------
+  # Phase 3: libplist, libxml2, libpng, libjpeg-turbo, libtiff
+  # -----------------------------------------------------------------------
+
+  # --- libplist 2.6.0 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libplist-2.0.a" ]; then
+    log "Building libplist 2.6.0 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "libplist-2.6.0.tar.bz2" ]; then
+      curl -L -o libplist-2.6.0.tar.bz2 https://github.com/libimobiledevice/libplist/releases/download/2.6.0/libplist-2.6.0.tar.bz2
+    fi
+    rm -rf libplist-2.6.0
+    tar xjf libplist-2.6.0.tar.bz2
+    cd libplist-2.6.0
+    # libplist 2.6.0 uses autotools
+    ./configure --prefix="$STATIC_DEPS_DIR" --enable-static --disable-shared \
+      --without-cython CFLAGS="-fPIC" \
+      PKG_CONFIG_PATH="$STATIC_PKG_PATH"
+    make -j"$NPROC"
+    make install
+  else
+    log "libplist already built, skipping"
+  fi
+
+  # --- libxml2 2.12.9 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libxml2.a" ]; then
+    log "Building libxml2 2.12.9 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "libxml2-2.12.9.tar.xz" ]; then
+      curl -L -o libxml2-2.12.9.tar.xz https://download.gnome.org/sources/libxml2/2.12/libxml2-2.12.9.tar.xz
+    fi
+    rm -rf libxml2-2.12.9
+    tar xJf libxml2-2.12.9.tar.xz
+    cd libxml2-2.12.9
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DLIBXML2_WITH_PYTHON=OFF \
+      -DLIBXML2_WITH_TESTS=OFF \
+      -DLIBXML2_WITH_LZMA=OFF \
+      -DLIBXML2_WITH_ZLIB=ON \
+      -DCMAKE_PREFIX_PATH="$STATIC_DEPS_DIR"
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "libxml2 already built, skipping"
+  fi
+
+  # --- libpng 1.6.43 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libpng16.a" ]; then
+    log "Building libpng 1.6.43 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "libpng-1.6.43.tar.xz" ]; then
+      curl -L -o libpng-1.6.43.tar.xz https://downloads.sourceforge.net/project/libpng/libpng16/1.6.43/libpng-1.6.43.tar.xz
+    fi
+    rm -rf libpng-1.6.43
+    tar xJf libpng-1.6.43.tar.xz
+    cd libpng-1.6.43
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DPNG_TESTS=OFF \
+      -DPNG_TOOLS=OFF \
+      -DCMAKE_PREFIX_PATH="$STATIC_DEPS_DIR"
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "libpng already built, skipping"
+  fi
+
+  # --- libjpeg-turbo 3.0.4 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libjpeg.a" ]; then
+    log "Building libjpeg-turbo 3.0.4 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "libjpeg-turbo-3.0.4.tar.gz" ]; then
+      curl -L -o libjpeg-turbo-3.0.4.tar.gz https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.0.4/libjpeg-turbo-3.0.4.tar.gz
+    fi
+    rm -rf libjpeg-turbo-3.0.4
+    tar xzf libjpeg-turbo-3.0.4.tar.gz
+    cd libjpeg-turbo-3.0.4
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DENABLE_SHARED=OFF \
+      -DENABLE_STATIC=ON
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "libjpeg-turbo already built, skipping"
+  fi
+
+  # --- libtiff 4.6.0 ---
+  if [ ! -f "$STATIC_DEPS_DIR/lib/libtiff.a" ]; then
+    log "Building libtiff 4.6.0 (static, -fPIC)..."
+    cd "$WORK_DIR"
+    if [ ! -f "tiff-4.6.0.tar.gz" ]; then
+      curl -L -o tiff-4.6.0.tar.gz https://download.osgeo.org/libtiff/tiff-4.6.0.tar.gz
+    fi
+    rm -rf tiff-4.6.0
+    tar xzf tiff-4.6.0.tar.gz
+    cd tiff-4.6.0
+    cmake -B build \
+      -DCMAKE_INSTALL_PREFIX="$STATIC_DEPS_DIR" \
+      -DCMAKE_C_FLAGS="-fPIC" \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -Dtiff-tests=OFF \
+      -Dtiff-tools=OFF \
+      -Dtiff-contrib=OFF \
+      -Dtiff-docs=OFF \
+      -Dzstd=OFF \
+      -Dlzma=OFF \
+      -Dwebp=OFF \
+      -Djbig=OFF \
+      -DCMAKE_PREFIX_PATH="$STATIC_DEPS_DIR"
+    cmake --build build -j"$NPROC"
+    cmake --install build
+  else
+    log "libtiff already built, skipping"
+  fi
+
+  # -----------------------------------------------------------------------
+  # Phase 4: gdk-pixbuf (needs glib, libpng, libjpeg-turbo, libtiff)
+  # -----------------------------------------------------------------------
   build_gdk_pixbuf_static \
-    "$SYS_PKG_PATH" \
+    "$STATIC_PKG_PATH" \
     "-fPIC" \
-    "-lpng16 -ljpeg -ltiff -lz"
+    "-L$STATIC_DEPS_DIR/lib -lpng16 -ljpeg -ltiff -lz"
 
-  # Build libgpod from source with -fPIC (Ubuntu's libgpod.a lacks -fPIC)
+  # -----------------------------------------------------------------------
+  # Phase 5: libgpod (needs glib, gdk-pixbuf, libplist, libxml2, sqlite3)
+  # -----------------------------------------------------------------------
   if [ ! -f "$STATIC_DEPS_DIR/lib/libgpod.a" ]; then
     log "Building libgpod from source (static, -fPIC)..."
     cd "$WORK_DIR"
@@ -199,10 +457,12 @@ elif [ "$OS" = "Linux" ]; then
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
 
+    # Point pkg-config at our static deps so configure finds glib, gdk-pixbuf, libplist
+    export PKG_CONFIG_PATH="$STATIC_PKG_PATH"
     # -Wno-incompatible-pointer-types: libgpod 0.8.3's ithumb-writer.c triggers
     # -Werror=incompatible-pointer-types in GCC 14+ (newer GLib g_object_ref macro)
-    export CFLAGS="-fPIC -Wno-incompatible-pointer-types $(pkg-config --cflags glib-2.0 gdk-pixbuf-2.0 libplist-2.0)"
-    export LDFLAGS="$(pkg-config --libs glib-2.0)"
+    export CFLAGS="-fPIC -Wno-incompatible-pointer-types -I$STATIC_DEPS_DIR/include"
+    export LDFLAGS="-L$STATIC_DEPS_DIR/lib"
 
     autoreconf -fi
     ./configure \
@@ -228,11 +488,14 @@ MISSING=""
 if [ "$OS" = "Darwin" ]; then
   REQUIRED="libgpod.a libglib-2.0.a libgobject-2.0.a libgdk_pixbuf-2.0.a"
 else
-  # Linux: only libgpod and gdk-pixbuf are statically linked (glib is dynamic)
-  REQUIRED="libgpod.a libgdk_pixbuf-2.0.a"
+  REQUIRED="libz.a libffi.a libpcre2-8.a libsqlite3.a libglib-2.0.a libgobject-2.0.a libplist-2.0.a libxml2.a libpng16.a libjpeg.a libtiff.a libgdk_pixbuf-2.0.a libgpod.a"
 fi
 for lib in $REQUIRED; do
   if [ ! -f "$STATIC_DEPS_DIR/lib/$lib" ]; then
+    # Also check multi-arch path (glib/meson may install to lib/$MULTIARCH/)
+    if [ "$OS" = "Linux" ] && [ -f "$STATIC_DEPS_DIR/lib/$MULTIARCH/$lib" ]; then
+      continue
+    fi
     MISSING="$MISSING $lib"
   fi
 done
