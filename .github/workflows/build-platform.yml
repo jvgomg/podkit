@@ -188,13 +188,22 @@ jobs:
             exit 1
           fi
 
-      - name: Smoke test - dummy iPod device info
+      - name: Smoke test - native binding loads (isolated)
         run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "Could not read"; then
+            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
             exit 1
           fi
 
@@ -352,13 +361,23 @@ jobs:
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
-      - name: Smoke test - dummy iPod
+      - name: Smoke test - native binding loads (isolated)
         run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"; exit 1
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+            echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+            exit 1
+          fi
+          if ! echo "$OUTPUT" | grep -q "Could not read"; then
+            echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
+            exit 1
           fi
 
       - name: Create tarball
@@ -464,7 +483,7 @@ jobs:
             -w /workspace \
             alpine:3.21 sh -c '
               set -e
-              apk add --no-cache bash curl unzip jq
+              apk add --no-cache bash curl unzip jq libstdc++
 
               echo "==> Installing Bun..."
               export BUN_INSTALL=/usr/local
@@ -491,11 +510,21 @@ jobs:
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
 
+              ISOLATED_DIR=$(mktemp -d)
+              cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
               mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-              OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+              OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
               echo "$OUTPUT"
-              if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-                echo "ERROR: Native addon failed to load"; exit 1
+              rm -rf "$ISOLATED_DIR"
+
+              if echo "$OUTPUT" | grep -qi "Failed to load native\|Native binding not found\|binding not found"; then
+                echo "ERROR: Native addon failed to load — .node file is not embedded in the binary."
+                exit 1
+              fi
+              if ! echo "$OUTPUT" | grep -q "Could not read"; then
+                echo "ERROR: Expected database error from libgpod (proves native binding loaded)."
+                exit 1
               fi
             '
 
