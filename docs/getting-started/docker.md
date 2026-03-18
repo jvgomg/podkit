@@ -9,51 +9,47 @@ podkit is available as a multi-architecture Docker image for `linux/amd64` and `
 
 ## Quick Start
 
-### 1. Create a directory for your config
-
-```bash
-mkdir -p podkit/config
-```
-
-### 2. Generate a config file
-
-```bash
-docker run --rm -v ./podkit/config:/config ghcr.io/jvgomg/podkit:latest init
-```
-
-This creates `podkit/config/config.toml` with a commented template.
-
-### 3. Edit the config
-
-Open `podkit/config/config.toml` and set your music collection path. Since you'll be mounting your music directory at `/music` inside the container, use that as the path:
-
-```toml
-[music.main]
-path = "/music"
-
-[defaults]
-music = "main"
-```
-
-### 4. Run a dry-run sync
+The fastest way to get started is with environment variables — no config file needed:
 
 ```bash
 docker run --rm \
-  -v ./podkit/config:/config \
+  -e PODKIT_MUSIC_PATH=/music \
   -v /path/to/music:/music:ro \
   -v /media/ipod:/ipod \
   ghcr.io/jvgomg/podkit:latest sync --dry-run
 ```
 
-### 5. Sync for real
+Remove `--dry-run` when you're ready to sync for real.
 
-```bash
-docker run --rm \
-  -v ./podkit/config:/config \
-  -v /path/to/music:/music:ro \
-  -v /media/ipod:/ipod \
-  ghcr.io/jvgomg/podkit:latest sync
-```
+### With a Config File
+
+For more advanced setups (multiple collections, per-device settings, Subsonic sources), use a config file:
+
+1. Generate a starter config:
+
+   ```bash
+   docker run --rm -v ./podkit/config:/config ghcr.io/jvgomg/podkit:latest init
+   ```
+
+2. Edit `podkit/config/config.toml` and set your music collection path. Since you'll be mounting your music directory at `/music` inside the container, use that as the path:
+
+   ```toml
+   [music.main]
+   path = "/music"
+
+   [defaults]
+   music = "main"
+   ```
+
+3. Run a sync:
+
+   ```bash
+   docker run --rm \
+     -v ./podkit/config:/config \
+     -v /path/to/music:/music:ro \
+     -v /media/ipod:/ipod \
+     ghcr.io/jvgomg/podkit:latest sync
+   ```
 
 ## Docker Compose
 
@@ -68,30 +64,35 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=Etc/UTC
+      - PODKIT_MUSIC_PATH=/music
     volumes:
-      - ./config:/config
       - /path/to/music:/music:ro
       - /media/ipod:/ipod
 ```
 
-Generate a config and sync:
+```bash
+docker compose run --rm podkit sync --dry-run  # Preview
+docker compose run --rm podkit sync            # Sync
+```
+
+If you prefer a config file (for multiple collections, per-device settings, etc.), mount a `/config` volume and use `podkit init` to generate one:
 
 ```bash
 docker compose run --rm podkit init       # Generate config
-# Edit config/config.toml
-docker compose run --rm podkit sync --dry-run  # Preview
-docker compose run --rm podkit sync            # Sync
+# Edit config/config.toml, then sync
 ```
 
 ## Volume Mounts
 
 | Mount | Required | Mode | Purpose |
 |-------|----------|------|---------|
-| `/config` | Yes | Read-write | Config file and cache |
-| `/music` | Yes* | Read-only | Music collection directory |
+| `/config` | No* | Read-write | Config file and cache |
+| `/music` | Yes** | Read-only | Music collection directory |
 | `/ipod` | Yes | Read-write | iPod mount point |
 
-*Not required if using a [Subsonic source](/user-guide/subsonic-source) defined in your config file.
+*Required only if using a config file instead of environment variables. Also required for Subsonic cache storage.
+
+**Not required if using a [Subsonic source](/user-guide/subsonic-source) defined in your config file or via env vars.
 
 The container automatically passes `--device /ipod` to the sync command, so your iPod mount is always used as the target device.
 
@@ -111,6 +112,7 @@ All [podkit environment variables](/reference/environment-variables) work inside
 
 | Variable | Example | Description |
 |----------|---------|-------------|
+| `PODKIT_MUSIC_PATH` | `/music` | Music collection path (no config file needed) |
 | `PODKIT_QUALITY` | `medium` | Transcoding quality preset |
 | `PODKIT_ARTWORK` | `true` | Include album artwork |
 | `PODKIT_CLEAN_ARTISTS` | `true` | Clean up featured artist credits |
@@ -126,10 +128,10 @@ services:
       - PUID=1000
       - PGID=1000
       - TZ=America/New_York
+      - PODKIT_MUSIC_PATH=/music
       - PODKIT_QUALITY=medium
       - PODKIT_CLEAN_ARTISTS=true
     volumes:
-      - ./config:/config
       - /path/to/music:/music:ro
       - /media/ipod:/ipod
 ```
@@ -164,43 +166,9 @@ sudo mount /dev/sdb2 /media/ipod
 docker compose run --rm podkit sync
 ```
 
-### USB Device Passthrough
-
-If you need the container to access USB devices directly (for future daemon mode or mount/eject commands), you can pass through the USB bus:
-
-```yaml
-services:
-  podkit:
-    image: ghcr.io/jvgomg/podkit:latest
-    volumes:
-      - ./config:/config
-      - /path/to/music:/music:ro
-      - /media/ipod:/ipod
-    devices:
-      - /dev/bus/usb:/dev/bus/usb
-    privileged: true
-```
-
-:::caution
-Running with `privileged: true` gives the container full access to the host's devices. Only use this if you need USB passthrough.
-:::
-
 ## Subsonic Source
 
-To sync from a Subsonic-compatible server (Navidrome, Airsonic, etc.), configure the source in your config file:
-
-```toml
-[music.navidrome]
-type = "subsonic"
-url = "https://navidrome.example.com"
-username = "user"
-path = "/config/subsonic-cache"
-
-[defaults]
-music = "navidrome"
-```
-
-Set the password via environment variable:
+To sync from a Subsonic-compatible server (Navidrome, Airsonic, etc.), configure via environment variables:
 
 ```yaml
 services:
@@ -209,13 +177,19 @@ services:
     environment:
       - PUID=1000
       - PGID=1000
-      - PODKIT_MUSIC_NAVIDROME_PASSWORD=your-password-here
+      - PODKIT_MUSIC_TYPE=subsonic
+      - PODKIT_MUSIC_URL=https://navidrome.example.com
+      - PODKIT_MUSIC_USERNAME=user
+      - PODKIT_MUSIC_PASSWORD=your-password-here
+      - PODKIT_MUSIC_PATH=/config/subsonic-cache
     volumes:
       - ./config:/config
       - /media/ipod:/ipod
 ```
 
 The Subsonic cache is stored in `/config/subsonic-cache` so it persists between runs.
+
+You can also configure Subsonic sources in a config file — see [Subsonic Source](/user-guide/subsonic-source) for details.
 
 ## Image Tags
 

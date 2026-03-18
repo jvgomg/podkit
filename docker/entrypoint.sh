@@ -76,18 +76,6 @@ if is_podkit_command "${1:-}"; then
 
   # Handle 'sync' command: inject --device /ipod if not specified
   if [ "$1" = "sync" ]; then
-    # Check for config file
-    if [ ! -f "${PODKIT_CONFIG:-/config/config.toml}" ]; then
-      echo "Error: No config file found at ${PODKIT_CONFIG:-/config/config.toml}"
-      echo ""
-      echo "Generate a starter config with:"
-      echo ""
-      echo "  docker run --rm -v ./config:/config ghcr.io/jvgomg/podkit init"
-      echo ""
-      echo "Then edit config/config.toml and restart the container."
-      exit 1
-    fi
-
     HAS_DEVICE=false
     for arg in "$@"; do
       case "$arg" in

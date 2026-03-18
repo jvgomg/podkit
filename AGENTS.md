@@ -461,8 +461,9 @@ podkit is distributed as a Docker image at `ghcr.io/jvgomg/podkit`. See [docs/ge
 **Entrypoint behavior:**
 1. Creates user/group matching PUID/PGID
 2. `init` command generates a config file into the mounted /config volume
-3. `sync` command auto-injects `--device /ipod` and checks for config file
-4. Fails with helpful instructions if no config file exists
+3. `sync` command auto-injects `--device /ipod`
+
+Collections can be configured via environment variables (e.g., `PODKIT_MUSIC_PATH=/music`) — no config file required. See [docs/reference/environment-variables.md](docs/reference/environment-variables.md) for details.
 
 **Impact on CLI changes:**
 - New CLI commands need to be added to the `PODKIT_COMMANDS` list in `docker/entrypoint.sh`

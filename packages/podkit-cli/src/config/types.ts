@@ -104,10 +104,10 @@ export interface VideoCollectionConfig {
  * ```
  */
 export interface DeviceConfig {
-  /** Volume UUID for device auto-detection */
-  volumeUuid: string;
-  /** Volume name for display and detection */
-  volumeName: string;
+  /** Volume UUID for device auto-detection (optional — required only for auto-detection) */
+  volumeUuid?: string;
+  /** Volume name for display and detection (optional — derived from device name if omitted) */
+  volumeName?: string;
   /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
   /** Audio transcoding quality preset (overrides quality) */

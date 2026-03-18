@@ -1,13 +1,13 @@
 ---
 title: Environment Variables
-description: Reference for all podkit environment variables — config path, quality overrides, and Subsonic passwords.
+description: Reference for all podkit environment variables — config path, quality overrides, collections, and Subsonic passwords.
 sidebar:
   order: 5
 ---
 
 podkit settings can be overridden via environment variables. These take precedence over values in the config file but are overridden by CLI arguments.
 
-## Variables
+## Settings Variables
 
 | Variable | Description |
 |----------|-------------|
@@ -28,8 +28,74 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |
 | `PODKIT_CLEAN_ARTISTS_IGNORE` | Comma-separated artist names to skip (e.g., `Simon & Garfunkel,Hall & Oates`) |
-| `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for collection `<NAME>` (uppercase, hyphens become underscores) |
 | `SUBSONIC_PASSWORD` | Fallback password for any Subsonic collection |
+
+## Collection Variables
+
+Collections can be defined entirely via environment variables, eliminating the need for a config file. This is useful for Docker deployments and CI environments.
+
+### Music Collections
+
+Define a default music collection (no name required):
+
+| Variable | Description |
+|----------|-------------|
+| `PODKIT_MUSIC_PATH` | Path to music directory (creates a default directory collection) |
+| `PODKIT_MUSIC_TYPE` | Collection type: `directory` (default) or `subsonic` |
+| `PODKIT_MUSIC_URL` | Subsonic server URL |
+| `PODKIT_MUSIC_USERNAME` | Subsonic username |
+| `PODKIT_MUSIC_PASSWORD` | Subsonic password |
+
+Or define named collections by inserting the collection name (uppercased, hyphens as underscores):
+
+| Variable | Description |
+|----------|-------------|
+| `PODKIT_MUSIC_<NAME>_PATH` | Path to music directory for collection `<NAME>` |
+| `PODKIT_MUSIC_<NAME>_TYPE` | Collection type for `<NAME>` |
+| `PODKIT_MUSIC_<NAME>_URL` | Subsonic server URL for `<NAME>` |
+| `PODKIT_MUSIC_<NAME>_USERNAME` | Subsonic username for `<NAME>` |
+| `PODKIT_MUSIC_<NAME>_PASSWORD` | Subsonic password for `<NAME>` |
+
+### Video Collections
+
+| Variable | Description |
+|----------|-------------|
+| `PODKIT_VIDEO_PATH` | Path to video directory (creates a default video collection) |
+| `PODKIT_VIDEO_<NAME>_PATH` | Path to video directory for collection `<NAME>` |
+
+### Naming Convention
+
+Collection names in env vars use `UPPER_SNAKE_CASE`, converted to `lower-kebab-case` in config:
+
+- `PODKIT_MUSIC_MY_SERVER_PATH` creates collection `my-server`
+- `PODKIT_MUSIC_MAIN_PATH` creates collection `main`
+
+### Auto-Defaulting
+
+When exactly one collection of a given type is defined via env vars, it is automatically set as the default. For example, `PODKIT_MUSIC_PATH=/music` creates a collection named `default` and sets it as the default music collection.
+
+### Examples
+
+**Simple directory source (no config file needed):**
+```bash
+PODKIT_MUSIC_PATH=/music podkit sync --device /path/to/ipod
+```
+
+**Subsonic source:**
+```bash
+export PODKIT_MUSIC_TYPE=subsonic
+export PODKIT_MUSIC_URL=https://navidrome.example.com
+export PODKIT_MUSIC_USERNAME=user
+export PODKIT_MUSIC_PASSWORD=secret
+podkit sync --device /path/to/ipod
+```
+
+**Multiple named collections:**
+```bash
+export PODKIT_MUSIC_MAIN_PATH=/music/library
+export PODKIT_MUSIC_VINYL_PATH=/music/vinyl-rips
+podkit sync --device /path/to/ipod -c main
+```
 
 ## Subsonic Password Resolution
 

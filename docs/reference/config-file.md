@@ -147,9 +147,16 @@ artwork = true
 skipUpgrades = false          # Allow file-replacement upgrades (default)
 ```
 
+A minimal device entry only needs the settings you want to override — `volumeUuid` is only required for auto-detection:
+
+```toml
+[devices.classic]
+quality = "max"               # Use --device <path> to specify mount point
+```
+
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
-| `volumeUuid` | string | yes | - | Volume UUID for device auto-detection |
+| `volumeUuid` | string | no | - | Volume UUID for device auto-detection. Required if you want podkit to automatically find your iPod without specifying `--device <path>`. |
 | `volumeName` | string | no | - | Volume name for display |
 | `quality` | string | no | global `quality` | Unified quality preset override for this device |
 | `audioQuality` | string | no | global `audioQuality` | Audio-specific quality override for this device |

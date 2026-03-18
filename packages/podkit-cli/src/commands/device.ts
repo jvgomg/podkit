@@ -57,7 +57,12 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import { formatGeneration, validateDevice, formatValidationMessages, parseSyncTag } from '@podkit/core';
+import {
+  formatGeneration,
+  validateDevice,
+  formatValidationMessages,
+  parseSyncTag,
+} from '@podkit/core';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
 
@@ -85,7 +90,6 @@ export function getStorageInfo(
     return null;
   }
 }
-
 
 /**
  * Format a terse sync tag consistency summary for device info display.
@@ -178,8 +182,8 @@ export interface DeviceListOutput {
   devices: Array<{
     name: string;
     isDefault: boolean;
-    volumeUuid: string;
-    volumeName: string;
+    volumeUuid?: string;
+    volumeName?: string;
     quality?: string;
     audioQuality?: string;
     videoQuality?: string;
@@ -220,8 +224,8 @@ export interface DeviceInfoOutput {
   success: boolean;
   device?: {
     name: string;
-    volumeUuid: string;
-    volumeName: string;
+    volumeUuid?: string;
+    volumeName?: string;
     quality?: string;
     audioQuality?: string;
     videoQuality?: string;
@@ -580,14 +584,8 @@ const addSubcommand = new Command('add')
   .description('detect connected iPod and add to config')
   .option('--path <path>', 'explicit path to iPod mount point')
   .option('-y, --yes', 'skip confirmation prompts')
-  .option(
-    '--quality <preset>',
-    'transcoding quality preset: max, high, medium, low'
-  )
-  .option(
-    '--audio-quality <preset>',
-    'audio quality (overrides --quality): max, high, medium, low'
-  )
+  .option('--quality <preset>', 'transcoding quality preset: max, high, medium, low')
+  .option('--audio-quality <preset>', 'audio quality (overrides --quality): max, high, medium, low')
   .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
   .option('--encoding <mode>', 'encoding mode: vbr, cbr')
   .option('--artwork', 'sync artwork to this device')
@@ -1349,7 +1347,10 @@ const infoSubcommand = new Command('info')
               const musicTracks = tracks.filter((t) => core.isMusicMediaType(t.mediaType));
               const musicCount = musicTracks.length;
               const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
-              const parsedSyncTags = musicTracks.map((t) => ({ tag: parseSyncTag(t.comment), hasArtwork: t.hasArtwork }));
+              const parsedSyncTags = musicTracks.map((t) => ({
+                tag: parseSyncTag(t.comment),
+                hasArtwork: t.hasArtwork,
+              }));
               const syncTagCount = parsedSyncTags.filter((t) => t.tag !== null).length;
               const syncTagComplete = parsedSyncTags.filter(
                 (t) => t.tag !== null && (t.tag.artworkHash || t.hasArtwork === false)
@@ -1424,8 +1425,12 @@ const infoSubcommand = new Command('info')
         // Human-readable output
         if (device) {
           out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
-          out.print(`  Volume UUID:   ${device.volumeUuid}`);
-          out.print(`  Volume Name:   ${device.volumeName}`);
+          if (device.volumeUuid) {
+            out.print(`  Volume UUID:   ${device.volumeUuid}`);
+          }
+          if (device.volumeName) {
+            out.print(`  Volume Name:   ${device.volumeName}`);
+          }
         } else if (cliPath) {
           out.print(`Device: ${cliPath} (path mode)`);
         }
@@ -1493,7 +1498,9 @@ const infoSubcommand = new Command('info')
             const missingArt = liveStatus.syncTagMissingArt ?? 0;
             const noTag = trackCount - syncTagCount;
 
-            out.print(`  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag)}`);
+            out.print(
+              `  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag)}`
+            );
           }
           if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {
             out.print(`  Video:         ${formatNumber(liveStatus.videoCount)} videos`);
@@ -1661,7 +1668,9 @@ const musicSubcommand = new Command('music')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled }));
+            out.stdout(
+              formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
+            );
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);
@@ -1816,7 +1825,9 @@ const videoSubcommand = new Command('video')
           if (format === 'json') {
             out.stdout(JSON.stringify(stats, null, 2));
           } else {
-            out.stdout(formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled }));
+            out.stdout(
+              formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
+            );
           }
         } else if (mode === 'albums') {
           const albums = aggregateAlbums(displayTracks);
@@ -2794,14 +2805,8 @@ interface SetOptions {
 
 const setSubcommand = new Command('set')
   .description('update device settings (quality, artwork)')
-  .option(
-    '--quality <preset>',
-    'transcoding quality preset: max, high, medium, low'
-  )
-  .option(
-    '--audio-quality <preset>',
-    'audio quality (overrides --quality): max, high, medium, low'
-  )
+  .option('--quality <preset>', 'transcoding quality preset: max, high, medium, low')
+  .option('--audio-quality <preset>', 'audio quality (overrides --quality): max, high, medium, low')
   .option('--video-quality <preset>', 'video quality (overrides --quality): max, high, medium, low')
   .option('--encoding <mode>', 'encoding mode: vbr, cbr')
   .option('--artwork', 'sync artwork to this device')
