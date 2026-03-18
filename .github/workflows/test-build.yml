@@ -1,0 +1,9 @@
+name: Test Build
+on:
+  push:
+    branches: [fix/embed-native-binding]
+jobs:
+  build:
+    uses: ./.github/workflows/build-platform.yml
+    with:
+      upload-artifacts: true
