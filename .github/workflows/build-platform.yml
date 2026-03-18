@@ -360,13 +360,18 @@ jobs:
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
-      - name: Smoke test - dummy iPod
+      - name: Smoke test - native binding loads (isolated)
         run: |
+          ISOLATED_DIR=$(mktemp -d)
+          cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
           mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-          OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+          OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
           echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-            echo "ERROR: Native addon failed to load"; exit 1
+          rm -rf "$ISOLATED_DIR"
+
+          if echo "$OUTPUT" | grep -qi "native binding\|Failed to load native\|binding not found\|native module\|cannot find\|segfault\|SIGSEGV"; then
+            echo "ERROR: Native addon failed to load in compiled binary"; exit 1
           fi
 
       - name: Create tarball
@@ -492,11 +497,16 @@ jobs:
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
 
+              ISOLATED_DIR=$(mktemp -d)
+              cp packages/podkit-cli/bin/podkit "$ISOLATED_DIR/"
               mkdir -p /tmp/test-ipod/iPod_Control/iTunes
-              OUTPUT=$(packages/podkit-cli/bin/podkit device info --device /tmp/test-ipod 2>&1) || true
+
+              OUTPUT=$("$ISOLATED_DIR/podkit" device info --device /tmp/test-ipod 2>&1) || true
               echo "$OUTPUT"
-              if echo "$OUTPUT" | grep -qi "native module\|cannot find\|segfault\|SIGSEGV"; then
-                echo "ERROR: Native addon failed to load"; exit 1
+              rm -rf "$ISOLATED_DIR"
+
+              if echo "$OUTPUT" | grep -qi "native binding\|Failed to load native\|binding not found\|native module\|cannot find\|segfault\|SIGSEGV"; then
+                echo "ERROR: Native addon failed to load in compiled binary"; exit 1
               fi
             '
 
