@@ -1,0 +1,9 @@
+name: Test Build
+on:
+  push:
+    branches: [ci/musl-only-linux]
+jobs:
+  build:
+    uses: ./.github/workflows/build-platform.yml
+    with:
+      upload-artifacts: true
