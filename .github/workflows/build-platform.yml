@@ -299,6 +299,9 @@ jobs:
       - name: Compile CLI binary
         run: bun run compile
 
+      - name: Compile daemon binary
+        run: bunx turbo run compile --filter=@podkit/podkit-daemon
+
       - name: Smoke test - version
         run: |
           VERSION=$(packages/podkit-cli/bin/podkit --version)
@@ -340,12 +343,26 @@ jobs:
           cd packages/podkit-cli/bin
           tar czf "${GITHUB_WORKSPACE}/podkit-linux-x64.tar.gz" podkit
 
+      - name: Create daemon tarball
+        if: inputs.upload-artifacts
+        run: |
+          cd packages/podkit-daemon/bin
+          tar czf "${GITHUB_WORKSPACE}/podkit-daemon-linux-x64.tar.gz" podkit-daemon
+
       - name: Upload tarball
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: podkit-linux-x64
           path: podkit-linux-x64.tar.gz
+          retention-days: 30
+
+      - name: Upload daemon tarball
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podkit-daemon-linux-x64
+          path: podkit-daemon-linux-x64.tar.gz
           retention-days: 30
 
   # arm64 musl: can't use container: alpine on ARM runners (GH Actions limitation)
@@ -452,6 +469,9 @@ jobs:
               echo "==> Compiling CLI binary..."
               bun run compile
 
+              echo "==> Compiling daemon binary..."
+              bunx turbo run compile --filter=@podkit/podkit-daemon
+
               echo "==> Smoke tests..."
               VERSION=$(packages/podkit-cli/bin/podkit --version)
               echo "Version: $VERSION"
@@ -488,10 +508,24 @@ jobs:
           cd packages/podkit-cli/bin
           tar czf "${GITHUB_WORKSPACE}/podkit-linux-arm64.tar.gz" podkit
 
+      - name: Create daemon tarball
+        if: inputs.upload-artifacts
+        run: |
+          cd packages/podkit-daemon/bin
+          tar czf "${GITHUB_WORKSPACE}/podkit-daemon-linux-arm64.tar.gz" podkit-daemon
+
       - name: Upload tarball
         if: inputs.upload-artifacts
         uses: actions/upload-artifact@v4
         with:
           name: podkit-linux-arm64
           path: podkit-linux-arm64.tar.gz
+          retention-days: 30
+
+      - name: Upload daemon tarball
+        if: inputs.upload-artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: podkit-daemon-linux-arm64
+          path: podkit-daemon-linux-arm64.tar.gz
           retention-days: 30

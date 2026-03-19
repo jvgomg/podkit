@@ -37,16 +37,30 @@ jobs:
           name: podkit-linux-arm64
           path: docker-artifacts/
 
+      - name: Download Linux amd64 daemon binary
+        uses: actions/download-artifact@v4
+        with:
+          name: podkit-daemon-linux-x64
+          path: docker-daemon-artifacts/
+
+      - name: Download Linux arm64 daemon binary
+        uses: actions/download-artifact@v4
+        with:
+          name: podkit-daemon-linux-arm64
+          path: docker-daemon-artifacts/
+
       - name: Prepare binaries for multi-arch build
         run: |
           mkdir -p bin/amd64 bin/arm64
           tar xzf docker-artifacts/podkit-linux-x64.tar.gz -C bin/amd64/
           tar xzf docker-artifacts/podkit-linux-arm64.tar.gz -C bin/arm64/
-          chmod +x bin/amd64/podkit bin/arm64/podkit
-          echo "--- amd64 binary ---"
-          file bin/amd64/podkit
-          echo "--- arm64 binary ---"
-          file bin/arm64/podkit
+          tar xzf docker-daemon-artifacts/podkit-daemon-linux-x64.tar.gz -C bin/amd64/
+          tar xzf docker-daemon-artifacts/podkit-daemon-linux-arm64.tar.gz -C bin/arm64/
+          chmod +x bin/amd64/podkit bin/arm64/podkit bin/amd64/podkit-daemon bin/arm64/podkit-daemon
+          echo "--- amd64 binaries ---"
+          file bin/amd64/podkit bin/amd64/podkit-daemon
+          echo "--- arm64 binaries ---"
+          file bin/arm64/podkit bin/arm64/podkit-daemon
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
