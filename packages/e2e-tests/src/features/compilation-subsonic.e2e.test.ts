@@ -21,7 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { withTarget } from '../targets/index.js';
 import { runCliJson, cleanupTempConfig } from '../helpers/cli-runner.js';
 import { isDockerAvailable } from '../sources/index.js';
-import { startContainer, stopContainer } from '../docker/index.js';
+import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
 import { areFixturesAvailable, getTrackPath, Tracks } from '../helpers/fixtures.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -187,13 +187,12 @@ beforeAll(async () => {
   await createCompilationFixtures(musicDir);
 
   // Start Navidrome container
-  serverPort = 4533 + Math.floor(Math.random() * 100);
-  console.log(`Starting Navidrome container on port ${serverPort}...`);
-
+  // Use port 0 to let Docker/OS assign a free host port (avoids conflicts
+  // when multiple Docker-based test files run concurrently)
   const result = await startContainer({
     image: 'deluan/navidrome:latest',
     source: 'subsonic-compilation',
-    ports: [`${serverPort}:4533`],
+    ports: ['0:4533'],
     volumes: [`${musicDir}:/music:ro`, `${dataDir}:/data`],
     env: [
       `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
@@ -205,6 +204,9 @@ beforeAll(async () => {
   });
 
   containerId = result.containerId;
+  serverPort = await getContainerPort(result.containerId, 4533);
+  console.log(`Navidrome container started on port ${serverPort}`);
+
   await waitForServer(serverPort);
   await waitForLibraryScan(serverPort);
   console.log('Navidrome ready with compilation fixtures');

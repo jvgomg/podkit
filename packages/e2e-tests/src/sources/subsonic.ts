@@ -11,7 +11,12 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { getFixturesDir } from '../helpers/fixtures.js';
-import { startContainer, stopContainer, runDockerCommand } from '../docker/index.js';
+import {
+  startContainer,
+  stopContainer,
+  getContainerPort,
+  runDockerCommand,
+} from '../docker/index.js';
 import type { TestSource } from './types.js';
 
 /**
@@ -49,7 +54,7 @@ export class SubsonicTestSource implements TestSource {
   constructor(port?: number) {
     this.tempDir = join(tmpdir(), `podkit-subsonic-test-${randomUUID()}`);
     this.config = {
-      port: port ?? 4533 + Math.floor(Math.random() * 100),
+      port: port ?? 0, // 0 = let OS assign a free port
       musicDir: join(this.tempDir, 'music'),
       dataDir: join(this.tempDir, 'data'),
       username: DEFAULT_USERNAME,
@@ -103,6 +108,8 @@ export class SubsonicTestSource implements TestSource {
     }
 
     // Start Navidrome container using the container manager
+    // Use port 0 to let Docker/OS assign a free host port, avoiding conflicts
+    // when multiple Subsonic containers run concurrently.
     const result = await startContainer({
       image: 'deluan/navidrome:latest',
       source: 'subsonic',
@@ -121,6 +128,11 @@ export class SubsonicTestSource implements TestSource {
     });
 
     this.containerId = result.containerId;
+
+    // If we used port 0, query the OS-assigned port
+    if (this.config.port === 0) {
+      this.config.port = await getContainerPort(result.containerId, 4533);
+    }
 
     // Wait for server to be ready (HTTP + auth)
     await this.waitForServer();

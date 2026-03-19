@@ -5,8 +5,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "bun test",
-    "test:dummy": "IPOD_TARGET=dummy bun test",
+    "test": "bun run src/scripts/run-parallel.ts",
+    "test:serial": "bun test",
+    "test:dummy": "IPOD_TARGET=dummy bun run src/scripts/run-parallel.ts",
     "test:real": "IPOD_TARGET=real bun test",
     "test:subsonic": "SUBSONIC_E2E=1 bun test src/workflows/subsonic-sync.e2e.test.ts",
     "preflight": "bun run src/helpers/preflight.ts",

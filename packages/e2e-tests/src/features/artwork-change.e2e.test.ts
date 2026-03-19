@@ -22,7 +22,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { mkdir, rm, copyFile, writeFile } from 'node:fs/promises';
+import { mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -30,7 +30,7 @@ import { randomUUID } from 'node:crypto';
 import { withTarget } from '../targets/index.js';
 import { runCliJson, cleanupTempConfig } from '../helpers/cli-runner.js';
 import { isDockerAvailable } from '../sources/index.js';
-import { startContainer, stopContainer } from '../docker/index.js';
+import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
 import { areFixturesAvailable, getTrackPath, Tracks } from '../helpers/fixtures.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -225,20 +225,47 @@ async function waitForLibraryScan(port: number, minAlbums = 1, timeoutMs = 60000
 }
 
 /**
+ * Update the Subsonic URL port in a config file.
+ *
+ * After a docker restart with dynamic port allocation, the host port changes.
+ * Config files that were created with the old port need to be updated.
+ */
+async function updateConfigPort(configPath: string, newPort: number): Promise<void> {
+  const content = await readFile(configPath, 'utf-8');
+  const updated = content.replace(
+    /url = "http:\/\/localhost:\d+"/,
+    `url = "http://localhost:${newPort}"`
+  );
+  await writeFile(configPath, updated);
+}
+
+/**
  * Restart the Navidrome container with a fresh database.
  *
  * Clears the data directory (database + artwork cache) and restarts the container.
  * On restart, Navidrome creates a fresh database and rescans all files, including
  * re-extracting artwork. This is the most reliable way to force Navidrome to serve
  * updated artwork after modifying source files.
+ *
+ * When using dynamic port allocation (port 0), docker restart assigns a new host
+ * port. Pass `configPath` to automatically update config files with the new port.
  */
-async function restartNavidrome(): Promise<void> {
+async function restartNavidrome(configPath?: string): Promise<void> {
   // Clear data directory so Navidrome starts from scratch
   await rm(dataDir, { recursive: true, force: true });
   await mkdir(dataDir, { recursive: true });
 
   // Restart the container
   execSync(`docker restart ${containerId}`, { stdio: 'ignore', timeout: 30000 });
+
+  // Re-query the assigned port (docker restart assigns a new host port
+  // when the container was started with -p 0:containerPort)
+  serverPort = await getContainerPort(containerId!, 4533);
+
+  // Update config file if provided
+  if (configPath) {
+    await updateConfigPort(configPath, serverPort);
+  }
 
   // Wait for fresh server + library scan
   await waitForServer(serverPort);
@@ -312,13 +339,12 @@ beforeAll(async () => {
 
   // Start Navidrome container
   // Mount music as read-write so we can modify artwork between syncs
-  serverPort = 4533 + Math.floor(Math.random() * 100);
-  console.log(`Starting Navidrome container on port ${serverPort}...`);
-
+  // Use port 0 to let Docker/OS assign a free host port (avoids conflicts
+  // when multiple Docker-based test files run concurrently)
   const result = await startContainer({
     image: 'deluan/navidrome:latest',
     source: 'subsonic-artwork',
-    ports: [`${serverPort}:4533`],
+    ports: ['0:4533'],
     volumes: [`${musicDir}:/music`, `${dataDir}:/data`],
     env: [
       `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
@@ -330,6 +356,9 @@ beforeAll(async () => {
   });
 
   containerId = result.containerId;
+  serverPort = await getContainerPort(result.containerId, 4533);
+  console.log(`Navidrome container started on port ${serverPort}`);
+
   await waitForServer(serverPort);
   await waitForLibraryScan(serverPort);
   console.log('Navidrome ready with artwork fixtures');
@@ -460,7 +489,7 @@ describe('artwork change detection (Subsonic)', () => {
           // and getCoverArt may serve stale data even after a fullScan. Restarting
           // with a clean data directory guarantees fresh artwork.
           console.log('Step 4: Restarting Navidrome with fresh database...');
-          await restartNavidrome();
+          await restartNavidrome(configPath);
 
           // ------------------------------------------------------------------
           // Step 5: Dry-run sync with --check-artwork to detect changes
@@ -577,7 +606,7 @@ describe('artwork change detection (Subsonic)', () => {
           // Step 1: Ensure goldberg tracks have artwork
           console.log('artwork-removed Step 1: Restoring artwork in goldberg fixtures...');
           restoreArtworkInFixtures(musicDir);
-          await restartNavidrome();
+          await restartNavidrome(configPath);
 
           // Step 2: Initial sync (artwork present)
           console.log('artwork-removed Step 2: Initial sync with artwork present...');
@@ -594,7 +623,7 @@ describe('artwork change detection (Subsonic)', () => {
 
           // Step 4: Restart Navidrome (fresh DB, rescans artworkless files)
           console.log('artwork-removed Step 4: Restarting Navidrome...');
-          await restartNavidrome();
+          await restartNavidrome(configPath);
 
           // Step 5: Dry-run to detect artwork-removed
           console.log('artwork-removed Step 5: Dry-run to detect artwork-removed...');
@@ -676,7 +705,7 @@ describe('artwork change detection (Subsonic)', () => {
           const dualToneSrc = getTrackPath(Tracks.DUAL_TONE.album, Tracks.DUAL_TONE.filename);
           const dualTonePath = join(syntheticDir, Tracks.DUAL_TONE.filename);
           await copyFile(dualToneSrc, dualTonePath);
-          await restartNavidrome();
+          await restartNavidrome(configPath);
 
           // Step 2: Initial sync (dual-tone has no artwork, placeholder is filtered)
           console.log('artwork-added Step 2: Initial sync (no artwork)...');
@@ -693,7 +722,7 @@ describe('artwork change detection (Subsonic)', () => {
 
           // Step 4: Restart Navidrome (fresh DB, rescans file with new artwork)
           console.log('artwork-added Step 4: Restarting Navidrome...');
-          await restartNavidrome();
+          await restartNavidrome(configPath);
 
           // Step 5: Dry-run to detect artwork-added
           console.log('artwork-added Step 5: Dry-run to detect artwork-added...');

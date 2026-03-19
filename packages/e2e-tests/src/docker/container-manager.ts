@@ -108,6 +108,27 @@ export async function startContainer(
 }
 
 /**
+ * Get the host port assigned to a container's exposed port.
+ *
+ * Useful when starting a container with `-p 0:<containerPort>` to let the OS
+ * pick a free host port, then querying the actual assignment afterwards.
+ */
+export async function getContainerPort(
+  containerId: string,
+  containerPort: number
+): Promise<number> {
+  const output = await runDockerCommand(['port', containerId, String(containerPort)]);
+  // Output format: "0.0.0.0:12345\n" or "[::]:12345\n" (or both lines)
+  const match = output.match(/:(\d+)/);
+  if (!match) {
+    throw new Error(
+      `Could not determine host port for container ${containerId} port ${containerPort}: ${output.trim()}`
+    );
+  }
+  return parseInt(match[1]!, 10);
+}
+
+/**
  * Stop a Docker container and unregister it.
  */
 export async function stopContainer(containerId: string): Promise<void> {
