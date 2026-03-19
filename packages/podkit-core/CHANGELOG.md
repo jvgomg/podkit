@@ -1,5 +1,20 @@
 # @podkit/core
 
+## 0.5.0
+
+### Minor Changes
+
+- [`0019607`](https://github.com/jvgomg/podkit/commit/00196072d68bdbf8a7dabb64fb53dc968aebfdbb) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `--force-metadata` flag to rewrite metadata on all synced tracks without re-transcoding or re-transferring files
+
+### Patch Changes
+
+- [`8dddd29`](https://github.com/jvgomg/podkit/commit/8dddd2945071f3aac3c018cc05138ef51386529c) Thanks [@jvgomg](https://github.com/jvgomg)! - Improve iPod eject reliability with automatic retry and filesystem sync
+  - Use `diskutil eject` instead of `diskutil unmount` on macOS for proper removable-media handling (unmounts + detaches the disk)
+  - Flush filesystem buffers before ejecting to ensure all writes are persisted
+  - Automatically retry eject up to 3 times when the device is temporarily busy (common on macOS when Finder/Spotlight holds a reference)
+  - Show progress output during retry so you know what's happening
+  - On Linux, return busy errors from udisksctl immediately so the retry wrapper can handle them instead of silently falling through
+
 ## 0.4.0
 
 ### Minor Changes
