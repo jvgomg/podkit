@@ -62,7 +62,6 @@ These features are on the roadmap but not yet scheduled. Votes and comments help
 | Feature | Description | Discussion |
 |---------|-------------|------------|
 | **Windows** | Full Windows platform support | [#8](https://github.com/jvgomg/podkit/discussions/8) |
-| **Linux mount/eject** | Native mount and eject commands for Linux | [#9](https://github.com/jvgomg/podkit/discussions/9) |
 
 ### Device Support
 
@@ -102,6 +101,7 @@ Features that have been completed and released.
 | Feature | Description | Discussion |
 |---------|-------------|------------|
 | **Docker distribution** | Official Docker image (`ghcr.io/jvgomg/podkit`) for linux/amd64 and linux/arm64, with musl release binaries | [#12](https://github.com/jvgomg/podkit/discussions/12) |
+| **Linux mount/eject** | Native mount and eject commands for Linux (Debian, Ubuntu, Alpine, and more) | [#9](https://github.com/jvgomg/podkit/discussions/9) |
 | **Homebrew distribution** | Install podkit via `brew install jvgomg/podkit/podkit` with automatic dependency management | [#19](https://github.com/jvgomg/podkit/discussions/19) |
 
 ## Help Shape podkit

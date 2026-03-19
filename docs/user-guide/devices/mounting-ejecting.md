@@ -1,6 +1,6 @@
 ---
 title: Mounting and Ejecting
-description: Mount and safely eject iPod devices with podkit on macOS, including how iFlash devices are handled.
+description: Mount and safely eject iPod devices with podkit on macOS and Linux, including how iFlash devices are handled.
 sidebar:
   order: 5
 ---

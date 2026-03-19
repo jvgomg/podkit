@@ -139,7 +139,7 @@ Keep this table updated when creating or closing discussions.
 | 6 | Plex media source | Collection Sources | Later |
 | 7 | Jellyfin media source | Collection Sources | Later |
 | 8 | Windows support | Platform Support | Later |
-| 9 | Linux mount and eject commands | Platform Support | Later |
+| 9 | Linux mount and eject commands | Platform Support | Shipped |
 | 10 | Device formatting command | Device Management | Later |
 | 11 | Keychain and secret manager integration | Security | Later |
 | 12 | Docker distribution | Distribution | Shipped |
