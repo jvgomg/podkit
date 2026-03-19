@@ -1,4 +1,4 @@
-# docker/docker-compose.daemon.yml
+# packages/podkit-docker/docker-compose.daemon.yml
 #
 # Docker Compose for podkit daemon mode with notifications.
 # Auto-detects iPods and syncs them when plugged in.

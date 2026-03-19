@@ -17,6 +17,7 @@ packages/
 ├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
 ├── podkit-cli/      # Command-line interface
+├── podkit-docker/   # Docker image (Dockerfile, entrypoint, compose files)
 └── test-fixtures/   # Test fixture generator (FLAC files with controllable metadata/artwork)
 
 tools/
@@ -516,10 +517,10 @@ podkit is distributed as a Docker image at `ghcr.io/jvgomg/podkit`. See [docs/ge
 
 | Purpose | Path |
 |---------|------|
-| Dockerfile | `docker/Dockerfile` |
-| Entrypoint script | `docker/entrypoint.sh` |
-| Docker Compose example | `docker/docker-compose.yml` |
-| Daemon Compose example | `docker/docker-compose.daemon.yml` |
+| Dockerfile | `packages/podkit-docker/Dockerfile` |
+| Entrypoint script | `packages/podkit-docker/entrypoint.sh` |
+| Docker Compose example | `packages/podkit-docker/docker-compose.yml` |
+| Daemon Compose example | `packages/podkit-docker/docker-compose.daemon.yml` |
 | CI workflow | `.github/workflows/docker.yml` |
 
 **Architecture:**
@@ -538,7 +539,7 @@ podkit is distributed as a Docker image at `ghcr.io/jvgomg/podkit`. See [docs/ge
 Collections can be configured via environment variables (e.g., `PODKIT_MUSIC_PATH=/music`) — no config file required. See [docs/reference/environment-variables.md](docs/reference/environment-variables.md) for details.
 
 **Impact on CLI changes:**
-- New CLI commands need to be added to the `PODKIT_COMMANDS` list in `docker/entrypoint.sh`
+- New CLI commands need to be added to the `PODKIT_COMMANDS` list in `packages/podkit-docker/entrypoint.sh`
 - The entrypoint passes `PODKIT_CONFIG=/config/config.toml` by default
 - `PODKIT_TIPS=false` is set in the Dockerfile (tips aren't useful in Docker context)
 
@@ -709,8 +710,8 @@ Key files to understand:
 | Demo build | `packages/demo/build.ts` |
 | Demo tape | `packages/demo/demo.tape` |
 | Test fixture generator | `packages/test-fixtures/src/index.ts` |
-| Docker entrypoint | `docker/entrypoint.sh` |
-| Dockerfile | `docker/Dockerfile` |
+| Docker entrypoint | `packages/podkit-docker/entrypoint.sh` |
+| Dockerfile | `packages/podkit-docker/Dockerfile` |
 | Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |
 | Lima VM configs | `tools/lima/` |
 | Lima test runner | `tools/lima/run-tests.sh` |

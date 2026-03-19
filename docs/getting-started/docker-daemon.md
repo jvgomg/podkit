@@ -126,7 +126,7 @@ Each device can have its own quality preset, collection, artwork setting, and mo
 
 The daemon can send notifications via [Apprise](https://github.com/caronc/apprise), which supports hundreds of notification services. Run Apprise as a sidecar container and point the daemon at it.
 
-Here's the full setup from `docker/docker-compose.daemon.yml`:
+Here's the full setup from `packages/podkit-docker/docker-compose.daemon.yml`:
 
 ```yaml
 services:
