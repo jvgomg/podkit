@@ -300,7 +300,7 @@ jobs:
         run: bun run compile
 
       - name: Compile daemon binary
-        run: bunx turbo run compile --filter=@podkit/podkit-daemon
+        run: bunx turbo run compile --filter=@podkit/daemon
 
       - name: Smoke test - version
         run: |
@@ -470,7 +470,7 @@ jobs:
               bun run compile
 
               echo "==> Compiling daemon binary..."
-              bunx turbo run compile --filter=@podkit/podkit-daemon
+              bunx turbo run compile --filter=@podkit/daemon
 
               echo "==> Smoke tests..."
               VERSION=$(packages/podkit-cli/bin/podkit --version)

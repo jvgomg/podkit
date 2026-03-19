@@ -1,5 +1,5 @@
 {
-  "name": "@podkit/podkit-daemon",
+  "name": "@podkit/daemon",
   "private": true,
   "version": "0.1.0",
   "description": "Daemon for auto-detecting iPods and syncing via the podkit CLI",
