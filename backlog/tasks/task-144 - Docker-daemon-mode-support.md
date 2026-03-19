@@ -1,10 +1,10 @@
 ---
 id: TASK-144
 title: Docker daemon mode support
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-17 20:50'
-updated_date: '2026-03-18 02:24'
+updated_date: '2026-03-18 23:57'
 labels:
   - docker
   - daemon
@@ -16,21 +16,16 @@ references:
   - docs/getting-started/docker.md
 documentation:
   - AGENTS.md (Docker Image > Future considerations)
+  - backlog/documents/doc-004.md
 priority: low
 ---
 
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-When daemon mode is implemented in the CLI, the Docker image needs updates:
+Superseded by PRD doc-004 (Docker Daemon Mode — Hotplug Sync with Notifications) and broken into tasks TASK-160 through TASK-165.
 
-1. **Entrypoint**: Default CMD should switch from `sync` to `daemon` (or support both via env var like `PODKIT_MODE=daemon`)
-2. **Process supervision**: Consider adopting s6-overlay for long-running container process management (restart on crash, graceful shutdown)
-3. **Health check**: Add a `HEALTHCHECK` instruction or s6 health check so Docker orchestration knows the daemon is healthy
-4. **USB auto-detect**: Document and support `--privileged` or `--device /dev/bus/usb` for USB device passthrough. May need udev rules inside the container for iPod connect/disconnect events
-5. **Restart policy**: Update docker-compose examples with `restart: unless-stopped`
-
-This task is blocked until the daemon mode CLI feature is implemented.
+The original assumption was that daemon mode would be a CLI feature. After design review, the decision is to build it as a separate `packages/podkit-daemon` package that wraps the CLI, running inside Docker with an Apprise sidecar for notifications. See doc-004 for full rationale.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
