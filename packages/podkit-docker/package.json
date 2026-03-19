@@ -1,0 +1,10 @@
+{
+  "name": "@podkit/docker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Docker image for podkit — syncs music collections to iPod devices",
+  "dependencies": {
+    "@podkit/podkit-daemon": "workspace:*",
+    "podkit": "workspace:*"
+  }
+}

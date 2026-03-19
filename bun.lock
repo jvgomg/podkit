@@ -116,9 +116,17 @@
     },
     "packages/podkit-daemon": {
       "name": "@podkit/podkit-daemon",
-      "version": "0.0.0",
+      "version": "0.1.0",
       "devDependencies": {
         "@types/bun": "latest",
+      },
+    },
+    "packages/podkit-docker": {
+      "name": "@podkit/docker",
+      "version": "0.1.0",
+      "dependencies": {
+        "@podkit/podkit-daemon": "workspace:*",
+        "podkit": "workspace:*",
       },
     },
     "packages/test-fixtures": {
@@ -430,6 +438,8 @@
     "@podkit/core": ["@podkit/core@workspace:packages/podkit-core"],
 
     "@podkit/demo": ["@podkit/demo@workspace:packages/demo"],
+
+    "@podkit/docker": ["@podkit/docker@workspace:packages/podkit-docker"],
 
     "@podkit/docs-site": ["@podkit/docs-site@workspace:packages/docs-site"],
 

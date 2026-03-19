@@ -21,6 +21,10 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       should_release: ${{ steps.detect.outputs.should_release }}
+      has_cli_release: ${{ steps.detect.outputs.has_cli_release }}
+      has_docker_release: ${{ steps.detect.outputs.has_docker_release }}
+      cli_version: ${{ steps.detect.outputs.cli_version }}
+      docker_version: ${{ steps.detect.outputs.docker_version }}
       hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
 
     steps:
@@ -55,32 +59,66 @@ jobs:
       - name: Detect if this is a release merge
         id: detect
         run: |
+          CLI_VERSION=$(jq -r '.version' packages/podkit-cli/package.json)
+          CLI_TAG="podkit@$CLI_VERSION"
+          DOCKER_VERSION=$(jq -r '.version' packages/podkit-docker/package.json)
+          DOCKER_TAG="docker@$DOCKER_VERSION"
+
+          echo "cli_version=$CLI_VERSION" >> "$GITHUB_OUTPUT"
+          echo "docker_version=$DOCKER_VERSION" >> "$GITHUB_OUTPUT"
+
           if [ "${{ steps.changesets.outputs.hasChangesets }}" = "false" ]; then
             # No pending changesets — check if this is a release-worthy commit
             COMMIT_MSG=$(git log -1 --format="%s")
             echo "Commit message: $COMMIT_MSG"
 
+            IS_RELEASE=false
+
             # Release if: Version Packages merge OR manual dispatch with unreleased version
             if echo "$COMMIT_MSG" | grep -q "Version Packages"; then
-              echo "should_release=true" >> "$GITHUB_OUTPUT"
+              IS_RELEASE=true
               echo "Release detected — Version Packages merge"
             elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-              VERSION=$(jq -r '.version' packages/podkit-cli/package.json)
-              TAG="podkit@$VERSION"
-              if git fetch --tags && git rev-parse "$TAG" >/dev/null 2>&1; then
-                echo "should_release=false" >> "$GITHUB_OUTPUT"
-                echo "Manual dispatch but $TAG already exists — nothing to release"
+              IS_RELEASE=true
+              echo "Manual dispatch — checking for unreleased versions"
+            fi
+
+            if [ "$IS_RELEASE" = "true" ]; then
+              git fetch --tags
+
+              if git rev-parse "$CLI_TAG" >/dev/null 2>&1; then
+                echo "has_cli_release=false" >> "$GITHUB_OUTPUT"
+                echo "CLI version $CLI_VERSION already released"
               else
-                echo "should_release=true" >> "$GITHUB_OUTPUT"
-                echo "Manual dispatch — releasing $TAG"
+                echo "has_cli_release=true" >> "$GITHUB_OUTPUT"
+                echo "CLI version $CLI_VERSION is new — will release"
               fi
+
+              if git rev-parse "$DOCKER_TAG" >/dev/null 2>&1; then
+                echo "has_docker_release=false" >> "$GITHUB_OUTPUT"
+                echo "Docker version $DOCKER_VERSION already released"
+              else
+                echo "has_docker_release=true" >> "$GITHUB_OUTPUT"
+                echo "Docker version $DOCKER_VERSION is new — will release"
+              fi
+
             else
-              echo "should_release=false" >> "$GITHUB_OUTPUT"
+              echo "has_cli_release=false" >> "$GITHUB_OUTPUT"
+              echo "has_docker_release=false" >> "$GITHUB_OUTPUT"
               echo "No changesets and not a version merge — nothing to do"
             fi
           else
-            echo "should_release=false" >> "$GITHUB_OUTPUT"
+            echo "has_cli_release=false" >> "$GITHUB_OUTPUT"
+            echo "has_docker_release=false" >> "$GITHUB_OUTPUT"
             echo "Pending changesets found — version PR will be created/updated"
+          fi
+
+          # Set should_release based on whether either component needs releasing.
+          # Re-read the outputs file since they were just written above.
+          if grep -q "has_cli_release=true" "$GITHUB_OUTPUT" || grep -q "has_docker_release=true" "$GITHUB_OUTPUT"; then
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
           fi
 
   # Step 2: Build native prebuilds + compile CLI binaries for each platform
@@ -94,26 +132,23 @@ jobs:
     with:
       upload-artifacts: true
 
-  # Step 3: Create GitHub Release with all platform tarballs
+  # Step 3: Create GitHub Release with all platform tarballs (CLI releases only)
   release:
     needs: [changesets, build]
-    if: needs.build.result == 'success'
+    if: needs.build.result == 'success' && needs.changesets.outputs.has_cli_release == 'true'
     runs-on: ubuntu-latest
     name: Create GitHub Release
     outputs:
-      version: ${{ steps.version.outputs.version }}
-      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ needs.changesets.outputs.cli_version }}
+      tag: ${{ steps.tag.outputs.tag }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version
-        id: version
+      - name: Set tag
+        id: tag
         run: |
-          VERSION=$(jq -r '.version' packages/podkit-cli/package.json)
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=podkit@$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Releasing version: $VERSION"
+          echo "tag=podkit@${{ needs.changesets.outputs.cli_version }}" >> "$GITHUB_OUTPUT"
 
       - name: Download all tarballs
         uses: actions/download-artifact@v4
@@ -136,7 +171,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           NOTES_FILE="release-notes.md"
-          VERSION="${{ steps.version.outputs.version }}"
+          VERSION="${{ needs.changesets.outputs.cli_version }}"
           : > "$NOTES_FILE"
 
           # Add version PR description at the top if available
@@ -174,8 +209,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VERSION="${{ steps.version.outputs.version }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          VERSION="${{ needs.changesets.outputs.cli_version }}"
 
           if git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "Tag $TAG already exists — skipping release"
@@ -191,21 +226,44 @@ jobs:
             release-assets/podkit-*.tar.gz \
             release-assets/SHA256SUMS.txt
 
-  # Step 4: Build and push Docker image to GHCR
+  # Step 4: Build and push Docker image to GHCR (Docker releases only)
   docker:
-    needs: [build, release]
-    if: needs.release.result == 'success'
+    needs: [changesets, build]
+    if: needs.build.result == 'success' && needs.changesets.outputs.has_docker_release == 'true'
     uses: ./.github/workflows/docker.yml
     with:
-      version: ${{ needs.release.outputs.version }}
+      version: ${{ needs.changesets.outputs.docker_version }}
       push: true
     permissions:
       contents: read
       packages: write
 
-  # Step 5: Update the Homebrew formula in the tap repository
+  # Step 4b: Tag Docker release after successful push
+  docker-tag:
+    needs: [changesets, docker]
+    if: needs.docker.result == 'success'
+    runs-on: ubuntu-latest
+    name: Tag Docker Release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Docker release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="docker@${{ needs.changesets.outputs.docker_version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created tag $TAG"
+          fi
+
+  # Step 5: Update the Homebrew formula in the tap repository (CLI releases only)
   update-homebrew:
-    needs: release
+    needs: [changesets, release]
     if: needs.release.result == 'success'
     runs-on: ubuntu-latest
     continue-on-error: true

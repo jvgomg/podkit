@@ -25,6 +25,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Extract component versions
+        id: versions
+        run: |
+          echo "cli=$(jq -r '.version' packages/podkit-cli/package.json)" >> "$GITHUB_OUTPUT"
+          echo "daemon=$(jq -r '.version' packages/podkit-daemon/package.json)" >> "$GITHUB_OUTPUT"
+
       - name: Download Linux amd64 binary
         uses: actions/download-artifact@v4
         with:
@@ -98,12 +104,14 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: packages/podkit-docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: ${{ inputs.push }}
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             VERSION=${{ inputs.version }}
+            CLI_VERSION=${{ steps.versions.outputs.cli }}
+            DAEMON_VERSION=${{ steps.versions.outputs.daemon }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

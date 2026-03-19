@@ -20,6 +20,8 @@ FROM alpine:3.21
 
 ARG BUILD_DATE
 ARG VERSION
+ARG CLI_VERSION
+ARG DAEMON_VERSION
 ARG TARGETARCH
 
 LABEL org.opencontainers.image.title="podkit" \
@@ -28,7 +30,9 @@ LABEL org.opencontainers.image.title="podkit" \
       org.opencontainers.image.source="https://github.com/jvgomg/podkit" \
       org.opencontainers.image.url="https://jvgomg.github.io/podkit" \
       org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="MIT" \
+      io.podkit.cli.version="${CLI_VERSION}" \
+      io.podkit.daemon.version="${DAEMON_VERSION}"
 
 # Runtime environment
 ENV PUID=1000 \
@@ -51,7 +55,7 @@ RUN echo "**** install runtime dependencies ****" && \
     rm -rf /tmp/*
 
 # Copy entrypoint
-COPY docker/entrypoint.sh /entrypoint.sh
+COPY packages/podkit-docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 # Copy pre-built musl binaries for this architecture
@@ -60,7 +64,10 @@ RUN chmod +x /entrypoint.sh
 #   arm64 -> bin/arm64/podkit, bin/arm64/podkit-daemon
 COPY bin/${TARGETARCH}/podkit /usr/local/bin/podkit
 COPY bin/${TARGETARCH}/podkit-daemon /usr/local/bin/podkit-daemon
-RUN chmod +x /usr/local/bin/podkit /usr/local/bin/podkit-daemon
+RUN chmod +x /usr/local/bin/podkit /usr/local/bin/podkit-daemon && \
+    printf '{"docker":"%s","cli":"%s","daemon":"%s"}\n' \
+      "${VERSION}" "${CLI_VERSION}" "${DAEMON_VERSION}" \
+      > /usr/local/share/podkit-versions.json
 
 VOLUME /config
 
