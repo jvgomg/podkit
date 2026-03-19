@@ -1,5 +1,31 @@
 # podkit
 
+## 0.5.0
+
+### Minor Changes
+
+- [`6b90ef7`](https://github.com/jvgomg/podkit/commit/6b90ef7972c42a4def206b15584ea7caa549b4d2) Thanks [@jvgomg](https://github.com/jvgomg)! - Add config migration system with `podkit migrate` command
+
+  Config files now have a `version` field. Running any command with an outdated config shows a clear error directing you to run `podkit migrate`. The migrate command detects your config version, shows what will change, backs up your original file, and applies updates. Supports `--dry-run` to preview changes and interactive migrations that can prompt for decisions. Configs without a version field are treated as version 0 and can be migrated with `podkit migrate`.
+
+- [`0019607`](https://github.com/jvgomg/podkit/commit/00196072d68bdbf8a7dabb64fb53dc968aebfdbb) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `--force-metadata` flag to rewrite metadata on all synced tracks without re-transcoding or re-transferring files
+
+- [`4edadde`](https://github.com/jvgomg/podkit/commit/4edadde979cbe780ff455df3f98310988961fe6e) Thanks [@jvgomg](https://github.com/jvgomg)! - Add tab completion for option values and dynamic config names
+
+  Options like `--quality`, `--type`, `--encoding`, and `--format` now offer their known values when pressing tab (e.g. `max`, `high`, `medium`, `low`). The `--device` and `--collection` flags complete with names from your config file. Works in both zsh and bash.
+
+### Patch Changes
+
+- [`8dddd29`](https://github.com/jvgomg/podkit/commit/8dddd2945071f3aac3c018cc05138ef51386529c) Thanks [@jvgomg](https://github.com/jvgomg)! - Improve iPod eject reliability with automatic retry and filesystem sync
+  - Use `diskutil eject` instead of `diskutil unmount` on macOS for proper removable-media handling (unmounts + detaches the disk)
+  - Flush filesystem buffers before ejecting to ensure all writes are persisted
+  - Automatically retry eject up to 3 times when the device is temporarily busy (common on macOS when Finder/Spotlight holds a reference)
+  - Show progress output during retry so you know what's happening
+  - On Linux, return busy errors from udisksctl immediately so the retry wrapper can handle them instead of silently falling through
+
+- Updated dependencies [[`8dddd29`](https://github.com/jvgomg/podkit/commit/8dddd2945071f3aac3c018cc05138ef51386529c), [`0019607`](https://github.com/jvgomg/podkit/commit/00196072d68bdbf8a7dabb64fb53dc968aebfdbb)]:
+  - @podkit/core@0.5.0
+
 ## 0.4.0
 
 ### Minor Changes
