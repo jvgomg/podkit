@@ -1,9 +1,10 @@
 ---
 id: TASK-166.05
 title: Developer documentation & agent directives for config migrations
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 14:42'
+updated_date: '2026-03-19 15:36'
 labels:
   - documentation
 milestone: Config Migration Wizard
@@ -48,9 +49,9 @@ Update developer-facing documentation and agent directives so that future develo
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 AGENTS.md has a config migrations section covering when to create migrations, how to create them, and pointers to examples
-- [ ] #2 Developer guide has a page or section explaining the versioning system, migration creation workflow, and testing approach
-- [ ] #3 Config reference documents the `version` field
-- [ ] #4 `podkit init` documentation reflects versioned config generation
-- [ ] #5 A developer or AI agent reading only AGENTS.md and the developer guide can create a new migration without looking at existing migration code
+- [x] #1 AGENTS.md has a config migrations section covering when to create migrations, how to create them, and pointers to examples
+- [x] #2 Developer guide has a page or section explaining the versioning system, migration creation workflow, and testing approach
+- [x] #3 Config reference documents the `version` field
+- [x] #4 `podkit init` documentation reflects versioned config generation
+- [x] #5 A developer or AI agent reading only AGENTS.md and the developer guide can create a new migration without looking at existing migration code
 <!-- AC:END -->

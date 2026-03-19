@@ -1,9 +1,10 @@
 ---
 id: TASK-166.02
 title: Migration engine & `podkit migrate` command
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 14:42'
+updated_date: '2026-03-19 15:29'
 labels:
   - config
   - cli
@@ -45,15 +46,15 @@ Build the core migration engine and the `podkit migrate` CLI command for automat
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Migration interface defined: source version, target version, description, migrate function (raw TOML → raw TOML)
-- [ ] #2 Migration registry holds an ordered list of migrations
-- [ ] #3 Engine applies migrations sequentially from current version to target
-- [ ] #4 `podkit migrate` shows current version, target version, and pending migration descriptions
-- [ ] #5 `podkit migrate` shows summary of changes and asks for confirmation before writing
-- [ ] #6 `podkit migrate` backs up original config with timestamp before writing
-- [ ] #7 `podkit migrate --dry-run` shows what would change without writing
-- [ ] #8 `podkit migrate` exits cleanly with 'up to date' message when no migrations needed
-- [ ] #9 Trivial test migration (0→1) proves the system end-to-end
-- [ ] #10 Unit tests: engine applies migrations in order, skips already-applied, backup created, dry-run doesn't write
-- [ ] #11 Integration test: `podkit migrate` on a version 0 config file produces a version 1 config file with backup
+- [x] #1 Migration interface defined: source version, target version, description, migrate function (raw TOML → raw TOML)
+- [x] #2 Migration registry holds an ordered list of migrations
+- [x] #3 Engine applies migrations sequentially from current version to target
+- [x] #4 `podkit migrate` shows current version, target version, and pending migration descriptions
+- [x] #5 `podkit migrate` shows summary of changes and asks for confirmation before writing
+- [x] #6 `podkit migrate` backs up original config with timestamp before writing
+- [x] #7 `podkit migrate --dry-run` shows what would change without writing
+- [x] #8 `podkit migrate` exits cleanly with 'up to date' message when no migrations needed
+- [x] #9 Trivial test migration (0→1) proves the system end-to-end
+- [x] #10 Unit tests: engine applies migrations in order, skips already-applied, backup created, dry-run doesn't write
+- [x] #11 Integration test: `podkit migrate` on a version 0 config file produces a version 1 config file with backup
 <!-- AC:END -->

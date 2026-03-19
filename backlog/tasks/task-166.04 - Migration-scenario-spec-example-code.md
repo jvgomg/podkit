@@ -1,9 +1,10 @@
 ---
 id: TASK-166.04
 title: Migration scenario spec & example code
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 14:42'
+updated_date: '2026-03-19 15:36'
 labels:
   - config
   - documentation
@@ -41,11 +42,11 @@ HITL review: enumerate the concrete scenarios the migration system will handle a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All six migration scenarios enumerated with concrete examples
-- [ ] #2 Each scenario has a documented example migration implementation with inline comments
-- [ ] #3 Example migrations are tested — each has at least one test case with input/output TOML
-- [ ] #4 Examples live alongside the migration registry as copyable templates
+- [x] #1 All six migration scenarios enumerated with concrete examples
+- [x] #2 Each scenario has a documented example migration implementation with inline comments
+- [x] #3 Example migrations are tested — each has at least one test case with input/output TOML
+- [x] #4 Examples live alongside the migration registry as copyable templates
 - [ ] #5 If the migration interface needed adjustments to handle a scenario, those adjustments are made
-- [ ] #6 Environment variable change scenario documents the messaging approach (since env vars can't be auto-migrated)
+- [x] #6 Environment variable change scenario documents the messaging approach (since env vars can't be auto-migrated)
 - [ ] #7 Review completed with developer — examples are clear and the interface is ergonomic
 <!-- AC:END -->

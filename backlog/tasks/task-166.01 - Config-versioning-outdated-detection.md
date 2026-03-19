@@ -1,9 +1,10 @@
 ---
 id: TASK-166.01
 title: Config versioning & outdated detection
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 14:41'
+updated_date: '2026-03-19 15:19'
 labels:
   - config
   - cli
@@ -39,13 +40,13 @@ Add a `version` field to the config file and hook version detection into config 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Lightweight version reader extracts version from raw TOML without full config parsing
-- [ ] #2 Missing version field is treated as version 0
-- [ ] #3 Invalid version field (non-integer, negative) produces a clear error
-- [ ] #4 Config loading errors with a message pointing to `podkit migrate` when version is behind current
+- [x] #1 Lightweight version reader extracts version from raw TOML without full config parsing
+- [x] #2 Missing version field is treated as version 0
+- [x] #3 Invalid version field (non-integer, negative) produces a clear error
+- [x] #4 Config loading errors with a message pointing to `podkit migrate` when version is behind current
 - [ ] #5 Config loading shows an info tip (respecting tips setting) when new optional features are available
-- [ ] #6 No error or tip when config is at current version
-- [ ] #7 `podkit init` generates config with `version = N` as the first field
-- [ ] #8 Docker init generates versioned config
-- [ ] #9 Unit tests cover: version present, version missing, version invalid, breaking detection, advisory detection
+- [x] #6 No error or tip when config is at current version
+- [x] #7 `podkit init` generates config with `version = N` as the first field
+- [x] #8 Docker init generates versioned config
+- [x] #9 Unit tests cover: version present, version missing, version invalid, breaking detection, advisory detection
 <!-- AC:END -->

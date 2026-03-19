@@ -1,9 +1,10 @@
 ---
 id: TASK-166.03
 title: Interactive migration support
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 14:42'
+updated_date: '2026-03-19 15:29'
 labels:
   - config
   - cli
@@ -36,12 +37,12 @@ Extend the migration engine to support interactive migrations that prompt users 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Migration interface extended with automatic/interactive discriminator
-- [ ] #2 Migration context object provides prompt utilities: yes/no, choice, text input
-- [ ] #3 Migration context object provides filesystem utilities: directory scanning, file reading
-- [ ] #4 Aborting an interactive migration at any prompt leaves the config file unmodified
+- [x] #1 Migration interface extended with automatic/interactive discriminator
+- [x] #2 Migration context object provides prompt utilities: yes/no, choice, text input
+- [x] #3 Migration context object provides filesystem utilities: directory scanning, file reading
+- [x] #4 Aborting an interactive migration at any prompt leaves the config file unmodified
 - [ ] #5 Interactive example migration exercises all prompt types and directory scanning
-- [ ] #6 Unit tests: context prompt utilities return expected values with mocked input
-- [ ] #7 Unit tests: abort during interactive migration produces no file changes
+- [x] #6 Unit tests: context prompt utilities return expected values with mocked input
+- [x] #7 Unit tests: abort during interactive migration produces no file changes
 - [ ] #8 Integration test: interactive migration prompts user, collects answers, produces correct output
 <!-- AC:END -->
