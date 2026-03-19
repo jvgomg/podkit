@@ -27,7 +27,11 @@
       }
     },
     {
-      "files": ["**/podkit-cli/src/config/**/*.ts", "**/podkit-cli/src/output/**/*.ts"],
+      "files": [
+        "**/podkit-cli/src/config/**/*.ts",
+        "**/podkit-cli/src/output/**/*.ts",
+        "**/podkit-cli/src/commands/completions.ts"
+      ],
       "rules": {
         "no-console": "off"
       }

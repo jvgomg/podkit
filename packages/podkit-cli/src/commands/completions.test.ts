@@ -132,7 +132,6 @@ describe('completions', () => {
 
   describe('detectShell', () => {
     const originalShell = process.env.SHELL;
-    const originalPlatform = process.platform;
 
     afterEach(() => {
       if (originalShell !== undefined) {

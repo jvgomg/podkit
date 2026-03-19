@@ -7,7 +7,7 @@
 
 import { createRequire } from 'module';
 import { dirname, join } from 'path';
-import { existsSync, readdirSync, readFileSync, realpathSync } from 'fs';
+import { existsSync, readdirSync, realpathSync } from 'fs';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { arch as osArch, platform as osPlatform } from 'os';

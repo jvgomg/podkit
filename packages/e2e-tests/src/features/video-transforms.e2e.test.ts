@@ -14,7 +14,7 @@ import { describe, it, expect, beforeAll } from 'bun:test';
 import { mkdtemp, rm, cp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCli, runCliJson } from '../helpers/cli-runner';
+import { runCli } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import {
   areVideoFixturesAvailable,

@@ -228,9 +228,11 @@ function mockManager(devices: PlatformDeviceInfo[] = []): DeviceManager {
     listDevices: async () => devices,
     findIpodDevices: async () => devices,
     findByVolumeUuid: async (uuid: string) => devices.find((d) => d.volumeUuid === uuid) ?? null,
-    eject: async () => ({ success: false, error: 'mock' }),
-    mount: async () => ({ success: false, error: 'mock' }),
-    getManualInstructions: () => ({ success: false, error: 'mock' }),
+    eject: async () => ({ success: false, device: 'mock', error: 'mock' }),
+    mount: async () => ({ success: false, device: 'mock', error: 'mock' }),
+    getManualInstructions: () => 'mock',
+    requiresPrivileges: () => false,
+    assessDevice: async () => null,
   };
 }
 
@@ -242,7 +244,6 @@ function mockDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDevice
     size: 160_000_000_000,
     isMounted: true,
     mountPoint: '/Volumes/IPOD',
-    fileSystem: 'FAT32',
     ...overrides,
   };
 }

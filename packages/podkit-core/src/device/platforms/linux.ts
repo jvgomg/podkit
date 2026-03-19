@@ -9,7 +9,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {
   DeviceManager,
@@ -129,7 +129,9 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
     // Handle both old "mountpoint" (string) and new "mountpoints" (array) formats.
     // Newer kernels (5.14+ / util-linux 2.38+) use the array form.
     const rawMount =
-      part.mountpoint ?? part.mountpoints?.find((m) => m != null && m !== '') ?? null;
+      part.mountpoint ??
+      part.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
+      null;
     const isMounted = rawMount !== null && rawMount !== '';
 
     devices.push({
