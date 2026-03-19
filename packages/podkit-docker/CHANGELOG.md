@@ -1,5 +1,11 @@
 # @podkit/docker
 
+## 0.2.2
+
+### Patch Changes
+
+- [`854c663`](https://github.com/jvgomg/podkit/commit/854c663d627a2817b5464af412461114fc6d5a98) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix daemon not detecting iPods on Synology NAS where lsblk does not probe filesystem types by default
+
 ## 0.2.1
 
 ### Patch Changes
