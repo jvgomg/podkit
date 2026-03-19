@@ -1,5 +1,46 @@
 # podkit
 
+## 0.4.0
+
+### Minor Changes
+
+- [`8c121ff`](https://github.com/jvgomg/podkit/commit/8c121ff25052a49a8ecda3850a04b57030cc065a) Thanks [@jvgomg](https://github.com/jvgomg)! - Add shell completion support with `podkit completions` command. Tab completion for all commands, subcommands, and options is generated automatically from the CLI structure. Supports zsh and bash via `podkit completions install` for guided setup, including a dev mode (`--alias`) that creates a shorthand function with completions for local development workflows.
+
+- [#37](https://github.com/jvgomg/podkit/pull/37) [`424e0e9`](https://github.com/jvgomg/podkit/commit/424e0e96923650e7fdb79f5d5d494b8078738f1c) Thanks [@jvgomg](https://github.com/jvgomg)! - Add official Docker image for running podkit in containers. The image is based on Alpine Linux and supports both `linux/amd64` and `linux/arm64` architectures. Published to GitHub Container Registry on each release.
+
+  Also adds musl-compatible Linux binaries to release assets for users on Alpine and other musl-based distributions.
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Add environment variable support for defining collections and devices without a config file. Set `PODKIT_MUSIC_PATH=/music` to configure a music collection entirely via env vars — no config file needed. Supports named collections (`PODKIT_MUSIC_MAIN_PATH`), Subsonic sources (`PODKIT_MUSIC_TYPE=subsonic`), and video collections (`PODKIT_VIDEO_PATH`). Device `volumeUuid` is now optional, and UUID validation protects against syncing to the wrong iPod when configured.
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Add Linux device manager support for mount, eject, and device detection. podkit now supports `podkit mount`, `podkit eject`, and `podkit device add` on Debian, Ubuntu, Alpine, and other Linux distributions. Uses `lsblk` for device enumeration, `udisksctl` for unprivileged mount/eject (with fallback to `mount`/`umount`), and USB identity from `/sys` for iPod auto-detection. iFlash adapter detection works on Linux via block size and capacity signals.
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Improve video filename parsing and add show language transform for video sync
+
+  **Filename parsing improvements:**
+  - Add anime fansub filename pattern support (`[Group]_Show_Name_EP_(codec)_[CRC].ext`)
+  - Prefer folder-based series titles over filename-only parsing for richer metadata
+  - Strip scene release cruft (quality tags, codecs, release groups) from episode titles
+  - Detect language and edition tags from filenames and folder paths
+  - Add `language` and `edition` optional fields to `CollectionVideo`
+
+  **Show language transform:**
+  - Add configurable `showLanguage` transform that reformats language markers in video series titles (e.g., `(JPN)` → `(Japanese)`)
+  - Enabled by default with abbreviated format — configure via config file, per-device overrides, or `PODKIT_SHOW_LANGUAGE*` env vars
+  - Changing language display preferences causes metadata-only updates, not file re-transfers (dual-key matching in video differ)
+
+  **CLI:**
+  - Add `showLanguage` config support (boolean shorthand or `[showLanguage]` table with `format` and `expand` options)
+  - Add per-device `showLanguage` overrides
+  - Show transform info in `--dry-run` output
+  - Add `@podkit/libgpod-node` as explicit dependency for reliable native binding resolution in worktrees
+
+### Patch Changes
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix native libgpod binding not loading in compiled CLI binary. The Homebrew and standalone binary distributions were completely broken for any command that touched the iPod database. The `.node` addon is now embedded directly in the single-file binary, and all native dependencies are fully statically linked — including on Linux, where builds now use musl/Alpine for universal compatibility across all distros (Debian, Ubuntu, RHEL, Fedora, Arch, Alpine, etc.).
+
+- Updated dependencies [[`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f), [`21ab79a`](https://github.com/jvgomg/podkit/commit/21ab79a2a52dd698b0d9d83304cad5ee9fee91f0), [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f)]:
+  - @podkit/core@0.4.0
+
 ## 0.3.0
 
 ### Minor Changes

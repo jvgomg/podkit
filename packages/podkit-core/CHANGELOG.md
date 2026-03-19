@@ -1,5 +1,37 @@
 # @podkit/core
 
+## 0.4.0
+
+### Minor Changes
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Add Linux device manager support for mount, eject, and device detection. podkit now supports `podkit mount`, `podkit eject`, and `podkit device add` on Debian, Ubuntu, Alpine, and other Linux distributions. Uses `lsblk` for device enumeration, `udisksctl` for unprivileged mount/eject (with fallback to `mount`/`umount`), and USB identity from `/sys` for iPod auto-detection. iFlash adapter detection works on Linux via block size and capacity signals.
+
+- [#38](https://github.com/jvgomg/podkit/pull/38) [`50e529c`](https://github.com/jvgomg/podkit/commit/50e529c53bae0bf403c61d1a097230514890c90f) Thanks [@jvgomg](https://github.com/jvgomg)! - Improve video filename parsing and add show language transform for video sync
+
+  **Filename parsing improvements:**
+  - Add anime fansub filename pattern support (`[Group]_Show_Name_EP_(codec)_[CRC].ext`)
+  - Prefer folder-based series titles over filename-only parsing for richer metadata
+  - Strip scene release cruft (quality tags, codecs, release groups) from episode titles
+  - Detect language and edition tags from filenames and folder paths
+  - Add `language` and `edition` optional fields to `CollectionVideo`
+
+  **Show language transform:**
+  - Add configurable `showLanguage` transform that reformats language markers in video series titles (e.g., `(JPN)` → `(Japanese)`)
+  - Enabled by default with abbreviated format — configure via config file, per-device overrides, or `PODKIT_SHOW_LANGUAGE*` env vars
+  - Changing language display preferences causes metadata-only updates, not file re-transfers (dual-key matching in video differ)
+
+  **CLI:**
+  - Add `showLanguage` config support (boolean shorthand or `[showLanguage]` table with `format` and `expand` options)
+  - Add per-device `showLanguage` overrides
+  - Show transform info in `--dry-run` output
+  - Add `@podkit/libgpod-node` as explicit dependency for reliable native binding resolution in worktrees
+
+### Patch Changes
+
+- [`21ab79a`](https://github.com/jvgomg/podkit/commit/21ab79a2a52dd698b0d9d83304cad5ee9fee91f0) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix video episode titles showing series name instead of episode ID
+
+  TV show episodes without an explicit episode title in the filename (e.g., `Show - S01E01.mkv`) now display as `S01E01` on iPod instead of repeating the series name. Episodes with titles show as `S01E01 - Episode Title`.
+
 ## 0.3.0
 
 ### Minor Changes
