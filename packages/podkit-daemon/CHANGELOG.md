@@ -1,5 +1,12 @@
 # @podkit/daemon
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [[`2e7ba81`](https://github.com/jvgomg/podkit/commit/2e7ba81085166b47ab08d07bb739f04d3d9e46d1), [`e1b0fbc`](https://github.com/jvgomg/podkit/commit/e1b0fbc679dca9516011a211adad255b9deb140f)]:
+  - @podkit/core@0.5.1
+
 ## 0.2.0
 
 ### Minor Changes

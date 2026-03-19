@@ -1,5 +1,13 @@
 # @podkit/core
 
+## 0.5.1
+
+### Patch Changes
+
+- [`2e7ba81`](https://github.com/jvgomg/podkit/commit/2e7ba81085166b47ab08d07bb739f04d3d9e46d1) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix iPod detection on Synology NAS and NVMe-based systems where block device names use non-standard partition suffixes
+
+- [`e1b0fbc`](https://github.com/jvgomg/podkit/commit/e1b0fbc679dca9516011a211adad255b9deb140f) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix Subsonic connection failures hanging indefinitely instead of failing with a clear error message
+
 ## 0.5.0
 
 ### Minor Changes
