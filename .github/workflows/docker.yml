@@ -113,5 +113,5 @@ jobs:
             CLI_VERSION=${{ steps.versions.outputs.cli }}
             DAEMON_VERSION=${{ steps.versions.outputs.daemon }}
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=docker-main
+          cache-to: type=gha,mode=max,scope=docker-main

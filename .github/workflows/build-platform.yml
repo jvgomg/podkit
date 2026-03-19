@@ -198,7 +198,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/libgpod-node/prebuilds/
-          key: prebuild-linux-x64-musl-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
+          key: prebuild-linux-x64-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
 
       - name: Set environment
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -212,7 +212,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-linux-x64-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-x64-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
 
       - name: Install Alpine build deps (full)
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -379,7 +379,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: packages/libgpod-node/prebuilds/
-          key: prebuild-linux-arm64-musl-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
+          key: prebuild-linux-arm64-${{ hashFiles('packages/libgpod-node/native/**', 'packages/libgpod-node/binding.gyp', 'tools/prebuild/**') }}
 
       - name: Cache static dependencies
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -387,7 +387,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: static-deps
-          key: static-deps-linux-arm64-musl-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-linux-arm64-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
 
       - name: Build prebuild in Alpine
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
