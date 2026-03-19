@@ -56,6 +56,11 @@ export function isValidQualityPreset(value: string): value is QualityPreset {
  */
 export type EncodingMode = 'vbr' | 'cbr';
 
+/**
+ * All valid encoding mode names
+ */
+export const ENCODING_MODES: readonly EncodingMode[] = ['vbr', 'cbr'] as const;
+
 // =============================================================================
 // Transcode Configuration
 // =============================================================================
@@ -142,7 +147,10 @@ export const ALAC_PRESET = {
  *
  * When `customBitrate` is provided, it overrides the preset target.
  */
-export function getPresetBitrate(preset: QualityPreset | 'lossless', customBitrate?: number): number {
+export function getPresetBitrate(
+  preset: QualityPreset | 'lossless',
+  customBitrate?: number
+): number {
   if (customBitrate !== undefined) {
     return customBitrate;
   }

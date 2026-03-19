@@ -154,6 +154,7 @@ export type {
 } from './transcode/types.js';
 export {
   QUALITY_PRESETS,
+  ENCODING_MODES,
   AAC_PRESETS,
   ALAC_PRESET,
   isValidQualityPreset,
@@ -223,7 +224,7 @@ export type {
 } from './ipod/types.js';
 export { IpodError } from './ipod/errors.js';
 export type { IpodErrorCode } from './ipod/errors.js';
-export { MediaType, isMusicMediaType } from './ipod/constants.js';
+export { MediaType, isMusicMediaType, CONTENT_TYPES } from './ipod/constants.js';
 export type { MediaTypeValue, ContentType as MediaContentType } from './ipod/constants.js';
 export { IpodDatabase } from './ipod/database.js';
 export { isVideoMediaType } from './ipod/video.js';

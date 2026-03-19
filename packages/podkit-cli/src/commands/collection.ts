@@ -30,8 +30,10 @@ import {
   removeCollection,
   setDefaultCollection,
   DEFAULT_CONFIG_PATH,
+  CONTENT_TYPES,
 } from '../config/index.js';
 import type { MusicCollectionConfig, VideoCollectionConfig } from '../config/types.js';
+import { OUTPUT_FORMATS } from '../output/formatters.js';
 import {
   type DisplayTrack,
   parseFields,
@@ -215,7 +217,7 @@ function resolveVideoCollectionArg(collectionName?: string):
 
 const listSubcommand = new Command('list')
   .description('list configured collections')
-  .addOption(new Option('-t, --type <type>', 'filter by type').choices(['music', 'video']))
+  .addOption(new Option('-t, --type <type>', 'filter by type').choices([...CONTENT_TYPES]))
   .action((options: { type?: string }) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -248,7 +250,7 @@ const listSubcommand = new Command('list')
 
 const addSubcommand = new Command('add')
   .description('add a new collection')
-  .addOption(new Option('-t, --type <type>', 'collection type').choices(['music', 'video']))
+  .addOption(new Option('-t, --type <type>', 'collection type').choices([...CONTENT_TYPES]))
   .option('-c, --collection <name>', 'collection name (used as identifier)')
   .option('--path <path>', 'path to the collection directory')
   .action(async (options: { type?: string; collection?: string; path?: string }) => {
@@ -608,7 +610,7 @@ const musicSubcommand = new Command('music')
   .option('--albums', 'list albums with track counts')
   .option('--artists', 'list artists with album/track counts')
   .addOption(
-    new Option('--format <fmt>', 'output format').choices(['table', 'json', 'csv']).default('table')
+    new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: ContentListOptions & { collection?: string }) => {
@@ -768,7 +770,7 @@ const videoSubcommand = new Command('video')
   .option('--albums', 'list albums with track counts')
   .option('--artists', 'list artists with album/track counts')
   .addOption(
-    new Option('--format <fmt>', 'output format').choices(['table', 'json', 'csv']).default('table')
+    new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: ContentListOptions & { collection?: string }) => {
@@ -910,7 +912,7 @@ export interface CollectionDefaultOutput {
 
 const defaultSubcommand = new Command('default')
   .description('set or show the default collection')
-  .addOption(new Option('-t, --type <type>', 'collection type').choices(['music', 'video']))
+  .addOption(new Option('-t, --type <type>', 'collection type').choices([...CONTENT_TYPES]))
   .option(
     '-c, --collection <name>',
     'collection name (omit to show current default, use --clear to unset)'

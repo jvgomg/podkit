@@ -56,6 +56,11 @@ export type MediaTypeValue = (typeof MediaType)[keyof typeof MediaType];
 export type ContentType = 'music' | 'video';
 
 /**
+ * All valid content type names
+ */
+export const CONTENT_TYPES: readonly ContentType[] = ['music', 'video'] as const;
+
+/**
  * Checks if a media type represents music content.
  *
  * Music is identified as audio tracks that are NOT video, podcast, or audiobook.

@@ -43,9 +43,11 @@ export type {
 } from './types.js';
 export {
   QUALITY_PRESETS,
+  ENCODING_MODES,
+  CONTENT_TYPES,
+  VIDEO_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
-  VIDEO_QUALITY_PRESETS,
 } from './types.js';
 
 // Defaults

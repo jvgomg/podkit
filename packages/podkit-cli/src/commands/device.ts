@@ -29,7 +29,8 @@ import {
   setDefaultDevice,
   DEFAULT_CONFIG_PATH,
 } from '../config/index.js';
-import { QUALITY_PRESETS, VIDEO_QUALITY_PRESETS } from '../config/index.js';
+import { QUALITY_PRESETS, VIDEO_QUALITY_PRESETS, ENCODING_MODES } from '../config/index.js';
+import { OUTPUT_FORMATS } from '../output/formatters.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -586,30 +587,19 @@ const addSubcommand = new Command('add')
   .option('--path <path>', 'explicit path to iPod mount point')
   .option('-y, --yes', 'skip confirmation prompts')
   .addOption(
-    new Option('--quality <preset>', 'transcoding quality preset').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
-    ])
+    new Option('--quality <preset>', 'transcoding quality preset').choices([...QUALITY_PRESETS])
   )
   .addOption(
     new Option('--audio-quality <preset>', 'audio quality (overrides --quality)').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
+      ...QUALITY_PRESETS,
     ])
   )
   .addOption(
     new Option('--video-quality <preset>', 'video quality (overrides --quality)').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
+      ...QUALITY_PRESETS,
     ])
   )
-  .addOption(new Option('--encoding <mode>', 'encoding mode').choices(['vbr', 'cbr']))
+  .addOption(new Option('--encoding <mode>', 'encoding mode').choices([...ENCODING_MODES]))
   .option('--artwork', 'sync artwork to this device')
   .option('--no-artwork', 'do not sync artwork to this device')
   .action(async (options: AddOptions & { path?: string }) => {
@@ -1620,7 +1610,7 @@ const musicSubcommand = new Command('music')
   .option('--albums', 'list albums with track counts')
   .option('--artists', 'list artists with album/track counts')
   .addOption(
-    new Option('--format <fmt>', 'output format').choices(['table', 'json', 'csv']).default('table')
+    new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: MusicVideoOptions) => {
@@ -1780,7 +1770,7 @@ const videoSubcommand = new Command('video')
   .option('--albums', 'list albums with track counts')
   .option('--artists', 'list artists with album/track counts')
   .addOption(
-    new Option('--format <fmt>', 'output format').choices(['table', 'json', 'csv']).default('table')
+    new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
   .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
   .action(async (options: MusicVideoOptions) => {
@@ -2857,30 +2847,19 @@ interface SetOptions {
 const setSubcommand = new Command('set')
   .description('update device settings (quality, artwork)')
   .addOption(
-    new Option('--quality <preset>', 'transcoding quality preset').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
-    ])
+    new Option('--quality <preset>', 'transcoding quality preset').choices([...QUALITY_PRESETS])
   )
   .addOption(
     new Option('--audio-quality <preset>', 'audio quality (overrides --quality)').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
+      ...QUALITY_PRESETS,
     ])
   )
   .addOption(
     new Option('--video-quality <preset>', 'video quality (overrides --quality)').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
+      ...QUALITY_PRESETS,
     ])
   )
-  .addOption(new Option('--encoding <mode>', 'encoding mode').choices(['vbr', 'cbr']))
+  .addOption(new Option('--encoding <mode>', 'encoding mode').choices([...ENCODING_MODES]))
   .option('--artwork', 'sync artwork to this device')
   .option('--no-artwork', 'do not sync artwork to this device')
   .option('--clear-quality', 'remove quality setting (use global default)')

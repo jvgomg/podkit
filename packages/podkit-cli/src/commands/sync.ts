@@ -37,6 +37,7 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
 } from '../config/index.js';
+import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES } from '../config/index.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -1396,7 +1397,7 @@ const syncTypeOption = new Option(
 ).default([] as string[]);
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (syncTypeOption as any).parseArg = collectTypes;
-syncTypeOption.argChoices = ['music', 'video'];
+syncTypeOption.argChoices = [...CONTENT_TYPES];
 
 export const syncCommand = new Command('sync')
   .description('sync music and/or video collections to iPod')
@@ -1405,25 +1406,22 @@ export const syncCommand = new Command('sync')
   .option('-n, --dry-run', 'show what would be synced without making changes')
   .addOption(
     new Option('--quality <preset>', 'unified quality preset for audio and video').choices([
-      'max',
-      'high',
-      'medium',
-      'low',
+      ...QUALITY_PRESETS,
     ])
   )
   .addOption(
     new Option(
       '--audio-quality <preset>',
       'audio transcoding quality (overrides --quality)'
-    ).choices(['max', 'high', 'medium', 'low'])
+    ).choices([...QUALITY_PRESETS])
   )
   .addOption(
     new Option(
       '--video-quality <preset>',
       'video transcoding quality (overrides --quality)'
-    ).choices(['max', 'high', 'medium', 'low'])
+    ).choices([...QUALITY_PRESETS])
   )
-  .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices(['vbr', 'cbr']))
+  .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--skip-upgrades', 'skip file-replacement upgrades for changed source files')

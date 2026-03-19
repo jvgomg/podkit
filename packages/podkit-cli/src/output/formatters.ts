@@ -9,6 +9,12 @@
 export { formatBytes, formatNumber } from '../commands/display-utils.js';
 
 /**
+ * All valid output format names for list commands
+ */
+export const OUTPUT_FORMATS = ['table', 'json', 'csv'] as const;
+export type OutputFormat = (typeof OUTPUT_FORMATS)[number];
+
+/**
  * Render text in bold using ANSI escape codes when stdout is a TTY.
  * Falls back to plain text when output is piped or redirected.
  */
