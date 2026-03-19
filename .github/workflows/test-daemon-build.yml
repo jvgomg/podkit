@@ -1,0 +1,23 @@
+name: Test Daemon Build
+
+on:
+  push:
+    branches:
+      - ci/build-daemon-binary
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-platform.yml
+    with:
+      upload-artifacts: true
+
+  docker:
+    needs: build
+    if: needs.build.result == 'success'
+    uses: ./.github/workflows/docker.yml
+    with:
+      version: 0.0.0-test
+      push: false
