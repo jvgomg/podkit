@@ -2,7 +2,7 @@
 
 ## Status
 
-**Draft** (2026-03-20)
+**Accepted** (2026-03-21)
 
 ## Context
 
@@ -41,6 +41,35 @@ The investigation covered every layer of the artwork pipeline:
 - `itdb_track_set_thumbnails_internal()` clears `artwork->id = 0` before setting new artwork — prevents stale ID references
 - `itdb_track_remove_thumbnails()` → `itdb_artwork_remove_thumbnails()` clears `artwork->id = 0` — prevents dangling references
 
+### Autopsy Findings (2026-03-21)
+
+**Finding F-001: ithmb file size mismatch**
+
+The ArtworkDB is structurally sound — 2,532 MHII entries with perfectly sequential IDs (100-2631), no gaps, no duplicates, all offsets properly aligned to slot boundaries. However, the .ithmb files contain only 246 thumbnail slots while the ArtworkDB references 2,289 unique slot positions.
+
+Key data:
+- F1028_1.ithmb: 4,920,000 bytes = 246 slots x 20,000 bytes
+- F1029_1.ithmb: 19,680,000 bytes = 246 slots x 80,000 bytes
+- ArtworkDB references: 2,289 unique offsets from 0 to 45,760,000 (format 1028)
+- Out-of-bounds: 2,043 offsets reference positions beyond the file boundary
+- In-bounds: 246 offsets perfectly cover all physical slots (0 through 4,900,000)
+- Offset sharing: 243 offsets are shared by exactly 2 MHII entries (album-level deduplication)
+- The offset space is perfectly contiguous (no gaps in the sequence of unique offsets)
+- OOB offsets start at exactly the file boundary (4,920,000 for format 1028)
+
+**Impact on iPod playback:**
+- 2,043 tracks reference non-existent pixel data
+- If firmware wraps reads (offset % file_size), every OOB track displays artwork from an unrelated album's slot — each physical slot shared by ~8-9 ghost tracks
+- If firmware reads beyond file boundaries, it gets FAT32 cluster data, explaining the "different wrong artwork after reboot" symptom
+
+**Self-perpetuation mechanism:**
+The corruption persists across syncs because:
+1. On database parse, OOB offsets become IPOD-type thumbnail items in memory
+2. The ithmb rearrangement can't fix them (the referenced data doesn't exist in the file)
+3. Only newly added tracks get MEMORY-type thumbnails that trigger fresh writes
+4. The ArtworkDB is rewritten preserving OOB offsets for all existing tracks
+5. Result: corruption is permanent unless ALL artwork is force-rebuilt
+
 ### Root Cause: libgpod's In-Place ithmb Rearrangement
 
 The most likely cause of artwork corruption is in libgpod's `ithmb_rearrange_existing_thumbnails()` function (`ithumb-writer.c:1402-1524`), which performs **in-place binary surgery** on the `.ithmb` files during every database save.
@@ -77,6 +106,27 @@ The 5th-gen iPod Video does not support "sparse artwork" (`itdb_device_supports_
 - **Larger ithmb files:** More pixel data means the compaction operates on larger files with more slots
 
 Newer iPods (Classic, Nano 3+) support sparse artwork where identical images are deduplicated via shared artwork IDs. These devices have fewer unique ithmb entries to rearrange and are thus less vulnerable to this class of bug.
+
+### Confirmed Root Cause
+
+The confirmed corruption is a **size mismatch between the ArtworkDB and ithmb files**. The ArtworkDB was written for ithmb files containing 2,289 thumbnails, but the actual files only contain 246 thumbnails. The most likely triggering events:
+
+1. **Write ordering on FAT32 (H6):** libgpod writes ithmb files via buffered stdio (fwrite) then writes ArtworkDB via g_file_set_contents (temp file + atomic rename). On FAT32 over USB, the rename may hit disk before the buffered ithmb writes are flushed. If the iPod is ejected between these events, the ArtworkDB references data that was never persisted.
+
+2. **Interrupted artwork rebuild:** If podkit replaced artwork on most tracks (e.g., artwork hash upgrade from ADR-012), the save would: (a) compact the ithmb to only the unchanged tracks' slots, (b) append 2,000+ new thumbnails. If interrupted during the append, the ithmb would be truncated while the ArtworkDB expected the full file.
+
+3. **The rearrangement is NOT the root cause** of this specific corruption. The rearrangement code correctly handles in-bounds data. The problem is that data never made it to disk, not that the rearrangement scrambled existing data. However, the rearrangement IS the mechanism that compacts the file before the append, making the system fragile to interruption.
+
+### Hypothesis Table (Final Status)
+
+| ID | Hypothesis | Status |
+|----|-----------|--------|
+| H1 | Rearrangement bug in ithmb compaction | **Partially confirmed** — not a logic error in rearrangement itself, but the non-atomic write sequence (rearrange in-place -> append new data -> write ArtworkDB) creates a window where interruption corrupts the state |
+| H2 | Bit-rot / media degradation | **Refuted** — corruption is systematic (perfectly contiguous offset space, not random bit flips) |
+| H3 | Pre-release code caused initial corruption | **Plausible contributing factor** — artwork hash changes in ADR-012 would trigger mass artwork replacement, maximizing the vulnerability window |
+| H4 | Artwork replace path triggers corruption | **Confirmed as amplifier** — replacing artwork converts IPOD->MEMORY thumbnails, forcing ithmb compaction + rebuild, creating the fragile window |
+| H5 | Something else entirely | H6 added (see below) |
+| H6 | FAT32 write ordering / buffered I/O flush failure | **Primary hypothesis** — explains the exact symptom: ArtworkDB persisted but ithmb data lost |
 
 ### Contributing Factor: No Checksums in ArtworkDB
 
@@ -322,6 +372,51 @@ iTunes avoids this issue because it:
 The libgpod documentation itself acknowledges this: "iTunes additionally stores the artwork as tags in the original music file. libgpod does not store the artwork as tags in the original music file. As a consequence, if iTunes attempts to access the artwork, it will find none, and remove libgpod's artwork."
 
 A repair command that rebuilds artwork from scratch is a pragmatic solution that works within libgpod's constraints while avoiding the problematic code path.
+
+## Detection Approach
+
+Programmatic detection of this corruption is a fast O(n) check:
+
+```
+For each artwork format:
+  1. Get the .ithmb file size
+  2. Parse ArtworkDB MHNI entries for that format
+  3. Check if any MHNI offset + size > file size
+  4. If yes: corruption detected
+  5. Count: how many entries are out-of-bounds
+```
+
+This can run as part of `podkit device info` or `podkit device artwork diagnose`.
+
+## Repair Approach
+
+The repair command (`podkit device artwork repair`) should:
+1. Remove ALL thumbnails from ALL tracks (making them MEMORY-type or clearing them)
+2. Re-extract artwork from the source collection for each track
+3. Set fresh artwork on each track via setArtworkFromData
+4. Call save() once — this writes fresh ithmb files from scratch (no rearrangement needed since there are no existing IPOD-type thumbs)
+5. Verify: re-parse ArtworkDB and confirm all offsets are within ithmb file bounds
+
+**Prevention (for future syncs):**
+- After `itdb_write()`, verify that all ArtworkDB offsets are within ithmb file bounds
+- If not, log an error and potentially retry the write
+- Consider adding fsync after ithmb writes and before ArtworkDB write (requires libgpod modification or wrapper)
+- Document that users should always "eject" the iPod properly (not just unplug) to ensure write flushing
+
+## Tools Produced
+
+Autopsy tools created during the investigation:
+
+- `~/Workstation/ipod-autopsy/tools/artworkdb-parser.ts` — Binary ArtworkDB parser
+- `~/Workstation/ipod-autopsy/tools/integrity-checker.ts` — Structural integrity checker
+- `~/Workstation/ipod-autopsy/tools/ithmb-extractor.ts` — RGB565 ithmb to PPM/PNG converter
+- `~/Workstation/ipod-autopsy/tools/cross-reference.ts` — Track <-> artwork cross-reference tool
+- `~/Workstation/ipod-autopsy/tools/run-autopsy.ts` — Main autopsy runner
+
+Binding changes:
+
+- `packages/libgpod-node/native/gpod_converters.cc` — Added mhiiLink field to Track bindings
+- `packages/libgpod-node/src/types.ts` — Added mhiiLink to Track interface
 
 ## Related Decisions
 
