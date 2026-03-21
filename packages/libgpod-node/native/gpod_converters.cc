@@ -174,6 +174,7 @@ Napi::Object TrackToObject(Napi::Env env, const Itdb_Track* track) {
     // Artwork
     // has_artwork values: 0x00 = never had, 0x01 = has artwork, 0x02 = removed
     obj.Set("hasArtwork", Napi::Boolean::New(env, track->has_artwork == 0x01));
+    obj.Set("mhiiLink", Napi::Number::New(env, track->mhii_link));
 
     // Compilation
     obj.Set("compilation", Napi::Boolean::New(env, track->compilation != 0));

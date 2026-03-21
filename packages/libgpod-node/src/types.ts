@@ -298,6 +298,12 @@ export interface Track {
   // Artwork
   /** Whether track has artwork */
   hasArtwork: boolean;
+  /**
+   * Link to the MHII artwork entry in the ArtworkDB.
+   * This is the artwork ID that resolves track → MHII → MHNI → ithmb pixel data.
+   * 0 means no artwork link. Read-only, assigned by libgpod during save.
+   */
+  mhiiLink: number;
 
   // Compilation
   /** Whether track is part of a compilation */

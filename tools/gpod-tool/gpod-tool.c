@@ -5,11 +5,12 @@
  * for testing and development purposes.
  *
  * Commands:
- *   init       Create a new iPod structure
- *   info       Display database information
- *   tracks     List all tracks
- *   add-track  Add a track entry (metadata only)
- *   verify     Verify database can be parsed
+ *   init          Create a new iPod structure
+ *   info          Display database information
+ *   tracks        List all tracks
+ *   add-track     Add a track entry (metadata only)
+ *   verify        Verify database can be parsed
+ *   artwork-dump  Dump artwork information from the database
  *
  * Usage:
  *   gpod-tool <command> <path> [options]
@@ -22,6 +23,7 @@
 #include <getopt.h>
 #include <gpod/itdb.h>
 #include <glib.h>
+#include "itdb_thumb.h"
 
 #define VERSION "0.1.0"
 
@@ -805,6 +807,207 @@ static int cmd_verify(int argc, char *argv[]) {
 }
 
 /* ============================================================================
+ * Command: artwork-dump
+ * ============================================================================ */
+
+static void print_artwork_dump_usage(void) {
+    fprintf(stderr, "Usage: gpod-tool artwork-dump <path> [options]\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Dump artwork information from the iPod database.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  -j, --json   Output as JSON\n");
+    fprintf(stderr, "  -h, --help   Show this help\n");
+}
+
+static int cmd_artwork_dump(int argc, char *argv[]) {
+    const char *path = NULL;
+
+    static struct option long_options[] = {
+        {"json", no_argument, 0, 'j'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    int opt;
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "jh", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'j': json_output = true; break;
+            case 'h': print_artwork_dump_usage(); return 0;
+            default:  print_artwork_dump_usage(); return 1;
+        }
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, "Error: path required\n\n");
+        print_artwork_dump_usage();
+        return 1;
+    }
+
+    path = argv[optind];
+
+    GError *error = NULL;
+    Itdb_iTunesDB *itdb = itdb_parse(path, &error);
+
+    if (!itdb) {
+        if (json_output) {
+            printf("{\n");
+            print_json_bool("success", false, true);
+            print_json_string("error", error ? error->message : "Failed to parse database", false);
+            printf("}\n");
+        } else {
+            fprintf(stderr, "Error: %s\n", error ? error->message : "Failed to parse database");
+        }
+        if (error) g_error_free(error);
+        return 1;
+    }
+
+    int total_tracks = itdb_tracks_number(itdb);
+    int tracks_with_artwork = 0;
+
+    /* Use hash tables to count unique artwork IDs and mhii_links */
+    GHashTable *unique_artwork_ids = g_hash_table_new(g_direct_hash, g_direct_equal);
+    GHashTable *unique_mhii_links = g_hash_table_new(g_direct_hash, g_direct_equal);
+
+    if (json_output) {
+        printf("{\n");
+        print_json_bool("success", true, true);
+
+        /* We'll print tracks array first, then summary */
+        printf("  \"tracks\": [\n");
+    } else {
+        printf("Artwork Dump\n");
+        printf("============\n\n");
+    }
+
+    GList *track_node;
+    bool first_track = true;
+    for (track_node = itdb->tracks; track_node; track_node = track_node->next) {
+        Itdb_Track *track = (Itdb_Track *)track_node->data;
+
+        if (!itdb_track_has_thumbnails(track)) {
+            continue;
+        }
+
+        tracks_with_artwork++;
+
+        Itdb_Artwork *artwork = track->artwork;
+        if (!artwork) continue;
+
+        g_hash_table_insert(unique_artwork_ids, GUINT_TO_POINTER(artwork->id), GUINT_TO_POINTER(1));
+        g_hash_table_insert(unique_mhii_links, GUINT_TO_POINTER(track->mhii_link), GUINT_TO_POINTER(1));
+
+        if (json_output) {
+            if (!first_track) printf(",\n");
+            first_track = false;
+
+            char title[1024], artist[1024], album[1024];
+            json_escape_string(track->title, title, sizeof(title));
+            json_escape_string(track->artist, artist, sizeof(artist));
+            json_escape_string(track->album, album, sizeof(album));
+
+            printf("    {\n");
+            printf("      \"id\": %u,\n", track->id);
+            printf("      \"dbid\": \"%" G_GUINT64_FORMAT "\",\n", track->dbid);
+            printf("      \"mhiiLink\": %u,\n", track->mhii_link);
+            printf("      \"title\": %s,\n", title);
+            printf("      \"artist\": %s,\n", artist);
+            printf("      \"album\": %s,\n", album);
+
+            printf("      \"artwork\": {\n");
+            printf("        \"id\": %u,\n", artwork->id);
+            printf("        \"dbid\": \"%" G_GUINT64_FORMAT "\",\n", artwork->dbid);
+            printf("        \"thumbnails\": [\n");
+
+            /* Access thumbnail items */
+            if (artwork->thumbnail &&
+                artwork->thumbnail->data_type == ITDB_THUMB_TYPE_IPOD) {
+                Itdb_Thumb_Ipod *thumb_ipod = (Itdb_Thumb_Ipod *)artwork->thumbnail;
+                const GList *thumbs = thumb_ipod->thumbs;
+                const GList *gl;
+                bool first_thumb = true;
+                for (gl = thumbs; gl != NULL; gl = gl->next) {
+                    Itdb_Thumb_Ipod_Item *item = (Itdb_Thumb_Ipod_Item *)gl->data;
+                    if (!first_thumb) printf(",\n");
+                    first_thumb = false;
+
+                    char filename[1024];
+                    json_escape_string(item->filename, filename, sizeof(filename));
+
+                    printf("          {\n");
+                    printf("            \"formatId\": %d,\n",
+                           item->format ? item->format->format_id : 0);
+                    printf("            \"filename\": %s,\n", filename);
+                    printf("            \"offset\": %u,\n", item->offset);
+                    printf("            \"size\": %u,\n", item->size);
+                    printf("            \"width\": %d,\n", item->width);
+                    printf("            \"height\": %d\n", item->height);
+                    printf("          }");
+                }
+            }
+
+            printf("\n        ]\n");
+            printf("      }\n");
+            printf("    }");
+        } else {
+            printf("Track [%u] dbid=%" G_GUINT64_FORMAT " mhii_link=%u\n",
+                   track->id, track->dbid, track->mhii_link);
+            printf("  Title:  %s\n", track->title ? track->title : "(none)");
+            printf("  Artist: %s\n", track->artist ? track->artist : "(none)");
+            printf("  Album:  %s\n", track->album ? track->album : "(none)");
+            printf("  Artwork: id=%u dbid=%" G_GUINT64_FORMAT "\n",
+                   artwork->id, artwork->dbid);
+
+            if (artwork->thumbnail &&
+                artwork->thumbnail->data_type == ITDB_THUMB_TYPE_IPOD) {
+                Itdb_Thumb_Ipod *thumb_ipod = (Itdb_Thumb_Ipod *)artwork->thumbnail;
+                const GList *thumbs = thumb_ipod->thumbs;
+                const GList *gl;
+                for (gl = thumbs; gl != NULL; gl = gl->next) {
+                    Itdb_Thumb_Ipod_Item *item = (Itdb_Thumb_Ipod_Item *)gl->data;
+                    printf("    Thumb: format=%d file=%s offset=%u size=%u %dx%d\n",
+                           item->format ? item->format->format_id : 0,
+                           item->filename ? item->filename : "(null)",
+                           item->offset, item->size,
+                           item->width, item->height);
+                }
+            } else {
+                printf("    (no iPod thumbnails)\n");
+            }
+
+            printf("\n");
+        }
+    }
+
+    int unique_artwork_count = g_hash_table_size(unique_artwork_ids);
+    int unique_mhii_count = g_hash_table_size(unique_mhii_links);
+
+    g_hash_table_destroy(unique_artwork_ids);
+    g_hash_table_destroy(unique_mhii_links);
+
+    if (json_output) {
+        printf("\n  ],\n");
+        printf("  \"summary\": {\n");
+        printf("    \"totalTracks\": %d,\n", total_tracks);
+        printf("    \"tracksWithArtwork\": %d,\n", tracks_with_artwork);
+        printf("    \"uniqueArtworkIds\": %d,\n", unique_artwork_count);
+        printf("    \"uniqueMhiiLinks\": %d\n", unique_mhii_count);
+        printf("  }\n");
+        printf("}\n");
+    } else {
+        printf("Summary\n");
+        printf("  Total tracks:       %d\n", total_tracks);
+        printf("  Tracks with artwork: %d\n", tracks_with_artwork);
+        printf("  Unique artwork IDs: %d\n", unique_artwork_count);
+        printf("  Unique mhii_links:  %d\n", unique_mhii_count);
+    }
+
+    itdb_free(itdb);
+    return 0;
+}
+
+/* ============================================================================
  * Main
  * ============================================================================ */
 
@@ -814,11 +1017,12 @@ static void print_usage(void) {
     fprintf(stderr, "Usage: gpod-tool <command> <path> [options]\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Commands:\n");
-    fprintf(stderr, "  init        Create a new iPod database structure\n");
-    fprintf(stderr, "  info        Display database information\n");
-    fprintf(stderr, "  tracks      List all tracks\n");
-    fprintf(stderr, "  add-track   Add a track entry (metadata only)\n");
-    fprintf(stderr, "  verify      Verify database can be parsed\n");
+    fprintf(stderr, "  init          Create a new iPod database structure\n");
+    fprintf(stderr, "  info          Display database information\n");
+    fprintf(stderr, "  tracks        List all tracks\n");
+    fprintf(stderr, "  add-track     Add a track entry (metadata only)\n");
+    fprintf(stderr, "  verify        Verify database can be parsed\n");
+    fprintf(stderr, "  artwork-dump  Dump artwork information from the database\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -j, --json  Output as JSON (all commands)\n");
@@ -829,6 +1033,7 @@ static void print_usage(void) {
     fprintf(stderr, "  gpod-tool info ./test-ipod --json\n");
     fprintf(stderr, "  gpod-tool add-track ./test-ipod -t \"Song\" -a \"Artist\"\n");
     fprintf(stderr, "  gpod-tool verify ./test-ipod\n");
+    fprintf(stderr, "  gpod-tool artwork-dump /Volumes/iPod --json\n");
 }
 
 int main(int argc, char *argv[]) {
@@ -866,6 +1071,8 @@ int main(int argc, char *argv[]) {
         return cmd_add_track(argc, argv);
     } else if (strcmp(command, "verify") == 0) {
         return cmd_verify(argc, argv);
+    } else if (strcmp(command, "artwork-dump") == 0) {
+        return cmd_artwork_dump(argc, argv);
     } else {
         fprintf(stderr, "Unknown command: %s\n\n", command);
         print_usage();
