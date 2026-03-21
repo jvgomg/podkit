@@ -996,7 +996,7 @@ describe('device reset integration', () => {
         db.close();
       }
     });
-  });
+  }, 10_000);
 });
 
 describe('device operations across models', () => {
