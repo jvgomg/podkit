@@ -525,7 +525,11 @@ function planUpdateOperations(
     // replace the audio file. Route it as an upgrade operation so the executor can access
     // the source, but without a preset (no transcode/copy needed).
     // artwork-removed is similar — metadata-only, removes artwork from iPod track.
-    if (reason === 'artwork-updated' || reason === 'artwork-removed') {
+    if (
+      reason === 'artwork-updated' ||
+      reason === 'artwork-removed' ||
+      reason === 'force-artwork'
+    ) {
       operations.push({
         type: 'upgrade',
         source: updateTrack.source,
@@ -603,8 +607,8 @@ export function calculateOperationSize(operation: SyncOperation): number {
       return estimateCopySize(operation.source);
     }
     case 'upgrade': {
-      // artwork-updated only transfers artwork bytes (~200KB), not the whole track
-      if (operation.reason === 'artwork-updated') {
+      // artwork-updated / force-artwork only transfers artwork bytes (~200KB), not the whole track
+      if (operation.reason === 'artwork-updated' || operation.reason === 'force-artwork') {
         return 200 * 1024;
       }
       // artwork-removed is metadata-only (no file transfer)
@@ -649,8 +653,8 @@ function calculateOperationTime(operation: SyncOperation): number {
       return estimateTransferTime(size);
     }
     case 'upgrade': {
-      // artwork-updated is nearly instant (small artwork data, no audio transfer)
-      if (operation.reason === 'artwork-updated') {
+      // artwork-updated / force-artwork is nearly instant (small artwork data, no audio transfer)
+      if (operation.reason === 'artwork-updated' || operation.reason === 'force-artwork') {
         return 0.1;
       }
       // artwork-removed is instant (metadata-only)
@@ -755,7 +759,12 @@ export function createPlan(diff: SyncDiff, options: PlanOptions = {}): SyncPlan 
   const artworkEnabled = options.artworkEnabled ?? true;
   const effectiveUpdates = artworkEnabled
     ? diff.toUpdate
-    : diff.toUpdate.filter((u) => u.reason !== 'artwork-updated' && u.reason !== 'artwork-removed');
+    : diff.toUpdate.filter(
+        (u) =>
+          u.reason !== 'artwork-updated' &&
+          u.reason !== 'artwork-removed' &&
+          u.reason !== 'force-artwork'
+      );
 
   // Plan update/upgrade operations for metadata changes and file replacements
   const updateResult = planUpdateOperations(effectiveUpdates, config, deviceSupportsAlac);

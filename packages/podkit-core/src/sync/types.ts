@@ -42,6 +42,7 @@ export type UpgradeReason =
   | 'artwork-added'
   | 'artwork-removed'
   | 'artwork-updated'
+  | 'force-artwork'
   | 'soundcheck-update'
   | 'metadata-correction';
 
@@ -58,6 +59,7 @@ export type UpgradeReason =
  * - artwork-added: Source has artwork, iPod does not (file replacement)
  * - artwork-removed: Source no longer has artwork but iPod does (metadata-only)
  * - artwork-updated: Source artwork hash differs from iPod sync tag hash (metadata-only)
+ * - force-artwork: Unconditionally re-transfer artwork for all matched tracks (metadata-only)
  * - soundcheck-update: Source has soundcheck value, iPod lacks or differs (metadata-only)
  * - metadata-correction: Non-matching metadata fields differ (metadata-only)
  */
@@ -339,6 +341,15 @@ export interface DiffOptions {
    * @default false
    */
   forceMetadata?: boolean;
+
+  /**
+   * When true, move ALL matched tracks to `toUpdate` with reason `'force-artwork'`.
+   * This re-extracts and re-transfers artwork for every matched track without
+   * re-transcoding or re-transferring audio files.
+   *
+   * @default false
+   */
+  forceArtwork?: boolean;
 
   /**
    * When true, indicates that lossless sources are transcoded to lossy format

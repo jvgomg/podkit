@@ -143,6 +143,8 @@ export function formatUpdateReason(reason: string): string {
       return 'Metadata correction';
     case 'force-metadata':
       return 'Metadata refresh';
+    case 'force-artwork':
+      return 'Artwork refresh';
     default:
       return reason;
   }

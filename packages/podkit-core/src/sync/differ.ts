@@ -505,6 +505,20 @@ export function computeDiff(
     existing.length = 0;
   }
 
+  // Post-processing: force-artwork moves ALL remaining existing tracks to toUpdate.
+  // This re-extracts and re-transfers artwork without re-transcoding or re-transferring audio.
+  if (options?.forceArtwork) {
+    for (const match of existing) {
+      toUpdate.push({
+        source: match.collection,
+        ipod: match.ipod,
+        reason: 'force-artwork',
+        changes: [],
+      });
+    }
+    existing.length = 0;
+  }
+
   // Find iPod tracks that weren't matched (candidates for removal)
   // This includes duplicate tracks that weren't selected from the index
   const toRemove: IPodTrack[] = [];

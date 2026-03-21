@@ -1629,8 +1629,8 @@ export class DefaultSyncExecutor implements SyncExecutor {
       return { bytesTransferred: 0, track: foundTrack };
     }
 
-    // artwork-updated: skip audio file transfer, only re-extract and update artwork + sync tag
-    if (operation.reason === 'artwork-updated') {
+    // artwork-updated / force-artwork: skip audio file transfer, only re-extract and update artwork + sync tag
+    if (operation.reason === 'artwork-updated' || operation.reason === 'force-artwork') {
       if (!artworkEnabled) {
         // artwork-updated with artwork disabled is a no-op — skip silently
         return { bytesTransferred: 0, track: foundTrack };

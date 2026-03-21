@@ -2406,3 +2406,77 @@ describe('computeDiff - forceMetadata', () => {
     expect(diff.toUpdate).toHaveLength(0);
   });
 });
+
+// =============================================================================
+// Force Artwork Tests
+// =============================================================================
+
+describe('computeDiff - forceArtwork', () => {
+  it('moves all matched tracks to toUpdate with force-artwork reason', () => {
+    const collectionTracks = [
+      createCollectionTrack('Artist A', 'Song 1', 'Album 1'),
+      createCollectionTrack('Artist B', 'Song 2', 'Album 2'),
+    ];
+    const ipodTracks = [
+      createIPodTrack('Artist A', 'Song 1', 'Album 1'),
+      createIPodTrack('Artist B', 'Song 2', 'Album 2'),
+    ];
+
+    const diff = computeDiff(collectionTracks, ipodTracks, { forceArtwork: true });
+
+    expect(diff.existing).toHaveLength(0);
+    expect(diff.toUpdate).toHaveLength(2);
+    expect(diff.toUpdate[0]!.reason).toBe('force-artwork');
+    expect(diff.toUpdate[1]!.reason).toBe('force-artwork');
+  });
+
+  it('still adds new tracks when forceArtwork is true', () => {
+    const collectionTracks = [
+      createCollectionTrack('Artist A', 'Song 1', 'Album 1'),
+      createCollectionTrack('Artist B', 'New Song', 'Album 2'),
+    ];
+    const ipodTracks = [createIPodTrack('Artist A', 'Song 1', 'Album 1')];
+
+    const diff = computeDiff(collectionTracks, ipodTracks, { forceArtwork: true });
+
+    expect(diff.toAdd).toHaveLength(1);
+    expect(diff.toAdd[0]!.title).toBe('New Song');
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('force-artwork');
+  });
+
+  it('still identifies removals when forceArtwork is true', () => {
+    const collectionTracks = [createCollectionTrack('Artist A', 'Song 1', 'Album 1')];
+    const ipodTracks = [
+      createIPodTrack('Artist A', 'Song 1', 'Album 1'),
+      createIPodTrack('Artist B', 'Old Song', 'Album 2'),
+    ];
+
+    const diff = computeDiff(collectionTracks, ipodTracks, { forceArtwork: true });
+
+    expect(diff.toRemove).toHaveLength(1);
+    expect(diff.toRemove[0]!.title).toBe('Old Song');
+    expect(diff.toUpdate).toHaveLength(1);
+  });
+
+  it('does not move tracks to toUpdate when forceArtwork is false', () => {
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
+
+    const diff = computeDiff(collectionTracks, ipodTracks, { forceArtwork: false });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  it('has empty changes array', () => {
+    const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
+    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
+
+    const diff = computeDiff(collectionTracks, ipodTracks, { forceArtwork: true });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('force-artwork');
+    expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+  });
+});

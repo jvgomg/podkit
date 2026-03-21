@@ -94,6 +94,7 @@ interface SyncOptions {
   forceTranscode?: boolean;
   forceSyncTags?: boolean;
   forceMetadata?: boolean;
+  forceArtwork?: boolean;
   checkArtwork?: boolean;
   delete?: boolean;
   collection?: string;
@@ -168,6 +169,7 @@ export interface UpdateBreakdown {
   'soundcheck-update'?: number;
   'metadata-correction'?: number;
   'force-metadata'?: number;
+  'force-artwork'?: number;
 }
 
 /**
@@ -547,6 +549,7 @@ export interface MusicSyncContext {
   forceTranscode: boolean;
   forceSyncTags: boolean;
   forceMetadata: boolean;
+  forceArtwork: boolean;
   checkArtwork: boolean;
   ipod: Awaited<ReturnType<typeof import('@podkit/core').IpodDatabase.open>>;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
@@ -586,6 +589,7 @@ export async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicS
     forceTranscode,
     forceSyncTags,
     forceMetadata,
+    forceArtwork,
     checkArtwork,
     ipod,
     transcoder,
@@ -724,6 +728,7 @@ export async function syncMusicCollection(ctx: MusicSyncContext): Promise<MusicS
     forceTranscode,
     forceSyncTags,
     forceMetadata,
+    forceArtwork,
     transcodingActive: true,
     presetBitrate: core.getPresetBitrate(effectiveQuality),
     encodingMode: effectiveEncoding,
@@ -1576,6 +1581,7 @@ export const syncCommand = new Command('sync')
     '--force-metadata',
     'rewrite metadata on all matched tracks without re-transcoding or re-transferring files'
   )
+  .option('--force-artwork', 're-extract and re-transfer artwork for all matched tracks')
   .option('--check-artwork', 'detect artwork changes by comparing content hashes')
   .option('--delete', 'remove tracks from iPod not in source')
   .option('--eject', 'eject iPod after successful sync')
@@ -1960,6 +1966,7 @@ export const syncCommand = new Command('sync')
             forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
             forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
             forceMetadata: options.forceMetadata ?? false,
+            forceArtwork: options.forceArtwork ?? false,
             checkArtwork:
               options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
             ipod,
