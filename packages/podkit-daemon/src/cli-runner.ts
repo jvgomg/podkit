@@ -5,7 +5,7 @@
  * It delegates everything to the CLI and parses JSON output.
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { log } from './logger.js';
 
 // ---------------------------------------------------------------------------
@@ -20,6 +20,15 @@ export interface CliResult<T = unknown> {
   json?: T;
   /** Execution duration in milliseconds */
   duration: number;
+}
+
+/**
+ * A CLI invocation that exposes the child process for signal forwarding.
+ * The `result` promise resolves when the child exits.
+ */
+export interface AbortableCliResult<T = unknown> {
+  result: Promise<CliResult<T>>;
+  child: ChildProcess;
 }
 
 export interface CliRunnerOptions {
@@ -78,27 +87,30 @@ const CLI_BINARY = 'podkit';
 
 /**
  * Spawn the podkit CLI and capture output.
+ *
+ * Returns both the result promise and the child process reference, allowing
+ * callers to send signals (e.g. SIGINT for graceful abort) to the child.
  */
-export async function runCli<T = unknown>(
+export function spawnCli<T = unknown>(
   args: string[],
   options?: CliRunnerOptions
-): Promise<CliResult<T>> {
+): AbortableCliResult<T> {
   const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
   const startTime = performance.now();
 
-  return new Promise((resolve, reject) => {
-    const env: Record<string, string | undefined> = {
-      ...process.env,
-      ...options?.env,
-      NO_COLOR: '1',
-      FORCE_COLOR: '0',
-    };
+  const env: Record<string, string | undefined> = {
+    ...process.env,
+    ...options?.env,
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+  };
 
-    const child = spawn(CLI_BINARY, args, {
-      env,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+  const child = spawn(CLI_BINARY, args, {
+    env,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
 
+  const result = new Promise<CliResult<T>>((resolve, reject) => {
     let stdout = '';
     let stderr = '';
     let resolved = false;
@@ -148,6 +160,20 @@ export async function runCli<T = unknown>(
       reject(err);
     });
   });
+
+  return { result, child };
+}
+
+/**
+ * Spawn the podkit CLI and capture output.
+ *
+ * Convenience wrapper around {@link spawnCli} that just returns the result promise.
+ */
+export async function runCli<T = unknown>(
+  args: string[],
+  options?: CliRunnerOptions
+): Promise<CliResult<T>> {
+  return spawnCli<T>(args, options).result;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,13 +200,26 @@ export async function runSync(
   device: string,
   options?: { dryRun?: boolean }
 ): Promise<CliResult<SyncOutput>> {
+  return spawnSync(device, options).result;
+}
+
+/**
+ * Run a sync against a mounted device, returning an abortable handle.
+ *
+ * The caller can send SIGINT to the child process via `child.kill('SIGINT')`
+ * to trigger the CLI's graceful shutdown (drain + save).
+ */
+export function spawnSync(
+  device: string,
+  options?: { dryRun?: boolean }
+): AbortableCliResult<SyncOutput> {
   // --json and -d are global flags and must precede the subcommand
   const args = ['--json', '-d', device, 'sync'];
   if (options?.dryRun) {
     args.push('--dry-run');
   }
   log('info', `Running sync`, { device, dryRun: options?.dryRun ?? false });
-  return runCli<SyncOutput>(args);
+  return spawnCli<SyncOutput>(args);
 }
 
 /**

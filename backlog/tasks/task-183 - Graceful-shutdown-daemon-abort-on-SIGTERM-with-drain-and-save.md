@@ -1,9 +1,10 @@
 ---
 id: TASK-183
 title: 'Graceful shutdown: daemon abort-on-SIGTERM with drain-and-save'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-21 21:48'
+updated_date: '2026-03-21 22:19'
 labels:
   - graceful-shutdown
   - docker
@@ -44,7 +45,13 @@ Check how the orchestrator runs sync — subprocess vs library call — to deter
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Daemon signals abort to in-progress sync on SIGTERM
-- [ ] #2 Sync drains and saves within Docker's 10s timeout
-- [ ] #3 Daemon exits cleanly with saved database
+- [x] #1 Daemon signals abort to in-progress sync on SIGTERM
+- [x] #2 Sync drains and saves within Docker's 10s timeout
+- [x] #3 Daemon exits cleanly with saved database
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Extracted `spawnCli()` from `runCli()` to expose `ChildProcess` reference. Added `spawnSync()` helper. Orchestrator stores `_activeSyncChild` and exposes `abort()` method that sends SIGINT. Daemon shutdown handler calls `abort()` before `waitForIdle()`. Exit code 130 treated as graceful abort (info log, no error notification). 3 new unit tests for abort flow, no-op when idle, and exit-130 handling.
+<!-- SECTION:NOTES:END -->

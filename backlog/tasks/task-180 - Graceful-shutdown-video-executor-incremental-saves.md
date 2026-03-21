@@ -1,9 +1,10 @@
 ---
 id: TASK-180
 title: 'Graceful shutdown: video executor incremental saves'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-21 21:47'
+updated_date: '2026-03-21 22:19'
 labels:
   - graceful-shutdown
 dependencies: []
@@ -28,7 +29,13 @@ The video executor (`packages/podkit-core/src/sync/video-executor.ts`) is sequen
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 VideoExecuteOptions includes saveInterval option
-- [ ] #2 Database saved every N completed video transfers
-- [ ] #3 Checkpoint save does not interfere with abort flow
+- [x] #1 VideoExecuteOptions includes saveInterval option
+- [x] #2 Database saved every N completed video transfers
+- [x] #3 Checkpoint save does not interfere with abort flow
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Added `saveInterval` (default 10) to `VideoExecuteOptions`. Checkpoint save logic extracted to inline `checkpointSave()` helper, called after successful transcode and copy operations. Aborted signals skip saves. 10 unit tests covering default interval, custom interval, mixed ops, remove/update-metadata exclusion, disabled saves, abort skip, dry-run, multiple saves, and continueOnError interaction.
+<!-- SECTION:NOTES:END -->

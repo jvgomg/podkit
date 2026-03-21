@@ -1,9 +1,10 @@
 ---
 id: TASK-182
 title: 'E2E test: graceful shutdown during sync'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-21 21:48'
+updated_date: '2026-03-21 22:30'
 labels:
   - graceful-shutdown
   - e2e
@@ -37,9 +38,15 @@ This requires spawning podkit as a child process and sending signals at the righ
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Test spawns podkit sync as child process
-- [ ] #2 Test sends SIGINT during active sync
-- [ ] #3 Test verifies exit code 130
-- [ ] #4 Test verifies completed tracks are in the database
-- [ ] #5 Test verifies no orphaned files on disk
+- [x] #1 Test spawns podkit sync as child process
+- [x] #2 Test sends SIGINT during active sync
+- [x] #3 Test verifies exit code 130
+- [x] #4 Test verifies completed tracks are in the database
+- [x] #5 Test verifies no orphaned files on disk
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+E2E test at `packages/e2e-tests/src/features/graceful-shutdown.e2e.test.ts`. Spawns `podkit sync` with 14 test fixture tracks, monitors stdout for progress, sends SIGINT after 1+ track completes. Verifies: exit code 130, valid database, tracks saved (>0 and <14), file count matches DB count (no orphans), "Database saved" in output. Includes 30s fallback timer with diagnostic warning. Passes consistently in ~700ms.
+<!-- SECTION:NOTES:END -->

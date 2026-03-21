@@ -99,6 +99,16 @@ export interface VideoExecuteOptions extends ExecuteOptions {
    * When set, sync tags are written to transcoded video tracks.
    */
   videoQuality?: string;
+
+  /**
+   * Save the iPod database every N completed video operations (transcode + copy).
+   *
+   * Reduces data loss if the process is killed, at the cost of triggering
+   * libgpod's ithmb compaction more frequently. Set to 0 to disable.
+   *
+   * @default 10
+   */
+  saveInterval?: number;
 }
 
 /**
@@ -193,6 +203,7 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       signal,
       onTranscodeProgress,
       videoQuality,
+      saveInterval = 10,
     } = options;
 
     // Store video quality for sync tag writing
@@ -217,6 +228,14 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
       }
 
       // Real execution
+      let completed = 0;
+      const checkpointSave = async () => {
+        completed++;
+        if (saveInterval > 0 && completed % saveInterval === 0 && !signal?.aborted) {
+          await this.ipod.save();
+        }
+      };
+
       for (let index = 0; index < plan.operations.length; index++) {
         const operation = plan.operations[index]!;
 
@@ -246,6 +265,8 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
             if (lastProgress) {
               bytesProcessed = lastProgress.bytesProcessed;
             }
+
+            await checkpointSave();
           } else if (operation.type === 'video-copy') {
             // Track bytes through yielded progress
             let lastProgress: VideoExecutorProgress | undefined;
@@ -263,6 +284,8 @@ export class DefaultVideoSyncExecutor implements VideoSyncExecutor {
             if (lastProgress) {
               bytesProcessed = lastProgress.bytesProcessed;
             }
+
+            await checkpointSave();
           } else if (operation.type === 'video-remove') {
             yield* this.executeRemove(operation, index, total, bytesProcessed, plan.estimatedSize);
           } else if (operation.type === 'video-update-metadata') {

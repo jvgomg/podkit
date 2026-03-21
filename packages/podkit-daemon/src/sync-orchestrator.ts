@@ -7,8 +7,9 @@
  * events are logged and ignored.
  */
 
+import type { ChildProcess } from 'node:child_process';
 import type { DetectedDevice } from './device-poller.js';
-import type { CliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
+import type { CliResult, AbortableCliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
 import type { AppriseClient } from './apprise-client.js';
 import {
   formatPreSyncNotification,
@@ -26,6 +27,12 @@ export interface SyncOrchestratorOptions {
   runMount: (disk: string, target: string) => Promise<CliResult<MountOutput>>;
   runSync: (device: string, options?: { dryRun?: boolean }) => Promise<CliResult<SyncOutput>>;
   runEject: (device: string) => Promise<CliResult<EjectOutput>>;
+  /**
+   * Abortable sync spawner. When provided, the orchestrator uses this for
+   * the actual sync (not dry-run) so it can forward SIGINT on abort.
+   * Falls back to `runSync` if not provided.
+   */
+  spawnSync?: (device: string, options?: { dryRun?: boolean }) => AbortableCliResult<SyncOutput>;
   /** Fixed mount target path (default: "/ipod") */
   mountTarget?: string;
   /** Optional notification client. When omitted, no notifications are sent. */
@@ -40,12 +47,14 @@ export class SyncOrchestrator {
   private _isSyncing = false;
   private _currentDevice: DetectedDevice | null = null;
   private _deviceDisconnected = false;
+  private _activeSyncChild: ChildProcess | null = null;
   private readonly mountTarget: string;
   private readonly notify: AppriseClient;
   private readonly cli: {
     runMount: SyncOrchestratorOptions['runMount'];
     runSync: SyncOrchestratorOptions['runSync'];
     runEject: SyncOrchestratorOptions['runEject'];
+    spawnSync?: SyncOrchestratorOptions['spawnSync'];
   };
 
   constructor(options: SyncOrchestratorOptions) {
@@ -55,6 +64,7 @@ export class SyncOrchestrator {
       runMount: options.runMount,
       runSync: options.runSync,
       runEject: options.runEject,
+      spawnSync: options.spawnSync,
     };
   }
 
@@ -79,6 +89,22 @@ export class SyncOrchestrator {
   async waitForIdle(): Promise<void> {
     while (this._isSyncing) {
       await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
+
+  /**
+   * Abort the in-progress sync by sending SIGINT to the child process.
+   *
+   * This triggers the CLI's graceful shutdown: the current operation drains,
+   * the database is saved, and the child exits. The `waitForIdle()` loop will
+   * then resolve once the child exits and `_isSyncing` is set to false.
+   *
+   * Safe to call multiple times or when no sync is in progress (no-op).
+   */
+  abort(): void {
+    if (this._activeSyncChild) {
+      log('info', 'Sending SIGINT to active sync process');
+      this._activeSyncChild.kill('SIGINT');
     }
   }
 
@@ -154,8 +180,23 @@ export class SyncOrchestrator {
       // Step 3: Sync
       let syncFailed = false;
       try {
-        const syncResult = await this.cli.runSync(mountPoint);
-        if (syncResult.exitCode !== 0 || !syncResult.json?.success) {
+        // Use spawnSync when available so abort() can forward SIGINT
+        let syncResult: CliResult<SyncOutput>;
+        if (this.cli.spawnSync) {
+          const handle = this.cli.spawnSync(mountPoint);
+          this._activeSyncChild = handle.child;
+          try {
+            syncResult = await handle.result;
+          } finally {
+            this._activeSyncChild = null;
+          }
+        } else {
+          syncResult = await this.cli.runSync(mountPoint);
+        }
+        if (syncResult.exitCode === 130) {
+          log('info', 'Sync aborted gracefully', { device: device.name });
+          // Don't treat as failure — database was saved before exit
+        } else if (syncResult.exitCode !== 0 || !syncResult.json?.success) {
           const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
           const error = syncResult.json?.error ?? syncResult.stderr.trim() ?? 'Unknown sync error';
           log('error', `Sync failed for ${device.name}: ${error}`, {
@@ -224,6 +265,7 @@ export class SyncOrchestrator {
       this._isSyncing = false;
       this._currentDevice = null;
       this._deviceDisconnected = false;
+      this._activeSyncChild = null;
     }
   }
 

@@ -185,7 +185,7 @@ Pressing Ctrl+C during sync triggers a graceful shutdown:
 2. All completed tracks are saved to the iPod database
 3. The process exits with code 130
 
-Press Ctrl+C a second time to force-quit immediately. The database is saved periodically during sync (every 50 tracks), so even a force-quit or crash loses at most a small batch of recent work.
+Press Ctrl+C a second time to force-quit immediately. The database is saved periodically during sync (every 50 music tracks or 10 video transfers), so even a force-quit or crash loses at most a small batch of recent work.
 
 If a sync is interrupted, run `podkit doctor` to check for orphaned files that may be wasting space on the iPod.
 

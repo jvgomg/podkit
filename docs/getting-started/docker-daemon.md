@@ -54,7 +54,7 @@ docker compose logs -f
 6. The iPod is ejected — safe to unplug.
 7. If configured, notifications are sent at each step via Apprise.
 
-The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress when the container stops, it waits for the sync to complete before exiting. This prevents iPod database corruption.
+The daemon handles graceful shutdown on `SIGTERM` — if a sync is in progress when the container stops, it signals the sync to drain and save, then exits cleanly within Docker's 10-second timeout. Completed tracks are always preserved in the iPod database.
 
 ## Configuration
 

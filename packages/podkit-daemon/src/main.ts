@@ -11,7 +11,7 @@
 
 import { DevicePoller } from './device-poller.js';
 import { SyncOrchestrator } from './sync-orchestrator.js';
-import { runMount, runSync, runEject } from './cli-runner.js';
+import { runMount, runSync, spawnSync, runEject } from './cli-runner.js';
 import { createAppriseClient } from './apprise-client.js';
 import { log } from './logger.js';
 
@@ -30,6 +30,7 @@ function main(): void {
   const orchestrator = new SyncOrchestrator({
     runMount,
     runSync,
+    spawnSync,
     runEject,
     notify,
   });
@@ -42,9 +43,10 @@ function main(): void {
     orchestrator.handleDeviceDisappeared(device);
   });
 
-  // Graceful shutdown — stop polling and wait for in-progress sync to finish.
-  // Docker sends SIGTERM with a 10s timeout before SIGKILL, so we must not
-  // kill a sync mid-transfer (could corrupt the iPod database).
+  // Graceful shutdown — stop polling and abort any in-progress sync.
+  // Docker sends SIGTERM with a 10s timeout before SIGKILL, so we forward
+  // SIGINT to the sync child process to trigger its graceful drain+save,
+  // ensuring the iPod database is saved within the timeout window.
   let shuttingDown = false;
   const shutdown = (): void => {
     if (shuttingDown) return;
@@ -52,7 +54,8 @@ function main(): void {
     log('info', 'Shutting down...');
     poller.stop();
     if (orchestrator.isSyncing) {
-      log('info', 'Waiting for in-progress sync to complete...');
+      log('info', 'Aborting in-progress sync (sending SIGINT to child)...');
+      orchestrator.abort();
     }
     void orchestrator.waitForIdle().then(() => {
       log('info', 'Shutdown complete');

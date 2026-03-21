@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'bun:test';
 import { SyncOrchestrator } from './sync-orchestrator.js';
 import type { DetectedDevice } from './device-poller.js';
-import type { CliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
+import type { CliResult, AbortableCliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
+import type { ChildProcess } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -323,5 +324,103 @@ describe('SyncOrchestrator', () => {
 
     resolveSync!();
     await syncDone;
+  });
+
+  it('abort() sends SIGINT to active sync child', async () => {
+    let resolveResult: ((value: CliResult<SyncOutput>) => void) | null = null;
+    const resultPromise = new Promise<CliResult<SyncOutput>>((resolve) => {
+      resolveResult = resolve;
+    });
+
+    const killCalls: string[] = [];
+    const mockChild = {
+      kill: (signal: string) => {
+        killCalls.push(signal);
+        return true;
+      },
+    } as unknown as ChildProcess;
+
+    const spawnSync = (_device: string): AbortableCliResult<SyncOutput> => ({
+      result: resultPromise,
+      child: mockChild,
+    });
+
+    const orchestrator = new SyncOrchestrator({
+      runMount: async () => okResult<MountOutput>({ success: true, mountPoint: '/ipod' }),
+      runSync: async (_device, options) =>
+        okResult<SyncOutput>({
+          success: true,
+          dryRun: options?.dryRun ?? false,
+          plan: { tracksToAdd: 1, tracksToRemove: 0, tracksToUpdate: 0, tracksExisting: 0 },
+        }),
+      runEject: async () => okResult<EjectOutput>({ success: true }),
+      spawnSync,
+    });
+
+    // Start sync — will block on the spawnSync result promise
+    const syncDone = orchestrator.handleDeviceAppeared(makeDevice());
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(orchestrator.isSyncing).toBe(true);
+
+    // Abort while sync is in progress
+    orchestrator.abort();
+    expect(killCalls).toEqual(['SIGINT']);
+
+    // Resolve the sync so the cycle completes
+    resolveResult!(okResult<SyncOutput>({
+      success: true,
+      dryRun: false,
+      result: { completed: 0, failed: 0, duration: 1 },
+    }));
+    await syncDone;
+
+    expect(orchestrator.isSyncing).toBe(false);
+  });
+
+  it('abort() is a no-op when not syncing', () => {
+    const cli = createMockCli();
+    const orchestrator = new SyncOrchestrator({ ...cli });
+
+    // Should not throw
+    orchestrator.abort();
+    expect(orchestrator.isSyncing).toBe(false);
+  });
+
+  it('exit code 130 is treated as graceful abort, not error', async () => {
+    const notifications: { title: string; body: string }[] = [];
+    const mockNotify = {
+      notify: async (title: string, body: string) => {
+        notifications.push({ title, body });
+      },
+    };
+
+    const spawnSync = (_device: string): AbortableCliResult<SyncOutput> => ({
+      result: Promise.resolve({
+        exitCode: 130,
+        stdout: '',
+        stderr: '',
+        json: undefined,
+        duration: 50,
+      }),
+      child: { kill: () => true } as unknown as ChildProcess,
+    });
+
+    const cli = createMockCli();
+    const orchestrator = new SyncOrchestrator({
+      ...cli,
+      spawnSync,
+      notify: mockNotify,
+    });
+
+    await orchestrator.handleDeviceAppeared(makeDevice());
+
+    // Should not have sent any error notifications
+    const errorNotifications = notifications.filter((n) => n.title === 'Sync Error');
+    expect(errorNotifications).toHaveLength(0);
+
+    // Eject should still proceed
+    expect(cli.calls).toContain('eject');
+    expect(orchestrator.isSyncing).toBe(false);
   });
 });
