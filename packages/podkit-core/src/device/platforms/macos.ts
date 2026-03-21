@@ -101,17 +101,45 @@ export class MacOSDeviceManager implements DeviceManager {
   async eject(mountPoint: string, options?: EjectOptions): Promise<EjectResult> {
     const force = options?.force ?? false;
 
-    // Normal: diskutil eject (unmounts + detaches whole disk — proper for removable media)
-    // Force: diskutil unmount force (diskutil eject has no force flag)
-    const args = force ? ['unmount', 'force', mountPoint] : ['eject', mountPoint];
+    // Resolve the whole-disk identifier so we can fully detach the USB device.
+    // diskutil eject on a whole disk (e.g., disk5) sends the "safe to remove"
+    // signal and makes the device disappear from Disk Utility.
+    const wholeDisk = await this.resolveWholeDisk(mountPoint);
 
-    const { stdout, stderr, code } = await execCommand('diskutil', args);
+    if (force) {
+      // Force: unmount the specific volume first, then eject the whole disk
+      const unmountResult = await execCommand('diskutil', ['unmount', 'force', mountPoint]);
+      if (unmountResult.code !== 0) {
+        const errorMessage = unmountResult.stderr.trim() || unmountResult.stdout.trim();
+        return {
+          success: false,
+          device: mountPoint,
+          error: errorMessage,
+          forced: true,
+        };
+      }
+
+      // Now eject the whole disk to fully detach the USB device
+      if (wholeDisk) {
+        await execCommand('diskutil', ['eject', wholeDisk]);
+      }
+
+      return {
+        success: true,
+        device: mountPoint,
+        forced: true,
+      };
+    }
+
+    // Normal mode: eject the whole disk (unmounts all volumes + detaches device)
+    const target = wholeDisk ?? mountPoint;
+    const { stdout, stderr, code } = await execCommand('diskutil', ['eject', target]);
 
     if (code === 0) {
       return {
         success: true,
         device: mountPoint,
-        forced: force,
+        forced: false,
       };
     }
 
@@ -128,8 +156,31 @@ export class MacOSDeviceManager implements DeviceManager {
       success: false,
       device: mountPoint,
       error: errorMessage,
-      forced: force,
+      forced: false,
     };
+  }
+
+  /**
+   * Resolve a mount point to its whole-disk identifier (e.g., "disk5").
+   *
+   * Uses `diskutil info` to find the partition identifier (e.g., "disk5s2"),
+   * then strips the partition suffix to get the whole disk. Ejecting the
+   * whole disk ensures the USB device is fully detached and disappears
+   * from Disk Utility.
+   */
+  private async resolveWholeDisk(mountPoint: string): Promise<string | null> {
+    const { stdout, code } = await execCommand('diskutil', ['info', mountPoint]);
+    if (code !== 0) return null;
+
+    const info = parseDiskutilInfo(stdout);
+    const deviceId = info['Device Identifier'];
+    if (!deviceId) return null;
+
+    // Strip partition suffix: disk5s2 → disk5
+    const wholeDisk = deviceId.replace(/s\d+$/, '');
+
+    // Only return if we actually stripped something (i.e., it was a partition)
+    return wholeDisk !== deviceId ? wholeDisk : deviceId;
   }
 
   async mount(deviceId: string, options?: MountOptions): Promise<MountResult> {

@@ -494,15 +494,18 @@ export class LinuxDeviceManager implements DeviceManager {
   async eject(mountPoint: string, options?: EjectOptions): Promise<EjectResult> {
     const force = options?.force ?? false;
 
-    // Resolve device path from mount point for udisksctl
+    // Resolve device path from mount point for udisksctl and power-off
     // lsblk can tell us which device is mounted at this path
     let devicePath: string | undefined;
+    let wholeDiskPath: string | undefined;
     try {
       await this.requireLsblk();
       const devices = await this.listDevices();
       const device = devices.find((d) => d.mountPoint === mountPoint);
       if (device) {
         devicePath = `/dev/${device.identifier}`;
+        // Derive whole-disk path for power-off (sda1 → sda, nvme0n1p2 → nvme0n1)
+        wholeDiskPath = `/dev/${stripPartitionSuffix(device.identifier)}`;
       }
     } catch {
       // Fall through to umount if we can't resolve device
@@ -512,8 +515,9 @@ export class LinuxDeviceManager implements DeviceManager {
     if (devicePath && (await this.hasUdisksctl())) {
       const unmountResult = await execCommand('udisksctl', ['unmount', '-b', devicePath]);
       if (unmountResult.code === 0) {
-        // Also power off the device
-        await execCommand('udisksctl', ['power-off', '-b', devicePath]);
+        // Power off using the whole-disk device so the USB device fully detaches
+        const powerOffTarget = wholeDiskPath ?? devicePath;
+        await execCommand('udisksctl', ['power-off', '-b', powerOffTarget]);
         return {
           success: true,
           device: mountPoint,
@@ -539,6 +543,11 @@ export class LinuxDeviceManager implements DeviceManager {
     const { stderr, code } = await execCommand('umount', umountArgs);
 
     if (code === 0) {
+      // After successful umount, try to power off the USB device so it fully detaches.
+      // Use udisksctl if available (doesn't require root for power-off after umount).
+      if (wholeDiskPath && (await this.hasUdisksctl())) {
+        await execCommand('udisksctl', ['power-off', '-b', wholeDiskPath]);
+      }
       return {
         success: true,
         device: mountPoint,
