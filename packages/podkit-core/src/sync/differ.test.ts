@@ -763,10 +763,33 @@ describe('computeDiff - duplicate handling', () => {
 
     const diff = computeDiff(collectionTracks, ipodTracks);
 
-    // Both collection tracks match the same iPod track
-    // First is added to existing, second also matches (existing or update)
+    // First source track claims the iPod match; duplicate is skipped
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
     expect(diff.toRemove).toHaveLength(0);
-    // The iPod track is matched, so it shouldn't be removed
+    expect(diff.toAdd).toHaveLength(0);
+  });
+
+  it('duplicate source tracks with different metadata do not generate phantom updates', () => {
+    // Regression: when a source has two entries with the same (artist, title, album)
+    // but different trackNumbers, the second entry would generate a metadata-correction
+    // against the same iPod track. After applying the first update, the next sync
+    // would see the other duplicate's trackNumber as a diff again — infinite loop.
+    const collectionTracks = [
+      createCollectionTrack('Yumi Zouma', 'be okay', 'Album', { trackNumber: 2 }),
+      createCollectionTrack('Yumi Zouma', 'be okay', 'Album', { trackNumber: 9 }),
+    ];
+
+    const ipodTracks = [createIPodTrack('Yumi Zouma', 'be okay', 'Album', { trackNumber: 9 })];
+
+    const diff = computeDiff(collectionTracks, ipodTracks);
+
+    // First source track claims the iPod match and sees trackNumber 2 vs 9 → update
+    // Second source track is skipped (iPod track already claimed)
+    expect(diff.toUpdate.length).toBeLessThanOrEqual(1);
+    expect(diff.toRemove).toHaveLength(0);
+    // No phantom duplicate operations
+    expect(diff.toUpdate.length + diff.existing.length).toBe(1);
   });
 
   it('handles duplicate tracks on iPod (same metadata)', () => {

@@ -145,6 +145,15 @@ export function computeDiff(
     }
 
     if (ipodMatch) {
+      // Skip duplicate source tracks that match the same iPod track.
+      // This can happen when the source has two entries with identical
+      // (artist, title, album) — e.g., a duplicated track in an album.
+      // The first source track claims the iPod match; subsequent duplicates
+      // are ignored to prevent phantom update loops.
+      if (matchedIpodPaths.has(ipodMatch.filePath)) {
+        continue;
+      }
+
       // Track exists on iPod - mark as matched
       matchedIpodPaths.add(ipodMatch.filePath);
 
