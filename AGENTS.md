@@ -137,6 +137,7 @@ Read these documents based on what you're working on:
 | Docker daemon mode | [docs/getting-started/docker-daemon.md](docs/getting-started/docker-daemon.md) |
 | Config migrations | [docs/developers/config-migrations.md](docs/developers/config-migrations.md) |
 | Config migration examples | `packages/podkit-cli/src/config/migrations/examples/` |
+| LLM documentation system | [docs/developers/llm-documentation.md](docs/developers/llm-documentation.md) |
 
 ## Feature Requests & GitHub Discussions
 
@@ -242,6 +243,17 @@ sidebar:
 | `reference/` | CLI commands, config file, quality presets | All users |
 | `troubleshooting/` | Common issues, macOS mounting | Users with problems |
 | `developers/` | Architecture, development, testing | Contributors |
+
+## LLM Documentation
+
+The docs site generates machine-readable documentation for LLM agents via the `starlight-llms-txt` plugin. Configuration is in `packages/docs-site/astro.config.mjs`.
+
+**When adding or moving docs pages:**
+- New pages within existing directories are automatically included in the right custom documentation sets (glob patterns use `**` wildcards).
+- If you create a new top-level docs section, add it to the appropriate custom set in the plugin config.
+- If you change common workflows, install methods, or the config format, update the `description` and `details` in the plugin config — this is the entry point agents always read.
+
+See [docs/developers/llm-documentation.md](docs/developers/llm-documentation.md) for the full guide.
 
 ## Key Technical Decisions
 
