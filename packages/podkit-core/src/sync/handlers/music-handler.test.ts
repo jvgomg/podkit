@@ -266,6 +266,68 @@ describe('MusicHandler', () => {
     });
   });
 
+  describe('detectUpdates with forceTranscode', () => {
+    test('adds force-transcode for lossless source when no file-replacement upgrade exists', () => {
+      // transcodingActive suppresses format-upgrade, then forceTranscode can add force-transcode
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      const reasons = handler.detectUpdates(source, device, {
+        forceTranscode: true,
+        transcodingActive: true,
+      });
+      expect(reasons).toContain('force-transcode');
+    });
+
+    test('does not add force-transcode for lossy source', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
+      expect(reasons).not.toContain('force-transcode');
+    });
+
+    test('does not add force-transcode when file-replacement upgrade already exists', () => {
+      // Lossless source with lossy device triggers format-upgrade, which is a file-replacement
+      // upgrade, so force-transcode is not added (redundant)
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
+      expect(reasons).toContain('format-upgrade');
+      expect(reasons).not.toContain('force-transcode');
+    });
+
+    test('prepends force-transcode as first reason when added', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      const reasons = handler.detectUpdates(source, device, {
+        forceTranscode: true,
+        transcodingActive: true,
+      });
+      expect(reasons[0]).toBe('force-transcode');
+    });
+  });
+
+  describe('detectUpdates with transcodingActive', () => {
+    test('suppresses format-upgrade for AAC device when transcodingActive is true', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      // Without transcodingActive, lossless→AAC should detect format-upgrade
+      const reasonsWithout = handler.detectUpdates(source, device, {});
+      expect(reasonsWithout).toContain('format-upgrade');
+      // With transcodingActive, format-upgrade should be suppressed for AAC (expected target format)
+      const reasonsWith = handler.detectUpdates(source, device, { transcodingActive: true });
+      expect(reasonsWith).not.toContain('format-upgrade');
+    });
+
+    test('preserves format-upgrade for MP3 device even with transcodingActive', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      // MP3 on iPod means the track was copied before the source was upgraded to FLAC.
+      // This IS a genuine upgrade opportunity even when transcoding is active.
+      const reasons = handler.detectUpdates(source, device, { transcodingActive: true });
+      expect(reasons).toContain('format-upgrade');
+    });
+  });
+
   describe('formatDryRun', () => {
     test('summarizes a plan', () => {
       const plan: SyncPlan = {

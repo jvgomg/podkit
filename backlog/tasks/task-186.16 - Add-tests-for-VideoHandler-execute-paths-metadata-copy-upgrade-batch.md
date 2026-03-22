@@ -1,9 +1,10 @@
 ---
 id: TASK-186.16
 title: 'Add tests for VideoHandler execute paths (metadata, copy-upgrade, batch)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-22 12:57'
+updated_date: '2026-03-22 20:35'
 labels:
   - testing
 dependencies: []
@@ -56,8 +57,32 @@ Add to `packages/podkit-core/src/sync/handlers/video-handler-execute.test.ts`:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 executeUpdateMetadata tested for tvshow, movie, and seriesTitle-only branches
-- [ ] #2 executeUpgrade copy path (no settings) tested
-- [ ] #3 executeBatch temp directory lifecycle tested (create, cleanup, skip when no transcodes)
-- [ ] #4 setVideoQuality sync tag writing path tested
+- [x] #1 executeUpdateMetadata tested for tvshow, movie, and seriesTitle-only branches
+- [x] #2 executeUpgrade copy path (no settings) tested
+- [x] #3 executeBatch temp directory lifecycle tested (create, cleanup, skip when no transcodes)
+- [x] #4 setVideoQuality sync tag writing path tested
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Context update (2026-03-22)\n\nVideoHandler was significantly enhanced during the Phase 3 CLI unification work. New methods that also need test coverage:\n\n- `postProcessDiff()` — preset-change detection (sync tag + bitrate comparison) and force-metadata sweep. Two passes over `diff.existing` array.\n- `setVideoTransformsConfig()` — stores transforms config on handler instance\n- `applyTransformKey()` — now uses `getVideoTransformMatchKeys` for transform-aware key generation (was a no-op before)\n- `transformSourceForAdd()` — returns `CollectionVideo` with transformed series title for TV shows\n- `getTransformedSeriesTitle()` — private helper, returns transformed series title string\n- `detectUpdates()` — now handles transform-apply/transform-remove scenarios in addition to metadata-correction\n- `planUpdate()` — now handles transform-apply, transform-remove, force-metadata, metadata-correction reasons\n- `planAdd()` — now passes transformedSeriesTitle when transforms are active\n\nConsider adding tests for these new diff/plan methods alongside the execute path tests listed in the original description. The diff/plan methods are critical for correctness when routing video through the unified pipeline."
+
+## Completed (2026-03-22)
+
+Added 26 new tests across 2 files:
+
+**video-handler-execute.test.ts** (12 tests):
+- executeUpdateMetadata (6): tvshow metadata, movie director, movie studio fallback, newSeriesTitle override, newSeriesTitle-only branch, track not found error
+- executeUpgrade copy path (1): no settings → copy path, old track removed, no transcodeVideo call
+- executeBatch (3): temp dir creation/cleanup for transcodes, skip when no transcodes, cleanup on error
+- setVideoQuality sync tag writing (3): writes tag when set, no tag when unset, correct quality value
+
+**video-handler.test.ts** (14 tests):
+- planUpdate additional branches (4): force-metadata, preset-downgrade, transform-apply, transform-remove
+- postProcessDiff preset detection (4): bitrate mismatch, bitrate match, sync tag mismatch, sync tag match
+- postProcessDiff force-metadata (2): moves all to toUpdate, sets newSeriesTitle on tvshow
+- detectUpdates metadata correction (3): year mismatch, key-based matching, no year match
+
+All acceptance criteria met. 1945 tests pass.
+<!-- SECTION:NOTES:END -->

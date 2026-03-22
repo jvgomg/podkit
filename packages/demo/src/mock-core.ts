@@ -281,14 +281,18 @@ export type {
   DryRunSummary,
 } from '@podkit/core';
 
-// Unified differ types
-export type { UnifiedSyncDiff, UnifiedDiffOptions } from '@podkit/core';
+// Generic differ types
+export type {
+  UnifiedSyncDiff,
+  SyncDiffOptions,
+  SyncDiffOptions as UnifiedDiffOptions,
+} from '@podkit/core';
 
-// Unified planner types
-export type { UnifiedPlanOptions, PlanAddResult } from '@podkit/core';
+// Generic planner types
+export type { SyncPlanOptions, SyncPlanOptions as UnifiedPlanOptions } from '@podkit/core';
 
-// Unified executor types
-export type { UnifiedExecuteOptions } from '@podkit/core';
+// Generic executor types
+export type { SyncExecuteOptions, SyncExecuteOptions as UnifiedExecuteOptions } from '@podkit/core';
 
 // Video adapter type alias
 export type { VideoAdapter } from '@podkit/core';
@@ -1899,28 +1903,6 @@ export const VIDEO_RETRY_CONFIG = {
 export const ENCODING_MODES = ['vbr', 'cbr'] as const;
 
 // =============================================================================
-// ContentTypeHandler registry (mock)
-// =============================================================================
-
-const handlerRegistry = new Map<string, any>();
-
-export function registerHandler(handler: any): void {
-  handlerRegistry.set(handler.type, handler);
-}
-
-export function getHandler(type: string): any {
-  return handlerRegistry.get(type) ?? null;
-}
-
-export function getAllHandlers(): any[] {
-  return Array.from(handlerRegistry.values());
-}
-
-export function clearHandlers(): void {
-  handlerRegistry.clear();
-}
-
-// =============================================================================
 // MusicHandler (mock)
 // =============================================================================
 
@@ -2077,10 +2059,10 @@ export function createVideoHandler(): VideoHandler {
 }
 
 // =============================================================================
-// UnifiedDiffer (mock)
+// SyncDiffer (mock)
 // =============================================================================
 
-export class UnifiedDiffer {
+export class SyncDiffer {
   private _handler: any;
 
   constructor(handler: any) {
@@ -2108,15 +2090,24 @@ export class UnifiedDiffer {
   }
 }
 
-export function createUnifiedDiffer(handler: any) {
-  return new UnifiedDiffer(handler);
+/** @deprecated Use SyncDiffer instead */
+export const UnifiedDiffer = SyncDiffer;
+
+export function createSyncDiffer(handler: any) {
+  return new SyncDiffer(handler);
 }
 
+/** @deprecated Use createSyncDiffer instead */
+export const createDiffer = createSyncDiffer;
+
+/** @deprecated Use createSyncDiffer instead */
+export const createUnifiedDiffer = createSyncDiffer;
+
 // =============================================================================
-// UnifiedPlanner (mock)
+// SyncPlanner (mock)
 // =============================================================================
 
-export class UnifiedPlanner {
+export class SyncPlanner {
   private _handler: any;
 
   constructor(handler: any) {
@@ -2138,9 +2129,18 @@ export class UnifiedPlanner {
   }
 }
 
-export function createUnifiedPlanner(handler: any) {
-  return new UnifiedPlanner(handler);
+/** @deprecated Use SyncPlanner instead */
+export const UnifiedPlanner = SyncPlanner;
+
+export function createSyncPlanner(handler: any) {
+  return new SyncPlanner(handler);
 }
+
+/** @deprecated Use createSyncPlanner instead */
+export const createPlanner = createSyncPlanner;
+
+/** @deprecated Use createSyncPlanner instead */
+export const createUnifiedPlanner = createSyncPlanner;
 
 export function orderOperations(operations: any[]): any[] {
   const order: Record<string, number> = {
@@ -2159,10 +2159,10 @@ export function orderOperations(operations: any[]): any[] {
 }
 
 // =============================================================================
-// UnifiedExecutor (mock)
+// SyncExecutor (mock)
 // =============================================================================
 
-export class UnifiedExecutor {
+export class SyncExecutor {
   private _handler: any;
 
   constructor(handler: any) {
@@ -2214,9 +2214,15 @@ export class UnifiedExecutor {
   }
 }
 
-export function createUnifiedExecutor(handler: any) {
-  return new UnifiedExecutor(handler);
+/** @deprecated Use SyncExecutor instead */
+export const UnifiedExecutor = SyncExecutor;
+
+export function createSyncExecutor(handler: any) {
+  return new SyncExecutor(handler);
 }
+
+/** @deprecated Use createSyncExecutor instead */
+export const createUnifiedExecutor = createSyncExecutor;
 
 // =============================================================================
 // Stream utilities (mock)

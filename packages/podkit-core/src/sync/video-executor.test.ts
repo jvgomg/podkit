@@ -1,8 +1,8 @@
 /**
  * Unit tests for the video sync executor
  *
- * Video execution uses UnifiedExecutor + VideoHandler. Tests for video execution
- * behaviour are now in the unified executor and video handler test suites.
+ * Video execution uses SyncExecutor + VideoHandler. Tests for video execution
+ * behaviour are now in the sync executor and video handler test suites.
  *
  * This file is kept as a placeholder for any future PlaceholderVideoSyncExecutor
  * or getVideoOperationDisplayName tests.

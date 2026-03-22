@@ -7,8 +7,8 @@
 
 import { describe, expect, it } from 'bun:test';
 import { OutputContext } from '../output/index.js';
-import { buildMusicDryRunOutput } from './sync.js';
-import type { MusicDryRunContext, SyncOutput } from './sync.js';
+import { MusicPresenter, type MusicContentConfig } from './sync-presenter.js';
+import type { SyncOutput } from './sync.js';
 
 /**
  * Create a silent JSON OutputContext for testing
@@ -24,7 +24,59 @@ function createJsonOutput(): OutputContext {
 }
 
 /**
- * Create a minimal MusicDryRunContext with the given tracks to add.
+ * Build music dry-run JSON output using MusicPresenter.
+ * This is a helper that wraps the presenter method to match the old test interface.
+ */
+function buildMusicDryRunOutput(ctx: {
+  out: OutputContext;
+  sourcePath: string;
+  devicePath: string;
+  effectiveQuality: string;
+  effectiveTransforms: any;
+  skipUpgrades: boolean;
+  diff: any;
+  plan: any;
+  summary: any;
+  storage: any;
+  hasEnoughSpace: boolean;
+  removeOrphans: boolean;
+  scanWarnings: any[];
+  core: any;
+}): SyncOutput {
+  const presenter = new MusicPresenter();
+  const musicConfig: MusicContentConfig = {
+    type: 'music',
+    effectiveTransforms: ctx.effectiveTransforms,
+    effectiveQuality: ctx.effectiveQuality as any,
+    effectiveEncoding: undefined,
+    effectiveCustomBitrate: undefined,
+    effectiveBitrateTolerance: undefined,
+    deviceSupportsAlac: false,
+    effectiveArtwork: true,
+    skipUpgrades: ctx.skipUpgrades,
+    forceTranscode: false,
+    forceSyncTags: false,
+    forceMetadata: false,
+    checkArtwork: false,
+    transcoder: null as never,
+  };
+  return presenter.buildDryRunJson(
+    ctx.out,
+    ctx.sourcePath,
+    ctx.devicePath,
+    ctx.diff,
+    ctx.plan,
+    ctx.summary,
+    ctx.removeOrphans,
+    musicConfig,
+    ctx.core,
+    ctx.scanWarnings,
+    ctx.diff.toAdd // sourceItems
+  );
+}
+
+/**
+ * Create a minimal context with the given tracks to add.
  * Only the fields needed for aggregation are populated; everything else
  * is stubbed to satisfy the type constraints.
  */
@@ -38,7 +90,7 @@ function createMusicDryRunCtx(
     filePath?: string;
     format?: string;
   }>
-): MusicDryRunContext {
+) {
   const diff = {
     toAdd: tracksToAdd.map((t) => ({
       id: t.id,
@@ -76,9 +128,9 @@ function createMusicDryRunCtx(
       cleanArtists: { enabled: false, format: '', drop: false, ignore: [] },
     },
     skipUpgrades: false,
-    diff: diff as unknown as MusicDryRunContext['diff'],
-    plan: plan as unknown as MusicDryRunContext['plan'],
-    summary: summary as unknown as MusicDryRunContext['summary'],
+    diff: diff as any,
+    plan: plan as any,
+    summary: summary as any,
     storage: null,
     hasEnoughSpace: true,
     removeOrphans: false,
@@ -87,7 +139,7 @@ function createMusicDryRunCtx(
       getOperationDisplayName: (_op: unknown) => 'mock',
       getPlanSummary: () => summary,
       applyTransforms: (t: unknown) => t,
-    } as unknown as MusicDryRunContext['core'],
+    } as any,
   };
 }
 

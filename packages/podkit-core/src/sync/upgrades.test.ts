@@ -4,7 +4,7 @@
  * Tests cover:
  * 1. isQualityUpgrade: format and bitrate comparisons
  * 2. detectUpgrades: all upgrade categories
- * 3. computeDiff integration: upgraded tracks route to toUpdate
+ * 3. computeMusicDiff integration: upgraded tracks route to toUpdate
  */
 
 import { describe, expect, it } from 'bun:test';
@@ -15,7 +15,7 @@ import {
   detectPresetChange,
   detectBitratePresetMismatch,
 } from './upgrades.js';
-import { computeDiff } from './differ.js';
+import { computeMusicDiff } from './music-differ.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { IPodTrack } from './types.js';
 
@@ -1375,10 +1375,10 @@ describe('isFileReplacementUpgrade', () => {
 });
 
 // =============================================================================
-// computeDiff integration
+// computeMusicDiff integration
 // =============================================================================
 
-describe('computeDiff with upgrades', () => {
+describe('computeMusicDiff with upgrades', () => {
   it('routes format-upgraded track to toUpdate', () => {
     const source = createCollectionTrack('Artist', 'Song', 'Album', {
       fileType: 'flac',
@@ -1389,7 +1389,7 @@ describe('computeDiff with upgrades', () => {
       bitrate: 192,
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('format-upgrade');
@@ -1409,7 +1409,7 @@ describe('computeDiff with upgrades', () => {
       bitrate: 128,
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('quality-upgrade');
@@ -1428,7 +1428,7 @@ describe('computeDiff with upgrades', () => {
       bitrate: 256,
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('soundcheck-update');
@@ -1447,7 +1447,7 @@ describe('computeDiff with upgrades', () => {
       genre: 'Rock',
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('metadata-correction');
@@ -1465,7 +1465,7 @@ describe('computeDiff with upgrades', () => {
       genre: 'Rock',
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.changes.length).toBeGreaterThan(0);
@@ -1486,7 +1486,7 @@ describe('computeDiff with upgrades', () => {
       bitrate: 256,
     });
 
-    const diff = computeDiff([source], [ipod]);
+    const diff = computeMusicDiff([source], [ipod]);
 
     expect(diff.existing).toHaveLength(1);
     expect(diff.toUpdate).toHaveLength(0);
@@ -1503,7 +1503,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 192,
       });
 
-      const diff = computeDiff([source], [ipod], { skipUpgrades: true });
+      const diff = computeMusicDiff([source], [ipod], { skipUpgrades: true });
 
       // format-upgrade is a file-replacement, should be suppressed
       // Track should end up in existing (since no metadata-only upgrades apply)
@@ -1523,7 +1523,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 256,
       });
 
-      const diff = computeDiff([source], [ipod], { skipUpgrades: true });
+      const diff = computeMusicDiff([source], [ipod], { skipUpgrades: true });
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reason).toBe('soundcheck-update');
@@ -1541,7 +1541,7 @@ describe('computeDiff with upgrades', () => {
         genre: 'Rock',
       });
 
-      const diff = computeDiff([source], [ipod], { skipUpgrades: true });
+      const diff = computeMusicDiff([source], [ipod], { skipUpgrades: true });
 
       // format-upgrade suppressed, but metadata-correction should still apply
       expect(diff.toUpdate).toHaveLength(1);
@@ -1558,7 +1558,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 192,
       });
 
-      const diff = computeDiff([source], [ipod], { skipUpgrades: false });
+      const diff = computeMusicDiff([source], [ipod], { skipUpgrades: false });
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reason).toBe('format-upgrade');
@@ -1583,7 +1583,7 @@ describe('computeDiff with upgrades', () => {
         cleanArtists: { enabled: true, drop: false, format: 'feat. {}', ignore: [] },
       };
 
-      const diff = computeDiff([source], [ipod], {
+      const diff = computeMusicDiff([source], [ipod], {
         skipUpgrades: true,
         transforms,
       });
@@ -1603,7 +1603,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 192,
       });
 
-      const diff = computeDiff([source], [ipod]);
+      const diff = computeMusicDiff([source], [ipod]);
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reason).toBe('format-upgrade');
@@ -1622,7 +1622,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 256,
       });
 
-      const diff = computeDiff([source1, source2], []);
+      const diff = computeMusicDiff([source1, source2], []);
 
       expect(diff.toAdd).toHaveLength(2);
       expect(diff.toUpdate).toHaveLength(0);
@@ -1634,7 +1634,7 @@ describe('computeDiff with upgrades', () => {
         bitrate: 192,
       });
 
-      const diff = computeDiff([], [ipod]);
+      const diff = computeMusicDiff([], [ipod]);
 
       expect(diff.toRemove).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
@@ -1675,7 +1675,7 @@ describe('computeDiff with upgrades', () => {
         }),
       ];
 
-      const diff = computeDiff(sources, ipods);
+      const diff = computeMusicDiff(sources, ipods);
 
       expect(diff.toAdd).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(1);

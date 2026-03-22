@@ -22,11 +22,11 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import {
-  DefaultSyncExecutor,
+  MusicExecutor,
   executePlan,
   type ExecutorProgress,
   type ExecutorDependencies,
-} from './executor.js';
+} from './music-executor.js';
 import { FFmpegTranscoder } from '../transcode/ffmpeg.js';
 import { IpodDatabase } from '../ipod/database.js';
 import type { CollectionTrack } from '../adapters/interface.js';
@@ -439,7 +439,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const executor = new DefaultSyncExecutor(deps);
+          const executor = new MusicExecutor(deps);
           const progress: ExecutorProgress[] = [];
 
           for await (const p of executor.execute(plan)) {

@@ -163,7 +163,7 @@ export type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-los
 /**
  * Warning types that can occur during sync planning
  */
-export type SyncWarningType = 'lossy-to-lossy';
+export type SyncWarningType = 'lossy-to-lossy' | 'space-constraint';
 
 /**
  * A warning generated during sync planning
@@ -539,6 +539,8 @@ export interface ExecutorProgress extends SyncProgress {
   retryAttempt?: number;
   /** Transcode progress for video-transcode operations */
   transcodeProgress?: TranscodeProgress;
+  /** Number of operations completed so far (includes successful, failed, and skipped) */
+  completedCount: number;
 }
 
 /**

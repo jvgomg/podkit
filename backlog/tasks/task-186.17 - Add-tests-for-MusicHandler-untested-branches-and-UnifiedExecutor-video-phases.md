@@ -1,9 +1,10 @@
 ---
 id: TASK-186.17
 title: Add tests for MusicHandler untested branches and UnifiedExecutor video phases
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-22 12:57'
+updated_date: '2026-03-22 20:33'
 labels:
   - testing
 dependencies: []
@@ -52,9 +53,33 @@ Several medium-priority test gaps exist across MusicHandler and UnifiedExecutor:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 MusicHandler.detectUpdates tested with forceTranscode and transcodingActive options
-- [ ] #2 MusicHandler.applyTransformKey directly tested
-- [ ] #3 MusicHandler.getDeviceItems tested (filters by music media type)
-- [ ] #4 UnifiedExecutor batch abort signal path tested
-- [ ] #5 UnifiedExecutor video operation phase mapping tested
+- [x] #1 MusicHandler.detectUpdates tested with forceTranscode and transcodingActive options
+- [x] #2 MusicHandler.applyTransformKey directly tested
+- [x] #3 MusicHandler.getDeviceItems tested (filters by music media type)
+- [x] #4 UnifiedExecutor batch abort signal path tested
+- [x] #5 UnifiedExecutor video operation phase mapping tested
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Context update (2026-03-22)\n\nThe CLI now routes all content types through `genericSyncCollection()` + presenters. MusicHandler.executeBatch() is invoked via `MusicPresenter.executeSync()` which creates a `UnifiedExecutor` wrapping the handler.\n\nAll existing tests pass. The gaps listed in the description are still valid and untested."
+
+## Completed (2026-03-22)
+
+Added 21 tests across 2 files:
+
+**music-handler.test.ts** (13 tests):
+- detectUpdates with forceTranscode (4 tests) — lossless-only, not lossy, not when upgrade exists, prepend order
+- detectUpdates with transcodingActive (2 tests) — suppresses for AAC device, preserves for MP3 device (corrected from agent output to match current code's AAC-only check)
+- applyTransformKey (2 tests) — consistent with generateMatchKey when no transforms
+- getDeviceItems (3 tests) — filters by music media type
+- planAdd with customBitrate (2 tests) — bitrateOverride flows through
+
+**unified-executor.test.ts** (8 tests):
+- batch abort signal (1 test) — stops batch when signal aborted mid-execution
+- video operation phase mapping (7 tests) — all 5 video types + combined plan
+
+### Review fix
+The agent wrote transcodingActive tests against the committed code which unconditionally suppresses format-upgrade. The uncommitted working directory code has an AAC-only check (only suppresses when `getIpodFormatFamily(device) === 'aac'`). Fixed tests to match current code: AAC device → suppressed, MP3 device → preserved.
+<!-- SECTION:NOTES:END -->

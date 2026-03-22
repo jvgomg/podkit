@@ -1,5 +1,5 @@
 /**
- * ContentTypeHandler interface and registry
+ * ContentTypeHandler interface
  *
  * Defines a generic interface for content-type-specific sync operations
  * (music, video). Each handler encapsulates diffing, planning, execution,
@@ -9,7 +9,7 @@
  */
 
 import type { IpodDatabase } from '../ipod/database.js';
-import type { SyncOperation, SyncPlan, UpdateReason } from './types.js';
+import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
 
 // =============================================================================
 // Option Types
@@ -18,7 +18,7 @@ import type { SyncOperation, SyncPlan, UpdateReason } from './types.js';
 /**
  * Options passed to handler diff methods
  */
-export interface HandlerDiffOptions {
+export interface HandlerDiffOptions<THandlerOptions = Record<string, unknown>> {
   skipUpgrades?: boolean;
   forceTranscode?: boolean;
   transcodingActive?: boolean;
@@ -26,6 +26,9 @@ export interface HandlerDiffOptions {
   presetChanged?: boolean;
   transformsEnabled?: boolean;
   transforms?: Record<string, string>;
+  forceMetadata?: boolean;
+  /** Content-type-specific options, typed by the handler */
+  handlerOptions?: THandlerOptions;
 }
 
 /**
@@ -61,7 +64,7 @@ export interface OperationProgress {
   progress?: number;
   error?: Error;
   skipped?: boolean;
-  transcodeProgress?: { percent: number; speed?: string };
+  transcodeProgress?: { percent: number; speed?: number };
 }
 
 /**
@@ -77,6 +80,41 @@ export interface DryRunSummary {
   estimatedTime: number;
   warnings: string[];
   operations: Array<{ type: string; displayName: string; size?: number }>;
+}
+
+// =============================================================================
+// Match and Diff Types
+// =============================================================================
+
+/**
+ * Information about how a source-device pair was matched
+ */
+export interface MatchInfo {
+  /** Whether the pair was matched via the transform key (not the primary key) */
+  matchedByTransformKey: boolean;
+}
+
+/**
+ * Result of a unified diff operation
+ *
+ * @typeParam TSource - Source item type
+ * @typeParam TDevice - Device item type
+ */
+export interface UnifiedSyncDiff<TSource, TDevice> {
+  /** Items in source but not on device */
+  toAdd: TSource[];
+  /** Items on device but not in source (candidates for removal) */
+  toRemove: TDevice[];
+  /** Items that exist in both and are in sync */
+  existing: Array<{ source: TSource; device: TDevice }>;
+  /** Items that need updates with reasons */
+  toUpdate: Array<{
+    source: TSource;
+    device: TDevice;
+    reasons: UpdateReason[];
+    /** Detailed metadata changes (populated by handlers that support it) */
+    changes?: MetadataChange[];
+  }>;
 }
 
 // =============================================================================
@@ -108,11 +146,29 @@ export interface ContentTypeHandler<TSource, TDevice> {
   /** Generate a match key with transforms applied (optional) */
   applyTransformKey?(source: TSource): string;
 
+  /** Apply transform to a source item for addition (optional) */
+  transformSourceForAdd?(source: TSource): TSource;
+
   /** Get the unique identifier for a device item */
   getDeviceItemId(device: TDevice): string;
 
   /** Detect reasons a matched pair needs updating */
-  detectUpdates(source: TSource, device: TDevice, options: HandlerDiffOptions): UpdateReason[];
+  detectUpdates(
+    source: TSource,
+    device: TDevice,
+    options: HandlerDiffOptions,
+    matchInfo?: MatchInfo
+  ): UpdateReason[];
+
+  /**
+   * Post-process a completed diff result.
+   * Called after the match loop with the full diff, allowing batch-level
+   * analysis that can move items between existing and toUpdate.
+   *
+   * Use cases: preset change detection, force-transcode sweeps,
+   * sync tag writing, force-metadata rewrites.
+   */
+  postProcessDiff?(diff: UnifiedSyncDiff<TSource, TDevice>, options: HandlerDiffOptions): void;
 
   // ---- Planning ----
 
@@ -123,13 +179,26 @@ export interface ContentTypeHandler<TSource, TDevice> {
   planRemove(device: TDevice): SyncOperation;
 
   /** Plan update operations for a matched pair with detected reasons */
-  planUpdate(source: TSource, device: TDevice, reasons: UpdateReason[]): SyncOperation[];
+  planUpdate(
+    source: TSource,
+    device: TDevice,
+    reasons: UpdateReason[],
+    options?: HandlerPlanOptions,
+    changes?: MetadataChange[]
+  ): SyncOperation[];
 
   /** Estimate the output size in bytes for an operation */
   estimateSize(op: SyncOperation): number;
 
   /** Estimate the time in seconds for an operation */
   estimateTime(op: SyncOperation): number;
+
+  /**
+   * Collect plan-level warnings after operations are created.
+   * Called by SyncPlanner with all planned operations to generate
+   * content-type-specific warnings (e.g., lossy-to-lossy conversion).
+   */
+  collectPlanWarnings?(operations: SyncOperation[]): import('./types.js').SyncWarning[];
 
   // ---- Execution ----
 
@@ -154,38 +223,4 @@ export interface ContentTypeHandler<TSource, TDevice> {
 
   /** Format a sync plan into a dry-run summary */
   formatDryRun(plan: SyncPlan): DryRunSummary;
-}
-
-// =============================================================================
-// Handler Registry
-// =============================================================================
-
-const handlers = new Map<string, ContentTypeHandler<any, any>>();
-
-/**
- * Register a content type handler
- */
-export function registerHandler(handler: ContentTypeHandler<any, any>): void {
-  handlers.set(handler.type, handler);
-}
-
-/**
- * Get a registered handler by type
- */
-export function getHandler(type: string): ContentTypeHandler<any, any> | undefined {
-  return handlers.get(type);
-}
-
-/**
- * Get all registered handlers
- */
-export function getAllHandlers(): ContentTypeHandler<any, any>[] {
-  return Array.from(handlers.values());
-}
-
-/**
- * Clear all registered handlers (for testing)
- */
-export function clearHandlers(): void {
-  handlers.clear();
 }

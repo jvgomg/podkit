@@ -21,9 +21,20 @@ import { probeVideo } from '../../video/probe.js';
 import { generateVideoMatchKey, type IPodVideo } from '../video-differ.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from '../video-planner.js';
 import { getVideoOperationDisplayName } from '../video-executor.js';
-import { buildVideoSyncTag, writeSyncTag } from '../sync-tags.js';
+import {
+  buildVideoSyncTag,
+  parseSyncTag,
+  syncTagMatchesConfig,
+  writeSyncTag,
+} from '../sync-tags.js';
+import { detectBitratePresetMismatch } from '../upgrades.js';
 import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
+import type { VideoTransformsConfig } from '../../transforms/types.js';
+import {
+  getVideoTransformMatchKeys,
+  hasEnabledVideoTransforms,
+} from '../../transforms/video-pipeline.js';
 import type {
   ContentTypeHandler,
   HandlerDiffOptions,
@@ -32,6 +43,25 @@ import type {
   OperationProgress,
   DryRunSummary,
 } from '../content-type.js';
+import type { UnifiedSyncDiff } from '../content-type.js';
+
+// =============================================================================
+// Types
+// =============================================================================
+
+/**
+ * Video-specific options for postProcessDiff.
+ *
+ * Passed via the `handlerOptions` field on the diff options object
+ * when the caller needs video-specific post-processing (preset change
+ * detection, force-metadata sweep).
+ */
+export interface VideoHandlerDiffOptions {
+  /** Resolved video quality preset name for sync tag comparison */
+  resolvedVideoQuality?: string;
+  /** Video transform configuration */
+  videoTransforms?: VideoTransformsConfig;
+}
 
 // =============================================================================
 // VideoHandler Implementation
@@ -46,6 +76,18 @@ import type {
 export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVideo> {
   readonly type = 'video';
 
+  /** Stored video transforms config (set via setVideoTransformsConfig) */
+  private videoTransformsConfig?: VideoTransformsConfig;
+
+  /**
+   * Set the video transforms configuration for transform-aware matching.
+   * When set, applyTransformKey generates transformed keys and detectUpdates
+   * detects transform apply/remove scenarios.
+   */
+  setVideoTransformsConfig(config: VideoTransformsConfig | undefined): void {
+    this.videoTransformsConfig = config;
+  }
+
   // ---- Diffing ----
 
   generateMatchKey(source: CollectionVideo): string {
@@ -57,9 +99,47 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
   }
 
   applyTransformKey(source: CollectionVideo): string {
-    // For video, transforms affect series title — generate key with original metadata
-    // (the actual transform application uses getVideoTransformMatchKeys in the differ)
-    return generateVideoMatchKey(source);
+    if (!this.videoTransformsConfig) {
+      return generateVideoMatchKey(source);
+    }
+
+    const { transformedKey } = getVideoTransformMatchKeys(
+      source,
+      generateVideoMatchKey,
+      this.videoTransformsConfig
+    );
+    return transformedKey;
+  }
+
+  /**
+   * Transform a source video for add operations.
+   *
+   * When transforms are enabled and the video is a TV show, returns a copy
+   * with the transformed series title. Returns the original source unchanged
+   * if no transform applies.
+   */
+  transformSourceForAdd(source: CollectionVideo): CollectionVideo {
+    const transformedTitle = this.getTransformedSeriesTitle(source);
+    if (!transformedTitle) return source;
+    return { ...source, seriesTitle: transformedTitle };
+  }
+
+  /**
+   * Get the transformed series title for a video, or undefined if no transform applies.
+   * @internal
+   */
+  private getTransformedSeriesTitle(source: CollectionVideo): string | undefined {
+    if (!this.videoTransformsConfig) return undefined;
+    if (!hasEnabledVideoTransforms(this.videoTransformsConfig)) return undefined;
+    if (source.contentType !== 'tvshow') return undefined;
+
+    const { transformedSeriesTitle, transformApplied } = getVideoTransformMatchKeys(
+      source,
+      generateVideoMatchKey,
+      this.videoTransformsConfig
+    );
+
+    return transformApplied ? transformedSeriesTitle : undefined;
   }
 
   getDeviceItemId(device: IPodVideo): string {
@@ -87,10 +167,115 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       reasons.push('metadata-correction');
     }
 
-    // Preset change detection is handled by the differ via sync tags,
-    // not by detectUpdates. This method covers metadata-level changes.
+    // Transform detection: determine if transforms need to be applied or removed.
+    // The unified differ matches by primary key first, then falls back to transform key.
+    // We can detect the match type by comparing the primary and transform keys.
+    if (this.videoTransformsConfig) {
+      const transformsEnabled = hasEnabledVideoTransforms(this.videoTransformsConfig);
+      const { originalKey, transformedKey, transformApplied } = getVideoTransformMatchKeys(
+        source,
+        generateVideoMatchKey,
+        this.videoTransformsConfig
+      );
+
+      if (transformApplied) {
+        // Check which key the device item matches
+        const deviceKey = generateVideoMatchKey(device);
+        const matchedByOriginalKey = deviceKey === originalKey;
+        const matchedByTransformKey = deviceKey === transformedKey;
+
+        if (matchedByOriginalKey && transformsEnabled) {
+          // iPod has original metadata, transforms are enabled → apply transform
+          reasons.push('transform-apply');
+        } else if (matchedByTransformKey && !transformsEnabled) {
+          // iPod has transformed metadata, transforms are disabled → revert
+          reasons.push('transform-remove');
+        }
+      }
+    }
 
     return reasons;
+  }
+
+  /**
+   * Post-process a unified diff to detect preset changes and force-metadata sweeps.
+   *
+   * This method handles two passes over the diff's `existing` array:
+   *
+   * 1. **Preset change detection** — When `options.presetBitrate` is set, checks each
+   *    existing video against sync tags and/or bitrate comparison. Mismatches are
+   *    moved from `existing` to `toUpdate` with reason `'preset-upgrade'` or `'preset-downgrade'`.
+   *
+   * 2. **Force metadata sweep** — When `options.forceMetadata` is true, moves ALL
+   *    remaining `existing` items to `toUpdate` with reason `'force-metadata'`.
+   *    For TV shows, computes the effective series title (with transforms if configured).
+   *
+   * @param diff - The unified diff to post-process (mutated in place)
+   * @param options - Diff options including presetBitrate and forceMetadata
+   */
+  postProcessDiff(
+    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+    options: HandlerDiffOptions & {
+      forceMetadata?: boolean;
+      handlerOptions?: VideoHandlerDiffOptions;
+    }
+  ): void {
+    const handlerOpts = options.handlerOptions;
+
+    // Pass 1: Preset change detection
+    if (options.presetBitrate) {
+      const presetBitrate = options.presetBitrate;
+      const resolvedVideoQuality = handlerOpts?.resolvedVideoQuality;
+      const expectedSyncTag = resolvedVideoQuality
+        ? buildVideoSyncTag(resolvedVideoQuality)
+        : undefined;
+      const stillExisting: Array<{ source: CollectionVideo; device: IPodVideo }> = [];
+
+      for (const match of diff.existing) {
+        // Try sync tag comparison first
+        const syncTag = parseSyncTag(match.device.comment);
+        let mismatch = false;
+
+        if (syncTag && expectedSyncTag) {
+          // Sync tag exists — use exact comparison
+          mismatch = !syncTagMatchesConfig(syncTag, expectedSyncTag);
+        } else {
+          // No sync tag — fall back to bitrate comparison
+          mismatch = detectBitratePresetMismatch(match.device.bitrate, presetBitrate) !== null;
+        }
+
+        if (mismatch) {
+          // Determine direction from bitrate comparison (default to upgrade)
+          const direction =
+            detectBitratePresetMismatch(match.device.bitrate, presetBitrate) ?? 'preset-upgrade';
+          diff.toUpdate.push({
+            source: match.source,
+            device: match.device,
+            reasons: [direction],
+          });
+        } else {
+          stillExisting.push(match);
+        }
+      }
+
+      diff.existing.length = 0;
+      diff.existing.push(...stillExisting);
+    }
+
+    // Pass 2: Force metadata sweep — move ALL remaining existing items to toUpdate.
+    // The effective series title (with transforms if configured) is computed
+    // downstream by planUpdate via transformSourceForAdd / videoTransformsConfig.
+    if (options.forceMetadata) {
+      for (const match of diff.existing) {
+        diff.toUpdate.push({
+          source: match.source,
+          device: match.device,
+          reasons: ['force-metadata'],
+        });
+      }
+
+      diff.existing.length = 0;
+    }
   }
 
   // ---- Planning ----
@@ -98,6 +283,8 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
   planAdd(source: CollectionVideo, _options: HandlerPlanOptions): SyncOperation {
     // Default to video-transcode; the actual planner determines passthrough vs transcode
     // based on compatibility checking. This stub provides a reasonable default.
+    const transformedSeriesTitle = this.getTransformedSeriesTitle(source);
+
     return {
       type: 'video-transcode',
       source,
@@ -112,6 +299,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
         frameRate: 30,
         useHardwareAcceleration: _options.hardwareAcceleration ?? true,
       },
+      ...(transformedSeriesTitle && { transformedSeriesTitle }),
     };
   }
 
@@ -119,7 +307,13 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     return { type: 'video-remove', video: device };
   }
 
-  planUpdate(source: CollectionVideo, device: IPodVideo, reasons: UpdateReason[]): SyncOperation[] {
+  planUpdate(
+    source: CollectionVideo,
+    device: IPodVideo,
+    reasons: UpdateReason[],
+    _options?: HandlerPlanOptions,
+    _changes?: import('../types.js').MetadataChange[]
+  ): SyncOperation[] {
     if (reasons.length === 0) return [];
 
     const primaryReason = reasons[0]!;
@@ -136,7 +330,35 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       ];
     }
 
-    // Metadata-only updates
+    // Transform and force-metadata updates need the effective series title
+    if (
+      primaryReason === 'transform-apply' ||
+      primaryReason === 'transform-remove' ||
+      primaryReason === 'force-metadata' ||
+      primaryReason === 'metadata-correction'
+    ) {
+      // Compute the new series title for transform-aware metadata updates
+      let newSeriesTitle: string | undefined;
+
+      if (source.contentType === 'tvshow') {
+        if (primaryReason === 'transform-apply' || primaryReason === 'force-metadata') {
+          newSeriesTitle = this.getTransformedSeriesTitle(source) ?? source.seriesTitle;
+        } else if (primaryReason === 'transform-remove') {
+          newSeriesTitle = source.seriesTitle;
+        }
+      }
+
+      return [
+        {
+          type: 'video-update-metadata',
+          source,
+          video: device,
+          newSeriesTitle,
+        },
+      ];
+    }
+
+    // Metadata-only updates (fallback)
     return [
       {
         type: 'video-update-metadata',
@@ -262,7 +484,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     const tempOutputPath = join(tempDir, outputFilename);
 
     // Async queue for bridging onProgress callback → yield
-    const progressQueue: Array<{ percent: number; speed?: string }> = [];
+    const progressQueue: Array<{ percent: number; speed?: number }> = [];
     let resolveWaiter: (() => void) | null = null;
     let transcodeComplete = false;
     let transcodeError: Error | undefined;
@@ -272,7 +494,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       onProgress: (p: TranscodeProgress) => {
         progressQueue.push({
           percent: p.percent,
-          speed: p.speed !== undefined ? String(p.speed) : undefined,
+          speed: p.speed,
         });
         resolveWaiter?.();
       },

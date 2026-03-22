@@ -1,10 +1,10 @@
 ---
 id: TASK-186.13
 title: Migrate music differ/planner to UnifiedDiffer + UnifiedPlanner
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-22 12:35'
-updated_date: '2026-03-22 12:51'
+updated_date: '2026-03-22 14:21'
 labels:
   - refactor
   - architecture
@@ -73,13 +73,13 @@ This is purely architectural consistency — `computeDiff()` and `createPlan()` 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 UnifiedDiffer supports post-processing passes (or equivalent hook) for content types that need batch-level analysis
-- [ ] #2 HandlerDiffOptions extended to support all music-specific diff options (forceSyncTags, forceMetadata, encodingMode, bitrateTolerance, isAlacPreset, resolvedQuality, customBitrate)
-- [ ] #3 syncMusicCollection() uses UnifiedDiffer + MusicHandler instead of computeDiff()
-- [ ] #4 syncMusicCollection() uses UnifiedPlanner + MusicHandler instead of createPlan()
-- [ ] #5 Transform apply/remove detection works through the unified path
-- [ ] #6 Dry-run output is identical to current output for music collections
-- [ ] #7 All existing differ and planner tests pass with identical results
+- [x] #1 UnifiedDiffer supports post-processing passes (or equivalent hook) for content types that need batch-level analysis
+- [x] #2 HandlerDiffOptions extended to support all music-specific diff options (forceSyncTags, forceMetadata, encodingMode, bitrateTolerance, isAlacPreset, resolvedQuality, customBitrate)
+- [x] #3 syncMusicCollection() uses UnifiedDiffer + MusicHandler instead of computeDiff()
+- [x] #4 syncMusicCollection() uses UnifiedPlanner + MusicHandler instead of createPlan()
+- [x] #5 Transform apply/remove detection works through the unified path
+- [x] #6 Dry-run output is identical to current output for music collections
+- [x] #7 All existing differ and planner tests pass with identical results
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -88,4 +88,20 @@ This is purely architectural consistency — `computeDiff()` and `createPlan()` 
 ## Related tasks
 
 **TASK-186.14** (naming refactor) is related but not dependent on this task. The underlying functions (`computeDiff`, `createPlan`) will be renamed to `computeMusicDiff`/`createMusicPlan` in 186.14 regardless of whether this migration happens first. However, if 186.13 completes first, fewer CLI callsites need updating during the rename.
+
+## Completed (2026-03-22)
+
+- Added postProcessDiff() hook to ContentTypeHandler interface
+- Added generic HandlerDiffOptions<THandlerOptions> with typed passthrough
+- Added MatchInfo for transform detection in detectUpdates()
+- Implemented MusicHandler.postProcessDiff() with all 4 passes
+- Added transformSourceForAdd() for transform application on new tracks
+- CLI syncMusicCollection() now uses UnifiedDiffer + UnifiedPlanner
+- All E2E tests pass
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Music diff/plan now routes through UnifiedDiffer + UnifiedPlanner + MusicHandler in the CLI. Key infrastructure added:\n\n- `postProcessDiff()` hook on ContentTypeHandler for batch-level diff post-processing\n- Generic `HandlerDiffOptions<THandlerOptions>` for typed content-type-specific options\n- `MatchInfo` parameter on `detectUpdates()` for transform apply/remove detection\n- `transformSourceForAdd()` for applying transforms to new tracks\n- `collectPlanWarnings()` for handler-specific plan warnings\n- `planUpdate()` extended with `changes` parameter for metadata propagation\n\nAll 4 post-processing passes from `computeDiff()` ported to `MusicHandler.postProcessDiff()`. 7 behavioral differences found and fixed during E2E validation (format-upgrade suppression, upgrade presets, metadata population, artwork routing, transform application, lossy warnings, graceful shutdown).
+<!-- SECTION:FINAL_SUMMARY:END -->

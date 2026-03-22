@@ -7,8 +7,11 @@
 
 import { describe, expect, it, mock } from 'bun:test';
 import { OutputContext } from '../output/index.js';
-import { syncCollection, syncVideoCollection } from './sync.js';
-import type { UnifiedSyncContext, VideoSyncContext } from './sync.js';
+import {
+  genericSyncCollection,
+  VideoPresenter,
+  type VideoContentConfig,
+} from './sync-presenter.js';
 
 /**
  * Create a silent OutputContext for testing (suppresses all output)
@@ -35,9 +38,9 @@ function createMockVideoAdapter() {
 }
 
 /**
- * Create minimal unified sync context with defaults (for syncCollection).
+ * Create args for genericSyncCollection with VideoPresenter that returns zero videos.
  */
-function createUnifiedCtx(
+function createVideoSyncArgs(
   overrides: Partial<{
     collectionName: string;
     sourcePath: string;
@@ -46,36 +49,54 @@ function createUnifiedCtx(
   }> = {}
 ) {
   const mockVideoAdapter = createMockVideoAdapter();
-  const ctx: UnifiedSyncContext = {
-    out: createTestOutput(overrides.mode ?? 'text'),
-    collection: {
-      name: overrides.collectionName ?? 'movies',
-      type: 'video' as const,
-      config: { path: overrides.sourcePath ?? '/fake/videos' },
-    },
-    sourcePath: overrides.sourcePath ?? '/fake/videos',
-    devicePath: overrides.devicePath ?? '/fake/ipod',
-    dryRun: false,
-    removeOrphans: false,
+  const out = createTestOutput(overrides.mode ?? 'text');
+  const collection = {
+    name: overrides.collectionName ?? 'movies',
+    type: 'video' as const,
+    config: { path: overrides.sourcePath ?? '/fake/videos' },
+  };
+  const sourcePath = overrides.sourcePath ?? '/fake/videos';
+  const devicePath = overrides.devicePath ?? '/fake/ipod';
+  const videoConfig: VideoContentConfig = {
+    type: 'video',
     effectiveVideoQuality: 'high' as const,
     effectiveVideoTransforms: {
       showLanguage: { enabled: false, format: '', expand: false },
     },
     forceMetadata: false,
-    ipod: null as never,
-    core: {
-      createVideoDirectoryAdapter: () => mockVideoAdapter,
-      createVideoHandler: () => ({ getDeviceItems: () => [] }),
-    } as never,
   };
-  return { ctx, mockVideoAdapter };
+  const core = {
+    createVideoDirectoryAdapter: () => mockVideoAdapter,
+    createVideoHandler: () => ({ getDeviceItems: () => [] }),
+  } as never;
+
+  return {
+    out,
+    collection,
+    sourcePath,
+    devicePath,
+    videoConfig,
+    core,
+    mockVideoAdapter,
+  };
 }
 
 describe('empty source abort', () => {
-  describe('video collection with zero tracks (syncCollection)', () => {
+  describe('video collection with zero tracks (genericSyncCollection)', () => {
     it('returns failure when adapter returns zero videos', async () => {
-      const { ctx } = createUnifiedCtx();
-      const result = await syncCollection(ctx);
+      const args = createVideoSyncArgs();
+      const result = await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
       expect(result.success).toBe(false);
       expect(result.completed).toBe(0);
@@ -83,8 +104,19 @@ describe('empty source abort', () => {
     });
 
     it('error message includes collection name', async () => {
-      const { ctx } = createUnifiedCtx({ collectionName: 'tv-shows', mode: 'json' });
-      const result = await syncCollection(ctx);
+      const args = createVideoSyncArgs({ collectionName: 'tv-shows', mode: 'json' });
+      const result = await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
       expect(result.success).toBe(false);
       expect(result.jsonOutput).toBeDefined();
@@ -95,42 +127,97 @@ describe('empty source abort', () => {
     });
 
     it('includes source and device in JSON output', async () => {
-      const { ctx } = createUnifiedCtx({
+      const args = createVideoSyncArgs({
         sourcePath: '/videos/collection',
         devicePath: '/Volumes/iPod',
         mode: 'json',
       });
-      const result = await syncCollection(ctx);
+      const result = await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
       expect(result.jsonOutput!.source).toBe('/videos/collection');
       expect(result.jsonOutput!.device).toBe('/Volumes/iPod');
     });
 
     it('returns no JSON output in text mode', async () => {
-      const { ctx } = createUnifiedCtx({ mode: 'text' });
-      const result = await syncCollection(ctx);
+      const args = createVideoSyncArgs({ mode: 'text' });
+      const result = await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
       expect(result.success).toBe(false);
       expect(result.jsonOutput).toBeUndefined();
     });
 
     it('disconnects adapter after zero-track abort (text mode)', async () => {
-      const { ctx, mockVideoAdapter } = createUnifiedCtx({ mode: 'text' });
-      await syncCollection(ctx);
+      const args = createVideoSyncArgs({ mode: 'text' });
+      await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
-      expect(mockVideoAdapter.disconnect).toHaveBeenCalled();
+      expect(args.mockVideoAdapter.disconnect).toHaveBeenCalled();
     });
 
     it('disconnects adapter after zero-track abort (JSON mode)', async () => {
-      const { ctx, mockVideoAdapter } = createUnifiedCtx({ mode: 'json' });
-      await syncCollection(ctx);
+      const args = createVideoSyncArgs({ mode: 'json' });
+      await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
-      expect(mockVideoAdapter.disconnect).toHaveBeenCalled();
+      expect(args.mockVideoAdapter.disconnect).toHaveBeenCalled();
     });
 
     it('JSON output has correct structure', async () => {
-      const { ctx } = createUnifiedCtx({ collectionName: 'main', mode: 'json' });
-      const result = await syncCollection(ctx);
+      const args = createVideoSyncArgs({ collectionName: 'main', mode: 'json' });
+      const result = await genericSyncCollection(
+        new VideoPresenter(),
+        args.out,
+        args.collection,
+        args.sourcePath,
+        args.devicePath,
+        false,
+        false,
+        args.videoConfig,
+        null as never,
+        args.core
+      );
 
       const json = result.jsonOutput!;
       expect(json).toEqual(
@@ -142,38 +229,6 @@ describe('empty source abort', () => {
           error: expect.stringContaining('zero videos'),
         })
       );
-    });
-  });
-
-  describe('legacy syncVideoCollection with zero tracks', () => {
-    it('returns failure when adapter returns zero videos', async () => {
-      const mockVideoAdapter = createMockVideoAdapter();
-      const ctx: VideoSyncContext = {
-        out: createTestOutput(),
-        collection: {
-          name: 'movies',
-          type: 'video' as const,
-          config: { path: '/fake/videos' },
-        },
-        sourcePath: '/fake/videos',
-        devicePath: '/fake/ipod',
-        dryRun: false,
-        removeOrphans: false,
-        effectiveVideoQuality: 'high' as const,
-        effectiveVideoTransforms: {
-          showLanguage: { enabled: false, format: '', expand: false },
-        },
-        forceMetadata: false,
-        ipod: null as never,
-        core: {
-          createVideoDirectoryAdapter: () => mockVideoAdapter,
-        } as never,
-      };
-      const result = await syncVideoCollection(ctx);
-
-      expect(result.success).toBe(false);
-      expect(result.completed).toBe(0);
-      expect(result.failed).toBe(0);
     });
   });
 });

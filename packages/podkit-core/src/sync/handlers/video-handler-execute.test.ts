@@ -184,7 +184,7 @@ describe('VideoHandler execution', () => {
       const firstProgress = progressEvents[0]!;
       expect(firstProgress.transcodeProgress).toBeDefined();
       expect(firstProgress.transcodeProgress!.percent).toBe(50);
-      expect(firstProgress.transcodeProgress!.speed).toBe('2');
+      expect(firstProgress.transcodeProgress!.speed).toBe(2);
     });
 
     it('calls transcodeVideo with correct arguments', async () => {
@@ -314,6 +314,355 @@ describe('VideoHandler execution', () => {
       for (const event of events) {
         expect(event.operation.type).toBe('video-upgrade');
       }
+    });
+
+    it('uses copy path when no settings provided', async () => {
+      const mockIpod = createMockIpod();
+      const op: SyncOperation = {
+        type: 'video-upgrade',
+        source: makeVideoSource(),
+        target: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'movie' as const,
+          title: 'Test',
+        },
+        reason: 'preset-upgrade',
+        // No settings field — triggers copy path
+      };
+
+      const events = await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      // Old track should be removed
+      expect(mockIpod.mockTrack.remove).toHaveBeenCalledTimes(1);
+
+      // New track should be added via copy path (addTrack + copyFile, no transcodeVideo)
+      expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
+      expect(mockIpod.mockTrack.copyFile).toHaveBeenCalledTimes(1);
+      expect(mockTranscodeVideo).not.toHaveBeenCalled();
+
+      // All events reference the upgrade operation, not the internal copy op
+      for (const event of events) {
+        expect(event.operation.type).toBe('video-upgrade');
+      }
+
+      // Should not have transcodeProgress (copy path, not transcode)
+      const withProgress = events.filter((e) => e.transcodeProgress);
+      expect(withProgress.length).toBe(0);
+    });
+  });
+
+  describe('executeUpdateMetadata (video-update-metadata)', () => {
+    it('updates TV show metadata with tvshow-specific fields', async () => {
+      const mockIpod = createMockIpod();
+      const source = makeVideoSource({
+        contentType: 'tvshow',
+        title: 'Pilot',
+        seriesTitle: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 1,
+        episodeId: 'S01E01',
+      });
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source,
+        video: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'tvshow',
+          title: 'Pilot',
+          seriesTitle: 'Breaking Bad',
+        },
+      };
+
+      const events = await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      expect(events.length).toBe(2);
+      expect(events[0]!.phase).toBe('starting');
+      expect(events[1]!.phase).toBe('complete');
+
+      expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(updateArg.title).toBe('Pilot');
+      expect(updateArg.artist).toBe('Breaking Bad');
+      expect(updateArg.album).toBe('Breaking Bad, Season 1');
+      expect(updateArg.tvShow).toBe('Breaking Bad');
+      expect(updateArg.tvEpisode).toBe('Pilot');
+      expect(updateArg.trackNumber).toBe(1);
+      expect(updateArg.discNumber).toBe(1);
+    });
+
+    it('updates movie metadata with movie-specific fields', async () => {
+      const mockIpod = createMockIpod();
+      const source = makeVideoSource({
+        contentType: 'movie',
+        title: 'Inception',
+        director: 'Christopher Nolan',
+      });
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source,
+        video: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'movie',
+          title: 'Inception',
+        },
+      };
+
+      const events = await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      expect(events.length).toBe(2);
+      expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(updateArg.title).toBe('Inception');
+      expect(updateArg.artist).toBe('Christopher Nolan');
+      expect(updateArg.album).toBe('Inception');
+    });
+
+    it('updates movie metadata using studio when director is absent', async () => {
+      const mockIpod = createMockIpod();
+      const source = makeVideoSource({
+        contentType: 'movie',
+        title: 'Toy Story',
+        studio: 'Pixar',
+      });
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source,
+        video: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'movie',
+          title: 'Toy Story',
+        },
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(updateArg.artist).toBe('Pixar');
+    });
+
+    it('updates with newSeriesTitle when set on operation', async () => {
+      const mockIpod = createMockIpod();
+      // Source is generic contentType (not tvshow or movie) but newSeriesTitle is set
+      const source = makeVideoSource({
+        contentType: 'tvshow' as any,
+        title: 'Episode 1',
+        seriesTitle: 'Original Name',
+        seasonNumber: 2,
+        episodeNumber: 3,
+      });
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source,
+        video: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'tvshow',
+          title: 'Episode 1',
+          seriesTitle: 'Original Name',
+          seasonNumber: 2,
+        },
+        newSeriesTitle: 'Transformed Name',
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      // For tvshow with newSeriesTitle, it uses newSeriesTitle
+      expect(updateArg.artist).toBe('Transformed Name');
+      expect(updateArg.album).toBe('Transformed Name, Season 2');
+      expect(updateArg.tvShow).toBe('Transformed Name');
+    });
+
+    it('updates only series fields when newSeriesTitle set on non-tvshow/movie source', async () => {
+      const mockIpod = createMockIpod();
+      // Use a source with a contentType that is neither 'tvshow' nor 'movie'
+      // to trigger the third branch (newSeriesTitle !== undefined)
+      const source = makeVideoSource({
+        contentType: undefined as any, // not tvshow or movie
+        title: 'Test',
+      });
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source,
+        video: {
+          id: '/iPod_Control/Music/test.m4v',
+          filePath: '/iPod_Control/Music/test.m4v',
+          contentType: 'movie',
+          title: 'Test',
+          seasonNumber: 3,
+        },
+        newSeriesTitle: 'New Series',
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(updateArg.artist).toBe('New Series');
+      expect(updateArg.album).toBe('New Series, Season 3');
+      expect(updateArg.tvShow).toBe('New Series');
+      // Should NOT have title, tvEpisode, trackNumber, discNumber (those are tvshow-branch-only)
+      expect(updateArg.title).toBeUndefined();
+    });
+
+    it('throws when track not found in database', async () => {
+      const mockIpod = createMockIpod();
+      mockIpod.getTracks.mockReturnValue([]);
+
+      const op: SyncOperation = {
+        type: 'video-update-metadata',
+        source: makeVideoSource(),
+        video: {
+          id: 'nonexistent',
+          filePath: 'nonexistent',
+          contentType: 'movie',
+          title: 'Missing Video',
+        },
+      };
+
+      await expect(collectProgress(handler.execute(op, makeCtx(mockIpod)))).rejects.toThrow(
+        'Video track not found'
+      );
+    });
+  });
+
+  describe('executeBatch', () => {
+    beforeEach(() => {
+      mockMkdir.mockClear();
+      mockRm.mockClear();
+    });
+
+    it('creates and cleans up temp dir for transcode operations', async () => {
+      const mockIpod = createMockIpod();
+      const ops: SyncOperation[] = [
+        {
+          type: 'video-transcode',
+          source: makeVideoSource(),
+          settings: defaultSettings,
+        },
+      ];
+
+      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+      await collectProgress(handler.executeBatch!(ops, ctx));
+
+      expect(mockMkdir).toHaveBeenCalledTimes(1);
+      expect(mockRm).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not create temp dir for non-transcode operations', async () => {
+      const mockIpod = createMockIpod();
+      const ops: SyncOperation[] = [
+        {
+          type: 'video-remove',
+          video: {
+            id: '/iPod_Control/Music/test.m4v',
+            filePath: '/iPod_Control/Music/test.m4v',
+            contentType: 'movie' as const,
+            title: 'Test',
+          },
+        },
+      ];
+
+      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+      await collectProgress(handler.executeBatch!(ops, ctx));
+
+      expect(mockMkdir).not.toHaveBeenCalled();
+      expect(mockRm).not.toHaveBeenCalled();
+    });
+
+    it('cleans up temp dir even when an operation throws', async () => {
+      const mockIpod = createMockIpod();
+      // First op: transcode (will trigger temp dir creation)
+      // Second op: remove with nonexistent track (will throw)
+      const ops: SyncOperation[] = [
+        {
+          type: 'video-transcode',
+          source: makeVideoSource(),
+          settings: defaultSettings,
+        },
+        {
+          type: 'video-remove',
+          video: {
+            id: 'nonexistent',
+            filePath: 'nonexistent',
+            contentType: 'movie' as const,
+            title: 'Missing',
+          },
+        },
+      ];
+
+      // Clear getTracks mock to make the second operation fail
+      mockIpod.getTracks.mockReturnValue([]);
+
+      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+
+      await expect(collectProgress(handler.executeBatch!(ops, ctx))).rejects.toThrow();
+
+      // Even though an error occurred, cleanup should still happen (finally block)
+      expect(mockMkdir).toHaveBeenCalledTimes(1);
+      expect(mockRm).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('setVideoQuality (sync tag writing)', () => {
+    it('writes sync tag to track comment when videoQuality is set', async () => {
+      const mockIpod = createMockIpod();
+
+      handler.setVideoQuality('medium');
+
+      const op: SyncOperation = {
+        type: 'video-transcode',
+        source: makeVideoSource(),
+        settings: defaultSettings,
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      // Capture what addTrack was called with
+      expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+
+      // The handler should have mutated the trackInput to include a sync tag
+      expect(trackInput.comment).toBeDefined();
+      expect(trackInput.comment).toContain('[podkit:v1');
+      expect(trackInput.comment).toContain('quality=medium');
+    });
+
+    it('does not write sync tag when videoQuality is not set', async () => {
+      const mockIpod = createMockIpod();
+
+      // No setVideoQuality call — default behavior
+      const op: SyncOperation = {
+        type: 'video-transcode',
+        source: makeVideoSource(),
+        settings: defaultSettings,
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+      // The mock createVideoTrackInput returns no comment field
+      expect(trackInput.comment).toBeUndefined();
+    });
+
+    it('writes sync tag with different quality presets', async () => {
+      const mockIpod = createMockIpod();
+
+      handler.setVideoQuality('high');
+
+      const op: SyncOperation = {
+        type: 'video-transcode',
+        source: makeVideoSource(),
+        settings: defaultSettings,
+      };
+
+      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+      expect(trackInput.comment).toContain('quality=high');
     });
   });
 });
