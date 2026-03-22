@@ -24,6 +24,8 @@ tools/
 ├── gpod-tool/       # C CLI for iPod database operations
 ├── libgpod-macos/   # macOS build scripts for libgpod
 └── lima/            # Lima VM configs for cross-platform testing (Debian + Alpine)
+
+devices/             # Device documentation profiles (specs, capabilities, research)
 ```
 
 ## Quick Reference
@@ -189,6 +191,14 @@ Quick reference: `bunx changeset` to create a changeset. Required for user-facin
 ## Config Migrations
 
 Read [agents/config-migrations.md](agents/config-migrations.md) when making breaking changes to the config file format.
+
+## Device Profiles
+
+The `devices/` directory contains structured documentation for portable music players that podkit supports or may support in the future. Each file uses markdown with a YAML frontmatter block covering device specs, audio format support, metadata handling, artwork, playlists, and features.
+
+Use `devices/TEMPLATE.md` when documenting a new device. Current profiles: `ipod.md` (stock firmware), `rockbox.md`, `echo-mini.md`.
+
+When implementing support for a new device, read its profile first. When researching a device, update or create its profile with findings.
 
 ## Entry Points
 
