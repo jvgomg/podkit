@@ -382,7 +382,7 @@ describe('VideoHandler execution', () => {
       expect(events[1]!.phase).toBe('complete');
 
       expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
       expect(updateArg.title).toBe('Pilot');
       expect(updateArg.artist).toBe('Breaking Bad');
       expect(updateArg.album).toBe('Breaking Bad, Season 1');
@@ -414,7 +414,7 @@ describe('VideoHandler execution', () => {
 
       expect(events.length).toBe(2);
       expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
       expect(updateArg.title).toBe('Inception');
       expect(updateArg.artist).toBe('Christopher Nolan');
       expect(updateArg.album).toBe('Inception');
@@ -440,7 +440,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
       expect(updateArg.artist).toBe('Pixar');
     });
 
@@ -470,7 +470,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
       // For tvshow with newSeriesTitle, it uses newSeriesTitle
       expect(updateArg.artist).toBe('Transformed Name');
       expect(updateArg.album).toBe('Transformed Name, Season 2');
@@ -500,7 +500,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
       expect(updateArg.artist).toBe('New Series');
       expect(updateArg.album).toBe('New Series, Season 3');
       expect(updateArg.tvShow).toBe('New Series');
@@ -545,7 +545,7 @@ describe('VideoHandler execution', () => {
         },
       ];
 
-      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
       await collectProgress(handler.executeBatch!(ops, ctx));
 
       expect(mockMkdir).toHaveBeenCalledTimes(1);
@@ -566,7 +566,7 @@ describe('VideoHandler execution', () => {
         },
       ];
 
-      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
       await collectProgress(handler.executeBatch!(ops, ctx));
 
       expect(mockMkdir).not.toHaveBeenCalled();
@@ -597,7 +597,7 @@ describe('VideoHandler execution', () => {
       // Clear getTracks mock to make the second operation fail
       mockIpod.getTracks.mockReturnValue([]);
 
-      const ctx: ExecutionContext = { ipod: mockIpod, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
 
       await expect(collectProgress(handler.executeBatch!(ops, ctx))).rejects.toThrow();
 
@@ -623,7 +623,7 @@ describe('VideoHandler execution', () => {
 
       // Capture what addTrack was called with
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
-      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
 
       // The handler should have mutated the trackInput to include a sync tag
       expect(trackInput.comment).toBeDefined();
@@ -643,7 +643,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
       // The mock createVideoTrackInput returns no comment field
       expect(trackInput.comment).toBeUndefined();
     });
@@ -661,7 +661,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
+      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
       expect(trackInput.comment).toContain('quality=high');
     });
   });

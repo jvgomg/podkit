@@ -226,7 +226,7 @@ describe('SyncExecutor', () => {
         async *executeBatch(): AsyncGenerator<OperationProgress> {
           batchCalled = true;
           return;
-          yield; // satisfy require-yield
+          yield undefined as unknown as OperationProgress; // satisfy require-yield
         },
       });
 
@@ -335,7 +335,7 @@ describe('SyncExecutor', () => {
       const handler = createMockHandler({
         async *executeBatch(): AsyncGenerator<OperationProgress> {
           throw new Error('batch generator exploded');
-          yield; // satisfy require-yield
+          yield undefined as unknown as OperationProgress; // satisfy require-yield
         },
       });
 

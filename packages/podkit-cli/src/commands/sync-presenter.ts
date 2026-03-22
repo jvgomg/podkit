@@ -613,7 +613,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     removeOrphans: boolean,
     contentConfig: MusicContentConfig | VideoContentConfig,
     core: typeof import('@podkit/core'),
-    scanWarnings: Array<{ file: string; message: string }>
+    scanWarnings: Array<{ file: string; message: string }>,
+    _sourceItems: CollectionTrack[]
   ): SyncOutput {
     const config = contentConfig as MusicContentConfig;
 
@@ -1018,7 +1019,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     summary: any,
     removeOrphans: boolean,
     _contentConfig: MusicContentConfig | VideoContentConfig,
-    core: typeof import('@podkit/core')
+    core: typeof import('@podkit/core'),
+    _scanWarnings: Array<{ file: string; message: string }>,
+    _sourceItems: CollectionVideo[]
   ): SyncOutput {
     const handler = core.createVideoHandler();
     const dryRunSummary = handler.formatDryRun(plan);
