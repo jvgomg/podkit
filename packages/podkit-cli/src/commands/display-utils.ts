@@ -527,7 +527,9 @@ export function formatStatsText(
 
   if (stats.syncTagTracks > 0) {
     const noTag = stats.tracks - stats.syncTagTracks;
-    lines.push(`  Sync Tags:    ${formatNumber(stats.syncTagTracks)} of ${formatNumber(stats.tracks)} tracks`);
+    lines.push(
+      `  Sync Tags:    ${formatNumber(stats.syncTagTracks)} of ${formatNumber(stats.tracks)} tracks`
+    );
     if (stats.syncTagComplete > 0) {
       lines.push(`    \u2713 Consistent: ${formatNumber(stats.syncTagComplete)}`);
     }

@@ -3,11 +3,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import {
-  IPOD_GENERATIONS,
-  supportsAlac,
-  supportsVideo,
-} from './generation.js';
+import { IPOD_GENERATIONS, supportsAlac, supportsVideo } from './generation.js';
 
 describe('supportsAlac', () => {
   it('returns true for iPod Video 5G', () => {

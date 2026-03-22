@@ -147,9 +147,7 @@ describe('parseSyncTag', () => {
   });
 
   it('parses art field with all other fields present', () => {
-    const result = parseSyncTag(
-      '[podkit:v1 quality=high encoding=cbr bitrate=320 art=deadbeef]'
-    );
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=cbr bitrate=320 art=deadbeef]');
     expect(result).toEqual({
       quality: 'high',
       encoding: 'cbr',
@@ -239,29 +237,26 @@ describe('writeSyncTag', () => {
 
   it('replaces existing tag in comment', () => {
     expect(
-      writeSyncTag(
-        'Great song [podkit:v1 quality=low encoding=vbr]',
-        { quality: 'high', encoding: 'cbr' }
-      )
+      writeSyncTag('Great song [podkit:v1 quality=low encoding=vbr]', {
+        quality: 'high',
+        encoding: 'cbr',
+      })
     ).toBe('Great song [podkit:v1 quality=high encoding=cbr]');
   });
 
   it('replaces tag while preserving surrounding text', () => {
     expect(
-      writeSyncTag(
-        'before [podkit:v1 quality=low encoding=vbr] after',
-        { quality: 'high', encoding: 'vbr' }
-      )
+      writeSyncTag('before [podkit:v1 quality=low encoding=vbr] after', {
+        quality: 'high',
+        encoding: 'vbr',
+      })
     ).toBe('before [podkit:v1 quality=high encoding=vbr] after');
   });
 
   it('replaces tag from different version', () => {
     // v2 tags should be replaced (regex matches any version)
     expect(
-      writeSyncTag(
-        '[podkit:v2 quality=high newField=abc]',
-        { quality: 'medium', encoding: 'cbr' }
-      )
+      writeSyncTag('[podkit:v2 quality=high newField=abc]', { quality: 'medium', encoding: 'cbr' })
     ).toBe('[podkit:v1 quality=medium encoding=cbr]');
   });
 });
@@ -408,12 +403,21 @@ describe('round-trip: format → parse → compare', () => {
     { name: 'medium CBR', data: { quality: 'medium', encoding: 'cbr' } },
     { name: 'low VBR', data: { quality: 'low', encoding: 'vbr' } },
     { name: 'lossless', data: { quality: 'lossless' } },
-    { name: 'high CBR with custom bitrate', data: { quality: 'high', encoding: 'cbr', bitrate: 320 } },
+    {
+      name: 'high CBR with custom bitrate',
+      data: { quality: 'high', encoding: 'cbr', bitrate: 320 },
+    },
     { name: 'video max', data: { quality: 'max' } },
     { name: 'video medium', data: { quality: 'medium' } },
-    { name: 'high VBR with artworkHash', data: { quality: 'high', encoding: 'vbr', artworkHash: 'a1b2c3d4' } },
+    {
+      name: 'high VBR with artworkHash',
+      data: { quality: 'high', encoding: 'vbr', artworkHash: 'a1b2c3d4' },
+    },
     { name: 'lossless with artworkHash', data: { quality: 'lossless', artworkHash: 'deadbeef' } },
-    { name: 'CBR with bitrate and artworkHash', data: { quality: 'high', encoding: 'cbr', bitrate: 320, artworkHash: '00112233' } },
+    {
+      name: 'CBR with bitrate and artworkHash',
+      data: { quality: 'high', encoding: 'cbr', bitrate: 320, artworkHash: '00112233' },
+    },
   ];
 
   for (const { name, data } of testCases) {

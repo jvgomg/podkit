@@ -530,7 +530,10 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       const input = join(fixturesDir, '08-opus-track.opus');
       const output = join(outputDir, 'opus-to-aac-cbr.m4a');
 
-      const result = await transcoder.transcode(input, output, { bitrateKbps: 256, encoding: 'cbr' });
+      const result = await transcoder.transcode(input, output, {
+        bitrateKbps: 256,
+        encoding: 'cbr',
+      });
 
       expect(result.size).toBeGreaterThan(0);
       const meta = await transcoder.probe(output);

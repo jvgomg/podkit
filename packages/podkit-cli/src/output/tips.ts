@@ -98,7 +98,13 @@ const MISSING_ARTWORK_HASH_TIP: TipDefinition = {
   },
 };
 
-const ALL_TIPS: TipDefinition[] = [SOUND_CHECK_TIP, MACOS_MOUNTING_TIP, ARTWORK_BASELINE_TIP, NO_SYNC_TAGS_TIP, MISSING_ARTWORK_HASH_TIP];
+const ALL_TIPS: TipDefinition[] = [
+  SOUND_CHECK_TIP,
+  MACOS_MOUNTING_TIP,
+  ARTWORK_BASELINE_TIP,
+  NO_SYNC_TAGS_TIP,
+  MISSING_ARTWORK_HASH_TIP,
+];
 
 export function collectTips(context: TipContext): Tip[] {
   const tips: Tip[] = [];

@@ -2,7 +2,13 @@ import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { formatBytes, formatNumber, formatGeneration, getStorageInfo, formatSyncTagSummary } from './device.js';
+import {
+  formatBytes,
+  formatNumber,
+  formatGeneration,
+  getStorageInfo,
+  formatSyncTagSummary,
+} from './device.js';
 
 describe('device utility functions', () => {
   describe('formatBytes', () => {
@@ -209,7 +215,9 @@ describe('device utility functions', () => {
     });
 
     it('shows missing artwork hash when all tags exist but none have art hash', () => {
-      expect(formatSyncTagSummary(2289, 0, 2289, 0)).toBe('2,289 tracks (\u25D0 2,289 missing artwork hash)');
+      expect(formatSyncTagSummary(2289, 0, 2289, 0)).toBe(
+        '2,289 tracks (\u25D0 2,289 missing artwork hash)'
+      );
     });
 
     it('shows mixed breakdown with only non-zero categories', () => {

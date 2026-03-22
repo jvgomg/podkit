@@ -301,7 +301,9 @@ describe('getFieldValue', () => {
 
     it('returns checkmark for tag without artworkHash when track has no artwork', () => {
       const tag: SyncTagData = { quality: 'high', encoding: 'vbr' };
-      expect(getFieldValue(createTrack({ syncTag: tag, hasArtwork: false }), 'syncTag')).toBe('\u2713');
+      expect(getFieldValue(createTrack({ syncTag: tag, hasArtwork: false }), 'syncTag')).toBe(
+        '\u2713'
+      );
     });
 
     it('returns X for null (no tag)', () => {
@@ -357,7 +359,9 @@ describe('getFieldValue', () => {
 
     it('returns dash when tag exists, no artworkHash, and track has no artwork', () => {
       const tag: SyncTagData = { quality: 'high', encoding: 'vbr' };
-      expect(getFieldValue(createTrack({ syncTag: tag, hasArtwork: false }), 'syncTagArtwork')).toBe('-');
+      expect(
+        getFieldValue(createTrack({ syncTag: tag, hasArtwork: false }), 'syncTagArtwork')
+      ).toBe('-');
     });
 
     it('returns dash when no tag', () => {
@@ -939,10 +943,7 @@ describe('computeStats', () => {
   });
 
   it('returns zero sync tag counts when no tags present', () => {
-    const tracks = [
-      createTrack({ syncTag: null }),
-      createTrack({ syncTag: undefined }),
-    ];
+    const tracks = [createTrack({ syncTag: null }), createTrack({ syncTag: undefined })];
     const stats = computeStats(tracks);
     expect(stats.syncTagTracks).toBe(0);
     expect(stats.syncTagComplete).toBe(0);
