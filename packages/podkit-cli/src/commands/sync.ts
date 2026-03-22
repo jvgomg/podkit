@@ -54,9 +54,9 @@ import {
   renderProgressBar,
 } from '../output/index.js';
 import { createShutdownController } from '../shutdown.js';
+import { MusicPresenter } from './music-presenter.js';
+import { VideoPresenter } from './video-presenter.js';
 import {
-  MusicPresenter,
-  VideoPresenter,
   genericSyncCollection,
   type MusicContentConfig,
   type VideoContentConfig,
@@ -466,9 +466,9 @@ function getEffectiveBitrateTolerance(
 // Re-exports from sync-presenter (for backward compatibility and testing)
 // =============================================================================
 
+export { MusicPresenter } from './music-presenter.js';
+export { VideoPresenter } from './video-presenter.js';
 export {
-  MusicPresenter,
-  VideoPresenter,
   genericSyncCollection,
   type MusicContentConfig,
   type VideoContentConfig,
@@ -931,7 +931,8 @@ export const syncCommand = new Command('sync')
             musicConfig,
             ipod,
             core,
-            shutdown.signal
+            shutdown.signal,
+            shutdown
           );
 
           if (result.jsonOutput && out.isJson) {
@@ -994,7 +995,8 @@ export const syncCommand = new Command('sync')
               videoConfig,
               ipod,
               core,
-              shutdown.signal
+              shutdown.signal,
+              shutdown
             );
 
             if (result.jsonOutput && out.isJson) {

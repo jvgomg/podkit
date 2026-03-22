@@ -7,7 +7,8 @@
 
 import { describe, expect, it } from 'bun:test';
 import { OutputContext } from '../output/index.js';
-import { MusicPresenter, type MusicContentConfig } from './sync-presenter.js';
+import { MusicPresenter } from './music-presenter.js';
+import type { MusicContentConfig } from './sync-presenter.js';
 import type { SyncOutput } from './sync.js';
 
 /**

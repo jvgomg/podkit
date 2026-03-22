@@ -7,11 +7,8 @@
 
 import { describe, expect, it, mock } from 'bun:test';
 import { OutputContext } from '../output/index.js';
-import {
-  genericSyncCollection,
-  VideoPresenter,
-  type VideoContentConfig,
-} from './sync-presenter.js';
+import { VideoPresenter } from './video-presenter.js';
+import { genericSyncCollection, type VideoContentConfig } from './sync-presenter.js';
 
 /**
  * Create a silent OutputContext for testing (suppresses all output)
