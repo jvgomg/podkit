@@ -71,6 +71,8 @@ import type { SyncOperation } from '../types.js';
 import type { OperationProgress, ExecutionContext } from '../content-type.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../../video/types.js';
+import type { IPodTrack, TrackInput, TrackFields, SaveResult } from '../../ipod/types.js';
+import type { IpodDatabase } from '../../ipod/database.js';
 
 // =============================================================================
 // Test Fixtures
@@ -78,8 +80,8 @@ import type { VideoTranscodeSettings } from '../../video/types.js';
 
 function createMockIpod() {
   const mockTrack = {
-    copyFile: mock(() => mockTrack),
-    update: mock(() => mockTrack),
+    copyFile: mock((_sourcePath: string) => mockTrack as unknown as IPodTrack),
+    update: mock((_fields: TrackFields) => mockTrack as unknown as IPodTrack),
     remove: mock(() => {}),
     filePath: '/iPod_Control/Music/test.m4v',
     title: 'Test',
@@ -87,9 +89,9 @@ function createMockIpod() {
   };
 
   return {
-    addTrack: mock(() => mockTrack),
-    getTracks: mock(() => [mockTrack]),
-    save: mock(() => Promise.resolve()),
+    addTrack: mock((_input: TrackInput) => mockTrack as unknown as IPodTrack),
+    getTracks: mock(() => [mockTrack as unknown as IPodTrack]),
+    save: mock(() => Promise.resolve({ warnings: [] }) as Promise<SaveResult>),
     mockTrack,
   };
 }
@@ -123,9 +125,9 @@ const defaultSettings: VideoTranscodeSettings = {
   useHardwareAcceleration: false,
 };
 
-function makeCtx(ipod?: any): ExecutionContext {
+function makeCtx(ipod?: ReturnType<typeof createMockIpod>): ExecutionContext {
   return {
-    ipod: ipod ?? createMockIpod(),
+    ipod: (ipod ?? createMockIpod()) as unknown as IpodDatabase,
     tempDir: '/tmp/test',
   };
 }
@@ -382,7 +384,7 @@ describe('VideoHandler execution', () => {
       expect(events[1]!.phase).toBe('complete');
 
       expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
       expect(updateArg.title).toBe('Pilot');
       expect(updateArg.artist).toBe('Breaking Bad');
       expect(updateArg.album).toBe('Breaking Bad, Season 1');
@@ -414,7 +416,7 @@ describe('VideoHandler execution', () => {
 
       expect(events.length).toBe(2);
       expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
       expect(updateArg.title).toBe('Inception');
       expect(updateArg.artist).toBe('Christopher Nolan');
       expect(updateArg.album).toBe('Inception');
@@ -440,7 +442,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
       expect(updateArg.artist).toBe('Pixar');
     });
 
@@ -448,7 +450,7 @@ describe('VideoHandler execution', () => {
       const mockIpod = createMockIpod();
       // Source is generic contentType (not tvshow or movie) but newSeriesTitle is set
       const source = makeVideoSource({
-        contentType: 'tvshow' as any,
+        contentType: 'tvshow',
         title: 'Episode 1',
         seriesTitle: 'Original Name',
         seasonNumber: 2,
@@ -470,7 +472,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
       // For tvshow with newSeriesTitle, it uses newSeriesTitle
       expect(updateArg.artist).toBe('Transformed Name');
       expect(updateArg.album).toBe('Transformed Name, Season 2');
@@ -482,7 +484,7 @@ describe('VideoHandler execution', () => {
       // Use a source with a contentType that is neither 'tvshow' nor 'movie'
       // to trigger the third branch (newSeriesTitle !== undefined)
       const source = makeVideoSource({
-        contentType: undefined as any, // not tvshow or movie
+        contentType: undefined as unknown as CollectionVideo['contentType'], // not tvshow or movie
         title: 'Test',
       });
       const op: SyncOperation = {
@@ -500,7 +502,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = (mockIpod.mockTrack.update.mock.calls as any)[0]![0];
+      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
       expect(updateArg.artist).toBe('New Series');
       expect(updateArg.album).toBe('New Series, Season 3');
       expect(updateArg.tvShow).toBe('New Series');
@@ -545,7 +547,10 @@ describe('VideoHandler execution', () => {
         },
       ];
 
-      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = {
+        ipod: mockIpod as unknown as IpodDatabase,
+        tempDir: '/tmp/batch',
+      };
       await collectProgress(handler.executeBatch!(ops, ctx));
 
       expect(mockMkdir).toHaveBeenCalledTimes(1);
@@ -566,7 +571,10 @@ describe('VideoHandler execution', () => {
         },
       ];
 
-      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = {
+        ipod: mockIpod as unknown as IpodDatabase,
+        tempDir: '/tmp/batch',
+      };
       await collectProgress(handler.executeBatch!(ops, ctx));
 
       expect(mockMkdir).not.toHaveBeenCalled();
@@ -597,7 +605,10 @@ describe('VideoHandler execution', () => {
       // Clear getTracks mock to make the second operation fail
       mockIpod.getTracks.mockReturnValue([]);
 
-      const ctx: ExecutionContext = { ipod: mockIpod as any, tempDir: '/tmp/batch' };
+      const ctx: ExecutionContext = {
+        ipod: mockIpod as unknown as IpodDatabase,
+        tempDir: '/tmp/batch',
+      };
 
       await expect(collectProgress(handler.executeBatch!(ops, ctx))).rejects.toThrow();
 
@@ -623,7 +634,7 @@ describe('VideoHandler execution', () => {
 
       // Capture what addTrack was called with
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
-      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
 
       // The handler should have mutated the trackInput to include a sync tag
       expect(trackInput.comment).toBeDefined();
@@ -643,7 +654,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
       // The mock createVideoTrackInput returns no comment field
       expect(trackInput.comment).toBeUndefined();
     });
@@ -661,7 +672,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const trackInput = (mockIpod.addTrack.mock.calls as any)[0]![0];
+      const trackInput = mockIpod.addTrack.mock.calls[0]![0];
       expect(trackInput.comment).toContain('quality=high');
     });
   });
