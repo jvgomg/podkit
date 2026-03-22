@@ -1096,6 +1096,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
   ) {
     const config = contentConfig as VideoContentConfig;
     let videoCompleted = 0;
+    let lastIndex = -1;
     const videoDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     const handler = core.createVideoHandler();
@@ -1111,8 +1112,13 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
       })) {
         if (progress.skipped) {
           // Skip tracking for skipped operations
-        } else if (progress.phase !== 'preparing' && progress.phase !== 'complete') {
+        } else if (
+          progress.phase !== 'preparing' &&
+          progress.phase !== 'complete' &&
+          progress.index !== lastIndex
+        ) {
           videoCompleted++;
+          lastIndex = progress.index;
         }
 
         const overallLine = formatOverallLine(videoCompleted, progress.total, 'videos');
