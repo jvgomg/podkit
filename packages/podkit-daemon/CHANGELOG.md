@@ -1,5 +1,16 @@
 # @podkit/daemon
 
+## 0.3.0
+
+### Minor Changes
+
+- [`455e115`](https://github.com/jvgomg/podkit/commit/455e115d5f724411f970ed49dda2cca57c7aff2f) Thanks [@jvgomg](https://github.com/jvgomg)! - Support multiple iPods plugged in simultaneously. Each device gets a unique mount point and devices appearing during a sync are queued and synced sequentially after the current sync completes.
+
+### Patch Changes
+
+- Updated dependencies [[`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb), [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df)]:
+  - @podkit/core@0.7.0
+
 ## 0.2.2
 
 ### Patch Changes

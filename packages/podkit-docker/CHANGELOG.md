@@ -1,5 +1,13 @@
 # @podkit/docker
 
+## 0.2.4
+
+### Patch Changes
+
+- Updated dependencies [[`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb), [`26733cc`](https://github.com/jvgomg/podkit/commit/26733cc77fd56681387b29e4241ad05e4d1fd348), [`455e115`](https://github.com/jvgomg/podkit/commit/455e115d5f724411f970ed49dda2cca57c7aff2f), [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df)]:
+  - podkit@0.7.0
+  - @podkit/daemon@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes

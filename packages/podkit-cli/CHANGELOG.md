@@ -1,5 +1,49 @@
 # podkit
 
+## 0.7.0
+
+### Minor Changes
+
+- [`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `podkit doctor --repair artwork-reset` to clear all artwork from an iPod without needing a source collection. This is a fast alternative to a full rebuild — useful when your source collection isn't available or you just want to clear corrupted artwork quickly.
+
+  Rename `--repair artwork-integrity` to `--repair artwork-rebuild` to better describe what the repair does. The old name no longer works.
+
+- [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df) Thanks [@jvgomg](https://github.com/jvgomg)! - Add three-tier transfer mode system controlling how files are prepared for the device.
+
+  **Transfer modes:**
+  - `fast` (default): optimizes for sync speed — direct-copies compatible files, strips artwork from transcodes
+  - `optimized`: strips embedded artwork from all file types (including MP3, M4A, ALAC copies) via FFmpeg stream-copy, reducing storage usage without re-encoding
+  - `portable`: preserves embedded artwork in all files for use outside the iPod ecosystem
+
+  **Configuration:**
+  - `transferMode` config option (global and per-device)
+  - `--transfer-mode` CLI flag
+  - `PODKIT_TRANSFER_MODE` environment variable
+
+  **Selective re-processing:**
+  - `--force-transfer-mode` flag re-processes only tracks whose transfer mode doesn't match the current setting
+  - `PODKIT_FORCE_TRANSFER_MODE` environment variable
+  - Works on all file types including direct copies (unlike `--force-transcode` which only affects transcoded tracks)
+
+  **Device inspection:**
+  - `podkit device music` and `podkit device video` stats show transfer mode distribution
+  - Missing transfer field flagged alongside missing artwork hash in sync tag summary
+  - New `syncTagTransfer` field available in `--tracks --fields` for querying transfer mode data
+  - Dry-run output shows configured transfer mode
+
+  **Under the hood:**
+  - Granular operation types: `add-direct-copy`, `add-optimized-copy`, `add-transcode` (and upgrade equivalents)
+  - Sync tags written to all tracks including direct copies (`quality=copy`)
+  - `DeviceCapabilities` abstraction for device-aware sync decisions
+  - Sync tag field `transfer=` tracks which mode was used per track
+
+### Patch Changes
+
+- [`26733cc`](https://github.com/jvgomg/podkit/commit/26733cc77fd56681387b29e4241ad05e4d1fd348) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix blank source path in sync output for subsonic collections
+
+- Updated dependencies [[`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb), [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df)]:
+  - @podkit/core@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes
