@@ -90,7 +90,7 @@ These apply to all devices unless overridden at the device level.
 | `audioQuality` | string | - | Audio-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for audio. |
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
 | `encoding` | string | `"vbr"` | Encoding mode for lossy AAC: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. |
-| `transferMode` | string | `"fast"` | Transfer mode controlling how files are processed during sync. `fast` directly copies compatible files and strips artwork from transcodes. `optimized` strips embedded artwork from all files (including copies) via FFmpeg passthrough. `portable` preserves embedded artwork in all files for use outside the iPod ecosystem. |
+| `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled during sync. `fast` skips extra data for fastest sync. `optimized` strips data your device won't use, saving storage. `portable` preserves extra track data for extracting files later. |
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
 | `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
 | `artwork` | boolean | `true` | Include album artwork during sync |

@@ -127,7 +127,7 @@ podkit sync [options]
 | `--audio-quality <preset>` | Audio-specific quality override: `max`, `high`, `medium`, `low` |
 | `--video-quality <preset>` | Video-specific quality override: `max`, `high`, `medium`, `low` |
 | `--encoding <mode>` | Encoding mode: `vbr` (default) or `cbr` |
-| `--transfer-mode <mode>` | Transfer mode: `fast` (default), `optimized`, or `portable` |
+| `--transfer-mode <mode>` | Transfer mode: `fast` (default), `optimized`, or `portable`. Controls whether extra file data is preserved or stripped during sync |
 | `--force-transfer-mode` | Re-process all tracks when changing transfer mode |
 | `--filter <pattern>` | Only sync tracks matching pattern |
 | `--no-artwork` | Skip artwork transfer |

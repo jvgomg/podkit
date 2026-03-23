@@ -25,10 +25,12 @@ version = ${CURRENT_CONFIG_VERSION}
 # [video.movies]
 # path = "/path/to/movies"
 
-# Transfer mode for synced files
-# transferMode = "fast"       # Optimized for iPod playback, strips embedded artwork (default)
-# transferMode = "optimized"  # Strip embedded artwork from transcoded files
-# transferMode = "portable"   # Preserve embedded artwork for exportable files
+# All transfer modes optimize for device compatibility
+# but you have options around preserving file data
+# Docs: https://jvgomg.github.io/podkit/user-guide/configuration#transfer-mode
+# transferMode = "fast"       # Skip extra data for fastest sync (default)
+# transferMode = "optimized"  # Strip data your device won't use, saving storage
+# transferMode = "portable"   # Preserve extra track data for extracting files later
 
 # Clean up featured artist entries in iPod artist list
 # Moves "Artist feat. X" credits from the artist field into the title.

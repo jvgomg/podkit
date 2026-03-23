@@ -544,9 +544,10 @@ export const syncCommand = new Command('sync')
   )
   .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
   .addOption(
-    new Option('--transfer-mode <mode>', 'transfer mode for synced files').choices([
-      ...TRANSFER_MODES,
-    ])
+    new Option(
+      '--transfer-mode <mode>',
+      'transfer mode: fast (default), optimized, or portable — controls whether extra file data is preserved or stripped during sync'
+    ).choices([...TRANSFER_MODES])
   )
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')

@@ -126,11 +126,15 @@ audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 ```
 
-By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`. The `transferMode` option controls how files are processed during sync:
+By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`.
 
-- **`fast`** (default) — Directly copies compatible files (MP3, M4A, ALAC) without re-encoding, and strips artwork from transcoded files. Optimizes for sync speed.
-- **`optimized`** — Strips embedded artwork from all files, including copies, via FFmpeg passthrough. Saves space on the iPod since artwork is stored separately in the iPod database.
-- **`portable`** — Preserves embedded artwork in all files. Use this if you access synced files outside the iPod ecosystem (e.g., mounting the iPod as a disk).
+### Transfer Mode
+
+All transfer modes optimize for device compatibility — you choose how extra file data (like embedded artwork) is handled:
+
+- **`fast`** (default) — Fastest sync. Strips embedded artwork from transcoded files; copies compatible files directly.
+- **`optimized`** — Saves device storage. Strips embedded artwork from all files (your device stores artwork separately, so nothing is lost).
+- **`portable`** — Preserves embedded artwork in all files, useful if you ever extract tracks from the device.
 
 See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
 
