@@ -39,6 +39,7 @@
     "workspaceProtocol": "require"
   },
   "lint-staged": {
+    "*.{ts,tsx,js,jsx}": "oxlint --config oxlint.json",
     "*": "prettier --write --ignore-unknown"
   },
   "devDependencies": {
