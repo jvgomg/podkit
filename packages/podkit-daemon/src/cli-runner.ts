@@ -183,7 +183,7 @@ export async function runCli<T = unknown>(
 /**
  * Mount a device to a target path.
  *
- * `podkit --json mount --disk /dev/sdXN --target /ipod`
+ * `podkit --json mount --disk /dev/sdXN --target /tmp/podkit-sdXN`
  */
 export async function runMount(disk: string, target: string): Promise<CliResult<MountOutput>> {
   log('info', `Mounting ${disk} to ${target}`);
@@ -194,7 +194,7 @@ export async function runMount(disk: string, target: string): Promise<CliResult<
 /**
  * Run a sync against a mounted device.
  *
- * `podkit --json -d /ipod sync [--dry-run]`
+ * `podkit --json -d /tmp/podkit-sdXN sync [--dry-run]`
  */
 export async function runSync(
   device: string,
@@ -225,7 +225,7 @@ export function spawnSync(
 /**
  * Eject (unmount) a device.
  *
- * `podkit --json -d /ipod eject`
+ * `podkit --json -d /tmp/podkit-sdXN eject`
  */
 export async function runEject(device: string): Promise<CliResult<EjectOutput>> {
   log('info', `Ejecting device at ${device}`);

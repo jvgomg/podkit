@@ -1,9 +1,10 @@
 ---
 id: TASK-173
 title: 'Daemon: handle multiple iPods plugged in simultaneously'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 22:24'
+updated_date: '2026-03-23 19:41'
 labels:
   - daemon
   - docker
@@ -41,8 +42,37 @@ Found during Synology NAS validation (TASK-165). The daemon was tested with a si
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Daemon uses unique mount points per device (not a fixed /ipod path)
-- [ ] #2 Second iPod plugged in during a sync is queued and synced after the first completes
-- [ ] #3 Logs clearly identify which device is being synced by label/partition name
-- [ ] #4 No data corruption risk from concurrent mount attempts
+- [x] #1 Daemon uses unique mount points per device (not a fixed /ipod path)
+- [x] #2 Second iPod plugged in during a sync is queued and synced after the first completes
+- [x] #3 Logs clearly identify which device is being synced by label/partition name
+- [x] #4 No data corruption risk from concurrent mount attempts
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Summary
+
+Replaced the fixed `/ipod` mount point with per-device mount points (`/tmp/podkit-<partition>`) and added a device queue so multiple iPods plugged in simultaneously are synced sequentially instead of being ignored.
+
+### Changes
+
+**`packages/podkit-daemon/src/sync-orchestrator.ts`**
+- `mountTarget` option → `mountBase` (default `/tmp/podkit`), each device mounts at `<mountBase>-<name>`
+- Devices appearing during a sync are queued instead of ignored
+- Queue is processed sequentially after each sync completes
+- `abort()` clears the queue to prevent new syncs during shutdown
+- `handleDeviceDisappeared` removes queued devices that disconnect before their turn
+- New `queue` getter for observability
+
+**`packages/podkit-daemon/src/sync-orchestrator.test.ts`**
+- Updated mount path assertions for per-device paths
+- Added tests: queue processing, duplicate prevention, queue removal on disconnect, abort clears queue
+
+**`packages/podkit-daemon/src/cli-runner.ts`**
+- Updated JSDoc examples from `/ipod` to `/tmp/podkit-sdXN`
+
+**`docs/getting-started/docker-daemon.md`**
+- Updated "How It Works" step 3 to describe per-device mount points
+- Changed multi-device note from a limitation warning to a tip explaining queue behavior
+<!-- SECTION:FINAL_SUMMARY:END -->

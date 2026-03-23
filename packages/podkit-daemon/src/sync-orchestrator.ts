@@ -4,12 +4,20 @@
  * Flow: mount -> dry-run -> sync -> eject
  *
  * Enforces one-at-a-time: while a sync is running, new device-appeared
- * events are logged and ignored.
+ * events are queued. Each device gets its own mount point to prevent
+ * conflicts. Queued devices are synced sequentially after the current
+ * sync completes.
  */
 
 import type { ChildProcess } from 'node:child_process';
 import type { DetectedDevice } from './device-poller.js';
-import type { CliResult, AbortableCliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
+import type {
+  CliResult,
+  AbortableCliResult,
+  MountOutput,
+  SyncOutput,
+  EjectOutput,
+} from './cli-runner.js';
 import type { AppriseClient } from './apprise-client.js';
 import {
   formatPreSyncNotification,
@@ -33,8 +41,8 @@ export interface SyncOrchestratorOptions {
    * Falls back to `runSync` if not provided.
    */
   spawnSync?: (device: string, options?: { dryRun?: boolean }) => AbortableCliResult<SyncOutput>;
-  /** Fixed mount target path (default: "/ipod") */
-  mountTarget?: string;
+  /** Base path for per-device mount points (default: "/tmp/podkit") */
+  mountBase?: string;
   /** Optional notification client. When omitted, no notifications are sent. */
   notify?: AppriseClient;
 }
@@ -48,7 +56,8 @@ export class SyncOrchestrator {
   private _currentDevice: DetectedDevice | null = null;
   private _deviceDisconnected = false;
   private _activeSyncChild: ChildProcess | null = null;
-  private readonly mountTarget: string;
+  private readonly _queue: DetectedDevice[] = [];
+  private readonly mountBase: string;
   private readonly notify: AppriseClient;
   private readonly cli: {
     runMount: SyncOrchestratorOptions['runMount'];
@@ -58,7 +67,7 @@ export class SyncOrchestrator {
   };
 
   constructor(options: SyncOrchestratorOptions) {
-    this.mountTarget = options.mountTarget ?? '/ipod';
+    this.mountBase = options.mountBase ?? '/tmp/podkit';
     this.notify = options.notify ?? { notify: async () => {} };
     this.cli = {
       runMount: options.runMount,
@@ -82,6 +91,11 @@ export class SyncOrchestrator {
     return this._deviceDisconnected;
   }
 
+  /** Devices waiting to be synced. */
+  get queue(): readonly DetectedDevice[] {
+    return this._queue;
+  }
+
   /**
    * Wait for any in-progress sync to complete.
    * Used for graceful shutdown — ensures we don't kill a sync mid-transfer.
@@ -93,32 +107,50 @@ export class SyncOrchestrator {
   }
 
   /**
-   * Abort the in-progress sync by sending SIGINT to the child process.
+   * Abort the in-progress sync and clear the queue.
    *
-   * This triggers the CLI's graceful shutdown: the current operation drains,
-   * the database is saved, and the child exits. The `waitForIdle()` loop will
-   * then resolve once the child exits and `_isSyncing` is set to false.
+   * Sends SIGINT to the active sync child process, triggering the CLI's
+   * graceful shutdown (drain + save). Also clears the queue so no new
+   * syncs start after the current one completes — important for shutdown
+   * where Docker's SIGKILL follows ~10s after SIGTERM.
    *
    * Safe to call multiple times or when no sync is in progress (no-op).
    */
   abort(): void {
+    if (this._queue.length > 0) {
+      log('info', `Clearing ${this._queue.length} queued device(s) for shutdown`);
+      this._queue.length = 0;
+    }
     if (this._activeSyncChild) {
       log('info', 'Sending SIGINT to active sync process');
       this._activeSyncChild.kill('SIGINT');
     }
   }
 
+  /** Generate a unique mount point path for a device. */
+  private mountPointFor(device: DetectedDevice): string {
+    return `${this.mountBase}-${device.name}`;
+  }
+
   /**
    * Handle a newly-detected iPod device.
    *
    * Runs the full mount -> dry-run -> sync -> eject cycle.
-   * If a sync is already in progress, the event is logged and dropped.
+   * If a sync is already in progress, the device is queued and will be
+   * synced after the current sync completes.
    */
   async handleDeviceAppeared(device: DetectedDevice): Promise<void> {
     if (this._isSyncing) {
-      log('warn', `Sync already in progress, ignoring new device: ${device.name}`, {
+      // Don't queue the same device twice
+      if (this._queue.some((d) => d.name === device.name)) {
+        log('info', `Device already queued: ${device.name}`, { disk: device.disk });
+        return;
+      }
+      log('info', `Sync in progress, queuing device: ${device.name}`, {
         disk: device.disk,
+        queueLength: this._queue.length + 1,
       });
+      this._queue.push(device);
       return;
     }
 
@@ -134,10 +166,11 @@ export class SyncOrchestrator {
         uuid: device.uuid,
       });
 
-      // Step 1: Mount
+      // Step 1: Mount (each device gets its own mount point)
+      const targetMount = this.mountPointFor(device);
       let mountResult;
       try {
-        mountResult = await this.cli.runMount(device.disk, this.mountTarget);
+        mountResult = await this.cli.runMount(device.disk, targetMount);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         log('error', `Mount threw for ${device.name}: ${message}`);
@@ -151,7 +184,7 @@ export class SyncOrchestrator {
         return;
       }
 
-      const mountPoint = mountResult.json.mountPoint ?? this.mountTarget;
+      const mountPoint = mountResult.json.mountPoint ?? targetMount;
       log('info', `Mounted ${device.name} at ${mountPoint}`);
 
       // Step 2: Dry-run preview (for logging + notification)
@@ -266,7 +299,27 @@ export class SyncOrchestrator {
       this._currentDevice = null;
       this._deviceDisconnected = false;
       this._activeSyncChild = null;
+
+      // Process the next queued device, if any
+      this.processQueue();
     }
+  }
+
+  /**
+   * Process the next device in the queue.
+   *
+   * Called after a sync cycle completes. Fires and forgets — the queued
+   * sync will set `_isSyncing` and run through the same full cycle.
+   */
+  private processQueue(): void {
+    if (this._queue.length === 0) return;
+
+    const next = this._queue.shift()!;
+    log('info', `Processing queued device: ${next.name}`, {
+      disk: next.disk,
+      remainingQueue: this._queue.length,
+    });
+    void this.handleDeviceAppeared(next);
   }
 
   /**
@@ -281,7 +334,14 @@ export class SyncOrchestrator {
       log('warn', `Device disconnected mid-sync: ${device.name}`, { disk: device.disk });
       this._deviceDisconnected = true;
     } else {
-      log('info', `Device removed: ${device.name}`, { disk: device.disk });
+      // Remove from queue if it was waiting
+      const queueIndex = this._queue.findIndex((d) => d.name === device.name);
+      if (queueIndex !== -1) {
+        this._queue.splice(queueIndex, 1);
+        log('info', `Removed queued device (disconnected): ${device.name}`, { disk: device.disk });
+      } else {
+        log('info', `Device removed: ${device.name}`, { disk: device.disk });
+      }
     }
   }
 }

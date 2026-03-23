@@ -1,7 +1,13 @@
 import { describe, it, expect } from 'bun:test';
 import { SyncOrchestrator } from './sync-orchestrator.js';
 import type { DetectedDevice } from './device-poller.js';
-import type { CliResult, AbortableCliResult, MountOutput, SyncOutput, EjectOutput } from './cli-runner.js';
+import type {
+  CliResult,
+  AbortableCliResult,
+  MountOutput,
+  SyncOutput,
+  EjectOutput,
+} from './cli-runner.js';
 import type { ChildProcess } from 'node:child_process';
 
 // ---------------------------------------------------------------------------
@@ -42,7 +48,7 @@ function createMockCli(overrides?: {
 }): MockCli {
   const calls: string[] = [];
 
-  const defaultMount = okResult<MountOutput>({ success: true, mountPoint: '/ipod' });
+  const defaultMount = okResult<MountOutput>({ success: true, mountPoint: '/tmp/podkit-sdb1' });
   const defaultSyncDryRun = okResult<SyncOutput>({
     success: true,
     dryRun: true,
@@ -83,13 +89,18 @@ function createMockCli(overrides?: {
 describe('SyncOrchestrator', () => {
   it('runs full mount -> dry-run -> sync -> eject cycle', async () => {
     const cli = createMockCli();
-    const orchestrator = new SyncOrchestrator({ ...cli, mountTarget: '/ipod' });
+    const orchestrator = new SyncOrchestrator({ ...cli });
 
     expect(orchestrator.isSyncing).toBe(false);
     await orchestrator.handleDeviceAppeared(makeDevice());
     expect(orchestrator.isSyncing).toBe(false);
 
-    expect(cli.calls).toEqual(['mount:/dev/sdb1:/ipod', 'sync:dry-run', 'sync:execute', 'eject']);
+    expect(cli.calls).toEqual([
+      'mount:/dev/sdb1:/tmp/podkit-sdb1',
+      'sync:dry-run',
+      'sync:execute',
+      'eject',
+    ]);
   });
 
   it('stops at mount failure without proceeding to sync', async () => {
@@ -100,7 +111,7 @@ describe('SyncOrchestrator', () => {
 
     await orchestrator.handleDeviceAppeared(makeDevice());
 
-    expect(cli.calls).toEqual(['mount:/dev/sdb1:/ipod']);
+    expect(cli.calls).toEqual(['mount:/dev/sdb1:/tmp/podkit-sdb1']);
     expect(orchestrator.isSyncing).toBe(false);
   });
 
@@ -112,7 +123,12 @@ describe('SyncOrchestrator', () => {
 
     await orchestrator.handleDeviceAppeared(makeDevice());
 
-    expect(cli.calls).toEqual(['mount:/dev/sdb1:/ipod', 'sync:dry-run', 'sync:execute', 'eject']);
+    expect(cli.calls).toEqual([
+      'mount:/dev/sdb1:/tmp/podkit-sdb1',
+      'sync:dry-run',
+      'sync:execute',
+      'eject',
+    ]);
   });
 
   it('still ejects after dry-run failure', async () => {
@@ -124,10 +140,15 @@ describe('SyncOrchestrator', () => {
     await orchestrator.handleDeviceAppeared(makeDevice());
 
     // dry-run failure is non-fatal — sync and eject should still run
-    expect(cli.calls).toEqual(['mount:/dev/sdb1:/ipod', 'sync:dry-run', 'sync:execute', 'eject']);
+    expect(cli.calls).toEqual([
+      'mount:/dev/sdb1:/tmp/podkit-sdb1',
+      'sync:dry-run',
+      'sync:execute',
+      'eject',
+    ]);
   });
 
-  it('ignores new devices while syncing (one-at-a-time)', async () => {
+  it('queues new devices while syncing (one-at-a-time)', async () => {
     let resolveSync: (() => void) | null = null;
     const syncPromise = new Promise<void>((resolve) => {
       resolveSync = resolve;
@@ -135,15 +156,17 @@ describe('SyncOrchestrator', () => {
 
     const calls: string[] = [];
     const orchestrator = new SyncOrchestrator({
-      runMount: async () => {
-        calls.push('mount');
-        return okResult<MountOutput>({ success: true, mountPoint: '/ipod' });
+      runMount: async (_disk, target) => {
+        calls.push(`mount:${target}`);
+        return okResult<MountOutput>({ success: true, mountPoint: target });
       },
       runSync: async (_device, options) => {
         if (!options?.dryRun) {
           calls.push('sync:execute:start');
-          // Block until we resolve
-          await syncPromise;
+          // Block until we resolve (only the first time)
+          if (syncPromise) {
+            await syncPromise;
+          }
           calls.push('sync:execute:end');
         } else {
           calls.push('sync:dry-run');
@@ -168,18 +191,59 @@ describe('SyncOrchestrator', () => {
 
     expect(orchestrator.isSyncing).toBe(true);
 
-    // Try to start second device — should be ignored
+    // Second device appears — should be queued, not ignored
     await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
+    expect(orchestrator.queue).toHaveLength(1);
+    expect(orchestrator.queue[0].name).toBe('sdc1');
 
-    // The second call should not have added any calls beyond what the first already did
-    const mountCount = calls.filter((c) => c === 'mount').length;
-    expect(mountCount).toBe(1);
+    // Only first device's mount should have been called so far
+    const mountCalls = calls.filter((c) => c.startsWith('mount:'));
+    expect(mountCalls).toEqual(['mount:/tmp/podkit-sdb1']);
 
-    // Release the sync
+    // Release the first sync — queued device will be processed after
     resolveSync!();
     await firstSync;
 
-    expect(orchestrator.isSyncing).toBe(false);
+    // Allow the queued sync to complete
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Both devices should have been mounted at unique paths
+    const allMounts = calls.filter((c) => c.startsWith('mount:'));
+    expect(allMounts).toEqual(['mount:/tmp/podkit-sdb1', 'mount:/tmp/podkit-sdc1']);
+    expect(orchestrator.queue).toHaveLength(0);
+  });
+
+  it('does not queue the same device twice', async () => {
+    let resolveSync: (() => void) | null = null;
+    const syncPromise = new Promise<void>((resolve) => {
+      resolveSync = resolve;
+    });
+
+    const orchestrator = new SyncOrchestrator({
+      runMount: async (_disk, target) =>
+        okResult<MountOutput>({ success: true, mountPoint: target }),
+      runSync: async (_device, options) => {
+        if (!options?.dryRun) await syncPromise;
+        return okResult<SyncOutput>({
+          success: true,
+          dryRun: options?.dryRun ?? false,
+          result: { completed: 1, failed: 0, duration: 1 },
+        });
+      },
+      runEject: async () => okResult<EjectOutput>({ success: true }),
+    });
+
+    const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Queue sdc1 twice — second should be a no-op
+    await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
+    await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
+    expect(orchestrator.queue).toHaveLength(1);
+
+    resolveSync!();
+    await firstSync;
+    await new Promise((r) => setTimeout(r, 50));
   });
 
   it('handles eject failure without crashing', async () => {
@@ -246,6 +310,40 @@ describe('SyncOrchestrator', () => {
     expect(orchestrator.currentDevice).toBeNull();
   });
 
+  it('removes queued device when it disappears', async () => {
+    let resolveSync: (() => void) | null = null;
+    const syncPromise = new Promise<void>((resolve) => {
+      resolveSync = resolve;
+    });
+
+    const orchestrator = new SyncOrchestrator({
+      runMount: async (_disk, target) =>
+        okResult<MountOutput>({ success: true, mountPoint: target }),
+      runSync: async (_device, options) => {
+        if (!options?.dryRun) await syncPromise;
+        return okResult<SyncOutput>({
+          success: true,
+          dryRun: options?.dryRun ?? false,
+          result: { completed: 1, failed: 0, duration: 1 },
+        });
+      },
+      runEject: async () => okResult<EjectOutput>({ success: true }),
+    });
+
+    const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Queue a second device, then remove it before first sync completes
+    await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
+    expect(orchestrator.queue).toHaveLength(1);
+
+    orchestrator.handleDeviceDisappeared(makeDevice({ name: 'sdc1' }));
+    expect(orchestrator.queue).toHaveLength(0);
+
+    resolveSync!();
+    await firstSync;
+  });
+
   it('sets deviceDisconnected when current device disappears mid-sync', async () => {
     let resolveSync: (() => void) | null = null;
     const syncPromise = new Promise<void>((resolve) => {
@@ -253,7 +351,8 @@ describe('SyncOrchestrator', () => {
     });
 
     const orchestrator = new SyncOrchestrator({
-      runMount: async () => okResult<MountOutput>({ success: true, mountPoint: '/ipod' }),
+      runMount: async (_disk, target) =>
+        okResult<MountOutput>({ success: true, mountPoint: target }),
       runSync: async (_device, options) => {
         if (!options?.dryRun) {
           // Block to simulate a long-running sync
@@ -297,7 +396,8 @@ describe('SyncOrchestrator', () => {
     });
 
     const orchestrator = new SyncOrchestrator({
-      runMount: async () => okResult<MountOutput>({ success: true, mountPoint: '/ipod' }),
+      runMount: async (_disk, target) =>
+        okResult<MountOutput>({ success: true, mountPoint: target }),
       runSync: async (_device, options) => {
         if (!options?.dryRun) {
           await syncPromise;
@@ -346,7 +446,8 @@ describe('SyncOrchestrator', () => {
     });
 
     const orchestrator = new SyncOrchestrator({
-      runMount: async () => okResult<MountOutput>({ success: true, mountPoint: '/ipod' }),
+      runMount: async (_disk, target) =>
+        okResult<MountOutput>({ success: true, mountPoint: target }),
       runSync: async (_device, options) =>
         okResult<SyncOutput>({
           success: true,
@@ -368,14 +469,62 @@ describe('SyncOrchestrator', () => {
     expect(killCalls).toEqual(['SIGINT']);
 
     // Resolve the sync so the cycle completes
-    resolveResult!(okResult<SyncOutput>({
-      success: true,
-      dryRun: false,
-      result: { completed: 0, failed: 0, duration: 1 },
-    }));
+    resolveResult!(
+      okResult<SyncOutput>({
+        success: true,
+        dryRun: false,
+        result: { completed: 0, failed: 0, duration: 1 },
+      })
+    );
     await syncDone;
 
     expect(orchestrator.isSyncing).toBe(false);
+  });
+
+  it('abort() clears the queue so no new syncs start during shutdown', async () => {
+    let resolveSync: (() => void) | null = null;
+    const syncPromise = new Promise<void>((resolve) => {
+      resolveSync = resolve;
+    });
+
+    const calls: string[] = [];
+    const orchestrator = new SyncOrchestrator({
+      runMount: async (_disk, target) => {
+        calls.push(`mount:${target}`);
+        return okResult<MountOutput>({ success: true, mountPoint: target });
+      },
+      runSync: async (_device, options) => {
+        if (!options?.dryRun) await syncPromise;
+        return okResult<SyncOutput>({
+          success: true,
+          dryRun: options?.dryRun ?? false,
+          result: { completed: 1, failed: 0, duration: 1 },
+        });
+      },
+      runEject: async () => {
+        calls.push('eject');
+        return okResult<EjectOutput>({ success: true });
+      },
+    });
+
+    // Start first sync, queue a second device
+    const firstSync = orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdb1' }));
+    await new Promise((r) => setTimeout(r, 10));
+    await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
+    expect(orchestrator.queue).toHaveLength(1);
+
+    // Abort (simulating shutdown) — should clear the queue
+    orchestrator.abort();
+    expect(orchestrator.queue).toHaveLength(0);
+
+    // Release the first sync
+    resolveSync!();
+    await firstSync;
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Only the first device should have been mounted — queued device was cleared
+    const mountCalls = calls.filter((c) => c.startsWith('mount:'));
+    expect(mountCalls).toEqual(['mount:/tmp/podkit-sdb1']);
   });
 
   it('abort() is a no-op when not syncing', () => {

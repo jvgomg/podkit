@@ -48,7 +48,7 @@ docker compose logs -f
 
 1. The daemon polls for iPod devices every 5 seconds (configurable).
 2. A new iPod is detected and confirmed after 2 consecutive polls (debounced to avoid false positives from brief USB connections).
-3. The iPod is mounted at `/ipod` inside the container.
+3. The iPod is mounted at a unique path inside the container (e.g., `/tmp/podkit-sdb1`).
 4. A dry-run sync runs first to preview changes.
 5. The actual sync executes.
 6. The iPod is ejected — safe to unplug.
@@ -146,8 +146,8 @@ artwork = true
 
 Each device can have its own quality preset, collection, artwork setting, and more. See [Config File Reference](/reference/config-file/) for all device-level options.
 
-:::note
-The daemon currently syncs one iPod at a time. If a second iPod is plugged in while a sync is in progress, it will be detected but skipped until the next poll cycle after the first sync completes. For best results, plug in one iPod at a time and wait for the sync to finish before connecting another.
+:::tip
+You can plug in multiple iPods at the same time. The daemon syncs one iPod at a time — if a second iPod is plugged in while a sync is in progress, it is automatically queued and synced after the first completes. Each device gets its own mount point, so there are no conflicts.
 :::
 
 ## Notifications with Apprise
