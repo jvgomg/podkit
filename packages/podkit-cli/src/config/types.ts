@@ -9,7 +9,7 @@
 export type {
   QualityPreset,
   EncodingMode,
-  FileMode,
+  TransferMode,
   TransformsConfig,
   CleanArtistsConfig,
   VideoQualityPreset,
@@ -19,21 +19,21 @@ export type {
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
-  FILE_MODES,
+  TRANSFER_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
-  isValidFileMode,
+  isValidTransferMode,
 } from '@podkit/core';
 
 // Import type for local use
 import type {
   QualityPreset,
   EncodingMode,
-  FileMode,
+  TransferMode,
   TransformsConfig,
   VideoQualityPreset,
   VideoTransformsConfig,
@@ -135,8 +135,8 @@ export interface DeviceConfig {
   artwork?: boolean;
   /** Detect artwork changes by comparing content hashes (overrides global) */
   checkArtwork?: boolean;
-  /** File mode for transcoded files (overrides global) */
-  fileMode?: FileMode;
+  /** Transfer mode for synced files (overrides global) */
+  transferMode?: TransferMode;
   /** Skip file-replacement upgrades during sync for this device */
   skipUpgrades?: boolean;
   /** Device-specific transform settings */
@@ -209,17 +209,20 @@ export interface PodkitConfig {
   tips: boolean;
   /** Force re-transcoding of all lossless-source tracks (CLI/env only, not saved in config) */
   forceTranscode?: boolean;
+  /** Reprocess tracks synced with a different transfer mode (CLI/env only) */
+  forceTransferMode?: boolean;
   /** Write sync tags to all matched transcoded tracks without re-transcoding (CLI/env only) */
   forceSyncTags?: boolean;
   /** Detect artwork changes by comparing content hashes (can be overridden per-device) */
   checkArtwork?: boolean;
   /**
-   * File mode for transcoded files.
+   * Transfer mode for synced files.
    *
-   * - `optimized` (default): strips embedded artwork from transcoded files.
+   * - `fast` (default): strips embedded artwork, optimized for iPod playback.
+   * - `optimized`: strips embedded artwork from transcoded files.
    * - `portable`: preserves embedded artwork for exportable files.
    */
-  fileMode?: FileMode;
+  transferMode?: TransferMode;
   /** Transform configuration (global default, can be overridden per-device) */
   transforms: TransformsConfig;
   /** Video transform configuration (global default, can be overridden per-device) */
@@ -329,7 +332,7 @@ export interface ConfigFileDevice {
   bitrateTolerance?: number;
   artwork?: boolean;
   checkArtwork?: boolean;
-  fileMode?: string;
+  transferMode?: string;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
@@ -390,7 +393,7 @@ export interface ConfigFileContent {
   bitrateTolerance?: number;
   artwork?: boolean;
   checkArtwork?: boolean;
-  fileMode?: string;
+  transferMode?: string;
   tips?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;

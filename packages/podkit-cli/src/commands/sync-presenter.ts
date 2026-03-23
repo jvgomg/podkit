@@ -15,7 +15,7 @@ import type {
   VideoTransformsConfig,
   MusicCollectionConfig,
 } from '../config/index.js';
-import type { EncodingMode, FileMode } from '@podkit/core';
+import type { EncodingMode, TransferMode } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import { formatBytes } from '../output/index.js';
 import type { SyncOutput } from './sync.js';
@@ -41,13 +41,14 @@ export interface MusicContentConfig {
   effectiveTransforms: TransformsConfig;
   effectiveQuality: QualityPreset;
   effectiveEncoding: EncodingMode | undefined;
-  effectiveFileMode: FileMode | undefined;
+  effectiveTransferMode: TransferMode | undefined;
   effectiveCustomBitrate: number | undefined;
   effectiveBitrateTolerance: number | undefined;
   deviceSupportsAlac: boolean;
   effectiveArtwork: boolean;
   skipUpgrades: boolean;
   forceTranscode: boolean;
+  forceTransferMode: boolean;
   forceSyncTags: boolean;
   forceMetadata: boolean;
   checkArtwork: boolean;
@@ -61,6 +62,7 @@ export interface VideoContentConfig {
   type: 'video';
   effectiveVideoQuality: VideoQualityPreset;
   effectiveVideoTransforms: VideoTransformsConfig;
+  effectiveTransferMode: TransferMode | undefined;
   forceMetadata: boolean;
 }
 
@@ -76,7 +78,7 @@ export interface GenericSyncResult {
   interrupted?: boolean;
   jsonOutput?: SyncOutput;
   artworkMissingBaseline?: number;
-  fileModeMismatch?: number;
+  transferModeMismatch?: number;
 }
 
 // =============================================================================
@@ -458,8 +460,8 @@ export async function genericSyncCollection<TSource, TDevice>(
       ...(postDiffData.artworkMissingBaseline !== undefined
         ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
         : {}),
-      ...(postDiffData.fileModeMismatch !== undefined
-        ? { fileModeMismatch: postDiffData.fileModeMismatch as number }
+      ...(postDiffData.transferModeMismatch !== undefined
+        ? { transferModeMismatch: postDiffData.transferModeMismatch as number }
         : {}),
     };
   }
@@ -480,9 +482,13 @@ export async function genericSyncCollection<TSource, TDevice>(
             tracksToAdd: diff.toAdd.length,
             tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
             tracksToUpdate: diff.toUpdate.length,
-            tracksToUpgrade: summary.upgradeCount ?? 0,
-            tracksToTranscode: summary.transcodeCount,
-            tracksToCopy: summary.copyCount,
+            tracksToUpgrade:
+              (summary.upgradeTranscodeCount ?? 0) +
+              (summary.upgradeDirectCopyCount ?? 0) +
+              (summary.upgradeOptimizedCopyCount ?? 0) +
+              (summary.upgradeArtworkCount ?? 0),
+            tracksToTranscode: summary.addTranscodeCount,
+            tracksToCopy: (summary.addDirectCopyCount ?? 0) + (summary.addOptimizedCopyCount ?? 0),
             tracksExisting: diff.existing.length,
             estimatedSize: plan.estimatedSize,
             estimatedTime: plan.estimatedTime,
@@ -532,8 +538,8 @@ export async function genericSyncCollection<TSource, TDevice>(
     ...(postDiffData.artworkMissingBaseline !== undefined
       ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
       : {}),
-    ...(postDiffData.fileModeMismatch !== undefined
-      ? { fileModeMismatch: postDiffData.fileModeMismatch as number }
+    ...(postDiffData.transferModeMismatch !== undefined
+      ? { transferModeMismatch: postDiffData.transferModeMismatch as number }
       : {}),
   };
 }

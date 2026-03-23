@@ -1,9 +1,10 @@
 ---
 id: TASK-202
 title: Transfer mode documentation and changeset
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:09'
+updated_date: '2026-03-23 17:09'
 labels:
   - docs
   - release
@@ -58,13 +59,26 @@ Update all user-facing documentation for the fileMode → transferMode rename, n
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Config file docs updated: transferMode with fast/optimized/portable values and descriptions
-- [ ] #2 Environment variables docs updated: PODKIT_TRANSFER_MODE and PODKIT_FORCE_TRANSFER_MODE
-- [ ] #3 CLI commands docs updated: --transfer-mode and --force-transfer-mode flags
-- [ ] #4 Sync tags docs updated: transfer= field and quality=copy for direct-copy tracks
-- [ ] #5 User guide config examples updated with transferMode
-- [ ] #6 All references to fileMode/--file-mode/PODKIT_FILE_MODE removed from docs
-- [ ] #7 Docker compose examples updated if applicable
-- [ ] #8 Changeset created: minor bump for podkit and @podkit/core with breaking change note
-- [ ] #9 Changelog notes cover the rename, new default, and resync recommendation
+- [x] #1 Config file docs updated: transferMode with fast/optimized/portable values and descriptions
+- [x] #2 Environment variables docs updated: PODKIT_TRANSFER_MODE and PODKIT_FORCE_TRANSFER_MODE
+- [x] #3 CLI commands docs updated: --transfer-mode and --force-transfer-mode flags
+- [x] #4 Sync tags docs updated: transfer= field and quality=copy for direct-copy tracks
+- [x] #5 User guide config examples updated with transferMode
+- [x] #6 All references to fileMode/--file-mode/PODKIT_FILE_MODE removed from docs
+- [x] #7 Docker compose examples updated if applicable
+- [x] #8 Changeset created: minor bump for podkit and @podkit/core with breaking change note
+- [x] #9 Changelog notes cover the rename, new default, and resync recommendation
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Updated 5 documentation files and created changeset for the transfer mode feature:
+
+- **config-file.md**: `fileMode` → `transferMode`, added `forceTransferMode`, updated defaults and descriptions
+- **environment-variables.md**: `PODKIT_FILE_MODE` → `PODKIT_TRANSFER_MODE`, added `PODKIT_FORCE_TRANSFER_MODE`
+- **cli-commands.md**: `--file-mode` → `--transfer-mode`, added `--force-transfer-mode` flag
+- **sync-tags.md**: `mode=` → `transfer=`, documented copy-format sync tags with `quality=copy`
+- **configuration.md**: Updated quick-reference tables for new option names and defaults
+- **Changeset**: Created `.changeset/transfer-mode.md` with minor bumps for `podkit` and `@podkit/core`, documenting all breaking changes and new features. Deleted superseded `file-mode-config.md` changeset.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -373,6 +373,33 @@ export function computeMusicDiff(
     existing.push(...stillExisting);
   }
 
+  // Post-processing: force re-processing when transfer mode changed.
+  // Affects ALL tracks (including copy-format), unlike forceTranscode which only
+  // affects lossless-source tracks.
+  if (options?.forceTransferMode && options?.effectiveTransferMode) {
+    const targetTransferMode = options.effectiveTransferMode;
+    const stillExisting: MatchedTrack[] = [];
+
+    for (const match of existing) {
+      const syncTag = parseSyncTag(match.ipod.comment);
+      const tagTransferMode = syncTag?.transferMode ?? 'fast'; // Legacy default
+
+      if (tagTransferMode !== targetTransferMode) {
+        toUpdate.push({
+          source: match.collection,
+          ipod: match.ipod,
+          reason: 'transfer-mode-changed',
+          changes: [{ field: 'comment', from: tagTransferMode, to: targetTransferMode }],
+        });
+      } else {
+        stillExisting.push(match);
+      }
+    }
+
+    existing.length = 0;
+    existing.push(...stillExisting);
+  }
+
   // Post-processing: write sync tags to lossless-source tracks that are missing
   // or have outdated tags. This is metadata-only — no file replacement.
   //

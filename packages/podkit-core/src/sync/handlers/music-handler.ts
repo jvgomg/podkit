@@ -669,7 +669,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     const category = categorizeSource(source);
 
     if (category === 'compatible-lossy') {
-      return { type: 'copy', source };
+      return { type: 'add-direct-copy', source };
     }
 
     // Lossless or incompatible lossy — needs transcoding
@@ -683,11 +683,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
 
     // ALAC source with lossless preset can be copied directly
     if (presetName === 'lossless' && source.codec?.toLowerCase() === 'alac') {
-      return { type: 'copy', source };
+      return { type: 'add-direct-copy', source };
     }
 
     return {
-      type: 'transcode',
+      type: 'add-transcode',
       source,
       preset: {
         name: presetName as Exclude<typeof presetName, 'max'>,
@@ -712,15 +712,14 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     const primaryReason = reasons[0]!;
 
     // artwork-updated and artwork-removed need source file access for artwork re-extraction
-    // or removal, but don't replace the audio file — route as upgrade without preset
+    // or removal, but don't replace the audio file — route as upgrade-artwork
     if (primaryReason === 'artwork-updated' || primaryReason === 'artwork-removed') {
       return [
         {
-          type: 'upgrade',
+          type: 'upgrade-artwork',
           source,
           target: device,
           reason: primaryReason as UpgradeReason,
-          // No preset — audio file is not replaced
         },
       ];
     }
@@ -729,9 +728,6 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
       // Resolve the transcode preset for the upgrade (same logic as planAdd)
       const category = categorizeSource(source);
-      let preset:
-        | { name: 'high' | 'medium' | 'low' | 'lossless'; bitrateOverride?: number }
-        | undefined;
 
       if (category !== 'compatible-lossy') {
         const presetName =
@@ -741,24 +737,41 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
               : 'high'
             : ((options?.qualityPreset as 'high' | 'medium' | 'low') ?? 'high');
 
-        // ALAC source with lossless preset can be copied directly (no preset needed)
+        // ALAC source with lossless preset can be copied directly
         if (presetName === 'lossless' && source.codec?.toLowerCase() === 'alac') {
-          preset = undefined;
-        } else {
-          preset = {
-            name: presetName as Exclude<typeof presetName, 'max'>,
-            ...(options?.customBitrate !== undefined && { bitrateOverride: options.customBitrate }),
-          };
+          return [
+            {
+              type: 'upgrade-direct-copy',
+              source,
+              target: device,
+              reason: primaryReason as UpgradeReason,
+            },
+          ];
         }
+
+        return [
+          {
+            type: 'upgrade-transcode',
+            source,
+            target: device,
+            reason: primaryReason as UpgradeReason,
+            preset: {
+              name: presetName as Exclude<typeof presetName, 'max'>,
+              ...(options?.customBitrate !== undefined && {
+                bitrateOverride: options.customBitrate,
+              }),
+            },
+          },
+        ];
       }
 
+      // compatible-lossy — copy upgrade
       return [
         {
-          type: 'upgrade',
+          type: 'upgrade-direct-copy',
           source,
           target: device,
           reason: primaryReason as UpgradeReason,
-          ...(preset !== undefined && { preset }),
         },
       ];
     }
@@ -790,14 +803,10 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     const lossyToLossyTracks: CollectionTrack[] = [];
 
     for (const op of operations) {
-      if (op.type === 'transcode' || (op.type === 'upgrade' && op.preset !== undefined)) {
-        const source =
-          op.type === 'transcode'
-            ? op.source
-            : (op as Extract<SyncOperation, { type: 'upgrade' }>).source;
-        const category = categorizeSource(source as CollectionTrack);
+      if (op.type === 'add-transcode' || op.type === 'upgrade-transcode') {
+        const category = categorizeSource(op.source as CollectionTrack);
         if (willWarnLossyToLossy(category)) {
-          lossyToLossyTracks.push(source as CollectionTrack);
+          lossyToLossyTracks.push(op.source as CollectionTrack);
         }
       }
     }
@@ -923,9 +932,21 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     for (const op of plan.operations) {
       operationCounts[op.type] = (operationCounts[op.type] ?? 0) + 1;
 
-      if (op.type === 'transcode' || op.type === 'copy') toAdd++;
+      if (
+        op.type === 'add-transcode' ||
+        op.type === 'add-direct-copy' ||
+        op.type === 'add-optimized-copy'
+      )
+        toAdd++;
       else if (op.type === 'remove') toRemove++;
-      else if (op.type === 'update-metadata' || op.type === 'upgrade') toUpdate++;
+      else if (
+        op.type === 'update-metadata' ||
+        op.type === 'upgrade-transcode' ||
+        op.type === 'upgrade-direct-copy' ||
+        op.type === 'upgrade-optimized-copy' ||
+        op.type === 'upgrade-artwork'
+      )
+        toUpdate++;
 
       operations.push({
         type: op.type,

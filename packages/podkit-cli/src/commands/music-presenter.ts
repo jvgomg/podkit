@@ -130,6 +130,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       transforms: config.effectiveTransforms,
       skipUpgrades: config.skipUpgrades,
       forceTranscode: config.forceTranscode,
+      forceTransferMode: config.forceTransferMode,
+      effectiveTransferMode: config.effectiveTransferMode,
       forceSyncTags: config.forceSyncTags,
       forceMetadata: config.forceMetadata,
       transcodingActive: true,
@@ -149,8 +151,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
   ) {
     const config = contentConfig as MusicContentConfig;
     let artworkMissingBaseline = 0;
-    let fileModeMismatch = 0;
-    const effectiveFileMode = config.effectiveFileMode ?? 'optimized';
+    let transferModeMismatch = 0;
+    const effectiveTransferMode = config.effectiveTransferMode ?? 'fast';
 
     for (const match of diff.existing) {
       if (config.checkArtwork && match.ipod.hasArtwork === true) {
@@ -160,18 +162,17 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         }
       }
 
-      // Count tracks whose sync tag mode doesn't match the effective fileMode.
-      // Treat missing fileMode (legacy sync tags) as 'optimized' since that was
-      // the effective behavior before fileMode was introduced (-vn always won).
+      // Count tracks whose sync tag mode doesn't match the effective transferMode.
+      // Treat missing transferMode (legacy sync tags) as 'fast' — the system default.
       const syncTag = core.parseSyncTag(match.ipod.comment);
       if (syncTag) {
-        const tagMode = syncTag.fileMode ?? 'optimized';
-        if (tagMode !== effectiveFileMode) {
-          fileModeMismatch++;
+        const tagMode = syncTag.transferMode ?? 'fast';
+        if (tagMode !== effectiveTransferMode) {
+          transferModeMismatch++;
         }
       }
     }
-    return { artworkMissingBaseline, fileModeMismatch };
+    return { artworkMissingBaseline, transferModeMismatch };
   }
 
   createPlan(
@@ -227,6 +228,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     if (transformsDisplay) {
       out.print(`Transforms: ${transformsDisplay}`);
     }
+    if (config.effectiveTransferMode) {
+      out.print(`Transfer mode: ${config.effectiveTransferMode}`);
+    }
     if (config.skipUpgrades) {
       out.print(`Skip upgrades: enabled`);
     }
@@ -234,11 +238,13 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
 
     out.print('Changes:');
     out.print(`  Tracks to add: ${formatNumber(diff.toAdd.length)}`);
-    if (summary.transcodeCount > 0) {
-      out.print(`    - Transcode: ${formatNumber(summary.transcodeCount)}`);
+    if (summary.addTranscodeCount > 0) {
+      out.print(`    - Transcode: ${formatNumber(summary.addTranscodeCount)}`);
     }
-    if (summary.copyCount > 0) {
-      out.print(`    - Copy: ${formatNumber(summary.copyCount)}`);
+    if (summary.addDirectCopyCount + summary.addOptimizedCopyCount > 0) {
+      out.print(
+        `    - Copy: ${formatNumber(summary.addDirectCopyCount + summary.addOptimizedCopyCount)}`
+      );
     }
     if (removeOrphans && diff.toRemove.length > 0) {
       out.print(`  Tracks to remove: ${formatNumber(diff.toRemove.length)}`);
@@ -376,7 +382,12 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
           };
         }
       }
-      if (op.type === 'upgrade') {
+      if (
+        op.type === 'upgrade-transcode' ||
+        op.type === 'upgrade-direct-copy' ||
+        op.type === 'upgrade-optimized-copy' ||
+        op.type === 'upgrade-artwork'
+      ) {
         return {
           ...base,
           reason: op.reason,
@@ -433,16 +444,22 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       dryRun: true,
       source: sourcePath,
       device: devicePath,
+      quality: config.effectiveQuality,
+      transferMode: config.effectiveTransferMode,
       transforms: transformsInfo.length > 0 ? transformsInfo : undefined,
       skipUpgrades: config.skipUpgrades || undefined,
       plan: {
         tracksToAdd: diff.toAdd.length,
         tracksToRemove: removeOrphans ? diff.toRemove.length : 0,
         tracksToUpdate: diff.toUpdate.length,
-        tracksToUpgrade: summary.upgradeCount,
+        tracksToUpgrade:
+          summary.upgradeTranscodeCount +
+          summary.upgradeDirectCopyCount +
+          summary.upgradeOptimizedCopyCount +
+          summary.upgradeArtworkCount,
         updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
-        tracksToTranscode: summary.transcodeCount,
-        tracksToCopy: summary.copyCount,
+        tracksToTranscode: summary.addTranscodeCount,
+        tracksToCopy: summary.addDirectCopyCount + summary.addOptimizedCopyCount,
         tracksExisting: diff.existing.length,
         estimatedSize: plan.estimatedSize,
         estimatedTime: plan.estimatedTime,
@@ -503,9 +520,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         syncTagConfig: {
           encodingMode: config.effectiveEncoding,
           customBitrate: config.effectiveCustomBitrate,
-          fileMode: config.effectiveFileMode,
+          transferMode: config.effectiveTransferMode,
         },
-        fileMode: config.effectiveFileMode,
+        transferMode: config.effectiveTransferMode,
       })) {
         if (progress.error) {
           const categorized = progress.categorizedError;

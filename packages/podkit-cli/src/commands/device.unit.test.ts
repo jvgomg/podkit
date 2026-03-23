@@ -237,5 +237,19 @@ describe('device utility functions', () => {
         '100 tracks (\u25D0 100 missing artwork hash)'
       );
     });
+
+    it('includes missing transfer mode when provided', () => {
+      expect(formatSyncTagSummary(500, 300, 0, 100, 100)).toBe(
+        '500 tracks (\u2713 300 consistent, \u2717 100 no sync tag, \u25D0 100 missing transfer mode)'
+      );
+    });
+
+    it('does not include missing transfer mode when zero', () => {
+      expect(formatSyncTagSummary(500, 500, 0, 0, 0)).toBe('500 tracks \u2713 all consistent');
+    });
+
+    it('does not include missing transfer mode when undefined', () => {
+      expect(formatSyncTagSummary(500, 500, 0, 0)).toBe('500 tracks \u2713 all consistent');
+    });
   });
 });

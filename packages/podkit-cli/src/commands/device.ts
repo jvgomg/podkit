@@ -103,7 +103,8 @@ export function formatSyncTagSummary(
   trackCount: number,
   complete: number,
   missingArt: number,
-  noTag: number
+  noTag: number,
+  missingTransfer?: number
 ): string {
   const tracksStr = `${formatNumber(trackCount)} tracks`;
   if (trackCount === 0) return tracksStr;
@@ -112,6 +113,8 @@ export function formatSyncTagSummary(
   if (complete > 0) parts.push(`\u2713 ${formatNumber(complete)} consistent`);
   if (missingArt > 0) parts.push(`\u25D0 ${formatNumber(missingArt)} missing artwork hash`);
   if (noTag > 0) parts.push(`\u2717 ${formatNumber(noTag)} no sync tag`);
+  if (missingTransfer !== undefined && missingTransfer > 0)
+    parts.push(`\u25D0 ${formatNumber(missingTransfer)} missing transfer mode`);
 
   // No sync tag data at all
   if (parts.length === 0) return tracksStr;
@@ -274,6 +277,7 @@ export interface DeviceInfoOutput {
     syncTagCount?: number;
     syncTagComplete?: number;
     syncTagMissingArt?: number;
+    syncTagMissingTransfer?: number;
     databaseError?: string;
   };
   error?: string;
@@ -1457,6 +1461,9 @@ const infoSubcommand = new Command('info')
                 (t) => t.tag !== null && (t.tag.artworkHash || t.hasArtwork === false)
               ).length;
               const syncTagMissingArt = syncTagCount - syncTagComplete;
+              const syncTagMissingTransfer = parsedSyncTags.filter(
+                (t) => t.tag !== null && !t.tag.transferMode
+              ).length;
 
               const deviceValidation = validateDevice(info.device, resolveResult.path);
 
@@ -1480,6 +1487,7 @@ const infoSubcommand = new Command('info')
                 syncTagCount,
                 syncTagComplete,
                 syncTagMissingArt,
+                syncTagMissingTransfer,
               };
 
               if (storage) {
@@ -1609,9 +1617,10 @@ const infoSubcommand = new Command('info')
             const complete = liveStatus.syncTagComplete ?? 0;
             const missingArt = liveStatus.syncTagMissingArt ?? 0;
             const noTag = trackCount - syncTagCount;
+            const missingTransfer = liveStatus.syncTagMissingTransfer ?? 0;
 
             out.print(
-              `  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag)}`
+              `  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag, missingTransfer)}`
             );
           }
           if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {

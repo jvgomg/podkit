@@ -53,8 +53,8 @@ export interface SyncTagData {
   bitrate?: number;
   /** Artwork hash: 8-char lowercase hex string (xxHash truncated to 32 bits) */
   artworkHash?: string;
-  /** File mode used for transcoding: 'optimized' | 'portable' (informational only) */
-  fileMode?: string;
+  /** Transfer mode used for this sync: 'fast' | 'optimized' | 'portable' */
+  transferMode?: string;
 }
 
 // =============================================================================
@@ -137,8 +137,8 @@ export function parseSyncTag(comment: string | null | undefined): SyncTagData | 
     result.artworkHash = data.art;
   }
 
-  if (data.mode) {
-    result.fileMode = data.mode;
+  if (data.transfer) {
+    result.transferMode = data.transfer;
   }
 
   return result;
@@ -169,8 +169,8 @@ export function formatSyncTag(data: SyncTagData): string {
     parts.push(`art=${data.artworkHash}`);
   }
 
-  if (data.fileMode) {
-    parts.push(`mode=${data.fileMode}`);
+  if (data.transferMode) {
+    parts.push(`transfer=${data.transferMode}`);
   }
 
   return `${TAG_PREFIX}${parts.join(' ')}${TAG_SUFFIX}`;
@@ -262,7 +262,7 @@ export function buildAudioSyncTag(
   resolvedPreset: string,
   encodingMode?: string,
   customBitrate?: number,
-  fileMode?: string
+  transferMode?: string
 ): SyncTagData {
   const data: SyncTagData = {
     quality: resolvedPreset,
@@ -276,8 +276,31 @@ export function buildAudioSyncTag(
     }
   }
 
-  if (fileMode) {
-    data.fileMode = fileMode;
+  if (transferMode) {
+    data.transferMode = transferMode;
+  }
+
+  return data;
+}
+
+/**
+ * Build the SyncTagData for a copy operation (direct-copy or optimized-copy).
+ *
+ * Copy tracks use `quality=copy` (no encoding/bitrate) and include the
+ * transfer mode and artwork hash.
+ *
+ * @param transferMode - Transfer mode used: 'fast' | 'optimized' | 'portable'
+ * @param artworkHash - Artwork content hash (8-char hex), if available
+ * @returns SyncTagData for the copy operation
+ */
+export function buildCopySyncTag(transferMode: string, artworkHash?: string): SyncTagData {
+  const data: SyncTagData = {
+    quality: 'copy',
+    transferMode,
+  };
+
+  if (artworkHash) {
+    data.artworkHash = artworkHash;
   }
 
   return data;

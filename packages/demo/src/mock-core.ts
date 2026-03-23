@@ -771,7 +771,7 @@ export function createMusicPlan(diff: any, _options?: any) {
 
   for (const track of diff.toAdd || []) {
     operations.push({
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'high' },
     });
@@ -808,11 +808,11 @@ export function estimateCopySize(track: any): number {
 }
 
 export function calculateMusicOperationSize(operation: any): number {
-  if (operation.type === 'transcode') {
+  if (operation.type === 'add-transcode') {
     const duration = operation.source?.duration ?? 240000;
     return estimateTranscodedSize(duration, 256);
   }
-  if (operation.type === 'copy') {
+  if (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') {
     return estimateCopySize(operation.source);
   }
   return 0;
@@ -823,19 +823,37 @@ export function willMusicFitInSpace(_plan: any, _availableSpace: number): boolea
 }
 
 export function getMusicPlanSummary(plan: any) {
-  let transcodeCount = 0;
-  let copyCount = 0;
+  let addTranscodeCount = 0;
+  let addDirectCopyCount = 0;
+  let addOptimizedCopyCount = 0;
   let removeCount = 0;
   let updateCount = 0;
-  let upgradeCount = 0;
+  let upgradeTranscodeCount = 0;
+  let upgradeDirectCopyCount = 0;
+  let upgradeOptimizedCopyCount = 0;
+  let upgradeArtworkCount = 0;
   for (const op of plan.operations || []) {
-    if (op.type === 'transcode') transcodeCount++;
-    else if (op.type === 'copy') copyCount++;
+    if (op.type === 'add-transcode') addTranscodeCount++;
+    else if (op.type === 'add-direct-copy') addDirectCopyCount++;
+    else if (op.type === 'add-optimized-copy') addOptimizedCopyCount++;
     else if (op.type === 'remove') removeCount++;
     else if (op.type === 'update-metadata') updateCount++;
-    else if (op.type === 'upgrade') upgradeCount++;
+    else if (op.type === 'upgrade-transcode') upgradeTranscodeCount++;
+    else if (op.type === 'upgrade-direct-copy') upgradeDirectCopyCount++;
+    else if (op.type === 'upgrade-optimized-copy') upgradeOptimizedCopyCount++;
+    else if (op.type === 'upgrade-artwork') upgradeArtworkCount++;
   }
-  return { transcodeCount, copyCount, removeCount, updateCount, upgradeCount };
+  return {
+    addTranscodeCount,
+    addDirectCopyCount,
+    addOptimizedCopyCount,
+    removeCount,
+    updateCount,
+    upgradeTranscodeCount,
+    upgradeDirectCopyCount,
+    upgradeOptimizedCopyCount,
+    upgradeArtworkCount,
+  };
 }
 
 export function categorizeSource(track: any) {
@@ -882,7 +900,9 @@ export class MusicExecutor {
     for (let i = 0; i < total; i++) {
       const op = ops[i];
       const trackName =
-        op.type === 'transcode' || op.type === 'copy'
+        op.type === 'add-transcode' ||
+        op.type === 'add-direct-copy' ||
+        op.type === 'add-optimized-copy'
           ? `${op.source.artist} - ${op.source.title}`
           : op.type === 'remove'
             ? `${op.track.artist} - ${op.track.title}`
@@ -892,7 +912,11 @@ export class MusicExecutor {
 
       // Emit transcoding/copying progress
       const phase =
-        op.type === 'transcode' ? 'transcoding' : op.type === 'copy' ? 'copying' : 'removing';
+        op.type === 'add-transcode'
+          ? 'transcoding'
+          : op.type === 'add-direct-copy' || op.type === 'add-optimized-copy'
+            ? 'copying'
+            : 'removing';
 
       yield {
         phase,
@@ -915,7 +939,12 @@ export class MusicExecutor {
 
     // Emit artwork phase
     if (!options.dryRun && total > 0) {
-      const artworkOps = ops.filter((op: any) => op.type === 'transcode' || op.type === 'copy');
+      const artworkOps = ops.filter(
+        (op: any) =>
+          op.type === 'add-transcode' ||
+          op.type === 'add-direct-copy' ||
+          op.type === 'add-optimized-copy'
+      );
       for (let i = 0; i < artworkOps.length; i++) {
         const op = artworkOps[i];
         yield {
@@ -996,13 +1025,19 @@ export async function executePlan(plan: any, deps: any, options: any = {}) {
 
 export function getMusicOperationDisplayName(operation: any): string {
   switch (operation.type) {
-    case 'transcode':
-    case 'copy':
+    case 'add-transcode':
+    case 'add-direct-copy':
+    case 'add-optimized-copy':
       return `${operation.source.artist} - ${operation.source.title}`;
     case 'remove':
       return `${operation.track.artist} - ${operation.track.title}`;
     case 'update-metadata':
       return `${operation.track.artist} - ${operation.track.title}`;
+    case 'upgrade-transcode':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy':
+    case 'upgrade-artwork':
+      return `${operation.source.artist} - ${operation.source.title}`;
     case 'video-transcode':
     case 'video-copy':
       return operation.source.title;
@@ -1014,8 +1049,9 @@ export function getMusicOperationDisplayName(operation: any): string {
 }
 
 export function categorizeError(_error: Error, operationType: string) {
-  if (operationType === 'transcode') return 'transcode';
-  if (operationType === 'copy') return 'copy';
+  if (operationType === 'add-transcode' || operationType === 'upgrade-transcode')
+    return 'transcode';
+  if (operationType === 'add-direct-copy' || operationType === 'add-optimized-copy') return 'copy';
   return 'unknown';
 }
 
@@ -1843,8 +1879,9 @@ export function showLanguageTransform(track: any, _config: any) {
 // =============================================================================
 
 export function sharedCategorizeError(_error: Error, operationType: string) {
-  if (operationType === 'transcode') return 'transcode';
-  if (operationType === 'copy') return 'copy';
+  if (operationType === 'add-transcode' || operationType === 'upgrade-transcode')
+    return 'transcode';
+  if (operationType === 'add-direct-copy' || operationType === 'add-optimized-copy') return 'copy';
   return 'unknown';
 }
 
@@ -1927,7 +1964,7 @@ export class MusicHandler {
   }
 
   planAdd(source: any, _options?: any) {
-    return { operation: { type: 'transcode', source, preset: { name: 'high' } } };
+    return { operation: { type: 'add-transcode', source, preset: { name: 'high' } } };
   }
 
   planUpdate(source: any, device: any, reasons: string[], _options?: any) {

@@ -1,9 +1,10 @@
 ---
 id: TASK-201
 title: '`--force-transfer-mode` CLI flag and differ integration'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:09'
+updated_date: '2026-03-23 16:47'
 labels:
   - feature
   - cli
@@ -66,15 +67,21 @@ When `forceTransferMode` is enabled, the differ adds a new check for each matche
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 --force-transfer-mode CLI flag accepted by sync command
-- [ ] #2 forceTransferMode config option and PODKIT_FORCE_TRANSFER_MODE env var supported
-- [ ] #3 Differ detects transfer mode mismatch by comparing sync tag transfer field to current config
-- [ ] #4 Only tracks with mismatched transfer mode are moved to toUpdate (not all tracks)
-- [ ] #5 transfer-mode-changed upgrade reason added and recognized as file-replacement upgrade
-- [ ] #6 Copy-format tracks (MP3, M4A) are re-processed when transfer mode changes (unlike --force-transcode which skips them)
-- [ ] #7 --force-transcode and --force-transfer-mode can be used together without duplicate processing
-- [ ] #8 TRANSFER_MODE_MISMATCH_TIP fires with correct count and recommends --force-transfer-mode
-- [ ] #9 Legacy sync tags (missing transfer field) treated as transfer=fast to avoid false positives
-- [ ] #10 Shell completions updated with --force-transfer-mode, old --file-mode removed
-- [ ] #11 Tests cover mismatch detection, interaction with --force-transcode, and tip firing
+- [x] #1 --force-transfer-mode CLI flag accepted by sync command
+- [x] #2 forceTransferMode config option and PODKIT_FORCE_TRANSFER_MODE env var supported
+- [x] #3 Differ detects transfer mode mismatch by comparing sync tag transfer field to current config
+- [x] #4 Only tracks with mismatched transfer mode are moved to toUpdate (not all tracks)
+- [x] #5 transfer-mode-changed upgrade reason added and recognized as file-replacement upgrade
+- [x] #6 Copy-format tracks (MP3, M4A) are re-processed when transfer mode changes (unlike --force-transcode which skips them)
+- [x] #7 --force-transcode and --force-transfer-mode can be used together without duplicate processing
+- [x] #8 TRANSFER_MODE_MISMATCH_TIP fires with correct count and recommends --force-transfer-mode
+- [x] #9 Legacy sync tags (missing transfer field) treated as transfer=fast to avoid false positives
+- [x] #10 Shell completions updated with --force-transfer-mode, old --file-mode removed
+- [x] #11 Tests cover mismatch detection, interaction with --force-transcode, and tip firing
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+`transfer-mode-changed` added to UpgradeReason and marked as file-replacement upgrade. Differ post-processing block added after forceTranscode, before forceSyncTags — iterates existing tracks, compares sync tag transferMode (legacy default: 'fast') against effectiveTransferMode. Affects ALL tracks including copy-format. CLI flag `--force-transfer-mode` added, config `forceTransferMode`, env `PODKIT_FORCE_TRANSFER_MODE`. Tip updated to recommend `--force-transfer-mode`. Shell completions are auto-generated from Commander.js options. 6 differ tests, 1 upgrade test, tip test updated. 2056 core + 58 CLI + 24 E2E tests pass.
+<!-- SECTION:NOTES:END -->

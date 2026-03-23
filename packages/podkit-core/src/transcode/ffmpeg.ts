@@ -17,7 +17,7 @@ import type {
   AudioMetadata,
   QualityPreset,
   EncodingMode,
-  FileMode,
+  TransferMode,
 } from './types.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
@@ -175,7 +175,7 @@ export function buildTranscodeArgs(
   output: string,
   encoder: string,
   preset: QualityPreset | 'lossless' | AacTranscodeConfig,
-  options?: { fileMode?: FileMode }
+  options?: { transferMode?: TransferMode }
 ): string[] {
   // Handle ALAC encoding
   if (preset === 'lossless') {
@@ -227,9 +227,9 @@ export function buildTranscodeArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on file mode
-  const fileMode = options?.fileMode ?? 'optimized';
-  if (fileMode === 'portable') {
+  // Embedded artwork handling based on transfer mode
+  const transferMode = options?.transferMode ?? 'fast';
+  if (transferMode === 'portable') {
     // Preserve embedded artwork for exportable files
     args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   } else {
@@ -262,7 +262,7 @@ export function buildTranscodeArgs(
 export function buildAlacArgs(
   input: string,
   output: string,
-  options?: { fileMode?: FileMode }
+  options?: { transferMode?: TransferMode }
 ): string[] {
   const args: string[] = [
     // Input
@@ -280,9 +280,9 @@ export function buildAlacArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on file mode
-  const fileMode = options?.fileMode ?? 'optimized';
-  if (fileMode === 'portable') {
+  // Embedded artwork handling based on transfer mode
+  const transferMode = options?.transferMode ?? 'fast';
+  if (transferMode === 'portable') {
     // Preserve embedded artwork for exportable files
     args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   } else {
@@ -300,6 +300,44 @@ export function buildAlacArgs(
   args.push('-progress', 'pipe:1');
 
   // Output file
+  args.push(output);
+
+  return args;
+}
+
+/**
+ * Optimized copy output format — determines container format flag
+ */
+export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a';
+
+/**
+ * Build FFmpeg arguments for optimized-copy (stream copy with artwork stripping).
+ *
+ * Used when transferMode='optimized' for copy-format files (MP3, M4A, ALAC→ALAC).
+ * Audio is copied without re-encoding; only artwork is stripped.
+ */
+export function buildOptimizedCopyArgs(
+  input: string,
+  output: string,
+  format: OptimizedCopyFormat
+): string[] {
+  const args: string[] = [
+    '-i',
+    input,
+    '-c:a',
+    'copy',
+    '-map_metadata',
+    '0',
+    '-vn', // Strip embedded artwork
+  ];
+
+  // MP3 doesn't use -f ipod container format
+  if (format !== 'mp3') {
+    args.push('-f', 'ipod');
+  }
+
+  args.push('-y');
+  args.push('-progress', 'pipe:1');
   args.push(output);
 
   return args;
@@ -440,7 +478,7 @@ export class FFmpegTranscoder implements Transcoder {
 
     // Build FFmpeg arguments
     const args = buildTranscodeArgs(input, output, caps.preferredEncoder, preset, {
-      fileMode: options.fileMode,
+      transferMode: options.transferMode,
     });
 
     // Track timing

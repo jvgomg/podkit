@@ -1,9 +1,10 @@
 ---
 id: TASK-195
 title: Define TransferMode types and DeviceCapabilities interface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:07'
+updated_date: '2026-03-23 15:13'
 labels:
   - feature
   - core
@@ -62,10 +63,16 @@ type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'ogg' | 'opus' | 'wav' | 'ai
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 TransferMode type exported from @podkit/core with TRANSFER_MODES array and isValidTransferMode() validator
-- [ ] #2 DeviceCapabilities interface exported from @podkit/core with ArtworkSource and AudioCodec types
-- [ ] #3 getDeviceCapabilities() returns correct capabilities for all iPod generations (color screen, non-color, Shuffle)
-- [ ] #4 deviceSupportsAlac boolean replaced with DeviceCapabilities throughout planner, executor, and config types
-- [ ] #5 Old FileMode type, FILE_MODES array, and isValidFileMode() removed
-- [ ] #6 Unit tests for getDeviceCapabilities() covering ALAC-capable, non-ALAC, video-capable, and screenless iPod generations
+- [x] #1 TransferMode type exported from @podkit/core with TRANSFER_MODES array and isValidTransferMode() validator
+- [x] #2 DeviceCapabilities interface exported from @podkit/core with ArtworkSource and AudioCodec types
+- [x] #3 getDeviceCapabilities() returns correct capabilities for all iPod generations (color screen, non-color, Shuffle)
+- [x] #4 deviceSupportsAlac boolean replaced with DeviceCapabilities throughout planner, executor, and config types
+- [x] #5 Old FileMode type, FILE_MODES array, and isValidFileMode() removed
+- [x] #6 Unit tests for getDeviceCapabilities() covering ALAC-capable, non-ALAC, video-capable, and screenless iPod generations
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+TransferMode type added alongside FileMode (then FileMode removed after all consumers migrated). DeviceCapabilities interface in new `ipod/capabilities.ts` file. `DeviceArtworkSource` name used instead of `ArtworkSource` to avoid conflict with existing `ArtworkSource` in artwork/types.ts. PlanOptions extended with `capabilities` field; `deviceSupportsAlac` deprecated. Planner uses fallback chain: `capabilities?.supportedAudioCodecs.includes('alac') ?? deviceSupportsAlac ?? false`.
+<!-- SECTION:NOTES:END -->

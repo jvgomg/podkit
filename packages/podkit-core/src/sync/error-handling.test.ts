@@ -27,35 +27,43 @@ import {
 describe('categorizeError', () => {
   describe('message-based categorization', () => {
     it('categorizes database errors', () => {
-      expect(categorizeError(new Error('database error'), 'copy')).toBe('database');
-      expect(categorizeError(new Error('itunes db corrupt'), 'copy')).toBe('database');
-      expect(categorizeError(new Error('libgpod failed'), 'copy')).toBe('database');
-      expect(categorizeError(new Error('ipod not found'), 'copy')).toBe('database');
+      expect(categorizeError(new Error('database error'), 'add-direct-copy')).toBe('database');
+      expect(categorizeError(new Error('itunes db corrupt'), 'add-direct-copy')).toBe('database');
+      expect(categorizeError(new Error('libgpod failed'), 'add-direct-copy')).toBe('database');
+      expect(categorizeError(new Error('ipod not found'), 'add-direct-copy')).toBe('database');
     });
 
     it('categorizes artwork errors', () => {
-      expect(categorizeError(new Error('artwork extraction failed'), 'copy')).toBe('artwork');
-      expect(categorizeError(new Error('image format unsupported'), 'copy')).toBe('artwork');
+      expect(categorizeError(new Error('artwork extraction failed'), 'add-direct-copy')).toBe(
+        'artwork'
+      );
+      expect(categorizeError(new Error('image format unsupported'), 'add-direct-copy')).toBe(
+        'artwork'
+      );
     });
 
     it('categorizes file I/O errors as copy', () => {
-      expect(categorizeError(new Error('ENOENT: no such file'), 'transcode')).toBe('copy');
-      expect(categorizeError(new Error('EACCES: permission denied'), 'transcode')).toBe('copy');
-      expect(categorizeError(new Error('ENOSPC: no space left'), 'transcode')).toBe('copy');
-      expect(categorizeError(new Error('file not found'), 'transcode')).toBe('copy');
+      expect(categorizeError(new Error('ENOENT: no such file'), 'add-transcode')).toBe('copy');
+      expect(categorizeError(new Error('EACCES: permission denied'), 'add-transcode')).toBe('copy');
+      expect(categorizeError(new Error('ENOSPC: no space left'), 'add-transcode')).toBe('copy');
+      expect(categorizeError(new Error('file not found'), 'add-transcode')).toBe('copy');
     });
 
     it('categorizes transcode errors', () => {
-      expect(categorizeError(new Error('ffmpeg exited with code 1'), 'copy')).toBe('transcode');
-      expect(categorizeError(new Error('transcode failed'), 'copy')).toBe('transcode');
-      expect(categorizeError(new Error('encoder not found'), 'copy')).toBe('transcode');
-      expect(categorizeError(new Error('codec not supported'), 'copy')).toBe('transcode');
+      expect(categorizeError(new Error('ffmpeg exited with code 1'), 'add-direct-copy')).toBe(
+        'transcode'
+      );
+      expect(categorizeError(new Error('transcode failed'), 'add-direct-copy')).toBe('transcode');
+      expect(categorizeError(new Error('encoder not found'), 'add-direct-copy')).toBe('transcode');
+      expect(categorizeError(new Error('codec not supported'), 'add-direct-copy')).toBe(
+        'transcode'
+      );
     });
   });
 
   describe('operation-type fallback', () => {
     it('falls back to transcode for transcode operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'transcode')).toBe('transcode');
+      expect(categorizeError(new Error('unknown error'), 'add-transcode')).toBe('transcode');
     });
 
     it('falls back to transcode for video-transcode operations', () => {
@@ -63,7 +71,7 @@ describe('categorizeError', () => {
     });
 
     it('falls back to copy for copy operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'copy')).toBe('copy');
+      expect(categorizeError(new Error('unknown error'), 'add-direct-copy')).toBe('copy');
     });
 
     it('falls back to copy for video-copy operations', () => {
@@ -71,7 +79,7 @@ describe('categorizeError', () => {
     });
 
     it('falls back to copy for upgrade operations', () => {
-      expect(categorizeError(new Error('unknown error'), 'upgrade')).toBe('copy');
+      expect(categorizeError(new Error('unknown error'), 'upgrade-direct-copy')).toBe('copy');
     });
 
     it('falls back to copy for video-upgrade operations', () => {
@@ -87,11 +95,13 @@ describe('categorizeError', () => {
   describe('priority order', () => {
     it('database takes priority over copy keywords', () => {
       // "ipod" matches database, but also looks like a file I/O error
-      expect(categorizeError(new Error('ipod ENOENT'), 'copy')).toBe('database');
+      expect(categorizeError(new Error('ipod ENOENT'), 'add-direct-copy')).toBe('database');
     });
 
     it('database takes priority over transcode keywords', () => {
-      expect(categorizeError(new Error('database ffmpeg error'), 'copy')).toBe('database');
+      expect(categorizeError(new Error('database ffmpeg error'), 'add-direct-copy')).toBe(
+        'database'
+      );
     });
   });
 });
@@ -202,7 +212,12 @@ describe('createCategorizedError', () => {
 
 describe('withRetry', () => {
   it('returns success on first try', async () => {
-    const result = await withRetry(async () => 42, DEFAULT_RETRY_CONFIG, 'transcode', 'Test Track');
+    const result = await withRetry(
+      async () => 42,
+      DEFAULT_RETRY_CONFIG,
+      'add-transcode',
+      'Test Track'
+    );
 
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -222,7 +237,7 @@ describe('withRetry', () => {
         return 'success';
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
-      'transcode',
+      'add-transcode',
       'Test Track'
     );
 
@@ -239,7 +254,7 @@ describe('withRetry', () => {
         throw new Error('ffmpeg persistent failure');
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
-      'transcode',
+      'add-transcode',
       'Test Track'
     );
 
@@ -261,7 +276,7 @@ describe('withRetry', () => {
         throw new Error('database error');
       },
       { ...DEFAULT_RETRY_CONFIG, retryDelayMs: 0 },
-      'copy',
+      'add-direct-copy',
       'Test Track'
     );
 

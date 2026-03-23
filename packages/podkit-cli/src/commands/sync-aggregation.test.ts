@@ -49,6 +49,7 @@ function buildMusicDryRunOutput(ctx: {
     type: 'music',
     effectiveTransforms: ctx.effectiveTransforms,
     effectiveQuality: ctx.effectiveQuality as any,
+    effectiveTransferMode: undefined,
     effectiveEncoding: undefined,
     effectiveCustomBitrate: undefined,
     effectiveBitrateTolerance: undefined,
@@ -56,6 +57,7 @@ function buildMusicDryRunOutput(ctx: {
     effectiveArtwork: true,
     skipUpgrades: ctx.skipUpgrades,
     forceTranscode: false,
+    forceTransferMode: false,
     forceSyncTags: false,
     forceMetadata: false,
     checkArtwork: false,
@@ -115,9 +117,13 @@ function createMusicDryRunCtx(
   };
 
   const summary = {
-    transcodeCount: 0,
-    copyCount: 0,
-    upgradeCount: 0,
+    addTranscodeCount: 0,
+    addDirectCopyCount: 0,
+    addOptimizedCopyCount: 0,
+    upgradeTranscodeCount: 0,
+    upgradeDirectCopyCount: 0,
+    upgradeOptimizedCopyCount: 0,
+    upgradeArtworkCount: 0,
   };
 
   return {

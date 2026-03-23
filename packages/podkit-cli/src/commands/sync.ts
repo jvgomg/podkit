@@ -37,7 +37,7 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
 } from '../config/index.js';
-import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES, FILE_MODES } from '../config/index.js';
+import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES, TRANSFER_MODES } from '../config/index.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -82,11 +82,12 @@ interface SyncOptions {
   audioQuality?: QualityPreset;
   videoQuality?: VideoQualityPreset;
   encoding?: string;
-  fileMode?: string;
+  transferMode?: string;
   filter?: string;
   artwork?: boolean;
   skipUpgrades?: boolean;
   forceTranscode?: boolean;
+  forceTransferMode?: boolean;
   forceSyncTags?: boolean;
   forceMetadata?: boolean;
   checkArtwork?: boolean;
@@ -156,6 +157,7 @@ export interface UpdateBreakdown {
   'preset-upgrade'?: number;
   'preset-downgrade'?: number;
   'force-transcode'?: number;
+  'transfer-mode-changed'?: number;
   'sync-tag-write'?: number;
   'artwork-added'?: number;
   'artwork-removed'?: number;
@@ -182,6 +184,8 @@ export interface SyncOutput {
   dryRun: boolean;
   source?: string;
   device?: string;
+  quality?: string;
+  transferMode?: string;
   transforms?: TransformInfo[];
   skipUpgrades?: boolean;
   plan?: {
@@ -202,11 +206,15 @@ export interface SyncOutput {
   };
   operations?: Array<{
     type:
-      | 'transcode'
-      | 'copy'
+      | 'add-transcode'
+      | 'add-direct-copy'
+      | 'add-optimized-copy'
+      | 'upgrade-transcode'
+      | 'upgrade-direct-copy'
+      | 'upgrade-optimized-copy'
+      | 'upgrade-artwork'
       | 'remove'
       | 'update-metadata'
-      | 'upgrade'
       | 'video-transcode'
       | 'video-copy'
       | 'video-remove'
@@ -428,15 +436,15 @@ function getEffectiveSkipUpgrades(
 }
 
 /**
- * Get effective file mode
+ * Get effective transfer mode
  *
- * Resolution order: device fileMode > global fileMode > undefined (defaults to optimized)
+ * Resolution order: device transferMode > global transferMode > undefined (defaults to fast)
  */
-function getEffectiveFileMode(
+function getEffectiveTransferMode(
   config: PodkitConfig,
   deviceConfig?: DeviceConfig
-): import('@podkit/core').FileMode | undefined {
-  return deviceConfig?.fileMode ?? config.fileMode;
+): import('@podkit/core').TransferMode | undefined {
+  return deviceConfig?.transferMode ?? config.transferMode;
 }
 
 /**
@@ -536,12 +544,17 @@ export const syncCommand = new Command('sync')
   )
   .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
   .addOption(
-    new Option('--file-mode <mode>', 'file mode for transcoded files').choices([...FILE_MODES])
+    new Option('--transfer-mode <mode>', 'transfer mode for synced files').choices([
+      ...TRANSFER_MODES,
+    ])
   )
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--skip-upgrades', 'skip file-replacement upgrades for changed source files')
   .option('--force-transcode', 're-transcode all lossless-source tracks regardless of bitrate')
+  .addOption(
+    new Option('--force-transfer-mode', 'reprocess tracks synced with different transfer mode')
+  )
   .option(
     '--force-sync-tags',
     'ensure sync tag consistency by writing tags to all matched transcoded tracks without re-transcoding'
@@ -628,9 +641,9 @@ export const syncCommand = new Command('sync')
         encoding: options.encoding
           ? (options.encoding as import('@podkit/core').EncodingMode)
           : getEffectiveEncoding(config, dc),
-        fileMode: options.fileMode
-          ? (options.fileMode as import('@podkit/core').FileMode)
-          : getEffectiveFileMode(config, dc),
+        transferMode: options.transferMode
+          ? (options.transferMode as import('@podkit/core').TransferMode)
+          : getEffectiveTransferMode(config, dc),
         customBitrate: getEffectiveCustomBitrate(config, dc),
         bitrateTolerance: getEffectiveBitrateTolerance(config, dc),
       };
@@ -646,7 +659,7 @@ export const syncCommand = new Command('sync')
     let effectiveArtwork = derived.artwork;
     let effectiveSkipUpgrades = derived.skipUpgrades;
     let effectiveEncoding = derived.encoding;
-    let effectiveFileMode = derived.fileMode;
+    let effectiveTransferMode = derived.transferMode;
     let effectiveCustomBitrate = derived.customBitrate;
     let effectiveBitrateTolerance = derived.bitrateTolerance;
 
@@ -781,7 +794,7 @@ export const syncCommand = new Command('sync')
       effectiveArtwork = derived.artwork;
       effectiveSkipUpgrades = derived.skipUpgrades;
       effectiveEncoding = derived.encoding;
-      effectiveFileMode = derived.fileMode;
+      effectiveTransferMode = derived.transferMode;
       effectiveCustomBitrate = derived.customBitrate;
       effectiveBitrateTolerance = derived.bitrateTolerance;
 
@@ -909,7 +922,7 @@ export const syncCommand = new Command('sync')
     let totalFailed = 0;
     let anyError = false;
     let totalArtworkMissingBaseline = 0;
-    let totalFileModeMismatch = 0;
+    let totalTransferModeMismatch = 0;
 
     const shutdown = createShutdownController();
     shutdown.install();
@@ -930,13 +943,14 @@ export const syncCommand = new Command('sync')
             effectiveTransforms,
             effectiveQuality,
             effectiveEncoding,
-            effectiveFileMode,
+            effectiveTransferMode,
             effectiveCustomBitrate,
             effectiveBitrateTolerance,
             deviceSupportsAlac,
             effectiveArtwork,
             skipUpgrades: effectiveSkipUpgrades,
             forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
+            forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
             forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
             forceMetadata: options.forceMetadata ?? false,
             checkArtwork:
@@ -965,7 +979,7 @@ export const syncCommand = new Command('sync')
           totalCompleted += result.completed;
           totalFailed += result.failed;
           totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
-          totalFileModeMismatch += result.fileModeMismatch ?? 0;
+          totalTransferModeMismatch += result.transferModeMismatch ?? 0;
           if (!result.success) {
             anyError = true;
           }
@@ -1006,6 +1020,7 @@ export const syncCommand = new Command('sync')
               type: 'video',
               effectiveVideoQuality,
               effectiveVideoTransforms,
+              effectiveTransferMode,
               forceMetadata: options.forceMetadata ?? false,
             };
             const result = await genericSyncCollection(
@@ -1119,10 +1134,10 @@ export const syncCommand = new Command('sync')
         }
 
         // Show tips at end of sync
-        if (totalArtworkMissingBaseline > 0 || totalFileModeMismatch > 0) {
+        if (totalArtworkMissingBaseline > 0 || totalTransferModeMismatch > 0) {
           out.printTips({
             artworkMissingBaseline: totalArtworkMissingBaseline || undefined,
-            fileModeMismatch: totalFileModeMismatch || undefined,
+            transferModeMismatch: totalTransferModeMismatch || undefined,
           });
         }
 

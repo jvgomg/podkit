@@ -119,6 +119,7 @@ export {
   writeSyncTag,
   syncTagMatchesConfig,
   buildAudioSyncTag,
+  buildCopySyncTag,
   buildVideoSyncTag,
 } from './sync/sync-tags.js';
 
@@ -151,6 +152,10 @@ export {
   MUSIC_RETRY_CONFIG,
 } from './sync/music-executor.js';
 
+// Device capabilities
+export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './ipod/capabilities.js';
+export { getDeviceCapabilities } from './ipod/capabilities.js';
+
 // Transcoding
 export type {
   TranscoderCapabilities,
@@ -161,18 +166,18 @@ export type {
   TranscodeOptions,
   QualityPreset,
   EncodingMode,
-  FileMode,
+  TransferMode,
   TranscodeConfig,
   AacPreset,
 } from './transcode/types.js';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
-  FILE_MODES,
+  TRANSFER_MODES,
   AAC_PRESETS,
   ALAC_PRESET,
   isValidQualityPreset,
-  isValidFileMode,
+  isValidTransferMode,
   getPresetBitrate,
   isMaxPreset,
   isVbrEncoding,
@@ -187,8 +192,13 @@ export {
   buildTranscodeArgs,
   buildAlacArgs,
   buildVbrArgs,
+  buildOptimizedCopyArgs,
 } from './transcode/ffmpeg.js';
-export type { AacTranscodeConfig, FFmpegTranscoderConfig } from './transcode/ffmpeg.js';
+export type {
+  AacTranscodeConfig,
+  FFmpegTranscoderConfig,
+  OptimizedCopyFormat,
+} from './transcode/ffmpeg.js';
 
 // Transcode progress parsing (shared utilities)
 export {

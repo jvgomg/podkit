@@ -44,6 +44,7 @@ interface MockIpodDatabase {
 interface MockTranscoder {
   transcode: ReturnType<typeof mock>;
   detect: ReturnType<typeof mock>;
+  getFFmpegPath: ReturnType<typeof mock>;
 }
 
 // =============================================================================
@@ -141,6 +142,7 @@ function createMockTranscoder(): MockTranscoder {
       aacEncoders: ['aac'],
       preferredEncoder: 'aac',
     })),
+    getFFmpegPath: mock(() => 'ffmpeg'),
   };
 }
 
@@ -205,7 +207,7 @@ function createDependencies(
 describe('getMusicOperationDisplayName', () => {
   it('returns artist - title for transcode operation', () => {
     const op: SyncOperation = {
-      type: 'transcode',
+      type: 'add-transcode',
       source: createCollectionTrack('Pink Floyd', 'Comfortably Numb', 'The Wall'),
       preset: { name: 'high' },
     };
@@ -215,7 +217,7 @@ describe('getMusicOperationDisplayName', () => {
 
   it('returns artist - title for copy operation', () => {
     const op: SyncOperation = {
-      type: 'copy',
+      type: 'add-direct-copy',
       source: createCollectionTrack('Radiohead', 'Paranoid Android', 'OK Computer'),
     };
 
@@ -266,7 +268,7 @@ describe('MusicExecutor - basic execution', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
         },
       ],
@@ -290,7 +292,7 @@ describe('MusicExecutor - basic execution', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Compilation Album', 'mp3', {
             compilation: true,
           }),
@@ -316,7 +318,7 @@ describe('MusicExecutor - basic execution', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             bitrate: 192,
           }),
@@ -351,7 +353,7 @@ describe('MusicExecutor - basic execution', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             bitrate: 1000, // Source is high-bitrate FLAC
           }),
@@ -379,7 +381,7 @@ describe('MusicExecutor - basic execution', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -457,11 +459,11 @@ describe('MusicExecutor - basic execution', () => {
           track: trackToRemove,
         },
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'MP3 Song', 'Album', 'mp3'),
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'FLAC Song', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -505,7 +507,7 @@ describe('MusicExecutor - progress reporting', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
         },
       ],
@@ -529,9 +531,9 @@ describe('MusicExecutor - progress reporting', () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S3', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S3', 'Album', 'mp3') },
       ],
       estimatedTime: 3,
       estimatedSize: 15000000,
@@ -560,7 +562,7 @@ describe('MusicExecutor - progress reporting', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Pink Floyd', 'Money', 'DSOTM', 'mp3'),
         },
       ],
@@ -583,7 +585,7 @@ describe('MusicExecutor - progress reporting', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -607,7 +609,9 @@ describe('MusicExecutor - progress reporting', () => {
   it('emits updating-db phase before save', async () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -625,7 +629,9 @@ describe('MusicExecutor - progress reporting', () => {
   it('emits complete phase at end', async () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -660,9 +666,9 @@ describe('MusicExecutor - dry-run mode', () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('B', 'T', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -687,7 +693,9 @@ describe('MusicExecutor - dry-run mode', () => {
   it('marks progress as skipped in dry-run', async () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -706,8 +714,8 @@ describe('MusicExecutor - dry-run mode', () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 2,
       estimatedSize: 10000000,
@@ -750,11 +758,11 @@ describe('MusicExecutor - error handling', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 20,
       estimatedSize: 10000000,
@@ -787,11 +795,11 @@ describe('MusicExecutor - error handling', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 20,
       estimatedSize: 10000000,
@@ -823,7 +831,9 @@ describe('MusicExecutor - error handling', () => {
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -865,9 +875,9 @@ describe('MusicExecutor - abort signal', () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S3', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S3', 'Album', 'mp3') },
       ],
       estimatedTime: 3,
       estimatedSize: 15000000,
@@ -901,7 +911,9 @@ describe('MusicExecutor - abort signal', () => {
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -947,8 +959,8 @@ describe('executePlan', () => {
 
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 2,
       estimatedSize: 10000000,
@@ -970,8 +982,8 @@ describe('executePlan', () => {
 
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 2,
       estimatedSize: 10000000,
@@ -1007,8 +1019,8 @@ describe('executePlan', () => {
 
     const plan: SyncPlan = {
       operations: [
-        { type: 'copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 2,
       estimatedSize: 10000000,
@@ -1047,7 +1059,7 @@ describe('phase detection', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -1069,7 +1081,9 @@ describe('phase detection', () => {
   it('reports copying phase for copy operations', async () => {
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
-      operations: [{ type: 'copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') }],
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
+      ],
       estimatedTime: 1,
       estimatedSize: 5000000,
       warnings: [],
@@ -1105,7 +1119,7 @@ describe('filetype detection', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('A', 'S', 'Album', 'mp3', {
             filePath: '/music/song.mp3',
           }),
@@ -1129,7 +1143,7 @@ describe('filetype detection', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('A', 'S', 'Album', 'm4a', {
             filePath: '/music/song.m4a',
           }),
@@ -1155,28 +1169,28 @@ describe('filetype detection', () => {
 
 describe('categorizeError', () => {
   it('categorizes FFmpeg errors as transcode', () => {
-    expect(categorizeError(new Error('FFmpeg failed'), 'transcode')).toBe('transcode');
-    expect(categorizeError(new Error('encoder not found'), 'transcode')).toBe('transcode');
-    expect(categorizeError(new Error('codec error'), 'copy')).toBe('transcode');
+    expect(categorizeError(new Error('FFmpeg failed'), 'add-transcode')).toBe('transcode');
+    expect(categorizeError(new Error('encoder not found'), 'add-transcode')).toBe('transcode');
+    expect(categorizeError(new Error('codec error'), 'add-direct-copy')).toBe('transcode');
   });
 
   it('categorizes file errors as copy', () => {
-    expect(categorizeError(new Error('ENOENT: file not found'), 'copy')).toBe('copy');
-    expect(categorizeError(new Error('EACCES: permission denied'), 'copy')).toBe('copy');
+    expect(categorizeError(new Error('ENOENT: file not found'), 'add-direct-copy')).toBe('copy');
+    expect(categorizeError(new Error('EACCES: permission denied'), 'add-direct-copy')).toBe('copy');
     // File I/O errors take precedence over operation type
-    expect(categorizeError(new Error('ENOSPC: no space left'), 'transcode')).toBe('copy');
-    expect(categorizeError(new Error('permission denied'), 'transcode')).toBe('copy');
+    expect(categorizeError(new Error('ENOSPC: no space left'), 'add-transcode')).toBe('copy');
+    expect(categorizeError(new Error('permission denied'), 'add-transcode')).toBe('copy');
   });
 
   it('categorizes database errors correctly', () => {
-    expect(categorizeError(new Error('database error'), 'copy')).toBe('database');
-    expect(categorizeError(new Error('libgpod failed'), 'copy')).toBe('database');
-    expect(categorizeError(new Error('iTunes error'), 'copy')).toBe('database');
+    expect(categorizeError(new Error('database error'), 'add-direct-copy')).toBe('database');
+    expect(categorizeError(new Error('libgpod failed'), 'add-direct-copy')).toBe('database');
+    expect(categorizeError(new Error('iTunes error'), 'add-direct-copy')).toBe('database');
   });
 
   it('categorizes artwork errors correctly', () => {
-    expect(categorizeError(new Error('artwork failed'), 'copy')).toBe('artwork');
-    expect(categorizeError(new Error('image processing error'), 'copy')).toBe('artwork');
+    expect(categorizeError(new Error('artwork failed'), 'add-direct-copy')).toBe('artwork');
+    expect(categorizeError(new Error('image processing error'), 'add-direct-copy')).toBe('artwork');
   });
 
   it('returns unknown for unrecognized errors', () => {
@@ -1185,11 +1199,11 @@ describe('categorizeError', () => {
 
   it('uses operation type as hint for generic errors', () => {
     // When error message doesn't match any specific category, fall back to operation type
-    expect(categorizeError(new Error('something failed'), 'transcode')).toBe('transcode');
-    expect(categorizeError(new Error('something failed'), 'copy')).toBe('copy');
+    expect(categorizeError(new Error('something failed'), 'add-transcode')).toBe('transcode');
+    expect(categorizeError(new Error('something failed'), 'add-direct-copy')).toBe('copy');
     // But specific error messages take precedence over operation type
-    expect(categorizeError(new Error('database corruption'), 'transcode')).toBe('database');
-    expect(categorizeError(new Error('ENOENT'), 'transcode')).toBe('copy');
+    expect(categorizeError(new Error('database corruption'), 'add-transcode')).toBe('database');
+    expect(categorizeError(new Error('ENOENT'), 'add-transcode')).toBe('copy');
   });
 });
 
@@ -1262,7 +1276,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -1298,7 +1312,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -1353,7 +1367,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('A', 'S1', 'Album', 'mp3'),
         },
       ],
@@ -1386,7 +1400,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('A', 'S1', 'Album', 'mp3'),
         },
       ],
@@ -1430,7 +1444,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -1465,7 +1479,7 @@ describe('MusicExecutor - retry logic', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -1506,11 +1520,11 @@ describe('executePlan - categorized errors', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('A', 'S1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
-        { type: 'copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'S2', 'Album', 'mp3') },
       ],
       estimatedTime: 20,
       estimatedSize: 10000000,
@@ -1948,7 +1962,7 @@ describe('getMusicOperationDisplayName - update-metadata', () => {
 describe('getMusicOperationDisplayName - upgrade', () => {
   it('returns artist - title for upgrade operation', () => {
     const op: SyncOperation = {
-      type: 'upgrade',
+      type: 'upgrade-transcode',
       source: createCollectionTrack('Pink Floyd', 'Comfortably Numb', 'The Wall', 'flac'),
       target: createIPodTrack('Pink Floyd', 'Comfortably Numb', 'The Wall'),
       reason: 'format-upgrade',
@@ -1979,7 +1993,7 @@ describe('upgrade operations - dry run', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
@@ -1999,7 +2013,7 @@ describe('upgrade operations - dry run', () => {
     }
 
     // Should report upgrade operation as skipped
-    const upgradeProgress = progress.find((p) => p.operation.type === 'upgrade');
+    const upgradeProgress = progress.find((p) => p.operation.type === 'upgrade-transcode');
     expect(upgradeProgress).toBeDefined();
     expect(upgradeProgress!.skipped).toBe(true);
     expect(upgradeProgress!.phase).toBe('upgrading');
@@ -2038,7 +2052,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
             duration: 200000,
@@ -2088,7 +2102,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             bitrate: 320,
           }),
@@ -2137,7 +2151,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
             duration: 200000,
@@ -2170,7 +2184,7 @@ describe('upgrade operations - execution', () => {
 
   it('categorizes upgrade errors as copy errors for retry', () => {
     const error = new Error('something went wrong');
-    const category = categorizeError(error, 'upgrade');
+    const category = categorizeError(error, 'upgrade-direct-copy');
     expect(category).toBe('copy');
   });
 
@@ -2188,7 +2202,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Missing', 'Track', 'Album', 'flac', {
             lossless: true,
           }),
@@ -2228,7 +2242,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Missing', 'Track', 'Album', 'flac', {
             lossless: true,
           }),
@@ -2280,7 +2294,7 @@ describe('upgrade operations - execution', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
             duration: 200000,
@@ -2374,12 +2388,12 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'mp3'),
         },
       ],
@@ -2427,17 +2441,17 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song3', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -2476,12 +2490,12 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -2543,11 +2557,11 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'mp3'),
         },
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'mp3'),
         },
       ],
@@ -2596,12 +2610,12 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
           track: existingTrack,
         } as SyncOperation,
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'copy',
+          type: 'add-direct-copy',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'mp3'),
         },
       ],
@@ -2641,17 +2655,17 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     const plan: SyncPlan = {
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song1', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song2', 'Album', 'flac'),
           preset: { name: 'high' },
         },
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song3', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -2721,7 +2735,7 @@ describe('sync tag preservation after upgrade', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
             duration: 200000,
@@ -2767,7 +2781,7 @@ describe('sync tag preservation after upgrade', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
@@ -2811,7 +2825,7 @@ describe('sync tag preservation after upgrade', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
@@ -2839,7 +2853,7 @@ describe('sync tag preservation after upgrade', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
           preset: { name: 'medium' },
         },
@@ -2883,7 +2897,7 @@ describe('artwork during upgrade operations', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'transcode',
+          type: 'add-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
           preset: { name: 'high' },
         },
@@ -2951,7 +2965,7 @@ describe('artwork during upgrade operations', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
@@ -2989,7 +3003,7 @@ describe('artwork during upgrade operations', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-transcode',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
             hasArtwork: true,
@@ -3033,7 +3047,7 @@ describe('artwork during upgrade operations', () => {
       ...createEmptyPlan(),
       operations: [
         {
-          type: 'upgrade',
+          type: 'upgrade-direct-copy',
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             bitrate: 320,
           }),
@@ -3058,5 +3072,253 @@ describe('artwork during upgrade operations', () => {
 
     // Should NOT have transcoded
     expect(transcoder.transcode).not.toHaveBeenCalled();
+  });
+});
+
+// =============================================================================
+// Copy Sync Tags
+// =============================================================================
+
+describe('copy sync tags', () => {
+  let db: MockIpodDatabase;
+  let transcoder: MockTranscoder;
+
+  beforeEach(() => {
+    db = createMockIpodDatabase();
+    transcoder = createMockTranscoder();
+  });
+
+  it('writes copy sync tag with transfer mode for add-direct-copy', async () => {
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    for await (const _p of executor.execute(plan, {
+      artwork: false,
+      syncTagConfig: { transferMode: 'fast' },
+    })) {
+      // consume
+    }
+
+    expect(db.addTrack).toHaveBeenCalledTimes(1);
+    const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(trackInput.comment).toContain('quality=copy');
+    expect(trackInput.comment).toContain('transfer=fast');
+  });
+
+  it('writes copy sync tag with optimized transfer mode for add-direct-copy with optimized config', async () => {
+    // Tests that the syncTagConfig.transferMode is used in the copy sync tag
+    // even for direct-copy operations (optimized-copy uses FFmpeg and needs real files)
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    for await (const _p of executor.execute(plan, {
+      artwork: false,
+      syncTagConfig: { transferMode: 'optimized' },
+    })) {
+      // consume
+    }
+
+    expect(db.addTrack).toHaveBeenCalledTimes(1);
+    const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(trackInput.comment).toContain('quality=copy');
+    expect(trackInput.comment).toContain('transfer=optimized');
+  });
+
+  it('does not write copy sync tag when syncTagConfig is absent', async () => {
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    // No syncTagConfig
+    for await (const _p of executor.execute(plan, { artwork: false })) {
+      // consume
+    }
+
+    expect(db.addTrack).toHaveBeenCalledTimes(1);
+    const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(trackInput.comment).toBeUndefined();
+  });
+
+  it('writes copy sync tag for upgrade-direct-copy', async () => {
+    let capturedUpdateFields: Record<string, unknown> | undefined;
+    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
+      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+      update: (fields: Record<string, unknown>) => {
+        capturedUpdateFields = fields;
+        return existingTrack;
+      },
+    });
+
+    const replaceTrackFile = mock(() => existingTrack);
+    (db as any).replaceTrackFile = replaceTrackFile;
+    db.getTracks.mockReturnValue([existingTrack]);
+
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'upgrade-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
+            bitrate: 320,
+          }),
+          target: existingTrack,
+          reason: 'quality-upgrade',
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    for await (const _p of executor.execute(plan, {
+      artwork: false,
+      syncTagConfig: { transferMode: 'fast' },
+    })) {
+      // consume
+    }
+
+    expect(capturedUpdateFields).toBeDefined();
+    expect(capturedUpdateFields!.comment).toContain('quality=copy');
+    expect(capturedUpdateFields!.comment).toContain('transfer=fast');
+  });
+
+  it('falls back to transferMode from options when syncTagConfig has no transferMode', async () => {
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    for await (const _p of executor.execute(plan, {
+      artwork: false,
+      syncTagConfig: {}, // No transferMode in syncTagConfig
+      transferMode: 'optimized', // Falls back to this
+    })) {
+      // consume
+    }
+
+    expect(db.addTrack).toHaveBeenCalledTimes(1);
+    const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(trackInput.comment).toContain('quality=copy');
+    expect(trackInput.comment).toContain('transfer=optimized');
+  });
+});
+
+// =============================================================================
+// Optimized Copy Format Helper
+// =============================================================================
+
+describe('optimized copy operations', () => {
+  let db: MockIpodDatabase;
+  let transcoder: MockTranscoder;
+
+  beforeEach(() => {
+    db = createMockIpodDatabase();
+    transcoder = createMockTranscoder();
+  });
+
+  it('routes add-optimized-copy through FFmpeg, not transcoder.transcode', async () => {
+    // Optimized-copy uses runFFmpeg (direct spawn) instead of transcoder.transcode.
+    // Since we have no real files, FFmpeg will fail, but we verify the code path.
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-optimized-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, { artwork: false, continueOnError: true })) {
+      progress.push(p);
+    }
+
+    // transcoder.transcode should NOT be called — optimized-copy spawns FFmpeg directly
+    expect(transcoder.transcode).not.toHaveBeenCalled();
+
+    // getFFmpegPath SHOULD be called to get the FFmpeg binary path
+    expect(transcoder.getFFmpegPath).toHaveBeenCalled();
+
+    // The operation fails (no real files) but that's expected in unit tests
+    const errorEvent = progress.find((p) => p.error);
+    expect(errorEvent).toBeDefined();
+  });
+
+  it('routes upgrade-optimized-copy through FFmpeg, not transcoder.transcode', async () => {
+    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
+      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+      update: (_fields: Record<string, unknown>) => existingTrack,
+    });
+
+    const replaceTrackFile = mock(() => existingTrack);
+    (db as any).replaceTrackFile = replaceTrackFile;
+    db.getTracks.mockReturnValue([existingTrack]);
+
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'upgrade-optimized-copy',
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+          target: existingTrack,
+          reason: 'format-upgrade',
+        },
+      ],
+    };
+
+    const deps = createDependencies(db, transcoder);
+    const executor = new MusicExecutor(deps);
+
+    const progress: ExecutorProgress[] = [];
+    for await (const p of executor.execute(plan, { artwork: false, continueOnError: true })) {
+      progress.push(p);
+    }
+
+    // transcoder.transcode should NOT be called
+    expect(transcoder.transcode).not.toHaveBeenCalled();
+
+    // getFFmpegPath SHOULD be called
+    expect(transcoder.getFFmpegPath).toHaveBeenCalled();
   });
 });

@@ -176,7 +176,7 @@ describe('podkit-core', () => {
 
     it('can construct SyncOperation variants', () => {
       const copyOp: SyncOperation = {
-        type: 'copy',
+        type: 'add-direct-copy',
         source: {
           id: 'test',
           title: 'Test',
@@ -186,10 +186,10 @@ describe('podkit-core', () => {
           fileType: 'mp3',
         },
       };
-      expect(copyOp.type).toBe('copy');
+      expect(copyOp.type).toBe('add-direct-copy');
 
       const transcodeOp: SyncOperation = {
-        type: 'transcode',
+        type: 'add-transcode',
         source: {
           id: 'test',
           title: 'Test',
@@ -200,7 +200,7 @@ describe('podkit-core', () => {
         },
         preset: { name: 'high' },
       };
-      expect(transcodeOp.type).toBe('transcode');
+      expect(transcodeOp.type).toBe('add-transcode');
     });
 
     it('can construct ArtworkSource variants', () => {

@@ -48,13 +48,13 @@ function createMockHandler(
     planAdd: (source: TestSource, _options: HandlerPlanOptions): SyncOperation => {
       if (source.needsTranscode) {
         return {
-          type: 'transcode',
+          type: 'add-transcode',
           source: { filePath: source.name, fileType: 'flac' } as any,
           preset: { name: 'high' },
         };
       }
       return {
-        type: 'copy',
+        type: 'add-direct-copy',
         source: { filePath: source.name, fileType: 'mp3' } as any,
       };
     },
@@ -73,10 +73,11 @@ function createMockHandler(
       if (primary === 'format-upgrade') {
         return [
           {
-            type: 'upgrade',
+            type: 'upgrade-transcode',
             source: { filePath: source.name } as any,
             target: { filePath: device.name } as any,
             reason: 'format-upgrade',
+            preset: { name: 'high' },
           },
         ];
       }
@@ -91,11 +92,11 @@ function createMockHandler(
 
     estimateSize: (op: SyncOperation): number => {
       switch (op.type) {
-        case 'transcode':
+        case 'add-transcode':
           return 5_000_000; // 5 MB
-        case 'copy':
+        case 'add-direct-copy':
           return 3_000_000; // 3 MB
-        case 'upgrade':
+        case 'upgrade-transcode':
           return 4_000_000; // 4 MB
         case 'remove':
         case 'update-metadata':
@@ -107,11 +108,11 @@ function createMockHandler(
 
     estimateTime: (op: SyncOperation): number => {
       switch (op.type) {
-        case 'transcode':
+        case 'add-transcode':
           return 10;
-        case 'copy':
+        case 'add-direct-copy':
           return 3;
-        case 'upgrade':
+        case 'upgrade-transcode':
           return 8;
         case 'remove':
           return 0.1;
@@ -198,8 +199,8 @@ describe('SyncPlanner', () => {
 
       expect(plan.operations).toHaveLength(2);
       // After ordering: copy comes before transcode
-      expect(plan.operations[0]!.type).toBe('copy');
-      expect(plan.operations[1]!.type).toBe('transcode');
+      expect(plan.operations[0]!.type).toBe('add-direct-copy');
+      expect(plan.operations[1]!.type).toBe('add-transcode');
     });
 
     it('should pass plan options to handler.planAdd', () => {
@@ -207,7 +208,7 @@ describe('SyncPlanner', () => {
       const handler = createMockHandler({
         planAdd: (_source, options) => {
           capturedOptions = options;
-          return { type: 'copy', source: {} as any };
+          return { type: 'add-direct-copy', source: {} as any };
         },
       });
 
@@ -298,7 +299,7 @@ describe('SyncPlanner', () => {
       const plan = planner.plan(diff);
 
       expect(plan.operations).toHaveLength(1);
-      expect(plan.operations[0]!.type).toBe('upgrade');
+      expect(plan.operations[0]!.type).toBe('upgrade-transcode');
     });
 
     it('should filter artwork updates when artwork is disabled', () => {
@@ -365,7 +366,13 @@ describe('SyncPlanner', () => {
       expect(plan.operations).toHaveLength(5);
 
       const types = plan.operations.map((op) => op.type);
-      expect(types).toEqual(['remove', 'update-metadata', 'copy', 'upgrade', 'transcode']);
+      expect(types).toEqual([
+        'remove',
+        'update-metadata',
+        'add-direct-copy',
+        'upgrade-transcode',
+        'add-transcode',
+      ]);
     });
 
     it('should maintain insertion order within same type', () => {
@@ -522,17 +529,29 @@ describe('SyncPlanner', () => {
 describe('orderOperations', () => {
   it('should sort operations by type priority', () => {
     const ops: SyncOperation[] = [
-      { type: 'transcode', source: {} as any, preset: { name: 'high' } },
+      { type: 'add-transcode', source: {} as any, preset: { name: 'high' } },
       { type: 'remove', track: {} as any },
-      { type: 'copy', source: {} as any },
+      { type: 'add-direct-copy', source: {} as any },
       { type: 'update-metadata', track: {} as any, metadata: {} },
-      { type: 'upgrade', source: {} as any, target: {} as any, reason: 'format-upgrade' },
+      {
+        type: 'upgrade-transcode',
+        source: {} as any,
+        target: {} as any,
+        reason: 'format-upgrade',
+        preset: { name: 'high' },
+      },
     ];
 
     const ordered = orderOperations(ops);
     const types = ordered.map((op) => op.type);
 
-    expect(types).toEqual(['remove', 'update-metadata', 'copy', 'upgrade', 'transcode']);
+    expect(types).toEqual([
+      'remove',
+      'update-metadata',
+      'add-direct-copy',
+      'upgrade-transcode',
+      'add-transcode',
+    ]);
   });
 
   it('should handle video operation types', () => {
@@ -556,9 +575,9 @@ describe('orderOperations', () => {
 
   it('should preserve order within same priority', () => {
     const ops: SyncOperation[] = [
-      { type: 'copy', source: { filePath: 'a' } as any },
-      { type: 'copy', source: { filePath: 'b' } as any },
-      { type: 'copy', source: { filePath: 'c' } as any },
+      { type: 'add-direct-copy', source: { filePath: 'a' } as any },
+      { type: 'add-direct-copy', source: { filePath: 'b' } as any },
+      { type: 'add-direct-copy', source: { filePath: 'c' } as any },
     ];
 
     const ordered = orderOperations(ops);

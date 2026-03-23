@@ -1,9 +1,10 @@
 ---
 id: TASK-198
 title: FFmpeg optimized-copy args and portable-mode artwork preservation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:08'
+updated_date: '2026-03-23 15:13'
 labels:
   - feature
   - core
@@ -47,11 +48,17 @@ This applies to both `buildTranscodeArgs()` (AAC output) and `buildAlacArgs()` (
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Optimized-copy FFmpeg args generated for ALAC→ALAC with -c:a copy -vn (no audio re-encode, strip artwork)
-- [ ] #2 Optimized-copy FFmpeg args generated for MP3→MP3 with -c:a copy -vn (no -f ipod for MP3)
-- [ ] #3 Optimized-copy FFmpeg args generated for M4A/AAC→M4A/AAC with -c:a copy -vn -f ipod
-- [ ] #4 Transcode args for fast mode use -vn (strip artwork) for both AAC and ALAC output
-- [ ] #5 Transcode args for optimized mode use -vn (strip artwork) for both AAC and ALAC output
-- [ ] #6 Transcode args for portable mode use -c:v copy -disposition:v attached_pic for both AAC and ALAC output
-- [ ] #7 Parameterized tests cover all 3 transfer modes × all file type paths per DOC-012 behavior matrix
+- [x] #1 Optimized-copy FFmpeg args generated for ALAC→ALAC with -c:a copy -vn (no audio re-encode, strip artwork)
+- [x] #2 Optimized-copy FFmpeg args generated for MP3→MP3 with -c:a copy -vn (no -f ipod for MP3)
+- [x] #3 Optimized-copy FFmpeg args generated for M4A/AAC→M4A/AAC with -c:a copy -vn -f ipod
+- [x] #4 Transcode args for fast mode use -vn (strip artwork) for both AAC and ALAC output
+- [x] #5 Transcode args for optimized mode use -vn (strip artwork) for both AAC and ALAC output
+- [x] #6 Transcode args for portable mode use -c:v copy -disposition:v attached_pic for both AAC and ALAC output
+- [x] #7 Parameterized tests cover all 3 transfer modes × all file type paths per DOC-012 behavior matrix
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+buildTranscodeArgs/buildAlacArgs updated from `fileMode?: FileMode` to `transferMode?: TransferMode`. New `buildOptimizedCopyArgs(input, output, format)` function added with `OptimizedCopyFormat` type. MP3 format correctly omits `-f ipod`. Default changed from 'optimized' to 'fast' (same -vn behavior). 86 tests pass.
+<!-- SECTION:NOTES:END -->

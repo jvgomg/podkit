@@ -434,7 +434,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 
   it('creates transcode operation for OGG files', () => {
@@ -446,7 +446,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 
   it('creates transcode operation for OPUS files', () => {
@@ -458,7 +458,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 
   it('creates transcode operation for WAV files', () => {
@@ -470,7 +470,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 
   it('creates copy operation for MP3 files', () => {
@@ -482,7 +482,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('copy');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
   it('creates copy operation for M4A files', () => {
@@ -494,7 +494,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('copy');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
   it('creates copy operation for AAC files', () => {
@@ -506,7 +506,81 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('copy');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+  });
+
+  it('creates optimized-copy for MP3 when transferMode is optimized', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, { transferMode: 'optimized' });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('creates direct-copy for MP3 when transferMode is fast', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, { transferMode: 'fast' });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+  });
+
+  it('creates direct-copy for MP3 when transferMode is portable', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, { transferMode: 'portable' });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+  });
+
+  it('creates optimized-copy for ALAC→ALAC when transferMode is optimized', () => {
+    const alacTrack = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
+    alacTrack.codec = 'alac';
+
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [alacTrack],
+    };
+
+    const plan = createMusicPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+      transferMode: 'optimized',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('creates direct-copy for ALAC→ALAC when transferMode is fast', () => {
+    const alacTrack = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
+    alacTrack.codec = 'alac';
+
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [alacTrack],
+    };
+
+    const plan = createMusicPlan(diff, {
+      transcodeConfig: { quality: 'max' },
+      deviceSupportsAlac: true,
+      transferMode: 'fast',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
   it('transcodes ALAC files to AAC by default (for space efficiency)', () => {
@@ -518,7 +592,7 @@ describe('createMusicPlan - operation types', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 
   it('includes preset in transcode operations', () => {
@@ -529,8 +603,8 @@ describe('createMusicPlan - operation types', () => {
 
     const plan = createMusicPlan(diff);
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset).toBeDefined();
       expect(plan.operations[0]!.preset.name).toBe('high'); // default
     }
@@ -544,8 +618,8 @@ describe('createMusicPlan - operation types', () => {
 
     const plan = createMusicPlan(diff, { transcodeConfig: { quality: 'low' } });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('low');
     }
   });
@@ -629,7 +703,7 @@ describe('createMusicPlan - operation ordering', () => {
 
     expect(plan.operations).toHaveLength(2);
     expect(plan.operations[0]!.type).toBe('remove');
-    expect(plan.operations[1]!.type).toBe('copy');
+    expect(plan.operations[1]!.type).toBe('add-direct-copy');
   });
 
   it('orders removes before transcodes', () => {
@@ -643,7 +717,7 @@ describe('createMusicPlan - operation ordering', () => {
 
     expect(plan.operations).toHaveLength(2);
     expect(plan.operations[0]!.type).toBe('remove');
-    expect(plan.operations[1]!.type).toBe('transcode');
+    expect(plan.operations[1]!.type).toBe('add-transcode');
   });
 
   it('orders copies before transcodes', () => {
@@ -658,8 +732,8 @@ describe('createMusicPlan - operation ordering', () => {
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(2);
-    expect(plan.operations[0]!.type).toBe('copy');
-    expect(plan.operations[1]!.type).toBe('transcode');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+    expect(plan.operations[1]!.type).toBe('add-transcode');
   });
 
   it('maintains full ordering: removes -> copies -> transcodes', () => {
@@ -686,12 +760,12 @@ describe('createMusicPlan - operation ordering', () => {
     expect(plan.operations[1]!.type).toBe('remove');
 
     // Next two should be copies
-    expect(plan.operations[2]!.type).toBe('copy');
-    expect(plan.operations[3]!.type).toBe('copy');
+    expect(plan.operations[2]!.type).toBe('add-direct-copy');
+    expect(plan.operations[3]!.type).toBe('add-direct-copy');
 
     // Last two should be transcodes
-    expect(plan.operations[4]!.type).toBe('transcode');
-    expect(plan.operations[5]!.type).toBe('transcode');
+    expect(plan.operations[4]!.type).toBe('add-transcode');
+    expect(plan.operations[5]!.type).toBe('add-transcode');
   });
 });
 
@@ -826,7 +900,7 @@ describe('calculateMusicOperationSize', () => {
       duration: 180000,
     });
     const op: SyncOperation = {
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'high' },
     };
@@ -842,7 +916,7 @@ describe('calculateMusicOperationSize', () => {
       duration: 180000,
     });
     const op: SyncOperation = {
-      type: 'copy',
+      type: 'add-direct-copy',
       source: track,
     };
 
@@ -881,13 +955,13 @@ describe('calculateMusicOperationSize', () => {
     });
 
     const highSize = calculateMusicOperationSize({
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'high' }, // 256 kbps
     });
 
     const lowSize = calculateMusicOperationSize({
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'low' }, // 128 kbps
     });
@@ -903,13 +977,13 @@ describe('calculateMusicOperationSize', () => {
     });
 
     const overriddenSize = calculateMusicOperationSize({
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'high', bitrateOverride: 128 },
     });
 
     const lowSize = calculateMusicOperationSize({
-      type: 'transcode',
+      type: 'add-transcode',
       source: track,
       preset: { name: 'low' }, // also 128 kbps
     });
@@ -1003,8 +1077,8 @@ describe('getMusicPlanSummary', () => {
     const plan = createMusicPlan(diff, { removeOrphans: true });
     const summary = getMusicPlanSummary(plan);
 
-    expect(summary.transcodeCount).toBe(2);
-    expect(summary.copyCount).toBe(1);
+    expect(summary.addTranscodeCount).toBe(2);
+    expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(1);
     expect(summary.removeCount).toBe(1);
     expect(summary.updateCount).toBe(0);
   });
@@ -1013,8 +1087,8 @@ describe('getMusicPlanSummary', () => {
     const plan = createMusicPlan(createEmptyDiff());
     const summary = getMusicPlanSummary(plan);
 
-    expect(summary.transcodeCount).toBe(0);
-    expect(summary.copyCount).toBe(0);
+    expect(summary.addTranscodeCount).toBe(0);
+    expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(0);
     expect(summary.removeCount).toBe(0);
     expect(summary.updateCount).toBe(0);
   });
@@ -1130,16 +1204,16 @@ describe('createMusicPlan - mixed scenarios', () => {
     const plan = createMusicPlan(diff, { removeOrphans: true });
     const summary = getMusicPlanSummary(plan);
 
-    expect(summary.transcodeCount).toBe(3);
-    expect(summary.copyCount).toBe(3);
+    expect(summary.addTranscodeCount).toBe(3);
+    expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(3);
     expect(summary.removeCount).toBe(2);
     expect(plan.operations).toHaveLength(8);
 
     // Verify ordering
     const types = plan.operations.map((op) => op.type);
     const firstRemove = types.indexOf('remove');
-    const firstCopy = types.indexOf('copy');
-    const firstTranscode = types.indexOf('transcode');
+    const firstCopy = types.indexOf('add-direct-copy');
+    const firstTranscode = types.indexOf('add-transcode');
 
     expect(firstRemove).toBeLessThan(firstCopy);
     expect(firstCopy).toBeLessThan(firstTranscode);
@@ -1188,8 +1262,8 @@ describe('createMusicPlan - source track references', () => {
 
     const plan = createMusicPlan(diff);
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.source.id).toBe('test-id-123');
       expect(plan.operations[0]!.source.filePath).toBe('/music/test.flac');
     }
@@ -1208,8 +1282,8 @@ describe('createMusicPlan - source track references', () => {
 
     const plan = createMusicPlan(diff);
 
-    expect(plan.operations[0]!.type).toBe('copy');
-    if (plan.operations[0]!.type === 'copy') {
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+    if (plan.operations[0]!.type === 'add-direct-copy') {
       expect(plan.operations[0]!.source.id).toBe('test-id-456');
       expect(plan.operations[0]!.source.filePath).toBe('/music/test.mp3');
     }
@@ -1326,8 +1400,8 @@ describe('createMusicPlan - max preset', () => {
     });
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('lossless');
     }
   });
@@ -1347,7 +1421,7 @@ describe('createMusicPlan - max preset', () => {
     });
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('copy');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
   it('resolves max to high for lossless source on non-ALAC device', () => {
@@ -1362,8 +1436,8 @@ describe('createMusicPlan - max preset', () => {
     });
 
     expect(plan.operations).toHaveLength(1);
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('high');
     }
   });
@@ -1379,8 +1453,8 @@ describe('createMusicPlan - max preset', () => {
       transcodeConfig: { quality: 'max' },
     });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('high');
     }
   });
@@ -1396,7 +1470,7 @@ describe('createMusicPlan - max preset', () => {
       deviceSupportsAlac: true,
     });
 
-    expect(plan.operations[0]!.type).toBe('copy');
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
   it('transcodes FLAC to ALAC with max on ALAC-capable device', () => {
@@ -1410,8 +1484,8 @@ describe('createMusicPlan - max preset', () => {
       deviceSupportsAlac: true,
     });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('lossless');
     }
   });
@@ -1427,8 +1501,8 @@ describe('createMusicPlan - max preset', () => {
       deviceSupportsAlac: false,
     });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('high');
     }
   });
@@ -1459,12 +1533,12 @@ describe('createMusicPlan - max preset', () => {
     // OGG -> transcode to AAC at high (1 transcode)
     // Existing ALAC -> copy (1 copy)
     // MP3 -> copy (1 copy)
-    expect(summary.transcodeCount).toBe(3);
-    expect(summary.copyCount).toBe(2);
+    expect(summary.addTranscodeCount).toBe(3);
+    expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(2);
 
     // Verify presets
-    const transcodeOps = plan.operations.filter((op) => op.type === 'transcode');
-    const presets = transcodeOps.map((op) => (op.type === 'transcode' ? op.preset.name : ''));
+    const transcodeOps = plan.operations.filter((op) => op.type === 'add-transcode');
+    const presets = transcodeOps.map((op) => (op.type === 'add-transcode' ? op.preset.name : ''));
 
     // Should have 2 lossless (FLAC, WAV) and 1 high (OGG)
     expect(presets.filter((p) => p === 'lossless')).toHaveLength(2);
@@ -1490,8 +1564,8 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
     // high preset target is 256 kbps, but source is only 128 kbps
     const plan = createMusicPlan(diff, { transcodeConfig: { quality: 'high' } });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
     }
   });
@@ -1509,8 +1583,8 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
     // low preset target is 128 kbps, source is 320 kbps → use preset (128)
     const plan = createMusicPlan(diff, { transcodeConfig: { quality: 'low' } });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
     }
   });
@@ -1527,8 +1601,8 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
 
     const plan = createMusicPlan(diff, { transcodeConfig: { quality: 'high' } });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       // bitrateOverride should be preset bitrate (256) since source is unknown
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(256);
     }
@@ -1550,8 +1624,8 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
       deviceSupportsAlac: true,
     });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(128);
     }
   });
@@ -1569,8 +1643,8 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
     // medium preset target is 192 kbps, source is 96 kbps → cap at 96
     const plan = createMusicPlan(diff, { transcodeConfig: { quality: 'medium' } });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(96);
     }
   });
@@ -1591,8 +1665,8 @@ describe('createMusicPlan - custom bitrate', () => {
       transcodeConfig: { quality: 'high', customBitrate: 200 },
     });
 
-    expect(plan.operations[0]!.type).toBe('transcode');
-    if (plan.operations[0]!.type === 'transcode') {
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+    if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.bitrateOverride).toBe(200);
     }
   });
@@ -1633,8 +1707,8 @@ describe('createMusicPlan - quality presets', () => {
 
       const plan = createMusicPlan(diff, { transcodeConfig: { quality: preset } });
 
-      expect(plan.operations[0]!.type).toBe('transcode');
-      if (plan.operations[0]!.type === 'transcode') {
+      expect(plan.operations[0]!.type).toBe('add-transcode');
+      if (plan.operations[0]!.type === 'add-transcode') {
         // max resolves to 'high' when deviceSupportsAlac is false (default)
         const expectedPreset = preset === 'max' ? 'high' : preset;
         expect(plan.operations[0]!.preset.name).toBe(expectedPreset);
@@ -1751,7 +1825,7 @@ describe('createMusicPlan - update operations', () => {
     const types = plan.operations.map((op) => op.type);
 
     // Transcode comes before update-metadata
-    expect(types.indexOf('transcode')).toBeLessThan(types.indexOf('update-metadata'));
+    expect(types.indexOf('add-transcode')).toBeLessThan(types.indexOf('update-metadata'));
   });
 
   it('does not count update operations in estimated size', () => {
@@ -1804,11 +1878,11 @@ describe('createMusicPlan - upgrade operations', () => {
 
     expect(plan.operations).toHaveLength(1);
     const op = plan.operations[0]!;
-    expect(op.type).toBe('upgrade');
-    if (op.type === 'upgrade') {
+    expect(op.type).toBe('upgrade-transcode');
+    if (op.type === 'upgrade-transcode') {
       expect(op.reason).toBe('format-upgrade');
       expect(op.preset).toBeDefined();
-      expect(op.preset!.name).toBe('high');
+      expect(op.preset.name).toBe('high');
     }
   });
 
@@ -1835,11 +1909,11 @@ describe('createMusicPlan - upgrade operations', () => {
     });
 
     const op = plan.operations[0]!;
-    expect(op.type).toBe('upgrade');
-    if (op.type === 'upgrade') {
+    expect(op.type).toBe('upgrade-transcode');
+    if (op.type === 'upgrade-transcode') {
       // FLAC to ALAC needs transcoding
       expect(op.preset).toBeDefined();
-      expect(op.preset!.name).toBe('lossless');
+      expect(op.preset.name).toBe('lossless');
     }
   });
 
@@ -1864,11 +1938,9 @@ describe('createMusicPlan - upgrade operations', () => {
     const plan = createMusicPlan(diff);
 
     const op = plan.operations[0]!;
-    expect(op.type).toBe('upgrade');
-    if (op.type === 'upgrade') {
+    expect(op.type).toBe('upgrade-direct-copy');
+    if (op.type === 'upgrade-direct-copy') {
       expect(op.reason).toBe('quality-upgrade');
-      // MP3 source can be copied directly — no preset
-      expect(op.preset).toBeUndefined();
     }
   });
 
@@ -1968,8 +2040,8 @@ describe('createMusicPlan - upgrade operations', () => {
     const types = plan.operations.map((op) => op.type);
 
     // Order: remove, upgrade (copy-like), transcode, update-metadata
-    expect(types.indexOf('remove')).toBeLessThan(types.indexOf('upgrade'));
-    expect(types.indexOf('upgrade')).toBeLessThan(types.indexOf('transcode'));
-    expect(types.indexOf('transcode')).toBeLessThan(types.indexOf('update-metadata'));
+    expect(types.indexOf('remove')).toBeLessThan(types.indexOf('upgrade-direct-copy'));
+    expect(types.indexOf('upgrade-direct-copy')).toBeLessThan(types.indexOf('add-transcode'));
+    expect(types.indexOf('add-transcode')).toBeLessThan(types.indexOf('update-metadata'));
   });
 });

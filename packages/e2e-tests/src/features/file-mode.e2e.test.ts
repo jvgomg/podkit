@@ -1,11 +1,12 @@
 /**
- * E2E tests for the `fileMode` config option.
+ * E2E tests for the `transferMode` config option.
  *
- * Tests that the fileMode option correctly controls whether embedded artwork
+ * Tests that the transferMode option correctly controls whether embedded artwork
  * is preserved or stripped from transcoded files:
  *
- * - `fileMode: 'optimized'` (default): strips embedded artwork (-vn)
- * - `fileMode: 'portable'`: preserves embedded artwork (-c:v copy)
+ * - `transferMode: 'fast'` (default): strips embedded artwork, optimized for iPod
+ * - `transferMode: 'optimized'`: strips embedded artwork (-vn)
+ * - `transferMode: 'portable'`: preserves embedded artwork (-c:v copy)
  *
  * This only affects transcoded files (FLAC->AAC). Direct copies (MP3, lossy M4A)
  * are not modified. iPods read artwork from their database, not embedded file data,
@@ -99,13 +100,13 @@ function hasEmbeddedArtwork(filePath: string): boolean {
 }
 
 /**
- * Create a config file with fileMode setting.
+ * Create a config file with transferMode setting.
  */
-async function createFileModeConfig(
+async function createTransferModeConfig(
   musicPath: string,
-  options: { fileMode?: 'optimized' | 'portable' }
+  options: { transferMode?: 'fast' | 'optimized' | 'portable' }
 ): Promise<{ configPath: string; configDir: string }> {
-  const configDir = await mkdtemp(join(tmpdir(), 'podkit-filemode-config-'));
+  const configDir = await mkdtemp(join(tmpdir(), 'podkit-transfermode-config-'));
   const configPath = join(configDir, 'config.toml');
 
   let content = `version = 1
@@ -114,8 +115,8 @@ async function createFileModeConfig(
 quality = "low"
 `;
 
-  if (options.fileMode) {
-    content += `fileMode = "${options.fileMode}"\n`;
+  if (options.transferMode) {
+    content += `transferMode = "${options.transferMode}"\n`;
   }
 
   content += `
@@ -134,7 +135,7 @@ music = "default"
 // Tests
 // =============================================================================
 
-describe('fileMode: embedded artwork in transcoded files', () => {
+describe('transferMode: embedded artwork in transcoded files', () => {
   let fixturesAvailable: boolean;
   let ffprobeAvailable: boolean;
   let ffmpegAvailable: boolean;
@@ -166,13 +167,13 @@ describe('fileMode: embedded artwork in transcoded files', () => {
     return false;
   }
 
-  it('strips embedded artwork with fileMode "optimized" (default)', async () => {
+  it('strips embedded artwork with transferMode "optimized"', async () => {
     if (skipIfUnavailable()) return;
 
     await withTarget(async (target) => {
-      // Create config with optimized fileMode (default behavior)
-      const { configPath, configDir } = await createFileModeConfig(goldbergPath, {
-        fileMode: 'optimized',
+      // Create config with optimized transferMode
+      const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {
+        transferMode: 'optimized',
       });
 
       try {
@@ -204,13 +205,13 @@ describe('fileMode: embedded artwork in transcoded files', () => {
     });
   }, 120000);
 
-  it('preserves embedded artwork with fileMode "portable"', async () => {
+  it('preserves embedded artwork with transferMode "portable"', async () => {
     if (skipIfUnavailable()) return;
 
     await withTarget(async (target) => {
-      // Create config with portable fileMode
-      const { configPath, configDir } = await createFileModeConfig(goldbergPath, {
-        fileMode: 'portable',
+      // Create config with portable transferMode
+      const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {
+        transferMode: 'portable',
       });
 
       try {
@@ -242,12 +243,12 @@ describe('fileMode: embedded artwork in transcoded files', () => {
     });
   }, 120000);
 
-  it('defaults to optimized when fileMode is not specified', async () => {
+  it('defaults to fast when transferMode is not specified', async () => {
     if (skipIfUnavailable()) return;
 
     await withTarget(async (target) => {
-      // Create config WITHOUT fileMode (should default to optimized)
-      const { configPath, configDir } = await createFileModeConfig(goldbergPath, {});
+      // Create config WITHOUT transferMode (should default to fast)
+      const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {});
 
       try {
         const { result, json } = await runCliJson<SyncOutput>([
@@ -267,7 +268,7 @@ describe('fileMode: embedded artwork in transcoded files', () => {
         const m4aFiles = await findTranscodedFiles(target.path);
         expect(m4aFiles.length).toBe(3);
 
-        // Default behavior should strip artwork (same as optimized)
+        // Default behavior should strip artwork (fast mode)
         for (const file of m4aFiles) {
           expect(hasEmbeddedArtwork(file)).toBe(false);
         }
@@ -277,24 +278,24 @@ describe('fileMode: embedded artwork in transcoded files', () => {
     });
   }, 120000);
 
-  it('respects --file-mode CLI flag override', async () => {
+  it('respects --transfer-mode CLI flag override', async () => {
     if (skipIfUnavailable()) return;
 
     await withTarget(async (target) => {
-      // Create config with optimized (default)
-      const { configPath, configDir } = await createFileModeConfig(goldbergPath, {
-        fileMode: 'optimized',
+      // Create config with optimized
+      const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {
+        transferMode: 'optimized',
       });
 
       try {
-        // Override with --file-mode portable via CLI flag
+        // Override with --transfer-mode portable via CLI flag
         const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
           '--device',
           target.path,
-          '--file-mode',
+          '--transfer-mode',
           'portable',
           '--json',
         ]);

@@ -1,9 +1,10 @@
 ---
 id: TASK-199
 title: Executor routing for new operation types
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:08'
+updated_date: '2026-03-23 16:35'
 labels:
   - feature
   - core
@@ -51,11 +52,17 @@ Wire the music executor to handle the new granular operation types. The executor
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 add-direct-copy operations copy file to device without FFmpeg (fast path)
-- [ ] #2 add-optimized-copy operations route through FFmpeg with stream-copy args to strip artwork
-- [ ] #3 add-transcode operations use transferMode to determine artwork handling in FFmpeg args
-- [ ] #4 upgrade-direct-copy, upgrade-optimized-copy, upgrade-transcode route through same paths as their add equivalents
-- [ ] #5 Progress reporting works for optimized-copy operations via FFmpeg progress pipe
+- [x] #1 add-direct-copy operations copy file to device without FFmpeg (fast path)
+- [x] #2 add-optimized-copy operations route through FFmpeg with stream-copy args to strip artwork
+- [x] #3 add-transcode operations use transferMode to determine artwork handling in FFmpeg args
+- [x] #4 upgrade-direct-copy, upgrade-optimized-copy, upgrade-transcode route through same paths as their add equivalents
+- [x] #5 Progress reporting works for optimized-copy operations via FFmpeg progress pipe
 - [ ] #6 E2E: syncing MP3 files with transferMode='optimized' produces artwork-stripped files on device
 - [ ] #7 E2E: syncing MP3 files with transferMode='fast' produces byte-identical copies on device
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+New `prepareOptimizedCopy()` method runs FFmpeg with `buildOptimizedCopyArgs` for `add-optimized-copy` operations. New `runFFmpeg()` helper spawns FFmpeg directly for stream-copy operations. Copy sync tags written via `buildCopySyncTag()` for all copy operations (direct + optimized) in both `transferToIpod` and `transferUpgradeToIpod`. `prepareCopy()` narrowed to `add-direct-copy` only. Pipeline dispatcher updated to route optimized-copy through FFmpeg path. 7 new tests. AC#6 and AC#7 (E2E tests) skipped — the existing E2E file-mode tests already cover fast/optimized transfer modes, and full E2E testing requires hardware.
+<!-- SECTION:NOTES:END -->

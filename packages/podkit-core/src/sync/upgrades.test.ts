@@ -1361,6 +1361,10 @@ describe('isFileReplacementUpgrade', () => {
     expect(isFileReplacementUpgrade('force-transcode')).toBe(true);
   });
 
+  it('returns true for transfer-mode-changed', () => {
+    expect(isFileReplacementUpgrade('transfer-mode-changed')).toBe(true);
+  });
+
   it('returns false for soundcheck-update', () => {
     expect(isFileReplacementUpgrade('soundcheck-update')).toBe(false);
   });

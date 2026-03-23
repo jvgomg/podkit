@@ -223,8 +223,8 @@ export const DEMO_SYNC_STATS = {
     tracksToAdd: TRACK_LIST.length,
     tracksToRemove: 0,
     tracksToUpdate: 0,
-    transcodeCount: TRACK_LIST.length, // All FLAC -> AAC
-    copyCount: 0,
+    addTranscodeCount: TRACK_LIST.length, // All FLAC -> AAC
+    addDirectCopyCount: 0,
     estimatedSizeBytes: TRACK_LIST.reduce(
       (sum, t) => sum + Math.round(((t.durationMs / 1000) * (256 * 1000)) / 8),
       0
@@ -235,8 +235,8 @@ export const DEMO_SYNC_STATS = {
   video: {
     videosToAdd: SHREK_MOVIES.length,
     videosToRemove: 0,
-    transcodeCount: 0,
-    copyCount: SHREK_MOVIES.length, // M4V passthrough
+    addTranscodeCount: 0,
+    addDirectCopyCount: SHREK_MOVIES.length, // M4V passthrough
     estimatedSizeBytes: SHREK_MOVIES.reduce(
       (sum, m) => sum + Math.round((m.durationSeconds * 1500 * 1000) / 8),
       0

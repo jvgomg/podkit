@@ -59,6 +59,7 @@ export const AVAILABLE_FIELDS = [
   'syncTagQuality',
   'syncTagEncoding',
   'syncTagArtwork',
+  'syncTagTransfer',
 ] as const;
 
 export type FieldName = (typeof AVAILABLE_FIELDS)[number];
@@ -91,6 +92,7 @@ export const FIELD_HEADERS: Record<FieldName, string> = {
   syncTagQuality: 'SyncQ',
   syncTagEncoding: 'SyncEnc',
   syncTagArtwork: 'SyncArt',
+  syncTagTransfer: 'SyncTfr',
 };
 
 /**
@@ -116,6 +118,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
   syncTagQuality: 10,
   syncTagEncoding: 7,
   syncTagArtwork: 7,
+  syncTagTransfer: 10,
 };
 
 // =============================================================================
@@ -221,6 +224,8 @@ export function getFieldValue(track: DisplayTrack, field: FieldName): string {
       if (track.syncTag.artworkHash) return '\u2713';
       if (track.hasArtwork === false) return '-'; // no artwork to hash
       return '\u2717'; // has artwork but no hash
+    case 'syncTagTransfer':
+      return track.syncTag?.transferMode ?? '-';
     default:
       return '';
   }
@@ -341,6 +346,8 @@ export function formatJson(tracks: DisplayTrack[], fields: FieldName[]): string 
         obj['syncTagEncoding'] = track.syncTag?.encoding ?? null;
       } else if (field === 'syncTagArtwork') {
         obj['syncTagArtwork'] = track.syncTag?.artworkHash ?? null;
+      } else if (field === 'syncTagTransfer') {
+        obj['syncTagTransfer'] = track.syncTag?.transferMode ?? null;
       } else {
         obj[field] = track[field as keyof DisplayTrack] as string | number | boolean | undefined;
       }
@@ -397,6 +404,8 @@ export interface ContentStats {
   syncTagComplete: number;
   syncTagMissingArt: number;
   soundCheckSources?: Partial<Record<SoundCheckSource, number>>;
+  transferModeCounts?: Record<string, number>;
+  syncTagMissingTransfer: number;
   fileTypes: Record<string, number>;
 }
 
@@ -414,6 +423,8 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
   let syncTagTracks = 0;
   let syncTagComplete = 0;
   let syncTagMissingArt = 0;
+  let syncTagMissingTransfer = 0;
+  const transferModeCounts: Record<string, number> = {};
 
   for (const track of tracks) {
     const album = track.album || 'Unknown Album';
@@ -434,6 +445,12 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
         syncTagMissingArt++; // only missing if track actually has artwork
       } else {
         syncTagComplete++; // no artwork = nothing to hash = complete
+      }
+      if (track.syncTag.transferMode) {
+        transferModeCounts[track.syncTag.transferMode] =
+          (transferModeCounts[track.syncTag.transferMode] || 0) + 1;
+      } else {
+        syncTagMissingTransfer++;
       }
     }
 
@@ -464,6 +481,8 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
       Object.keys(soundCheckSources).length > 0
         ? (soundCheckSources as Partial<Record<SoundCheckSource, number>>)
         : undefined,
+    transferModeCounts: Object.keys(transferModeCounts).length > 0 ? transferModeCounts : undefined,
+    syncTagMissingTransfer,
     fileTypes,
   };
 }
@@ -538,6 +557,46 @@ export function formatStatsText(
     }
     if (noTag > 0) {
       lines.push(`    \u2717 No sync tag: ${formatNumber(noTag)}`);
+    }
+
+    // Transfer Mode sub-section
+    const modeEntries = stats.transferModeCounts
+      ? Object.entries(stats.transferModeCounts).sort((a, b) => b[1] - a[1])
+      : [];
+    const totalWithMode = modeEntries.reduce((sum, [, c]) => sum + c, 0);
+
+    if (options?.verbose && (totalWithMode > 0 || stats.syncTagMissingTransfer > 0)) {
+      lines.push('  Transfer Mode:');
+      const allLabels = [
+        ...modeEntries.map(([mode]) => mode),
+        ...(stats.syncTagMissingTransfer > 0 ? ['(missing)'] : []),
+      ];
+      const maxLabelLen = allLabels.length > 0 ? Math.max(...allLabels.map((l) => l.length)) : 0;
+      for (const [mode, count] of modeEntries) {
+        lines.push(`    ${mode.padEnd(maxLabelLen)}  ${formatNumber(count)}`);
+      }
+      if (stats.syncTagMissingTransfer > 0) {
+        lines.push(
+          `    ${'(missing)'.padEnd(maxLabelLen)}  ${formatNumber(stats.syncTagMissingTransfer)}`
+        );
+      }
+    } else {
+      if (totalWithMode > 0 || stats.syncTagMissingTransfer > 0) {
+        lines.push('  Transfer Mode:');
+        if (modeEntries.length === 1 && modeEntries[0]) {
+          lines.push(
+            `    \u2713 Consistent: ${formatNumber(totalWithMode)} (all ${modeEntries[0][0]})`
+          );
+        } else if (modeEntries.length > 1) {
+          const modeParts = modeEntries.map(([mode, count]) => `${formatNumber(count)} ${mode}`);
+          lines.push(`    \u25D0 Mixed: ${modeParts.join(', ')}`);
+        }
+        if (stats.syncTagMissingTransfer > 0) {
+          lines.push(
+            `    \u25D0 Missing transfer field: ${formatNumber(stats.syncTagMissingTransfer)}`
+          );
+        }
+      }
     }
   }
 

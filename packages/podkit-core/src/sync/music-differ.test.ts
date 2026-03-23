@@ -2368,3 +2368,157 @@ describe('computeMusicDiff - forceMetadata', () => {
     expect(diff.toUpdate).toHaveLength(0);
   });
 });
+
+// =============================================================================
+// forceTransferMode
+// =============================================================================
+
+describe('forceTransferMode', () => {
+  it('moves tracks with mismatched transfer mode to toUpdate', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr transfer=fast]',
+    });
+
+    const diff = computeMusicDiff([source], [ipod], {
+      forceTransferMode: true,
+      effectiveTransferMode: 'optimized',
+      transcodingActive: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transfer-mode-changed');
+    expect(diff.toUpdate[0]!.changes[0]!.from).toBe('fast');
+    expect(diff.toUpdate[0]!.changes[0]!.to).toBe('optimized');
+    expect(diff.existing).toHaveLength(0);
+  });
+
+  it('keeps tracks matching current transfer mode in existing', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr transfer=optimized]',
+    });
+
+    const diff = computeMusicDiff([source], [ipod], {
+      forceTransferMode: true,
+      effectiveTransferMode: 'optimized',
+      transcodingActive: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+  });
+
+  it('treats legacy sync tags (no transfer field) as transfer=fast', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr]',
+    });
+
+    const diff = computeMusicDiff([source], [ipod], {
+      forceTransferMode: true,
+      effectiveTransferMode: 'portable',
+      transcodingActive: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transfer-mode-changed');
+    expect(diff.toUpdate[0]!.changes[0]!.from).toBe('fast');
+    expect(diff.toUpdate[0]!.changes[0]!.to).toBe('portable');
+  });
+
+  it('affects copy-format tracks (MP3) unlike forceTranscode', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: false,
+      fileType: 'mp3',
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 320,
+      filetype: 'MPEG audio file',
+      comment: '[podkit:v1 quality=copy transfer=fast]',
+    });
+
+    const diff = computeMusicDiff([source], [ipod], {
+      forceTransferMode: true,
+      effectiveTransferMode: 'portable',
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transfer-mode-changed');
+  });
+
+  it('forceTransferMode + forceTranscode: each track processed once (no duplicates)', () => {
+    const losslessSource = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const lossySource = createCollectionTrack('Artist2', 'Track2', 'Album', {
+      lossless: false,
+      fileType: 'mp3',
+    });
+    const ipod1 = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr transfer=fast]',
+    });
+    const ipod2 = createIPodTrack('Artist2', 'Track2', 'Album', {
+      bitrate: 320,
+      filetype: 'MPEG audio file',
+      comment: '[podkit:v1 quality=copy transfer=fast]',
+    });
+
+    const diff = computeMusicDiff([losslessSource, lossySource], [ipod1, ipod2], {
+      forceTranscode: true,
+      forceTransferMode: true,
+      effectiveTransferMode: 'portable',
+      transcodingActive: true,
+    });
+
+    // Lossless track is caught by forceTranscode (earlier in processing),
+    // so it won't be double-counted by forceTransferMode.
+    // Lossy track is not affected by forceTranscode but IS affected by forceTransferMode.
+    expect(diff.toUpdate).toHaveLength(2);
+
+    const reasons = diff.toUpdate.map((u) => u.reason);
+    expect(reasons).toContain('force-transcode');
+    expect(reasons).toContain('transfer-mode-changed');
+
+    expect(diff.existing).toHaveLength(0);
+  });
+
+  it('forceTransferMode without effectiveTransferMode does nothing', () => {
+    const source = createCollectionTrack('Artist', 'Track', 'Album', {
+      lossless: true,
+      fileType: 'flac',
+    });
+    const ipod = createIPodTrack('Artist', 'Track', 'Album', {
+      bitrate: 256,
+      filetype: 'AAC audio file',
+      comment: '[podkit:v1 quality=high encoding=vbr transfer=fast]',
+    });
+
+    const diff = computeMusicDiff([source], [ipod], {
+      forceTransferMode: true,
+      // effectiveTransferMode NOT set
+      transcodingActive: true,
+    });
+
+    expect(diff.toUpdate).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+  });
+});

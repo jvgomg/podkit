@@ -28,7 +28,12 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
-import { type QualityPreset, type TranscodeConfig, getPresetBitrate } from '../transcode/types.js';
+import {
+  type QualityPreset,
+  type TranscodeConfig,
+  type TransferMode,
+  getPresetBitrate,
+} from '../transcode/types.js';
 import type {
   IPodTrack,
   MetadataChange,
@@ -278,27 +283,46 @@ export function estimateCopySize(track: CollectionTrack): number {
 // =============================================================================
 
 /**
- * Create a transcode operation for a track
+ * Create an add-transcode operation for a track
  */
 function createTranscodeOperation(
   track: CollectionTrack,
   preset: TranscodePresetRef
 ): SyncOperation {
   return {
-    type: 'transcode',
+    type: 'add-transcode',
     source: track,
     preset,
   };
 }
 
 /**
- * Create a copy operation for a track
+ * Create a direct copy operation for a track (fast/portable mode)
  */
-function createCopyOperation(track: CollectionTrack): SyncOperation {
+function createDirectCopyOperation(track: CollectionTrack): SyncOperation {
   return {
-    type: 'copy',
+    type: 'add-direct-copy',
     source: track,
   };
+}
+
+/**
+ * Create an optimized copy operation for a track (optimized mode)
+ */
+function createOptimizedCopyOperation(track: CollectionTrack): SyncOperation {
+  return {
+    type: 'add-optimized-copy',
+    source: track,
+  };
+}
+
+/**
+ * Create a copy operation for a track, routing by transfer mode
+ */
+function createCopyOperation(track: CollectionTrack, transferMode: TransferMode): SyncOperation {
+  return transferMode === 'optimized'
+    ? createOptimizedCopyOperation(track)
+    : createDirectCopyOperation(track);
 }
 
 /**
@@ -425,7 +449,8 @@ function makePresetRef(
 function planAddOperations(
   tracks: CollectionTrack[],
   config: TranscodeConfig,
-  deviceSupportsAlac: boolean
+  deviceSupportsAlac: boolean,
+  transferMode: TransferMode
 ): PlanAddResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
@@ -444,7 +469,7 @@ function planAddOperations(
         if (effectivePreset === 'lossless') {
           // Check if source is already ALAC - can copy directly
           if (track.codec?.toLowerCase() === 'alac') {
-            operations.push(createCopyOperation(track));
+            operations.push(createCopyOperation(track, transferMode));
           } else {
             // Transcode to ALAC
             operations.push(createTranscodeOperation(track, makePresetRef('lossless')));
@@ -460,7 +485,7 @@ function planAddOperations(
 
       case 'compatible-lossy':
         // MP3/AAC: always copy (no benefit to re-encoding)
-        operations.push(createCopyOperation(track));
+        operations.push(createCopyOperation(track, transferMode));
         break;
 
       case 'incompatible-lossy': {
@@ -512,7 +537,8 @@ interface PlanUpdateResult {
 function planUpdateOperations(
   tracks: UpdateTrack[],
   config: TranscodeConfig,
-  deviceSupportsAlac: boolean
+  deviceSupportsAlac: boolean,
+  transferMode: TransferMode
 ): PlanUpdateResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
@@ -521,16 +547,15 @@ function planUpdateOperations(
     const { reason } = updateTrack;
 
     // artwork-updated needs source file access (to re-extract artwork bytes) but does NOT
-    // replace the audio file. Route it as an upgrade operation so the executor can access
-    // the source, but without a preset (no transcode/copy needed).
+    // replace the audio file. Route as upgrade-artwork so the executor can access
+    // the source without replacing the audio.
     // artwork-removed is similar — metadata-only, removes artwork from iPod track.
     if (reason === 'artwork-updated' || reason === 'artwork-removed') {
       operations.push({
-        type: 'upgrade',
+        type: 'upgrade-artwork',
         source: updateTrack.source,
         target: updateTrack.ipod,
         reason: reason as UpgradeReason,
-        // No preset — audio file is not replaced
       });
       continue;
     }
@@ -545,40 +570,56 @@ function planUpdateOperations(
         lossyToLossyTracks.push(updateTrack.source);
       }
 
-      // Determine if upgrade needs a transcode preset
-      let preset: TranscodePresetRef | undefined;
+      // Determine the granular upgrade operation type
+      let upgradePreset: TranscodePresetRef | undefined;
+      let needsTranscode = false;
 
       switch (category) {
         case 'lossless':
           if (effectivePreset === 'lossless') {
             // ALAC source can be copied directly
             if (updateTrack.source.codec?.toLowerCase() === 'alac') {
-              preset = undefined; // copy
+              needsTranscode = false;
             } else {
-              preset = makePresetRef('lossless');
+              needsTranscode = true;
+              upgradePreset = makePresetRef('lossless');
             }
           } else {
+            needsTranscode = true;
             const bitrateOverride = config.customBitrate;
-            preset = makePresetRef(effectivePreset, bitrateOverride);
+            upgradePreset = makePresetRef(effectivePreset, bitrateOverride);
           }
           break;
         case 'compatible-lossy':
-          preset = undefined; // copy
+          needsTranscode = false;
           break;
         case 'incompatible-lossy': {
+          needsTranscode = true;
           const effectiveBitrate = resolveIncompatibleLossyBitrate(updateTrack.source, config);
-          preset = makePresetRef(effectivePreset, effectiveBitrate);
+          upgradePreset = makePresetRef(effectivePreset, effectiveBitrate);
           break;
         }
       }
 
-      operations.push({
-        type: 'upgrade',
-        source: updateTrack.source,
-        target: updateTrack.ipod,
-        reason: reason as UpgradeReason,
-        ...(preset !== undefined && { preset }),
-      });
+      if (needsTranscode && upgradePreset) {
+        operations.push({
+          type: 'upgrade-transcode',
+          source: updateTrack.source,
+          target: updateTrack.ipod,
+          reason: reason as UpgradeReason,
+          preset: upgradePreset,
+        });
+      } else {
+        // Copy upgrade — route by transfer mode
+        const upgradeType =
+          transferMode === 'optimized' ? 'upgrade-optimized-copy' : 'upgrade-direct-copy';
+        operations.push({
+          type: upgradeType,
+          source: updateTrack.source,
+          target: updateTrack.ipod,
+          reason: reason as UpgradeReason,
+        });
+      }
     } else {
       // Metadata-only update (transforms, soundcheck, metadata-correction)
       operations.push(createUpdateMetadataOperation(updateTrack));
@@ -593,30 +634,31 @@ function planUpdateOperations(
  */
 export function calculateMusicOperationSize(operation: SyncOperation): number {
   switch (operation.type) {
-    case 'transcode': {
+    case 'add-transcode': {
       const duration = operation.source.duration ?? 240000; // default 4 min
       const bitrate = operation.preset.bitrateOverride ?? getPresetBitrate(operation.preset.name);
       return estimateTranscodedSize(duration, bitrate);
     }
-    case 'copy': {
+    case 'add-direct-copy':
+    case 'add-optimized-copy': {
       return estimateCopySize(operation.source);
     }
-    case 'upgrade': {
+    case 'upgrade-transcode': {
+      const duration = operation.source.duration ?? 240000;
+      const bitrate = operation.preset.bitrateOverride ?? getPresetBitrate(operation.preset.name);
+      return estimateTranscodedSize(duration, bitrate);
+    }
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy': {
+      return estimateCopySize(operation.source);
+    }
+    case 'upgrade-artwork': {
       // artwork-updated only transfers artwork bytes (~200KB), not the whole track
       if (operation.reason === 'artwork-updated') {
         return 200 * 1024;
       }
       // artwork-removed is metadata-only (no file transfer)
-      if (operation.reason === 'artwork-removed') {
-        return 0;
-      }
-      // Upgrades replace a file, so estimate based on preset (transcode) or source (copy)
-      if (operation.preset) {
-        const duration = operation.source.duration ?? 240000;
-        const bitrate = operation.preset.bitrateOverride ?? getPresetBitrate(operation.preset.name);
-        return estimateTranscodedSize(duration, bitrate);
-      }
-      return estimateCopySize(operation.source);
+      return 0;
     }
     case 'remove':
     case 'update-metadata':
@@ -639,27 +681,22 @@ export function calculateMusicOperationSize(operation: SyncOperation): number {
  */
 function calculateOperationTime(operation: SyncOperation): number {
   switch (operation.type) {
-    case 'transcode': {
-      // Time is based on transfer size, not transcode time (pipeline hides transcode)
+    case 'add-transcode':
+    case 'add-direct-copy':
+    case 'add-optimized-copy':
+    case 'upgrade-transcode':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy': {
       const size = calculateMusicOperationSize(operation);
       return estimateTransferTime(size);
     }
-    case 'copy': {
-      const size = calculateMusicOperationSize(operation);
-      return estimateTransferTime(size);
-    }
-    case 'upgrade': {
+    case 'upgrade-artwork': {
       // artwork-updated is nearly instant (small artwork data, no audio transfer)
       if (operation.reason === 'artwork-updated') {
         return 0.1;
       }
       // artwork-removed is instant (metadata-only)
-      if (operation.reason === 'artwork-removed') {
-        return 0.01;
-      }
-      // Upgrade time is similar to transcode/copy — based on transfer size
-      const size = calculateMusicOperationSize(operation);
-      return estimateTransferTime(size);
+      return 0.01;
     }
     case 'remove':
       // Removal is nearly instant (database update)
@@ -688,7 +725,8 @@ function calculateOperationTime(operation: SyncOperation): number {
  */
 function orderOperations(operations: SyncOperation[]): SyncOperation[] {
   const removes: SyncOperation[] = [];
-  const copies: SyncOperation[] = [];
+  const directCopies: SyncOperation[] = [];
+  const optimizedCopies: SyncOperation[] = [];
   const transcodes: SyncOperation[] = [];
   const upgrades: SyncOperation[] = [];
   const updates: SyncOperation[] = [];
@@ -698,13 +736,19 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
       case 'remove':
         removes.push(op);
         break;
-      case 'copy':
-        copies.push(op);
+      case 'add-direct-copy':
+        directCopies.push(op);
         break;
-      case 'transcode':
+      case 'add-optimized-copy':
+        optimizedCopies.push(op);
+        break;
+      case 'add-transcode':
         transcodes.push(op);
         break;
-      case 'upgrade':
+      case 'upgrade-direct-copy':
+      case 'upgrade-optimized-copy':
+      case 'upgrade-transcode':
+      case 'upgrade-artwork':
         upgrades.push(op);
         break;
       case 'update-metadata':
@@ -714,7 +758,7 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
   }
 
   // Upgrades run after removes (free space) and before adds (similar transfer work)
-  return [...removes, ...copies, ...upgrades, ...transcodes, ...updates];
+  return [...removes, ...directCopies, ...optimizedCopies, ...upgrades, ...transcodes, ...updates];
 }
 
 // =============================================================================
@@ -741,13 +785,18 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  * }
  */
 export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): SyncPlan {
-  const { removeOrphans = false, deviceSupportsAlac = false } = options;
+  const { removeOrphans = false } = options;
+  const deviceSupportsAlac =
+    options.capabilities?.supportedAudioCodecs.includes('alac') ??
+    options.deviceSupportsAlac ??
+    false;
+  const transferMode: TransferMode = options.transferMode ?? 'fast';
 
   // Get transcode config (handles both legacy and new formats)
   const config = getTranscodeConfig(options);
 
   // Plan add operations using source categorization logic
-  const addResult = planAddOperations(diff.toAdd, config, deviceSupportsAlac);
+  const addResult = planAddOperations(diff.toAdd, config, deviceSupportsAlac, transferMode);
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
@@ -759,7 +808,12 @@ export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): Sync
     : diff.toUpdate.filter((u) => u.reason !== 'artwork-updated' && u.reason !== 'artwork-removed');
 
   // Plan update/upgrade operations for metadata changes and file replacements
-  const updateResult = planUpdateOperations(effectiveUpdates, config, deviceSupportsAlac);
+  const updateResult = planUpdateOperations(
+    effectiveUpdates,
+    config,
+    deviceSupportsAlac,
+    transferMode
+  );
 
   // Combine and order operations
   const allOperations = [...addResult.operations, ...removeOperations, ...updateResult.operations];
@@ -812,22 +866,30 @@ export function willMusicFitInSpace(plan: SyncPlan, availableSpace: number): boo
  * Get a summary of operations in a plan
  */
 export function getMusicPlanSummary(plan: SyncPlan): {
-  transcodeCount: number;
-  copyCount: number;
   removeCount: number;
   updateCount: number;
-  upgradeCount: number;
+  addTranscodeCount: number;
+  addDirectCopyCount: number;
+  addOptimizedCopyCount: number;
+  upgradeTranscodeCount: number;
+  upgradeDirectCopyCount: number;
+  upgradeOptimizedCopyCount: number;
+  upgradeArtworkCount: number;
   videoTranscodeCount: number;
   videoCopyCount: number;
   videoRemoveCount: number;
   videoUpdateCount: number;
   videoUpgradeCount: number;
 } {
-  let transcodeCount = 0;
-  let copyCount = 0;
+  let addTranscodeCount = 0;
+  let addDirectCopyCount = 0;
+  let addOptimizedCopyCount = 0;
+  let upgradeTranscodeCount = 0;
+  let upgradeDirectCopyCount = 0;
+  let upgradeOptimizedCopyCount = 0;
+  let upgradeArtworkCount = 0;
   let removeCount = 0;
   let updateCount = 0;
-  let upgradeCount = 0;
   let videoTranscodeCount = 0;
   let videoCopyCount = 0;
   let videoRemoveCount = 0;
@@ -836,20 +898,32 @@ export function getMusicPlanSummary(plan: SyncPlan): {
 
   for (const op of plan.operations) {
     switch (op.type) {
-      case 'transcode':
-        transcodeCount++;
+      case 'add-transcode':
+        addTranscodeCount++;
         break;
-      case 'copy':
-        copyCount++;
+      case 'add-direct-copy':
+        addDirectCopyCount++;
+        break;
+      case 'add-optimized-copy':
+        addOptimizedCopyCount++;
+        break;
+      case 'upgrade-transcode':
+        upgradeTranscodeCount++;
+        break;
+      case 'upgrade-direct-copy':
+        upgradeDirectCopyCount++;
+        break;
+      case 'upgrade-optimized-copy':
+        upgradeOptimizedCopyCount++;
+        break;
+      case 'upgrade-artwork':
+        upgradeArtworkCount++;
         break;
       case 'remove':
         removeCount++;
         break;
       case 'update-metadata':
         updateCount++;
-        break;
-      case 'upgrade':
-        upgradeCount++;
         break;
       case 'video-transcode':
         videoTranscodeCount++;
@@ -870,11 +944,15 @@ export function getMusicPlanSummary(plan: SyncPlan): {
   }
 
   return {
-    transcodeCount,
-    copyCount,
     removeCount,
     updateCount,
-    upgradeCount,
+    addTranscodeCount,
+    addDirectCopyCount,
+    addOptimizedCopyCount,
+    upgradeTranscodeCount,
+    upgradeDirectCopyCount,
+    upgradeOptimizedCopyCount,
+    upgradeArtworkCount,
     videoTranscodeCount,
     videoCopyCount,
     videoRemoveCount,

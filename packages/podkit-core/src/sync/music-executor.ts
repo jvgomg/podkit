@@ -28,10 +28,11 @@ import { join, basename, extname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
 
 import { AsyncQueue } from './async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
-import { buildAudioSyncTag, parseSyncTag, writeSyncTag } from './sync-tags.js';
+import { buildAudioSyncTag, buildCopySyncTag, parseSyncTag, writeSyncTag } from './sync-tags.js';
 import type { SyncTagData } from './sync-tags.js';
 import {
   categorizeError as sharedCategorizeError,
@@ -41,7 +42,8 @@ import {
 } from './error-handling.js';
 
 import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.js';
-import type { FFmpegTranscoder } from '../transcode/ffmpeg.js';
+import type { FFmpegTranscoder, OptimizedCopyFormat } from '../transcode/ffmpeg.js';
+import { buildOptimizedCopyArgs } from '../transcode/ffmpeg.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -115,8 +117,8 @@ export interface SyncTagConfig {
   encodingMode?: string;
   /** Custom bitrate override (only when explicitly set by user) */
   customBitrate?: number;
-  /** File mode: 'optimized' | 'portable' (informational — stored in sync tag) */
-  fileMode?: string;
+  /** Transfer mode: 'fast' | 'optimized' | 'portable' (informational — stored in sync tag) */
+  transferMode?: string;
 }
 
 export interface ExtendedExecuteOptions extends ExecuteOptions {
@@ -145,14 +147,15 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    */
   syncTagConfig?: SyncTagConfig;
   /**
-   * File mode for transcoded output.
+   * Transfer mode for transcoded output.
    *
-   * - `optimized` (default): strips embedded artwork from transcoded files.
+   * - `fast` (default): strips embedded artwork, optimized for iPod playback.
+   * - `optimized`: strips embedded artwork from transcoded files.
    * - `portable`: preserves embedded artwork for exportable files.
    *
    * Only affects transcoded files. Direct-copy formats are left as-is.
    */
-  fileMode?: string;
+  transferMode?: string;
   /**
    * Save the iPod database every N completed track operations.
    *
@@ -166,6 +169,28 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
 
 /** @see types.ts for canonical definition */
 export type ExecuteResult = ExecuteResultFromTypes;
+
+/**
+ * Music file operation types — operations that involve file transfer (not remove/update-metadata).
+ * Used for Extract<SyncOperation, ...> patterns in the pipeline.
+ */
+type MusicFileOperationType =
+  | 'add-transcode'
+  | 'add-direct-copy'
+  | 'add-optimized-copy'
+  | 'upgrade-transcode'
+  | 'upgrade-direct-copy'
+  | 'upgrade-optimized-copy'
+  | 'upgrade-artwork';
+
+/**
+ * Music upgrade operation types — operations that upgrade existing tracks.
+ */
+type MusicUpgradeOperationType =
+  | 'upgrade-transcode'
+  | 'upgrade-direct-copy'
+  | 'upgrade-optimized-copy'
+  | 'upgrade-artwork';
 
 /**
  * Dependencies required by the executor
@@ -185,7 +210,7 @@ export interface ExecutorDependencies {
  */
 export interface PreparedFile {
   /** The sync operation this file is for */
-  operation: Extract<SyncOperation, { type: 'transcode' | 'copy' | 'upgrade' }>;
+  operation: Extract<SyncOperation, { type: MusicFileOperationType }>;
   /** Path to the file to transfer (temp file for transcode, source for copy) */
   sourcePath: string;
   /** Whether this is a temp file that should be deleted after transfer */
@@ -227,7 +252,7 @@ const PREFETCH_BUFFER_SIZE = 2;
  */
 interface PrefetchedFile {
   /** The sync operation this file is for */
-  operation: Extract<SyncOperation, { type: 'transcode' | 'copy' | 'upgrade' }>;
+  operation: Extract<SyncOperation, { type: MusicFileOperationType }>;
   /** Resolved file access (local path or downloaded temp path) */
   fileAccess: ResolvedFileAccess;
 }
@@ -327,6 +352,18 @@ function getFileTypeLabel(filePath: string): string {
 }
 
 /**
+ * Determine the FFmpeg format argument for an optimized-copy operation.
+ *
+ * Maps the track's file type and codec to the container format that FFmpeg
+ * should use when stream-copying audio with artwork stripped.
+ */
+function getOptimizedCopyFormat(track: CollectionTrack): OptimizedCopyFormat {
+  if (track.fileType === 'mp3') return 'mp3';
+  if (track.codec?.toLowerCase() === 'alac' || track.fileType === 'alac') return 'alac';
+  return 'm4a'; // m4a, aac, and other M4A-container formats
+}
+
+/**
  * Convert CollectionTrack to TrackInput for libgpod
  */
 function toTrackInput(track: CollectionTrack): TrackInput {
@@ -351,15 +388,20 @@ function toTrackInput(track: CollectionTrack): TrackInput {
  */
 export function getMusicOperationDisplayName(operation: SyncOperation): string {
   switch (operation.type) {
-    case 'transcode':
+    case 'add-transcode':
       return `${operation.source.artist} - ${operation.source.title}`;
-    case 'copy':
+    case 'add-direct-copy':
+      return `${operation.source.artist} - ${operation.source.title}`;
+    case 'add-optimized-copy':
       return `${operation.source.artist} - ${operation.source.title}`;
     case 'remove':
       return `${operation.track.artist} - ${operation.track.title}`;
     case 'update-metadata':
       return `${operation.track.artist} - ${operation.track.title}`;
-    case 'upgrade':
+    case 'upgrade-transcode':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy':
+    case 'upgrade-artwork':
       return `${operation.source.artist} - ${operation.source.title}`;
     case 'video-transcode':
     case 'video-copy':
@@ -454,8 +496,8 @@ export class MusicExecutor implements SyncExecutor {
   private warnings: ExecutionWarning[] = [];
   /** Sync tag config for the current execution (set during execute()) */
   private syncTagConfig?: SyncTagConfig;
-  /** File mode for the current execution (set during execute()) */
-  private fileMode?: string;
+  /** Transfer mode for the current execution (set during execute()) */
+  private transferMode?: string;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
 
@@ -518,13 +560,13 @@ export class MusicExecutor implements SyncExecutor {
       artwork = true,
       adapter,
       syncTagConfig,
-      fileMode,
+      transferMode,
       saveInterval = 50,
     } = options;
 
     // Store sync tag config for use during transfer
     this.syncTagConfig = syncTagConfig;
-    this.fileMode = fileMode;
+    this.transferMode = transferMode;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -541,7 +583,7 @@ export class MusicExecutor implements SyncExecutor {
     // Create temp directory for transcoded files if needed
     const transcodeDir = join(tempDir, `podkit-transcode-${randomUUID()}`);
     const hasTranscodes = plan.operations.some(
-      (op) => op.type === 'transcode' || (op.type === 'upgrade' && op.preset !== undefined)
+      (op) => op.type === 'add-transcode' || op.type === 'upgrade-transcode'
     );
     if (hasTranscodes && !dryRun) {
       await mkdir(transcodeDir, { recursive: true });
@@ -673,7 +715,7 @@ export class MusicExecutor implements SyncExecutor {
 
     // Helper to get source from file operations
     const getFileOperationSource = (
-      operation: Extract<SyncOperation, { type: 'transcode' | 'copy' | 'upgrade' }>
+      operation: Extract<SyncOperation, { type: MusicFileOperationType }>
     ): CollectionTrack => operation.source;
 
     // Stage 1: Downloader — resolve file access (download for remote, instant for local)
@@ -683,9 +725,13 @@ export class MusicExecutor implements SyncExecutor {
 
         try {
           if (
-            operation.type === 'transcode' ||
-            operation.type === 'copy' ||
-            operation.type === 'upgrade'
+            operation.type === 'add-transcode' ||
+            operation.type === 'add-direct-copy' ||
+            operation.type === 'add-optimized-copy' ||
+            operation.type === 'upgrade-transcode' ||
+            operation.type === 'upgrade-direct-copy' ||
+            operation.type === 'upgrade-optimized-copy' ||
+            operation.type === 'upgrade-artwork'
           ) {
             const source = getFileOperationSource(operation);
             const fileAccess = await getTrackFilePath(source, adapter);
@@ -731,20 +777,26 @@ export class MusicExecutor implements SyncExecutor {
             | { value: PreparedFile; error?: undefined; attempts: number }
             | { value: null; error: Error; attempts: number };
 
-          if (operation.type === 'transcode') {
+          if (operation.type === 'add-transcode') {
             result = await this.prepareWithRetry(
               () => this.prepareTranscode(operation, transcodeDir, adapter, signal, fileAccess),
               operation,
               retryConfig
             );
-          } else if (operation.type === 'copy') {
+          } else if (operation.type === 'add-direct-copy') {
             result = await this.prepareWithRetry(
               () => this.prepareCopy(operation, adapter, fileAccess),
               operation,
               retryConfig
             );
+          } else if (operation.type === 'add-optimized-copy') {
+            result = await this.prepareWithRetry(
+              () => this.prepareOptimizedCopy(operation, transcodeDir, adapter, signal, fileAccess),
+              operation,
+              retryConfig
+            );
           } else {
-            // upgrade
+            // upgrade-transcode, upgrade-direct-copy, upgrade-optimized-copy, upgrade-artwork
             result = await this.prepareWithRetry(
               () => this.prepareUpgrade(operation, transcodeDir, adapter, signal, fileAccess),
               operation,
@@ -986,9 +1038,7 @@ export class MusicExecutor implements SyncExecutor {
     | { value: null; error: Error; attempts: number }
   > {
     const maxRetries =
-      operation.type === 'transcode' ||
-      (operation.type === 'upgrade' &&
-        (operation as Extract<SyncOperation, { type: 'upgrade' }>).preset !== undefined)
+      operation.type === 'add-transcode' || operation.type === 'upgrade-transcode'
         ? retryConfig.transcodeRetries
         : retryConfig.copyRetries;
 
@@ -1062,15 +1112,19 @@ export class MusicExecutor implements SyncExecutor {
     artworkEnabled?: boolean
   ): Promise<{ bytesTransferred: number; track?: IpodDatabaseTrack }> {
     switch (operation.type) {
-      case 'transcode':
+      case 'add-transcode':
         return this.executeTranscode(operation, transcodeDir, signal, artworkEnabled);
-      case 'copy':
+      case 'add-direct-copy':
+      case 'add-optimized-copy':
         return this.executeCopy(operation, artworkEnabled);
       case 'remove':
         return this.executeRemove(operation);
       case 'update-metadata':
         return this.executeUpdateMetadata(operation);
-      case 'upgrade':
+      case 'upgrade-transcode':
+      case 'upgrade-direct-copy':
+      case 'upgrade-optimized-copy':
+      case 'upgrade-artwork':
         // Upgrade operations are handled via the pipeline (prepare + transfer)
         throw new Error('Upgrade operations should be handled via the pipeline');
       case 'video-transcode':
@@ -1129,7 +1183,7 @@ export class MusicExecutor implements SyncExecutor {
    * Execute a transcode operation
    */
   private async executeTranscode(
-    operation: Extract<SyncOperation, { type: 'transcode' }>,
+    operation: Extract<SyncOperation, { type: 'add-transcode' }>,
     transcodeDir: string,
     signal?: AbortSignal,
     artworkEnabled?: boolean
@@ -1143,7 +1197,7 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file (using the quality preset name directly)
     const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
       signal,
-      fileMode: this.fileMode as import('../transcode/types.js').FileMode | undefined,
+      transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
     });
 
     // Add track to iPod database using IpodDatabase API
@@ -1171,7 +1225,7 @@ export class MusicExecutor implements SyncExecutor {
    * Execute a copy operation
    */
   private async executeCopy(
-    operation: Extract<SyncOperation, { type: 'copy' }>,
+    operation: Extract<SyncOperation, { type: 'add-direct-copy' | 'add-optimized-copy' }>,
     artworkEnabled?: boolean
   ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { source } = operation;
@@ -1331,7 +1385,7 @@ export class MusicExecutor implements SyncExecutor {
    * cleaned up after transfer completes.
    */
   private async prepareTranscode(
-    operation: Extract<SyncOperation, { type: 'transcode' }>,
+    operation: Extract<SyncOperation, { type: 'add-transcode' }>,
     transcodeDir: string,
     adapter?: CollectionAdapter,
     signal?: AbortSignal,
@@ -1350,7 +1404,7 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file
     const result = await this.transcoder.transcode(inputPath, outputPath, presetRef.name, {
       signal,
-      fileMode: this.fileMode as import('../transcode/types.js').FileMode | undefined,
+      transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
     });
 
     return {
@@ -1368,13 +1422,13 @@ export class MusicExecutor implements SyncExecutor {
   }
 
   /**
-   * Prepare a copy operation by getting file info.
+   * Prepare a direct-copy operation by getting file info.
    *
-   * Copy operations don't need CPU work, so this just returns the source info.
+   * Direct-copy operations don't need CPU work, so this just returns the source info.
    * For remote sources (via adapter), the file is downloaded to a temp location.
    */
   private async prepareCopy(
-    operation: Extract<SyncOperation, { type: 'copy' }>,
+    operation: Extract<SyncOperation, { type: 'add-direct-copy' }>,
     adapter?: CollectionAdapter,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
@@ -1416,6 +1470,95 @@ export class MusicExecutor implements SyncExecutor {
   }
 
   /**
+   * Prepare an optimized-copy operation by running FFmpeg in stream-copy mode.
+   *
+   * Unlike direct-copy which returns the source path unchanged, optimized-copy
+   * runs FFmpeg to strip embedded artwork while preserving audio data as-is.
+   * This produces a temp file with artwork removed.
+   */
+  private async prepareOptimizedCopy(
+    operation: Extract<SyncOperation, { type: 'add-optimized-copy' }>,
+    transcodeDir: string,
+    adapter?: CollectionAdapter,
+    signal?: AbortSignal,
+    prefetchedAccess?: ResolvedFileAccess
+  ): Promise<PreparedFile> {
+    const { source } = operation;
+
+    // Resolve file access
+    const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
+    const inputPath = fileAccess.path;
+
+    // Determine format for FFmpeg args
+    const format = getOptimizedCopyFormat(source);
+
+    // Generate output path — keep same extension as input
+    const ext = extname(source.filePath);
+    const baseName = basename(source.filePath, ext);
+    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${ext}`);
+
+    // Build FFmpeg args and run
+    const args = buildOptimizedCopyArgs(inputPath, outputPath, format);
+    await this.runFFmpeg(args, signal);
+
+    // Get output file size
+    const outputStat = await stat(outputPath);
+
+    return {
+      operation,
+      sourcePath: outputPath,
+      isTemp: true,
+      size: outputStat.size,
+      filetype: getFileTypeLabel(source.filePath),
+      // Use the original source for artwork extraction (before stripping)
+      artworkSourcePath: inputPath,
+      // Track downloaded file for cleanup after transfer (for remote sources)
+      downloadedSourcePath: fileAccess.isDownloaded ? inputPath : undefined,
+    };
+  }
+
+  /**
+   * Run FFmpeg with custom arguments.
+   *
+   * Used for optimized-copy operations that need FFmpeg but not the full
+   * transcode pipeline (no progress parsing, no re-encoding).
+   */
+  private async runFFmpeg(args: string[], signal?: AbortSignal): Promise<void> {
+    const ffmpegPath = this.transcoder.getFFmpegPath();
+
+    return new Promise((resolve, reject) => {
+      const proc = spawn(ffmpegPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      let stderr = '';
+      proc.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      if (signal) {
+        const onAbort = () => {
+          proc.kill('SIGTERM');
+          reject(new Error('Operation aborted'));
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        proc.on('close', () => signal.removeEventListener('abort', onAbort));
+      }
+
+      proc.on('error', (err: Error) => reject(err));
+      proc.on('close', (code) => {
+        if (code !== 0) {
+          reject(
+            new Error(`FFmpeg optimized-copy failed with code ${code}: ${stderr.slice(0, 500)}`)
+          );
+          return;
+        }
+        resolve();
+      });
+    });
+  }
+
+  /**
    * Prepare an upgrade operation by transcoding or getting file info.
    *
    * Delegates to prepareTranscode when a preset is set (transcode needed),
@@ -1424,16 +1567,16 @@ export class MusicExecutor implements SyncExecutor {
    * so the transfer phase can target the existing iPod track.
    */
   private async prepareUpgrade(
-    operation: Extract<SyncOperation, { type: 'upgrade' }>,
+    operation: Extract<SyncOperation, { type: MusicUpgradeOperationType }>,
     transcodeDir: string,
     adapter?: CollectionAdapter,
     signal?: AbortSignal,
     prefetchedAccess?: ResolvedFileAccess
   ): Promise<PreparedFile> {
-    if (operation.preset) {
+    if (operation.type === 'upgrade-transcode') {
       // Needs transcoding — delegate to prepareTranscode using a synthetic transcode op
-      const transcodeOp: Extract<SyncOperation, { type: 'transcode' }> = {
-        type: 'transcode',
+      const transcodeOp: Extract<SyncOperation, { type: 'add-transcode' }> = {
+        type: 'add-transcode',
         source: operation.source,
         preset: operation.preset,
       };
@@ -1445,10 +1588,32 @@ export class MusicExecutor implements SyncExecutor {
         prefetchedAccess
       );
       return { ...prepared, operation };
+    } else if (operation.type === 'upgrade-artwork') {
+      // Artwork-only — delegate to prepareCopy to resolve file access for artwork extraction
+      const copyOp: Extract<SyncOperation, { type: 'add-direct-copy' }> = {
+        type: 'add-direct-copy',
+        source: operation.source,
+      };
+      const prepared = await this.prepareCopy(copyOp, adapter, prefetchedAccess);
+      return { ...prepared, operation };
+    } else if (operation.type === 'upgrade-optimized-copy') {
+      // Optimized copy upgrade — route through FFmpeg for artwork stripping
+      const optimizedOp: Extract<SyncOperation, { type: 'add-optimized-copy' }> = {
+        type: 'add-optimized-copy',
+        source: operation.source,
+      };
+      const prepared = await this.prepareOptimizedCopy(
+        optimizedOp,
+        transcodeDir,
+        adapter,
+        signal,
+        prefetchedAccess
+      );
+      return { ...prepared, operation };
     } else {
-      // Copy directly — delegate to prepareCopy using a synthetic copy op
-      const copyOp: Extract<SyncOperation, { type: 'copy' }> = {
-        type: 'copy',
+      // upgrade-direct-copy — delegate to prepareCopy
+      const copyOp: Extract<SyncOperation, { type: 'add-direct-copy' }> = {
+        type: 'add-direct-copy',
         source: operation.source,
       };
       const prepared = await this.prepareCopy(copyOp, adapter, prefetchedAccess);
@@ -1472,7 +1637,12 @@ export class MusicExecutor implements SyncExecutor {
     const { operation, sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
 
     // Upgrade operations: replace file on existing track
-    if (operation.type === 'upgrade') {
+    if (
+      operation.type === 'upgrade-transcode' ||
+      operation.type === 'upgrade-direct-copy' ||
+      operation.type === 'upgrade-optimized-copy' ||
+      operation.type === 'upgrade-artwork'
+    ) {
       return this.transferUpgradeToIpod(prepared, artworkEnabled);
     }
 
@@ -1485,12 +1655,23 @@ export class MusicExecutor implements SyncExecutor {
       ...(bitrate !== undefined && { bitrate }),
     };
 
-    // Write sync tag for transcode operations (not copy operations)
-    if (operation.type === 'transcode' && operation.preset) {
+    // Write sync tag for transcode operations
+    if (operation.type === 'add-transcode' && operation.preset) {
       const syncTag = this.buildSyncTagForPreset(operation.preset.name);
       if (syncTag) {
         trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
       }
+    }
+
+    // Write sync tag for copy operations (direct-copy and optimized-copy)
+    if (
+      (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
+      this.syncTagConfig
+    ) {
+      const copySyncTag = buildCopySyncTag(
+        this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
+      );
+      trackInput.comment = writeSyncTag(trackInput.comment, copySyncTag);
     }
 
     const track = this.ipod.addTrack(trackInput);
@@ -1520,7 +1701,10 @@ export class MusicExecutor implements SyncExecutor {
         if (existingTag) {
           existingTag.artworkHash = artHash;
           track.update({ comment: writeSyncTag(currentComment, existingTag) });
-        } else if (operation.type === 'copy') {
+        } else if (
+          operation.type === 'add-direct-copy' ||
+          operation.type === 'add-optimized-copy'
+        ) {
           // Copy operation: no existing sync tag. Write a minimal tag with just the artwork hash.
           const artOnlyTag: SyncTagData = { quality: 'copy', artworkHash: artHash };
           track.update({ comment: writeSyncTag(currentComment, artOnlyTag) });
@@ -1548,7 +1732,10 @@ export class MusicExecutor implements SyncExecutor {
     artworkEnabled: boolean
   ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
     const { sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
-    const operation = prepared.operation as Extract<SyncOperation, { type: 'upgrade' }>;
+    const operation = prepared.operation as Extract<
+      SyncOperation,
+      { type: MusicUpgradeOperationType }
+    >;
     const { source, target } = operation;
 
     // Find the existing track in the database by filePath
@@ -1626,12 +1813,23 @@ export class MusicExecutor implements SyncExecutor {
     if (source.albumArtist !== undefined) updateFields.albumArtist = source.albumArtist;
     if (source.compilation !== undefined) updateFields.compilation = source.compilation;
 
-    // Write sync tag for upgrade operations with a preset (transcoded)
-    if (operation.preset) {
+    // Write sync tag for upgrade-transcode operations (has preset)
+    if (operation.type === 'upgrade-transcode') {
       const syncTag = this.buildSyncTagForPreset(operation.preset.name);
       if (syncTag) {
         updateFields.comment = writeSyncTag(foundTrack.comment, syncTag);
       }
+    }
+
+    // Write sync tag for upgrade-direct-copy and upgrade-optimized-copy operations
+    if (
+      (operation.type === 'upgrade-direct-copy' || operation.type === 'upgrade-optimized-copy') &&
+      this.syncTagConfig
+    ) {
+      const copySyncTag = buildCopySyncTag(
+        this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
+      );
+      updateFields.comment = writeSyncTag(foundTrack.comment, copySyncTag);
     }
 
     foundTrack = foundTrack.update(updateFields);
@@ -1650,7 +1848,7 @@ export class MusicExecutor implements SyncExecutor {
         if (existingTag) {
           existingTag.artworkHash = artHash;
           foundTrack = foundTrack.update({ comment: writeSyncTag(currentComment, existingTag) });
-        } else if (!operation.preset) {
+        } else if (operation.type !== 'upgrade-transcode') {
           // Copy upgrade: no sync tag was written. Write a minimal tag with the artwork hash.
           const artOnlyTag: SyncTagData = { quality: 'copy', artworkHash: artHash };
           foundTrack = foundTrack.update({ comment: writeSyncTag(currentComment, artOnlyTag) });
@@ -1687,7 +1885,7 @@ export class MusicExecutor implements SyncExecutor {
       presetName,
       this.syncTagConfig.encodingMode,
       this.syncTagConfig.customBitrate,
-      this.syncTagConfig.fileMode ?? this.fileMode
+      this.syncTagConfig.transferMode ?? this.transferMode
     );
   }
 
@@ -1717,15 +1915,19 @@ export class MusicExecutor implements SyncExecutor {
  */
 function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
   switch (operation.type) {
-    case 'transcode':
+    case 'add-transcode':
       return 'transcoding';
-    case 'copy':
+    case 'add-direct-copy':
+    case 'add-optimized-copy':
       return 'copying';
     case 'remove':
       return 'removing';
     case 'update-metadata':
       return 'updating-metadata';
-    case 'upgrade':
+    case 'upgrade-transcode':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy':
+    case 'upgrade-artwork':
       return 'upgrading';
     case 'video-transcode':
       return 'video-transcoding';

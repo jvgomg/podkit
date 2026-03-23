@@ -61,15 +61,19 @@ export interface SyncExecuteOptions {
  */
 function getPhaseForOperation(type: SyncOperation['type']): ExecutorProgress['phase'] {
   switch (type) {
-    case 'transcode':
+    case 'add-transcode':
       return 'transcoding';
-    case 'copy':
+    case 'add-direct-copy':
+    case 'add-optimized-copy':
       return 'copying';
     case 'remove':
       return 'removing';
     case 'update-metadata':
       return 'updating-metadata';
-    case 'upgrade':
+    case 'upgrade-transcode':
+    case 'upgrade-direct-copy':
+    case 'upgrade-optimized-copy':
+    case 'upgrade-artwork':
       return 'upgrading';
     case 'video-transcode':
       return 'video-transcoding';

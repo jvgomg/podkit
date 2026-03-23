@@ -126,13 +126,26 @@ export function categorizeError(error: Error, operationType: SyncOperation['type
   }
 
   // Fall back to operation type as a hint for generic errors
-  if (operationType === 'transcode' || operationType === 'video-transcode') {
+  if (
+    operationType === 'add-transcode' ||
+    operationType === 'upgrade-transcode' ||
+    operationType === 'video-transcode'
+  ) {
     return 'transcode';
   }
-  if (operationType === 'copy' || operationType === 'video-copy') {
+  if (
+    operationType === 'add-direct-copy' ||
+    operationType === 'add-optimized-copy' ||
+    operationType === 'video-copy'
+  ) {
     return 'copy';
   }
-  if (operationType === 'upgrade' || operationType === 'video-upgrade') {
+  if (
+    operationType === 'upgrade-direct-copy' ||
+    operationType === 'upgrade-optimized-copy' ||
+    operationType === 'upgrade-artwork' ||
+    operationType === 'video-upgrade'
+  ) {
     return 'copy'; // Upgrade errors are treated like copy errors for retry purposes
   }
 

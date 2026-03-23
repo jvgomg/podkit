@@ -1,9 +1,10 @@
 ---
 id: TASK-209
 title: Review `podkit device music` output for transfer mode changes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:36'
+updated_date: '2026-03-23 18:13'
 labels:
   - feature
   - cli
@@ -21,36 +22,67 @@ priority: low
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-The `podkit device music` command lists tracks on the device and can show sync tag details. With the transfer mode changes (new field names, sync tags on all tracks, new operation types), the output format and UX should be reviewed.
+Add transfer mode visibility to device inspection and dry-run output. Users should be able to see transfer mode information when inspecting a device — including what's configured, flagging inconsistency, and using verbose for more detail. Follows the same pattern as sync tag data display.
 
 **PRD:** DOC-011 (Transfer Mode)
 
-**What's changing:**
-- Sync tags now use `transfer=` instead of `mode=`
-- All tracks have sync tags (previously only transcoded tracks)
-- New `quality=copy` value appears for direct-copy tracks
-- The summary view may show transfer mode distribution
+**Stats view (device music, device video, dry-run sync):**
+- Add transfer mode breakdown alongside existing sync tag summary
+- Show configured transfer mode when available
+- Flag inconsistency: tracks with a different transfer mode than configured
+- Track missing `transfer` field in sync tags (like "missing artwork hash" for artwork)
+- `-v` verbose shows per-mode counts; default shows just the issue summary
 
-**HITL review needed:**
-This task requires human review of the output UX. Specifically:
+**Track fields (`--tracks --fields`):**
+- Add `syncTagTransfer` field — renders the `transferMode` value from parsed sync tag
+- Works for both music and video track listings
+- Table: shows value like `fast`, `optimized`, `portable`, or `-` if missing
+- JSON: includes `syncTagTransfer` string or null
 
-1. **Summary view (`podkit device music`):** Should the summary show transfer mode distribution (e.g., "450 fast, 50 optimized, 10 portable")? Is this useful or noise?
+**Dry-run sync:**
+- Show transfer mode summary similar to device inspection
+- Show configured transfer mode and count of mismatched tracks
 
-2. **Detailed view (`podkit device music --format json`):** The JSON output will now include sync tag data for all tracks. Is the schema clear? Should `quality: "copy"` be presented differently?
-
-3. **Filtering:** Should users be able to filter by transfer mode (e.g., `podkit device music --transfer-mode optimized`)? This could help users identify which tracks would be affected by `--force-transfer-mode`.
-
-4. **Table/list format:** If there's a tabular output mode, should transfer mode be a visible column? Or is it too niche?
-
-The implementation should be straightforward once the UX decisions are made.
+**NOT in scope:**
+- No `--transfer-mode` filter flag
+- No speculation or diffing in device commands — only show what's on the device
+- Device commands show what IS on device; dry-run shows what WILL change
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 HITL: UX review of summary view — decision on whether to show transfer mode distribution
-- [ ] #2 HITL: UX review of detailed/JSON output — decision on schema for copy-format sync tags
-- [ ] #3 HITL: Decision on whether to add --transfer-mode filter to device music command
-- [ ] #4 Output correctly displays transfer= field instead of mode= in sync tag details
-- [ ] #5 quality=copy tracks displayed appropriately in all output formats
-- [ ] #6 Tests updated for new sync tag format in device music output
+- [x] #1 Stats view shows transfer mode distribution (per-mode track counts)
+- [x] #2 Stats view flags tracks with missing transfer field in sync tags
+- [x] #3 Stats view shows configured transfer mode and flags inconsistency with on-device data
+- [x] #4 Verbose (-v) shows per-mode breakdown; default shows summary/issue count
+- [x] #5 syncTagTransfer field available in --tracks --fields for music and video
+- [x] #6 syncTagTransfer renders correctly in table, JSON, and CSV formats
+- [x] #7 Dry-run sync output includes transfer mode summary
+- [x] #8 Tests cover stats rendering, field display, and dry-run output
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added transfer mode visibility to device inspection and dry-run output.
+
+**Track fields (`display-utils.ts`):**
+- New `syncTagTransfer` field available via `--tracks --fields syncTagTransfer`
+- Renders transfer mode value in table/CSV/JSON (follows syncTagQuality/syncTagEncoding/syncTagArtwork pattern)
+
+**Stats view (`display-utils.ts`):**
+- `computeStats()` tracks `transferModeCounts` and `syncTagMissingTransfer`
+- `formatStatsText()` shows Transfer Mode section: ✓ Consistent (single mode), ◐ Mixed (multiple modes), ◐ Missing transfer field
+- Verbose (`-v`) shows per-mode count breakdown with (missing) count
+- Section only appears when sync-tagged tracks exist
+
+**Device info (`device.ts`):**
+- `formatSyncTagSummary()` includes missing transfer mode count in one-liner
+- Live status computation tracks `syncTagMissingTransfer`
+
+**Dry-run (`music-presenter.ts`):**
+- Shows `Transfer mode: <mode>` in config block
+- JSON output includes `transferMode` field
+
+**Tests:** 18 new tests covering field rendering, stats computation, stats formatting (consistent/mixed/all-legacy/verbose/no-sync-tags), and formatSyncTagSummary. 58 CLI tests pass, build clean.
+<!-- SECTION:FINAL_SUMMARY:END -->

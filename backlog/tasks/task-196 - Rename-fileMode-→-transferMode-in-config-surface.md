@@ -1,9 +1,10 @@
 ---
 id: TASK-196
 title: Rename fileMode → transferMode in config surface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:07'
+updated_date: '2026-03-23 15:13'
 labels:
   - feature
   - config
@@ -55,13 +56,19 @@ Rename `fileMode` to `transferMode` across the entire config surface — config 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 transferMode accepted from config file (global + per-device) with values fast/optimized/portable
-- [ ] #2 PODKIT_TRANSFER_MODE environment variable loaded and validated
-- [ ] #3 --transfer-mode CLI flag accepted by sync command
-- [ ] #4 Default value is 'fast' when not specified
-- [ ] #5 Old fileMode/--file-mode/PODKIT_FILE_MODE references removed throughout codebase
-- [ ] #6 Config template updated with transferMode field and all three options
-- [ ] #7 effectiveTransferMode threaded through MusicContentConfig and presenter/handler chain
-- [ ] #8 Config loader tests cover file, env, CLI, per-device, and merge for all three values
-- [ ] #9 Validation test confirms invalid values are rejected with helpful error
+- [x] #1 transferMode accepted from config file (global + per-device) with values fast/optimized/portable
+- [x] #2 PODKIT_TRANSFER_MODE environment variable loaded and validated
+- [x] #3 --transfer-mode CLI flag accepted by sync command
+- [x] #4 Default value is 'fast' when not specified
+- [x] #5 Old fileMode/--file-mode/PODKIT_FILE_MODE references removed throughout codebase
+- [x] #6 Config template updated with transferMode field and all three options
+- [x] #7 effectiveTransferMode threaded through MusicContentConfig and presenter/handler chain
+- [x] #8 Config loader tests cover file, env, CLI, per-device, and merge for all three values
+- [x] #9 Validation test confirms invalid values are rejected with helpful error
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Full rename across config types, loader, defaults, CLI sync command, init template, music-presenter, sync-presenter, tips, music-executor, and all tests. ENV changed to PODKIT_TRANSFER_MODE. CLI flag changed to --transfer-mode. Default changed to 'fast'. Docker compose updated. E2E tests updated. Zero remaining fileMode references outside deprecated type (now also removed). 787 CLI tests + 2037 core tests + 24 E2E tests pass.
+<!-- SECTION:NOTES:END -->

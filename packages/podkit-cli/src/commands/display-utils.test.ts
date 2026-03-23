@@ -372,6 +372,26 @@ describe('getFieldValue', () => {
       expect(getFieldValue(createTrack({ syncTag: undefined }), 'syncTagArtwork')).toBe('-');
     });
   });
+
+  describe('syncTagTransfer field', () => {
+    it('returns transfer mode value when present', () => {
+      const tag: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+      expect(getFieldValue(createTrack({ syncTag: tag }), 'syncTagTransfer')).toBe('fast');
+    });
+
+    it('returns dash when tag has no transferMode', () => {
+      const tag: SyncTagData = { quality: 'high', encoding: 'vbr' };
+      expect(getFieldValue(createTrack({ syncTag: tag }), 'syncTagTransfer')).toBe('-');
+    });
+
+    it('returns dash when no tag', () => {
+      expect(getFieldValue(createTrack({ syncTag: null }), 'syncTagTransfer')).toBe('-');
+    });
+
+    it('returns dash when syncTag is undefined', () => {
+      expect(getFieldValue(createTrack({ syncTag: undefined }), 'syncTagTransfer')).toBe('-');
+    });
+  });
 });
 
 // =============================================================================
@@ -692,6 +712,32 @@ describe('formatJson', () => {
     expect(parsed[0].syncTagArtwork).toBeNull();
   });
 
+  it('emits transfer mode string for syncTagTransfer when present', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    const track = createTrack({ syncTag: tag });
+    const result = formatJson([track], ['syncTagTransfer']);
+    const parsed = JSON.parse(result);
+
+    expect(parsed[0].syncTagTransfer).toBe('fast');
+  });
+
+  it('emits null for syncTagTransfer when no tag', () => {
+    const track = createTrack({ syncTag: null });
+    const result = formatJson([track], ['syncTagTransfer']);
+    const parsed = JSON.parse(result);
+
+    expect(parsed[0].syncTagTransfer).toBeNull();
+  });
+
+  it('emits null for syncTagTransfer when tag has no transferMode', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const track = createTrack({ syncTag: tag });
+    const result = formatJson([track], ['syncTagTransfer']);
+    const parsed = JSON.parse(result);
+
+    expect(parsed[0].syncTagTransfer).toBeNull();
+  });
+
   it('preserves undefined values as undefined in JSON', () => {
     const track = createTrack({ genre: undefined, bitrate: undefined });
     const result = formatJson([track], ['genre', 'bitrate']);
@@ -949,6 +995,45 @@ describe('computeStats', () => {
     expect(stats.syncTagComplete).toBe(0);
     expect(stats.syncTagMissingArt).toBe(0);
   });
+
+  it('counts transfer mode breakdown', () => {
+    const tracks = [
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr', transferMode: 'fast' } }),
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr', transferMode: 'fast' } }),
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr', transferMode: 'optimized' } }),
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr' } }), // no transfer mode (legacy)
+      createTrack({ syncTag: null }), // no tag at all
+    ];
+    const stats = computeStats(tracks);
+    expect(stats.transferModeCounts).toEqual({ fast: 2, optimized: 1 });
+    expect(stats.syncTagMissingTransfer).toBe(1);
+  });
+
+  it('returns undefined transferModeCounts when no transfer modes present', () => {
+    const tracks = [
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr' } }), // legacy, no transfer mode
+      createTrack({ syncTag: null }),
+    ];
+    const stats = computeStats(tracks);
+    expect(stats.transferModeCounts).toBeUndefined();
+    expect(stats.syncTagMissingTransfer).toBe(1);
+  });
+
+  it('returns zero syncTagMissingTransfer when all tags have transfer mode', () => {
+    const tracks = [
+      createTrack({ syncTag: { quality: 'high', encoding: 'vbr', transferMode: 'fast' } }),
+      createTrack({ syncTag: { quality: 'copy', transferMode: 'optimized' } }),
+    ];
+    const stats = computeStats(tracks);
+    expect(stats.transferModeCounts).toEqual({ fast: 1, optimized: 1 });
+    expect(stats.syncTagMissingTransfer).toBe(0);
+  });
+
+  it('returns zero syncTagMissingTransfer when no sync tags', () => {
+    const tracks = [createTrack({ syncTag: null }), createTrack({ syncTag: undefined })];
+    const stats = computeStats(tracks);
+    expect(stats.syncTagMissingTransfer).toBe(0);
+  });
 });
 
 // =============================================================================
@@ -967,6 +1052,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: { FLAC: 892, MP3: 280 },
     };
     const result = formatStatsText(stats, 'Music on TERAPOD:');
@@ -992,6 +1078,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1010,6 +1097,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1028,6 +1116,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1046,6 +1135,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1064,6 +1154,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1084,6 +1175,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1102,6 +1194,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1120,6 +1213,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:', {
@@ -1141,6 +1235,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:', {
@@ -1211,6 +1306,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1231,6 +1327,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1249,6 +1346,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1267,6 +1365,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: { flac: 100 },
     };
     const result = formatStatsText(stats, 'Music:');
@@ -1288,6 +1387,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:', { tips: false });
@@ -1306,6 +1406,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 345,
       syncTagComplete: 120,
       syncTagMissingArt: 225,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music on TERAPOD:', { tips: false });
@@ -1327,6 +1428,7 @@ describe('formatStatsText', () => {
       syncTagTracks: 100,
       syncTagComplete: 100,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:', { tips: false });
@@ -1348,11 +1450,139 @@ describe('formatStatsText', () => {
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
       fileTypes: {},
     };
     const result = formatStatsText(stats, 'Music:', { tips: false });
 
     expect(result).not.toContain('Sync Tags');
+  });
+
+  it('shows transfer mode consistent when all same mode', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 100,
+      syncTagComplete: 100,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
+      transferModeCounts: { fast: 100 },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).toContain('Transfer Mode:');
+    expect(result).toContain('\u2713 Consistent: 100 (all fast)');
+  });
+
+  it('shows transfer mode mixed when multiple modes', () => {
+    const stats: ContentStats = {
+      tracks: 200,
+      albums: 20,
+      artists: 10,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 200,
+      syncTagComplete: 200,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
+      transferModeCounts: { fast: 150, optimized: 50 },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).toContain('Transfer Mode:');
+    expect(result).toContain('\u25D0 Mixed: 150 fast, 50 optimized');
+  });
+
+  it('shows missing transfer field count', () => {
+    const stats: ContentStats = {
+      tracks: 200,
+      albums: 20,
+      artists: 10,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 200,
+      syncTagComplete: 200,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 89,
+      transferModeCounts: { fast: 111 },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).toContain('Transfer Mode:');
+    expect(result).toContain('\u25D0 Missing transfer field: 89');
+  });
+
+  it('shows only missing transfer field when all tags are legacy', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 100,
+      syncTagComplete: 100,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 100,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).toContain('Transfer Mode:');
+    expect(result).toContain('\u25D0 Missing transfer field: 100');
+    expect(result).not.toContain('Consistent');
+    expect(result).not.toContain('Mixed');
+  });
+
+  it('shows verbose transfer mode breakdown with per-mode counts', () => {
+    const stats: ContentStats = {
+      tracks: 200,
+      albums: 20,
+      artists: 10,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 200,
+      syncTagComplete: 200,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 10,
+      transferModeCounts: { fast: 100, optimized: 90 },
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { verbose: true, tips: false });
+
+    expect(result).toContain('Transfer Mode:');
+    expect(result).toContain('fast');
+    expect(result).toContain('optimized');
+    expect(result).toContain('(missing)');
+  });
+
+  it('omits transfer mode section when no sync tags', () => {
+    const stats: ContentStats = {
+      tracks: 100,
+      albums: 10,
+      artists: 5,
+      compilationAlbums: 0,
+      compilationTracks: 0,
+      soundCheckTracks: 0,
+      syncTagTracks: 0,
+      syncTagComplete: 0,
+      syncTagMissingArt: 0,
+      syncTagMissingTransfer: 0,
+      fileTypes: {},
+    };
+    const result = formatStatsText(stats, 'Music:', { tips: false });
+
+    expect(result).not.toContain('Transfer Mode');
   });
 });
 

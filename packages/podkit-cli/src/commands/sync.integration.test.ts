@@ -125,8 +125,8 @@ describe('sync command integration', () => {
         const summary = getMusicPlanSummary(plan);
 
         expect(summary.removeCount).toBe(2);
-        expect(summary.transcodeCount).toBe(0);
-        expect(summary.copyCount).toBe(0);
+        expect(summary.addTranscodeCount).toBe(0);
+        expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(0);
       } finally {
         ipod.close();
       }

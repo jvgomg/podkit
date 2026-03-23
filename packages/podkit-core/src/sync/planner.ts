@@ -53,13 +53,17 @@ const OPERATION_ORDER: Record<string, number> = {
   'update-metadata': 1,
   'video-update-metadata': 1,
   // Copies next — fast, no CPU work
-  copy: 2,
+  'add-direct-copy': 2,
+  'add-optimized-copy': 2,
   'video-copy': 2,
   // Upgrades next — replace existing files
-  upgrade: 3,
+  'upgrade-transcode': 3,
+  'upgrade-direct-copy': 3,
+  'upgrade-optimized-copy': 3,
+  'upgrade-artwork': 3,
   'video-upgrade': 3,
   // Transcodes last — CPU intensive, benefits from pipeline parallelism
-  transcode: 4,
+  'add-transcode': 4,
   'video-transcode': 4,
 };
 

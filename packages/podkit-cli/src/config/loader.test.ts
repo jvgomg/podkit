@@ -36,7 +36,7 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.audioQuality];
     delete process.env[ENV_KEYS.videoQuality];
     delete process.env[ENV_KEYS.encoding];
-    delete process.env[ENV_KEYS.fileMode];
+    delete process.env[ENV_KEYS.transferMode];
     delete process.env[ENV_KEYS.customBitrate];
     delete process.env[ENV_KEYS.bitrateTolerance];
     delete process.env[ENV_KEYS.artwork];
@@ -164,28 +164,36 @@ quality = "invalid"
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid encoding value/);
     });
 
-    // fileMode tests
-    it('parses fileMode = "optimized"', () => {
+    // transferMode tests
+    it('parses transferMode = "fast"', () => {
       const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(configPath, v(`fileMode = "optimized"`));
+      fs.writeFileSync(configPath, v(`transferMode = "fast"`));
 
       const result = loadConfigFile(configPath);
-      expect(result?.fileMode).toBe('optimized');
+      expect(result?.transferMode).toBe('fast');
     });
 
-    it('parses fileMode = "portable"', () => {
+    it('parses transferMode = "optimized"', () => {
       const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(configPath, v(`fileMode = "portable"`));
+      fs.writeFileSync(configPath, v(`transferMode = "optimized"`));
 
       const result = loadConfigFile(configPath);
-      expect(result?.fileMode).toBe('portable');
+      expect(result?.transferMode).toBe('optimized');
     });
 
-    it('throws on invalid fileMode', () => {
+    it('parses transferMode = "portable"', () => {
       const configPath = path.join(tempDir, 'config.toml');
-      fs.writeFileSync(configPath, v(`fileMode = "invalid"`));
+      fs.writeFileSync(configPath, v(`transferMode = "portable"`));
 
-      expect(() => loadConfigFile(configPath)).toThrow(/Invalid fileMode value/);
+      const result = loadConfigFile(configPath);
+      expect(result?.transferMode).toBe('portable');
+    });
+
+    it('throws on invalid transferMode', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`transferMode = "invalid"`));
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid transferMode value/);
     });
 
     // customBitrate tests
@@ -897,7 +905,7 @@ skipUpgrades = "yes"
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid type for "skipUpgrades"/);
       });
 
-      it('parses device fileMode', () => {
+      it('parses device transferMode', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -905,15 +913,15 @@ skipUpgrades = "yes"
 [devices.nano]
 volumeUuid = "ABC-123"
 volumeName = "NANO"
-fileMode = "portable"
+transferMode = "portable"
 `)
         );
 
         const result = loadConfigFile(configPath);
-        expect(result?.devices?.nano!.fileMode).toBe('portable');
+        expect(result?.devices?.nano!.transferMode).toBe('portable');
       });
 
-      it('throws on invalid device fileMode', () => {
+      it('throws on invalid device transferMode', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -921,11 +929,11 @@ fileMode = "portable"
 [devices.terapod]
 volumeUuid = "ABC-123"
 volumeName = "TERAPOD"
-fileMode = "invalid"
+transferMode = "invalid"
 `)
         );
 
-        expect(() => loadConfigFile(configPath)).toThrow(/Invalid fileMode value "invalid"/);
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid transferMode value "invalid"/);
       });
     });
 
@@ -1143,16 +1151,16 @@ device = "terapod"
       expect(result.encoding).toBeUndefined();
     });
 
-    it('reads PODKIT_FILE_MODE with valid value', () => {
-      process.env[ENV_KEYS.fileMode] = 'portable';
+    it('reads PODKIT_TRANSFER_MODE with valid value', () => {
+      process.env[ENV_KEYS.transferMode] = 'portable';
       const result = loadEnvConfig();
-      expect(result.fileMode).toBe('portable');
+      expect(result.transferMode).toBe('portable');
     });
 
-    it('ignores PODKIT_FILE_MODE with invalid value', () => {
-      process.env[ENV_KEYS.fileMode] = 'invalid';
+    it('ignores PODKIT_TRANSFER_MODE with invalid value', () => {
+      process.env[ENV_KEYS.transferMode] = 'invalid';
       const result = loadEnvConfig();
-      expect(result.fileMode).toBeUndefined();
+      expect(result.transferMode).toBeUndefined();
     });
 
     it('reads PODKIT_CUSTOM_BITRATE with valid value', () => {
@@ -1575,22 +1583,22 @@ device = "terapod"
       expect(result.skipUpgrades).toBeUndefined();
     });
 
-    it('merges fileMode from partial config', () => {
-      const partial: PartialConfig = { fileMode: 'portable' };
+    it('merges transferMode from partial config', () => {
+      const partial: PartialConfig = { transferMode: 'portable' };
       const result = mergeConfigs(partial);
-      expect(result.fileMode).toBe('portable');
+      expect(result.transferMode).toBe('portable');
     });
 
-    it('later fileMode overrides earlier', () => {
-      const first: PartialConfig = { fileMode: 'portable' };
-      const second: PartialConfig = { fileMode: 'optimized' };
+    it('later transferMode overrides earlier', () => {
+      const first: PartialConfig = { transferMode: 'portable' };
+      const second: PartialConfig = { transferMode: 'optimized' };
       const result = mergeConfigs(first, second);
-      expect(result.fileMode).toBe('optimized');
+      expect(result.transferMode).toBe('optimized');
     });
 
-    it('fileMode defaults to undefined when not set', () => {
+    it('transferMode defaults to undefined when not set', () => {
       const result = mergeConfigs();
-      expect(result.fileMode).toBeUndefined();
+      expect(result.transferMode).toBeUndefined();
     });
 
     describe('transforms merging', () => {

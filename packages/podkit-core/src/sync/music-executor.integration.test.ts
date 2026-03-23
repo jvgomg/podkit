@@ -193,7 +193,7 @@ describe('SyncExecutor integration', () => {
           const plan: SyncPlan = {
             operations: [
               {
-                type: 'copy',
+                type: 'add-direct-copy',
                 source: createCollectionTrack(
                   'Test Artist',
                   'Test Song',
@@ -251,7 +251,7 @@ describe('SyncExecutor integration', () => {
           const plan: SyncPlan = {
             operations: [
               {
-                type: 'transcode',
+                type: 'add-transcode',
                 source: createCollectionTrack(
                   'Transcode Artist',
                   'Transcode Song',
@@ -373,15 +373,15 @@ describe('SyncExecutor integration', () => {
           const plan: SyncPlan = {
             operations: [
               {
-                type: 'copy',
+                type: 'add-direct-copy',
                 source: createCollectionTrack('Artist 1', 'Song 1', 'Album', mp3Path1, 'mp3'),
               },
               {
-                type: 'copy',
+                type: 'add-direct-copy',
                 source: createCollectionTrack('Artist 2', 'Song 2', 'Album', mp3Path2, 'mp3'),
               },
               {
-                type: 'transcode',
+                type: 'add-transcode',
                 source: createCollectionTrack('Artist 3', 'Song 3', 'Album', wavPath, 'wav'),
                 preset: { name: 'medium' },
               },
@@ -424,7 +424,7 @@ describe('SyncExecutor integration', () => {
           const plan: SyncPlan = {
             operations: [
               {
-                type: 'copy',
+                type: 'add-direct-copy',
                 source: createCollectionTrack(
                   'Progress Artist',
                   'Progress Song',
@@ -482,7 +482,7 @@ describe('SyncExecutor integration', () => {
           const plan: SyncPlan = {
             operations: [
               {
-                type: 'copy',
+                type: 'add-direct-copy',
                 source: createCollectionTrack(
                   'DryRun Artist',
                   'DryRun Song',

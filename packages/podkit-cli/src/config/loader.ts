@@ -37,8 +37,8 @@ import {
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   VIDEO_QUALITY_PRESETS,
-  FILE_MODES,
-  isValidFileMode,
+  TRANSFER_MODES,
+  isValidTransferMode,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
@@ -179,13 +179,13 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     config.checkArtwork = parsed.checkArtwork;
   }
 
-  if (typeof parsed.fileMode === 'string') {
-    if (isValidFileMode(parsed.fileMode)) {
-      config.fileMode = parsed.fileMode;
+  if (typeof parsed.transferMode === 'string') {
+    if (isValidTransferMode(parsed.transferMode)) {
+      config.transferMode = parsed.transferMode;
     } else {
       throw new Error(
-        `Invalid fileMode value "${parsed.fileMode}" in config. ` +
-          `Valid values: ${FILE_MODES.join(', ')}`
+        `Invalid transferMode value "${parsed.transferMode}" in config. ` +
+          `Valid values: ${TRANSFER_MODES.join(', ')}`
       );
     }
   }
@@ -656,21 +656,21 @@ function parseDevices(
       device.checkArtwork = rawDevice.checkArtwork;
     }
 
-    // Parse optional fileMode
-    if (rawDevice.fileMode !== undefined) {
-      if (typeof rawDevice.fileMode !== 'string') {
+    // Parse optional transferMode
+    if (rawDevice.transferMode !== undefined) {
+      if (typeof rawDevice.transferMode !== 'string') {
         throw new Error(
-          `Invalid type for "fileMode" in [devices.${name}]. ` +
-            `Expected string, got ${typeof rawDevice.fileMode}.`
+          `Invalid type for "transferMode" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.transferMode}.`
         );
       }
-      if (!isValidFileMode(rawDevice.fileMode)) {
+      if (!isValidTransferMode(rawDevice.transferMode)) {
         throw new Error(
-          `Invalid fileMode value "${rawDevice.fileMode}" in [devices.${name}]. ` +
-            `Valid values: ${FILE_MODES.join(', ')}`
+          `Invalid transferMode value "${rawDevice.transferMode}" in [devices.${name}]. ` +
+            `Valid values: ${TRANSFER_MODES.join(', ')}`
         );
       }
-      device.fileMode = rawDevice.fileMode;
+      device.transferMode = rawDevice.transferMode;
     }
 
     // Parse optional skipUpgrades
@@ -854,6 +854,11 @@ export function loadEnvConfig(): PartialConfig {
     config.forceTranscode = parseBoolEnv(forceTranscode);
   }
 
+  const forceTransferMode = process.env[ENV_KEYS.forceTransferMode];
+  if (forceTransferMode !== undefined) {
+    config.forceTransferMode = parseBoolEnv(forceTransferMode);
+  }
+
   const forceSyncTags = process.env[ENV_KEYS.forceSyncTags];
   if (forceSyncTags !== undefined) {
     config.forceSyncTags = parseBoolEnv(forceSyncTags);
@@ -864,10 +869,10 @@ export function loadEnvConfig(): PartialConfig {
     config.checkArtwork = parseBoolEnv(checkArtwork);
   }
 
-  const fileMode = process.env[ENV_KEYS.fileMode];
-  if (fileMode !== undefined) {
-    if (isValidFileMode(fileMode)) {
-      config.fileMode = fileMode;
+  const transferMode = process.env[ENV_KEYS.transferMode];
+  if (transferMode !== undefined) {
+    if (isValidTransferMode(transferMode)) {
+      config.transferMode = transferMode;
     }
   }
 
@@ -1259,8 +1264,8 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     if (config.checkArtwork !== undefined) {
       merged.checkArtwork = config.checkArtwork;
     }
-    if (config.fileMode !== undefined) {
-      merged.fileMode = config.fileMode;
+    if (config.transferMode !== undefined) {
+      merged.transferMode = config.transferMode;
     }
     if (config.skipUpgrades !== undefined) {
       merged.skipUpgrades = config.skipUpgrades;

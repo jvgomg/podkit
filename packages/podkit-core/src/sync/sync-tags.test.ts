@@ -12,6 +12,7 @@ import {
   writeSyncTag,
   syncTagMatchesConfig,
   buildAudioSyncTag,
+  buildCopySyncTag,
   buildVideoSyncTag,
 } from './sync-tags.js';
 import type { SyncTagData } from './sync-tags.js';
@@ -319,6 +320,24 @@ describe('syncTagMatchesConfig', () => {
     const config: SyncTagData = { quality: 'lossless' };
     expect(syncTagMatchesConfig(tag, config)).toBe(false);
   });
+
+  it('ignores transferMode differences', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    const config: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'optimized' };
+    expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
+
+  it('ignores missing transferMode', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    const config: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
+
+  it('ignores transferMode for copy quality tags', () => {
+    const tag: SyncTagData = { quality: 'copy', transferMode: 'fast' };
+    const config: SyncTagData = { quality: 'copy', transferMode: 'optimized' };
+    expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
 });
 
 // =============================================================================
@@ -372,6 +391,64 @@ describe('buildAudioSyncTag', () => {
       quality: 'low',
       encoding: 'vbr',
     });
+  });
+
+  it('includes transferMode when provided', () => {
+    expect(buildAudioSyncTag('high', 'vbr', undefined, 'optimized')).toEqual({
+      quality: 'high',
+      encoding: 'vbr',
+      transferMode: 'optimized',
+    });
+  });
+
+  it('omits transferMode when not provided', () => {
+    const result = buildAudioSyncTag('high', 'vbr');
+    expect(result.transferMode).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// buildCopySyncTag
+// =============================================================================
+
+describe('buildCopySyncTag', () => {
+  it('builds tag with quality=copy and transferMode', () => {
+    expect(buildCopySyncTag('fast')).toEqual({
+      quality: 'copy',
+      transferMode: 'fast',
+    });
+  });
+
+  it('builds tag with optimized transferMode', () => {
+    expect(buildCopySyncTag('optimized')).toEqual({
+      quality: 'copy',
+      transferMode: 'optimized',
+    });
+  });
+
+  it('builds tag with portable transferMode', () => {
+    expect(buildCopySyncTag('portable')).toEqual({
+      quality: 'copy',
+      transferMode: 'portable',
+    });
+  });
+
+  it('includes artworkHash when provided', () => {
+    expect(buildCopySyncTag('optimized', 'a1b2c3d4')).toEqual({
+      quality: 'copy',
+      transferMode: 'optimized',
+      artworkHash: 'a1b2c3d4',
+    });
+  });
+
+  it('omits artworkHash when not provided', () => {
+    const result = buildCopySyncTag('fast');
+    expect(result.artworkHash).toBeUndefined();
+  });
+
+  it('formats correctly via formatSyncTag', () => {
+    const tag = buildCopySyncTag('fast', 'a1b2c3d4');
+    expect(formatSyncTag(tag)).toBe('[podkit:v1 quality=copy art=a1b2c3d4 transfer=fast]');
   });
 });
 
@@ -459,70 +536,92 @@ describe('round-trip: format → parse → compare', () => {
 });
 
 // =============================================================================
-// fileMode (mode= field) tests
+// transferMode (transfer= field) tests
 // =============================================================================
 
-describe('fileMode in sync tags', () => {
-  it('parseSyncTag reads mode field', () => {
-    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=optimized]');
-    expect(result).toEqual({ quality: 'high', encoding: 'vbr', fileMode: 'optimized' });
+describe('transferMode in sync tags', () => {
+  it('parseSyncTag reads transfer field', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=optimized]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', transferMode: 'optimized' });
   });
 
-  it('parseSyncTag reads mode=portable', () => {
-    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=portable]');
-    expect(result).toEqual({ quality: 'high', encoding: 'vbr', fileMode: 'portable' });
+  it('parseSyncTag reads transfer=portable', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=portable]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', transferMode: 'portable' });
   });
 
-  it('parseSyncTag omits fileMode when mode field is absent', () => {
+  it('parseSyncTag reads transfer=fast', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=fast]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', transferMode: 'fast' });
+  });
+
+  it('parseSyncTag omits transferMode when transfer field is absent', () => {
     const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr]');
-    expect(result!.fileMode).toBeUndefined();
+    expect(result!.transferMode).toBeUndefined();
   });
 
-  it('formatSyncTag includes mode when fileMode is set', () => {
-    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', fileMode: 'optimized' });
-    expect(result).toBe('[podkit:v1 quality=high encoding=vbr mode=optimized]');
+  it('formatSyncTag includes transfer when transferMode is set', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', transferMode: 'optimized' });
+    expect(result).toBe('[podkit:v1 quality=high encoding=vbr transfer=optimized]');
   });
 
-  it('formatSyncTag includes mode=portable', () => {
-    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', fileMode: 'portable' });
-    expect(result).toBe('[podkit:v1 quality=high encoding=vbr mode=portable]');
+  it('formatSyncTag includes transfer=portable', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', transferMode: 'portable' });
+    expect(result).toBe('[podkit:v1 quality=high encoding=vbr transfer=portable]');
   });
 
-  it('formatSyncTag omits mode when fileMode is undefined', () => {
+  it('formatSyncTag omits transfer when transferMode is undefined', () => {
     const result = formatSyncTag({ quality: 'high', encoding: 'vbr' });
-    expect(result).not.toContain('mode=');
+    expect(result).not.toContain('transfer=');
   });
 
-  it('syncTagMatchesConfig ignores fileMode differences', () => {
-    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'optimized' };
-    const config: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'portable' };
-    expect(syncTagMatchesConfig(tag, config)).toBe(true);
-  });
-
-  it('syncTagMatchesConfig ignores missing fileMode', () => {
-    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'optimized' };
-    const config: SyncTagData = { quality: 'high', encoding: 'vbr' };
-    expect(syncTagMatchesConfig(tag, config)).toBe(true);
-  });
-
-  it('buildAudioSyncTag includes fileMode when provided', () => {
-    expect(buildAudioSyncTag('high', 'vbr', undefined, 'optimized')).toEqual({
-      quality: 'high',
-      encoding: 'vbr',
-      fileMode: 'optimized',
-    });
-  });
-
-  it('buildAudioSyncTag omits fileMode when not provided', () => {
-    const result = buildAudioSyncTag('high', 'vbr');
-    expect(result.fileMode).toBeUndefined();
-  });
-
-  it('round-trips fileMode through format then parse', () => {
-    const data: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'portable' };
+  it('round-trips transferMode through format then parse', () => {
+    const data: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'portable' };
     const formatted = formatSyncTag(data);
     const parsed = parseSyncTag(formatted);
     expect(parsed).not.toBeNull();
-    expect(parsed!.fileMode).toBe('portable');
+    expect(parsed!.transferMode).toBe('portable');
+  });
+
+  it('round-trips transfer=fast through format then parse', () => {
+    const data: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    const formatted = formatSyncTag(data);
+    const parsed = parseSyncTag(formatted);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.transferMode).toBe('fast');
+  });
+
+  it('round-trips transfer=optimized through format then parse', () => {
+    const data: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'optimized' };
+    const formatted = formatSyncTag(data);
+    const parsed = parseSyncTag(formatted);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.transferMode).toBe('optimized');
+  });
+
+  it('round-trips copy tag with transfer through format then parse', () => {
+    const data: SyncTagData = { quality: 'copy', transferMode: 'optimized' };
+    const formatted = formatSyncTag(data);
+    const parsed = parseSyncTag(formatted);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.quality).toBe('copy');
+    expect(parsed!.transferMode).toBe('optimized');
+  });
+});
+
+// =============================================================================
+// Backward compatibility: old mode= key
+// =============================================================================
+
+describe('backward compatibility with old mode= key', () => {
+  it('does not parse old mode= key into transferMode', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=optimized]');
+    expect(result).not.toBeNull();
+    expect(result!.transferMode).toBeUndefined();
+  });
+
+  it('old mode= key is treated as unknown and ignored', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=portable]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr' });
   });
 });

@@ -12,10 +12,11 @@ import {
   buildTranscodeArgs,
   buildAlacArgs,
   buildVbrArgs,
+  buildOptimizedCopyArgs,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
-import type { AacTranscodeConfig } from './ffmpeg.js';
+import type { AacTranscodeConfig, OptimizedCopyFormat } from './ffmpeg.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
 
@@ -226,7 +227,7 @@ describe('buildTranscodeArgs', () => {
       expect(args).toContain('0');
     });
 
-    it('strips artwork by default (optimized mode)', () => {
+    it('strips artwork by default (fast mode)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'high');
 
       expect(args).toContain('-vn');
@@ -234,8 +235,28 @@ describe('buildTranscodeArgs', () => {
       expect(args).not.toContain('-disposition:v');
     });
 
+    it('strips artwork in fast mode', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', { transferMode: 'fast' });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-c:v');
+      expect(args).not.toContain('-disposition:v');
+    });
+
+    it('strips artwork in optimized mode', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'optimized',
+      });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-c:v');
+      expect(args).not.toContain('-disposition:v');
+    });
+
     it('preserves artwork in portable mode', () => {
-      const args = buildTranscodeArgs(input, output, 'aac', 'high', { fileMode: 'portable' });
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'portable',
+      });
 
       expect(args).toContain('-c:v');
       expect(args).toContain('copy');
@@ -314,7 +335,7 @@ describe('buildAlacArgs', () => {
     expect(args).toContain('0');
   });
 
-  it('strips artwork by default (optimized mode)', () => {
+  it('strips artwork by default (fast mode)', () => {
     const args = buildAlacArgs(input, output);
 
     expect(args).toContain('-vn');
@@ -322,14 +343,166 @@ describe('buildAlacArgs', () => {
     expect(args).not.toContain('-disposition:v');
   });
 
+  it('strips artwork in optimized mode', () => {
+    const args = buildAlacArgs(input, output, { transferMode: 'optimized' });
+
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('-disposition:v');
+  });
+
   it('preserves artwork in portable mode', () => {
-    const args = buildAlacArgs(input, output, { fileMode: 'portable' });
+    const args = buildAlacArgs(input, output, { transferMode: 'portable' });
 
     expect(args).toContain('-c:v');
     expect(args).toContain('copy');
     expect(args).toContain('-disposition:v');
     expect(args).toContain('attached_pic');
     expect(args).not.toContain('-vn');
+  });
+});
+
+describe('buildOptimizedCopyArgs', () => {
+  const input = '/path/to/input.mp3';
+  const output = '/path/to/output.mp3';
+
+  describe('common arguments', () => {
+    it.each(['alac', 'mp3', 'm4a'] as OptimizedCopyFormat[])(
+      'includes stream copy and metadata for %s format',
+      (format) => {
+        const args = buildOptimizedCopyArgs(input, output, format);
+
+        expect(args).toContain('-c:a');
+        expect(args).toContain('copy');
+        expect(args).toContain('-map_metadata');
+        expect(args).toContain('0');
+        expect(args).toContain('-vn');
+        expect(args).toContain('-y');
+        expect(args).toContain('-progress');
+        expect(args).toContain('pipe:1');
+      }
+    );
+
+    it.each(['alac', 'mp3', 'm4a'] as OptimizedCopyFormat[])(
+      'places input before output for %s format',
+      (format) => {
+        const args = buildOptimizedCopyArgs(input, output, format);
+
+        const inputIndex = args.indexOf(input);
+        const outputIndex = args.indexOf(output);
+        expect(inputIndex).toBeLessThan(outputIndex);
+        expect(args[args.length - 1]).toBe(output);
+      }
+    );
+  });
+
+  describe('ALAC format', () => {
+    it('uses ipod container format', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'alac');
+
+      expect(args).toContain('-f');
+      expect(args).toContain('ipod');
+    });
+
+    it('does not specify an audio encoder (stream copy only)', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'alac');
+
+      // -c:a should be 'copy', not 'alac' or any encoder
+      const codecIndex = args.indexOf('-c:a');
+      expect(args[codecIndex + 1]).toBe('copy');
+    });
+  });
+
+  describe('MP3 format', () => {
+    it('does not use ipod container format', () => {
+      const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3');
+
+      expect(args).not.toContain('-f');
+      expect(args).not.toContain('ipod');
+    });
+  });
+
+  describe('M4A format', () => {
+    it('uses ipod container format', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a');
+
+      expect(args).toContain('-f');
+      expect(args).toContain('ipod');
+    });
+  });
+});
+
+describe('transfer mode × transcode path matrix', () => {
+  const input = '/music/song.flac';
+  const output = '/ipod/song.m4a';
+
+  describe('FLAC → AAC (transcode)', () => {
+    it.each(['fast', 'optimized'] as const)('%s mode strips artwork', (mode) => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', { transferMode: mode });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-c:v');
+    });
+
+    it('portable mode preserves artwork', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', { transferMode: 'portable' });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('copy');
+      expect(args).toContain('-disposition:v');
+      expect(args).toContain('attached_pic');
+      expect(args).not.toContain('-vn');
+    });
+  });
+
+  describe('FLAC → ALAC (transcode)', () => {
+    it.each(['fast', 'optimized'] as const)('%s mode strips artwork', (mode) => {
+      const args = buildAlacArgs(input, output, { transferMode: mode });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-c:v');
+    });
+
+    it('portable mode preserves artwork', () => {
+      const args = buildAlacArgs(input, output, { transferMode: 'portable' });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('copy');
+      expect(args).toContain('-disposition:v');
+      expect(args).toContain('attached_pic');
+      expect(args).not.toContain('-vn');
+    });
+  });
+
+  describe('copy-format files (optimized mode uses buildOptimizedCopyArgs)', () => {
+    it('ALAC → ALAC uses stream copy with ipod container', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'alac');
+
+      expect(args).toContain('-c:a');
+      expect(args).toContain('copy');
+      expect(args).toContain('-vn');
+      expect(args).toContain('-f');
+      expect(args).toContain('ipod');
+    });
+
+    it('MP3 → MP3 uses stream copy without ipod container', () => {
+      const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3');
+
+      expect(args).toContain('-c:a');
+      expect(args).toContain('copy');
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-f');
+    });
+
+    it('M4A → M4A uses stream copy with ipod container', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a');
+
+      expect(args).toContain('-c:a');
+      expect(args).toContain('copy');
+      expect(args).toContain('-vn');
+      expect(args).toContain('-f');
+      expect(args).toContain('ipod');
+    });
   });
 });
 

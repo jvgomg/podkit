@@ -55,7 +55,7 @@ function createMockHandler(
     },
 
     // Planning stubs (not used by differ)
-    planAdd: () => ({ type: 'copy', source: {} }) as any,
+    planAdd: () => ({ type: 'add-direct-copy', source: {} }) as any,
     planRemove: () => ({ type: 'remove', track: {} }) as any,
     planUpdate: () => [],
     estimateSize: () => 0,

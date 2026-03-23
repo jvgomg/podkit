@@ -173,6 +173,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
     out.print(`Quality: ${config.effectiveVideoQuality}`);
+    if (config.effectiveTransferMode) {
+      out.print(`Transfer mode: ${config.effectiveTransferMode}`);
+    }
     const videoTransformsDisplay = formatVideoTransformsConfig(config.effectiveVideoTransforms);
     if (videoTransformsDisplay) {
       out.print(`Transforms: ${videoTransformsDisplay}`);

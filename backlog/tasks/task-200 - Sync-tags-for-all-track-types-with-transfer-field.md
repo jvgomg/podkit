@@ -1,9 +1,10 @@
 ---
 id: TASK-200
 title: Sync tags for all track types with transfer field
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 14:08'
+updated_date: '2026-03-23 16:35'
 labels:
   - feature
   - core
@@ -53,12 +54,18 @@ Extend sync tags to cover direct-copy tracks (previously only transcoded tracks 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sync tag field renamed from mode= to transfer= with values fast/optimized/portable
-- [ ] #2 New quality=copy value for direct-copy tracks (no encoding/bitrate fields)
-- [ ] #3 buildCopySyncTag() produces correct sync tag for copy-format tracks
-- [ ] #4 Executor writes sync tags for direct-copy and optimized-copy operations
-- [ ] #5 parseSyncTag() correctly reads transfer= field from sync tags
-- [ ] #6 formatSyncTag() correctly emits transfer= field
-- [ ] #7 Round-trip tests: parse → format → parse for all transfer modes and quality=copy
-- [ ] #8 syncTagMatchesConfig() ignores transfer field during normal comparison
+- [x] #1 Sync tag field renamed from mode= to transfer= with values fast/optimized/portable
+- [x] #2 New quality=copy value for direct-copy tracks (no encoding/bitrate fields)
+- [x] #3 buildCopySyncTag() produces correct sync tag for copy-format tracks
+- [x] #4 Executor writes sync tags for direct-copy and optimized-copy operations
+- [x] #5 parseSyncTag() correctly reads transfer= field from sync tags
+- [x] #6 formatSyncTag() correctly emits transfer= field
+- [x] #7 Round-trip tests: parse → format → parse for all transfer modes and quality=copy
+- [x] #8 syncTagMatchesConfig() ignores transfer field during normal comparison
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+SyncTagData.fileMode → transferMode. Parser reads `transfer=` key, formatter emits `transfer=` key. New `buildCopySyncTag(transferMode, artworkHash?)` for copy-format tracks with `quality=copy`. Old `mode=` tags are not parsed (treated as no transfer field → defaults to 'fast' at differ level). syncTagMatchesConfig still ignores transferMode. 97 sync-tag tests pass. AC#4 (executor writes sync tags for copies) deferred to TASK-199 as designed.
+<!-- SECTION:NOTES:END -->

@@ -45,12 +45,12 @@ function makePlan(operations: SyncOperation[], estimatedSize = 1000): SyncPlan {
 }
 
 function makeCopyOp(name: string): SyncOperation {
-  return { type: 'copy', source: { filePath: name, fileType: 'mp3' } as any };
+  return { type: 'add-direct-copy', source: { filePath: name, fileType: 'mp3' } as any };
 }
 
 function makeTranscodeOp(name: string): SyncOperation {
   return {
-    type: 'transcode',
+    type: 'add-transcode',
     source: { filePath: name, fileType: 'flac' } as any,
     preset: { name: 'high' },
   };
@@ -99,7 +99,7 @@ function createMockHandler(
     detectUpdates: (): UpdateReason[] => [],
 
     planAdd: (source: TestSource): SyncOperation => ({
-      type: 'copy',
+      type: 'add-direct-copy',
       source: { filePath: source.name, fileType: 'mp3' } as any,
     }),
 

@@ -13,7 +13,9 @@ import type {
   QualityPreset,
   TranscodeConfig,
   TranscodeProgress,
+  TransferMode,
 } from '../transcode/types.js';
+import type { DeviceCapabilities } from '../ipod/capabilities.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../video/types.js';
 import type { IPodVideo } from './video-differ.js';
@@ -44,6 +46,7 @@ export type UpgradeReason =
   | 'preset-upgrade'
   | 'preset-downgrade'
   | 'force-transcode'
+  | 'transfer-mode-changed'
   | 'artwork-added'
   | 'artwork-removed'
   | 'artwork-updated'
@@ -178,17 +181,67 @@ export interface SyncWarning {
 
 /**
  * Individual sync operation
+ *
+ * Music add operations:
+ * - add-transcode: Transcode source to target format (e.g., FLAC → AAC)
+ * - add-direct-copy: Copy source file as-is (fast/portable mode)
+ * - add-optimized-copy: Copy via FFmpeg passthrough for metadata normalization (optimized mode)
+ *
+ * Music upgrade operations:
+ * - upgrade-transcode: Re-transcode an existing track (e.g., preset change)
+ * - upgrade-direct-copy: Re-copy an existing track as-is
+ * - upgrade-optimized-copy: Re-copy an existing track via FFmpeg passthrough
+ * - upgrade-artwork: Update artwork only (no audio file replacement)
+ *
+ * Common operations (unchanged):
+ * - remove: Remove a track from the iPod
+ * - update-metadata: Update metadata fields without file transfer
+ *
+ * Video operations (unchanged):
+ * - video-transcode, video-copy, video-remove, video-update-metadata, video-upgrade
  */
 export type SyncOperation =
+  // Music add operations
   | {
-      type: 'transcode';
+      type: 'add-transcode';
       source: CollectionTrack;
       preset: TranscodePresetRef;
     }
   | {
-      type: 'copy';
+      type: 'add-direct-copy';
       source: CollectionTrack;
     }
+  | {
+      type: 'add-optimized-copy';
+      source: CollectionTrack;
+    }
+  // Music upgrade operations
+  | {
+      type: 'upgrade-transcode';
+      source: CollectionTrack;
+      target: IPodTrack;
+      reason: UpgradeReason;
+      preset: TranscodePresetRef;
+    }
+  | {
+      type: 'upgrade-direct-copy';
+      source: CollectionTrack;
+      target: IPodTrack;
+      reason: UpgradeReason;
+    }
+  | {
+      type: 'upgrade-optimized-copy';
+      source: CollectionTrack;
+      target: IPodTrack;
+      reason: UpgradeReason;
+    }
+  | {
+      type: 'upgrade-artwork';
+      source: CollectionTrack;
+      target: IPodTrack;
+      reason: UpgradeReason;
+    }
+  // Common operations (unchanged)
   | {
       type: 'remove';
       track: IPodTrack;
@@ -198,13 +251,7 @@ export type SyncOperation =
       track: IPodTrack;
       metadata: Partial<TrackMetadata>;
     }
-  | {
-      type: 'upgrade';
-      source: CollectionTrack;
-      target: IPodTrack;
-      reason: UpgradeReason;
-      preset?: TranscodePresetRef;
-    }
+  // Video operations (unchanged)
   | {
       type: 'video-transcode';
       source: CollectionVideo;
@@ -345,6 +392,21 @@ export interface DiffOptions {
   forceSyncTags?: boolean;
 
   /**
+   * When true, move tracks whose sync tag `transfer` field doesn't match
+   * `effectiveTransferMode` to `toUpdate` with reason `'transfer-mode-changed'`.
+   * Only checked when effectiveTransferMode is also provided.
+   *
+   * @default false
+   */
+  forceTransferMode?: boolean;
+
+  /**
+   * The current effective transfer mode. Used for mismatch detection when
+   * `forceTransferMode` is true. Also used for mismatch counting (tips).
+   */
+  effectiveTransferMode?: string;
+
+  /**
    * When true, move ALL matched tracks to `toUpdate` with reason `'force-metadata'`.
    * This rewrites metadata on every matched track without re-transcoding or
    * re-transferring files.
@@ -448,12 +510,22 @@ export interface PlanOptions {
   maxSize?: number;
 
   /**
+   * Device capabilities for making device-aware sync decisions.
+   *
+   * When provided, the planner uses capabilities to determine codec support,
+   * artwork handling, and other device-specific behavior. Takes precedence
+   * over `deviceSupportsAlac` for ALAC detection.
+   */
+  capabilities?: DeviceCapabilities;
+
+  /**
    * Whether the target device supports ALAC (Apple Lossless) playback.
    *
    * When true and quality='max', lossless sources will be sent as ALAC
    * rather than transcoded to AAC. Only iPod Classic, Video 5G/5.5G,
    * and Nano 3G–5G support ALAC.
    *
+   * @deprecated Use `capabilities.supportedAudioCodecs.includes('alac')` instead.
    * @default false
    */
   deviceSupportsAlac?: boolean;
@@ -467,6 +539,14 @@ export interface PlanOptions {
    * @default true
    */
   artworkEnabled?: boolean;
+
+  /**
+   * Transfer mode for file preparation.
+   * Determines whether copy-format files use direct copy or FFmpeg passthrough.
+   *
+   * @default 'fast'
+   */
+  transferMode?: TransferMode;
 }
 
 // =============================================================================

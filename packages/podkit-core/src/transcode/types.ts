@@ -62,28 +62,34 @@ export type EncodingMode = 'vbr' | 'cbr';
 export const ENCODING_MODES: readonly EncodingMode[] = ['vbr', 'cbr'] as const;
 
 // =============================================================================
-// File Mode
+// Transfer Mode
 // =============================================================================
 
 /**
- * File mode for transcoded files
+ * Transfer mode for synced files
  *
- * - `optimized`: Strip non-essential embedded data (artwork, etc.) from transcoded files.
- *   iPods read artwork from their internal database, so embedded artwork is dead weight.
- * - `portable`: Preserve embedded artwork for users who want exportable files.
+ * Controls how files are prepared for the target device:
+ *
+ * - `fast` (default): Optimize for sync speed. Transcoded files have artwork
+ *   stripped. Copy-format files (MP3, M4A, ALAC→ALAC) use direct file copy.
+ * - `optimized`: Optimize for device storage. Transcoded files have artwork
+ *   stripped. Copy-format files are routed through FFmpeg with audio stream
+ *   copy to strip embedded artwork without re-encoding.
+ * - `portable`: Optimize for file portability. Transcoded files preserve
+ *   embedded artwork. Copy-format files use direct file copy.
  */
-export type FileMode = 'optimized' | 'portable';
+export type TransferMode = 'fast' | 'optimized' | 'portable';
 
 /**
- * All valid file mode names
+ * All valid transfer mode names
  */
-export const FILE_MODES: readonly FileMode[] = ['optimized', 'portable'] as const;
+export const TRANSFER_MODES: readonly TransferMode[] = ['fast', 'optimized', 'portable'] as const;
 
 /**
- * Check if a string is a valid file mode
+ * Check if a string is a valid transfer mode
  */
-export function isValidFileMode(value: string): value is FileMode {
-  return FILE_MODES.includes(value as FileMode);
+export function isValidTransferMode(value: string): value is TransferMode {
+  return TRANSFER_MODES.includes(value as TransferMode);
 }
 
 // =============================================================================
@@ -307,10 +313,11 @@ export interface TranscodeOptions {
   /** Abort signal for cancellation */
   signal?: AbortSignal;
   /**
-   * File mode for transcoded output.
+   * Transfer mode for transcoded output.
    *
-   * - `optimized` (default): strips embedded artwork (`-vn`).
+   * - `fast` (default): strips embedded artwork (`-vn`).
+   * - `optimized`: strips embedded artwork (`-vn`).
    * - `portable`: preserves embedded artwork (`-c:v copy`).
    */
-  fileMode?: FileMode;
+  transferMode?: TransferMode;
 }

@@ -120,27 +120,26 @@ describe('collectTips', () => {
     });
   });
 
-  describe('file mode mismatch tip', () => {
-    it('returns tip when tracks have mismatched file mode', () => {
-      const tips = collectTips({ fileModeMismatch: 25 });
+  describe('transfer mode mismatch tip', () => {
+    it('returns tip when tracks have mismatched transfer mode', () => {
+      const tips = collectTips({ transferModeMismatch: 25 });
       expect(tips).toHaveLength(1);
-      expect(tips[0]!.message).toContain('25 tracks were synced with a different file mode');
-      expect(tips[0]!.message).toContain('--force-transcode');
-      expect(tips[0]!.message).toContain('all lossless-source tracks');
+      expect(tips[0]!.message).toContain('25 tracks were synced with a different transfer mode');
+      expect(tips[0]!.message).toContain('--force-transfer-mode');
     });
 
-    it('returns no tip when fileModeMismatch is 0', () => {
-      const tips = collectTips({ fileModeMismatch: 0 });
+    it('returns no tip when transferModeMismatch is 0', () => {
+      const tips = collectTips({ transferModeMismatch: 0 });
       expect(tips).toHaveLength(0);
     });
 
-    it('does not trigger without fileModeMismatch context', () => {
+    it('does not trigger without transferModeMismatch context', () => {
       const tips = collectTips({});
       expect(tips).toHaveLength(0);
     });
 
     it('uses singular form for 1 track', () => {
-      const tips = collectTips({ fileModeMismatch: 1 });
+      const tips = collectTips({ transferModeMismatch: 1 });
       expect(tips).toHaveLength(1);
       expect(tips[0]!.message).toContain('1 track was synced');
     });

@@ -147,26 +147,26 @@ describe('MusicHandler', () => {
     test('returns transcode for lossless source', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const op = handler.planAdd(source, { qualityPreset: 'high' });
-      expect(op.type).toBe('transcode');
+      expect(op.type).toBe('add-transcode');
     });
 
     test('returns copy for compatible lossy source', () => {
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const op = handler.planAdd(source, { qualityPreset: 'high' });
-      expect(op.type).toBe('copy');
+      expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns copy for ALAC source with lossless preset', () => {
       const source = makeCollectionTrack({ fileType: 'alac', lossless: true, codec: 'alac' });
       const op = handler.planAdd(source, { qualityPreset: 'max', deviceSupportsAlac: true });
-      expect(op.type).toBe('copy');
+      expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns transcode for FLAC with lossless preset', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const op = handler.planAdd(source, { qualityPreset: 'max', deviceSupportsAlac: true });
-      expect(op.type).toBe('transcode');
-      if (op.type === 'transcode') {
+      expect(op.type).toBe('add-transcode');
+      if (op.type === 'add-transcode') {
         expect(op.preset.name).toBe('lossless');
       }
     });
@@ -189,7 +189,7 @@ describe('MusicHandler', () => {
       const device = makeIpodTrack();
       const ops = handler.planUpdate(source, device, ['format-upgrade']);
       expect(ops.length).toBe(1);
-      expect(ops[0]!.type).toBe('upgrade');
+      expect(ops[0]!.type).toBe('upgrade-transcode');
     });
 
     test('returns update-metadata for metadata-only reason', () => {
@@ -211,7 +211,7 @@ describe('MusicHandler', () => {
   describe('estimateSize', () => {
     test('returns positive number for transcode operation', () => {
       const op: SyncOperation = {
-        type: 'transcode',
+        type: 'add-transcode',
         source: makeCollectionTrack({ duration: 240000 }),
         preset: { name: 'high' },
       };
@@ -227,7 +227,7 @@ describe('MusicHandler', () => {
   describe('estimateTime', () => {
     test('returns positive number for copy operation', () => {
       const op: SyncOperation = {
-        type: 'copy',
+        type: 'add-direct-copy',
         source: makeCollectionTrack({ duration: 240000 }),
       };
       expect(handler.estimateTime(op)).toBeGreaterThan(0);
@@ -242,7 +242,7 @@ describe('MusicHandler', () => {
   describe('getDisplayName', () => {
     test('returns artist - title for transcode', () => {
       const op: SyncOperation = {
-        type: 'transcode',
+        type: 'add-transcode',
         source: makeCollectionTrack({ artist: 'Radiohead', title: 'Creep' }),
         preset: { name: 'high' },
       };
@@ -251,7 +251,7 @@ describe('MusicHandler', () => {
 
     test('returns artist - title for copy', () => {
       const op: SyncOperation = {
-        type: 'copy',
+        type: 'add-direct-copy',
         source: makeCollectionTrack({ artist: 'Björk', title: 'Army of Me' }),
       };
       expect(handler.getDisplayName(op)).toBe('Björk - Army of Me');
@@ -332,8 +332,11 @@ describe('MusicHandler', () => {
     test('summarizes a plan', () => {
       const plan: SyncPlan = {
         operations: [
-          { type: 'transcode', source: makeCollectionTrack(), preset: { name: 'high' } },
-          { type: 'copy', source: makeCollectionTrack({ fileType: 'mp3', lossless: false }) },
+          { type: 'add-transcode', source: makeCollectionTrack(), preset: { name: 'high' } },
+          {
+            type: 'add-direct-copy',
+            source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
+          },
           { type: 'remove', track: makeIpodTrack() },
         ],
         estimatedSize: 10000000,
@@ -347,8 +350,8 @@ describe('MusicHandler', () => {
       expect(summary.toUpdate).toBe(0);
       expect(summary.estimatedSize).toBe(10000000);
       expect(summary.estimatedTime).toBe(120);
-      expect(summary.operationCounts['transcode']).toBe(1);
-      expect(summary.operationCounts['copy']).toBe(1);
+      expect(summary.operationCounts['add-transcode']).toBe(1);
+      expect(summary.operationCounts['add-direct-copy']).toBe(1);
       expect(summary.operationCounts['remove']).toBe(1);
       expect(summary.operations).toHaveLength(3);
     });
