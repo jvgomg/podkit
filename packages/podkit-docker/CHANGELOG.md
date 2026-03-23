@@ -1,5 +1,15 @@
 # @podkit/docker
 
+## 0.2.3
+
+### Patch Changes
+
+- [`a71f2d0`](https://github.com/jvgomg/podkit/commit/a71f2d08b1e78412fd8a537f67894934ea50436c) Thanks [@jvgomg](https://github.com/jvgomg)! - Optimise Docker image layers by using `COPY --chmod=755` instead of separate `RUN chmod` steps, reducing the total layer count
+
+- Updated dependencies [[`632f360`](https://github.com/jvgomg/podkit/commit/632f3605370dbb50b0be5ffada0460f1aa9792d7), [`67d1357`](https://github.com/jvgomg/podkit/commit/67d1357672016fcf6a55a20187bf8d5dbe4d3f31), [`4dd7b44`](https://github.com/jvgomg/podkit/commit/4dd7b443c9bdeaa98507d5439dd1223bbd2f82e1), [`d19d6e3`](https://github.com/jvgomg/podkit/commit/d19d6e305cd864d188f3de377873b5a44df7e02f), [`120a7b1`](https://github.com/jvgomg/podkit/commit/120a7b1a8899ed48515bd98ce731231e94d3409f), [`b698a07`](https://github.com/jvgomg/podkit/commit/b698a0765a039d130c6f913e2608f0fc00320ca0), [`3f56a1b`](https://github.com/jvgomg/podkit/commit/3f56a1b063f821e7a0d399a497521358331577a6), [`3db2bbb`](https://github.com/jvgomg/podkit/commit/3db2bbb2381a01107602380a8017624581548ecc), [`1c98ac2`](https://github.com/jvgomg/podkit/commit/1c98ac273e5eb3b78aa02dbc649c2f8086e5af2e), [`143e314`](https://github.com/jvgomg/podkit/commit/143e31442a40489390d45d74ee953facdc243706), [`2873f14`](https://github.com/jvgomg/podkit/commit/2873f14aad6493d2d7dafbe344e8b5db0abc3551), [`7624265`](https://github.com/jvgomg/podkit/commit/762426537af1d3d7b29c6d6e1f878abd5c0474eb)]:
+  - @podkit/daemon@0.2.2
+  - podkit@0.6.0
+
 ## 0.2.2
 
 ### Patch Changes
