@@ -1,5 +1,69 @@
 # @podkit/core
 
+## 0.6.0
+
+### Minor Changes
+
+- [`d19d6e3`](https://github.com/jvgomg/podkit/commit/d19d6e305cd864d188f3de377873b5a44df7e02f) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `podkit doctor` command for running diagnostic checks on an iPod, and `podkit device reset-artwork` for wiping artwork and clearing sync tags. `podkit doctor` runs all checks and reports problems; `podkit doctor --repair artwork-integrity -c <collection>` repairs by check ID using the source collection. @podkit/core exports `resetArtworkDatabase` and `rebuildArtworkDatabase` primitives, and a diagnostic framework in the `diagnostics/` module built on a `DiagnosticCheck` interface (check + repair pattern). Includes a binary ArtworkDB parser and integrity checker.
+
+- [`2873f14`](https://github.com/jvgomg/podkit/commit/2873f14aad6493d2d7dafbe344e8b5db0abc3551) Thanks [@jvgomg](https://github.com/jvgomg)! - Add graceful shutdown handling for sync and doctor commands
+
+  Pressing Ctrl+C during `podkit sync` now triggers a graceful shutdown: the current operation finishes, all completed tracks are saved to the iPod database, and the process exits cleanly with code 130. Previously, Ctrl+C killed the process immediately, potentially leaving orphaned files and unsaved work.
+  - Sync: first Ctrl+C drains the current operation and saves; second Ctrl+C force-quits
+  - Doctor: repair operations save partial progress on interrupt
+  - Incremental saves: the database is now saved every 50 completed tracks during sync, reducing data loss from force-quits or crashes
+  - New `podkit doctor` check: detects orphaned files on the iPod (files not referenced by the database) with optional cleanup via `--repair orphan-files`
+
+- [`66560a9`](https://github.com/jvgomg/podkit/commit/66560a9158c777f2f25ca24c047204afa78f187e) Thanks [@jvgomg](https://github.com/jvgomg)! - Unify sync pipeline: CLI presenter pattern, naming symmetry, tests, and cleanup (TASK-186)
+  - Add ContentTypePresenter pattern for content-type-agnostic CLI sync orchestration
+  - Rename music-specific symbols with Music prefix (computeDiff→computeMusicDiff, DefaultSyncExecutor→MusicExecutor, etc.)
+  - Rename generic pipeline from Unified prefix to Sync prefix (UnifiedDiffer→SyncDiffer, UnifiedPlanner→SyncPlanner, UnifiedExecutor→SyncExecutor)
+  - Remove unused handler registry (registerHandler, getHandler, getAllHandlers, clearHandlers)
+  - Remove dead video pipeline code (PlaceholderVideoSyncExecutor, createVideoExecutor)
+  - Fix TranscodeProgress.speed type inconsistency (string→number)
+  - Add 'space-constraint' to SyncWarningType union
+  - Add completedCount to ExecutorProgress
+  - Add 47 new tests for VideoHandler, MusicHandler, and SyncExecutor
+  - All old symbol names preserved as backward-compatible aliases
+
+- [`7624265`](https://github.com/jvgomg/podkit/commit/762426537af1d3d7b29c6d6e1f878abd5c0474eb) Thanks [@jvgomg](https://github.com/jvgomg)! - Unify sync pipeline with ContentTypeHandler pattern
+  - Add generic `ContentTypeHandler<TSource, TDevice>` interface for media-type-specific sync logic
+  - Add `MusicHandler` and `VideoHandler` implementations
+  - Add `UnifiedDiffer`, `UnifiedPlanner`, and `UnifiedExecutor` generic pipeline components
+  - Add shared error categorization and retry logic (`error-handling.ts`)
+  - Add handler registry for looking up handlers by type string
+  - Video sync now routes through the unified pipeline in the CLI
+  - Video executor supports self-healing upgrades (preset-change, metadata-correction)
+  - Video executor categorizes errors and supports configurable per-category retries
+  - Fix album artwork cache incorrectly sharing artwork between tracks with and without artwork
+  - Generic `CollectionAdapter<TItem, TFilter>` interface replaces separate music/video adapter contracts
+
+### Patch Changes
+
+- [`8e11397`](https://github.com/jvgomg/podkit/commit/8e11397501861930cf0827913003f8afe2afd943) Thanks [@jvgomg](https://github.com/jvgomg)! - Add album-level artwork cache to sync executor, reducing redundant artwork extractions by ~10x (one extraction per album instead of per track). The cache is shared with the doctor repair routine via a new `AlbumArtworkCache` abstraction.
+
+- [`8fdf618`](https://github.com/jvgomg/podkit/commit/8fdf618d95f3fad88f3738baf03dbda313a5a2d5) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix infinite metadata update loop when source collection contains duplicate tracks
+
+  When a source collection had multiple entries with the same (artist, title, album) but different track numbers, each duplicate would generate a separate metadata-correction operation against the same iPod track. After applying one update, the next sync would see the other duplicate's metadata as a diff — causing an endless update cycle.
+
+  The diff engine now skips duplicate source tracks that match an already-claimed iPod track. The first source entry wins; subsequent duplicates are ignored.
+
+- [`3f56a1b`](https://github.com/jvgomg/podkit/commit/3f56a1b063f821e7a0d399a497521358331577a6) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix video sync deleting and re-adding episodes with episode number 0 (e.g., S01E00)
+
+  The `||` operator treated episode/season number `0` as falsy, converting it to `undefined`. This broke diff key matching for episode 0, causing every sync to delete and re-add the video. Changed to `??` (nullish coalescing) which only converts `null`/`undefined`, preserving `0` as a valid value.
+
+- [`120a7b1`](https://github.com/jvgomg/podkit/commit/120a7b1a8899ed48515bd98ce731231e94d3409f) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix track removal leaving orphan files on iPod. When removing tracks during sync (both music and video), the audio/video file was deleted from the iPod database but left on disk, accumulating orphan files over time. `track.remove()` now deletes the file by default. Pass `{ keepFile: true }` to preserve the file on disk.
+
+- [`143e314`](https://github.com/jvgomg/podkit/commit/143e31442a40489390d45d74ee953facdc243706) Thanks [@jvgomg](https://github.com/jvgomg)! - Fully detach USB device on eject so iPod disappears from Disk Utility (macOS) and system (Linux/Docker)
+
+  Previously, eject only unmounted the volume but left the physical disk device attached. On macOS, the iPod would still appear in Disk Utility after ejecting. On Linux, the USB device could remain visible.
+
+  Now eject resolves the whole-disk identifier and fully detaches the USB device:
+  - macOS: `diskutil eject` targets the whole disk (e.g., `disk5`) instead of the volume
+  - Linux: `udisksctl power-off` targets the whole disk (e.g., `/dev/sda`) and is also called after the `umount` fallback path
+
+- [`632f360`](https://github.com/jvgomg/podkit/commit/632f3605370dbb50b0be5ffada0460f1aa9792d7) Thanks [@jvgomg](https://github.com/jvgomg)! - Add incremental database saves during video sync, saving every 10 completed transfers by default. Reduces data loss if the process is interrupted during a large video sync.
+
 ## 0.5.1
 
 ### Patch Changes
