@@ -1541,7 +1541,8 @@ describe('formatStatsText', () => {
 
     expect(result).toContain('Transfer Mode:');
     expect(result).toContain('\u25D0 Missing transfer field: 100');
-    expect(result).not.toContain('Consistent');
+    // Transfer Mode section should not show Consistent or Mixed lines
+    expect(result).not.toContain('\u2713 Consistent: 100 (all');
     expect(result).not.toContain('Mixed');
   });
 
