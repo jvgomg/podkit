@@ -932,7 +932,11 @@ export const syncCommand = new Command('sync')
       // ----- Sync Music Collections -----
       if (hasMusicToSync) {
         for (const collection of musicCollections) {
-          const sourcePath = (collection.config as MusicCollectionConfig).path;
+          const musicCollectionConfig = collection.config as MusicCollectionConfig;
+          const sourcePath =
+            musicCollectionConfig.type === 'subsonic'
+              ? musicCollectionConfig.url!
+              : musicCollectionConfig.path;
 
           if (musicCollections.length > 1) {
             out.newline();
