@@ -9,6 +9,7 @@
 export type {
   QualityPreset,
   EncodingMode,
+  FileMode,
   TransformsConfig,
   CleanArtistsConfig,
   VideoQualityPreset,
@@ -18,18 +19,21 @@ export type {
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
+  FILE_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  isValidFileMode,
 } from '@podkit/core';
 
 // Import type for local use
 import type {
   QualityPreset,
   EncodingMode,
+  FileMode,
   TransformsConfig,
   VideoQualityPreset,
   VideoTransformsConfig,
@@ -131,6 +135,8 @@ export interface DeviceConfig {
   artwork?: boolean;
   /** Detect artwork changes by comparing content hashes (overrides global) */
   checkArtwork?: boolean;
+  /** File mode for transcoded files (overrides global) */
+  fileMode?: FileMode;
   /** Skip file-replacement upgrades during sync for this device */
   skipUpgrades?: boolean;
   /** Device-specific transform settings */
@@ -207,6 +213,13 @@ export interface PodkitConfig {
   forceSyncTags?: boolean;
   /** Detect artwork changes by comparing content hashes (can be overridden per-device) */
   checkArtwork?: boolean;
+  /**
+   * File mode for transcoded files.
+   *
+   * - `optimized` (default): strips embedded artwork from transcoded files.
+   * - `portable`: preserves embedded artwork for exportable files.
+   */
+  fileMode?: FileMode;
   /** Transform configuration (global default, can be overridden per-device) */
   transforms: TransformsConfig;
   /** Video transform configuration (global default, can be overridden per-device) */
@@ -316,6 +329,7 @@ export interface ConfigFileDevice {
   bitrateTolerance?: number;
   artwork?: boolean;
   checkArtwork?: boolean;
+  fileMode?: string;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
@@ -376,6 +390,7 @@ export interface ConfigFileContent {
   bitrateTolerance?: number;
   artwork?: boolean;
   checkArtwork?: boolean;
+  fileMode?: string;
   tips?: boolean;
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;

@@ -161,15 +161,18 @@ export type {
   TranscodeOptions,
   QualityPreset,
   EncodingMode,
+  FileMode,
   TranscodeConfig,
   AacPreset,
 } from './transcode/types.js';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
+  FILE_MODES,
   AAC_PRESETS,
   ALAC_PRESET,
   isValidQualityPreset,
+  isValidFileMode,
   getPresetBitrate,
   isMaxPreset,
   isVbrEncoding,

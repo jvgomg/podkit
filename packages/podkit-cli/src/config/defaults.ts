@@ -46,6 +46,7 @@ export const ENV_KEYS = {
   skipUpgrades: `${ENV_PREFIX}SKIP_UPGRADES`,
   artwork: `${ENV_PREFIX}ARTWORK`,
   tips: `${ENV_PREFIX}TIPS`,
+  fileMode: `${ENV_PREFIX}FILE_MODE`,
   cleanArtists: `${ENV_PREFIX}CLEAN_ARTISTS`,
   cleanArtistsDrop: `${ENV_PREFIX}CLEAN_ARTISTS_DROP`,
   cleanArtistsFormat: `${ENV_PREFIX}CLEAN_ARTISTS_FORMAT`,

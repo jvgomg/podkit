@@ -115,6 +115,8 @@ export interface SyncTagConfig {
   encodingMode?: string;
   /** Custom bitrate override (only when explicitly set by user) */
   customBitrate?: number;
+  /** File mode: 'optimized' | 'portable' (informational — stored in sync tag) */
+  fileMode?: string;
 }
 
 export interface ExtendedExecuteOptions extends ExecuteOptions {
@@ -142,6 +144,15 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * this config supplies the encoding mode and optional custom bitrate.
    */
   syncTagConfig?: SyncTagConfig;
+  /**
+   * File mode for transcoded output.
+   *
+   * - `optimized` (default): strips embedded artwork from transcoded files.
+   * - `portable`: preserves embedded artwork for exportable files.
+   *
+   * Only affects transcoded files. Direct-copy formats are left as-is.
+   */
+  fileMode?: string;
   /**
    * Save the iPod database every N completed track operations.
    *
@@ -443,6 +454,8 @@ export class MusicExecutor implements SyncExecutor {
   private warnings: ExecutionWarning[] = [];
   /** Sync tag config for the current execution (set during execute()) */
   private syncTagConfig?: SyncTagConfig;
+  /** File mode for the current execution (set during execute()) */
+  private fileMode?: string;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
 
@@ -505,11 +518,13 @@ export class MusicExecutor implements SyncExecutor {
       artwork = true,
       adapter,
       syncTagConfig,
+      fileMode,
       saveInterval = 50,
     } = options;
 
     // Store sync tag config for use during transfer
     this.syncTagConfig = syncTagConfig;
+    this.fileMode = fileMode;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -1128,6 +1143,7 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file (using the quality preset name directly)
     const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
       signal,
+      fileMode: this.fileMode as import('../transcode/types.js').FileMode | undefined,
     });
 
     // Add track to iPod database using IpodDatabase API
@@ -1334,6 +1350,7 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file
     const result = await this.transcoder.transcode(inputPath, outputPath, presetRef.name, {
       signal,
+      fileMode: this.fileMode as import('../transcode/types.js').FileMode | undefined,
     });
 
     return {
@@ -1669,7 +1686,8 @@ export class MusicExecutor implements SyncExecutor {
     return buildAudioSyncTag(
       presetName,
       this.syncTagConfig.encodingMode,
-      this.syncTagConfig.customBitrate
+      this.syncTagConfig.customBitrate,
+      this.syncTagConfig.fileMode ?? this.fileMode
     );
   }
 

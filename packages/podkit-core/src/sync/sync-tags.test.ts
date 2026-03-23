@@ -457,3 +457,72 @@ describe('round-trip: format → parse → compare', () => {
     expect(syncTagMatchesConfig(parsed!, oldData)).toBe(false);
   });
 });
+
+// =============================================================================
+// fileMode (mode= field) tests
+// =============================================================================
+
+describe('fileMode in sync tags', () => {
+  it('parseSyncTag reads mode field', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=optimized]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', fileMode: 'optimized' });
+  });
+
+  it('parseSyncTag reads mode=portable', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr mode=portable]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', fileMode: 'portable' });
+  });
+
+  it('parseSyncTag omits fileMode when mode field is absent', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr]');
+    expect(result!.fileMode).toBeUndefined();
+  });
+
+  it('formatSyncTag includes mode when fileMode is set', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', fileMode: 'optimized' });
+    expect(result).toBe('[podkit:v1 quality=high encoding=vbr mode=optimized]');
+  });
+
+  it('formatSyncTag includes mode=portable', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr', fileMode: 'portable' });
+    expect(result).toBe('[podkit:v1 quality=high encoding=vbr mode=portable]');
+  });
+
+  it('formatSyncTag omits mode when fileMode is undefined', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr' });
+    expect(result).not.toContain('mode=');
+  });
+
+  it('syncTagMatchesConfig ignores fileMode differences', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'optimized' };
+    const config: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'portable' };
+    expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
+
+  it('syncTagMatchesConfig ignores missing fileMode', () => {
+    const tag: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'optimized' };
+    const config: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
+
+  it('buildAudioSyncTag includes fileMode when provided', () => {
+    expect(buildAudioSyncTag('high', 'vbr', undefined, 'optimized')).toEqual({
+      quality: 'high',
+      encoding: 'vbr',
+      fileMode: 'optimized',
+    });
+  });
+
+  it('buildAudioSyncTag omits fileMode when not provided', () => {
+    const result = buildAudioSyncTag('high', 'vbr');
+    expect(result.fileMode).toBeUndefined();
+  });
+
+  it('round-trips fileMode through format then parse', () => {
+    const data: SyncTagData = { quality: 'high', encoding: 'vbr', fileMode: 'portable' };
+    const formatted = formatSyncTag(data);
+    const parsed = parseSyncTag(formatted);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.fileMode).toBe('portable');
+  });
+});

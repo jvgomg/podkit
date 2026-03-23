@@ -37,6 +37,8 @@ import {
   DEFAULT_CLEAN_ARTISTS_CONFIG,
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   VIDEO_QUALITY_PRESETS,
+  FILE_MODES,
+  isValidFileMode,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
@@ -175,6 +177,17 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
 
   if (typeof parsed.checkArtwork === 'boolean') {
     config.checkArtwork = parsed.checkArtwork;
+  }
+
+  if (typeof parsed.fileMode === 'string') {
+    if (isValidFileMode(parsed.fileMode)) {
+      config.fileMode = parsed.fileMode;
+    } else {
+      throw new Error(
+        `Invalid fileMode value "${parsed.fileMode}" in config. ` +
+          `Valid values: ${FILE_MODES.join(', ')}`
+      );
+    }
   }
 
   if (typeof parsed.skipUpgrades === 'boolean') {
@@ -643,6 +656,23 @@ function parseDevices(
       device.checkArtwork = rawDevice.checkArtwork;
     }
 
+    // Parse optional fileMode
+    if (rawDevice.fileMode !== undefined) {
+      if (typeof rawDevice.fileMode !== 'string') {
+        throw new Error(
+          `Invalid type for "fileMode" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.fileMode}.`
+        );
+      }
+      if (!isValidFileMode(rawDevice.fileMode)) {
+        throw new Error(
+          `Invalid fileMode value "${rawDevice.fileMode}" in [devices.${name}]. ` +
+            `Valid values: ${FILE_MODES.join(', ')}`
+        );
+      }
+      device.fileMode = rawDevice.fileMode;
+    }
+
     // Parse optional skipUpgrades
     if (rawDevice.skipUpgrades !== undefined) {
       if (typeof rawDevice.skipUpgrades !== 'boolean') {
@@ -832,6 +862,13 @@ export function loadEnvConfig(): PartialConfig {
   const checkArtwork = process.env[ENV_KEYS.checkArtwork];
   if (checkArtwork !== undefined) {
     config.checkArtwork = parseBoolEnv(checkArtwork);
+  }
+
+  const fileMode = process.env[ENV_KEYS.fileMode];
+  if (fileMode !== undefined) {
+    if (isValidFileMode(fileMode)) {
+      config.fileMode = fileMode;
+    }
   }
 
   const skipUpgrades = process.env[ENV_KEYS.skipUpgrades];
@@ -1221,6 +1258,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.checkArtwork !== undefined) {
       merged.checkArtwork = config.checkArtwork;
+    }
+    if (config.fileMode !== undefined) {
+      merged.fileMode = config.fileMode;
     }
     if (config.skipUpgrades !== undefined) {
       merged.skipUpgrades = config.skipUpgrades;

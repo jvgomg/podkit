@@ -226,13 +226,22 @@ describe('buildTranscodeArgs', () => {
       expect(args).toContain('0');
     });
 
-    it('includes artwork copy settings', () => {
+    it('strips artwork by default (optimized mode)', () => {
       const args = buildTranscodeArgs(input, output, 'aac', 'high');
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-c:v');
+      expect(args).not.toContain('-disposition:v');
+    });
+
+    it('preserves artwork in portable mode', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', { fileMode: 'portable' });
 
       expect(args).toContain('-c:v');
       expect(args).toContain('copy');
       expect(args).toContain('-disposition:v');
       expect(args).toContain('attached_pic');
+      expect(args).not.toContain('-vn');
     });
   });
 
@@ -303,6 +312,24 @@ describe('buildAlacArgs', () => {
     expect(args).toContain('44100');
     expect(args).toContain('-map_metadata');
     expect(args).toContain('0');
+  });
+
+  it('strips artwork by default (optimized mode)', () => {
+    const args = buildAlacArgs(input, output);
+
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('-disposition:v');
+  });
+
+  it('preserves artwork in portable mode', () => {
+    const args = buildAlacArgs(input, output, { fileMode: 'portable' });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('copy');
+    expect(args).toContain('-disposition:v');
+    expect(args).toContain('attached_pic');
+    expect(args).not.toContain('-vn');
   });
 });
 

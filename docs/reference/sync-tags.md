@@ -25,6 +25,7 @@ The tag is embedded in the track's comment field alongside any existing comment 
 | `encoding` | No | `vbr`, `cbr` | Encoding mode. Omitted for lossless audio and video |
 | `bitrate` | No | `64`–`320` | Only present when a custom bitrate override was used |
 | `art` | No | 8-character hex string | Artwork fingerprint (xxHash truncated to 32 bits) |
+| `mode` | No | `optimized`, `portable` | File mode used for transcoding. Informational — not used for change detection. |
 
 ### Examples
 
@@ -35,6 +36,7 @@ The tag is embedded in the track's comment field alongside any existing comment 
 [podkit:v1 quality=lossless art=a1b2c3d4]           # ALAC transcode with artwork fingerprint
 [podkit:v1 quality=copy art=deadbeef]               # Copied lossy track with artwork fingerprint
 [podkit:v1 quality=max]                             # Video transcode
+[podkit:v1 quality=high encoding=vbr mode=portable] # VBR transcode with portable file mode
 ```
 
 ## When Sync Tags Are Written
@@ -71,6 +73,8 @@ podkit sync --force-sync-tags --check-artwork
 When you change your [quality preset](/reference/quality-presets) (e.g., `medium` to `high`), podkit compares the new target settings against each track's sync tag. If they don't match, the track is re-transcoded.
 
 Without sync tags, podkit falls back to comparing the track's bitrate against the target bitrate using a percentage tolerance (30% for VBR, 10% for CBR). This works but is less precise — VBR encoding naturally produces variable bitrates that can trigger false re-transcodes. Sync tags eliminate this ambiguity with an exact comparison.
+
+The `mode` field is informational only — it records which file mode was used when the track was transcoded, but changes to `fileMode` do not trigger re-transcoding.
 
 ### Artwork change detection
 

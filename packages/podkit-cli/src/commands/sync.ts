@@ -37,7 +37,7 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
 } from '../config/index.js';
-import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES } from '../config/index.js';
+import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES, FILE_MODES } from '../config/index.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -82,6 +82,7 @@ interface SyncOptions {
   audioQuality?: QualityPreset;
   videoQuality?: VideoQualityPreset;
   encoding?: string;
+  fileMode?: string;
   filter?: string;
   artwork?: boolean;
   skipUpgrades?: boolean;
@@ -427,6 +428,18 @@ function getEffectiveSkipUpgrades(
 }
 
 /**
+ * Get effective file mode
+ *
+ * Resolution order: device fileMode > global fileMode > undefined (defaults to optimized)
+ */
+function getEffectiveFileMode(
+  config: PodkitConfig,
+  deviceConfig?: DeviceConfig
+): import('@podkit/core').FileMode | undefined {
+  return deviceConfig?.fileMode ?? config.fileMode;
+}
+
+/**
  * Get effective encoding mode
  *
  * Resolution order: device encoding > global encoding > undefined (defaults to VBR)
@@ -522,6 +535,9 @@ export const syncCommand = new Command('sync')
     ).choices([...QUALITY_PRESETS])
   )
   .addOption(new Option('--encoding <mode>', 'audio encoding mode').choices([...ENCODING_MODES]))
+  .addOption(
+    new Option('--file-mode <mode>', 'file mode for transcoded files').choices([...FILE_MODES])
+  )
   .option('--filter <pattern>', 'only sync tracks matching pattern')
   .option('--no-artwork', 'skip artwork transfer')
   .option('--skip-upgrades', 'skip file-replacement upgrades for changed source files')
@@ -612,6 +628,9 @@ export const syncCommand = new Command('sync')
         encoding: options.encoding
           ? (options.encoding as import('@podkit/core').EncodingMode)
           : getEffectiveEncoding(config, dc),
+        fileMode: options.fileMode
+          ? (options.fileMode as import('@podkit/core').FileMode)
+          : getEffectiveFileMode(config, dc),
         customBitrate: getEffectiveCustomBitrate(config, dc),
         bitrateTolerance: getEffectiveBitrateTolerance(config, dc),
       };
@@ -627,6 +646,7 @@ export const syncCommand = new Command('sync')
     let effectiveArtwork = derived.artwork;
     let effectiveSkipUpgrades = derived.skipUpgrades;
     let effectiveEncoding = derived.encoding;
+    let effectiveFileMode = derived.fileMode;
     let effectiveCustomBitrate = derived.customBitrate;
     let effectiveBitrateTolerance = derived.bitrateTolerance;
 
@@ -761,6 +781,7 @@ export const syncCommand = new Command('sync')
       effectiveArtwork = derived.artwork;
       effectiveSkipUpgrades = derived.skipUpgrades;
       effectiveEncoding = derived.encoding;
+      effectiveFileMode = derived.fileMode;
       effectiveCustomBitrate = derived.customBitrate;
       effectiveBitrateTolerance = derived.bitrateTolerance;
 
@@ -888,6 +909,7 @@ export const syncCommand = new Command('sync')
     let totalFailed = 0;
     let anyError = false;
     let totalArtworkMissingBaseline = 0;
+    let totalFileModeMismatch = 0;
 
     const shutdown = createShutdownController();
     shutdown.install();
@@ -908,6 +930,7 @@ export const syncCommand = new Command('sync')
             effectiveTransforms,
             effectiveQuality,
             effectiveEncoding,
+            effectiveFileMode,
             effectiveCustomBitrate,
             effectiveBitrateTolerance,
             deviceSupportsAlac,
@@ -942,6 +965,7 @@ export const syncCommand = new Command('sync')
           totalCompleted += result.completed;
           totalFailed += result.failed;
           totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
+          totalFileModeMismatch += result.fileModeMismatch ?? 0;
           if (!result.success) {
             anyError = true;
           }
@@ -1094,9 +1118,12 @@ export const syncCommand = new Command('sync')
           out.print('Run without --dry-run to execute this plan.');
         }
 
-        // Show artwork baseline tip at end of sync
-        if (totalArtworkMissingBaseline > 0) {
-          out.printTips({ artworkMissingBaseline: totalArtworkMissingBaseline });
+        // Show tips at end of sync
+        if (totalArtworkMissingBaseline > 0 || totalFileModeMismatch > 0) {
+          out.printTips({
+            artworkMissingBaseline: totalArtworkMissingBaseline || undefined,
+            fileModeMismatch: totalFileModeMismatch || undefined,
+          });
         }
 
         // Show eject tip or auto-eject on successful sync

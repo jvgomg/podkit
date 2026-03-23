@@ -16,6 +16,7 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_AUDIO_QUALITY` | Audio-specific quality (overrides config file `audioQuality`) |
 | `PODKIT_VIDEO_QUALITY` | Video-specific quality (overrides config file `videoQuality`) |
 | `PODKIT_ENCODING` | Encoding mode: `vbr` or `cbr` (overrides config file `encoding`) |
+| `PODKIT_FILE_MODE` | File mode: `optimized` or `portable` (overrides config file `fileMode`) |
 | `PODKIT_CUSTOM_BITRATE` | Override target bitrate for AAC encoding, 64-320 kbps (overrides config file `customBitrate`) |
 | `PODKIT_BITRATE_TOLERANCE` | Override preset change detection tolerance, 0.0-1.0 (overrides config file `bitrateTolerance`) |
 | `PODKIT_FORCE_TRANSCODE` | Force re-transcoding of all lossless-source tracks (`true`/`false`) |

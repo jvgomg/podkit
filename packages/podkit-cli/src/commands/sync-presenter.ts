@@ -15,7 +15,7 @@ import type {
   VideoTransformsConfig,
   MusicCollectionConfig,
 } from '../config/index.js';
-import type { EncodingMode } from '@podkit/core';
+import type { EncodingMode, FileMode } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import { formatBytes } from '../output/index.js';
 import type { SyncOutput } from './sync.js';
@@ -41,6 +41,7 @@ export interface MusicContentConfig {
   effectiveTransforms: TransformsConfig;
   effectiveQuality: QualityPreset;
   effectiveEncoding: EncodingMode | undefined;
+  effectiveFileMode: FileMode | undefined;
   effectiveCustomBitrate: number | undefined;
   effectiveBitrateTolerance: number | undefined;
   deviceSupportsAlac: boolean;
@@ -75,6 +76,7 @@ export interface GenericSyncResult {
   interrupted?: boolean;
   jsonOutput?: SyncOutput;
   artworkMissingBaseline?: number;
+  fileModeMismatch?: number;
 }
 
 // =============================================================================
@@ -456,6 +458,9 @@ export async function genericSyncCollection<TSource, TDevice>(
       ...(postDiffData.artworkMissingBaseline !== undefined
         ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
         : {}),
+      ...(postDiffData.fileModeMismatch !== undefined
+        ? { fileModeMismatch: postDiffData.fileModeMismatch as number }
+        : {}),
     };
   }
 
@@ -526,6 +531,9 @@ export async function genericSyncCollection<TSource, TDevice>(
     interrupted: execResult.interrupted,
     ...(postDiffData.artworkMissingBaseline !== undefined
       ? { artworkMissingBaseline: postDiffData.artworkMissingBaseline as number }
+      : {}),
+    ...(postDiffData.fileModeMismatch !== undefined
+      ? { fileModeMismatch: postDiffData.fileModeMismatch as number }
       : {}),
   };
 }

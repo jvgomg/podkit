@@ -22,6 +22,7 @@ export type {
   PartialConfig,
   QualityPreset,
   EncodingMode,
+  FileMode,
   GlobalOptions,
   ConfigFileContent,
   TransformsConfig,
@@ -44,10 +45,12 @@ export type {
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
+  FILE_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  isValidFileMode,
 } from './types.js';
 
 // Defaults

@@ -36,6 +36,7 @@ describe('config loader', () => {
     delete process.env[ENV_KEYS.audioQuality];
     delete process.env[ENV_KEYS.videoQuality];
     delete process.env[ENV_KEYS.encoding];
+    delete process.env[ENV_KEYS.fileMode];
     delete process.env[ENV_KEYS.customBitrate];
     delete process.env[ENV_KEYS.bitrateTolerance];
     delete process.env[ENV_KEYS.artwork];
@@ -161,6 +162,30 @@ quality = "invalid"
       fs.writeFileSync(configPath, v(`encoding = "abr"`));
 
       expect(() => loadConfigFile(configPath)).toThrow(/Invalid encoding value/);
+    });
+
+    // fileMode tests
+    it('parses fileMode = "optimized"', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`fileMode = "optimized"`));
+
+      const result = loadConfigFile(configPath);
+      expect(result?.fileMode).toBe('optimized');
+    });
+
+    it('parses fileMode = "portable"', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`fileMode = "portable"`));
+
+      const result = loadConfigFile(configPath);
+      expect(result?.fileMode).toBe('portable');
+    });
+
+    it('throws on invalid fileMode', () => {
+      const configPath = path.join(tempDir, 'config.toml');
+      fs.writeFileSync(configPath, v(`fileMode = "invalid"`));
+
+      expect(() => loadConfigFile(configPath)).toThrow(/Invalid fileMode value/);
     });
 
     // customBitrate tests
@@ -871,6 +896,37 @@ skipUpgrades = "yes"
 
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid type for "skipUpgrades"/);
       });
+
+      it('parses device fileMode', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.nano]
+volumeUuid = "ABC-123"
+volumeName = "NANO"
+fileMode = "portable"
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.nano!.fileMode).toBe('portable');
+      });
+
+      it('throws on invalid device fileMode', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+volumeName = "TERAPOD"
+fileMode = "invalid"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid fileMode value "invalid"/);
+      });
     });
 
     describe('defaults', () => {
@@ -1085,6 +1141,18 @@ device = "terapod"
       process.env[ENV_KEYS.encoding] = 'abr';
       const result = loadEnvConfig();
       expect(result.encoding).toBeUndefined();
+    });
+
+    it('reads PODKIT_FILE_MODE with valid value', () => {
+      process.env[ENV_KEYS.fileMode] = 'portable';
+      const result = loadEnvConfig();
+      expect(result.fileMode).toBe('portable');
+    });
+
+    it('ignores PODKIT_FILE_MODE with invalid value', () => {
+      process.env[ENV_KEYS.fileMode] = 'invalid';
+      const result = loadEnvConfig();
+      expect(result.fileMode).toBeUndefined();
     });
 
     it('reads PODKIT_CUSTOM_BITRATE with valid value', () => {
@@ -1505,6 +1573,24 @@ device = "terapod"
     it('skipUpgrades defaults to undefined when not set', () => {
       const result = mergeConfigs();
       expect(result.skipUpgrades).toBeUndefined();
+    });
+
+    it('merges fileMode from partial config', () => {
+      const partial: PartialConfig = { fileMode: 'portable' };
+      const result = mergeConfigs(partial);
+      expect(result.fileMode).toBe('portable');
+    });
+
+    it('later fileMode overrides earlier', () => {
+      const first: PartialConfig = { fileMode: 'portable' };
+      const second: PartialConfig = { fileMode: 'optimized' };
+      const result = mergeConfigs(first, second);
+      expect(result.fileMode).toBe('optimized');
+    });
+
+    it('fileMode defaults to undefined when not set', () => {
+      const result = mergeConfigs();
+      expect(result.fileMode).toBeUndefined();
     });
 
     describe('transforms merging', () => {

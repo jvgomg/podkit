@@ -126,7 +126,7 @@ audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 ```
 
-By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`. See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
+By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`. The `fileMode` option controls whether transcoded files keep embedded artwork (`portable`) or strip it (`optimized`, the default). Use `portable` if you share transcoded files with other players that read embedded artwork. See [Quality Settings](/user-guide/devices/quality) for a practical guide to choosing presets, and [Quality Presets Reference](/reference/quality-presets) for the full preset specifications.
 
 ## Clean Artists
 

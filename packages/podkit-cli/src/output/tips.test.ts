@@ -120,6 +120,32 @@ describe('collectTips', () => {
     });
   });
 
+  describe('file mode mismatch tip', () => {
+    it('returns tip when tracks have mismatched file mode', () => {
+      const tips = collectTips({ fileModeMismatch: 25 });
+      expect(tips).toHaveLength(1);
+      expect(tips[0]!.message).toContain('25 tracks were synced with a different file mode');
+      expect(tips[0]!.message).toContain('--force-transcode');
+      expect(tips[0]!.message).toContain('all lossless-source tracks');
+    });
+
+    it('returns no tip when fileModeMismatch is 0', () => {
+      const tips = collectTips({ fileModeMismatch: 0 });
+      expect(tips).toHaveLength(0);
+    });
+
+    it('does not trigger without fileModeMismatch context', () => {
+      const tips = collectTips({});
+      expect(tips).toHaveLength(0);
+    });
+
+    it('uses singular form for 1 track', () => {
+      const tips = collectTips({ fileModeMismatch: 1 });
+      expect(tips).toHaveLength(1);
+      expect(tips[0]!.message).toContain('1 track was synced');
+    });
+  });
+
   describe('multiple tips', () => {
     it('returns multiple tips when multiple conditions match', () => {
       const tips = collectTips({

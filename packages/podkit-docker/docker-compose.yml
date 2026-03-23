@@ -42,6 +42,7 @@ services:
 #       - PODKIT_QUALITY=medium               # Override transcoding quality
 #       - PODKIT_ARTWORK=true                 # Include album artwork
 #       - PODKIT_CLEAN_ARTISTS=true           # Clean up featured artist credits
+#       # PODKIT_FILE_MODE=portable           # Preserve embedded artwork in transcoded files
 #     volumes:
 #       - ./config:/config
 #       - /path/to/music:/music:ro

@@ -25,6 +25,8 @@ export interface TipContext {
   mountRequiresSudo?: boolean;
   /** Number of tracks with artwork but no artwork hash baseline (from sync) */
   artworkMissingBaseline?: number;
+  /** Number of existing tracks whose file mode doesn't match current setting */
+  fileModeMismatch?: number;
   /** Sync tag counts from device info */
   syncTagInfo?: {
     trackCount: number;
@@ -86,6 +88,19 @@ const NO_SYNC_TAGS_TIP: TipDefinition = {
   },
 };
 
+const FILE_MODE_MISMATCH_TIP: TipDefinition = {
+  evaluate: ({ fileModeMismatch }) => {
+    if (fileModeMismatch && fileModeMismatch > 0) {
+      const plural = fileModeMismatch === 1 ? '' : 's';
+      const verb = fileModeMismatch === 1 ? 'was' : 'were';
+      return {
+        message: `${fileModeMismatch} track${plural} ${verb} synced with a different file mode. Use --force-transcode to re-transcode all lossless-source tracks with the current fileMode setting.`,
+      };
+    }
+    return null;
+  },
+};
+
 const MISSING_ARTWORK_HASH_TIP: TipDefinition = {
   evaluate: ({ syncTagInfo }) => {
     if (syncTagInfo && syncTagInfo.missingArt > 0 && syncTagInfo.syncTagCount > 0) {
@@ -102,6 +117,7 @@ const ALL_TIPS: TipDefinition[] = [
   SOUND_CHECK_TIP,
   MACOS_MOUNTING_TIP,
   ARTWORK_BASELINE_TIP,
+  FILE_MODE_MISMATCH_TIP,
   NO_SYNC_TAGS_TIP,
   MISSING_ARTWORK_HASH_TIP,
 ];

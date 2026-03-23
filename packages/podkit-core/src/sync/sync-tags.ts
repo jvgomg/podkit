@@ -53,6 +53,8 @@ export interface SyncTagData {
   bitrate?: number;
   /** Artwork hash: 8-char lowercase hex string (xxHash truncated to 32 bits) */
   artworkHash?: string;
+  /** File mode used for transcoding: 'optimized' | 'portable' (informational only) */
+  fileMode?: string;
 }
 
 // =============================================================================
@@ -135,6 +137,10 @@ export function parseSyncTag(comment: string | null | undefined): SyncTagData | 
     result.artworkHash = data.art;
   }
 
+  if (data.mode) {
+    result.fileMode = data.mode;
+  }
+
   return result;
 }
 
@@ -161,6 +167,10 @@ export function formatSyncTag(data: SyncTagData): string {
 
   if (data.artworkHash) {
     parts.push(`art=${data.artworkHash}`);
+  }
+
+  if (data.fileMode) {
+    parts.push(`mode=${data.fileMode}`);
   }
 
   return `${TAG_PREFIX}${parts.join(' ')}${TAG_SUFFIX}`;
@@ -251,7 +261,8 @@ export function syncTagMatchesConfig(tag: SyncTagData, config: SyncTagData): boo
 export function buildAudioSyncTag(
   resolvedPreset: string,
   encodingMode?: string,
-  customBitrate?: number
+  customBitrate?: number,
+  fileMode?: string
 ): SyncTagData {
   const data: SyncTagData = {
     quality: resolvedPreset,
@@ -263,6 +274,10 @@ export function buildAudioSyncTag(
     if (customBitrate !== undefined) {
       data.bitrate = customBitrate;
     }
+  }
+
+  if (fileMode) {
+    data.fileMode = fileMode;
   }
 
   return data;

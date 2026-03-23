@@ -127,6 +127,7 @@ podkit sync [options]
 | `--audio-quality <preset>` | Audio-specific quality override: `max`, `high`, `medium`, `low` |
 | `--video-quality <preset>` | Video-specific quality override: `max`, `high`, `medium`, `low` |
 | `--encoding <mode>` | Encoding mode: `vbr` (default) or `cbr` |
+| `--file-mode <mode>` | File mode: `optimized` (default) or `portable` |
 | `--filter <pattern>` | Only sync tracks matching pattern |
 | `--no-artwork` | Skip artwork transfer |
 | `--check-artwork` | Detect changed artwork by comparing fingerprints between syncs |

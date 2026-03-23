@@ -62,6 +62,31 @@ export type EncodingMode = 'vbr' | 'cbr';
 export const ENCODING_MODES: readonly EncodingMode[] = ['vbr', 'cbr'] as const;
 
 // =============================================================================
+// File Mode
+// =============================================================================
+
+/**
+ * File mode for transcoded files
+ *
+ * - `optimized`: Strip non-essential embedded data (artwork, etc.) from transcoded files.
+ *   iPods read artwork from their internal database, so embedded artwork is dead weight.
+ * - `portable`: Preserve embedded artwork for users who want exportable files.
+ */
+export type FileMode = 'optimized' | 'portable';
+
+/**
+ * All valid file mode names
+ */
+export const FILE_MODES: readonly FileMode[] = ['optimized', 'portable'] as const;
+
+/**
+ * Check if a string is a valid file mode
+ */
+export function isValidFileMode(value: string): value is FileMode {
+  return FILE_MODES.includes(value as FileMode);
+}
+
+// =============================================================================
 // Transcode Configuration
 // =============================================================================
 
@@ -281,4 +306,11 @@ export interface TranscodeOptions {
   onProgress?: (progress: TranscodeProgress) => void;
   /** Abort signal for cancellation */
   signal?: AbortSignal;
+  /**
+   * File mode for transcoded output.
+   *
+   * - `optimized` (default): strips embedded artwork (`-vn`).
+   * - `portable`: preserves embedded artwork (`-c:v copy`).
+   */
+  fileMode?: FileMode;
 }

@@ -17,6 +17,7 @@ import type {
   AudioMetadata,
   QualityPreset,
   EncodingMode,
+  FileMode,
 } from './types.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
@@ -173,11 +174,12 @@ export function buildTranscodeArgs(
   input: string,
   output: string,
   encoder: string,
-  preset: QualityPreset | 'lossless' | AacTranscodeConfig
+  preset: QualityPreset | 'lossless' | AacTranscodeConfig,
+  options?: { fileMode?: FileMode }
 ): string[] {
   // Handle ALAC encoding
   if (preset === 'lossless') {
-    return buildAlacArgs(input, output);
+    return buildAlacArgs(input, output, options);
   }
 
   // Resolve preset to AAC config
@@ -225,11 +227,15 @@ export function buildTranscodeArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Copy embedded artwork if present
-  args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
-
-  // No video stream (only copy artwork)
-  args.push('-vn');
+  // Embedded artwork handling based on file mode
+  const fileMode = options?.fileMode ?? 'optimized';
+  if (fileMode === 'portable') {
+    // Preserve embedded artwork for exportable files
+    args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
+  } else {
+    // Strip embedded artwork — iPods read artwork from their internal database
+    args.push('-vn');
+  }
 
   // Output format (M4A container optimized for iPod)
   args.push('-f', 'ipod');
@@ -253,7 +259,11 @@ export function buildTranscodeArgs(
  * @param output - Output file path
  * @returns Array of FFmpeg arguments
  */
-export function buildAlacArgs(input: string, output: string): string[] {
+export function buildAlacArgs(
+  input: string,
+  output: string,
+  options?: { fileMode?: FileMode }
+): string[] {
   const args: string[] = [
     // Input
     '-i',
@@ -270,11 +280,15 @@ export function buildAlacArgs(input: string, output: string): string[] {
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Copy embedded artwork if present
-  args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
-
-  // No video stream (only copy artwork)
-  args.push('-vn');
+  // Embedded artwork handling based on file mode
+  const fileMode = options?.fileMode ?? 'optimized';
+  if (fileMode === 'portable') {
+    // Preserve embedded artwork for exportable files
+    args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
+  } else {
+    // Strip embedded artwork — iPods read artwork from their internal database
+    args.push('-vn');
+  }
 
   // Output format (M4A container optimized for iPod)
   args.push('-f', 'ipod');
@@ -425,7 +439,9 @@ export class FFmpegTranscoder implements Transcoder {
     const ffmpegPath = options.ffmpegPath ?? this.ffmpegPath;
 
     // Build FFmpeg arguments
-    const args = buildTranscodeArgs(input, output, caps.preferredEncoder, preset);
+    const args = buildTranscodeArgs(input, output, caps.preferredEncoder, preset, {
+      fileMode: options.fileMode,
+    });
 
     // Track timing
     const startTime = Date.now();

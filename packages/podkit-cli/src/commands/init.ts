@@ -25,6 +25,10 @@ version = ${CURRENT_CONFIG_VERSION}
 # [video.movies]
 # path = "/path/to/movies"
 
+# File mode for transcoded files
+# fileMode = "optimized"  # Strip embedded artwork from transcoded files (default)
+# fileMode = "portable"   # Preserve embedded artwork for exportable files
+
 # Clean up featured artist entries in iPod artist list
 # Moves "Artist feat. X" credits from the artist field into the title.
 # Docs: https://jvgomg.github.io/podkit/reference/clean-artists

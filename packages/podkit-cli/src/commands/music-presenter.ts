@@ -149,17 +149,29 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
   ) {
     const config = contentConfig as MusicContentConfig;
     let artworkMissingBaseline = 0;
-    if (config.checkArtwork) {
-      for (const match of diff.existing) {
-        if (match.ipod.hasArtwork === true) {
-          const syncTag = core.parseSyncTag(match.ipod.comment);
-          if (!syncTag?.artworkHash) {
-            artworkMissingBaseline++;
-          }
+    let fileModeMismatch = 0;
+    const effectiveFileMode = config.effectiveFileMode ?? 'optimized';
+
+    for (const match of diff.existing) {
+      if (config.checkArtwork && match.ipod.hasArtwork === true) {
+        const syncTag = core.parseSyncTag(match.ipod.comment);
+        if (!syncTag?.artworkHash) {
+          artworkMissingBaseline++;
+        }
+      }
+
+      // Count tracks whose sync tag mode doesn't match the effective fileMode.
+      // Treat missing fileMode (legacy sync tags) as 'optimized' since that was
+      // the effective behavior before fileMode was introduced (-vn always won).
+      const syncTag = core.parseSyncTag(match.ipod.comment);
+      if (syncTag) {
+        const tagMode = syncTag.fileMode ?? 'optimized';
+        if (tagMode !== effectiveFileMode) {
+          fileModeMismatch++;
         }
       }
     }
-    return { artworkMissingBaseline };
+    return { artworkMissingBaseline, fileModeMismatch };
   }
 
   createPlan(
@@ -491,7 +503,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         syncTagConfig: {
           encodingMode: config.effectiveEncoding,
           customBitrate: config.effectiveCustomBitrate,
+          fileMode: config.effectiveFileMode,
         },
+        fileMode: config.effectiveFileMode,
       })) {
         if (progress.error) {
           const categorized = progress.categorizedError;
