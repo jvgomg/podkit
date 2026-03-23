@@ -1,9 +1,10 @@
 ---
 id: TASK-172
 title: Docker image crashes with "Illegal instruction" on minimal x86_64 CPUs
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 20:46'
+updated_date: '2026-03-23 14:57'
 labels:
   - bug
   - docker
@@ -70,7 +71,13 @@ Synology NAS / Debian VM validation (TASK-165). VM was a Proxmox QEMU instance w
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Minimum CPU requirements are documented in Docker docs (SSE4.2 minimum, recommend host CPU type for VMs)
-- [ ] #2 Docker troubleshooting section covers the Illegal instruction error with fix (change VM CPU type)
-- [ ] #3 Bun's exact baseline CPU requirement is confirmed and documented
+- [x] #1 Minimum CPU requirements are documented in Docker docs (SSE4.2 minimum, recommend host CPU type for VMs)
+- [x] #2 Docker troubleshooting section covers the Illegal instruction error with fix (change VM CPU type)
+- [x] #3 Bun's exact baseline CPU requirement is confirmed and documented
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+CPU requirements (SSE4.2 minimum) and "Illegal instruction" troubleshooting documented in `docs/getting-started/docker-daemon.md`, including Proxmox VM CPU type guidance.
+<!-- SECTION:FINAL_SUMMARY:END -->

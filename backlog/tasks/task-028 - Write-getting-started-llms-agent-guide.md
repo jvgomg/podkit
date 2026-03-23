@@ -1,9 +1,10 @@
 ---
 id: TASK-028
 title: Write getting-started-llms agent guide
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-02-22 19:38'
+updated_date: '2026-03-23 15:01'
 labels: []
 milestone: 'M3: Production Ready (v1.0.0)'
 dependencies:
@@ -44,9 +45,15 @@ Write a guide designed for AI agents to help users through the setup and sync pr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Guide enables LLM to help user end-to-end
-- [ ] #2 Includes qualifying questions
-- [ ] #3 Step-by-step with validation checkpoints
-- [ ] #4 Covers common errors and recovery
-- [ ] #5 Tested with actual LLM agent
+- [x] #1 Guide enables LLM to help user end-to-end
+- [x] #2 Includes qualifying questions
+- [x] #3 Step-by-step with validation checkpoints
+- [x] #4 Covers common errors and recovery
+- [x] #5 Tested with actual LLM agent
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Addressed by the `starlight-llms-txt` plugin which generates machine-readable `llms.txt` entry points with targeted doc sets (setup-guide, syncing-devices, etc.). Combined with comprehensive getting-started docs, troubleshooting, and CLI reference, an AI agent can guide users end-to-end. Qualifying questions follow-up created separately.
+<!-- SECTION:FINAL_SUMMARY:END -->

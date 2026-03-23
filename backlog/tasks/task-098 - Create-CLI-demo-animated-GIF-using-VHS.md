@@ -1,9 +1,10 @@
 ---
 id: TASK-098
 title: Create CLI demo animated GIF using VHS
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-10 10:31'
+updated_date: '2026-03-23 14:57'
 labels:
   - docs-site
   - marketing
@@ -34,7 +35,13 @@ VHS allows scripting terminal recordings with precise timing and clean output.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 VHS tape file exists for CLI demo
-- [ ] #2 Animated GIF generated and optimized
-- [ ] #3 GIF integrated into landing page or getting started
+- [x] #1 VHS tape file exists for CLI demo
+- [x] #2 Animated GIF generated and optimized
+- [x] #3 GIF integrated into landing page or getting started
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+VHS tape file at `packages/demo/demo.tape`, generated GIF at `packages/demo/demo.gif` (404KB), integrated into both the docs landing page (`docs/index.mdx`) and root README.
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-170
 title: Subsonic adapter retries indefinitely on connection failure
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-19 20:09'
+updated_date: '2026-03-23 14:57'
 labels:
   - bug
   - subsonic
@@ -37,7 +38,13 @@ Synology NAS validation (TASK-165). Tailscale userspace networking on Synology d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Subsonic connection failures fail after a bounded number of retries (not infinite)
-- [ ] #2 Clear error message on final failure includes the URL and suggests checking connectivity
-- [ ] #3 Retry count and/or timeout is reasonable (e.g. 3 retries or 30s total)
+- [x] #1 Subsonic connection failures fail after a bounded number of retries (not infinite)
+- [x] #2 Clear error message on final failure includes the URL and suggests checking connectivity
+- [x] #3 Retry count and/or timeout is reasonable (e.g. 3 retries or 30s total)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Bounded retry logic added to Subsonic adapter in `packages/podkit-core/src/adapters/subsonic.ts`. 3 retries with exponential backoff, 30s per-request timeout, `SubsonicConnectionError` with clear messaging. Full test coverage in `subsonic.test.ts`.
+<!-- SECTION:FINAL_SUMMARY:END -->

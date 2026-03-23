@@ -4,6 +4,7 @@ title: Create data-driven E2E test suite for iPod model compatibility
 status: To Do
 assignee: []
 created_date: '2026-03-10 10:13'
+updated_date: '2026-03-23 14:57'
 labels:
   - testing
   - e2e
@@ -126,12 +127,28 @@ Add validation that matrix matches SUPPORTED-DEVICES.md and can regenerate the d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Model capability matrix exists as single source of truth in model-matrix.ts
-- [ ] #2 Tests are generated dynamically from matrix (not hand-written per model)
-- [ ] #3 Each supported generation has at least one representative model in the matrix
+- [x] #1 Model capability matrix exists as single source of truth in model-matrix.ts
+- [x] #2 Tests are generated dynamically from matrix (not hand-written per model)
+- [x] #3 Each supported generation has at least one representative model in the matrix
 - [ ] #4 Feature tests are conditional: only run if model.features.X is true
-- [ ] #5 Matrix includes verification status (e2eTest, realDevice, confirmedBy)
+- [x] #5 Matrix includes verification status (e2eTest, realDevice, confirmedBy)
 - [ ] #6 CLI integration tests verify sync respects device capabilities
 - [ ] #7 Matrix validation tests ensure consistency with libgpod and docs
 - [ ] #8 Running tests produces clear output showing which models/features passed
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Current State (2026-03-23)
+
+Implementation lives in `packages/compatibility/` (not `packages/e2e-tests/src/models/` as originally specified). MODEL_MATRIX has 19 entries covering all supported generations. Dynamic E2E tests run from `packages/e2e-tests/src/models/model-tests.e2e.test.ts`.
+
+**Verification status** is stored in `GENERATION_INFO` (confidence levels) and `REAL_DEVICE_REPORTS` (per-device hardware confirmations) rather than inline `verified` fields on each matrix entry.
+
+### Remaining work:
+- AC#4: Conditional feature tests (`if model.features.X` style) — currently all tests run unconditionally
+- AC#6: CLI integration tests for device-capability-aware sync
+- AC#7: Matrix validation tests ensuring consistency with libgpod types and docs
+- AC#8: Depends on AC#4 being implemented for meaningful conditional output
+<!-- SECTION:NOTES:END -->

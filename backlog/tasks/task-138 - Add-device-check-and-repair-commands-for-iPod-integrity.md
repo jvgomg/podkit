@@ -1,9 +1,10 @@
 ---
 id: TASK-138
 title: Add device check and repair commands for iPod integrity
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-14 18:22'
+updated_date: '2026-03-23 14:57'
 labels:
   - cli
   - feature
@@ -85,7 +86,13 @@ The one-off fix required a custom script to rename files and re-run `replaceTrac
 <!-- AC:BEGIN -->
 - [ ] #1 podkit device check detects file extension mismatches
 - [ ] #2 podkit device check detects missing files
-- [ ] #3 podkit device check detects orphaned files
-- [ ] #4 podkit device repair fixes detected issues
-- [ ] #5 podkit device repair --dry-run shows what would be fixed without modifying
+- [x] #3 podkit device check detects orphaned files
+- [x] #4 podkit device repair fixes detected issues
+- [x] #5 podkit device repair --dry-run shows what would be fixed without modifying
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+`podkit doctor` diagnostics framework implemented with orphan-file detection/repair and artwork integrity checks. Extension-mismatch and missing-file detection split into a new follow-up task.
+<!-- SECTION:FINAL_SUMMARY:END -->
