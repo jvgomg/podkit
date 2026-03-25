@@ -4,9 +4,10 @@ title: Documentation for mass-storage device support and Echo Mini
 status: To Do
 assignee: []
 created_date: '2026-03-23 20:35'
+updated_date: '2026-03-24 16:11'
 labels:
   - docs
-milestone: "Additional Device Support: Echo Mini"
+milestone: 'Additional Device Support: Echo Mini'
 dependencies:
   - TASK-226
 documentation:
@@ -58,3 +59,22 @@ Update user-facing documentation to cover non-iPod device support. Users should 
 - [ ] #5 Getting started guide updated to mention non-iPod support
 - [ ] #6 Shell completions updated for new commands
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Research findings relevant to docs (DOC-022)
+
+**Key user-facing caveats to document:**
+- Library shows filenames, not title tags — podkit handles this automatically
+- Progressive JPEG artwork won't display — podkit converts to baseline
+- No sidecar artwork support
+- Dual volumes mount (internal + SD) — explain in setup guide
+- Opus files invisible to device — podkit transcodes automatically
+- Multi-disc albums display interleaved — podkit works around this
+- No gapless playback (hardware limitation)
+- No playlists
+
+**USB detection details for setup guide:**
+VID 0x071b, PID 0x3203, manufacturer "ECHO MINI"
+<!-- SECTION:NOTES:END -->

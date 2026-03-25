@@ -20,6 +20,7 @@ import {
   resolveEffectiveDevice,
 } from '../device-resolver.js';
 import { OutputContext, bold } from '../output/index.js';
+import { getDeviceLabel } from './open-device.js';
 import type { DeviceAssessment } from '@podkit/core';
 
 export interface MountOutput {
@@ -39,7 +40,7 @@ interface MountOptions {
 }
 
 export const mountCommand = new Command('mount')
-  .description('mount an iPod device (shortcut for "device mount")')
+  .description('mount a device (shortcut for "device mount")')
   .option('--disk <identifier>', 'disk identifier (e.g., /dev/disk4s2)')
   .option('--target <path>', 'mount point path (default: /tmp/podkit-{volumeName})')
   .option('--dry-run', 'show mount command without executing')
@@ -112,12 +113,13 @@ export const mountCommand = new Command('mount')
         const device = await manager.findByVolumeUuid(volumeUuid);
 
         if (!device) {
+          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
           out.result<MountOutput>(
-            { success: false, error: `iPod not found with UUID: ${volumeUuid}` },
+            { success: false, error: `${devLabel} not found with UUID: ${volumeUuid}` },
             () => {
-              out.error(`iPod not found with UUID: ${volumeUuid}`);
+              out.error(`${devLabel} not found with UUID: ${volumeUuid}`);
               out.newline();
-              out.error('Make sure the iPod is connected.');
+              out.error(`Make sure the ${devLabel.toLowerCase()} is connected.`);
               out.newline();
               out.error('You can specify a device explicitly:');
               out.error('  podkit mount --disk /dev/disk4s2');
@@ -130,7 +132,7 @@ export const mountCommand = new Command('mount')
         if (device.isMounted && device.mountPoint) {
           out.result<MountOutput>(
             { success: true, device: device.identifier, mountPoint: device.mountPoint },
-            () => out.print(`iPod already mounted at: ${device.mountPoint}`)
+            () => out.print(`Device already mounted at: ${device.mountPoint}`)
           );
           return;
         }
@@ -139,14 +141,14 @@ export const mountCommand = new Command('mount')
         volumeName = device.volumeName;
       } else {
         out.result<MountOutput>(
-          { success: false, error: 'No device specified and no iPod registered in config' },
+          { success: false, error: 'No device specified and no device registered in config' },
           () => {
-            out.error('No device specified and no iPod registered in config.');
+            out.error('No device specified and no device registered in config.');
             out.newline();
             out.error('Either specify a device:');
             out.error('  podkit mount --disk /dev/disk4s2');
             out.newline();
-            out.error('Or register an iPod first:');
+            out.error('Or register a device first:');
             out.error('  podkit device add -d <name>');
           }
         );
@@ -157,7 +159,8 @@ export const mountCommand = new Command('mount')
 
     if (!dryRun) {
       const displayName = volumeName || deviceId;
-      out.print(`Mounting iPod: ${displayName}...`);
+      const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+      out.print(`Mounting ${devLabel}: ${displayName}...`);
     }
 
     const mountTarget = options.target ?? (volumeName ? `/tmp/podkit-${volumeName}` : undefined);
@@ -231,7 +234,8 @@ export const mountCommand = new Command('mount')
       out.result<MountOutput>(
         { success: true, device: deviceId, mountPoint: result.mountPoint },
         () => {
-          out.print(`iPod mounted at: ${result.mountPoint}`);
+          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+          out.print(`${devLabel} mounted at: ${result.mountPoint}`);
           out.newline();
           out.print('You can now use:');
           out.print('  podkit device info');
@@ -240,7 +244,7 @@ export const mountCommand = new Command('mount')
       );
     } else {
       out.result<MountOutput>({ success: false, device: deviceId, error: result.error }, () => {
-        out.error('Failed to mount iPod.');
+        out.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`);
         out.newline();
         if (result.error) {
           out.error(result.error);

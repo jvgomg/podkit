@@ -15,6 +15,8 @@ export type {
   VideoQualityPreset,
   ShowLanguageConfig,
   VideoTransformsConfig,
+  AudioCodec,
+  DeviceArtworkSource,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
@@ -37,7 +39,34 @@ import type {
   TransformsConfig,
   VideoQualityPreset,
   VideoTransformsConfig,
+  AudioCodec,
+  DeviceArtworkSource,
 } from '@podkit/core';
+
+/** Supported device types */
+export type DeviceType = 'ipod' | 'echo-mini' | 'rockbox' | 'generic';
+
+/** Valid device type values */
+export const DEVICE_TYPES = ['ipod', 'echo-mini', 'rockbox', 'generic'] as const;
+
+/** Valid audio codec values for capability overrides */
+export const AUDIO_CODECS: readonly AudioCodec[] = [
+  'aac',
+  'alac',
+  'mp3',
+  'flac',
+  'ogg',
+  'opus',
+  'wav',
+  'aiff',
+] as const;
+
+/** Valid artwork source values for capability overrides */
+export const ARTWORK_SOURCES: readonly DeviceArtworkSource[] = [
+  'database',
+  'embedded',
+  'sidecar',
+] as const;
 
 // =============================================================================
 // Multi-Collection/Device Types (ADR-008)
@@ -96,9 +125,9 @@ export interface VideoCollectionConfig {
 /**
  * Device configuration
  *
- * Represents a named iPod device with its sync settings.
+ * Represents a named device with its sync settings.
  * Quality, transforms, and other settings are scoped to devices, not collections,
- * because different iPods may have different storage/capability constraints.
+ * because different devices may have different storage/capability constraints.
  *
  * @example
  * ```toml
@@ -119,6 +148,10 @@ export interface DeviceConfig {
   volumeUuid?: string;
   /** Volume name for display and detection (optional — derived from device name if omitted) */
   volumeName?: string;
+  /** Device type (default: 'ipod' when omitted for backward compatibility) */
+  type?: DeviceType;
+  /** Mount point path for mass-storage devices (alternative to volumeUuid; if both are set, volumeUuid takes precedence) */
+  path?: string;
   /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
   /** Audio transcoding quality preset (overrides quality) */
@@ -143,6 +176,19 @@ export interface DeviceConfig {
   transforms?: TransformsConfig;
   /** Device-specific video transform settings */
   videoTransforms?: VideoTransformsConfig;
+
+  // ===========================================================================
+  // Capability overrides (merged on top of preset defaults)
+  // ===========================================================================
+
+  /** Override maximum artwork display resolution in pixels */
+  artworkMaxResolution?: number;
+  /** Override artwork sources the device reads from */
+  artworkSources?: DeviceArtworkSource[];
+  /** Override audio codecs the device can play natively */
+  supportedAudioCodecs?: AudioCodec[];
+  /** Override whether the device supports video playback */
+  supportsVideo?: boolean;
 }
 
 /**
@@ -324,6 +370,8 @@ export interface ConfigFileVideoCollection {
 export interface ConfigFileDevice {
   volumeUuid?: string;
   volumeName?: string;
+  type?: string;
+  path?: string;
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;
@@ -336,6 +384,10 @@ export interface ConfigFileDevice {
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
+  artworkMaxResolution?: number;
+  artworkSources?: string[];
+  supportedAudioCodecs?: string[];
+  supportsVideo?: boolean;
 }
 
 /**

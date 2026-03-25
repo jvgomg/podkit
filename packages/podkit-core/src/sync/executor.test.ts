@@ -150,7 +150,9 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeRemoveOp('c.mp3')]);
 
-      const { events, result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events, result } = await consumeExecutor(
+        executor.execute(plan, { device: {} as any })
+      );
 
       // Each operation yields starting + complete = 2 events per op
       expect(events.length).toBe(6);
@@ -164,7 +166,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       // First operation events: index=0, total=2
       expect(events[0]!.index).toBe(0);
@@ -184,7 +186,7 @@ describe('SyncExecutor', () => {
         makeRemoveOp('c.mp3'),
       ]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('copying');
       expect(events[2]!.phase).toBe('transcoding');
@@ -212,7 +214,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
-      const { result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { result } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(batchCalled).toBe(true);
       expect(result.completed).toBe(2);
@@ -252,7 +254,9 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeTranscodeOp('a.flac')]);
 
-      const { events, result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events, result } = await consumeExecutor(
+        executor.execute(plan, { device: {} as any })
+      );
 
       expect(result.failed).toBe(1);
       expect(result.completed).toBe(0);
@@ -281,7 +285,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, continueOnError: false })
+        executor.execute(plan, { device: {} as any, continueOnError: false })
       );
 
       expect(executeCount).toBe(1);
@@ -306,7 +310,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, continueOnError: true })
+        executor.execute(plan, { device: {} as any, continueOnError: true })
       );
 
       expect(executeCount).toBe(2);
@@ -325,7 +329,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3')]);
 
-      const { result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { result } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(result.failed).toBe(1);
       expect(result.categorizedErrors.length).toBe(1);
@@ -342,7 +346,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3')]);
 
-      const { result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { result } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(result.failed).toBe(1);
       expect(result.categorizedErrors[0]!.error.message).toBe('batch generator exploded');
@@ -368,7 +372,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, signal: controller.signal })
+        executor.execute(plan, { device: {} as any, signal: controller.signal })
       );
 
       expect(executeCount).toBe(0);
@@ -394,7 +398,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, signal: controller.signal })
+        executor.execute(plan, { device: {} as any, signal: controller.signal })
       );
 
       expect(executeCount).toBe(1);
@@ -457,7 +461,7 @@ describe('SyncExecutor', () => {
         makeCopyOp('e.mp3'),
       ]);
 
-      await consumeExecutor(executor.execute(plan, { ipod: mockIpod, saveInterval: 2 }));
+      await consumeExecutor(executor.execute(plan, { device: mockIpod, saveInterval: 2 }));
 
       // 5 completed, saveInterval=2 -> save at completed=2 and completed=4
       expect(saveCount).toBe(2);
@@ -475,7 +479,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3')]);
 
-      await consumeExecutor(executor.execute(plan, { ipod: mockIpod, saveInterval: 0 }));
+      await consumeExecutor(executor.execute(plan, { device: mockIpod, saveInterval: 0 }));
 
       expect(saveCount).toBe(0);
     });
@@ -500,7 +504,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
 
-      await consumeExecutor(executor.execute(plan, { ipod: mockIpod, saveInterval: 2 }));
+      await consumeExecutor(executor.execute(plan, { device: mockIpod, saveInterval: 2 }));
 
       // 3 completed, saveInterval=2 -> save at completed=2
       expect(saveCount).toBe(1);
@@ -523,7 +527,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeTranscodeOp('a.flac')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       const progressEvent = events.find((e) => e.transcodeProgress);
       expect(progressEvent).toBeDefined();
@@ -548,7 +552,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeTranscodeOp('a.flac')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       const progressEvent = events.find((e) => e.transcodeProgress);
       expect(progressEvent).toBeDefined();
@@ -575,7 +579,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, continueOnError: true })
+        executor.execute(plan, { device: {} as any, continueOnError: true })
       );
 
       expect(result.completed).toBe(2);
@@ -589,7 +593,9 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([]);
 
-      const { events, result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events, result } = await consumeExecutor(
+        executor.execute(plan, { device: {} as any })
+      );
 
       expect(events.length).toBe(0);
       expect(result.completed).toBe(0);
@@ -619,7 +625,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, signal: controller.signal })
+        executor.execute(plan, { device: {} as any, signal: controller.signal })
       );
 
       expect(result.aborted).toBe(true);
@@ -666,7 +672,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoTranscodeOp('video.mkv')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-transcoding');
     });
@@ -676,7 +682,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoCopyOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-copying');
     });
@@ -686,7 +692,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoRemoveOp('old-video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('removing');
     });
@@ -696,7 +702,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpdateMetadataOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-updating-metadata');
     });
@@ -706,7 +712,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpgradeOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-upgrading');
     });
@@ -722,7 +728,7 @@ describe('SyncExecutor', () => {
         makeVideoUpgradeOp('e.m4v'),
       ]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       // Each op yields 2 events (starting + complete), first event of each has the phase
       expect(events[0]!.phase).toBe('video-transcoding');
@@ -754,7 +760,7 @@ describe('SyncExecutor', () => {
       const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
 
       const { result } = await consumeExecutor(
-        executor.execute(plan, { ipod: {} as any, signal: controller.signal })
+        executor.execute(plan, { device: {} as any, signal: controller.signal })
       );
 
       expect(result.aborted).toBe(true);
@@ -801,7 +807,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoTranscodeOp('video.mkv')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-transcoding');
     });
@@ -811,7 +817,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoCopyOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-copying');
     });
@@ -821,7 +827,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoRemoveOp('old-video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('removing');
     });
@@ -831,7 +837,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpdateMetadataOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-updating-metadata');
     });
@@ -841,7 +847,7 @@ describe('SyncExecutor', () => {
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpgradeOp('video.m4v')]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       expect(events[0]!.phase).toBe('video-upgrading');
     });
@@ -857,7 +863,7 @@ describe('SyncExecutor', () => {
         makeVideoUpgradeOp('e.m4v'),
       ]);
 
-      const { events } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       // Each op yields 2 events (starting + complete), first event of each has the phase
       expect(events[0]!.phase).toBe('video-transcoding');
@@ -876,7 +882,7 @@ describe('SyncExecutor', () => {
       expect(executor).toBeInstanceOf(SyncExecutor);
 
       const plan = makePlan([makeCopyOp('a.mp3')]);
-      const { result } = await consumeExecutor(executor.execute(plan, { ipod: {} as any }));
+      const { result } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
       expect(result.completed).toBe(1);
     });
   });

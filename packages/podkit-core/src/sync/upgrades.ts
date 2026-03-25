@@ -12,7 +12,7 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { EncodingMode } from '../transcode/types.js';
-import type { IPodTrack } from './types.js';
+import type { DeviceTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
 import { parseSyncTag } from './sync-tags.js';
 
@@ -96,7 +96,7 @@ function getSourceFormatFamily(source: CollectionTrack): FormatFamily {
  *
  * Returns `undefined` if the filetype is not set (unknown format).
  */
-function isIpodTrackLossless(ipod: IPodTrack): boolean | undefined {
+function isIpodTrackLossless(ipod: DeviceTrack): boolean | undefined {
   if (!ipod.filetype) return undefined;
   const lower = ipod.filetype.toLowerCase();
   return LOSSLESS_FILETYPE_PATTERNS.some((pattern) => lower.includes(pattern));
@@ -105,7 +105,7 @@ function isIpodTrackLossless(ipod: IPodTrack): boolean | undefined {
 /**
  * Determine the format family of an iPod track from its filetype string.
  */
-export function getIpodFormatFamily(ipod: IPodTrack): FormatFamily {
+export function getIpodFormatFamily(ipod: DeviceTrack): FormatFamily {
   if (isIpodTrackLossless(ipod)) {
     return 'lossless';
   }
@@ -148,7 +148,7 @@ export function isSourceLossless(source: CollectionTrack): boolean {
  * @param ipod - Matched track currently on the iPod
  * @returns True if the source is a quality upgrade over the iPod track
  */
-export function isQualityUpgrade(source: CollectionTrack, ipod: IPodTrack): boolean {
+export function isQualityUpgrade(source: CollectionTrack, ipod: DeviceTrack): boolean {
   const sourceLossless = isSourceLossless(source);
   const ipodLossless = isIpodTrackLossless(ipod);
 
@@ -227,7 +227,7 @@ export function isQualityUpgrade(source: CollectionTrack, ipod: IPodTrack): bool
  * @param ipod - Matched track currently on the iPod
  * @returns Array of detected upgrade reasons in priority order (empty if no upgrades)
  */
-export function detectUpgrades(source: CollectionTrack, ipod: IPodTrack): UpgradeReason[] {
+export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): UpgradeReason[] {
   // Reasons are pushed in priority order — most significant first.
   // The caller uses reasons[0] as the primary reason for display/categorization.
   const reasons: UpgradeReason[] = [];
@@ -310,7 +310,7 @@ export function detectUpgrades(source: CollectionTrack, ipod: IPodTrack): Upgrad
   // Metadata correction: check non-matching metadata fields
   for (const field of METADATA_CORRECTION_FIELDS) {
     const sourceValue = source[field as keyof CollectionTrack];
-    const ipodValue = ipod[field as keyof IPodTrack];
+    const ipodValue = ipod[field as keyof DeviceTrack];
 
     if (metadataValuesDiffer(field, sourceValue, ipodValue)) {
       reasons.push('metadata-correction');
@@ -507,7 +507,7 @@ export interface PresetChangeOptions {
  */
 export function detectPresetChange(
   source: CollectionTrack,
-  ipod: IPodTrack,
+  ipod: DeviceTrack,
   presetBitrate: number,
   options?: PresetChangeOptions
 ): 'preset-upgrade' | 'preset-downgrade' | null {

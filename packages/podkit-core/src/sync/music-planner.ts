@@ -8,6 +8,10 @@
  *
  * ## Source File Categories
  *
+ * When `DeviceCapabilities.supportedAudioCodecs` is provided, the planner first
+ * checks whether the source codec is natively supported by the device. If yes,
+ * the file is copied as-is regardless of category. Otherwise:
+ *
  * | Category | Formats | Behavior |
  * |----------|---------|----------|
  * | **Lossless** | FLAC, WAV, AIFF, ALAC | Transcode to target preset |
@@ -28,6 +32,7 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
+import type { AudioCodec } from '../device/capabilities.js';
 import {
   type QualityPreset,
   type TranscodeConfig,
@@ -115,6 +120,63 @@ export function isIPodCompatible(fileType: AudioFileType): boolean {
  */
 export function requiresTranscoding(fileType: AudioFileType): boolean {
   return TRANSCODE_REQUIRED_FORMATS.has(fileType);
+}
+
+/**
+ * Map a track's file type and codec to the AudioCodec used in device capabilities.
+ *
+ * - m4a/aac files: use the codec field to distinguish AAC vs ALAC
+ * - Other file types map directly to AudioCodec names
+ *
+ * Returns undefined if the file type cannot be mapped (unknown format).
+ */
+export function fileTypeToAudioCodec(
+  fileType: AudioFileType,
+  codec?: string
+): AudioCodec | undefined {
+  switch (fileType) {
+    case 'mp3':
+      return 'mp3';
+    case 'flac':
+      return 'flac';
+    case 'ogg':
+      return 'ogg';
+    case 'opus':
+      return 'opus';
+    case 'wav':
+      return 'wav';
+    case 'aiff':
+      return 'aiff';
+    case 'alac':
+      return 'alac';
+    case 'm4a':
+    case 'aac':
+      // M4A can be AAC or ALAC — check codec field
+      if (codec?.toLowerCase() === 'alac') return 'alac';
+      return 'aac';
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Check if a track's format is natively supported by the device.
+ *
+ * When the device provides a supportedAudioCodecs list, this checks whether
+ * the track's codec is in that list. This is used to skip transcoding for
+ * devices that support formats like FLAC, OGG, etc. natively.
+ *
+ * @returns true if the device can play this track without transcoding
+ */
+export function isDeviceCompatible(
+  track: CollectionTrack,
+  supportedCodecs: AudioCodec[] | undefined
+): boolean {
+  if (!supportedCodecs || supportedCodecs.length === 0) {
+    return false;
+  }
+  const codec = fileTypeToAudioCodec(track.fileType, track.codec);
+  return codec !== undefined && supportedCodecs.includes(codec);
 }
 
 // =============================================================================
@@ -267,6 +329,19 @@ export function estimateCopySize(track: CollectionTrack): number {
       case 'alac':
         // ALAC is lossless, typically ~800-1000 kbps for CD quality
         typicalBitrateKbps = 900;
+        break;
+      case 'flac':
+        // FLAC is lossless, typically ~900 kbps for CD quality
+        typicalBitrateKbps = 900;
+        break;
+      case 'ogg':
+      case 'opus':
+        typicalBitrateKbps = 192;
+        break;
+      case 'wav':
+      case 'aiff':
+        // Uncompressed audio, ~1411 kbps for CD quality (16-bit/44.1kHz stereo)
+        typicalBitrateKbps = 1411;
         break;
       default:
         typicalBitrateKbps = 256;
@@ -450,12 +525,25 @@ function planAddOperations(
   tracks: CollectionTrack[],
   config: TranscodeConfig,
   deviceSupportsAlac: boolean,
-  transferMode: TransferMode
+  transferMode: TransferMode,
+  primaryArtworkSource?: 'database' | 'embedded' | 'sidecar',
+  supportedAudioCodecs?: AudioCodec[]
 ): PlanAddResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
 
   for (const track of tracks) {
+    // Device-level codec check: if the device natively supports this format,
+    // copy directly regardless of source category (lossless, lossy, etc.)
+    if (isDeviceCompatible(track, supportedAudioCodecs)) {
+      if (primaryArtworkSource === 'embedded') {
+        operations.push(createOptimizedCopyOperation(track));
+      } else {
+        operations.push(createCopyOperation(track, transferMode));
+      }
+      continue;
+    }
+
     const category = categorizeSource(track);
     const effectivePreset = resolveEffectivePreset(config, category, deviceSupportsAlac);
 
@@ -484,8 +572,13 @@ function planAddOperations(
         break;
 
       case 'compatible-lossy':
-        // MP3/AAC: always copy (no benefit to re-encoding)
-        operations.push(createCopyOperation(track, transferMode));
+        // Embedded-artwork devices need FFmpeg to resize artwork in all modes
+        if (primaryArtworkSource === 'embedded') {
+          operations.push(createOptimizedCopyOperation(track));
+        } else {
+          // MP3/AAC: copy (no benefit to re-encoding)
+          operations.push(createCopyOperation(track, transferMode));
+        }
         break;
 
       case 'incompatible-lossy': {
@@ -538,7 +631,9 @@ function planUpdateOperations(
   tracks: UpdateTrack[],
   config: TranscodeConfig,
   deviceSupportsAlac: boolean,
-  transferMode: TransferMode
+  transferMode: TransferMode,
+  primaryArtworkSource?: 'database' | 'embedded' | 'sidecar',
+  supportedAudioCodecs?: AudioCodec[]
 ): PlanUpdateResult {
   const operations: SyncOperation[] = [];
   const lossyToLossyTracks: CollectionTrack[] = [];
@@ -562,11 +657,15 @@ function planUpdateOperations(
 
     // Check if this is a file-replacement upgrade
     if (isFileReplacementUpgrade(reason)) {
+      // Device-level codec check: if the device natively supports this format,
+      // always use a copy upgrade regardless of source category
+      const deviceNative = isDeviceCompatible(updateTrack.source, supportedAudioCodecs);
+
       const category = categorizeSource(updateTrack.source);
       const effectivePreset = resolveEffectivePreset(config, category, deviceSupportsAlac);
 
-      // Track lossy-to-lossy conversions for warnings
-      if (willWarnLossyToLossy(category)) {
+      // Track lossy-to-lossy conversions for warnings (only when actually transcoding)
+      if (!deviceNative && willWarnLossyToLossy(category)) {
         lossyToLossyTracks.push(updateTrack.source);
       }
 
@@ -574,30 +673,35 @@ function planUpdateOperations(
       let upgradePreset: TranscodePresetRef | undefined;
       let needsTranscode = false;
 
-      switch (category) {
-        case 'lossless':
-          if (effectivePreset === 'lossless') {
-            // ALAC source can be copied directly
-            if (updateTrack.source.codec?.toLowerCase() === 'alac') {
-              needsTranscode = false;
+      if (deviceNative) {
+        // Device supports this codec natively — copy, no transcode
+        needsTranscode = false;
+      } else {
+        switch (category) {
+          case 'lossless':
+            if (effectivePreset === 'lossless') {
+              // ALAC source can be copied directly
+              if (updateTrack.source.codec?.toLowerCase() === 'alac') {
+                needsTranscode = false;
+              } else {
+                needsTranscode = true;
+                upgradePreset = makePresetRef('lossless');
+              }
             } else {
               needsTranscode = true;
-              upgradePreset = makePresetRef('lossless');
+              const bitrateOverride = config.customBitrate;
+              upgradePreset = makePresetRef(effectivePreset, bitrateOverride);
             }
-          } else {
+            break;
+          case 'compatible-lossy':
+            needsTranscode = false;
+            break;
+          case 'incompatible-lossy': {
             needsTranscode = true;
-            const bitrateOverride = config.customBitrate;
-            upgradePreset = makePresetRef(effectivePreset, bitrateOverride);
+            const effectiveBitrate = resolveIncompatibleLossyBitrate(updateTrack.source, config);
+            upgradePreset = makePresetRef(effectivePreset, effectiveBitrate);
+            break;
           }
-          break;
-        case 'compatible-lossy':
-          needsTranscode = false;
-          break;
-        case 'incompatible-lossy': {
-          needsTranscode = true;
-          const effectiveBitrate = resolveIncompatibleLossyBitrate(updateTrack.source, config);
-          upgradePreset = makePresetRef(effectivePreset, effectiveBitrate);
-          break;
         }
       }
 
@@ -610,9 +714,14 @@ function planUpdateOperations(
           preset: upgradePreset,
         });
       } else {
-        // Copy upgrade — route by transfer mode
+        // Copy upgrade — embedded-artwork devices always use optimized copy,
+        // database-artwork devices route by transfer mode
         const upgradeType =
-          transferMode === 'optimized' ? 'upgrade-optimized-copy' : 'upgrade-direct-copy';
+          primaryArtworkSource === 'embedded'
+            ? 'upgrade-optimized-copy'
+            : transferMode === 'optimized'
+              ? 'upgrade-optimized-copy'
+              : 'upgrade-direct-copy';
         operations.push({
           type: upgradeType,
           source: updateTrack.source,
@@ -791,12 +900,21 @@ export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): Sync
     options.deviceSupportsAlac ??
     false;
   const transferMode: TransferMode = options.transferMode ?? 'fast';
+  const primaryArtworkSource = options.capabilities?.artworkSources[0];
+  const supportedAudioCodecs = options.capabilities?.supportedAudioCodecs;
 
   // Get transcode config (handles both legacy and new formats)
   const config = getTranscodeConfig(options);
 
   // Plan add operations using source categorization logic
-  const addResult = planAddOperations(diff.toAdd, config, deviceSupportsAlac, transferMode);
+  const addResult = planAddOperations(
+    diff.toAdd,
+    config,
+    deviceSupportsAlac,
+    transferMode,
+    primaryArtworkSource,
+    supportedAudioCodecs
+  );
 
   // Plan remove operations (if enabled)
   const removeOperations = planRemoveOperations(diff.toRemove, removeOrphans);
@@ -812,7 +930,9 @@ export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): Sync
     effectiveUpdates,
     config,
     deviceSupportsAlac,
-    transferMode
+    transferMode,
+    primaryArtworkSource,
+    supportedAudioCodecs
   );
 
   // Combine and order operations
@@ -840,6 +960,20 @@ export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): Sync
       type: 'lossy-to-lossy',
       message: `${allLossyToLossyTracks.length} track${allLossyToLossyTracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion (OGG, Opus). This is unavoidable but results in quality loss.`,
       tracks: allLossyToLossyTracks,
+    });
+  }
+
+  // Warn when portable mode is used with an embedded-artwork device
+  if (
+    primaryArtworkSource === 'embedded' &&
+    transferMode === 'portable' &&
+    options.capabilities?.artworkMaxResolution &&
+    orderedOperations.length > 0
+  ) {
+    warnings.push({
+      type: 'embedded-artwork-resize',
+      message: `Artwork resized to device maximum (${options.capabilities.artworkMaxResolution}px) — this device reads artwork from embedded file data and cannot use full-resolution images. Portable mode preserves audio quality but artwork is optimized for the device.`,
+      tracks: [],
     });
   }
 

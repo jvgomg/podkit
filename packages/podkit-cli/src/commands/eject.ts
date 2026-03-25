@@ -22,6 +22,7 @@ import {
   resolveEffectiveDevice,
 } from '../device-resolver.js';
 import { OutputContext } from '../output/index.js';
+import { getDeviceLabel } from './open-device.js';
 
 export interface EjectOutput {
   success: boolean;
@@ -37,7 +38,7 @@ interface EjectOptions {
 
 export const ejectCommand = new Command('eject')
   .alias('unmount')
-  .description('safely unmount an iPod device (shortcut for "device eject")')
+  .description('safely unmount a device (shortcut for "device eject")')
   .option('-f, --force', 'force unmount even if device is busy')
   .action(async (options: EjectOptions) => {
     const { config, globalOpts } = getContext();
@@ -116,13 +117,15 @@ export const ejectCommand = new Command('eject')
 
     const devicePath = resolveResult.path;
 
+    const deviceLabel = getDeviceLabel(resolvedDevice?.config?.type);
+
     if (!existsSync(devicePath)) {
       out.result<EjectOutput>(
         { success: false, device: devicePath, error: `Device path not found: ${devicePath}` },
         () => {
-          out.error(`iPod not found at: ${devicePath}`);
+          out.error(`${deviceLabel} not found at: ${devicePath}`);
           out.newline();
-          out.error('Make sure the iPod is connected and mounted.');
+          out.error(`Make sure the ${deviceLabel.toLowerCase()} is connected and mounted.`);
         }
       );
       process.exitCode = 1;
@@ -148,7 +151,7 @@ export const ejectCommand = new Command('eject')
     if (result.success) {
       out.result<EjectOutput>(
         { success: true, device: devicePath, forced: result.forced, attempts: result.attempts },
-        () => out.success('iPod ejected successfully. Safe to disconnect.')
+        () => out.success(`${deviceLabel} ejected successfully. Safe to disconnect.`)
       );
     } else {
       out.result<EjectOutput>(
@@ -160,7 +163,7 @@ export const ejectCommand = new Command('eject')
           error: result.error,
         },
         () => {
-          out.error('Failed to eject iPod.');
+          out.error(`Failed to eject ${deviceLabel.toLowerCase()}.`);
           out.newline();
           if (result.error) {
             out.error(result.error);

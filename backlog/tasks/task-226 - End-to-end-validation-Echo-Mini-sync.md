@@ -4,11 +4,11 @@ title: 'End-to-end validation: Echo Mini sync'
 status: To Do
 assignee: []
 created_date: '2026-03-23 20:31'
-updated_date: '2026-03-23 20:31'
+updated_date: '2026-03-24 16:11'
 labels:
   - testing
   - e2e
-milestone: "Additional Device Support: Echo Mini"
+milestone: 'Additional Device Support: Echo Mini'
 dependencies:
   - TASK-223
   - TASK-224
@@ -66,3 +66,20 @@ Validate the full sync pipeline works end-to-end for the Echo Mini. This is the 
 - [ ] #6 Automated E2E test profile for mass-storage devices added to e2e-tests
 - [ ] #7 Manual validation on real Echo Mini hardware passes
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Research findings relevant to E2E (DOC-022)
+
+**Test scenarios informed by device behavior:**
+- Progressive JPEG artwork → must be converted to baseline during sync
+- Opus source files → must be transcoded (only format needing it)
+- Multi-disc album → album name gets '(disc N)' suffix
+- Compound tracknumber in source → cleaned to plain integer
+- Filename generation → verify FAT32/exFAT safe characters
+- Pre-existing music on device → verify not deleted
+- Dual-volume → syncs to correct volume
+
+**Test device available:** Firmware 3.2.0, Hardware 1.2.0, 128GB SD card
+<!-- SECTION:NOTES:END -->

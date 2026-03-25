@@ -3,6 +3,7 @@ id: doc-013
 title: 'Spec: Device Capabilities Interface'
 type: other
 created_date: '2026-03-23 13:55'
+updated_date: '2026-03-24 16:12'
 ---
 ## Overview
 
@@ -143,17 +144,31 @@ model = "ipod-classic"  # Determines screen size, capabilities
 
 The `DeviceCapabilities` interface doesn't need to change — only the source of the data differs (auto-detected vs user-configured).
 
-## Future Device: Echo Mini
+## Echo Mini (confirmed via firsthand testing, 2026-03-24)
 
 ```
 Echo Mini:
-  artworkSources: ['sidecar', 'embedded']  (prefers sidecar, falls back to embedded)
-  artworkMaxResolution: 320  (estimated from device screen)
-  supportedAudioCodecs: ['mp3', 'flac', 'aac']
+  artworkSources: ['embedded']            # Embedded JPEG only — no sidecar support (confirmed)
+  artworkMaxResolution: 600               # Optimal for instant load; 1000 max before slowdown
+  supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav']
   supportsVideo: false
 ```
 
-The Echo Mini reads sidecar artwork in preference to embedded. This means `optimized` mode should create an optimized sidecar AND strip embedded artwork. `fast` mode creates the sidecar but leaves the file untouched (direct copy).
+**Corrections from original spec (based on TASK-232/233 testing):**
+- **No sidecar artwork** — tested cover.jpg, folder.jpg, albumart.jpg; all ignored. Original spec assumed `['sidecar', 'embedded']`.
+- **ALAC confirmed working** — resolves conflicting community reports. Plays in both library and folder browser.
+- **artworkMaxResolution: 600** — not 320 as estimated. 600x600 at quality 85-90 (~50-100KB) loads instantly. No hard pixel limit, but byte size determines load speed.
+- **WAV included** — plays but not indexed by library scanner (folder browser only).
+- **Baseline JPEG only** — progressive JPEG silently ignored. Not reflected in DeviceCapabilities but critical for the artwork pipeline.
+
+**Implementation notes (not part of capabilities interface):**
+- Library displays filenames, not TITLE tags — adapter must generate meaningful filenames
+- Compound TRACKNUMBER ("3/10") not parsed — use clean integers
+- Disc number sorting inverted — workaround: append "(disc N)" to album name
+- FLAC must use Vorbis Comments (ID3 in FLAC ignored)
+- Opus files completely hidden from device (library and folder browser)
+- USB detection: VID 0x071b, PID 0x3203, manufacturer string "ECHO MINI"
+- Dual USB LUNs: internal (FAT32, 7.5GB) + SD card (exFAT)
 
 ## Extension Points
 

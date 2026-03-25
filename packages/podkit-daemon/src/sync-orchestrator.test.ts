@@ -194,7 +194,7 @@ describe('SyncOrchestrator', () => {
     // Second device appears — should be queued, not ignored
     await orchestrator.handleDeviceAppeared(makeDevice({ name: 'sdc1' }));
     expect(orchestrator.queue).toHaveLength(1);
-    expect(orchestrator.queue[0].name).toBe('sdc1');
+    expect(orchestrator.queue[0]!.name).toBe('sdc1');
 
     // Only first device's mount should have been called so far
     const mountCalls = calls.filter((c) => c.startsWith('mount:'));
@@ -571,5 +571,73 @@ describe('SyncOrchestrator', () => {
     // Eject should still proceed
     expect(cli.calls).toContain('eject');
     expect(orchestrator.isSyncing).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mass-storage sync cycle (noopMount / noopEject)
+// ---------------------------------------------------------------------------
+
+describe('SyncOrchestrator with mass-storage no-op runners', () => {
+  it('runs full cycle with noopMount returning path as mountPoint', async () => {
+    const { noopMount, noopEject } = await import('./cli-runner.js');
+
+    const calls: string[] = [];
+    const devicePath = '/mnt/music-player';
+
+    const orchestrator = new SyncOrchestrator({
+      runMount: async (disk, target) => {
+        calls.push(`mount:${disk}:${target}`);
+        return noopMount(disk, target);
+      },
+      runSync: async (device, options) => {
+        const label = options?.dryRun ? 'sync:dry-run' : 'sync:execute';
+        calls.push(`${label}:${device}`);
+        return okResult<SyncOutput>({
+          success: true,
+          dryRun: options?.dryRun ?? false,
+          result: { completed: 5, failed: 0, duration: 10 },
+        });
+      },
+      runEject: async (device) => {
+        calls.push(`eject:${device}`);
+        return noopEject(device);
+      },
+    });
+
+    const device = makeDevice({ name: devicePath, disk: devicePath });
+    await orchestrator.handleDeviceAppeared(device);
+
+    expect(orchestrator.isSyncing).toBe(false);
+
+    // Mount should have been called with the path as disk
+    expect(calls[0]).toStartWith(`mount:${devicePath}:`);
+
+    // Sync (dry-run and execute) should have been called with the path
+    // (noopMount returns disk as mountPoint, so the orchestrator uses that)
+    expect(calls).toContainEqual(`sync:dry-run:${devicePath}`);
+    expect(calls).toContainEqual(`sync:execute:${devicePath}`);
+
+    // Eject should have been called
+    expect(calls.some((c) => c.startsWith('eject:'))).toBe(true);
+  });
+
+  it('noopMount returns the disk parameter as mountPoint', async () => {
+    const { noopMount } = await import('./cli-runner.js');
+
+    const result = await noopMount('/mnt/player', '/tmp/podkit-unused');
+    expect(result.exitCode).toBe(0);
+    expect(result.json?.success).toBe(true);
+    expect(result.json?.mountPoint).toBe('/mnt/player');
+    expect(result.duration).toBe(0);
+  });
+
+  it('noopEject returns success', async () => {
+    const { noopEject } = await import('./cli-runner.js');
+
+    const result = await noopEject('/mnt/player');
+    expect(result.exitCode).toBe(0);
+    expect(result.json?.success).toBe(true);
+    expect(result.duration).toBe(0);
   });
 });

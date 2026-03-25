@@ -10,8 +10,7 @@
 import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { EncodingMode } from '../../transcode/types.js';
-import type { IPodTrack } from '../../ipod/types.js';
-import type { IpodDatabase } from '../../ipod/database.js';
+import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { isMusicMediaType } from '../../ipod/constants.js';
 import { applyTransforms, hasEnabledTransforms } from '../../transforms/pipeline.js';
@@ -28,6 +27,7 @@ import {
   calculateMusicOperationSize,
   categorizeSource,
   changesToMetadata,
+  isDeviceCompatible,
   isLosslessSource,
   willWarnLossyToLossy,
 } from '../music-planner.js';
@@ -72,6 +72,11 @@ export interface MusicExecutionConfig {
   artwork?: boolean;
   continueOnError?: boolean;
   retryConfig?: RetryConfig;
+  /**
+   * Resize embedded artwork to this maximum dimension (pixels, square).
+   * Used for devices where embedded artwork is the primary display source.
+   */
+  artworkResize?: number;
 }
 
 /** Music-specific diff options passed via handlerOptions */
@@ -171,7 +176,7 @@ function buildMusicMetadataChanges(
  * Delegates to existing music sync functions from matching.ts, differ.ts,
  * planner.ts, and executor.ts.
  */
-export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTrack> {
+export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceTrack> {
   readonly type = 'music';
 
   private executionConfig?: MusicExecutionConfig;
@@ -199,7 +204,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     return getMatchKey(source);
   }
 
-  generateDeviceMatchKey(device: IPodTrack): string {
+  generateDeviceMatchKey(device: DeviceTrack): string {
     return getMatchKey(device);
   }
 
@@ -209,8 +214,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     return keys.transformedKey;
   }
 
-  getDeviceItemId(device: IPodTrack): string {
-    // IPodTrack's filePath is unique per track on the iPod
+  getDeviceItemId(device: DeviceTrack): string {
+    // DeviceTrack's filePath is unique per track on the device
     return device.filePath;
   }
 
@@ -234,7 +239,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
 
   detectUpdates(
     source: CollectionTrack,
-    device: IPodTrack,
+    device: DeviceTrack,
     options: HandlerDiffOptions,
     matchInfo?: MatchInfo
   ): UpdateReason[] {
@@ -288,7 +293,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
   // ---- Post-processing ----
 
   postProcessDiff(
-    diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     options: HandlerDiffOptions
   ): void {
     const musicOpts = (options.handlerOptions ?? {}) as MusicHandlerDiffOptions;
@@ -315,7 +320,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
    * detectUpdates() only returns reason strings — this pass builds the
    * MetadataChange arrays needed for planning and display.
    */
-  private postProcessBuildChanges(diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>): void {
+  private postProcessBuildChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     for (const update of diff.toUpdate) {
       if (update.changes && update.changes.length > 0) continue; // already populated
 
@@ -359,7 +364,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
         ] as const;
         for (const field of metadataFields) {
           const sourceValue = update.source[field as keyof CollectionTrack];
-          const ipodValue = update.device[field as keyof IPodTrack];
+          const ipodValue = update.device[field as keyof DeviceTrack];
           if (metadataValuesDiffer(field, sourceValue, ipodValue)) {
             changes.push({
               field: field as MetadataChange['field'],
@@ -391,7 +396,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
    * the current config. If no sync tag, fall back to bitrate tolerance detection.
    */
   private postProcessPresetChanges(
-    diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     options: HandlerDiffOptions,
     musicOpts: MusicHandlerDiffOptions
   ): void {
@@ -414,7 +419,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       ? buildAudioSyncTag(resolvedQuality, musicOpts.encodingMode, musicOpts.customBitrate)
       : undefined;
 
-    const stillExisting: Array<{ source: CollectionTrack; device: IPodTrack }> = [];
+    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
 
     for (const match of diff.existing) {
       // Only check lossless-source tracks (lossy are copied as-is)
@@ -483,12 +488,12 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
    * copied as-is and re-encoding them would only degrade quality.
    */
   private postProcessForceTranscode(
-    diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     options: HandlerDiffOptions
   ): void {
     if (!options.forceTranscode) return;
 
-    const stillExisting: Array<{ source: CollectionTrack; device: IPodTrack }> = [];
+    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
 
     for (const match of diff.existing) {
       if (isSourceLossless(match.source)) {
@@ -520,7 +525,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
    * expected state for a freshly synced collection.
    */
   private postProcessSyncTags(
-    diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     musicOpts: MusicHandlerDiffOptions
   ): void {
     if (!(musicOpts.forceSyncTags && musicOpts.resolvedQuality)) return;
@@ -530,7 +535,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       musicOpts.encodingMode,
       musicOpts.customBitrate
     );
-    const stillExisting: Array<{ source: CollectionTrack; device: IPodTrack }> = [];
+    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
 
     for (const match of diff.existing) {
       const sourceLossless = isSourceLossless(match.source);
@@ -608,7 +613,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
    * This rewrites metadata on every matched track without re-transcoding or re-transferring.
    */
   private postProcessForceMetadata(
-    diff: UnifiedSyncDiff<CollectionTrack, IPodTrack>,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     options: HandlerDiffOptions
   ): void {
     if (!options.forceMetadata) return;
@@ -632,7 +637,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
 
       for (const field of allFields) {
         const sourceValue = source[field as keyof CollectionTrack];
-        const ipodValue = device[field as keyof IPodTrack];
+        const ipodValue = device[field as keyof DeviceTrack];
 
         if (metadataValuesDiffer(field, sourceValue, ipodValue)) {
           changes.push({
@@ -666,9 +671,29 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
   // ---- Planning ----
 
   planAdd(source: CollectionTrack, options: HandlerPlanOptions): SyncOperation {
+    // Device-level codec check: if the device natively supports this format,
+    // copy directly regardless of source category
+    if (isDeviceCompatible(source, options.supportedAudioCodecs)) {
+      if (options.primaryArtworkSource === 'embedded') {
+        return { type: 'add-optimized-copy', source };
+      }
+      if (options.transferMode === 'optimized') {
+        return { type: 'add-optimized-copy', source };
+      }
+      return { type: 'add-direct-copy', source };
+    }
+
     const category = categorizeSource(source);
 
     if (category === 'compatible-lossy') {
+      // Embedded-artwork devices need FFmpeg to resize artwork in all modes
+      if (options.primaryArtworkSource === 'embedded') {
+        return { type: 'add-optimized-copy', source };
+      }
+      // Database-artwork devices: fast/portable = direct copy, optimized = FFmpeg strip
+      if (options.transferMode === 'optimized') {
+        return { type: 'add-optimized-copy', source };
+      }
       return { type: 'add-direct-copy', source };
     }
 
@@ -696,13 +721,13 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     };
   }
 
-  planRemove(device: IPodTrack): SyncOperation {
+  planRemove(device: DeviceTrack): SyncOperation {
     return { type: 'remove', track: device };
   }
 
   planUpdate(
     source: CollectionTrack,
-    device: IPodTrack,
+    device: DeviceTrack,
     reasons: UpdateReason[],
     options?: HandlerPlanOptions,
     changes?: MetadataChange[]
@@ -726,6 +751,39 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
 
     // File-replacement upgrades
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
+      // Device-level codec check: if the device natively supports this format,
+      // always use a copy upgrade regardless of source category
+      if (isDeviceCompatible(source, options?.supportedAudioCodecs)) {
+        if (options?.primaryArtworkSource === 'embedded') {
+          return [
+            {
+              type: 'upgrade-optimized-copy',
+              source,
+              target: device,
+              reason: primaryReason as UpgradeReason,
+            },
+          ];
+        }
+        if (options?.transferMode === 'optimized') {
+          return [
+            {
+              type: 'upgrade-optimized-copy',
+              source,
+              target: device,
+              reason: primaryReason as UpgradeReason,
+            },
+          ];
+        }
+        return [
+          {
+            type: 'upgrade-direct-copy',
+            source,
+            target: device,
+            reason: primaryReason as UpgradeReason,
+          },
+        ];
+      }
+
       // Resolve the transcode preset for the upgrade (same logic as planAdd)
       const category = categorizeSource(source);
 
@@ -766,6 +824,16 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       }
 
       // compatible-lossy — copy upgrade
+      if (options?.primaryArtworkSource === 'embedded') {
+        return [
+          {
+            type: 'upgrade-optimized-copy',
+            source,
+            target: device,
+            reason: primaryReason as UpgradeReason,
+          },
+        ];
+      }
       return [
         {
           type: 'upgrade-direct-copy',
@@ -798,7 +866,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
     return estimateTransferTime(size);
   }
 
-  collectPlanWarnings(operations: SyncOperation[]): SyncWarning[] {
+  collectPlanWarnings(operations: SyncOperation[], options?: HandlerPlanOptions): SyncWarning[] {
     const warnings: SyncWarning[] = [];
     const lossyToLossyTracks: CollectionTrack[] = [];
 
@@ -816,6 +884,20 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
         type: 'lossy-to-lossy',
         message: `${lossyToLossyTracks.length} track${lossyToLossyTracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion (OGG, Opus). This is unavoidable but results in quality loss.`,
         tracks: lossyToLossyTracks,
+      });
+    }
+
+    // Warn when portable mode is used with an embedded-artwork device
+    if (
+      options?.primaryArtworkSource === 'embedded' &&
+      options?.transferMode === 'portable' &&
+      options?.artworkMaxResolution &&
+      operations.length > 0
+    ) {
+      warnings.push({
+        type: 'embedded-artwork-resize',
+        message: `Artwork resized to device maximum (${options.artworkMaxResolution}px) — this device reads artwork from embedded file data and cannot use full-resolution images. Portable mode preserves audio quality but artwork is optimized for the device.`,
+        tracks: [],
       });
     }
 
@@ -842,8 +924,15 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       return;
     }
 
-    const { transcoder, adapter, syncTagConfig, artwork, continueOnError, retryConfig } =
-      this.executionConfig;
+    const {
+      transcoder,
+      adapter,
+      syncTagConfig,
+      artwork,
+      continueOnError,
+      retryConfig,
+      artworkResize,
+    } = this.executionConfig;
 
     // Wrap operations in a SyncPlan for MusicExecutor
     const plan: SyncPlan = {
@@ -853,8 +942,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       warnings: [],
     };
 
-    // Create the 3-stage pipeline executor
-    const executor = new MusicExecutor({ ipod: ctx.ipod, transcoder });
+    // Create the 3-stage pipeline executor.
+    const executor = new MusicExecutor({ device: ctx.device, transcoder });
 
     // Execute and bridge events
     for await (const progress of executor.execute(plan, {
@@ -866,6 +955,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
       syncTagConfig,
       continueOnError,
       retryConfig,
+      artworkResize,
     })) {
       // Filter out batch-level events that don't map to per-operation progress
       if (progress.phase === 'updating-db' || progress.phase === 'complete') {
@@ -912,8 +1002,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, IPodTra
 
   // ---- Device ----
 
-  getDeviceItems(ipod: IpodDatabase): IPodTrack[] {
-    return ipod.getTracks().filter((track) => isMusicMediaType(track.mediaType));
+  getDeviceItems(device: DeviceAdapter): DeviceTrack[] {
+    return device.getTracks().filter((track) => isMusicMediaType(track.mediaType));
   }
 
   // ---- Display ----

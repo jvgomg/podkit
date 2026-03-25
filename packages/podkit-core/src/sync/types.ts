@@ -8,6 +8,7 @@
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
+import type { DeviceTrack } from '../device/adapter.js';
 import type {
   EncodingMode,
   QualityPreset,
@@ -15,13 +16,13 @@ import type {
   TranscodeProgress,
   TransferMode,
 } from '../transcode/types.js';
-import type { DeviceCapabilities } from '../ipod/capabilities.js';
+import type { DeviceCapabilities } from '../device/capabilities.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../video/types.js';
 import type { IPodVideo } from './video-differ.js';
 
 // Re-export for use within sync module
-export type { IPodTrack };
+export type { IPodTrack, DeviceTrack };
 
 /**
  * A matched pair of collection track and iPod track
@@ -166,7 +167,7 @@ export type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-los
 /**
  * Warning types that can occur during sync planning
  */
-export type SyncWarningType = 'lossy-to-lossy' | 'space-constraint';
+export type SyncWarningType = 'lossy-to-lossy' | 'space-constraint' | 'embedded-artwork-resize';
 
 /**
  * A warning generated during sync planning
@@ -219,36 +220,36 @@ export type SyncOperation =
   | {
       type: 'upgrade-transcode';
       source: CollectionTrack;
-      target: IPodTrack;
+      target: DeviceTrack;
       reason: UpgradeReason;
       preset: TranscodePresetRef;
     }
   | {
       type: 'upgrade-direct-copy';
       source: CollectionTrack;
-      target: IPodTrack;
+      target: DeviceTrack;
       reason: UpgradeReason;
     }
   | {
       type: 'upgrade-optimized-copy';
       source: CollectionTrack;
-      target: IPodTrack;
+      target: DeviceTrack;
       reason: UpgradeReason;
     }
   | {
       type: 'upgrade-artwork';
       source: CollectionTrack;
-      target: IPodTrack;
+      target: DeviceTrack;
       reason: UpgradeReason;
     }
   // Common operations (unchanged)
   | {
       type: 'remove';
-      track: IPodTrack;
+      track: DeviceTrack;
     }
   | {
       type: 'update-metadata';
-      track: IPodTrack;
+      track: DeviceTrack;
       metadata: Partial<TrackMetadata>;
     }
   // Video operations (unchanged)

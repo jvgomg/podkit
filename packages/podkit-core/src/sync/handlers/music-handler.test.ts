@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { MusicHandler, createMusicHandler } from './music-handler.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
-import type { IPodTrack } from '../../ipod/types.js';
+import type { DeviceTrack } from '../../device/adapter.js';
 import type { SyncOperation, SyncPlan } from '../types.js';
 
 // =============================================================================
@@ -21,7 +21,7 @@ function makeCollectionTrack(overrides: Partial<CollectionTrack> = {}): Collecti
   } as CollectionTrack;
 }
 
-function makeIpodTrack(overrides: Partial<IPodTrack> = {}): IPodTrack {
+function makeDeviceTrack(overrides: Partial<DeviceTrack> = {}): DeviceTrack {
   return {
     artist: 'Test Artist',
     title: 'Test Song',
@@ -32,24 +32,17 @@ function makeIpodTrack(overrides: Partial<IPodTrack> = {}): IPodTrack {
     sampleRate: 44100,
     size: 7680000,
     mediaType: 0x0001, // Audio
-    timeAdded: 0,
-    timeModified: 0,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
     hasArtwork: false,
     hasFile: true,
     compilation: false,
-    update: () => ({}) as IPodTrack,
+    update: () => ({}) as DeviceTrack,
     remove: () => {},
-    copyFile: () => ({}) as IPodTrack,
-    setArtwork: () => ({}) as IPodTrack,
-    setArtworkFromData: () => ({}) as IPodTrack,
-    removeArtwork: () => ({}) as IPodTrack,
+    copyFile: () => ({}) as DeviceTrack,
+    setArtwork: () => ({}) as DeviceTrack,
+    setArtworkFromData: () => ({}) as DeviceTrack,
+    removeArtwork: () => ({}) as DeviceTrack,
     ...overrides,
-  } as IPodTrack;
+  } as DeviceTrack;
 }
 
 // =============================================================================
@@ -90,7 +83,7 @@ describe('MusicHandler', () => {
 
   describe('generateDeviceMatchKey', () => {
     test('generates key for iPod track', () => {
-      const ipodTrack = makeIpodTrack({
+      const ipodTrack = makeDeviceTrack({
         artist: 'The Beatles',
         title: 'Hey Jude',
         album: 'Past Masters',
@@ -105,14 +98,14 @@ describe('MusicHandler', () => {
         title: 'Creep',
         album: 'Pablo Honey',
       });
-      const device = makeIpodTrack({ artist: 'Radiohead', title: 'Creep', album: 'Pablo Honey' });
+      const device = makeDeviceTrack({ artist: 'Radiohead', title: 'Creep', album: 'Pablo Honey' });
       expect(handler.generateMatchKey(source)).toBe(handler.generateDeviceMatchKey(device));
     });
   });
 
   describe('getDeviceItemId', () => {
     test('returns filePath', () => {
-      const device = makeIpodTrack({ filePath: ':iPod_Control:Music:F00:ABCD.mp3' });
+      const device = makeDeviceTrack({ filePath: ':iPod_Control:Music:F00:ABCD.mp3' });
       expect(handler.getDeviceItemId(device)).toBe(':iPod_Control:Music:F00:ABCD.mp3');
     });
   });
@@ -120,7 +113,7 @@ describe('MusicHandler', () => {
   describe('detectUpdates', () => {
     test('returns empty array when no updates needed', () => {
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 256 });
-      const device = makeIpodTrack({ bitrate: 256, filetype: 'MPEG audio file' });
+      const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
       const reasons = handler.detectUpdates(source, device, {});
       // May or may not detect changes depending on exact metadata — just verify it returns an array
       expect(Array.isArray(reasons)).toBe(true);
@@ -128,7 +121,7 @@ describe('MusicHandler', () => {
 
     test('filters file-replacement upgrades when skipUpgrades is set', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true, bitrate: 1000 });
-      const device = makeIpodTrack({ bitrate: 128, filetype: 'MPEG audio file' });
+      const device = makeDeviceTrack({ bitrate: 128, filetype: 'MPEG audio file' });
       const reasons = handler.detectUpdates(source, device, { skipUpgrades: true });
       // File-replacement reasons should be filtered
       const fileReplacement = [
@@ -170,11 +163,44 @@ describe('MusicHandler', () => {
         expect(op.preset.name).toBe('lossless');
       }
     });
+
+    test('returns optimized-copy for compatible lossy with embedded artwork source', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const op = handler.planAdd(source, {
+        qualityPreset: 'high',
+        primaryArtworkSource: 'embedded',
+      });
+      expect(op.type).toBe('add-optimized-copy');
+    });
+
+    test('returns direct-copy for compatible lossy with database artwork source', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const op = handler.planAdd(source, {
+        qualityPreset: 'high',
+        primaryArtworkSource: 'database',
+      });
+      expect(op.type).toBe('add-direct-copy');
+    });
+
+    test('returns direct-copy for compatible lossy with no artwork source (backward compat)', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const op = handler.planAdd(source, { qualityPreset: 'high' });
+      expect(op.type).toBe('add-direct-copy');
+    });
+
+    test('returns optimized-copy for compatible lossy with optimized transfer mode', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const op = handler.planAdd(source, {
+        qualityPreset: 'high',
+        transferMode: 'optimized',
+      });
+      expect(op.type).toBe('add-optimized-copy');
+    });
   });
 
   describe('planRemove', () => {
     test('returns remove operation', () => {
-      const device = makeIpodTrack();
+      const device = makeDeviceTrack();
       const op = handler.planRemove(device);
       expect(op.type).toBe('remove');
       if (op.type === 'remove') {
@@ -186,7 +212,7 @@ describe('MusicHandler', () => {
   describe('planUpdate', () => {
     test('returns upgrade for file-replacement reason', () => {
       const source = makeCollectionTrack();
-      const device = makeIpodTrack();
+      const device = makeDeviceTrack();
       const ops = handler.planUpdate(source, device, ['format-upgrade']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-transcode');
@@ -194,7 +220,7 @@ describe('MusicHandler', () => {
 
     test('returns update-metadata for metadata-only reason', () => {
       const source = makeCollectionTrack();
-      const device = makeIpodTrack();
+      const device = makeDeviceTrack();
       const ops = handler.planUpdate(source, device, ['metadata-correction']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('update-metadata');
@@ -202,9 +228,29 @@ describe('MusicHandler', () => {
 
     test('returns empty array for no reasons', () => {
       const source = makeCollectionTrack();
-      const device = makeIpodTrack();
+      const device = makeDeviceTrack();
       const ops = handler.planUpdate(source, device, []);
       expect(ops).toEqual([]);
+    });
+
+    test('returns upgrade-optimized-copy for compatible lossy with embedded artwork source', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const device = makeDeviceTrack();
+      const ops = handler.planUpdate(source, device, ['format-upgrade'], {
+        primaryArtworkSource: 'embedded',
+      });
+      expect(ops.length).toBe(1);
+      expect(ops[0]!.type).toBe('upgrade-optimized-copy');
+    });
+
+    test('returns upgrade-direct-copy for compatible lossy with database artwork source', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const device = makeDeviceTrack();
+      const ops = handler.planUpdate(source, device, ['format-upgrade'], {
+        primaryArtworkSource: 'database',
+      });
+      expect(ops.length).toBe(1);
+      expect(ops[0]!.type).toBe('upgrade-direct-copy');
     });
   });
 
@@ -219,7 +265,7 @@ describe('MusicHandler', () => {
     });
 
     test('returns 0 for remove operation', () => {
-      const op: SyncOperation = { type: 'remove', track: makeIpodTrack() };
+      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
       expect(handler.estimateSize(op)).toBe(0);
     });
   });
@@ -234,7 +280,7 @@ describe('MusicHandler', () => {
     });
 
     test('returns small number for remove operation', () => {
-      const op: SyncOperation = { type: 'remove', track: makeIpodTrack() };
+      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
       expect(handler.estimateTime(op)).toBe(0.1);
     });
   });
@@ -260,9 +306,59 @@ describe('MusicHandler', () => {
     test('returns artist - title for remove', () => {
       const op: SyncOperation = {
         type: 'remove',
-        track: makeIpodTrack({ artist: 'Nirvana', title: 'Smells Like Teen Spirit' }),
+        track: makeDeviceTrack({ artist: 'Nirvana', title: 'Smells Like Teen Spirit' }),
       };
       expect(handler.getDisplayName(op)).toBe('Nirvana - Smells Like Teen Spirit');
+    });
+  });
+
+  describe('collectPlanWarnings', () => {
+    test('produces embedded-artwork-resize warning for portable + embedded artwork', () => {
+      const ops: SyncOperation[] = [
+        {
+          type: 'add-optimized-copy',
+          source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
+        },
+      ];
+      const warnings = handler.collectPlanWarnings(ops, {
+        primaryArtworkSource: 'embedded',
+        transferMode: 'portable',
+        artworkMaxResolution: 600,
+      });
+      const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
+      expect(resizeWarning).toBeDefined();
+      expect(resizeWarning!.message).toContain('600px');
+    });
+
+    test('no embedded-artwork-resize warning for database artwork', () => {
+      const ops: SyncOperation[] = [
+        {
+          type: 'add-direct-copy',
+          source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
+        },
+      ];
+      const warnings = handler.collectPlanWarnings(ops, {
+        primaryArtworkSource: 'database',
+        transferMode: 'portable',
+      });
+      const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
+      expect(resizeWarning).toBeUndefined();
+    });
+
+    test('no embedded-artwork-resize warning for non-portable mode', () => {
+      const ops: SyncOperation[] = [
+        {
+          type: 'add-optimized-copy',
+          source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
+        },
+      ];
+      const warnings = handler.collectPlanWarnings(ops, {
+        primaryArtworkSource: 'embedded',
+        transferMode: 'fast',
+        artworkMaxResolution: 600,
+      });
+      const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
+      expect(resizeWarning).toBeUndefined();
     });
   });
 
@@ -270,7 +366,7 @@ describe('MusicHandler', () => {
     test('adds force-transcode for lossless source when no file-replacement upgrade exists', () => {
       // transcodingActive suppresses format-upgrade, then forceTranscode can add force-transcode
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file' });
       const reasons = handler.detectUpdates(source, device, {
         forceTranscode: true,
         transcodingActive: true,
@@ -280,7 +376,7 @@ describe('MusicHandler', () => {
 
     test('does not add force-transcode for lossy source', () => {
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
       expect(reasons).not.toContain('force-transcode');
     });
@@ -289,7 +385,7 @@ describe('MusicHandler', () => {
       // Lossless source with lossy device triggers format-upgrade, which is a file-replacement
       // upgrade, so force-transcode is not added (redundant)
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
       expect(reasons).toContain('format-upgrade');
       expect(reasons).not.toContain('force-transcode');
@@ -297,7 +393,7 @@ describe('MusicHandler', () => {
 
     test('prepends force-transcode as first reason when added', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file' });
       const reasons = handler.detectUpdates(source, device, {
         forceTranscode: true,
         transcodingActive: true,
@@ -309,7 +405,7 @@ describe('MusicHandler', () => {
   describe('detectUpdates with transcodingActive', () => {
     test('suppresses format-upgrade for AAC device when transcodingActive is true', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeIpodTrack({ filetype: 'AAC audio file' });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file' });
       // Without transcodingActive, lossless→AAC should detect format-upgrade
       const reasonsWithout = handler.detectUpdates(source, device, {});
       expect(reasonsWithout).toContain('format-upgrade');
@@ -320,7 +416,7 @@ describe('MusicHandler', () => {
 
     test('preserves format-upgrade for MP3 device even with transcodingActive', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeIpodTrack({ filetype: 'MPEG audio file' });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       // MP3 on iPod means the track was copied before the source was upgraded to FLAC.
       // This IS a genuine upgrade opportunity even when transcoding is active.
       const reasons = handler.detectUpdates(source, device, { transcodingActive: true });
@@ -337,7 +433,7 @@ describe('MusicHandler', () => {
             type: 'add-direct-copy',
             source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
           },
-          { type: 'remove', track: makeIpodTrack() },
+          { type: 'remove', track: makeDeviceTrack() },
         ],
         estimatedSize: 10000000,
         estimatedTime: 120,

@@ -1,5 +1,5 @@
 /**
- * Sync command - synchronize music and/or video collections to iPod
+ * Sync command - synchronize music and/or video collections to device
  *
  * This command:
  * 1. Resolves collections and device from config or CLI flags
@@ -56,6 +56,7 @@ import {
 import { createShutdownController } from '../shutdown.js';
 import { MusicPresenter } from './music-presenter.js';
 import { VideoPresenter } from './video-presenter.js';
+import { openDevice } from './open-device.js';
 import {
   genericSyncCollection,
   type MusicContentConfig,
@@ -521,7 +522,7 @@ const syncTypeOption = new Option(
 syncTypeOption.argChoices = [...CONTENT_TYPES];
 
 export const syncCommand = new Command('sync')
-  .description('sync music and/or video collections to iPod')
+  .description('sync music and/or video collections to device')
   .addOption(syncTypeOption)
   .option('-c, --collection <name>', 'collection name to sync (searches music and video)')
   .option('-n, --dry-run', 'show what would be synced without making changes')
@@ -565,8 +566,8 @@ export const syncCommand = new Command('sync')
     'rewrite metadata on all matched tracks without re-transcoding or re-transferring files'
   )
   .option('--check-artwork', 'detect artwork changes by comparing content hashes')
-  .option('--delete', 'remove tracks from iPod not in source')
-  .option('--eject', 'eject iPod after successful sync')
+  .option('--delete', 'remove tracks from device not in source')
+  .option('--eject', 'eject device after successful sync')
   .action(async (options: SyncOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const startTime = Date.now();
@@ -651,6 +652,11 @@ export const syncCommand = new Command('sync')
     }
 
     let deviceConfig = resolvedDevice?.config;
+
+    // Determine device type — undefined or 'ipod' means iPod (backward compat)
+    let deviceType = deviceConfig?.type;
+    let isIpodDevice = !deviceType || deviceType === 'ipod';
+
     let derived = deriveSettings(deviceConfig);
     // Unpack into local variables that downstream code uses
     let effectiveTransforms = derived.transforms;
@@ -762,7 +768,7 @@ export const syncCommand = new Command('sync')
     } else {
       const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
-      if (deviceIdentity?.volumeUuid) {
+      if (deviceIdentity?.volumeUuid || deviceIdentity?.path) {
         out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
       }
 
@@ -799,7 +805,11 @@ export const syncCommand = new Command('sync')
       effectiveCustomBitrate = derived.customBitrate;
       effectiveBitrateTolerance = derived.bitrateTolerance;
 
-      out.verbose1(`Auto-matched iPod to configured device '${resolved.matchedDevice.name}'`);
+      // Re-derive device type after auto-match (the matched device may have a type)
+      deviceType = deviceConfig?.type;
+      isIpodDevice = !deviceType || deviceType === 'ipod';
+
+      out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
     }
 
     // Show hint if resolver provided one (e.g., "Run 'podkit device add'")
@@ -818,9 +828,10 @@ export const syncCommand = new Command('sync')
           error: `Device path not found: ${devicePath}`,
         },
         () => {
-          out.error(`iPod not found at: ${devicePath}`);
+          const label = isIpodDevice ? 'iPod' : 'Device';
+          out.error(`${label} not found at: ${devicePath}`);
           out.error('');
-          out.error('Make sure the iPod is connected and mounted.');
+          out.error(`Make sure the ${label.toLowerCase()} is connected and mounted.`);
         }
       );
       process.exitCode = 1;
@@ -851,72 +862,92 @@ export const syncCommand = new Command('sync')
       return;
     }
 
-    // ----- Open iPod database -----
-    const dbSpinner = out.spinner('Opening iPod database...');
+    // ----- Open device -----
+    let adapter: import('@podkit/core').DeviceAdapter;
+    let ipod: Awaited<ReturnType<typeof core.IpodDatabase.open>> | undefined;
+    let deviceSupportsAlac = false;
+    let deviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
 
-    let ipod: Awaited<ReturnType<typeof core.IpodDatabase.open>>;
-    try {
-      ipod = await core.IpodDatabase.open(devicePath);
-    } catch (err) {
-      dbSpinner.stop();
-      const isIpodError = err instanceof core.IpodError;
-      const message = err instanceof Error ? err.message : 'Failed to open iPod database';
-      out.result(
-        { success: false, dryRun, device: devicePath, error: `Failed to open iPod: ${message}` },
-        () => {
-          out.error(`Cannot read iPod database at: ${devicePath}`);
-          out.error('');
-          if (isIpodError) {
-            out.error('This path does not appear to be a valid iPod:');
-            out.error('  - Missing iTunesDB file');
-            out.error('  - Database may be corrupted');
-          } else {
-            out.error(`Error: ${message}`);
-          }
-          if (out.isVerbose) {
-            out.error('');
-            out.error(`Details: ${message}`);
-          }
+    {
+      const spinnerLabel = isIpodDevice ? 'Opening iPod database...' : 'Opening device...';
+      const dbSpinner = out.spinner(spinnerLabel);
+
+      let deviceResult: import('./open-device.js').OpenDeviceResult;
+      try {
+        deviceResult = await openDevice(core, devicePath, deviceConfig);
+      } catch (err) {
+        dbSpinner.stop();
+        const isIpodError = err instanceof core.IpodError;
+        const message = err instanceof Error ? err.message : 'Failed to open device';
+
+        if (isIpodDevice) {
+          out.result(
+            {
+              success: false,
+              dryRun,
+              device: devicePath,
+              error: `Failed to open iPod: ${message}`,
+            },
+            () => {
+              out.error(`Cannot read iPod database at: ${devicePath}`);
+              out.error('');
+              if (isIpodError) {
+                out.error('This path does not appear to be a valid iPod:');
+                out.error('  - Missing iTunesDB file');
+                out.error('  - Database may be corrupted');
+              } else {
+                out.error(`Error: ${message}`);
+              }
+              if (out.isVerbose) {
+                out.error('');
+                out.error(`Details: ${message}`);
+              }
+            }
+          );
+        } else {
+          out.result(errorOutput(`Failed to open device: ${message}`), () =>
+            out.error(`Failed to open device at: ${devicePath}`)
+          );
         }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    dbSpinner.stop('iPod database opened');
-
-    // ----- Pre-flight device validation -----
-    const ipodDeviceInfo = ipod.getInfo().device;
-    if (ipodDeviceInfo) {
-      const deviceValidation = core.validateDevice(ipodDeviceInfo, devicePath);
-
-      // Block sync for unsupported devices
-      if (!deviceValidation.supported) {
-        const messages = core.formatValidationMessages(deviceValidation);
-        out.result({ success: false, dryRun, device: devicePath, error: messages[0] }, () => {
-          out.newline();
-          for (const msg of messages) {
-            out.print(msg);
-          }
-        });
-        ipod.close();
         process.exitCode = 1;
         return;
       }
 
-      // Show warnings for unknown model
-      for (const issue of deviceValidation.issues) {
-        out.warn(issue.message);
-        if (issue.suggestion) {
-          out.print(`  ${issue.suggestion}`);
+      dbSpinner.stop(isIpodDevice ? 'iPod database opened' : 'Device opened');
+
+      adapter = deviceResult.adapter;
+      ipod = deviceResult.ipod;
+      deviceSupportsAlac = deviceResult.deviceSupportsAlac;
+      deviceCapabilities = deviceResult.capabilities;
+
+      // Pre-flight device validation (iPod only)
+      if (ipod) {
+        const ipodDeviceInfo = ipod.getInfo().device;
+        if (ipodDeviceInfo) {
+          const deviceValidation = core.validateDevice(ipodDeviceInfo, devicePath);
+
+          if (!deviceValidation.supported) {
+            const messages = core.formatValidationMessages(deviceValidation);
+            out.result({ success: false, dryRun, device: devicePath, error: messages[0] }, () => {
+              out.newline();
+              for (const msg of messages) {
+                out.print(msg);
+              }
+            });
+            ipod.close();
+            process.exitCode = 1;
+            return;
+          }
+
+          for (const issue of deviceValidation.issues) {
+            out.warn(issue.message);
+            if (issue.suggestion) {
+              out.print(`  ${issue.suggestion}`);
+            }
+          }
         }
       }
     }
-
-    // Determine ALAC capability from device generation
-    const deviceSupportsAlac = ipodDeviceInfo?.generation
-      ? core.supportsAlac(ipodDeviceInfo.generation)
-      : false;
 
     // Track overall results
     let totalCompleted = 0;
@@ -961,6 +992,7 @@ export const syncCommand = new Command('sync')
             checkArtwork:
               options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
             transcoder,
+            capabilities: deviceCapabilities,
           };
           const result = await genericSyncCollection(
             new MusicPresenter(),
@@ -971,7 +1003,7 @@ export const syncCommand = new Command('sync')
             dryRun,
             removeOrphans,
             musicConfig,
-            ipod,
+            adapter,
             core,
             shutdown.signal,
             shutdown
@@ -991,8 +1023,8 @@ export const syncCommand = new Command('sync')
 
           if (result.interrupted) {
             if (!dryRun && totalCompleted > 0) {
-              out.print('Saving iPod database...');
-              await ipod.save();
+              out.print('Saving device database...');
+              await adapter.save();
               out.print('Database saved. Sync interrupted.');
             }
             process.exitCode = 130;
@@ -1003,14 +1035,12 @@ export const syncCommand = new Command('sync')
 
       // ----- Sync Video Collections -----
       if (hasVideoToSync && !shutdown.isShuttingDown) {
-        const ipodInfo = ipod.getInfo();
-        const supportsVideo = ipodInfo.device?.supportsVideo ?? false;
-
-        if (!supportsVideo) {
+        // Check video support via device capabilities
+        if (!(deviceCapabilities?.supportsVideo ?? false)) {
           const explicitVideo = syncType === 'video';
           out.newline();
           if (explicitVideo) {
-            out.warn('This iPod does not support video playback. No video files will be synced.');
+            out.warn('This device does not support video playback. No video files will be synced.');
           } else {
             out.print('Skipping video: device does not support video playback.');
           }
@@ -1037,7 +1067,7 @@ export const syncCommand = new Command('sync')
               dryRun,
               removeOrphans,
               videoConfig,
-              ipod,
+              adapter,
               core,
               shutdown.signal,
               shutdown
@@ -1055,8 +1085,8 @@ export const syncCommand = new Command('sync')
 
             if (result.interrupted) {
               if (!dryRun && totalCompleted > 0) {
-                out.print('Saving iPod database...');
-                await ipod.save();
+                out.print('Saving device database...');
+                await adapter.save();
                 out.print('Database saved. Video sync interrupted.');
               }
               process.exitCode = 130;
@@ -1066,7 +1096,7 @@ export const syncCommand = new Command('sync')
 
           // Save database after video sync (not in dry-run)
           if (!dryRun && !shutdown.isShuttingDown) {
-            await ipod.save();
+            await adapter.save();
           }
         }
       }
@@ -1081,7 +1111,7 @@ export const syncCommand = new Command('sync')
           out.print('=== Sync Interrupted ===');
           out.newline();
           if (totalCompleted > 0) {
-            out.print(`Saved ${formatNumber(totalCompleted)} completed items to iPod.`);
+            out.print(`Saved ${formatNumber(totalCompleted)} completed items to device.`);
           }
           if (totalFailed > 0) {
             out.print(`${formatNumber(totalFailed)} items failed before interruption.`);
@@ -1164,9 +1194,9 @@ export const syncCommand = new Command('sync')
               },
             });
             if (ejectResult.success) {
-              out.print('iPod ejected. Safe to disconnect.');
+              out.print('Device ejected. Safe to disconnect.');
             } else {
-              out.print('Could not eject iPod automatically.');
+              out.print('Could not eject device automatically.');
               if (ejectResult.error) {
                 out.print(`  ${ejectResult.error}`);
               }
@@ -1184,6 +1214,6 @@ export const syncCommand = new Command('sync')
       }
     } finally {
       shutdown.uninstall();
-      ipod.close();
+      adapter.close();
     }
   });
