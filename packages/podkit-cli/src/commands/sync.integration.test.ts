@@ -11,28 +11,15 @@ import {
   getMusicPlanSummary,
   createDirectoryAdapter,
 } from '@podkit/core';
-import type { CollectionTrack, IPodTrack, SyncDiff } from '@podkit/core';
+import type { CollectionTrack, DeviceTrack } from '@podkit/core';
 
 /**
  * Compute music diff using the unified SyncDiffer + MusicHandler pipeline.
- * Converts the result to SyncDiff for compatibility with createMusicPlan.
  */
-function computeDiff(collectionTracks: CollectionTrack[], ipodTracks: IPodTrack[]): SyncDiff {
+function computeDiff(collectionTracks: CollectionTrack[], ipodTracks: DeviceTrack[]) {
   const handler = createMusicHandler();
   const differ = createSyncDiffer(handler);
-  const unified = differ.diff(collectionTracks, ipodTracks);
-  return {
-    toAdd: unified.toAdd,
-    toRemove: unified.toRemove as IPodTrack[],
-    existing: unified.existing.map((e) => ({ collection: e.source, ipod: e.device as IPodTrack })),
-    toUpdate: unified.toUpdate.map((u) => ({
-      source: u.source,
-      ipod: u.device as IPodTrack,
-      reason: u.reasons[0]!,
-      changes: u.changes ?? [],
-      syncTag: u.syncTag,
-    })),
-  };
+  return differ.diff(collectionTracks, ipodTracks);
 }
 
 /**
