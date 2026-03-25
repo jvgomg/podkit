@@ -24,6 +24,8 @@ import type {
   DeviceTrackMetadata,
 } from './adapter.js';
 import type { DeviceCapabilities } from './capabilities.js';
+import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
+import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
 import {
   MUSIC_DIR,
   VIDEO_DIR,
@@ -140,6 +142,9 @@ export class MassStorageTrack implements DeviceTrack {
   readonly compilation: boolean;
   readonly mediaType: number;
 
+  // Sync tag (parsed from comment)
+  readonly syncTag: SyncTagData | null;
+
   // Video-specific (not used for audio-only devices, but required by interface)
   readonly tvShow?: string;
   readonly tvEpisode?: string;
@@ -204,6 +209,7 @@ export class MassStorageTrack implements DeviceTrack {
     this.compilation = opts.compilation ?? false;
     this.mediaType = opts.mediaType ?? 1; // 1 = audio
     this.managed = opts.managed;
+    this.syncTag = parseSyncTag(this.comment);
   }
 
   /**
@@ -453,6 +459,9 @@ export class MassStorageAdapter implements DeviceAdapter {
     const uniquePath = deduplicatePath(desiredPath, this.allocatedPaths);
     this.allocatedPaths.add(uniquePath);
 
+    // If a syncTag is provided, embed it into the comment field
+    const comment = input.syncTag ? writeSyncTag(input.comment, input.syncTag) : input.comment;
+
     const track = new MassStorageTrack({
       mountPoint: this.mountPoint,
       filePath: uniquePath,
@@ -462,7 +471,7 @@ export class MassStorageAdapter implements DeviceAdapter {
       albumArtist: input.albumArtist,
       genre: input.genre,
       composer: input.composer,
-      comment: input.comment,
+      comment,
       trackNumber: input.trackNumber,
       discNumber: input.discNumber,
       totalDiscs: input.totalDiscs,
@@ -485,8 +494,8 @@ export class MassStorageAdapter implements DeviceAdapter {
 
     // Queue comment write — the file doesn't exist yet (copyFile comes later),
     // but the write is deferred to save() by which point the file will exist.
-    if (input.comment) {
-      this.pendingCommentWrites.set(uniquePath, input.comment);
+    if (comment) {
+      this.pendingCommentWrites.set(uniquePath, comment);
     }
 
     return track;
@@ -602,6 +611,34 @@ export class MassStorageAdapter implements DeviceAdapter {
     }
 
     return updated;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sync tags
+  // ---------------------------------------------------------------------------
+
+  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack {
+    const msTrack = track as MassStorageTrack;
+    const currentComment = msTrack.comment;
+    const existingTag = parseSyncTag(currentComment);
+    // Merge: existing tag fields + update fields (update wins)
+    const merged: SyncTagData = existingTag
+      ? { ...existingTag, ...update }
+      : { quality: 'copy', ...update };
+    const newComment = writeSyncTag(currentComment, merged);
+    return this.updateTrack(track, { comment: newComment });
+  }
+
+  clearSyncTag(track: DeviceTrack): DeviceTrack {
+    const msTrack = track as MassStorageTrack;
+    const currentComment = msTrack.comment;
+    if (!parseSyncTag(currentComment)) {
+      return track; // No sync tag to clear
+    }
+    // Strip the [podkit:...] block from the comment
+    const cleaned =
+      (currentComment ?? '').replace(/\s*\[podkit:v\d+[^\]]*\]\s*/g, '').trim() || undefined;
+    return this.updateTrack(track, { comment: cleaned });
   }
 
   // ---------------------------------------------------------------------------

@@ -57,6 +57,14 @@ export interface SyncTagData {
   transferMode?: string;
 }
 
+/**
+ * Partial sync tag data for update/upsert operations.
+ *
+ * All fields are optional, allowing callers to update only specific fields
+ * (e.g., just adding an artworkHash) without re-specifying the full tag.
+ */
+export type SyncTagUpdate = Partial<SyncTagData>;
+
 // =============================================================================
 // Constants
 // =============================================================================

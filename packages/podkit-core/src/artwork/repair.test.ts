@@ -34,6 +34,7 @@ function makeIpodTrack(overrides: {
     artist: overrides.artist,
     album: overrides.album,
     comment: overrides.comment,
+    syncTag: null,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,

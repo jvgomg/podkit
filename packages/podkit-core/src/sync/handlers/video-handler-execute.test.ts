@@ -648,10 +648,9 @@ describe('VideoHandler execution', () => {
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
       const trackInput = mockIpod.addTrack.mock.calls[0]![0];
 
-      // The handler should have mutated the trackInput to include a sync tag
-      expect(trackInput.comment).toBeDefined();
-      expect(trackInput.comment).toContain('[podkit:v1');
-      expect(trackInput.comment).toContain('quality=medium');
+      // The handler should have set syncTag on the trackInput
+      expect(trackInput.syncTag).toBeDefined();
+      expect(trackInput.syncTag).toMatchObject({ quality: 'medium' });
     });
 
     it('does not write sync tag when videoQuality is not set', async () => {
@@ -667,8 +666,8 @@ describe('VideoHandler execution', () => {
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
       const trackInput = mockIpod.addTrack.mock.calls[0]![0];
-      // The mock createVideoTrackInput returns no comment field
-      expect(trackInput.comment).toBeUndefined();
+      // No syncTag should be set when videoQuality is not configured
+      expect(trackInput.syncTag).toBeUndefined();
     });
 
     it('writes sync tag with different quality presets', async () => {
@@ -685,7 +684,7 @@ describe('VideoHandler execution', () => {
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
       const trackInput = mockIpod.addTrack.mock.calls[0]![0];
-      expect(trackInput.comment).toContain('quality=high');
+      expect(trackInput.syncTag).toMatchObject({ quality: 'high' });
     });
   });
 });
