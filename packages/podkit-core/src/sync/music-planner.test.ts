@@ -25,7 +25,9 @@ import {
   createMusicPlan,
   estimateCopySize,
   estimateTranscodedSize,
+  fileTypeToAudioCodec,
   getMusicPlanSummary,
+  isDeviceCompatible,
   isIPodCompatible,
   isLosslessSource,
   requiresTranscoding,
@@ -326,6 +328,69 @@ describe('willWarnLossyToLossy', () => {
 });
 
 // =============================================================================
+// fileTypeToAudioCodec Tests
+// =============================================================================
+
+describe('fileTypeToAudioCodec', () => {
+  it('maps standard file types to codecs', () => {
+    expect(fileTypeToAudioCodec('mp3')).toBe('mp3');
+    expect(fileTypeToAudioCodec('flac')).toBe('flac');
+    expect(fileTypeToAudioCodec('ogg')).toBe('ogg');
+    expect(fileTypeToAudioCodec('opus')).toBe('opus');
+    expect(fileTypeToAudioCodec('wav')).toBe('wav');
+    expect(fileTypeToAudioCodec('aiff')).toBe('aiff');
+    expect(fileTypeToAudioCodec('alac')).toBe('alac');
+  });
+
+  it('maps m4a to aac by default', () => {
+    expect(fileTypeToAudioCodec('m4a')).toBe('aac');
+  });
+
+  it('maps m4a with alac codec to alac', () => {
+    expect(fileTypeToAudioCodec('m4a', 'alac')).toBe('alac');
+    expect(fileTypeToAudioCodec('m4a', 'ALAC')).toBe('alac');
+  });
+
+  it('maps aac extension to aac', () => {
+    expect(fileTypeToAudioCodec('aac')).toBe('aac');
+  });
+});
+
+// =============================================================================
+// isDeviceCompatible Tests
+// =============================================================================
+
+describe('isDeviceCompatible', () => {
+  it('returns false when no supported codecs provided', () => {
+    const track = createCollectionTrack('A', 'B', 'C', 'flac');
+    expect(isDeviceCompatible(track, undefined)).toBe(false);
+    expect(isDeviceCompatible(track, [])).toBe(false);
+  });
+
+  it('returns true when track codec is in supported list', () => {
+    const track = createCollectionTrack('A', 'B', 'C', 'flac');
+    expect(isDeviceCompatible(track, ['aac', 'mp3', 'flac'])).toBe(true);
+  });
+
+  it('returns false when track codec is not in supported list', () => {
+    const track = createCollectionTrack('A', 'B', 'C', 'flac');
+    expect(isDeviceCompatible(track, ['aac', 'mp3'])).toBe(false);
+  });
+
+  it('handles m4a files with AAC codec', () => {
+    const track = createCollectionTrack('A', 'B', 'C', 'm4a');
+    expect(isDeviceCompatible(track, ['aac'])).toBe(true);
+    expect(isDeviceCompatible(track, ['mp3'])).toBe(false);
+  });
+
+  it('handles m4a files with ALAC codec', () => {
+    const track = createCollectionTrack('A', 'B', 'C', 'm4a', { codec: 'alac' });
+    expect(isDeviceCompatible(track, ['alac'])).toBe(true);
+    expect(isDeviceCompatible(track, ['aac'])).toBe(false);
+  });
+});
+
+// =============================================================================
 // Size Estimation Tests
 // =============================================================================
 
@@ -622,6 +687,290 @@ describe('createMusicPlan - operation types', () => {
     if (plan.operations[0]!.type === 'add-transcode') {
       expect(plan.operations[0]!.preset.name).toBe('low');
     }
+  });
+});
+
+// =============================================================================
+// Embedded Artwork Device Tests
+// =============================================================================
+
+describe('createMusicPlan - embedded artwork devices', () => {
+  const embeddedCapabilities = {
+    artworkSources: ['embedded' as const],
+    artworkMaxResolution: 600,
+    supportedAudioCodecs: ['aac' as const, 'mp3' as const, 'flac' as const],
+    supportsVideo: false,
+  };
+
+  it('routes MP3 through optimized-copy for embedded-artwork device (fast mode)', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: embeddedCapabilities,
+      transferMode: 'fast',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('routes MP3 through optimized-copy for embedded-artwork device (portable mode)', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: embeddedCapabilities,
+      transferMode: 'portable',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('routes AAC through optimized-copy for embedded-artwork device', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'm4a')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: embeddedCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('copies FLAC as-is when device supports FLAC natively', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: embeddedCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    // Device supports FLAC natively — copy via optimized-copy (embedded artwork resize)
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('transcodes FLAC when device does not support FLAC', () => {
+    const noFlacCapabilities = {
+      artworkSources: ['embedded' as const],
+      artworkMaxResolution: 600,
+      supportedAudioCodecs: ['aac' as const, 'mp3' as const],
+      supportsVideo: false,
+    };
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: noFlacCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+  });
+
+  it('produces embedded-artwork-resize warning in portable mode', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: embeddedCapabilities,
+      transferMode: 'portable',
+    });
+
+    const artworkWarning = plan.warnings.find((w) => w.type === 'embedded-artwork-resize');
+    expect(artworkWarning).toBeDefined();
+    expect(artworkWarning!.message).toContain('600px');
+  });
+
+  it('does not produce embedded-artwork-resize warning in fast mode', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: embeddedCapabilities,
+      transferMode: 'fast',
+    });
+
+    const artworkWarning = plan.warnings.find((w) => w.type === 'embedded-artwork-resize');
+    expect(artworkWarning).toBeUndefined();
+  });
+
+  it('database-artwork device still uses direct-copy in fast mode', () => {
+    const databaseCapabilities = {
+      artworkSources: ['database' as const],
+      artworkMaxResolution: 320,
+      supportedAudioCodecs: ['aac' as const, 'mp3' as const],
+      supportsVideo: true,
+    };
+
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: databaseCapabilities,
+      transferMode: 'fast',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+  });
+});
+
+// =============================================================================
+// Device Codec Compatibility Tests
+// =============================================================================
+
+describe('createMusicPlan - device codec compatibility', () => {
+  // Echo Mini-like device: supports FLAC, OGG, WAV, etc. natively
+  const echoMiniCapabilities = {
+    artworkSources: ['embedded' as const],
+    artworkMaxResolution: 600,
+    supportedAudioCodecs: [
+      'aac' as const,
+      'alac' as const,
+      'mp3' as const,
+      'flac' as const,
+      'ogg' as const,
+      'wav' as const,
+    ],
+    supportsVideo: false,
+  };
+
+  it('copies FLAC as-is when device supports FLAC natively', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: echoMiniCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('copies OGG as-is when device supports OGG natively (no lossy-to-lossy warning)', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'ogg')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: echoMiniCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+    expect(plan.warnings).toHaveLength(0);
+  });
+
+  it('copies WAV as-is when device supports WAV natively', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'wav')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: echoMiniCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-optimized-copy');
+  });
+
+  it('transcodes Opus when device does not support Opus', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'opus')],
+    };
+
+    // echoMiniCapabilities does not include 'opus'
+    const plan = createMusicPlan(diff, { capabilities: echoMiniCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+  });
+
+  it('uses direct-copy for FLAC on database-artwork device that supports FLAC', () => {
+    const databaseFlacCapabilities = {
+      artworkSources: ['database' as const],
+      artworkMaxResolution: 320,
+      supportedAudioCodecs: ['aac' as const, 'mp3' as const, 'flac' as const],
+      supportsVideo: false,
+    };
+
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    const plan = createMusicPlan(diff, {
+      capabilities: databaseFlacCapabilities,
+      transferMode: 'fast',
+    });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-direct-copy');
+  });
+
+  it('still transcodes FLAC for iPod (no FLAC in supportedAudioCodecs)', () => {
+    const ipodCapabilities = {
+      artworkSources: ['database' as const],
+      artworkMaxResolution: 320,
+      supportedAudioCodecs: ['aac' as const, 'mp3' as const],
+      supportsVideo: true,
+    };
+
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: ipodCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-transcode');
+  });
+
+  it('copies FLAC for upgrade when device supports FLAC', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toUpdate: [
+        {
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
+          ipod: createIPodTrack('Artist', 'Song', 'Album'),
+          reason: 'format-upgrade',
+          changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
+        },
+      ],
+    };
+
+    const plan = createMusicPlan(diff, { capabilities: echoMiniCapabilities });
+
+    expect(plan.operations).toHaveLength(1);
+    // Should be a copy upgrade, not transcode upgrade
+    expect(plan.operations[0]!.type).toBe('upgrade-optimized-copy');
+  });
+
+  it('falls back to iPod-compatible format check when no capabilities provided', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
+    };
+
+    // No capabilities = legacy iPod behavior, FLAC must be transcoded
+    const plan = createMusicPlan(diff);
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('add-transcode');
   });
 });
 

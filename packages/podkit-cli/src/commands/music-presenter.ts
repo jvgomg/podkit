@@ -193,6 +193,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       transcodeConfig,
       deviceSupportsAlac: config.deviceSupportsAlac,
       artworkEnabled: config.effectiveArtwork,
+      capabilities: config.capabilities,
+      transferMode: config.effectiveTransferMode,
     });
     const summary = core.getMusicPlanSummary(plan);
     return { plan, summary };
@@ -340,6 +342,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
           out.print(
             `Warning: ${warning.tracks.length} track${warning.tracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion`
           );
+        } else if (warning.type === 'embedded-artwork-resize') {
+          out.print(`Warning: ${warning.message}`);
         }
       }
       out.newline();
@@ -480,7 +484,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     out.newline();
     out.print('Music already in sync! No changes needed.');
     out.print(`  Source tracks: ${formatNumber(sourceCount)}`);
-    out.print(`  iPod tracks: ${formatNumber(deviceCount)}`);
+    out.print(`  Device tracks: ${formatNumber(deviceCount)}`);
   }
 
   renderExecutionHeader(out: OutputContext, plan: SyncPlan): void {
@@ -507,7 +511,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     let completed = 0;
     let failed = 0;
 
-    const executor = new core.MusicExecutor({ ipod, transcoder: config.transcoder });
+    const artworkResize =
+      config.capabilities?.artworkSources[0] === 'embedded'
+        ? config.capabilities.artworkMaxResolution
+        : undefined;
+    const executor = new core.MusicExecutor({ device: ipod, transcoder: config.transcoder });
     const musicDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     try {
@@ -523,6 +531,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
           transferMode: config.effectiveTransferMode,
         },
         transferMode: config.effectiveTransferMode,
+        artworkResize,
       })) {
         if (progress.error) {
           const categorized = progress.categorizedError;
@@ -549,7 +558,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
           out.print('Music sync complete!');
         } else if (progress.phase === 'updating-db') {
           musicDisplay.finish();
-          out.raw('Saving iPod database...');
+          out.raw('Saving device database...');
         } else if (progress.phase !== 'preparing') {
           const overallLine = formatOverallLine(completed, progress.total, 'tracks');
           const phaseStr =

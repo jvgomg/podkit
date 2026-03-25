@@ -320,4 +320,16 @@ export interface TranscodeOptions {
    * - `portable`: preserves embedded artwork (`-c:v copy`).
    */
   transferMode?: TransferMode;
+  /**
+   * Resize embedded artwork to this maximum dimension (pixels, square).
+   *
+   * When set, embedded artwork is resized during transcode instead of being
+   * stripped or preserved at full resolution. The artwork will not be upscaled
+   * (if source artwork is smaller than this value, it is kept as-is).
+   *
+   * Used for devices where embedded artwork is the primary display source
+   * (e.g., Echo Mini). When set, takes priority over transferMode for artwork
+   * handling — the device cannot use full-res artwork, so it is always resized.
+   */
+  artworkResize?: number;
 }

@@ -8,7 +8,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { EventEmitter } from 'node:events';
 import { stripPartitionSuffix } from '@podkit/core';
@@ -149,6 +149,31 @@ export function isIpodDevice(partition: LsblkDevice): boolean {
   if (partition.fstype !== 'vfat') return false;
   const vendorId = readUsbVendorId(partition.name);
   return vendorId === APPLE_VENDOR_ID;
+}
+
+// ---------------------------------------------------------------------------
+// Mass-storage path scanning
+// ---------------------------------------------------------------------------
+
+/**
+ * Scan configured mass-storage paths and return detected devices.
+ *
+ * For each path, checks that it exists and is a directory. Returns a
+ * {@link DetectedDevice} for each valid path, using the path as both
+ * `name` and `disk` (mass-storage devices are already mounted).
+ */
+export function scanMassStoragePaths(paths: string[]): DetectedDevice[] {
+  const devices: DetectedDevice[] = [];
+  for (const path of paths) {
+    try {
+      if (existsSync(path) && statSync(path).isDirectory()) {
+        devices.push({ name: path, disk: path, size: 0 });
+      }
+    } catch {
+      // Path inaccessible — skip it
+    }
+  }
+  return devices;
 }
 
 // ---------------------------------------------------------------------------

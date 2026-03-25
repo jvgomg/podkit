@@ -232,3 +232,40 @@ export async function runEject(device: string): Promise<CliResult<EjectOutput>> 
   // --json and -d are global flags and must precede the subcommand
   return runCli<EjectOutput>(['--json', '-d', device, 'eject']);
 }
+
+// ---------------------------------------------------------------------------
+// No-op runners for mass-storage devices (already mounted, no eject needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * No-op mount for mass-storage devices.
+ *
+ * Mass-storage devices are already mounted at their configured path,
+ * so this just returns immediate success with the path as the mount point.
+ */
+export async function noopMount(disk: string, _target: string): Promise<CliResult<MountOutput>> {
+  log('info', `Mass-storage device already mounted at ${disk}`);
+  return {
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    json: { success: true, mountPoint: disk },
+    duration: 0,
+  };
+}
+
+/**
+ * No-op eject for mass-storage devices.
+ *
+ * Mass-storage devices are managed externally, so we skip ejection.
+ */
+export async function noopEject(_device: string): Promise<CliResult<EjectOutput>> {
+  log('info', 'Skipping eject for mass-storage device');
+  return {
+    exitCode: 0,
+    stdout: '',
+    stderr: '',
+    json: { success: true },
+    duration: 0,
+  };
+}

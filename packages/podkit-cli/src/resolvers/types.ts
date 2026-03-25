@@ -46,11 +46,15 @@ export type ResolutionResult<T> =
 export type ResolvedDevice = ResolvedEntity<DeviceConfig>;
 
 /**
- * Device identity for path resolution (UUID-based detection)
+ * Device identity for path resolution (UUID-based or path-based detection)
  */
 export interface DeviceIdentity {
   volumeUuid?: string;
   volumeName?: string;
+  /** Mount point path for mass-storage devices */
+  path?: string;
+  /** Device type */
+  type?: import('../config/types.js').DeviceType;
 }
 
 /**

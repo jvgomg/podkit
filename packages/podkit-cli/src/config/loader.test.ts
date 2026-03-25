@@ -935,6 +935,57 @@ transferMode = "invalid"
 
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid transferMode value "invalid"/);
       });
+
+      it('rejects capability overrides on iPod devices (type undefined)', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+artworkMaxResolution = 600
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Capability overrides.*artworkMaxResolution.*only valid for mass-storage/
+        );
+      });
+
+      it('rejects capability overrides on explicit iPod type', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+type = "ipod"
+supportedAudioCodecs = ["aac", "mp3", "flac"]
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Capability overrides.*supportedAudioCodecs.*only valid for mass-storage/
+        );
+      });
+
+      it('allows capability overrides on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.echo]
+type = "echo-mini"
+path = "/mnt/echo"
+artworkMaxResolution = 800
+supportedAudioCodecs = ["aac", "mp3"]
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.echo!.artworkMaxResolution).toBe(800);
+        expect(result.devices!.echo!.supportedAudioCodecs).toEqual(['aac', 'mp3']);
+      });
     });
 
     describe('defaults', () => {

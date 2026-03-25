@@ -1,35 +1,25 @@
 /**
- * Device capabilities abstraction
+ * iPod device capabilities
  *
- * Allows the sync engine to make device-aware decisions without
- * knowing which specific device is connected.
+ * Derives DeviceCapabilities from iPod generation metadata.
+ * The shared type definitions live in `device/capabilities.ts`.
  */
 
 import type { IpodGeneration } from '@podkit/libgpod-node';
 import { IPOD_GENERATIONS } from './generation.js';
 import { getVideoProfile } from './generation.js';
+import type {
+  AudioCodec,
+  DeviceArtworkSource,
+  DeviceCapabilities,
+} from '../device/capabilities.js';
 
-// =============================================================================
-// Types
-// =============================================================================
-
-/** Where the device reads artwork from */
-export type DeviceArtworkSource = 'database' | 'embedded' | 'sidecar';
-
-/** Audio codecs a device can play natively */
-export type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'ogg' | 'opus' | 'wav' | 'aiff';
-
-/** Device capabilities for sync engine decisions */
-export interface DeviceCapabilities {
-  /** Where the device reads artwork from, ordered by priority (first = preferred) */
-  artworkSources: DeviceArtworkSource[];
-  /** Maximum artwork display resolution in pixels (width = height, square) */
-  artworkMaxResolution: number;
-  /** Audio codecs the device can play natively without transcoding */
-  supportedAudioCodecs: AudioCodec[];
-  /** Whether the device supports video playback */
-  supportsVideo: boolean;
-}
+// Re-export types from their canonical location for backward compatibility
+export type {
+  DeviceArtworkSource,
+  AudioCodec,
+  DeviceCapabilities,
+} from '../device/capabilities.js';
 
 // =============================================================================
 // Artwork Resolution

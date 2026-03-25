@@ -335,7 +335,7 @@ describe('resolveDevicePath', () => {
       manager: mockManager(),
     });
     expect(result.path).toBeUndefined();
-    expect(result.error).toContain('No iPod configured');
+    expect(result.error).toContain('No device configured');
   });
 
   it('handles trailing slash normalization in path comparison', async () => {

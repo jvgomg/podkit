@@ -86,9 +86,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     // Video doesn't display scan warnings in the current implementation
   }
 
-  getDeviceItems(ipod: any, core: typeof import('@podkit/core')): IPodVideo[] {
+  getDeviceItems(device: any, core: typeof import('@podkit/core')): IPodVideo[] {
     const handler = core.createVideoHandler();
-    return handler.getDeviceItems(ipod);
+    return handler.getDeviceItems(device);
   }
 
   /** Stored during computeDiff for use in createPlan */
@@ -98,12 +98,19 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     sourceItems: CollectionVideo[],
     deviceItems: IPodVideo[],
     contentConfig: MusicContentConfig | VideoContentConfig,
-    ipod: any,
+    device: any,
     core: typeof import('@podkit/core')
   ) {
     const config = contentConfig as VideoContentConfig;
-    const ipodDevice = ipod.getInfo().device;
-    const deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
+
+    // Resolve device profile: iPod uses generation metadata, mass-storage uses default
+    let deviceProfile;
+    if (typeof device.getIpodDatabase === 'function') {
+      const ipodDevice = device.getIpodDatabase().getInfo().device;
+      deviceProfile = core.getDeviceProfileByGeneration(ipodDevice.generation);
+    } else {
+      deviceProfile = core.getDefaultDeviceProfile();
+    }
     this._deviceProfile = deviceProfile;
 
     const videoPresetSettings = core.getPresetSettingsWithFallback(
@@ -298,7 +305,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     plan: SyncPlan,
     _adapter: any,
     contentConfig: MusicContentConfig | VideoContentConfig,
-    ipod: any,
+    device: any,
     core: typeof import('@podkit/core'),
     signal?: AbortSignal
   ) {
@@ -317,7 +324,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     try {
       for await (const progress of videoExecutor.execute(plan, {
         dryRun: false,
-        ipod,
+        device,
         signal,
       })) {
         if (!progress.error && progress.index !== lastIndex && !progress.skipped) {

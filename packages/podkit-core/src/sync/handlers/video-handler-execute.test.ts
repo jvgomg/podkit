@@ -71,8 +71,13 @@ import type { SyncOperation } from '../types.js';
 import type { OperationProgress, ExecutionContext } from '../content-type.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../../video/types.js';
-import type { IPodTrack, TrackInput, TrackFields, SaveResult } from '../../ipod/types.js';
-import type { IpodDatabase } from '../../ipod/database.js';
+import type { SaveResult } from '../../ipod/types.js';
+import type {
+  DeviceAdapter,
+  DeviceTrack,
+  DeviceTrackInput,
+  DeviceTrackMetadata,
+} from '../../device/adapter.js';
 
 // =============================================================================
 // Test Fixtures
@@ -80,8 +85,8 @@ import type { IpodDatabase } from '../../ipod/database.js';
 
 function createMockIpod() {
   const mockTrack = {
-    copyFile: mock((_sourcePath: string) => mockTrack as unknown as IPodTrack),
-    update: mock((_fields: TrackFields) => mockTrack as unknown as IPodTrack),
+    copyFile: mock((_sourcePath: string) => mockTrack as unknown as DeviceTrack),
+    update: mock((_fields: DeviceTrackMetadata) => mockTrack as unknown as DeviceTrack),
     remove: mock(() => {}),
     filePath: '/iPod_Control/Music/test.m4v',
     title: 'Test',
@@ -89,8 +94,8 @@ function createMockIpod() {
   };
 
   return {
-    addTrack: mock((_input: TrackInput) => mockTrack as unknown as IPodTrack),
-    getTracks: mock(() => [mockTrack as unknown as IPodTrack]),
+    addTrack: mock((_input: DeviceTrackInput) => mockTrack as unknown as DeviceTrack),
+    getTracks: mock(() => [mockTrack as unknown as DeviceTrack]),
     save: mock(() => Promise.resolve({ warnings: [] }) as Promise<SaveResult>),
     mockTrack,
   };
@@ -127,7 +132,7 @@ const defaultSettings: VideoTranscodeSettings = {
 
 function makeCtx(ipod?: ReturnType<typeof createMockIpod>): ExecutionContext {
   return {
-    ipod: (ipod ?? createMockIpod()) as unknown as IpodDatabase,
+    device: (ipod ?? createMockIpod()) as unknown as DeviceAdapter,
     tempDir: '/tmp/test',
   };
 }
@@ -548,7 +553,7 @@ describe('VideoHandler execution', () => {
       ];
 
       const ctx: ExecutionContext = {
-        ipod: mockIpod as unknown as IpodDatabase,
+        device: mockIpod as unknown as DeviceAdapter,
         tempDir: '/tmp/batch',
       };
       await collectProgress(handler.executeBatch!(ops, ctx));
@@ -572,7 +577,7 @@ describe('VideoHandler execution', () => {
       ];
 
       const ctx: ExecutionContext = {
-        ipod: mockIpod as unknown as IpodDatabase,
+        device: mockIpod as unknown as DeviceAdapter,
         tempDir: '/tmp/batch',
       };
       await collectProgress(handler.executeBatch!(ops, ctx));
@@ -606,7 +611,7 @@ describe('VideoHandler execution', () => {
       mockIpod.getTracks.mockReturnValue([]);
 
       const ctx: ExecutionContext = {
-        ipod: mockIpod as unknown as IpodDatabase,
+        device: mockIpod as unknown as DeviceAdapter,
         tempDir: '/tmp/batch',
       };
 

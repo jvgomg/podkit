@@ -506,6 +506,187 @@ describe('transfer mode × transcode path matrix', () => {
   });
 });
 
+describe('artwork resize (embedded artwork devices)', () => {
+  const input = '/music/song.flac';
+  const output = '/device/song.m4a';
+
+  describe('buildTranscodeArgs with artworkResize', () => {
+    it('resizes artwork in fast mode when artworkResize is set', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'fast',
+        artworkResize: 600,
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(600,iw)':'min(600,ih)'");
+      expect(args[filterIndex + 1]).toContain('force_original_aspect_ratio=decrease');
+      expect(args).toContain('-disposition:v');
+      expect(args).toContain('attached_pic');
+      expect(args).not.toContain('-vn');
+    });
+
+    it('resizes artwork in optimized mode when artworkResize is set', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'optimized',
+        artworkResize: 320,
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(320,iw)':'min(320,ih)'");
+      expect(args).not.toContain('-vn');
+    });
+
+    it('resizes artwork in portable mode when artworkResize is set (embedded device)', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'portable',
+        artworkResize: 600,
+      });
+
+      // artworkResize wins — device needs resized artwork regardless of mode
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(600,iw)':'min(600,ih)'");
+      expect(args).not.toContain('-vn');
+    });
+
+    it('preserves full-res artwork in portable mode when artworkResize is NOT set (database device)', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'portable',
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('copy');
+      expect(args).not.toContain('-filter:v');
+      expect(args).not.toContain('-vn');
+    });
+
+    it('strips artwork when artworkResize is not set (default iPod behavior)', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'fast',
+      });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-filter:v');
+    });
+
+    it('strips artwork when artworkResize is 0', () => {
+      const args = buildTranscodeArgs(input, output, 'aac', 'high', {
+        transferMode: 'fast',
+        artworkResize: 0,
+      });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-filter:v');
+    });
+  });
+
+  describe('buildAlacArgs with artworkResize', () => {
+    it('resizes artwork in fast mode when artworkResize is set', () => {
+      const args = buildAlacArgs(input, output, {
+        transferMode: 'fast',
+        artworkResize: 176,
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(176,iw)':'min(176,ih)'");
+      expect(args).not.toContain('-vn');
+    });
+
+    it('resizes artwork in optimized mode when artworkResize is set', () => {
+      const args = buildAlacArgs(input, output, {
+        transferMode: 'optimized',
+        artworkResize: 320,
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIdx = args.indexOf('-filter:v');
+      expect(args[filterIdx + 1]).toContain('320');
+      expect(args).not.toContain('-vn');
+    });
+
+    it('resizes artwork in portable mode when artworkResize is set (embedded device)', () => {
+      const args = buildAlacArgs(input, output, {
+        transferMode: 'portable',
+        artworkResize: 176,
+      });
+
+      // artworkResize wins — device needs resized artwork regardless of mode
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(176,iw)':'min(176,ih)'");
+      expect(args).not.toContain('-vn');
+    });
+
+    it('preserves full-res artwork in portable mode when artworkResize is NOT set (database device)', () => {
+      const args = buildAlacArgs(input, output, {
+        transferMode: 'portable',
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('copy');
+      expect(args).not.toContain('-filter:v');
+      expect(args).not.toContain('-vn');
+    });
+  });
+
+  describe('buildOptimizedCopyArgs with artworkResize', () => {
+    it('resizes artwork instead of stripping when artworkResize is set', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a', {
+        artworkResize: 600,
+      });
+
+      expect(args).toContain('-c:v');
+      expect(args).toContain('mjpeg');
+      expect(args).toContain('-filter:v');
+      const filterIndex = args.indexOf('-filter:v');
+      expect(args[filterIndex + 1]).toContain("scale='min(600,iw)':'min(600,ih)'");
+      expect(args).toContain('-disposition:v');
+      expect(args).toContain('attached_pic');
+      expect(args).not.toContain('-vn');
+    });
+
+    it('strips artwork when artworkResize is not set (default behavior)', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a');
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-filter:v');
+    });
+
+    it('strips artwork when artworkResize is 0', () => {
+      const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a', {
+        artworkResize: 0,
+      });
+
+      expect(args).toContain('-vn');
+      expect(args).not.toContain('-filter:v');
+    });
+
+    it('resizes artwork for MP3 format', () => {
+      const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3', {
+        artworkResize: 320,
+      });
+
+      expect(args).toContain('-filter:v');
+      expect(args).not.toContain('-vn');
+    });
+  });
+});
+
 describe('parseFFmpegProgressLine', () => {
   it('parses out_time_ms to seconds', () => {
     const result = parseFFmpegProgressLine('out_time_ms=5000000');

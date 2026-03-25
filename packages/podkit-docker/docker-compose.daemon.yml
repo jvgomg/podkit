@@ -19,6 +19,7 @@ services:
       - PODKIT_POLL_INTERVAL=5
       - PODKIT_APPRISE_URL=http://apprise:8000/notify
       - PODKIT_MUSIC_PATH=/music
+      # PODKIT_MASS_STORAGE_PATHS=/mnt/device1:/mnt/device2  # Mass-storage device paths (colon or comma separated)
       # Or use a config file:
       # - PODKIT_CONFIG=/config/config.toml
     volumes:

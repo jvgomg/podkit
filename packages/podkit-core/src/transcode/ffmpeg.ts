@@ -62,6 +62,15 @@ const DEFAULT_FFMPEG = 'ffmpeg';
 const DEFAULT_FFPROBE = 'ffprobe';
 
 /**
+ * Build an FFmpeg scale filter for artwork resize.
+ * Downscales to fit within maxDim×maxDim, preserves aspect ratio, never upscales.
+ * Forces even pixel dimensions for codec compatibility.
+ */
+function buildArtworkScaleFilter(maxDim: number): string {
+  return `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
+}
+
+/**
  * FFmpeg transcoder configuration
  */
 export interface FFmpegTranscoderConfig {
@@ -175,7 +184,7 @@ export function buildTranscodeArgs(
   output: string,
   encoder: string,
   preset: QualityPreset | 'lossless' | AacTranscodeConfig,
-  options?: { transferMode?: TransferMode }
+  options?: { transferMode?: TransferMode; artworkResize?: number }
 ): string[] {
   // Handle ALAC encoding
   if (preset === 'lossless') {
@@ -227,13 +236,28 @@ export function buildTranscodeArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on transfer mode
+  // Embedded artwork handling based on device artwork source and transfer mode.
+  // artworkResize takes priority: when set, the device reads artwork from embedded
+  // tags and ALWAYS needs resized artwork regardless of transfer mode.
   const transferMode = options?.transferMode ?? 'fast';
-  if (transferMode === 'portable') {
-    // Preserve embedded artwork for exportable files
+  const artworkResize = options?.artworkResize;
+
+  if (artworkResize && artworkResize > 0) {
+    // Resize — device needs optimized embedded artwork regardless of mode.
+    // Re-encode artwork as MJPEG at the target resolution.
+    args.push(
+      '-c:v',
+      'mjpeg',
+      '-filter:v',
+      buildArtworkScaleFilter(artworkResize),
+      '-disposition:v',
+      'attached_pic'
+    );
+  } else if (transferMode === 'portable') {
+    // Database device portable: preserve full-res for file portability
     args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   } else {
-    // Strip embedded artwork — iPods read artwork from their internal database
+    // Database device fast/optimized: strip embedded artwork
     args.push('-vn');
   }
 
@@ -262,7 +286,7 @@ export function buildTranscodeArgs(
 export function buildAlacArgs(
   input: string,
   output: string,
-  options?: { transferMode?: TransferMode }
+  options?: { transferMode?: TransferMode; artworkResize?: number }
 ): string[] {
   const args: string[] = [
     // Input
@@ -280,13 +304,28 @@ export function buildAlacArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on transfer mode
+  // Embedded artwork handling based on device artwork source and transfer mode.
+  // artworkResize takes priority: when set, the device reads artwork from embedded
+  // tags and ALWAYS needs resized artwork regardless of transfer mode.
   const transferMode = options?.transferMode ?? 'fast';
-  if (transferMode === 'portable') {
-    // Preserve embedded artwork for exportable files
+  const artworkResize = options?.artworkResize;
+
+  if (artworkResize && artworkResize > 0) {
+    // Resize — device needs optimized embedded artwork regardless of mode.
+    // Re-encode artwork as MJPEG at the target resolution.
+    args.push(
+      '-c:v',
+      'mjpeg',
+      '-filter:v',
+      buildArtworkScaleFilter(artworkResize),
+      '-disposition:v',
+      'attached_pic'
+    );
+  } else if (transferMode === 'portable') {
+    // Database device portable: preserve full-res for file portability
     args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
   } else {
-    // Strip embedded artwork — iPods read artwork from their internal database
+    // Database device fast/optimized: strip embedded artwork
     args.push('-vn');
   }
 
@@ -319,17 +358,28 @@ export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a';
 export function buildOptimizedCopyArgs(
   input: string,
   output: string,
-  format: OptimizedCopyFormat
+  format: OptimizedCopyFormat,
+  options?: { artworkResize?: number }
 ): string[] {
-  const args: string[] = [
-    '-i',
-    input,
-    '-c:a',
-    'copy',
-    '-map_metadata',
-    '0',
-    '-vn', // Strip embedded artwork
-  ];
+  const artworkResize = options?.artworkResize;
+
+  const args: string[] = ['-i', input, '-c:a', 'copy', '-map_metadata', '0'];
+
+  if (artworkResize && artworkResize > 0) {
+    // Resize embedded artwork for devices that read from embedded tags.
+    // With audio stream copy, we can still filter the video (artwork) stream.
+    args.push(
+      '-c:v',
+      'mjpeg',
+      '-filter:v',
+      buildArtworkScaleFilter(artworkResize),
+      '-disposition:v',
+      'attached_pic'
+    );
+  } else {
+    // Strip embedded artwork
+    args.push('-vn');
+  }
 
   // MP3 doesn't use -f ipod container format
   if (format !== 'mp3') {
@@ -479,6 +529,7 @@ export class FFmpegTranscoder implements Transcoder {
     // Build FFmpeg arguments
     const args = buildTranscodeArgs(input, output, caps.preferredEncoder, preset, {
       transferMode: options.transferMode,
+      artworkResize: options.artworkResize,
     });
 
     // Track timing
