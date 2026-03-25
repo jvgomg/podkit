@@ -450,9 +450,6 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
       case 'soundcheck':
         metadata.soundcheck = change.to ? Number(change.to) : undefined;
         break;
-      case 'comment':
-        metadata.comment = change.to || undefined;
-        break;
     }
   }
 
@@ -729,6 +726,13 @@ function planUpdateOperations(
           reason: reason as UpgradeReason,
         });
       }
+    } else if (reason === 'sync-tag-write' && updateTrack.syncTag) {
+      // Sync tag write — direct operation, no metadata conversion needed
+      operations.push({
+        type: 'update-sync-tag',
+        track: updateTrack.ipod,
+        syncTag: updateTrack.syncTag,
+      });
     } else {
       // Metadata-only update (transforms, soundcheck, metadata-correction)
       operations.push(createUpdateMetadataOperation(updateTrack));
@@ -771,6 +775,7 @@ export function calculateMusicOperationSize(operation: SyncOperation): number {
     }
     case 'remove':
     case 'update-metadata':
+    case 'update-sync-tag':
       // These operations free space rather than consume it
       return 0;
     case 'video-transcode':
@@ -811,6 +816,7 @@ function calculateOperationTime(operation: SyncOperation): number {
       // Removal is nearly instant (database update)
       return 0.1;
     case 'update-metadata':
+    case 'update-sync-tag':
       // Metadata update is instant
       return 0.01;
     case 'video-transcode':
@@ -861,6 +867,7 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
         upgrades.push(op);
         break;
       case 'update-metadata':
+      case 'update-sync-tag':
         updates.push(op);
         break;
     }
@@ -1057,6 +1064,7 @@ export function getMusicPlanSummary(plan: SyncPlan): {
         removeCount++;
         break;
       case 'update-metadata':
+      case 'update-sync-tag':
         updateCount++;
         break;
       case 'video-transcode':

@@ -10,6 +10,7 @@
 
 import type { DeviceAdapter } from '../device/adapter.js';
 import type { AudioCodec } from '../device/capabilities.js';
+import type { SyncTagData } from './sync-tags.js';
 import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
 
 // =============================================================================
@@ -145,6 +146,8 @@ export interface UnifiedSyncDiff<TSource, TDevice> {
     reasons: UpdateReason[];
     /** Detailed metadata changes (populated by handlers that support it) */
     changes?: MetadataChange[];
+    /** Typed sync tag to write (replaces raw comment field changes) */
+    syncTag?: SyncTagData;
   }>;
 }
 

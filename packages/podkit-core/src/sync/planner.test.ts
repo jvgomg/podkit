@@ -11,6 +11,7 @@ import { SyncPlanner, createSyncPlanner, orderOperations } from './planner.js';
 import type { ContentTypeHandler, HandlerPlanOptions } from './content-type.js';
 import type { SyncOperation, UpdateReason } from './types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
+import type { SyncTagData } from './sync-tags.js';
 
 // =============================================================================
 // Test Types
@@ -319,6 +320,63 @@ describe('SyncPlanner', () => {
       // Only the metadata-correction update should remain
       expect(plan.operations).toHaveLength(1);
       expect(plan.operations[0]!.type).toBe('update-metadata');
+    });
+
+    it('should create update-sync-tag operation for sync-tag-write reason with syncTag', () => {
+      const handler = createMockHandler();
+      const planner = new SyncPlanner(handler);
+
+      const syncTag: SyncTagData = { quality: 'high', encoding: 'vbr' };
+      const diff: UnifiedSyncDiff<TestSource, TestDevice> = {
+        ...emptyDiff(),
+        toUpdate: [
+          {
+            source: src('track-a'),
+            device: dev('track-a'),
+            reasons: ['sync-tag-write'],
+            syncTag,
+          },
+        ],
+      };
+
+      const plan = planner.plan(diff);
+
+      expect(plan.operations).toHaveLength(1);
+      expect(plan.operations[0]!.type).toBe('update-sync-tag');
+      const op = plan.operations[0] as Extract<SyncOperation, { type: 'update-sync-tag' }>;
+      expect(op.syncTag).toEqual(syncTag);
+    });
+
+    it('should create both update-sync-tag and update-metadata for multi-reason updates', () => {
+      const handler = createMockHandler();
+      const planner = new SyncPlanner(handler);
+
+      const syncTag: SyncTagData = { quality: 'high', encoding: 'vbr' };
+      const diff: UnifiedSyncDiff<TestSource, TestDevice> = {
+        ...emptyDiff(),
+        toUpdate: [
+          {
+            source: src('track-a'),
+            device: dev('track-a'),
+            reasons: ['sync-tag-write', 'metadata-correction'],
+            syncTag,
+            changes: [],
+          },
+        ],
+      };
+
+      const plan = planner.plan(diff);
+
+      expect(plan.operations).toHaveLength(2);
+      const types = plan.operations.map((op) => op.type);
+      expect(types).toContain('update-sync-tag');
+      expect(types).toContain('update-metadata');
+
+      const syncTagOp = plan.operations.find((op) => op.type === 'update-sync-tag') as Extract<
+        SyncOperation,
+        { type: 'update-sync-tag' }
+      >;
+      expect(syncTagOp.syncTag).toEqual(syncTag);
     });
 
     it('should filter artwork-removed updates when artwork is disabled', () => {

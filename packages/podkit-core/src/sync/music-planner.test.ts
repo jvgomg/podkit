@@ -2199,6 +2199,76 @@ describe('createMusicPlan - update operations', () => {
 });
 
 // =============================================================================
+// Sync Tag Write Tests
+// =============================================================================
+
+describe('createMusicPlan - sync-tag-write operations', () => {
+  it('creates update-sync-tag operation for sync-tag-write reason', () => {
+    const syncTag = { quality: 'high' as const, encoding: 'vbr' as const };
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toUpdate: [
+        {
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
+          ipod: createIPodTrack('Artist', 'Song', 'Album'),
+          reason: 'sync-tag-write',
+          changes: [],
+          syncTag,
+        },
+      ],
+    };
+
+    const plan = createMusicPlan(diff);
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('update-sync-tag');
+    const op = plan.operations[0] as Extract<SyncOperation, { type: 'update-sync-tag' }>;
+    expect(op.syncTag).toEqual(syncTag);
+    expect(op.track.artist).toBe('Artist');
+    expect(op.track.title).toBe('Song');
+  });
+
+  it('falls through to update-metadata when syncTag is absent despite sync-tag-write reason', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toUpdate: [
+        {
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
+          ipod: createIPodTrack('Artist', 'Song', 'Album'),
+          reason: 'sync-tag-write',
+          changes: [],
+          // syncTag intentionally omitted
+        },
+      ],
+    };
+
+    const plan = createMusicPlan(diff);
+
+    expect(plan.operations).toHaveLength(1);
+    expect(plan.operations[0]!.type).toBe('update-metadata');
+  });
+
+  it('does not count sync-tag-write operations in estimated size', () => {
+    const diff: SyncDiff = {
+      ...createEmptyDiff(),
+      toUpdate: [
+        {
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
+          ipod: createIPodTrack('Artist', 'Song', 'Album'),
+          reason: 'sync-tag-write',
+          changes: [],
+          syncTag: { quality: 'high', encoding: 'vbr' },
+        },
+      ],
+    };
+
+    const plan = createMusicPlan(diff);
+
+    expect(plan.estimatedSize).toBe(0);
+  });
+});
+
+// =============================================================================
 // Upgrade Operations Tests (Self-Healing Sync)
 // =============================================================================
 

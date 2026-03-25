@@ -11,6 +11,7 @@ import {
   formatSyncTag,
   writeSyncTag,
   syncTagMatchesConfig,
+  syncTagsEqual,
   buildAudioSyncTag,
   buildCopySyncTag,
   buildVideoSyncTag,
@@ -337,6 +338,84 @@ describe('syncTagMatchesConfig', () => {
     const tag: SyncTagData = { quality: 'copy', transferMode: 'fast' };
     const config: SyncTagData = { quality: 'copy', transferMode: 'optimized' };
     expect(syncTagMatchesConfig(tag, config)).toBe(true);
+  });
+});
+
+// =============================================================================
+// syncTagsEqual
+// =============================================================================
+
+describe('syncTagsEqual', () => {
+  it('returns true for two identical tags', () => {
+    const a: SyncTagData = {
+      quality: 'high',
+      encoding: 'vbr',
+      bitrate: 256,
+      artworkHash: 'aabbccdd',
+      transferMode: 'fast',
+    };
+    const b: SyncTagData = {
+      quality: 'high',
+      encoding: 'vbr',
+      bitrate: 256,
+      artworkHash: 'aabbccdd',
+      transferMode: 'fast',
+    };
+    expect(syncTagsEqual(a, b)).toBe(true);
+  });
+
+  it('returns false when quality differs', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const b: SyncTagData = { quality: 'low', encoding: 'vbr' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when encoding differs', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const b: SyncTagData = { quality: 'high', encoding: 'cbr' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when bitrate differs', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'cbr', bitrate: 256 };
+    const b: SyncTagData = { quality: 'high', encoding: 'cbr', bitrate: 320 };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when artworkHash differs', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr', artworkHash: 'aabbccdd' };
+    const b: SyncTagData = { quality: 'high', encoding: 'vbr', artworkHash: '11223344' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when transferMode differs', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    const b: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'optimized' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when one has undefined optional field and other has a value', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const b: SyncTagData = { quality: 'high', encoding: 'vbr', artworkHash: 'aabbccdd' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns false when one has undefined transferMode and other has a value', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const b: SyncTagData = { quality: 'high', encoding: 'vbr', transferMode: 'fast' };
+    expect(syncTagsEqual(a, b)).toBe(false);
+  });
+
+  it('returns true when both have undefined for the same optional fields', () => {
+    const a: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    const b: SyncTagData = { quality: 'high', encoding: 'vbr' };
+    expect(syncTagsEqual(a, b)).toBe(true);
+  });
+
+  it('returns true for minimal tags with quality only', () => {
+    const a: SyncTagData = { quality: 'lossless' };
+    const b: SyncTagData = { quality: 'lossless' };
+    expect(syncTagsEqual(a, b)).toBe(true);
   });
 });
 

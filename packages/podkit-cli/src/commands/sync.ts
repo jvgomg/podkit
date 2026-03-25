@@ -216,6 +216,7 @@ export interface SyncOutput {
       | 'upgrade-artwork'
       | 'remove'
       | 'update-metadata'
+      | 'update-sync-tag'
       | 'video-transcode'
       | 'video-copy'
       | 'video-remove'

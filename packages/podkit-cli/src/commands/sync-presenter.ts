@@ -212,8 +212,7 @@ export interface ContentTypePresenter<TSource, TDevice> {
   /** Collect post-diff data (e.g., artworkMissingBaseline for music) */
   collectPostDiffData?(
     diff: any,
-    contentConfig: MusicContentConfig | VideoContentConfig,
-    core: typeof import('@podkit/core')
+    contentConfig: MusicContentConfig | VideoContentConfig
   ): Record<string, unknown>;
 
   /** Create a sync plan from the diff */
@@ -409,7 +408,7 @@ export async function genericSyncCollection<TSource, TDevice>(
   // 5. Post-diff analysis
   let postDiffData: Record<string, unknown> = {};
   if (presenter.collectPostDiffData) {
-    postDiffData = presenter.collectPostDiffData(diff, contentConfig, core);
+    postDiffData = presenter.collectPostDiffData(diff, contentConfig);
   }
 
   // 6. Create plan + check space

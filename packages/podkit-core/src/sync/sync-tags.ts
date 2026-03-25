@@ -222,6 +222,28 @@ export function writeSyncTag(
 // =============================================================================
 
 /**
+ * Structural equality comparison for two SyncTagData objects.
+ *
+ * Compares all fields: quality, encoding, bitrate, artworkHash, and
+ * transferMode. Stricter than formatSyncTag string comparison — catches
+ * tags that format identically but differ structurally (e.g., a tag
+ * with `encoding: undefined` vs one with `encoding: 'vbr'`).
+ *
+ * @param a - First sync tag
+ * @param b - Second sync tag
+ * @returns True if all fields are structurally equal
+ */
+export function syncTagsEqual(a: SyncTagData, b: SyncTagData): boolean {
+  return (
+    a.quality === b.quality &&
+    a.encoding === b.encoding &&
+    a.bitrate === b.bitrate &&
+    a.artworkHash === b.artworkHash &&
+    a.transferMode === b.transferMode
+  );
+}
+
+/**
  * Compare a parsed sync tag against expected config.
  *
  * Returns true if the tag matches the config exactly (quality, encoding,

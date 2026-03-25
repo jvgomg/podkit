@@ -69,6 +69,7 @@ function getPhaseForOperation(type: SyncOperation['type']): ExecutorProgress['ph
     case 'remove':
       return 'removing';
     case 'update-metadata':
+    case 'update-sync-tag':
       return 'updating-metadata';
     case 'upgrade-transcode':
     case 'upgrade-direct-copy':

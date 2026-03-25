@@ -34,12 +34,8 @@ import {
 import { MusicExecutor, getMusicOperationDisplayName } from '../music-executor.js';
 import type { SyncTagConfig, RetryConfig } from '../music-executor.js';
 import { estimateTransferTime } from '../estimation.js';
-import {
-  buildAudioSyncTag,
-  parseSyncTag,
-  formatSyncTag,
-  syncTagMatchesConfig,
-} from '../sync-tags.js';
+import { buildAudioSyncTag, syncTagMatchesConfig, syncTagsEqual } from '../sync-tags.js';
+import type { SyncTagData } from '../sync-tags.js';
 import type {
   MetadataChange,
   SyncOperation,
@@ -429,7 +425,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       }
 
       // Try sync tag comparison first
-      const syncTag = parseSyncTag(match.device.comment);
+      const syncTag = match.device.syncTag;
       let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
 
       if (syncTag && expectedSyncTag) {
@@ -545,28 +541,23 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       // This ensures --force-sync-tags --check-artwork establishes baselines for ALL tracks.
       if (!sourceLossless) {
         if (match.source.artworkHash) {
-          const currentTag = parseSyncTag(match.device.comment);
+          const currentTag = match.device.syncTag;
           if (!currentTag?.artworkHash || currentTag.artworkHash !== match.source.artworkHash) {
             // Build a minimal "copy" sync tag with just the artwork hash
-            const copyTag: typeof baseExpectedTag = {
+            const copyTag: SyncTagData = {
               quality: 'copy',
               artworkHash: match.source.artworkHash,
             };
             // If there's an existing tag, preserve its fields but update the artwork hash
-            const expectedTag = currentTag
+            const expectedTag: SyncTagData = currentTag
               ? { ...currentTag, artworkHash: match.source.artworkHash }
               : copyTag;
             diff.toUpdate.push({
               source: match.source,
               device: match.device,
               reasons: ['sync-tag-write'],
-              changes: [
-                {
-                  field: 'comment',
-                  from: match.device.comment ?? '',
-                  to: formatSyncTag(expectedTag),
-                },
-              ],
+              changes: [],
+              syncTag: expectedTag,
             });
             continue;
           }
@@ -584,12 +575,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
         expectedTag.artworkHash = match.source.artworkHash;
       }
 
-      // Compare formatted tag strings — rewrite if the text differs,
+      // Structural comparison — rewrite if any field differs,
       // even if the semantic meaning is equivalent (e.g., missing encoding=vbr).
       // This ensures all tags are complete and consistent.
-      const expectedTagStr = formatSyncTag(expectedTag);
-      const currentTag = parseSyncTag(match.device.comment);
-      if (currentTag && formatSyncTag(currentTag) === expectedTagStr) {
+      const currentTag = match.device.syncTag;
+      if (currentTag && syncTagsEqual(currentTag, expectedTag)) {
         stillExisting.push(match);
         continue;
       }
@@ -598,9 +588,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
         source: match.source,
         device: match.device,
         reasons: ['sync-tag-write'],
-        changes: [
-          { field: 'comment', from: match.device.comment ?? '', to: formatSyncTag(expectedTag) },
-        ],
+        changes: [],
+        syncTag: expectedTag,
       });
     }
 
@@ -862,7 +851,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   estimateTime(op: SyncOperation): number {
     const size = calculateMusicOperationSize(op);
     if (op.type === 'remove') return 0.1;
-    if (op.type === 'update-metadata') return 0.01;
+    if (op.type === 'update-metadata' || op.type === 'update-sync-tag') return 0.01;
     return estimateTransferTime(size);
   }
 
@@ -1031,6 +1020,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       else if (op.type === 'remove') toRemove++;
       else if (
         op.type === 'update-metadata' ||
+        op.type === 'update-sync-tag' ||
         op.type === 'upgrade-transcode' ||
         op.type === 'upgrade-direct-copy' ||
         op.type === 'upgrade-optimized-copy' ||
