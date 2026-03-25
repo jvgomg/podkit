@@ -874,7 +874,7 @@ export const syncCommand = new Command('sync')
 
       let deviceResult: import('./open-device.js').OpenDeviceResult;
       try {
-        deviceResult = await openDevice(core, devicePath, deviceConfig);
+        deviceResult = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
       } catch (err) {
         dbSpinner.stop();
         const isIpodError = err instanceof core.IpodError;

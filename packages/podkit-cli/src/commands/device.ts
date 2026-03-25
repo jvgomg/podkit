@@ -35,6 +35,8 @@ import {
   VIDEO_QUALITY_PRESETS,
   ENCODING_MODES,
   DEVICE_TYPES,
+  AUDIO_CODECS,
+  ARTWORK_SOURCES,
 } from '../config/index.js';
 import { OUTPUT_FORMATS } from '../output/formatters.js';
 import {
@@ -788,6 +790,11 @@ interface AddOptions {
   videoQuality?: string;
   encoding?: string;
   artwork?: boolean;
+  artworkMaxResolution?: string;
+  artworkSources?: string[];
+  supportedAudioCodecs?: string[];
+  supportsVideo?: boolean;
+  musicDir?: string;
 }
 
 const addSubcommand = new Command('add')
@@ -811,6 +818,24 @@ const addSubcommand = new Command('add')
   .addOption(new Option('--encoding <mode>', 'encoding mode').choices([...ENCODING_MODES]))
   .option('--artwork', 'sync artwork to this device')
   .option('--no-artwork', 'do not sync artwork to this device')
+  .option(
+    '--artwork-max-resolution <pixels>',
+    'max artwork resolution in pixels (mass-storage only)'
+  )
+  .option(
+    '--artwork-sources <sources...>',
+    'artwork sources: database, embedded, sidecar (mass-storage only)'
+  )
+  .option(
+    '--supported-audio-codecs <codecs...>',
+    'supported audio codecs: aac, alac, mp3, flac, ogg, opus, wav, aiff (mass-storage only)'
+  )
+  .option('--supports-video', 'device supports video playback (mass-storage only)')
+  .option('--no-supports-video', 'device does not support video playback (mass-storage only)')
+  .option(
+    '--music-dir <name>',
+    'music directory name on device (default: Music, mass-storage only)'
+  )
   .action(async (options: AddOptions & { path?: string }) => {
     const { globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -903,6 +928,37 @@ const addSubcommand = new Command('add')
         return;
       }
 
+      // Validate capability override options
+      if (options.artworkMaxResolution !== undefined) {
+        const parsed = parseInt(options.artworkMaxResolution, 10);
+        if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+          const error = `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`;
+          out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+          process.exitCode = 1;
+          return;
+        }
+      }
+      if (options.artworkSources !== undefined) {
+        for (const source of options.artworkSources) {
+          if (!ARTWORK_SOURCES.includes(source as any)) {
+            const error = `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`;
+            out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+            process.exitCode = 1;
+            return;
+          }
+        }
+      }
+      if (options.supportedAudioCodecs !== undefined) {
+        for (const codec of options.supportedAudioCodecs) {
+          if (!AUDIO_CODECS.includes(codec as any)) {
+            const error = `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`;
+            out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+            process.exitCode = 1;
+            return;
+          }
+        }
+      }
+
       const deviceConfig: DeviceConfig = {
         type: deviceType as DeviceConfig['type'],
         path: explicitPath,
@@ -912,6 +968,14 @@ const addSubcommand = new Command('add')
       if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
       if (options.encoding) deviceConfig.encoding = options.encoding as any;
       if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
+      if (options.artworkMaxResolution !== undefined)
+        deviceConfig.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
+      if (options.artworkSources !== undefined)
+        deviceConfig.artworkSources = options.artworkSources as any;
+      if (options.supportedAudioCodecs !== undefined)
+        deviceConfig.supportedAudioCodecs = options.supportedAudioCodecs as any;
+      if (options.supportsVideo !== undefined) deviceConfig.supportsVideo = options.supportsVideo;
+      if (options.musicDir !== undefined) deviceConfig.musicDir = options.musicDir;
 
       const volumeName = explicitPath.split('/').pop() || name;
       const deviceCount = Object.keys(existingDevices).length;
@@ -994,6 +1058,22 @@ const addSubcommand = new Command('add')
     // =========================================================================
     // iPod device flow (--type ipod or no --type)
     // =========================================================================
+
+    // Reject mass-storage-only options on iPod devices
+    const massStorageOnlyOptions = [
+      options.artworkMaxResolution !== undefined && '--artwork-max-resolution',
+      options.artworkSources !== undefined && '--artwork-sources',
+      options.supportedAudioCodecs !== undefined && '--supported-audio-codecs',
+      options.supportsVideo !== undefined && '--supports-video',
+      options.musicDir !== undefined && '--music-dir',
+    ].filter(Boolean) as string[];
+
+    if (massStorageOnlyOptions.length > 0) {
+      const error = `${massStorageOnlyOptions.join(', ')} ${massStorageOnlyOptions.length === 1 ? 'is' : 'are'} only valid for mass-storage devices (--type echo-mini|rockbox|generic).`;
+      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
 
     // Load core dependencies
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
@@ -1638,7 +1718,7 @@ const removeSubcommand = new Command('remove')
 const infoSubcommand = new Command('info')
   .description('display device configuration and live status')
   .action(async () => {
-    const { globalOpts } = getContext();
+    const { globalOpts, config: podkitConfig } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
     const resolved = resolveDeviceArg();
@@ -1677,7 +1757,12 @@ const infoSubcommand = new Command('info')
 
         if (resolveResult.path && existsSync(resolveResult.path)) {
           try {
-            const deviceResult = await openDevice(core, resolveResult.path, device);
+            const deviceResult = await openDevice(
+              core,
+              resolveResult.path,
+              device,
+              podkitConfig.deviceDefaults
+            );
             resolvedDeviceCapabilities = deviceResult.capabilities;
             try {
               const storage = getStorageInfo(resolveResult.path);
@@ -1935,6 +2020,37 @@ const infoSubcommand = new Command('info')
               out.print(`    ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
             }
           }
+
+          // Show mass-storage-specific config overrides
+          if (isMassStorage) {
+            const overrides: string[] = [];
+            if (device.artworkMaxResolution !== undefined) {
+              overrides.push(`  Artwork Resolution: ${device.artworkMaxResolution}px (override)`);
+            }
+            if (device.artworkSources !== undefined) {
+              overrides.push(
+                `  Artwork Sources:    ${device.artworkSources.join(', ')} (override)`
+              );
+            }
+            if (device.supportedAudioCodecs !== undefined) {
+              overrides.push(
+                `  Audio Codecs:       ${device.supportedAudioCodecs.join(', ')} (override)`
+              );
+            }
+            if (device.supportsVideo !== undefined) {
+              overrides.push(
+                `  Video Support:      ${device.supportsVideo ? 'yes' : 'no'} (override)`
+              );
+            }
+            if (device.musicDir !== undefined) {
+              overrides.push(`  Music Directory:    ${device.musicDir}`);
+            }
+            if (overrides.length > 0) {
+              for (const line of overrides) {
+                out.print(line);
+              }
+            }
+          }
         }
 
         // Show tips based on sync tag state
@@ -2099,7 +2215,12 @@ const musicSubcommand = new Command('music')
         }
       };
 
-      const deviceResult = await openDevice(core, resolveResult.path, resolvedDevice?.config);
+      const deviceResult = await openDevice(
+        core,
+        resolveResult.path,
+        resolvedDevice?.config,
+        config.deviceDefaults
+      );
       try {
         const allTracks = deviceResult.adapter.getTracks();
         const musicTracks = allTracks.filter((t) => core.isMusicMediaType(t.mediaType));
@@ -2260,7 +2381,12 @@ const videoSubcommand = new Command('video')
         }
       };
 
-      const deviceResult = await openDevice(core, resolveResult.path, resolvedDevice?.config);
+      const deviceResult = await openDevice(
+        core,
+        resolveResult.path,
+        resolvedDevice?.config,
+        config.deviceDefaults
+      );
       try {
         // Check if device supports video
         if (!deviceResult.capabilities.supportsVideo) {
@@ -3263,6 +3389,16 @@ interface SetOptions {
   clearVideoQuality?: boolean;
   clearEncoding?: boolean;
   clearArtwork?: boolean;
+  artworkMaxResolution?: string;
+  artworkSources?: string[];
+  supportedAudioCodecs?: string[];
+  supportsVideo?: boolean;
+  musicDir?: string;
+  clearArtworkMaxResolution?: boolean;
+  clearArtworkSources?: boolean;
+  clearSupportedAudioCodecs?: boolean;
+  clearSupportsVideo?: boolean;
+  clearMusicDir?: boolean;
 }
 
 const setSubcommand = new Command('set')
@@ -3288,6 +3424,26 @@ const setSubcommand = new Command('set')
   .option('--clear-video-quality', 'remove video quality setting (use global default)')
   .option('--clear-encoding', 'remove encoding setting (use global default)')
   .option('--clear-artwork', 'remove artwork setting (use global default)')
+  .option(
+    '--artwork-max-resolution <pixels>',
+    'max artwork resolution in pixels (mass-storage only)'
+  )
+  .option(
+    '--artwork-sources <sources...>',
+    'artwork sources: database, embedded, sidecar (mass-storage only)'
+  )
+  .option('--supported-audio-codecs <codecs...>', 'supported audio codecs (mass-storage only)')
+  .option('--supports-video', 'device supports video playback (mass-storage only)')
+  .option('--no-supports-video', 'device does not support video playback (mass-storage only)')
+  .option('--music-dir <name>', 'music directory name on device (mass-storage only)')
+  .option(
+    '--clear-artwork-max-resolution',
+    'remove artwork resolution override (use preset default)'
+  )
+  .option('--clear-artwork-sources', 'remove artwork sources override (use preset default)')
+  .option('--clear-supported-audio-codecs', 'remove audio codecs override (use preset default)')
+  .option('--clear-supports-video', 'remove video support override (use preset default)')
+  .option('--clear-music-dir', 'remove music directory override (use default "Music")')
   .action(async (options: SetOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -3351,8 +3507,62 @@ const setSubcommand = new Command('set')
       return;
     }
 
+    // Validate capability override options
+    if (options.artworkMaxResolution !== undefined) {
+      const parsed = parseInt(options.artworkMaxResolution, 10);
+      if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+        const error = `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`;
+        out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+        process.exitCode = 1;
+        return;
+      }
+    }
+    if (options.artworkSources !== undefined) {
+      for (const source of options.artworkSources) {
+        if (!ARTWORK_SOURCES.includes(source as any)) {
+          const error = `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`;
+          out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+          process.exitCode = 1;
+          return;
+        }
+      }
+    }
+    if (options.supportedAudioCodecs !== undefined) {
+      for (const codec of options.supportedAudioCodecs) {
+        if (!AUDIO_CODECS.includes(codec as any)) {
+          const error = `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`;
+          out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+          process.exitCode = 1;
+          return;
+        }
+      }
+    }
+
+    // Validate mass-storage-only options are not set on iPod devices
+    const deviceConfig = devices[name]!;
+    const isMassStorage = isMassStorageDevice(deviceConfig.type);
+    const massStorageOptions = [
+      options.artworkMaxResolution,
+      options.artworkSources,
+      options.supportedAudioCodecs,
+      options.supportsVideo,
+      options.musicDir,
+      options.clearArtworkMaxResolution,
+      options.clearArtworkSources,
+      options.clearSupportedAudioCodecs,
+      options.clearSupportsVideo,
+      options.clearMusicDir,
+    ];
+    if (!isMassStorage && massStorageOptions.some((o) => o !== undefined)) {
+      const error =
+        'Capability overrides and musicDir are only valid for mass-storage devices (echo-mini, rockbox, generic).';
+      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
+      process.exitCode = 1;
+      return;
+    }
+
     // Build updates object (null means remove the setting)
-    const updates: Record<string, string | boolean | null> = {};
+    const updates: Record<string, string | number | boolean | string[] | null> = {};
 
     if (options.clearQuality) {
       updates.quality = null;
@@ -3384,9 +3594,39 @@ const setSubcommand = new Command('set')
       updates.artwork = options.artwork;
     }
 
+    if (options.clearArtworkMaxResolution) {
+      updates.artworkMaxResolution = null;
+    } else if (options.artworkMaxResolution !== undefined) {
+      updates.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
+    }
+
+    if (options.clearArtworkSources) {
+      updates.artworkSources = null;
+    } else if (options.artworkSources !== undefined) {
+      updates.artworkSources = options.artworkSources;
+    }
+
+    if (options.clearSupportedAudioCodecs) {
+      updates.supportedAudioCodecs = null;
+    } else if (options.supportedAudioCodecs !== undefined) {
+      updates.supportedAudioCodecs = options.supportedAudioCodecs;
+    }
+
+    if (options.clearSupportsVideo) {
+      updates.supportsVideo = null;
+    } else if (options.supportsVideo !== undefined) {
+      updates.supportsVideo = options.supportsVideo;
+    }
+
+    if (options.clearMusicDir) {
+      updates.musicDir = null;
+    } else if (options.musicDir !== undefined) {
+      updates.musicDir = options.musicDir;
+    }
+
     if (Object.keys(updates).length === 0) {
       const error =
-        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, or --clear-* variants).';
+        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, capability overrides, --music-dir, or --clear-* variants).';
       out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;

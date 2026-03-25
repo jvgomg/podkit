@@ -467,6 +467,130 @@ artwork = true
     expect(result.error).toContain('not found');
   });
 
+  it('writes musicDir to device config', () => {
+    const result = addDevice(
+      'player',
+      { type: 'generic', path: '/mnt/player', musicDir: 'MUSIC' },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('musicDir = "MUSIC"');
+  });
+
+  it('writes capability overrides to device config', () => {
+    const result = addDevice(
+      'player',
+      {
+        type: 'generic',
+        path: '/mnt/player',
+        artworkMaxResolution: 800,
+        artworkSources: ['embedded', 'sidecar'],
+        supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+        supportsVideo: true,
+      },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('artworkMaxResolution = 800');
+    expect(content).toContain('artworkSources = ["embedded", "sidecar"]');
+    expect(content).toContain('supportedAudioCodecs = ["aac", "mp3", "flac"]');
+    expect(content).toContain('supportsVideo = true');
+  });
+
+  it('updates artworkMaxResolution on existing device', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+`
+    );
+
+    const result = updateDevice('player', { artworkMaxResolution: 600 }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('artworkMaxResolution = 600');
+  });
+
+  it('updates array fields on existing device', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+supportedAudioCodecs = ["aac", "mp3"]
+`
+    );
+
+    const result = updateDevice(
+      'player',
+      { supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'] },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('supportedAudioCodecs = ["aac", "mp3", "flac", "ogg"]');
+    expect(content).not.toContain('supportedAudioCodecs = ["aac", "mp3"]');
+  });
+
+  it('clears capability override when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+artworkMaxResolution = 800
+`
+    );
+
+    const result = updateDevice('player', { artworkMaxResolution: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('artworkMaxResolution');
+  });
+
+  it('updates musicDir on existing device', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+musicDir = "Music"
+`
+    );
+
+    const result = updateDevice('player', { musicDir: 'MUSIC' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('musicDir = "MUSIC"');
+    expect(content).not.toContain('musicDir = "Music"');
+  });
+
+  it('clears musicDir when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+musicDir = "MUSIC"
+`
+    );
+
+    const result = updateDevice('player', { musicDir: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('musicDir');
+  });
+
   it('does not affect other devices', () => {
     fs.writeFileSync(
       configPath,
