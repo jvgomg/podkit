@@ -483,6 +483,7 @@ describe('diffVideos — preset change detection', () => {
       year: 2022,
       bitrate: 1500,
       comment: '[podkit:v1 quality=low]', // Tag says low, but preset is medium
+      syncTag: { quality: 'low' }, // Pre-computed sync tag
     });
 
     const diff = diffVideos([source], [device], {
@@ -502,6 +503,7 @@ describe('diffVideos — preset change detection', () => {
       year: 2023,
       bitrate: 1500,
       comment: '[podkit:v1 quality=medium]',
+      syncTag: { quality: 'medium' }, // Pre-computed sync tag
     });
 
     const diff = diffVideos([source], [device], {

@@ -14,6 +14,7 @@
  */
 
 import type { DeviceCapabilities } from './capabilities.js';
+import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
 
 // =============================================================================
 // DeviceTrack
@@ -52,6 +53,9 @@ export interface DeviceTrackInput {
   rating?: number;
   playCount?: number;
   skipCount?: number;
+
+  // Sync tag (adapter-managed, written to device-specific storage)
+  syncTag?: SyncTagData;
 
   // Video-specific fields
   tvShow?: string;
@@ -113,6 +117,9 @@ export interface DeviceTrack {
   readonly compilation: boolean;
   readonly mediaType: number;
 
+  // Sync tag (parsed from device-specific storage, e.g. comment field)
+  readonly syncTag: SyncTagData | null;
+
   // Video-specific
   readonly tvShow?: string;
   readonly tvEpisode?: string;
@@ -172,6 +179,14 @@ export interface DeviceAdapter {
 
   /** Remove artwork from a track */
   removeTrackArtwork(track: DeviceTrack): DeviceTrack;
+
+  // Sync tags
+
+  /** Write or update sync tag on a track (merge semantics) */
+  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack;
+
+  /** Remove sync tag from a track */
+  clearSyncTag(track: DeviceTrack): DeviceTrack;
 
   // Persistence
 

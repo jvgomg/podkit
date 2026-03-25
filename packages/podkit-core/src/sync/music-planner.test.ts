@@ -36,6 +36,7 @@ import {
 } from './music-planner.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
+import { parseSyncTag } from './sync-tags.js';
 import type { IPodTrack, SyncDiff, SyncOperation } from './types.js';
 
 // =============================================================================
@@ -111,6 +112,7 @@ function createIPodTrack(
     genre: options.genre,
     composer: options.composer,
     comment: options.comment,
+    syncTag: options.comment ? parseSyncTag(options.comment) : null,
     grouping: options.grouping,
     trackNumber: options.trackNumber,
     totalTracks: options.totalTracks,

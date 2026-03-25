@@ -20,6 +20,8 @@ import type {
 import type { DeviceCapabilities } from './capabilities.js';
 import type { IpodDatabase } from '../ipod/database.js';
 import type { IPodTrack, TrackInput, TrackFields } from '../ipod/types.js';
+import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
+import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
 
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.
@@ -61,8 +63,13 @@ export class IpodDeviceAdapter implements DeviceAdapter {
   }
 
   addTrack(input: DeviceTrackInput): DeviceTrack {
-    // DeviceTrackInput is a superset-compatible subset of TrackInput
-    return this.ipod.addTrack(input as TrackInput) as unknown as DeviceTrack;
+    // If a syncTag is provided, embed it into the comment field for iPod storage
+    const { syncTag, ...rest } = input;
+    const trackInput = rest as TrackInput;
+    if (syncTag) {
+      trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
+    }
+    return this.ipod.addTrack(trackInput) as unknown as DeviceTrack;
   }
 
   updateTrack(track: DeviceTrack, fields: DeviceTrackMetadata): DeviceTrack {
@@ -90,6 +97,32 @@ export class IpodDeviceAdapter implements DeviceAdapter {
 
   removeTrackArtwork(track: DeviceTrack): DeviceTrack {
     return track.removeArtwork();
+  }
+
+  // Sync tags
+
+  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack {
+    const ipodTrack = track as unknown as IPodTrack;
+    const currentComment = ipodTrack.comment;
+    const existingTag = parseSyncTag(currentComment);
+    // Merge: existing tag fields + update fields (update wins)
+    const merged: SyncTagData = existingTag
+      ? { ...existingTag, ...update }
+      : { quality: 'copy', ...update };
+    const newComment = writeSyncTag(currentComment, merged);
+    return this.updateTrack(track, { comment: newComment });
+  }
+
+  clearSyncTag(track: DeviceTrack): DeviceTrack {
+    const ipodTrack = track as unknown as IPodTrack;
+    const currentComment = ipodTrack.comment;
+    if (!parseSyncTag(currentComment)) {
+      return track; // No sync tag to clear
+    }
+    // Strip the [podkit:...] block from the comment
+    const cleaned =
+      (currentComment ?? '').replace(/\s*\[podkit:v\d+[^\]]*\]\s*/g, '').trim() || undefined;
+    return this.updateTrack(track, { comment: cleaned });
   }
 
   // Persistence

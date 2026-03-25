@@ -24,7 +24,8 @@ import {
   getVideoTransformMatchKeys,
   hasEnabledVideoTransforms,
 } from '../transforms/video-pipeline.js';
-import { buildVideoSyncTag, parseSyncTag, syncTagMatchesConfig } from './sync-tags.js';
+import type { SyncTagData } from './sync-tags.js';
+import { buildVideoSyncTag, syncTagMatchesConfig } from './sync-tags.js';
 import { detectBitratePresetMismatch } from './upgrades.js';
 
 // =============================================================================
@@ -70,6 +71,9 @@ export interface IPodVideo {
 
   /** Comment field from iPod database (may contain sync tags) */
   comment?: string;
+
+  /** Pre-computed sync tag data (parsed from comment field) */
+  syncTag?: SyncTagData | null;
 }
 
 /**
@@ -387,7 +391,7 @@ export function diffVideos(
 
     for (const match of existing) {
       // Try sync tag comparison first
-      const syncTag = parseSyncTag(match.ipod.comment);
+      const syncTag = match.ipod.syncTag ?? null;
       let mismatch = false;
 
       if (syncTag && expectedSyncTag) {

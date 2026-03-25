@@ -75,6 +75,7 @@ function createIPodTrack(
     hasArtwork: options.hasArtwork ?? false,
     hasFile: options.hasFile ?? true,
     compilation: options.compilation ?? false,
+    syncTag: options.syncTag ?? null,
     albumArtist: options.albumArtist,
     genre: options.genre,
     composer: options.composer,
@@ -658,6 +659,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: true,
         comment: '[podkit:v1 quality=high encoding=vbr art=11223344]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: '11223344' },
       });
       const reasons = detectUpgrades(source, ipod);
       expect(reasons).toContain('artwork-updated');
@@ -676,6 +678,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: true,
         comment: '[podkit:v1 quality=high encoding=vbr art=aabbccdd]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: 'aabbccdd' },
       });
       const reasons = detectUpgrades(source, ipod);
       expect(reasons).not.toContain('artwork-updated');
@@ -712,6 +715,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: true,
         comment: '[podkit:v1 quality=high encoding=vbr]',
+        syncTag: { quality: 'high', encoding: 'vbr' },
       });
       const reasons = detectUpgrades(source, ipod);
       expect(reasons).not.toContain('artwork-updated');
@@ -730,6 +734,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: true,
         comment: '[podkit:v1 quality=high encoding=vbr art=11223344]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: '11223344' },
       });
       const reasons = detectUpgrades(source, ipod);
       expect(reasons).not.toContain('artwork-updated');
@@ -748,6 +753,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: false,
         comment: '[podkit:v1 quality=high encoding=vbr art=11223344]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: '11223344' },
       });
       const reasons = detectUpgrades(source, ipod);
       expect(reasons).toContain('artwork-added');
@@ -773,6 +779,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: true,
         comment: '[podkit:v1 quality=high encoding=vbr art=11223344]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: '11223344' },
         // no soundcheck
       });
       const reasons = detectUpgrades(source, ipod);
@@ -1149,6 +1156,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: false,
         comment: '[podkit:v1 quality=high encoding=vbr art=aabb1122]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: 'aabb1122' },
       });
 
       const reasons = detectUpgrades(source, ipodNoArtworkButHasHash);
@@ -1170,6 +1178,7 @@ describe('detectUpgrades', () => {
         bitrate: 256,
         hasArtwork: false,
         comment: '[podkit:v1 quality=high encoding=vbr art=oldart11]',
+        syncTag: { quality: 'high', encoding: 'vbr', artworkHash: 'oldart11' },
       });
 
       const reasons = detectUpgrades(source, ipodNoArtworkOldHash);

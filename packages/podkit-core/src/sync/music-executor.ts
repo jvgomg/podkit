@@ -32,7 +32,7 @@ import { spawn } from 'node:child_process';
 
 import { AsyncQueue } from './async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
-import { buildAudioSyncTag, buildCopySyncTag, parseSyncTag, writeSyncTag } from './sync-tags.js';
+import { buildAudioSyncTag, buildCopySyncTag } from './sync-tags.js';
 import type { SyncTagData } from './sync-tags.js';
 import {
   categorizeError as sharedCategorizeError,
@@ -1377,15 +1377,7 @@ export class MusicExecutor implements SyncExecutor {
       updateFields.soundcheck = metadata.soundcheck;
     }
     if (metadata.comment !== undefined) {
-      // For sync-tag-write: the comment value is a formatted sync tag string.
-      // Parse it back to SyncTagData, then use writeSyncTag to merge it into
-      // the track's existing comment (preserving any user text).
-      const syncTagData = parseSyncTag(metadata.comment);
-      if (syncTagData) {
-        updateFields.comment = writeSyncTag(foundTrack.comment, syncTagData);
-      } else {
-        updateFields.comment = metadata.comment;
-      }
+      updateFields.comment = metadata.comment;
     }
 
     // Update the track metadata (preserves play stats automatically)
@@ -1687,7 +1679,7 @@ export class MusicExecutor implements SyncExecutor {
     if (operation.type === 'add-transcode' && operation.preset) {
       const syncTag = this.buildSyncTagForPreset(operation.preset.name);
       if (syncTag) {
-        trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
+        trackInput.syncTag = syncTag;
       }
     }
 
@@ -1699,7 +1691,7 @@ export class MusicExecutor implements SyncExecutor {
       const copySyncTag = buildCopySyncTag(
         this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
       );
-      trackInput.comment = writeSyncTag(trackInput.comment, copySyncTag);
+      trackInput.syncTag = copySyncTag;
     }
 
     const track = this.device.addTrack(trackInput);
@@ -1724,18 +1716,14 @@ export class MusicExecutor implements SyncExecutor {
       // For copy operations, no sync tag was written above, so create a minimal one
       // containing just the artwork hash so --check-artwork can detect future changes.
       if (artHash && this.syncTagConfig) {
-        const currentComment = track.comment;
-        const existingTag = parseSyncTag(currentComment);
-        if (existingTag) {
-          existingTag.artworkHash = artHash;
-          this.device.updateTrack(track, { comment: writeSyncTag(currentComment, existingTag) });
+        if (track.syncTag) {
+          this.device.writeSyncTag(track, { artworkHash: artHash });
         } else if (
           operation.type === 'add-direct-copy' ||
           operation.type === 'add-optimized-copy'
         ) {
           // Copy operation: no existing sync tag. Write a minimal tag with just the artwork hash.
-          const artOnlyTag: SyncTagData = { quality: 'copy', artworkHash: artHash };
-          this.device.updateTrack(track, { comment: writeSyncTag(currentComment, artOnlyTag) });
+          this.device.writeSyncTag(track, { quality: 'copy', artworkHash: artHash });
         }
       } else if (!artHash && track.hasArtwork) {
         // Defensive: artwork extraction returned null but track somehow has artwork — clean up
@@ -1787,15 +1775,8 @@ export class MusicExecutor implements SyncExecutor {
     if (operation.reason === 'artwork-removed') {
       foundTrack = this.device.removeTrackArtwork(foundTrack);
       // Clear artworkHash from sync tag if present
-      if (this.syncTagConfig) {
-        const currentComment = foundTrack.comment;
-        const existingTag = parseSyncTag(currentComment);
-        if (existingTag && existingTag.artworkHash) {
-          existingTag.artworkHash = undefined;
-          foundTrack = this.device.updateTrack(foundTrack, {
-            comment: writeSyncTag(currentComment, existingTag),
-          });
-        }
+      if (this.syncTagConfig && foundTrack.syncTag?.artworkHash) {
+        foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
       }
       return { bytesTransferred: 0, track: foundTrack };
     }
@@ -1810,18 +1791,13 @@ export class MusicExecutor implements SyncExecutor {
       // Prefer the adapter's artwork hash for sync tag consistency (see transferToIpod comment)
       const artHash = source.artworkHash ?? extractedHash;
       if (artHash && this.syncTagConfig) {
-        const currentComment = foundTrack.comment;
-        const existingTag = parseSyncTag(currentComment);
-        if (existingTag) {
-          existingTag.artworkHash = artHash;
-          foundTrack = this.device.updateTrack(foundTrack, {
-            comment: writeSyncTag(currentComment, existingTag),
-          });
+        if (foundTrack.syncTag) {
+          foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: artHash });
         } else {
           // No existing sync tag (e.g., copied lossy track). Write minimal tag with artwork hash.
-          const artOnlyTag: SyncTagData = { quality: 'copy', artworkHash: artHash };
-          foundTrack = this.device.updateTrack(foundTrack, {
-            comment: writeSyncTag(currentComment, artOnlyTag),
+          foundTrack = this.device.writeSyncTag(foundTrack, {
+            quality: 'copy',
+            artworkHash: artHash,
           });
         }
       }
@@ -1847,11 +1823,13 @@ export class MusicExecutor implements SyncExecutor {
     if (source.albumArtist !== undefined) updateFields.albumArtist = source.albumArtist;
     if (source.compilation !== undefined) updateFields.compilation = source.compilation;
 
+    foundTrack = this.device.updateTrack(foundTrack, updateFields);
+
     // Write sync tag for upgrade-transcode operations (has preset)
     if (operation.type === 'upgrade-transcode') {
       const syncTag = this.buildSyncTagForPreset(operation.preset.name);
       if (syncTag) {
-        updateFields.comment = writeSyncTag(foundTrack.comment, syncTag);
+        foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
       }
     }
 
@@ -1863,10 +1841,8 @@ export class MusicExecutor implements SyncExecutor {
       const copySyncTag = buildCopySyncTag(
         this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
       );
-      updateFields.comment = writeSyncTag(foundTrack.comment, copySyncTag);
+      foundTrack = this.device.writeSyncTag(foundTrack, copySyncTag);
     }
-
-    foundTrack = this.device.updateTrack(foundTrack, updateFields);
 
     // Extract and transfer artwork if enabled.
     // Skip when the source explicitly has no artwork (hasArtwork === false) — see transferToIpod
@@ -1877,33 +1853,21 @@ export class MusicExecutor implements SyncExecutor {
       const artHash = source.artworkHash ?? extractedHash;
       if (artHash && this.syncTagConfig) {
         // Progressive hash write: include artwork hash in sync tag for future change detection
-        const currentComment = foundTrack.comment;
-        const existingTag = parseSyncTag(currentComment);
-        if (existingTag) {
-          existingTag.artworkHash = artHash;
-          foundTrack = this.device.updateTrack(foundTrack, {
-            comment: writeSyncTag(currentComment, existingTag),
-          });
+        if (foundTrack.syncTag) {
+          foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: artHash });
         } else if (operation.type !== 'upgrade-transcode') {
           // Copy upgrade: no sync tag was written. Write a minimal tag with the artwork hash.
-          const artOnlyTag: SyncTagData = { quality: 'copy', artworkHash: artHash };
-          foundTrack = this.device.updateTrack(foundTrack, {
-            comment: writeSyncTag(currentComment, artOnlyTag),
+          foundTrack = this.device.writeSyncTag(foundTrack, {
+            quality: 'copy',
+            artworkHash: artHash,
           });
         }
       } else if (!artHash && foundTrack.hasArtwork) {
         // Artwork extraction returned null but iPod track has artwork — clean up stale artwork
         foundTrack = this.device.removeTrackArtwork(foundTrack);
         // Clear artworkHash from sync tag if present
-        if (this.syncTagConfig) {
-          const currentComment = foundTrack.comment;
-          const existingTag = parseSyncTag(currentComment);
-          if (existingTag && existingTag.artworkHash) {
-            existingTag.artworkHash = undefined;
-            foundTrack = this.device.updateTrack(foundTrack, {
-              comment: writeSyncTag(currentComment, existingTag),
-            });
-          }
+        if (this.syncTagConfig && foundTrack.syncTag?.artworkHash) {
+          foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: undefined });
         }
       }
     }
