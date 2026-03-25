@@ -350,10 +350,12 @@ export function buildAlacArgs(
 export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a';
 
 /**
- * Build FFmpeg arguments for optimized-copy (stream copy with artwork stripping).
+ * Build FFmpeg arguments for optimized-copy (stream copy with artwork processing).
  *
- * Used when transferMode='optimized' for copy-format files (MP3, M4A, ALAC→ALAC).
- * Audio is copied without re-encoding; only artwork is stripped.
+ * Audio is copied without re-encoding. Artwork handling depends on context:
+ * - With artworkResize: resizes embedded artwork (for devices that read from tags).
+ * - Without artworkResize: strips embedded artwork (for database-artwork devices
+ *   in optimized mode, or as part of transcode output).
  */
 export function buildOptimizedCopyArgs(
   input: string,

@@ -96,6 +96,13 @@ function createMockIpod() {
   return {
     addTrack: mock((_input: DeviceTrackInput) => mockTrack as unknown as DeviceTrack),
     getTracks: mock(() => [mockTrack as unknown as DeviceTrack]),
+    updateTrack: mock((_track: DeviceTrack, _fields: DeviceTrackMetadata) => {
+      mockTrack.update(_fields);
+      return mockTrack as unknown as DeviceTrack;
+    }),
+    copyTrackFile: mock(
+      (_track: DeviceTrack, _sourcePath: string) => mockTrack as unknown as DeviceTrack
+    ),
     save: mock(() => Promise.resolve({ warnings: [] }) as Promise<SaveResult>),
     mockTrack,
   };
@@ -223,7 +230,7 @@ describe('VideoHandler execution', () => {
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
-      expect(mockIpod.mockTrack.copyFile).toHaveBeenCalledTimes(1);
+      expect(mockIpod.copyTrackFile).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -345,7 +352,7 @@ describe('VideoHandler execution', () => {
 
       // New track should be added via copy path (addTrack + copyFile, no transcodeVideo)
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
-      expect(mockIpod.mockTrack.copyFile).toHaveBeenCalledTimes(1);
+      expect(mockIpod.copyTrackFile).toHaveBeenCalledTimes(1);
       expect(mockTranscodeVideo).not.toHaveBeenCalled();
 
       // All events reference the upgrade operation, not the internal copy op
@@ -388,8 +395,8 @@ describe('VideoHandler execution', () => {
       expect(events[0]!.phase).toBe('starting');
       expect(events[1]!.phase).toBe('complete');
 
-      expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(mockIpod.updateTrack).toHaveBeenCalledTimes(1);
+      const updateArg = mockIpod.updateTrack.mock.calls[0]![1];
       expect(updateArg.title).toBe('Pilot');
       expect(updateArg.artist).toBe('Breaking Bad');
       expect(updateArg.album).toBe('Breaking Bad, Season 1');
@@ -420,8 +427,8 @@ describe('VideoHandler execution', () => {
       const events = await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
       expect(events.length).toBe(2);
-      expect(mockIpod.mockTrack.update).toHaveBeenCalledTimes(1);
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      expect(mockIpod.updateTrack).toHaveBeenCalledTimes(1);
+      const updateArg = mockIpod.updateTrack.mock.calls[0]![1];
       expect(updateArg.title).toBe('Inception');
       expect(updateArg.artist).toBe('Christopher Nolan');
       expect(updateArg.album).toBe('Inception');
@@ -447,7 +454,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = mockIpod.updateTrack.mock.calls[0]![1];
       expect(updateArg.artist).toBe('Pixar');
     });
 
@@ -477,7 +484,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = mockIpod.updateTrack.mock.calls[0]![1];
       // For tvshow with newSeriesTitle, it uses newSeriesTitle
       expect(updateArg.artist).toBe('Transformed Name');
       expect(updateArg.album).toBe('Transformed Name, Season 2');
@@ -507,7 +514,7 @@ describe('VideoHandler execution', () => {
 
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
-      const updateArg = mockIpod.mockTrack.update.mock.calls[0]![0];
+      const updateArg = mockIpod.updateTrack.mock.calls[0]![1];
       expect(updateArg.artist).toBe('New Series');
       expect(updateArg.album).toBe('New Series, Season 3');
       expect(updateArg.tvShow).toBe('New Series');
