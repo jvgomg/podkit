@@ -821,19 +821,30 @@ function parseDevices(
       device.supportsVideo = rawDevice.supportsVideo;
     }
 
-    // Validate: capability overrides are only valid for mass-storage devices
+    // Parse optional musicDir
+    if (rawDevice.musicDir !== undefined) {
+      if (typeof rawDevice.musicDir !== 'string' || rawDevice.musicDir.trim().length === 0) {
+        throw new Error(
+          `Invalid musicDir value in [devices.${name}]. ` + `Must be a non-empty string.`
+        );
+      }
+      device.musicDir = rawDevice.musicDir;
+    }
+
+    // Validate: capability overrides and musicDir are only valid for mass-storage devices
     const isIpodDevice = !device.type || device.type === 'ipod';
     if (isIpodDevice) {
-      const capabilityFields = [
+      const massStorageFields = [
         'artworkMaxResolution',
         'artworkSources',
         'supportedAudioCodecs',
         'supportsVideo',
+        'musicDir',
       ] as const;
-      const presentFields = capabilityFields.filter((f) => device[f] !== undefined);
+      const presentFields = massStorageFields.filter((f) => device[f] !== undefined);
       if (presentFields.length > 0) {
         throw new Error(
-          `Capability overrides (${presentFields.join(', ')}) in [devices.${name}] ` +
+          `Mass-storage settings (${presentFields.join(', ')}) in [devices.${name}] ` +
             `are only valid for mass-storage devices (type must be set to a non-iPod device type). ` +
             `iPod capabilities are determined automatically from the device generation.`
         );
@@ -1084,6 +1095,62 @@ export function loadEnvConfig(): PartialConfig {
     }
 
     config.videoTransforms = { showLanguage: sl };
+  }
+
+  // Parse device default env vars (mass-storage capability overrides)
+  const deviceDefaults: NonNullable<PodkitConfig['deviceDefaults']> = {};
+  let hasDeviceDefaults = false;
+
+  const envArtworkMaxRes = process.env[ENV_KEYS.artworkMaxResolution];
+  if (envArtworkMaxRes !== undefined) {
+    const parsed = parseInt(envArtworkMaxRes, 10);
+    if (!isNaN(parsed) && Number.isInteger(parsed) && parsed >= 1 && parsed <= 10000) {
+      deviceDefaults.artworkMaxResolution = parsed;
+      hasDeviceDefaults = true;
+    }
+  }
+
+  const envArtworkSources = process.env[ENV_KEYS.artworkSources];
+  if (envArtworkSources !== undefined) {
+    const sources = envArtworkSources
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (
+      sources.length > 0 &&
+      sources.every((s) => ARTWORK_SOURCES.includes(s as DeviceArtworkSource))
+    ) {
+      deviceDefaults.artworkSources = sources as DeviceArtworkSource[];
+      hasDeviceDefaults = true;
+    }
+  }
+
+  const envSupportedCodecs = process.env[ENV_KEYS.supportedAudioCodecs];
+  if (envSupportedCodecs !== undefined) {
+    const codecs = envSupportedCodecs
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+    if (codecs.length > 0 && codecs.every((c) => AUDIO_CODECS.includes(c as AudioCodec))) {
+      deviceDefaults.supportedAudioCodecs = codecs as AudioCodec[];
+      hasDeviceDefaults = true;
+    }
+  }
+
+  const envSupportsVideo = process.env[ENV_KEYS.supportsVideo];
+  if (envSupportsVideo !== undefined) {
+    deviceDefaults.supportsVideo = parseBoolEnv(envSupportsVideo);
+    hasDeviceDefaults = true;
+  }
+
+  const envMusicDir = process.env[ENV_KEYS.musicDir];
+  if (envMusicDir !== undefined && envMusicDir.trim().length > 0) {
+    deviceDefaults.musicDir = envMusicDir;
+    hasDeviceDefaults = true;
+  }
+
+  if (hasDeviceDefaults) {
+    config.deviceDefaults = deviceDefaults;
   }
 
   // Parse collection env vars
