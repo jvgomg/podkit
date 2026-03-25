@@ -38,8 +38,11 @@ interface MockIpodDatabase {
   addTrack: ReturnType<typeof mock>;
   getTracks: ReturnType<typeof mock>;
   removeTrack: ReturnType<typeof mock>;
+  updateTrack: ReturnType<typeof mock>;
+  copyTrackFile: ReturnType<typeof mock>;
   save: ReturnType<typeof mock>;
   replaceTrackFile: ReturnType<typeof mock>;
+  removeTrackArtwork: ReturnType<typeof mock>;
 }
 
 interface MockTranscoder {
@@ -125,8 +128,21 @@ function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDataba
       }
       return { removed: true };
     }),
+    updateTrack: mock((track: IPodTrack, fields: Record<string, unknown>) => {
+      const updated = track.update(fields);
+      // Replace in tracks array (mirrors real adapter behavior)
+      const index = tracks.findIndex((t) => t.filePath === track.filePath);
+      if (index >= 0) {
+        tracks[index] = updated;
+      }
+      return updated;
+    }),
+    copyTrackFile: mock((track: IPodTrack, _sourcePath: string) => {
+      return track.copyFile(_sourcePath);
+    }),
     save: mock(async () => ({ warnings: [] })),
     replaceTrackFile: mock((track: IPodTrack, _newFilePath: string) => track),
+    removeTrackArtwork: mock((track: IPodTrack) => track.removeArtwork()),
   };
 }
 

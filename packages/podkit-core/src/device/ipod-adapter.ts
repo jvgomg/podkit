@@ -76,11 +76,20 @@ export class IpodDeviceAdapter implements DeviceAdapter {
     this.ipod.removeTrack(track as unknown as IPodTrack, options);
   }
 
+  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack {
+    // IPodTrack.copyFile() mutates in place and returns the same instance
+    return track.copyFile(sourcePath);
+  }
+
   replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack {
     return this.ipod.replaceTrackFile(
       track as unknown as IPodTrack,
       newFilePath
     ) as unknown as DeviceTrack;
+  }
+
+  removeTrackArtwork(track: DeviceTrack): DeviceTrack {
+    return track.removeArtwork();
   }
 
   // Persistence
