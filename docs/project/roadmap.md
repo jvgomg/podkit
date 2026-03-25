@@ -55,6 +55,7 @@ These features are on the roadmap but not yet scheduled. Votes and comments help
 | **iTunes / Apple Music** | Sync music from an iTunes or Apple Music library | [#35](https://github.com/jvgomg/podkit/discussions/35) |
 | **Plex** | Sync music from Plex media servers | [#6](https://github.com/jvgomg/podkit/discussions/6) |
 | **Jellyfin** | Sync music from Jellyfin media servers | [#7](https://github.com/jvgomg/podkit/discussions/7) |
+| **Lyrion Music Server** | Sync music from Lyrion (formerly Logitech Media Server) via its JSON-RPC API | [#53](https://github.com/jvgomg/podkit/discussions/53) |
 
 ### Platform Support
 

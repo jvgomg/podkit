@@ -158,6 +158,7 @@ Keep this table updated when creating or closing discussions.
 | 32 | Sound Check (volume normalization) support | Library Sync | Later |
 | 34 | Rockbox and non-iTunesDB device support | Device Support | Later |
 | 35 | iTunes / Apple Music library source | Collection Sources | Later |
+| 53 | Lyrion Music Server collection source | Collection Sources | Later |
 
 ## Documentation
 
