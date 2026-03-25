@@ -152,13 +152,17 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    */
   syncTagConfig?: SyncTagConfig;
   /**
-   * Transfer mode for transcoded output.
+   * Transfer mode — an optimization strategy applied after device constraints.
    *
-   * - `fast` (default): strips embedded artwork, optimized for iPod playback.
-   * - `optimized`: strips embedded artwork from transcoded files.
-   * - `portable`: preserves embedded artwork for exportable files.
+   * Device constraints (artworkMaxResolution, supportedAudioCodecs, artworkSources)
+   * are always enforced regardless of mode. Transfer mode only affects discretionary
+   * decisions where the device doesn't dictate the outcome:
    *
-   * Only affects transcoded files. Direct-copy formats are left as-is.
+   * - `fast` (default): minimum extra work beyond device requirements.
+   * - `optimized`: optimize storage (e.g., strip embedded artwork when the device
+   *   reads from a database and doesn't need it).
+   * - `portable`: optimize completeness (preserve embedded artwork even when the
+   *   device doesn't need it, for portability if files are copied elsewhere).
    */
   transferMode?: string;
   /**

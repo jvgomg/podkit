@@ -562,9 +562,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
     }
 
-    // Add track to iPod and copy file
+    // Add track to device and copy file
     const track = ctx.device.addTrack(trackInput);
-    track.copyFile(tempOutputPath);
+    ctx.device.copyTrackFile(track, tempOutputPath);
 
     yield { operation: op, phase: 'complete' };
   }
@@ -598,9 +598,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       }
     }
 
-    // Add track to iPod and copy file
+    // Add track to device and copy file
     const track = ctx.device.addTrack(trackInput);
-    track.copyFile(source.filePath);
+    ctx.device.copyTrackFile(track, source.filePath);
 
     yield { operation: op, phase: 'complete' };
   }
@@ -656,7 +656,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       const seriesTitle = newSeriesTitle ?? source.seriesTitle ?? source.title;
       const episodeTitle = source.title || formatVideoEpisodeTitle(source);
 
-      foundTrack.update({
+      ctx.device.updateTrack(foundTrack, {
         title: episodeTitle,
         artist: seriesTitle,
         album: `${seriesTitle}, Season ${source.seasonNumber ?? 1}`,
@@ -666,13 +666,13 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
         discNumber: source.seasonNumber,
       });
     } else if (source.contentType === 'movie') {
-      foundTrack.update({
+      ctx.device.updateTrack(foundTrack, {
         title: source.title,
         artist: source.director ?? source.studio,
         album: source.title,
       });
     } else if (newSeriesTitle !== undefined) {
-      foundTrack.update({
+      ctx.device.updateTrack(foundTrack, {
         artist: newSeriesTitle,
         album: `${newSeriesTitle}, Season ${video.seasonNumber ?? 1}`,
         tvShow: newSeriesTitle,

@@ -325,12 +325,12 @@ export class MassStorageTrack implements DeviceTrack {
   /**
    * Set artwork on the track.
    *
-   * No-op for mass-storage devices — artwork is embedded by the FFmpeg
-   * pipeline during transcoding (TASK-203/205). This method exists only
-   * to satisfy the DeviceTrack interface.
+   * No-op for mass-storage devices — artwork is already embedded in the
+   * file by the FFmpeg pipeline (resize/transcode). Unlike iPod, which
+   * stores artwork in a separate database, mass-storage devices read
+   * artwork directly from embedded tags.
    */
   setArtwork(_imagePath: string): DeviceTrack {
-    // Artwork is embedded by the transcode pipeline, not set separately
     return this;
   }
 
@@ -340,15 +340,16 @@ export class MassStorageTrack implements DeviceTrack {
    * No-op — see setArtwork() for rationale.
    */
   setArtworkFromData(_imageData: Buffer): DeviceTrack {
-    // Artwork is embedded by the transcode pipeline, not set separately
     return this;
   }
 
   /**
    * Remove artwork from the track.
    *
-   * No-op — artwork removal would require tag rewriting, which is
-   * deferred to a future iteration.
+   * No-op — mass-storage devices with embedded artwork as their primary
+   * source should never have artwork stripped, since the device needs it.
+   * For devices that could benefit from stripping (e.g., sidecar-artwork
+   * devices in optimized mode), this would require tag rewriting.
    */
   removeArtwork(): DeviceTrack {
     return this;
@@ -540,9 +541,8 @@ export class MassStorageAdapter implements DeviceAdapter {
   }
 
   removeTrackArtwork(track: DeviceTrack): DeviceTrack {
-    // No-op for mass-storage — artwork is embedded by the transcode pipeline.
-    // The adapter intercept point exists so future artwork tag-stripping
-    // can be added here without changing the executor.
+    // No-op — mass-storage devices with embedded artwork need it kept.
+    // Delegates to the track's removeArtwork() which is also a no-op.
     return track.removeArtwork();
   }
 

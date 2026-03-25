@@ -27,6 +27,7 @@
     "@podkit/libgpod-node": "workspace:*",
     "glob": "^13.0.6",
     "music-metadata": "^11.12.1",
+    "node-taglib-sharp": "^6.0.1",
     "subsonic-api": "^3.2.0"
   },
   "devDependencies": {
