@@ -126,22 +126,50 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         ? 'high'
         : config.effectiveQuality;
 
-    return core.computeMusicDiff(sourceItems, deviceItems, {
-      transforms: config.effectiveTransforms,
+    // Use the unified SyncDiffer + MusicHandler pipeline
+    const handler = core.createMusicHandler();
+    handler.setTransformsConfig(config.effectiveTransforms);
+    const differ = core.createSyncDiffer(handler);
+    const transformsEnabled = core.hasEnabledTransforms(config.effectiveTransforms);
+
+    const unifiedDiff = differ.diff(sourceItems, deviceItems, {
+      transformsEnabled,
       skipUpgrades: config.skipUpgrades,
       forceTranscode: config.forceTranscode,
-      forceTransferMode: config.forceTransferMode,
-      effectiveTransferMode: config.effectiveTransferMode,
-      forceSyncTags: config.forceSyncTags,
       forceMetadata: config.forceMetadata,
       transcodingActive: true,
       presetBitrate: core.getPresetBitrate(config.effectiveQuality),
-      encodingMode: config.effectiveEncoding,
-      bitrateTolerance: config.effectiveBitrateTolerance,
-      isAlacPreset,
-      resolvedQuality,
-      customBitrate: config.effectiveCustomBitrate,
+      handlerOptions: {
+        forceSyncTags: config.forceSyncTags,
+        encodingMode: config.effectiveEncoding,
+        bitrateTolerance: config.effectiveBitrateTolerance,
+        isAlacPreset,
+        resolvedQuality,
+        customBitrate: config.effectiveCustomBitrate,
+        forceTransferMode: config.forceTransferMode,
+        effectiveTransferMode: config.effectiveTransferMode,
+      },
     });
+
+    // Convert unified diff to SyncDiff shape for downstream consumers
+    // (createMusicPlan, collectPostDiffData, renderDryRunText, buildDryRunJson)
+    const syncDiff: SyncDiff = {
+      toAdd: unifiedDiff.toAdd,
+      toRemove: unifiedDiff.toRemove as IPodTrack[],
+      existing: unifiedDiff.existing.map((e) => ({
+        collection: e.source,
+        ipod: e.device as IPodTrack,
+      })),
+      toUpdate: unifiedDiff.toUpdate.map((u) => ({
+        source: u.source,
+        ipod: u.device as IPodTrack,
+        reason: u.reasons[0]!,
+        changes: u.changes ?? [],
+        syncTag: u.syncTag,
+      })),
+    };
+
+    return syncDiff;
   }
 
   collectPostDiffData(diff: SyncDiff, contentConfig: MusicContentConfig | VideoContentConfig) {
@@ -525,7 +553,6 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         syncTagConfig: {
           encodingMode: config.effectiveEncoding,
           customBitrate: config.effectiveCustomBitrate,
-          transferMode: config.effectiveTransferMode,
         },
         transferMode: config.effectiveTransferMode,
         artworkResize,

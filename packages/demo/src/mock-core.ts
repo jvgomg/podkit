@@ -1937,6 +1937,14 @@ export const ENCODING_MODES = ['vbr', 'cbr'] as const;
 export class MusicHandler {
   readonly type = 'music';
 
+  setTransformsConfig(_config: any): void {
+    // no-op in mock
+  }
+
+  setExecutionConfig(_config: any): void {
+    // no-op in mock
+  }
+
   generateMatchKey(source: any): string {
     return getMatchKey(source);
   }
