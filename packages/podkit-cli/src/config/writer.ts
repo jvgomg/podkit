@@ -143,6 +143,9 @@ export function addDevice(
   if (device.supportsVideo !== undefined) {
     lines.push(`supportsVideo = ${device.supportsVideo}`);
   }
+  if (device.musicDir !== undefined) {
+    lines.push(`musicDir = "${device.musicDir}"`);
+  }
 
   // Handle cleanArtists config
   if (device.transforms?.cleanArtists) {
@@ -217,6 +220,11 @@ export function updateDevice(
     videoQuality?: string | null;
     artwork?: boolean | null;
     checkArtwork?: boolean | null;
+    artworkMaxResolution?: number | null;
+    artworkSources?: string[] | null;
+    supportedAudioCodecs?: string[] | null;
+    supportsVideo?: boolean | null;
+    musicDir?: string | null;
   },
   options?: UpdateConfigOptions
 ): UpdateConfigResult {
@@ -281,14 +289,24 @@ export function updateDevice(
       sectionContent = sectionContent.replace(lineRegex, '');
       // Clean up double blank lines from removal
       sectionContent = sectionContent.replace(/\n\n\n+/g, '\n\n');
-    } else if (lineRegex.test(sectionContent)) {
-      // Update existing line
-      const formattedValue = typeof value === 'boolean' ? String(value) : `"${value}"`;
-      sectionContent = sectionContent.replace(lineRegex, `${tomlKey} = ${formattedValue}`);
     } else {
-      // Add new line after the section header (first line)
-      const formattedValue = typeof value === 'boolean' ? String(value) : `"${value}"`;
-      sectionContent = `\n${tomlKey} = ${formattedValue}` + sectionContent;
+      // Format value for TOML
+      let formattedValue: string;
+      if (typeof value === 'boolean' || typeof value === 'number') {
+        formattedValue = String(value);
+      } else if (Array.isArray(value)) {
+        formattedValue = `[${value.map((v) => `"${v}"`).join(', ')}]`;
+      } else {
+        formattedValue = `"${value}"`;
+      }
+
+      if (lineRegex.test(sectionContent)) {
+        // Update existing line
+        sectionContent = sectionContent.replace(lineRegex, `${tomlKey} = ${formattedValue}`);
+      } else {
+        // Add new line after the section header (first line)
+        sectionContent = `\n${tomlKey} = ${formattedValue}` + sectionContent;
+      }
     }
   }
 

@@ -55,4 +55,9 @@ export const ENV_KEYS = {
   showLanguage: `${ENV_PREFIX}SHOW_LANGUAGE`,
   showLanguageFormat: `${ENV_PREFIX}SHOW_LANGUAGE_FORMAT`,
   showLanguageExpand: `${ENV_PREFIX}SHOW_LANGUAGE_EXPAND`,
+  artworkMaxResolution: `${ENV_PREFIX}ARTWORK_MAX_RESOLUTION`,
+  artworkSources: `${ENV_PREFIX}ARTWORK_SOURCES`,
+  supportedAudioCodecs: `${ENV_PREFIX}SUPPORTED_AUDIO_CODECS`,
+  supportsVideo: `${ENV_PREFIX}SUPPORTS_VIDEO`,
+  musicDir: `${ENV_PREFIX}MUSIC_DIR`,
 } as const;

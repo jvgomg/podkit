@@ -189,6 +189,8 @@ export interface DeviceConfig {
   supportedAudioCodecs?: AudioCodec[];
   /** Override whether the device supports video playback */
   supportsVideo?: boolean;
+  /** Override the music directory name on the device (default: "Music") */
+  musicDir?: string;
 }
 
 /**
@@ -286,6 +288,19 @@ export interface PodkitConfig {
   devices?: Record<string, DeviceConfig>;
   /** Default collection and device names */
   defaults?: DefaultsConfig;
+
+  // ===========================================================================
+  // Global device defaults (applied to mass-storage devices when not overridden per-device)
+  // ===========================================================================
+
+  /** Global device defaults from env vars (PODKIT_ARTWORK_MAX_RESOLUTION, etc.) */
+  deviceDefaults?: {
+    artworkMaxResolution?: number;
+    artworkSources?: DeviceArtworkSource[];
+    supportedAudioCodecs?: AudioCodec[];
+    supportsVideo?: boolean;
+    musicDir?: string;
+  };
 }
 
 /**
@@ -388,6 +403,7 @@ export interface ConfigFileDevice {
   artworkSources?: string[];
   supportedAudioCodecs?: string[];
   supportsVideo?: boolean;
+  musicDir?: string;
 }
 
 /**

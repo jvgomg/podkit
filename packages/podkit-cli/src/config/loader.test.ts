@@ -948,7 +948,7 @@ artworkMaxResolution = 600
         );
 
         expect(() => loadConfigFile(configPath)).toThrow(
-          /Capability overrides.*artworkMaxResolution.*only valid for mass-storage/
+          /Mass-storage settings.*artworkMaxResolution.*only valid for mass-storage/
         );
       });
 
@@ -965,7 +965,7 @@ supportedAudioCodecs = ["aac", "mp3", "flac"]
         );
 
         expect(() => loadConfigFile(configPath)).toThrow(
-          /Capability overrides.*supportedAudioCodecs.*only valid for mass-storage/
+          /Mass-storage settings.*supportedAudioCodecs.*only valid for mass-storage/
         );
       });
 
@@ -985,6 +985,53 @@ supportedAudioCodecs = ["aac", "mp3"]
         const result = loadConfigFile(configPath)!;
         expect(result.devices!.echo!.artworkMaxResolution).toBe(800);
         expect(result.devices!.echo!.supportedAudioCodecs).toEqual(['aac', 'mp3']);
+      });
+
+      it('parses musicDir on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+musicDir = "MUSIC"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.musicDir).toBe('MUSIC');
+      });
+
+      it('rejects musicDir on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+musicDir = "MUSIC"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*musicDir.*only valid for mass-storage/
+        );
+      });
+
+      it('rejects empty musicDir', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+musicDir = ""
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid musicDir.*non-empty string/);
       });
     });
 
@@ -1446,6 +1493,69 @@ device = "terapod"
         const result = loadEnvConfig();
         expect(result.music).toBeUndefined();
         expect(result.video).toBeUndefined();
+      });
+    });
+
+    describe('device defaults', () => {
+      it('parses PODKIT_ARTWORK_MAX_RESOLUTION', () => {
+        process.env[ENV_KEYS.artworkMaxResolution] = '800';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.artworkMaxResolution).toBe(800);
+        delete process.env[ENV_KEYS.artworkMaxResolution];
+      });
+
+      it('ignores invalid PODKIT_ARTWORK_MAX_RESOLUTION', () => {
+        process.env[ENV_KEYS.artworkMaxResolution] = 'abc';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults).toBeUndefined();
+        delete process.env[ENV_KEYS.artworkMaxResolution];
+      });
+
+      it('parses PODKIT_ARTWORK_SOURCES as comma-separated list', () => {
+        process.env[ENV_KEYS.artworkSources] = 'embedded,sidecar';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.artworkSources).toEqual(['embedded', 'sidecar']);
+        delete process.env[ENV_KEYS.artworkSources];
+      });
+
+      it('ignores PODKIT_ARTWORK_SOURCES with invalid values', () => {
+        process.env[ENV_KEYS.artworkSources] = 'embedded,invalid';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.artworkSources).toBeUndefined();
+        delete process.env[ENV_KEYS.artworkSources];
+      });
+
+      it('parses PODKIT_SUPPORTED_AUDIO_CODECS as comma-separated list', () => {
+        process.env[ENV_KEYS.supportedAudioCodecs] = 'aac,mp3,flac';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.supportedAudioCodecs).toEqual(['aac', 'mp3', 'flac']);
+        delete process.env[ENV_KEYS.supportedAudioCodecs];
+      });
+
+      it('parses PODKIT_SUPPORTS_VIDEO', () => {
+        process.env[ENV_KEYS.supportsVideo] = 'true';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.supportsVideo).toBe(true);
+        delete process.env[ENV_KEYS.supportsVideo];
+      });
+
+      it('parses PODKIT_MUSIC_DIR', () => {
+        process.env[ENV_KEYS.musicDir] = 'MUSIC';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.musicDir).toBe('MUSIC');
+        delete process.env[ENV_KEYS.musicDir];
+      });
+
+      it('ignores empty PODKIT_MUSIC_DIR', () => {
+        process.env[ENV_KEYS.musicDir] = '';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.musicDir).toBeUndefined();
+        delete process.env[ENV_KEYS.musicDir];
+      });
+
+      it('returns no deviceDefaults when no device env vars set', () => {
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults).toBeUndefined();
       });
     });
   });

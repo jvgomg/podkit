@@ -11,7 +11,7 @@
  */
 
 import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
-import type { DeviceConfig } from '../config/types.js';
+import type { DeviceConfig, PodkitConfig } from '../config/types.js';
 
 // =============================================================================
 // Types
@@ -79,27 +79,37 @@ export function getDeviceLabel(type: string | undefined): string {
 
 /**
  * Build capability overrides from device config fields.
+ *
+ * Per-device config takes priority over global deviceDefaults (from env vars).
  */
 function buildCapabilityOverrides(
-  deviceConfig: DeviceConfig
+  deviceConfig: DeviceConfig,
+  deviceDefaults?: PodkitConfig['deviceDefaults']
 ): Partial<import('@podkit/core').DeviceCapabilities> | undefined {
   const overrides: Partial<import('@podkit/core').DeviceCapabilities> = {};
   let hasOverrides = false;
 
-  if (deviceConfig.artworkMaxResolution !== undefined) {
-    overrides.artworkMaxResolution = deviceConfig.artworkMaxResolution;
+  const artworkMaxRes = deviceConfig.artworkMaxResolution ?? deviceDefaults?.artworkMaxResolution;
+  if (artworkMaxRes !== undefined) {
+    overrides.artworkMaxResolution = artworkMaxRes;
     hasOverrides = true;
   }
-  if (deviceConfig.artworkSources !== undefined) {
-    overrides.artworkSources = deviceConfig.artworkSources;
+
+  const artworkSources = deviceConfig.artworkSources ?? deviceDefaults?.artworkSources;
+  if (artworkSources !== undefined) {
+    overrides.artworkSources = artworkSources;
     hasOverrides = true;
   }
-  if (deviceConfig.supportedAudioCodecs !== undefined) {
-    overrides.supportedAudioCodecs = deviceConfig.supportedAudioCodecs;
+
+  const supportedCodecs = deviceConfig.supportedAudioCodecs ?? deviceDefaults?.supportedAudioCodecs;
+  if (supportedCodecs !== undefined) {
+    overrides.supportedAudioCodecs = supportedCodecs;
     hasOverrides = true;
   }
-  if (deviceConfig.supportsVideo !== undefined) {
-    overrides.supportsVideo = deviceConfig.supportsVideo;
+
+  const supportsVideo = deviceConfig.supportsVideo ?? deviceDefaults?.supportsVideo;
+  if (supportsVideo !== undefined) {
+    overrides.supportsVideo = supportsVideo;
     hasOverrides = true;
   }
 
@@ -120,6 +130,7 @@ function buildCapabilityOverrides(
  * @param core - Dynamically-imported `@podkit/core` module
  * @param path - Mount point / device path
  * @param deviceConfig - Optional device config from TOML (provides type, capability overrides)
+ * @param deviceDefaults - Optional global device defaults from env vars (fallback for mass-storage)
  * @returns OpenDeviceResult with adapter, capabilities, and iPod handle if applicable
  *
  * @throws {Error} If the device fails to open (database missing, path invalid, etc.)
@@ -128,7 +139,8 @@ function buildCapabilityOverrides(
 export async function openDevice(
   core: CoreModule,
   path: string,
-  deviceConfig?: DeviceConfig
+  deviceConfig?: DeviceConfig,
+  deviceDefaults?: PodkitConfig['deviceDefaults']
 ): Promise<OpenDeviceResult> {
   const deviceType = deviceConfig?.type;
   const isIpod = !deviceType || deviceType === 'ipod';
@@ -164,15 +176,21 @@ export async function openDevice(
     };
   }
 
-  // Mass-storage device: resolve preset + config overrides
-  const overrides = deviceConfig ? buildCapabilityOverrides(deviceConfig) : undefined;
+  // Mass-storage device: resolve preset + config overrides + env defaults
+  const overrides = deviceConfig
+    ? buildCapabilityOverrides(deviceConfig, deviceDefaults)
+    : deviceDefaults
+      ? buildCapabilityOverrides({}, deviceDefaults)
+      : undefined;
   const resolvedCaps = core.resolveDeviceCapabilities(deviceType!, overrides);
 
   if (!resolvedCaps) {
     throw new Error(`Unknown device type: ${deviceType}`);
   }
 
-  const adapter = await core.MassStorageAdapter.open(path, resolvedCaps);
+  const musicDir = deviceConfig?.musicDir ?? deviceDefaults?.musicDir;
+  const adapterOptions = musicDir ? { musicDir } : undefined;
+  const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 
   return {
     adapter,
