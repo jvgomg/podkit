@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { CollectionVideo, SyncPlan, VideoSyncDiff } from '@podkit/core';
+import type { CollectionVideo, SyncPlan, UnifiedSyncDiff } from '@podkit/core';
 import type { IPodVideo } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
@@ -100,7 +100,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     contentConfig: MusicContentConfig | VideoContentConfig,
     device: any,
     core: typeof import('@podkit/core')
-  ) {
+  ): UnifiedSyncDiff<CollectionVideo, IPodVideo> {
     const config = contentConfig as VideoContentConfig;
 
     // Resolve device profile: iPod uses generation metadata, mass-storage uses default
@@ -118,17 +118,28 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
       config.effectiveVideoQuality
     );
     const videoPresetBitrate = videoPresetSettings.videoBitrate + videoPresetSettings.audioBitrate;
+    const transformsEnabled =
+      !!config.effectiveVideoTransforms &&
+      core.hasEnabledVideoTransforms(config.effectiveVideoTransforms);
 
-    return core.diffVideos(sourceItems, deviceItems, {
+    // Use the unified SyncDiffer + VideoHandler pipeline
+    const handler = core.createVideoHandler();
+    handler.setVideoTransformsConfig(config.effectiveVideoTransforms);
+    const differ = core.createSyncDiffer(handler);
+
+    return differ.diff(sourceItems, deviceItems, {
+      transformsEnabled,
       presetBitrate: videoPresetBitrate,
-      resolvedVideoQuality: config.effectiveVideoQuality,
-      videoTransforms: config.effectiveVideoTransforms,
       forceMetadata: config.forceMetadata,
+      handlerOptions: {
+        resolvedVideoQuality: config.effectiveVideoQuality,
+        videoTransforms: config.effectiveVideoTransforms,
+      },
     });
   }
 
   createPlan(
-    diff: VideoSyncDiff,
+    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
     removeOrphans: boolean,
     contentConfig: MusicContentConfig | VideoContentConfig,
     _ipod: any,
@@ -154,7 +165,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: VideoSyncDiff,
+    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
     plan: SyncPlan,
     summary: any,
     _storage: { total: number; free: number; used: number } | null,
@@ -208,8 +219,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     if (diff.toUpdate.length > 0) {
       const updatesByReason = new Map<string, number>();
       for (const update of diff.toUpdate) {
-        const count = updatesByReason.get(update.reason) ?? 0;
-        updatesByReason.set(update.reason, count + 1);
+        const reason = update.reasons[0] ?? 'unknown';
+        const count = updatesByReason.get(reason) ?? 0;
+        updatesByReason.set(reason, count + 1);
       }
       const reasonParts: string[] = [];
       for (const [reason, count] of updatesByReason) {
@@ -230,7 +242,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     _out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: VideoSyncDiff,
+    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
     plan: SyncPlan,
     summary: any,
     removeOrphans: boolean,

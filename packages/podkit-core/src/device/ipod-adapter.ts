@@ -5,7 +5,7 @@
  * sync engine can work against the generic DeviceAdapter interface without
  * knowing about iPod-specific concerns (playlists, artwork database, etc.).
  *
- * IPodTrack already satisfies DeviceTrack, so no mapping is needed for
+ * IPodTrack extends DeviceTrack, so no mapping is needed for
  * getTracks() — we return IPodTrack instances directly.
  *
  * @module
@@ -26,8 +26,8 @@ import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.
  *
- * IPodTrack naturally satisfies DeviceTrack (same property names and types),
- * so this wrapper simply delegates calls without data transformation.
+ * IPodTrack extends DeviceTrack, so this wrapper simply delegates calls
+ * without data transformation.
  */
 export class IpodDeviceAdapter implements DeviceAdapter {
   private readonly ipod: IpodDatabase;
@@ -58,8 +58,8 @@ export class IpodDeviceAdapter implements DeviceAdapter {
   // Track lifecycle
 
   getTracks(): DeviceTrack[] {
-    // IPodTrack satisfies DeviceTrack — return directly
-    return this.ipod.getTracks() as unknown as DeviceTrack[];
+    // IPodTrack extends DeviceTrack — return directly
+    return this.ipod.getTracks();
   }
 
   addTrack(input: DeviceTrackInput): DeviceTrack {
@@ -69,18 +69,15 @@ export class IpodDeviceAdapter implements DeviceAdapter {
     if (syncTag) {
       trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
     }
-    return this.ipod.addTrack(trackInput) as unknown as DeviceTrack;
+    return this.ipod.addTrack(trackInput);
   }
 
   updateTrack(track: DeviceTrack, fields: DeviceTrackMetadata): DeviceTrack {
-    return this.ipod.updateTrack(
-      track as unknown as IPodTrack,
-      fields as TrackFields
-    ) as unknown as DeviceTrack;
+    return this.ipod.updateTrack(track as IPodTrack, fields as TrackFields);
   }
 
   removeTrack(track: DeviceTrack, options?: { deleteFile?: boolean }): void {
-    this.ipod.removeTrack(track as unknown as IPodTrack, options);
+    this.ipod.removeTrack(track as IPodTrack, options);
   }
 
   copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack {
@@ -89,10 +86,7 @@ export class IpodDeviceAdapter implements DeviceAdapter {
   }
 
   replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack {
-    return this.ipod.replaceTrackFile(
-      track as unknown as IPodTrack,
-      newFilePath
-    ) as unknown as DeviceTrack;
+    return this.ipod.replaceTrackFile(track as IPodTrack, newFilePath);
   }
 
   removeTrackArtwork(track: DeviceTrack): DeviceTrack {
@@ -102,7 +96,7 @@ export class IpodDeviceAdapter implements DeviceAdapter {
   // Sync tags
 
   writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack {
-    const ipodTrack = track as unknown as IPodTrack;
+    const ipodTrack = track as IPodTrack;
     const currentComment = ipodTrack.comment;
     const existingTag = parseSyncTag(currentComment);
     // Merge: existing tag fields + update fields (update wins)
@@ -114,7 +108,7 @@ export class IpodDeviceAdapter implements DeviceAdapter {
   }
 
   clearSyncTag(track: DeviceTrack): DeviceTrack {
-    const ipodTrack = track as unknown as IPodTrack;
+    const ipodTrack = track as IPodTrack;
     const currentComment = ipodTrack.comment;
     if (!parseSyncTag(currentComment)) {
       return track; // No sync tag to clear

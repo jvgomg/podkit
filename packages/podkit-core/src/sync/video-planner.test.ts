@@ -21,7 +21,8 @@ import {
   estimateTranscodedSize,
   estimatePassthroughSize,
 } from './video-planner.js';
-import type { VideoSyncDiff, IPodVideo, VideoUpdateTrack } from './video-differ.js';
+import type { IPodVideo } from './video-differ.js';
+import type { UnifiedSyncDiff } from './content-type.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import { getDefaultDeviceProfile } from '../video/types.js';
 
@@ -93,33 +94,39 @@ function createCollectionVideo(
   return createVideo(title, { contentType, ...options });
 }
 
+type TestUpdateEntry = {
+  source: CollectionVideo;
+  device: IPodVideo;
+  reasons: import('./types.js').UpdateReason[];
+};
+
 /**
- * Create a VideoSyncDiff for testing
+ * Create a UnifiedSyncDiff for testing
  */
 function createDiff(options: {
   toAdd?: CollectionVideo[];
   toRemove?: IPodVideo[];
-  existing?: { collection: CollectionVideo; ipod: IPodVideo }[];
-  toUpdate?: VideoUpdateTrack[];
-}): VideoSyncDiff;
+  existing?: { source: CollectionVideo; device: IPodVideo }[];
+  toUpdate?: TestUpdateEntry[];
+}): UnifiedSyncDiff<CollectionVideo, IPodVideo>;
 function createDiff(
   toAdd?: CollectionVideo[],
   toRemove?: IPodVideo[],
-  existing?: { collection: CollectionVideo; ipod: IPodVideo }[]
-): VideoSyncDiff;
+  existing?: { source: CollectionVideo; device: IPodVideo }[]
+): UnifiedSyncDiff<CollectionVideo, IPodVideo>;
 function createDiff(
   toAddOrOptions:
     | CollectionVideo[]
     | {
         toAdd?: CollectionVideo[];
         toRemove?: IPodVideo[];
-        existing?: { collection: CollectionVideo; ipod: IPodVideo }[];
-        toUpdate?: VideoUpdateTrack[];
+        existing?: { source: CollectionVideo; device: IPodVideo }[];
+        toUpdate?: TestUpdateEntry[];
       }
     | undefined = [],
   toRemove: IPodVideo[] = [],
-  existing: { collection: CollectionVideo; ipod: IPodVideo }[] = []
-): VideoSyncDiff {
+  existing: { source: CollectionVideo; device: IPodVideo }[] = []
+): UnifiedSyncDiff<CollectionVideo, IPodVideo> {
   if (toAddOrOptions && !Array.isArray(toAddOrOptions)) {
     return {
       toAdd: toAddOrOptions.toAdd ?? [],
@@ -481,24 +488,82 @@ describe('planVideoSync - toUpdate', () => {
     const diff = createDiff({
       toUpdate: [
         {
-          collection: createCollectionVideo('S01E01', 'tvshow', {
+          source: createCollectionVideo('S01E01', 'tvshow', {
             seriesTitle: 'Show (JPN)',
             seasonNumber: 1,
             episodeNumber: 1,
           }),
-          ipod: createIPodVideo('S01E01', 'tvshow', {
+          device: createIPodVideo('S01E01', 'tvshow', {
             seriesTitle: 'Show (JPN)',
             seasonNumber: 1,
             episodeNumber: 1,
           }),
-          reason: 'transform-apply' as const,
-          newSeriesTitle: 'Show (Japanese)',
+          reasons: ['transform-apply' as const],
         },
       ],
     });
     const plan = planVideoSync(diff);
     const updateOps = plan.operations.filter((op) => op.type === 'video-update-metadata');
     expect(updateOps).toHaveLength(1);
-    expect(updateOps[0]!.newSeriesTitle).toBe('Show (Japanese)');
+    // Without videoTransforms config, newSeriesTitle is undefined
+    expect(updateOps[0]!.type).toBe('video-update-metadata');
+    expect((updateOps[0] as any).newSeriesTitle).toBeUndefined();
+  });
+
+  it('computes newSeriesTitle from videoTransforms for transform-apply', () => {
+    const diff = createDiff({
+      toUpdate: [
+        {
+          source: createCollectionVideo('S01E01', 'tvshow', {
+            seriesTitle: 'Show (Japanese)',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          device: createIPodVideo('S01E01', 'tvshow', {
+            seriesTitle: 'Show (Japanese)',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          reasons: ['transform-apply' as const],
+        },
+      ],
+    });
+    const plan = planVideoSync(diff, {
+      videoTransforms: {
+        showLanguage: {
+          enabled: true,
+          format: '({})',
+          expand: false,
+        },
+      },
+    });
+    const updateOps = plan.operations.filter((op) => op.type === 'video-update-metadata');
+    expect(updateOps).toHaveLength(1);
+    // With format '({})' and expand: false, "Show (Japanese)" contracts to "Show (JPN)"
+    expect((updateOps[0] as any).newSeriesTitle).toBe('Show (JPN)');
+  });
+
+  it('uses original seriesTitle for force-metadata without videoTransforms', () => {
+    const diff = createDiff({
+      toUpdate: [
+        {
+          source: createCollectionVideo('S01E01', 'tvshow', {
+            seriesTitle: 'My Show',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          device: createIPodVideo('S01E01', 'tvshow', {
+            seriesTitle: 'Old Title',
+            seasonNumber: 1,
+            episodeNumber: 1,
+          }),
+          reasons: ['force-metadata' as const],
+        },
+      ],
+    });
+    const plan = planVideoSync(diff);
+    const updateOps = plan.operations.filter((op) => op.type === 'video-update-metadata');
+    expect(updateOps).toHaveLength(1);
+    expect((updateOps[0] as any).newSeriesTitle).toBe('My Show');
   });
 });

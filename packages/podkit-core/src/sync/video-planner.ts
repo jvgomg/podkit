@@ -1,7 +1,7 @@
 /**
  * Video sync planner for converting video diffs into execution plans
  *
- * The planner takes a VideoSyncDiff (from the video differ) and produces a
+ * The planner takes a UnifiedSyncDiff<CollectionVideo, IPodVideo> and produces a
  * VideoSyncPlan containing ordered operations. It determines whether each video
  * needs transcoding or can be copied directly (passthrough), estimates output
  * sizes, and calculates estimated times.
@@ -33,7 +33,8 @@ import { getDefaultDeviceProfile } from '../video/types.js';
 import { checkVideoCompatibility } from '../video/compatibility.js';
 import { calculateEffectiveSettings } from '../video/quality.js';
 import type { SyncOperation, SyncPlan, SyncWarning } from './types.js';
-import type { VideoSyncDiff, IPodVideo } from './video-differ.js';
+import type { IPodVideo } from './video-differ.js';
+import type { UnifiedSyncDiff } from './content-type.js';
 import type { VideoTransformsConfig } from '../transforms/types.js';
 import { applyVideoTransforms } from '../transforms/video-pipeline.js';
 import { estimateTransferTime } from './estimation.js';
@@ -539,13 +540,18 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  *
  * @example
  * ```typescript
- * const diff = diffVideos(collectionVideos, ipodVideos);
+ * const handler = createVideoHandler();
+ * const differ = createSyncDiffer(handler);
+ * const diff = differ.diff(collectionVideos, ipodVideos);
  * const plan = planVideoSync(diff, { qualityPreset: 'high' });
  * console.log(`${plan.operations.length} operations to execute`);
  * console.log(`Estimated size: ${plan.estimatedSize} bytes`);
  * ```
  */
-export function planVideoSync(diff: VideoSyncDiff, options: VideoSyncPlanOptions = {}): SyncPlan {
+export function planVideoSync(
+  diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+  options: VideoSyncPlanOptions = {}
+): SyncPlan {
   const {
     deviceProfile = getDefaultDeviceProfile(),
     qualityPreset = DEFAULT_QUALITY_PRESET,
@@ -574,9 +580,10 @@ export function planVideoSync(diff: VideoSyncDiff, options: VideoSyncPlanOptions
   const updateOperations: SyncOperation[] = [];
   if (diff.toUpdate && diff.toUpdate.length > 0) {
     for (const update of diff.toUpdate) {
-      if (update.reason === 'preset-change') {
+      const primaryReason = update.reasons[0];
+      if (primaryReason === 'preset-upgrade' || primaryReason === 'preset-downgrade') {
         // Preset changes require re-transcoding — create a video-upgrade operation
-        const video = update.collection;
+        const video = update.source;
         if (canTranscode(video, deviceProfile)) {
           const settings = calculateTranscodeSettings(
             video,
@@ -587,25 +594,41 @@ export function planVideoSync(diff: VideoSyncDiff, options: VideoSyncPlanOptions
           updateOperations.push({
             type: 'video-upgrade',
             source: video,
-            target: update.ipod,
-            reason: 'preset-upgrade', // UpgradeReason (the differ detected a preset mismatch)
+            target: update.device,
+            reason: primaryReason,
             settings,
           });
         }
-      } else if (update.reason === 'metadata-correction') {
+      } else if (primaryReason === 'metadata-correction') {
         // Metadata corrections are metadata-only updates
         updateOperations.push({
           type: 'video-update-metadata',
-          source: update.collection,
-          video: update.ipod,
+          source: update.source,
+          video: update.device,
         });
-      } else {
-        // Transform changes and force-metadata are metadata-only
+      } else if (primaryReason) {
+        // Transform changes, force-metadata: compute effective series title
+        let newSeriesTitle: string | undefined;
+        if (update.source.contentType === 'tvshow') {
+          if (
+            (primaryReason === 'transform-apply' || primaryReason === 'force-metadata') &&
+            videoTransforms
+          ) {
+            const result = applyVideoTransforms(update.source, videoTransforms);
+            newSeriesTitle = result.applied
+              ? result.transformed.seriesTitle
+              : update.source.seriesTitle;
+          } else if (primaryReason === 'transform-remove' || primaryReason === 'force-metadata') {
+            // No transforms available or removing transforms — use original series title
+            newSeriesTitle = update.source.seriesTitle;
+          }
+        }
+
         updateOperations.push({
           type: 'video-update-metadata',
-          source: update.collection,
-          video: update.ipod,
-          newSeriesTitle: update.newSeriesTitle,
+          source: update.source,
+          video: update.device,
+          newSeriesTitle,
         });
       }
     }
@@ -710,5 +733,5 @@ export interface VideoSyncPlanner {
   /**
    * Create an execution plan from a video diff
    */
-  plan(diff: VideoSyncDiff, options?: VideoSyncPlanOptions): SyncPlan;
+  plan(diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>, options?: VideoSyncPlanOptions): SyncPlan;
 }
