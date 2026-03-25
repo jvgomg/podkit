@@ -83,6 +83,17 @@ export interface MusicHandlerDiffOptions {
   isAlacPreset?: boolean;
   resolvedQuality?: string;
   customBitrate?: number;
+  /**
+   * When true, move tracks whose sync tag `transfer` field doesn't match
+   * `effectiveTransferMode` to `toUpdate` with reason `'transfer-mode-changed'`.
+   * Only checked when effectiveTransferMode is also provided.
+   */
+  forceTransferMode?: boolean;
+  /**
+   * The current effective transfer mode. Used for mismatch detection when
+   * `forceTransferMode` is true.
+   */
+  effectiveTransferMode?: string;
 }
 
 // =============================================================================
@@ -267,11 +278,6 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       }
     }
 
-    // When skipUpgrades is set, filter out file-replacement upgrades
-    if (options.skipUpgrades) {
-      reasons = reasons.filter((r) => !isFileReplacementUpgrade(r as UpgradeReason));
-    }
-
     // When forceTranscode is on and source is lossless, ensure file-replacement
     if (options.forceTranscode) {
       const category = categorizeSource(source);
@@ -281,6 +287,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       ) {
         reasons.unshift('force-transcode');
       }
+    }
+
+    // When skipUpgrades is set, filter out file-replacement upgrades
+    if (options.skipUpgrades) {
+      reasons = reasons.filter((r) => !isFileReplacementUpgrade(r as UpgradeReason));
     }
 
     return reasons;
@@ -303,10 +314,13 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     // Pass 2: Force transcode sweep
     this.postProcessForceTranscode(diff, options);
 
-    // Pass 3: Sync tag writing
+    // Pass 3: Transfer mode mismatch detection
+    this.postProcessTransferMode(diff, musicOpts);
+
+    // Pass 4: Sync tag writing
     this.postProcessSyncTags(diff, musicOpts);
 
-    // Pass 4: Force metadata rewrite
+    // Pass 5: Force metadata rewrite
     this.postProcessForceMetadata(diff, options);
   }
 
@@ -511,7 +525,66 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   }
 
   /**
-   * Pass 3: Write sync tags to lossless-source tracks that are missing
+   * Pass 3: Force re-processing when transfer mode changed.
+   * Affects ALL tracks (including copy-format), unlike forceTranscode which only
+   * affects lossless-source tracks.
+   *
+   * Two cases:
+   * 1. Transfer mode is missing from sync tag (legacy tracks) — if the effective
+   *    mode is 'fast' (the legacy default behavior), this is metadata-only (stamp
+   *    the tag). If the effective mode is different, the file needs re-processing.
+   * 2. Transfer mode is present but differs — file replacement needed.
+   */
+  private postProcessTransferMode(
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
+    musicOpts: MusicHandlerDiffOptions
+  ): void {
+    if (!(musicOpts.forceTransferMode && musicOpts.effectiveTransferMode)) return;
+
+    const targetTransferMode = musicOpts.effectiveTransferMode;
+    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
+
+    for (const match of diff.existing) {
+      const syncTag = match.device.syncTag;
+      const tagTransferMode = syncTag?.transferMode;
+
+      if (tagTransferMode === targetTransferMode) {
+        stillExisting.push(match);
+      } else if (!syncTag) {
+        // No sync tag at all — can't stamp transfer mode. Treat as existing.
+        stillExisting.push(match);
+      } else if (tagTransferMode === undefined && targetTransferMode === 'fast') {
+        // Missing transfer mode + effective is 'fast': the file was already
+        // transferred with fast behavior (the only behavior before transfer modes).
+        // Just stamp the sync tag — no file re-transfer needed.
+        const updatedTag: SyncTagData = { ...syncTag, transferMode: targetTransferMode };
+        diff.toUpdate.push({
+          source: match.source,
+          device: match.device,
+          reasons: ['sync-tag-write'],
+          changes: [],
+          syncTag: updatedTag,
+        });
+      } else {
+        // Transfer mode actually changed (or missing + effective is not 'fast')
+        // — file needs re-processing.
+        diff.toUpdate.push({
+          source: match.source,
+          device: match.device,
+          reasons: ['transfer-mode-changed'],
+          changes: [
+            { field: 'transferMode', from: tagTransferMode ?? 'none', to: targetTransferMode },
+          ],
+        });
+      }
+    }
+
+    diff.existing.length = 0;
+    diff.existing.push(...stillExisting);
+  }
+
+  /**
+   * Pass 4 (formerly Pass 3): Write sync tags to lossless-source tracks that are missing
    * or have outdated tags. This is metadata-only — no file replacement.
    *
    * When checkArtwork is active (source tracks have artworkHash), this also processes

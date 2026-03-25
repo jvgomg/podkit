@@ -3,6 +3,8 @@ import { MusicHandler, createMusicHandler } from './music-handler.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
 import type { SyncOperation, SyncPlan } from '../types.js';
+import type { UnifiedSyncDiff } from '../content-type.js';
+import { parseSyncTag } from '../sync-tags.js';
 
 // =============================================================================
 // Test Fixtures
@@ -399,6 +401,259 @@ describe('MusicHandler', () => {
         transcodingActive: true,
       });
       expect(reasons[0]).toBe('force-transcode');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // postProcessTransferMode (via postProcessDiff)
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessTransferMode', () => {
+    /**
+     * Build a minimal UnifiedSyncDiff with one matched existing pair.
+     */
+    function makeDiff(
+      source: CollectionTrack,
+      device: DeviceTrack
+    ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+      return {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+    }
+
+    test('moves tracks with mismatched transfer mode to toUpdate with reason transfer-mode-changed', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=fast]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'optimized',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
+      expect(diff.toUpdate[0]!.changes![0]!.from).toBe('fast');
+      expect(diff.toUpdate[0]!.changes![0]!.to).toBe('optimized');
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('leaves tracks already at the target transfer mode in existing', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag:
+          parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=optimized]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'optimized',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
+    });
+
+    test('treats missing transfer field in sync tag as needing update when effective mode is not fast', () => {
+      // Legacy sync tag has no transfer field; if effective mode is portable, file re-processing needed
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'portable',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
+      expect(diff.toUpdate[0]!.changes![0]!.from).toBe('none');
+      expect(diff.toUpdate[0]!.changes![0]!.to).toBe('portable');
+    });
+
+    test('stamps sync tag (metadata-only) when transfer mode missing and effective mode is fast', () => {
+      // Missing transfer field + effective mode 'fast' = legacy track; stamp the tag only
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'fast',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('sync-tag-write');
+      expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+      expect(diff.toUpdate[0]!.syncTag).toBeDefined();
+      expect(diff.toUpdate[0]!.syncTag!.transferMode).toBe('fast');
+    });
+
+    test('affects copy-format (MP3) tracks unlike forceTranscode which only affects lossless', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy transfer=fast]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'portable',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
+    });
+
+    test('forceTransferMode + forceTranscode: each track processed once with no duplicates', () => {
+      // Lossless track is caught by forceTranscode pass (earlier), not double-counted by forceTransferMode.
+      // Lossy track is unaffected by forceTranscode but caught by forceTransferMode.
+      const losslessSource = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const lossySource = makeCollectionTrack({
+        artist: 'Artist2',
+        title: 'Track2',
+        fileType: 'mp3',
+        lossless: false,
+      });
+
+      const losslessDevice = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=fast]') ?? undefined,
+      });
+      const lossyDevice = makeDeviceTrack({
+        artist: 'Artist2',
+        title: 'Track2',
+        filePath: ':iPod_Control:Music:F00:test2.mp3',
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy transfer=fast]') ?? undefined,
+      });
+
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [
+          { source: losslessSource, device: losslessDevice },
+          { source: lossySource, device: lossyDevice },
+        ],
+        toUpdate: [],
+      };
+
+      handler.postProcessDiff(diff, {
+        forceTranscode: true,
+        transcodingActive: true,
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'portable',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(2);
+
+      const reasons = diff.toUpdate.map((u) => u.reasons[0]);
+      expect(reasons).toContain('force-transcode');
+      expect(reasons).toContain('transfer-mode-changed');
+
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('does nothing when forceTransferMode is true but effectiveTransferMode is not provided', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=fast]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          // effectiveTransferMode not provided
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
+    });
+
+    test('does nothing when effectiveTransferMode is provided but forceTransferMode is false', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr transfer=fast]') ?? undefined,
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: false,
+          effectiveTransferMode: 'optimized',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
+    });
+
+    test('leaves tracks with no sync tag in existing (cannot detect transfer mode)', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        // no syncTag
+      });
+
+      const diff = makeDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        handlerOptions: {
+          forceTransferMode: true,
+          effectiveTransferMode: 'optimized',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(0);
+      expect(diff.existing).toHaveLength(1);
     });
   });
 

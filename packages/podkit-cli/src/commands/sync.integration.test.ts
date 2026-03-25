@@ -5,11 +5,35 @@ import { join } from 'node:path';
 import { createTestIpod, TestModels } from '@podkit/gpod-testing';
 import {
   IpodDatabase,
-  computeMusicDiff,
+  createMusicHandler,
+  createSyncDiffer,
   createMusicPlan,
   getMusicPlanSummary,
   createDirectoryAdapter,
 } from '@podkit/core';
+import type { CollectionTrack, IPodTrack, SyncDiff } from '@podkit/core';
+
+/**
+ * Compute music diff using the unified SyncDiffer + MusicHandler pipeline.
+ * Converts the result to SyncDiff for compatibility with createMusicPlan.
+ */
+function computeDiff(collectionTracks: CollectionTrack[], ipodTracks: IPodTrack[]): SyncDiff {
+  const handler = createMusicHandler();
+  const differ = createSyncDiffer(handler);
+  const unified = differ.diff(collectionTracks, ipodTracks);
+  return {
+    toAdd: unified.toAdd,
+    toRemove: unified.toRemove as IPodTrack[],
+    existing: unified.existing.map((e) => ({ collection: e.source, ipod: e.device as IPodTrack })),
+    toUpdate: unified.toUpdate.map((u) => ({
+      source: u.source,
+      ipod: u.device as IPodTrack,
+      reason: u.reasons[0]!,
+      changes: u.changes ?? [],
+      syncTag: u.syncTag,
+    })),
+  };
+}
 
 /**
  * Integration tests for the sync command.
@@ -60,7 +84,7 @@ describe('sync command integration', () => {
         // IpodDatabase.getTracks() returns IPodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
-        const diff = computeMusicDiff(collectionTracks, ipodTracks);
+        const diff = computeDiff(collectionTracks, ipodTracks);
 
         expect(diff.toAdd).toHaveLength(0);
         expect(diff.toRemove).toHaveLength(0);
@@ -87,7 +111,7 @@ describe('sync command integration', () => {
         // IpodDatabase.getTracks() returns IPodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
-        const diff = computeMusicDiff(collectionTracks, ipodTracks);
+        const diff = computeDiff(collectionTracks, ipodTracks);
 
         expect(diff.toAdd).toHaveLength(0);
         expect(diff.toRemove).toHaveLength(2);
@@ -118,7 +142,7 @@ describe('sync command integration', () => {
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
-        const diff = computeMusicDiff([], ipodTracks);
+        const diff = computeDiff([], ipodTracks);
 
         // Create plan with removeOrphans
         const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -142,7 +166,7 @@ describe('sync command integration', () => {
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
-        const diff = computeMusicDiff([], ipodTracks);
+        const diff = computeDiff([], ipodTracks);
 
         // Create plan without removeOrphans
         const plan = createMusicPlan(diff, { removeOrphans: false });

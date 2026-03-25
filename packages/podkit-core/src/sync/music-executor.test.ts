@@ -3129,7 +3129,8 @@ describe('copy sync tags', () => {
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
-      syncTagConfig: { transferMode: 'fast' },
+      syncTagConfig: {},
+      transferMode: 'fast',
     })) {
       // consume
     }
@@ -3143,7 +3144,7 @@ describe('copy sync tags', () => {
   });
 
   it('writes copy sync tag with optimized transfer mode for add-direct-copy with optimized config', async () => {
-    // Tests that the syncTagConfig.transferMode is used in the copy sync tag
+    // Tests that the transferMode option is used in the copy sync tag
     // even for direct-copy operations (optimized-copy uses FFmpeg and needs real files)
     const plan: SyncPlan = {
       ...createEmptyPlan(),
@@ -3160,7 +3161,8 @@ describe('copy sync tags', () => {
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
-      syncTagConfig: { transferMode: 'optimized' },
+      syncTagConfig: {},
+      transferMode: 'optimized',
     })) {
       // consume
     }
@@ -3230,7 +3232,8 @@ describe('copy sync tags', () => {
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
-      syncTagConfig: { transferMode: 'fast' },
+      syncTagConfig: {},
+      transferMode: 'fast',
     })) {
       // consume
     }
@@ -3242,7 +3245,7 @@ describe('copy sync tags', () => {
     expect(syncTagUpdate.transferMode).toBe('fast');
   });
 
-  it('falls back to transferMode from options when syncTagConfig has no transferMode', async () => {
+  it('uses transferMode from options as single source of truth (not syncTagConfig)', async () => {
     const plan: SyncPlan = {
       ...createEmptyPlan(),
       operations: [
@@ -3258,8 +3261,8 @@ describe('copy sync tags', () => {
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
-      syncTagConfig: {}, // No transferMode in syncTagConfig
-      transferMode: 'optimized', // Falls back to this
+      syncTagConfig: {},
+      transferMode: 'optimized',
     })) {
       // consume
     }
