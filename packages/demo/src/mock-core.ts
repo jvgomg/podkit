@@ -50,8 +50,6 @@ export type { SubsonicAdapterConfig } from '@podkit/core';
 
 // Sync types
 export type {
-  MatchedTrack,
-  SyncDiff,
   SyncPlan,
   SyncOperation,
   ExecuteOptions,
@@ -64,7 +62,6 @@ export type {
   UpdateReason,
   UpgradeReason,
   MetadataChange,
-  UpdateTrack,
   DiffOptions,
 } from '@podkit/core';
 

@@ -721,4 +721,455 @@ describe('MusicHandler', () => {
       expect(summary.warnings).toEqual(['2 tracks require lossy conversion']);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // postProcessPresetChanges (via postProcessDiff)
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessPresetChanges', () => {
+    function makePresetDiff(
+      source: CollectionTrack,
+      device: DeviceTrack
+    ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+      return {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+    }
+
+    test('moves lossless-source track from existing to toUpdate with preset-upgrade', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.changes).toContainEqual({
+        field: 'bitrate',
+        from: '128',
+        to: '256',
+      });
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('moves lossless-source track from existing to toUpdate with preset-downgrade', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 128,
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('leaves lossless-source track in existing when bitrate is within tolerance', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 240 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('does not detect preset change when presetBitrate is not provided', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        // no presetBitrate
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('does not detect preset change when skipUpgrades is true', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        skipUpgrades: true,
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('does not detect preset change for lossy source tracks', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 128 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('uses sync tag comparison when resolvedQuality is provided — match keeps as existing', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+        },
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('uses sync tag comparison when resolvedQuality is provided — mismatch triggers preset-upgrade', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 128,
+        syncTag: parseSyncTag('[podkit:v1 quality=low encoding=vbr]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+    });
+
+    test('uses sync tag comparison — quality downgrade triggers preset-downgrade', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 128,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'low',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
+    });
+
+    test('no sync tag falls back to bitrate tolerance detection', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+    });
+
+    test('detects ALAC format-based preset upgrade when isAlacPreset is true', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: { isAlacPreset: true },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+      expect(diff.toUpdate[0]!.changes).toContainEqual({
+        field: 'lossless',
+        from: 'AAC audio file',
+        to: 'ALAC',
+      });
+    });
+
+    test('keeps ALAC track as existing when isAlacPreset is true', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'Apple Lossless audio file', bitrate: 900 });
+      const diff = makePresetDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: { isAlacPreset: true },
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // postProcessForceTranscode via postProcessDiff (extended scenarios)
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessForceTranscode (extended)', () => {
+    test('moves lossless-source tracks from existing to toUpdate while leaving lossy in existing', () => {
+      const losslessSource = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const lossySource = makeCollectionTrack({
+        artist: 'Artist2',
+        title: 'Track2',
+        fileType: 'mp3',
+        lossless: false,
+      });
+      const losslessDevice = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const lossyDevice = makeDeviceTrack({
+        artist: 'Artist2',
+        title: 'Track2',
+        filePath: ':iPod_Control:Music:F00:test2.mp3',
+        filetype: 'MPEG audio file',
+        bitrate: 320,
+      });
+
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [
+          { source: losslessSource, device: losslessDevice },
+          { source: lossySource, device: lossyDevice },
+        ],
+        toUpdate: [],
+      };
+
+      handler.postProcessDiff(diff, {
+        forceTranscode: true,
+        transcodingActive: true,
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('force-transcode');
+      expect(diff.toUpdate[0]!.source.fileType).toBe('flac');
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.existing[0]!.source.fileType).toBe('mp3');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // postProcessSyncTags (via postProcessDiff)
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessSyncTags', () => {
+    function makeSyncTagDiff(
+      source: CollectionTrack,
+      device: DeviceTrack
+    ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+      return {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+    }
+
+    test('writes sync tag for lossless sources missing a tag', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const diff = makeSyncTagDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+          forceSyncTags: true,
+        },
+      });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('sync-tag-write');
+      expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+      expect(diff.toUpdate[0]!.syncTag).toBeDefined();
+      expect(diff.toUpdate[0]!.syncTag!.quality).toBe('high');
+      expect(diff.toUpdate[0]!.syncTag!.encoding).toBe('vbr');
+      expect(diff.existing).toHaveLength(0);
+    });
+
+    test('keeps lossless source in existing when sync tag already matches', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr]') ?? undefined,
+      });
+      const diff = makeSyncTagDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+          forceSyncTags: true,
+        },
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('skips lossy sources', () => {
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
+      const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 192 });
+      const diff = makeSyncTagDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          encodingMode: 'vbr',
+          resolvedQuality: 'high',
+          forceSyncTags: true,
+        },
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('does not activate without resolvedQuality even when forceSyncTags is true', () => {
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
+      const diff = makeSyncTagDiff(source, device);
+
+      handler.postProcessDiff(diff, {
+        transcodingActive: true,
+        presetBitrate: 256,
+        handlerOptions: {
+          forceSyncTags: true,
+          // resolvedQuality NOT provided
+        },
+      });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // postProcessForceMetadata (via postProcessDiff)
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessForceMetadata', () => {
+    test('moves all matched tracks to toUpdate with force-metadata reason', () => {
+      const source1 = makeCollectionTrack({ artist: 'Artist A', title: 'Song 1' });
+      const source2 = makeCollectionTrack({
+        artist: 'Artist B',
+        title: 'Song 2',
+        album: 'Album 2',
+      });
+      const device1 = makeDeviceTrack({ artist: 'Artist A', title: 'Song 1' });
+      const device2 = makeDeviceTrack({
+        artist: 'Artist B',
+        title: 'Song 2',
+        filePath: ':iPod_Control:Music:F00:test2.m4a',
+      });
+
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [
+          { source: source1, device: device1 },
+          { source: source2, device: device2 },
+        ],
+        toUpdate: [],
+      };
+
+      handler.postProcessDiff(diff, { forceMetadata: true });
+
+      expect(diff.existing).toHaveLength(0);
+      expect(diff.toUpdate).toHaveLength(2);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('force-metadata');
+      expect(diff.toUpdate[1]!.reasons[0]).toBe('force-metadata');
+    });
+
+    test('includes no-op title change when metadata is identical', () => {
+      const source = makeCollectionTrack();
+      const device = makeDeviceTrack();
+
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+
+      handler.postProcessDiff(diff, { forceMetadata: true });
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('force-metadata');
+      expect(diff.toUpdate[0]!.changes).toHaveLength(1);
+      expect(diff.toUpdate[0]!.changes[0]!.field).toBe('title');
+    });
+
+    test('does not move tracks when forceMetadata is false', () => {
+      const source = makeCollectionTrack();
+      const device = makeDeviceTrack();
+
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+
+      handler.postProcessDiff(diff, { forceMetadata: false });
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+  });
 });

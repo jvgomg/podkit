@@ -4,7 +4,13 @@
  * @module
  */
 
-import type { CollectionTrack, IPodTrack, SyncDiff, SyncPlan, SyncOperation } from '@podkit/core';
+import type {
+  CollectionTrack,
+  DeviceTrack,
+  SyncPlan,
+  SyncOperation,
+  UnifiedSyncDiff,
+} from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
   formatBytes,
@@ -47,7 +53,7 @@ interface ResolvedCollection {
 /**
  * Presenter for music content type.
  */
-export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPodTrack> {
+export class MusicPresenter implements ContentTypePresenter<CollectionTrack, DeviceTrack> {
   readonly type = 'music' as const;
   readonly itemNoun = 'tracks';
   readonly sectionTitle = 'Music';
@@ -107,17 +113,17 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     }
   }
 
-  getDeviceItems(ipod: any, core: typeof import('@podkit/core')): IPodTrack[] {
+  getDeviceItems(ipod: any, core: typeof import('@podkit/core')): DeviceTrack[] {
     return ipod.getTracks().filter((t: any) => core.isMusicMediaType(t.mediaType));
   }
 
   computeDiff(
     sourceItems: CollectionTrack[],
-    deviceItems: IPodTrack[],
+    deviceItems: DeviceTrack[],
     contentConfig: MusicContentConfig | VideoContentConfig,
     _ipod: any,
     core: typeof import('@podkit/core')
-  ) {
+  ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
     const config = contentConfig as MusicContentConfig;
     const isAlacPreset = config.effectiveQuality === 'max' && config.deviceSupportsAlac;
     const resolvedQuality = isAlacPreset
@@ -132,7 +138,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     const differ = core.createSyncDiffer(handler);
     const transformsEnabled = core.hasEnabledTransforms(config.effectiveTransforms);
 
-    const unifiedDiff = differ.diff(sourceItems, deviceItems, {
+    return differ.diff(sourceItems, deviceItems, {
       transformsEnabled,
       skipUpgrades: config.skipUpgrades,
       forceTranscode: config.forceTranscode,
@@ -150,37 +156,20 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
         effectiveTransferMode: config.effectiveTransferMode,
       },
     });
-
-    // Convert unified diff to SyncDiff shape for downstream consumers
-    // (createMusicPlan, collectPostDiffData, renderDryRunText, buildDryRunJson)
-    const syncDiff: SyncDiff = {
-      toAdd: unifiedDiff.toAdd,
-      toRemove: unifiedDiff.toRemove as IPodTrack[],
-      existing: unifiedDiff.existing.map((e) => ({
-        collection: e.source,
-        ipod: e.device as IPodTrack,
-      })),
-      toUpdate: unifiedDiff.toUpdate.map((u) => ({
-        source: u.source,
-        ipod: u.device as IPodTrack,
-        reason: u.reasons[0]!,
-        changes: u.changes ?? [],
-        syncTag: u.syncTag,
-      })),
-    };
-
-    return syncDiff;
   }
 
-  collectPostDiffData(diff: SyncDiff, contentConfig: MusicContentConfig | VideoContentConfig) {
+  collectPostDiffData(
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
+    contentConfig: MusicContentConfig | VideoContentConfig
+  ) {
     const config = contentConfig as MusicContentConfig;
     let artworkMissingBaseline = 0;
     let transferModeMismatch = 0;
     const effectiveTransferMode = config.effectiveTransferMode ?? 'fast';
 
     for (const match of diff.existing) {
-      if (config.checkArtwork && match.ipod.hasArtwork === true) {
-        const syncTag = match.ipod.syncTag;
+      if (config.checkArtwork && match.device.hasArtwork === true) {
+        const syncTag = match.device.syncTag;
         if (!syncTag?.artworkHash) {
           artworkMissingBaseline++;
         }
@@ -189,7 +178,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       // Count tracks whose sync tag transfer mode doesn't match the effective setting.
       // Missing transferMode (legacy sync tags) counts as a mismatch — these tracks
       // need --force-transfer-mode to have their sync tag updated.
-      const syncTag = match.ipod.syncTag;
+      const syncTag = match.device.syncTag;
       if (syncTag) {
         if (syncTag.transferMode !== effectiveTransferMode) {
           transferModeMismatch++;
@@ -200,7 +189,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
   }
 
   createPlan(
-    diff: SyncDiff,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     removeOrphans: boolean,
     contentConfig: MusicContentConfig | VideoContentConfig,
     _ipod: any,
@@ -232,7 +221,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: SyncDiff,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     plan: SyncPlan,
     summary: any,
     storage: { total: number; free: number; used: number } | null,
@@ -280,8 +269,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     if (diff.toUpdate.length > 0) {
       const updatesByReason = new Map<string, number>();
       for (const update of diff.toUpdate) {
-        const count = updatesByReason.get(update.reason) ?? 0;
-        updatesByReason.set(update.reason, count + 1);
+        const reason = update.reasons[0]!;
+        const count = updatesByReason.get(reason) ?? 0;
+        updatesByReason.set(reason, count + 1);
       }
       const reasonParts: string[] = [];
       for (const [reason, count] of updatesByReason) {
@@ -314,7 +304,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     if (config.effectiveTransforms.cleanArtists.enabled) {
       const tracksToTransform = [
         ...diff.toAdd,
-        ...diff.toUpdate.filter((u) => u.reason === 'transform-apply').map((u) => u.source),
+        ...diff.toUpdate.filter((u) => u.reasons[0] === 'transform-apply').map((u) => u.source),
       ];
       if (tracksToTransform.length > 0) {
         const preview = buildTransformPreview(
@@ -379,7 +369,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: SyncDiff,
+    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     plan: SyncPlan,
     summary: any,
     removeOrphans: boolean,
@@ -398,12 +388,12 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       };
       if (op.type === 'update-metadata') {
         const updateInfo = diff.toUpdate.find(
-          (u) => u.ipod.title === op.track.title && u.ipod.artist === op.track.artist
+          (u) => u.device.title === op.track.title && u.device.artist === op.track.artist
         );
         if (updateInfo) {
           return {
             ...base,
-            changes: updateInfo.changes.map((c: any) => ({
+            changes: (updateInfo.changes ?? []).map((c: any) => ({
               field: c.field,
               from: c.from,
               to: c.to,
@@ -453,8 +443,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
 
     const updateBreakdown: UpdateBreakdown = {};
     for (const update of diff.toUpdate) {
-      const count = updateBreakdown[update.reason as keyof UpdateBreakdown] ?? 0;
-      updateBreakdown[update.reason as keyof UpdateBreakdown] = count + 1;
+      const reason = update.reasons[0]!;
+      const count = updateBreakdown[reason as keyof UpdateBreakdown] ?? 0;
+      updateBreakdown[reason as keyof UpdateBreakdown] = count + 1;
     }
 
     let albumCount: number | undefined;
