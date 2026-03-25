@@ -52,6 +52,11 @@ export default defineConfig({
         }),
         starlightLlmsTxt(llmsTxtConfig),
       ],
+      customCss: [
+        '@fontsource-variable/source-sans-3',
+        '@fontsource/cormorant/300.css',
+        './src/styles/fonts.css',
+      ],
       title: 'podkit',
       description: 'Sync your music collection to iPod devices',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jvgomg/podkit' }],
