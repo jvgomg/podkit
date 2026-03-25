@@ -122,8 +122,6 @@ export interface SyncTagConfig {
   encodingMode?: string;
   /** Custom bitrate override (only when explicitly set by user) */
   customBitrate?: number;
-  /** Transfer mode: 'fast' | 'optimized' | 'portable' (informational — stored in sync tag) */
-  transferMode?: string;
 }
 
 export interface ExtendedExecuteOptions extends ExecuteOptions {
@@ -1725,9 +1723,7 @@ export class MusicExecutor implements SyncExecutor {
       (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
       this.syncTagConfig
     ) {
-      const copySyncTag = buildCopySyncTag(
-        this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
-      );
+      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast');
       trackInput.syncTag = copySyncTag;
     }
 
@@ -1875,9 +1871,7 @@ export class MusicExecutor implements SyncExecutor {
       (operation.type === 'upgrade-direct-copy' || operation.type === 'upgrade-optimized-copy') &&
       this.syncTagConfig
     ) {
-      const copySyncTag = buildCopySyncTag(
-        this.syncTagConfig.transferMode ?? this.transferMode ?? 'fast'
-      );
+      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast');
       foundTrack = this.device.writeSyncTag(foundTrack, copySyncTag);
     }
 
@@ -1926,7 +1920,7 @@ export class MusicExecutor implements SyncExecutor {
       presetName,
       this.syncTagConfig.encodingMode,
       this.syncTagConfig.customBitrate,
-      this.syncTagConfig.transferMode ?? this.transferMode
+      this.transferMode
     );
   }
 

@@ -64,9 +64,6 @@ export type {
   ExecuteResult,
 } from './sync/types.js';
 
-// Differ
-export { computeMusicDiff } from './sync/music-differ.js';
-
 // Upgrade detection (self-healing sync)
 export {
   isQualityUpgrade,
