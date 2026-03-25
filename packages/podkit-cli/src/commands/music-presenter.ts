@@ -144,11 +144,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
     });
   }
 
-  collectPostDiffData(
-    diff: SyncDiff,
-    contentConfig: MusicContentConfig | VideoContentConfig,
-    core: typeof import('@podkit/core')
-  ) {
+  collectPostDiffData(diff: SyncDiff, contentConfig: MusicContentConfig | VideoContentConfig) {
     const config = contentConfig as MusicContentConfig;
     let artworkMissingBaseline = 0;
     let transferModeMismatch = 0;
@@ -156,7 +152,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
 
     for (const match of diff.existing) {
       if (config.checkArtwork && match.ipod.hasArtwork === true) {
-        const syncTag = core.parseSyncTag(match.ipod.comment);
+        const syncTag = match.ipod.syncTag;
         if (!syncTag?.artworkHash) {
           artworkMissingBaseline++;
         }
@@ -165,7 +161,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
       // Count tracks whose sync tag transfer mode doesn't match the effective setting.
       // Missing transferMode (legacy sync tags) counts as a mismatch — these tracks
       // need --force-transfer-mode to have their sync tag updated.
-      const syncTag = core.parseSyncTag(match.ipod.comment);
+      const syncTag = match.ipod.syncTag;
       if (syncTag) {
         if (syncTag.transferMode !== effectiveTransferMode) {
           transferModeMismatch++;
@@ -320,6 +316,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, IPo
               symbol = '-';
               break;
             case 'update-metadata':
+            case 'update-sync-tag':
               symbol = '~';
               break;
             default:

@@ -417,6 +417,7 @@ export function getMusicOperationDisplayName(operation: SyncOperation): string {
     case 'remove':
       return `${operation.track.artist} - ${operation.track.title}`;
     case 'update-metadata':
+    case 'update-sync-tag':
       return `${operation.track.artist} - ${operation.track.title}`;
     case 'upgrade-transcode':
     case 'upgrade-direct-copy':
@@ -766,6 +767,10 @@ export class MusicExecutor implements SyncExecutor {
             inlineCompleted++;
           } else if (operation.type === 'update-metadata') {
             await this.executeUpdateMetadata(operation);
+            inlineCompletions.push(operation);
+            inlineCompleted++;
+          } else if (operation.type === 'update-sync-tag') {
+            await this.executeUpdateSyncTag(operation);
             inlineCompletions.push(operation);
             inlineCompleted++;
           }
@@ -1145,6 +1150,8 @@ export class MusicExecutor implements SyncExecutor {
         return this.executeRemove(operation);
       case 'update-metadata':
         return this.executeUpdateMetadata(operation);
+      case 'update-sync-tag':
+        return this.executeUpdateSyncTag(operation);
       case 'upgrade-transcode':
       case 'upgrade-direct-copy':
       case 'upgrade-optimized-copy':
@@ -1376,14 +1383,44 @@ export class MusicExecutor implements SyncExecutor {
     if (metadata.soundcheck !== undefined) {
       updateFields.soundcheck = metadata.soundcheck;
     }
-    if (metadata.comment !== undefined) {
-      updateFields.comment = metadata.comment;
-    }
-
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
 
     // No bytes transferred for metadata-only updates
+    return { bytesTransferred: 0 };
+  }
+
+  /**
+   * Execute an update-sync-tag operation
+   *
+   * Writes a typed sync tag to the iPod track's comment field without
+   * changing any other metadata. Uses the device adapter's writeSyncTag
+   * method directly.
+   */
+  private async executeUpdateSyncTag(
+    operation: Extract<SyncOperation, { type: 'update-sync-tag' }>
+  ): Promise<{ bytesTransferred: number }> {
+    const { track: targetTrack, syncTag } = operation;
+
+    // Find the matching track in the database
+    const tracks = this.device.getTracks();
+    let foundTrack = tracks.find((t) => t.filePath === targetTrack.filePath);
+
+    if (!foundTrack) {
+      foundTrack = tracks.find(
+        (t) =>
+          t.title === targetTrack.title &&
+          t.artist === targetTrack.artist &&
+          t.album === targetTrack.album
+      );
+    }
+
+    if (!foundTrack) {
+      throw new Error(`Track not found in database: ${targetTrack.artist} - ${targetTrack.title}`);
+    }
+
+    foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
+
     return { bytesTransferred: 0 };
   }
 
@@ -1927,6 +1964,7 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
     case 'remove':
       return 'removing';
     case 'update-metadata':
+    case 'update-sync-tag':
       return 'updating-metadata';
     case 'upgrade-transcode':
     case 'upgrade-direct-copy':

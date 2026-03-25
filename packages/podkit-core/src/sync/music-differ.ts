@@ -18,12 +18,8 @@
 import type { CollectionTrack } from '../adapters/interface.js';
 import { hasEnabledTransforms } from '../transforms/pipeline.js';
 import { buildMatchIndex, getTransformMatchKeys } from './matching.js';
-import {
-  buildAudioSyncTag,
-  formatSyncTag,
-  parseSyncTag,
-  syncTagMatchesConfig,
-} from './sync-tags.js';
+import { buildAudioSyncTag, syncTagMatchesConfig, syncTagsEqual } from './sync-tags.js';
+import type { SyncTagData } from './sync-tags.js';
 import {
   detectPresetChange,
   detectUpgrades,
@@ -294,7 +290,7 @@ export function computeMusicDiff(
       }
 
       // Try sync tag comparison first
-      const syncTag = parseSyncTag(match.ipod.comment);
+      const syncTag = match.ipod.syncTag;
       let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
 
       if (syncTag && expectedSyncTag) {
@@ -387,27 +383,25 @@ export function computeMusicDiff(
     const stillExisting: MatchedTrack[] = [];
 
     for (const match of existing) {
-      const syncTag = parseSyncTag(match.ipod.comment);
+      const syncTag = match.ipod.syncTag;
       const tagTransferMode = syncTag?.transferMode;
 
       if (tagTransferMode === targetTransferMode) {
+        stillExisting.push(match);
+      } else if (!syncTag) {
+        // No sync tag at all — can't stamp transfer mode. Treat as existing.
         stillExisting.push(match);
       } else if (tagTransferMode === undefined && targetTransferMode === 'fast') {
         // Missing transfer mode + effective is 'fast': the file was already
         // transferred with fast behavior (the only behavior before transfer modes).
         // Just stamp the sync tag — no file re-transfer needed.
-        const updatedTag = { ...syncTag!, transferMode: targetTransferMode };
+        const updatedTag: SyncTagData = { ...syncTag, transferMode: targetTransferMode };
         toUpdate.push({
           source: match.collection,
           ipod: match.ipod,
           reason: 'sync-tag-write',
-          changes: [
-            {
-              field: 'comment',
-              from: match.ipod.comment ?? '',
-              to: formatSyncTag(updatedTag),
-            },
-          ],
+          changes: [],
+          syncTag: updatedTag,
         });
       } else {
         // Transfer mode actually changed (or missing + effective is not 'fast')
@@ -416,7 +410,9 @@ export function computeMusicDiff(
           source: match.collection,
           ipod: match.ipod,
           reason: 'transfer-mode-changed',
-          changes: [{ field: 'comment', from: tagTransferMode ?? 'none', to: targetTransferMode }],
+          changes: [
+            { field: 'transferMode', from: tagTransferMode ?? 'none', to: targetTransferMode },
+          ],
         });
       }
     }
@@ -449,28 +445,23 @@ export function computeMusicDiff(
       // This ensures --force-sync-tags --check-artwork establishes baselines for ALL tracks.
       if (!sourceLossless) {
         if (match.collection.artworkHash) {
-          const currentTag = parseSyncTag(match.ipod.comment);
+          const currentTag = match.ipod.syncTag;
           if (!currentTag?.artworkHash || currentTag.artworkHash !== match.collection.artworkHash) {
             // Build a minimal "copy" sync tag with just the artwork hash
-            const copyTag: typeof baseExpectedTag = {
+            const copyTag: SyncTagData = {
               quality: 'copy',
               artworkHash: match.collection.artworkHash,
             };
             // If there's an existing tag, preserve its fields but update the artwork hash
-            const expectedTag = currentTag
+            const expectedTag: SyncTagData = currentTag
               ? { ...currentTag, artworkHash: match.collection.artworkHash }
               : copyTag;
             toUpdate.push({
               source: match.collection,
               ipod: match.ipod,
               reason: 'sync-tag-write',
-              changes: [
-                {
-                  field: 'comment',
-                  from: match.ipod.comment ?? '',
-                  to: formatSyncTag(expectedTag),
-                },
-              ],
+              changes: [],
+              syncTag: expectedTag,
             });
             continue;
           }
@@ -488,12 +479,11 @@ export function computeMusicDiff(
         expectedTag.artworkHash = match.collection.artworkHash;
       }
 
-      // Compare formatted tag strings — rewrite if the text differs,
+      // Structural comparison — rewrite if any field differs,
       // even if the semantic meaning is equivalent (e.g., missing encoding=vbr).
       // This ensures all tags are complete and consistent.
-      const expectedTagStr = formatSyncTag(expectedTag);
-      const currentTag = parseSyncTag(match.ipod.comment);
-      if (currentTag && formatSyncTag(currentTag) === expectedTagStr) {
+      const currentTag = match.ipod.syncTag;
+      if (currentTag && syncTagsEqual(currentTag, expectedTag)) {
         stillExisting.push(match);
         continue;
       }
@@ -502,9 +492,8 @@ export function computeMusicDiff(
         source: match.collection,
         ipod: match.ipod,
         reason: 'sync-tag-write',
-        changes: [
-          { field: 'comment', from: match.ipod.comment ?? '', to: formatSyncTag(expectedTag) },
-        ],
+        changes: [],
+        syncTag: expectedTag,
       });
     }
 

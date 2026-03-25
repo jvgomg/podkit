@@ -9,6 +9,7 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
 import type { IPodTrack } from '../ipod/types.js';
 import type { DeviceTrack } from '../device/adapter.js';
+import type { SyncTagData } from './sync-tags.js';
 import type {
   EncodingMode,
   QualityPreset,
@@ -97,7 +98,7 @@ export interface MetadataChange {
     | 'bitrate'
     | 'fileType'
     | 'lossless'
-    | 'comment';
+    | 'transferMode';
   from: string;
   to: string;
 }
@@ -114,6 +115,8 @@ export interface UpdateTrack {
   reason: UpdateReason;
   /** What metadata fields are changing */
   changes: MetadataChange[];
+  /** Typed sync tag to write (replaces raw comment field changes) */
+  syncTag?: SyncTagData;
 }
 
 /**
@@ -251,6 +254,11 @@ export type SyncOperation =
       type: 'update-metadata';
       track: DeviceTrack;
       metadata: Partial<TrackMetadata>;
+    }
+  | {
+      type: 'update-sync-tag';
+      track: DeviceTrack;
+      syncTag: SyncTagData;
     }
   // Video operations (unchanged)
   | {
