@@ -94,6 +94,8 @@ export {
   categorizeSource,
   isLosslessSource,
   willWarnLossyToLossy,
+  fileTypeToAudioCodec,
+  isDeviceCompatible,
 } from './sync/music-planner.js';
 
 // Track matching
@@ -153,8 +155,12 @@ export {
 } from './sync/music-executor.js';
 
 // Device capabilities
-export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './ipod/capabilities.js';
+export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './device/capabilities.js';
 export { getDeviceCapabilities } from './ipod/capabilities.js';
+
+// Device presets
+export { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './device/index.js';
+export type { DeviceTypeId } from './device/index.js';
 
 // Transcoding
 export type {
@@ -488,6 +494,32 @@ export type {
   VideoExecutorDependencies,
 } from './sync/video-executor.js';
 export { getVideoOperationDisplayName } from './sync/video-executor.js';
+
+// Device adapter interface
+export type {
+  DeviceAdapter,
+  DeviceTrack,
+  DeviceTrackInput,
+  DeviceTrackMetadata,
+} from './device/index.js';
+export { IpodDeviceAdapter } from './device/index.js';
+export { MassStorageAdapter, MassStorageTrack } from './device/index.js';
+export type {
+  MetadataReader,
+  MetadataReaderResult,
+  MassStorageAdapterOptions,
+  MassStorageManifest,
+} from './device/index.js';
+export {
+  sanitizeFilename,
+  generateTrackPath,
+  deduplicatePath,
+  padTrackNumber,
+  isAudioExtension,
+  MUSIC_DIR,
+  PODKIT_DIR,
+  MANIFEST_FILE,
+} from './device/index.js';
 
 // Device management
 export type {

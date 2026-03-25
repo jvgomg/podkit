@@ -1,14 +1,14 @@
 ---
 id: TASK-225
 title: CLI multi-device support for device commands
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:31'
-updated_date: '2026-03-23 20:31'
+updated_date: '2026-03-24 21:40'
 labels:
   - feature
   - cli
-milestone: "Additional Device Support: Echo Mini"
+milestone: 'Additional Device Support: Echo Mini'
 dependencies:
   - TASK-222
   - TASK-223
@@ -53,3 +53,30 @@ Update CLI device commands to work with non-iPod devices. Currently `device scan
 - [ ] #5 podkit doctor routes to device-appropriate diagnostic checks
 - [ ] #6 Existing iPod CLI behavior unchanged
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Research findings relevant to CLI (DOC-022)
+
+**Dual-volume:** Echo Mini mounts two volumes simultaneously. `device scan` needs to show both and indicate which is internal vs SD. `device info` should show both volumes with capacity.
+
+**Device type display:** CLI should show device type ("Echo Mini", "iPod Classic 7G", etc.) consistently in scan/info output.
+
+**New command considerations:**
+- `podkit device setup` wizard (may be in TASK-224 instead)
+- `device info` for mass-storage: show device type, mount point, capacity, file count, codec support
+- `device music` for mass-storage: reads from MassStorageAdapter track scan
+
+## Superseded by TASK-234 (2026-03-24)
+
+TASK-234 covers all the same acceptance criteria with more specific implementation details. Unique details from TASK-225 (doctor routing, device type display consistency) have been captured in TASK-234 notes.
+
+AC mapping:
+- TASK-225 AC#1 (scan) → TASK-234 AC#5
+- TASK-225 AC#2 (info) → TASK-234 AC#1
+- TASK-225 AC#3 (music) → TASK-234 AC#2
+- TASK-225 AC#4 (init/reset gate) → TASK-234 AC#4
+- TASK-225 AC#5 (doctor) → deferred, not in current milestone scope
+- TASK-225 AC#6 (iPod unchanged) → TASK-234 AC#6
+<!-- SECTION:NOTES:END -->

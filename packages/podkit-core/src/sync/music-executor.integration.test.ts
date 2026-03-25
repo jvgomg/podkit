@@ -29,6 +29,8 @@ import {
 } from './music-executor.js';
 import { FFmpegTranscoder } from '../transcode/ffmpeg.js';
 import { IpodDatabase } from '../ipod/database.js';
+import { IpodDeviceAdapter } from '../device/ipod-adapter.js';
+import { getDeviceCapabilities } from '../ipod/capabilities.js';
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { SyncPlan } from './types.js';
 import { requireAllDeps } from '../__tests__/helpers/test-setup.js';
@@ -186,7 +188,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 
@@ -244,7 +246,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 
@@ -313,7 +315,7 @@ describe('SyncExecutor integration', () => {
 
           // Now remove it via executor
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 
@@ -366,7 +368,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 
@@ -417,7 +419,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 
@@ -475,7 +477,7 @@ describe('SyncExecutor integration', () => {
           const initialCount = db.trackCount;
 
           const deps: ExecutorDependencies = {
-            ipod: db,
+            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
             transcoder,
           };
 

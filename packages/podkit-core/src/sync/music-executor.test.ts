@@ -39,6 +39,7 @@ interface MockIpodDatabase {
   getTracks: ReturnType<typeof mock>;
   removeTrack: ReturnType<typeof mock>;
   save: ReturnType<typeof mock>;
+  replaceTrackFile: ReturnType<typeof mock>;
 }
 
 interface MockTranscoder {
@@ -125,6 +126,7 @@ function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDataba
       return { removed: true };
     }),
     save: mock(async () => ({ warnings: [] })),
+    replaceTrackFile: mock((track: IPodTrack, _newFilePath: string) => track),
   };
 }
 
@@ -195,7 +197,7 @@ function createDependencies(
 ): ExecutorDependencies {
   // Cast mocks to satisfy the interface
   return {
-    ipod: db as unknown as ExecutorDependencies['ipod'],
+    device: db as unknown as ExecutorDependencies['device'],
     transcoder: transcoder as unknown as ExecutorDependencies['transcoder'],
   };
 }

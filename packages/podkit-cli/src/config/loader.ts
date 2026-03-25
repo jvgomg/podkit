@@ -31,6 +31,9 @@ import type {
   VideoCollectionConfig,
   DeviceConfig,
   DefaultsConfig,
+  DeviceType,
+  AudioCodec,
+  DeviceArtworkSource,
 } from './types.js';
 import {
   QUALITY_PRESETS,
@@ -39,6 +42,9 @@ import {
   VIDEO_QUALITY_PRESETS,
   TRANSFER_MODES,
   isValidTransferMode,
+  DEVICE_TYPES,
+  AUDIO_CODECS,
+  ARTWORK_SOURCES,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
@@ -73,6 +79,13 @@ function isValidEncodingMode(value: string): value is EncodingMode {
  */
 function isValidVideoQuality(value: string): value is VideoQualityPreset {
   return VIDEO_QUALITY_PRESETS.includes(value as VideoQualityPreset);
+}
+
+/**
+ * Check if a string is a valid device type
+ */
+function isValidDeviceType(value: string): value is DeviceType {
+  return (DEVICE_TYPES as readonly string[]).includes(value);
 }
 
 /**
@@ -541,6 +554,34 @@ function parseDevices(
       device.volumeName = rawDevice.volumeName.trim();
     }
 
+    // Parse optional device type
+    if (rawDevice.type !== undefined) {
+      if (typeof rawDevice.type !== 'string') {
+        throw new Error(
+          `Invalid type for "type" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.type}.`
+        );
+      }
+      if (!isValidDeviceType(rawDevice.type)) {
+        throw new Error(
+          `Invalid device type "${rawDevice.type}" in [devices.${name}]. ` +
+            `Valid values: ${DEVICE_TYPES.join(', ')}`
+        );
+      }
+      device.type = rawDevice.type;
+    }
+
+    // Parse optional path (mount point for mass-storage devices)
+    if (rawDevice.path !== undefined) {
+      if (typeof rawDevice.path !== 'string') {
+        throw new Error(
+          `Invalid type for "path" in [devices.${name}]. ` +
+            `Expected string, got ${typeof rawDevice.path}.`
+        );
+      }
+      device.path = rawDevice.path.trim();
+    }
+
     // Parse optional quality
     if (rawDevice.quality !== undefined) {
       if (typeof rawDevice.quality !== 'string') {
@@ -702,6 +743,101 @@ function parseDevices(
           `devices.${name}.showLanguage`
         ),
       };
+    }
+
+    // Parse optional capability overrides
+    if (rawDevice.artworkMaxResolution !== undefined) {
+      if (
+        typeof rawDevice.artworkMaxResolution !== 'number' ||
+        !Number.isInteger(rawDevice.artworkMaxResolution) ||
+        rawDevice.artworkMaxResolution < 1 ||
+        rawDevice.artworkMaxResolution > 10000
+      ) {
+        throw new Error(
+          `Invalid artworkMaxResolution value "${rawDevice.artworkMaxResolution}" in [devices.${name}]. ` +
+            `Must be a positive integer between 1 and 10000.`
+        );
+      }
+      device.artworkMaxResolution = rawDevice.artworkMaxResolution;
+    }
+
+    if (rawDevice.artworkSources !== undefined) {
+      if (!Array.isArray(rawDevice.artworkSources)) {
+        throw new Error(
+          `Invalid type for "artworkSources" in [devices.${name}]. ` +
+            `Expected array, got ${typeof rawDevice.artworkSources}.`
+        );
+      }
+      if (rawDevice.artworkSources.length === 0) {
+        throw new Error(
+          `Empty artworkSources array in [devices.${name}]. ` + `Must contain at least one value.`
+        );
+      }
+      for (const source of rawDevice.artworkSources) {
+        if (
+          typeof source !== 'string' ||
+          !ARTWORK_SOURCES.includes(source as DeviceArtworkSource)
+        ) {
+          throw new Error(
+            `Invalid artwork source "${source}" in [devices.${name}]. ` +
+              `Valid values: ${ARTWORK_SOURCES.join(', ')}`
+          );
+        }
+      }
+      device.artworkSources = rawDevice.artworkSources as DeviceArtworkSource[];
+    }
+
+    if (rawDevice.supportedAudioCodecs !== undefined) {
+      if (!Array.isArray(rawDevice.supportedAudioCodecs)) {
+        throw new Error(
+          `Invalid type for "supportedAudioCodecs" in [devices.${name}]. ` +
+            `Expected array, got ${typeof rawDevice.supportedAudioCodecs}.`
+        );
+      }
+      if (rawDevice.supportedAudioCodecs.length === 0) {
+        throw new Error(
+          `Empty supportedAudioCodecs array in [devices.${name}]. ` +
+            `Must contain at least one value.`
+        );
+      }
+      for (const codec of rawDevice.supportedAudioCodecs) {
+        if (typeof codec !== 'string' || !AUDIO_CODECS.includes(codec as AudioCodec)) {
+          throw new Error(
+            `Invalid audio codec "${codec}" in [devices.${name}]. ` +
+              `Valid values: ${AUDIO_CODECS.join(', ')}`
+          );
+        }
+      }
+      device.supportedAudioCodecs = rawDevice.supportedAudioCodecs as AudioCodec[];
+    }
+
+    if (rawDevice.supportsVideo !== undefined) {
+      if (typeof rawDevice.supportsVideo !== 'boolean') {
+        throw new Error(
+          `Invalid type for "supportsVideo" in [devices.${name}]. ` +
+            `Expected boolean, got ${typeof rawDevice.supportsVideo}.`
+        );
+      }
+      device.supportsVideo = rawDevice.supportsVideo;
+    }
+
+    // Validate: capability overrides are only valid for mass-storage devices
+    const isIpodDevice = !device.type || device.type === 'ipod';
+    if (isIpodDevice) {
+      const capabilityFields = [
+        'artworkMaxResolution',
+        'artworkSources',
+        'supportedAudioCodecs',
+        'supportsVideo',
+      ] as const;
+      const presentFields = capabilityFields.filter((f) => device[f] !== undefined);
+      if (presentFields.length > 0) {
+        throw new Error(
+          `Capability overrides (${presentFields.join(', ')}) in [devices.${name}] ` +
+            `are only valid for mass-storage devices (type must be set to a non-iPod device type). ` +
+            `iPod capabilities are determined automatically from the device generation.`
+        );
+      }
     }
 
     devices[name] = device;

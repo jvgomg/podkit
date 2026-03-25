@@ -163,9 +163,9 @@ export class SyncPlanner<TSource, TDevice> {
       estimatedTime += this.handler.estimateTime(op);
     }
 
-    // Step 6: Content-type-specific warnings (e.g., lossy-to-lossy)
+    // Step 6: Content-type-specific warnings (e.g., lossy-to-lossy, embedded artwork resize)
     if (this.handler.collectPlanWarnings) {
-      warnings.push(...this.handler.collectPlanWarnings(orderedOperations));
+      warnings.push(...this.handler.collectPlanWarnings(orderedOperations, planOptions));
     }
 
     // Step 7: Space constraint warnings

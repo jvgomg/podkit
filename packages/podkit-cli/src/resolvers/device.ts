@@ -64,6 +64,8 @@ export function getDeviceIdentity(device: ResolvedDevice | undefined): DeviceIde
   return {
     volumeUuid: device.config.volumeUuid,
     volumeName: device.config.volumeName,
+    path: device.config.path,
+    type: device.config.type,
   };
 }
 
@@ -210,7 +212,7 @@ export interface DevicePathResult {
   /** Resolved device path, if found */
   path?: string;
   /** How the device was found */
-  source: 'cli' | 'uuid' | 'auto-detected' | 'path-matched' | 'none';
+  source: 'cli' | 'uuid' | 'auto-detected' | 'path-matched' | 'config-path' | 'none';
   /** Device info if found via UUID */
   deviceInfo?: PlatformDeviceInfo;
   /** Error message if resolution failed */
@@ -251,7 +253,8 @@ export interface DevicePathOptions {
  *
  * Priority:
  * 1. CLI path (--device /path) - always wins
- * 2. Auto-detect via Volume UUID from device identity
+ * 2. Config path for mass-storage devices (path without UUID)
+ * 3. Auto-detect via Volume UUID from device identity
  *
  * @param options - Resolution options
  * @returns Device path result
@@ -308,7 +311,15 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
     };
   }
 
-  // Priority 2: Auto-detect via Volume UUID
+  // Priority 2: Path-based resolution for mass-storage devices
+  if (deviceIdentity?.path && !deviceIdentity?.volumeUuid) {
+    return {
+      path: deviceIdentity.path,
+      source: 'config-path',
+    };
+  }
+
+  // Priority 3: Auto-detect via Volume UUID
   if (deviceIdentity?.volumeUuid) {
     const device = await manager.findByVolumeUuid(deviceIdentity.volumeUuid);
 
@@ -324,7 +335,7 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
         return {
           source: 'uuid',
           deviceInfo: device,
-          error: 'iPod found but not mounted',
+          error: 'Device found but not mounted',
         };
       }
       // For mount command - return device info even if not mounted
@@ -338,24 +349,24 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
     // UUID configured but device not found
     return {
       source: 'none',
-      error: `iPod with UUID ${deviceIdentity.volumeUuid} not found. Is it connected?`,
+      error: `Device with UUID ${deviceIdentity.volumeUuid} not found. Is it connected?`,
     };
   }
 
-  // No UUID available — either no device configured or device has no UUID
+  // No UUID or path available — either no device configured or device has no identification
   if (deviceIdentity) {
-    // Device exists in config but has no volumeUuid
+    // Device exists in config but has no volumeUuid or path
     return {
       source: 'none',
       error:
-        'Device has no volumeUuid for auto-detection. ' +
-        'Use --device <path> to specify the mount point, or run "podkit device add" to register the device.',
+        'Device has no volumeUuid or path for detection. ' +
+        'Use --device <path> to specify the mount point, or add a path to the device config.',
     };
   }
 
   return {
     source: 'none',
-    error: 'No iPod configured. Run: podkit device add -d <name>',
+    error: 'No device configured. Run: podkit device add -d <name>',
   };
 }
 
@@ -458,7 +469,7 @@ export async function autoDetectDevice(
         source: 'auto-detected',
         deviceInfo,
         matchedDevice,
-        error: `iPod '${matchedDevice.name}' found but not mounted`,
+        error: `Device '${matchedDevice.name}' found but not mounted`,
       };
     }
     return {
@@ -518,7 +529,7 @@ export function formatDevicePathError(result: DevicePathResult): string {
       }
       return 'iPod not found';
     case 'none':
-      return 'No iPod configured. Run: podkit device add -d <name>';
+      return 'No device configured. Run: podkit device add -d <name>';
     default:
       return 'Device not found';
   }
@@ -548,11 +559,15 @@ export function formatDeviceLookupMessage(
   deviceIdentity: DeviceIdentity | undefined,
   verbose: boolean
 ): string {
+  // Determine the device label
+  const isIpod = !deviceIdentity?.type || deviceIdentity.type === 'ipod';
+  const deviceLabel = isIpod ? 'iPod' : 'device';
+
   if (!deviceName) {
-    return 'Looking for iPod...';
+    return `Looking for ${deviceLabel}...`;
   }
 
-  const base = `Looking for iPod '${deviceName}'`;
+  const base = `Looking for ${deviceLabel} '${deviceName}'`;
 
   if (verbose && deviceIdentity?.volumeUuid) {
     return `${base} (UUID: ${deviceIdentity.volumeUuid})...`;

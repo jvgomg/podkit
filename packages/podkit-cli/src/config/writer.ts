@@ -99,8 +99,18 @@ export function addDevice(
 
   // Build the device section
   const lines: string[] = [`[devices.${name}]`];
-  lines.push(`volumeUuid = "${device.volumeUuid}"`);
-  lines.push(`volumeName = "${device.volumeName}"`);
+  if (device.type) {
+    lines.push(`type = "${device.type}"`);
+  }
+  if (device.path) {
+    lines.push(`path = "${device.path}"`);
+  }
+  if (device.volumeUuid) {
+    lines.push(`volumeUuid = "${device.volumeUuid}"`);
+  }
+  if (device.volumeName) {
+    lines.push(`volumeName = "${device.volumeName}"`);
+  }
 
   if (device.quality !== undefined) {
     lines.push(`quality = "${device.quality}"`);
@@ -116,6 +126,22 @@ export function addDevice(
   }
   if (device.checkArtwork !== undefined) {
     lines.push(`checkArtwork = ${device.checkArtwork}`);
+  }
+
+  // Write capability overrides
+  if (device.artworkMaxResolution !== undefined) {
+    lines.push(`artworkMaxResolution = ${device.artworkMaxResolution}`);
+  }
+  if (device.artworkSources !== undefined) {
+    const sources = device.artworkSources.map((s: string) => `"${s}"`).join(', ');
+    lines.push(`artworkSources = [${sources}]`);
+  }
+  if (device.supportedAudioCodecs !== undefined) {
+    const codecs = device.supportedAudioCodecs.map((c: string) => `"${c}"`).join(', ');
+    lines.push(`supportedAudioCodecs = [${codecs}]`);
+  }
+  if (device.supportsVideo !== undefined) {
+    lines.push(`supportsVideo = ${device.supportsVideo}`);
   }
 
   // Handle cleanArtists config

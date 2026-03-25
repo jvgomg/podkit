@@ -2239,3 +2239,72 @@ export async function streamToTempFile(_getStream: any, _size?: number): Promise
 }
 
 export function cleanupTempFile(_path: string) {}
+
+// =============================================================================
+// Device adapter mocks
+// =============================================================================
+
+export const DEVICE_PRESETS: Record<string, any> = {
+  'echo-mini': {
+    artworkSources: ['embedded'],
+    artworkMaxResolution: 600,
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
+    supportsVideo: false,
+  },
+  rockbox: {
+    artworkSources: ['sidecar', 'embedded'],
+    artworkMaxResolution: 320,
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
+    supportsVideo: false,
+  },
+  generic: {
+    artworkSources: ['embedded'],
+    artworkMaxResolution: 500,
+    supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+    supportsVideo: false,
+  },
+};
+
+export function getDevicePreset(deviceType: string): any {
+  return DEVICE_PRESETS[deviceType];
+}
+
+export function resolveDeviceCapabilities(deviceType: string, overrides?: any): any {
+  const preset = getDevicePreset(deviceType);
+  if (!preset) return undefined;
+  if (!overrides) return preset;
+  return {
+    artworkSources: overrides.artworkSources ?? preset.artworkSources,
+    artworkMaxResolution: overrides.artworkMaxResolution ?? preset.artworkMaxResolution,
+    supportedAudioCodecs: overrides.supportedAudioCodecs ?? preset.supportedAudioCodecs,
+    supportsVideo: overrides.supportsVideo ?? preset.supportsVideo,
+  };
+}
+
+export class MassStorageAdapter {
+  readonly capabilities: any;
+  readonly mountPoint: string;
+
+  constructor(mountPoint: string, capabilities: any) {
+    this.mountPoint = mountPoint;
+    this.capabilities = capabilities;
+  }
+
+  static async open(mountPoint: string, capabilities: any): Promise<MassStorageAdapter> {
+    return new MassStorageAdapter(mountPoint, capabilities);
+  }
+
+  getTracks(): any[] {
+    return [];
+  }
+
+  close(): void {}
+}
+
+export class MassStorageTrack {
+  constructor(_opts: any) {}
+}
+
+export class IpodDeviceAdapter {
+  constructor(_ipod: any) {}
+}

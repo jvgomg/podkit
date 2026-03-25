@@ -57,7 +57,12 @@ import type {
   ExecutorProgress as ExecutorProgressFromTypes,
   ExecuteResult as ExecuteResultFromTypes,
 } from './types.js';
-import type { IpodDatabase, IPodTrack as IpodDatabaseTrack, TrackInput } from '../ipod/index.js';
+import type {
+  DeviceAdapter,
+  DeviceTrack,
+  DeviceTrackInput,
+  DeviceTrackMetadata,
+} from '../device/adapter.js';
 import { AlbumArtworkCache } from '../artwork/album-cache.js';
 
 // =============================================================================
@@ -165,6 +170,17 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * @default 50
    */
   saveInterval?: number;
+  /**
+   * Resize embedded artwork to this maximum dimension (pixels, square).
+   *
+   * When set, embedded artwork is resized during transcode and optimized-copy
+   * instead of being stripped. Used for devices where embedded artwork is the
+   * primary display source (e.g., Echo Mini).
+   *
+   * Takes priority over transferMode — when set, artwork is resized in all
+   * modes including portable (the device cannot use full-res artwork).
+   */
+  artworkResize?: number;
 }
 
 /** @see types.ts for canonical definition */
@@ -196,8 +212,8 @@ type MusicUpgradeOperationType =
  * Dependencies required by the executor
  */
 export interface ExecutorDependencies {
-  /** iPod database connection (high-level IpodDatabase API) */
-  ipod: IpodDatabase;
+  /** Device adapter for track operations (iPod, mass-storage, etc.) */
+  device: DeviceAdapter;
   /** FFmpeg transcoder for audio conversion */
   transcoder: FFmpegTranscoder;
 }
@@ -364,9 +380,9 @@ function getOptimizedCopyFormat(track: CollectionTrack): OptimizedCopyFormat {
 }
 
 /**
- * Convert CollectionTrack to TrackInput for libgpod
+ * Convert CollectionTrack to DeviceTrackInput for the device adapter
  */
-function toTrackInput(track: CollectionTrack): TrackInput {
+function toDeviceTrackInput(track: CollectionTrack): DeviceTrackInput {
   return {
     title: track.title,
     artist: track.artist,
@@ -490,7 +506,7 @@ function sleep(ms: number): Promise<void> {
  * removing, updating metadata, and upgrading tracks on the iPod.
  */
 export class MusicExecutor implements SyncExecutor {
-  private ipod: IpodDatabase;
+  private device: DeviceAdapter;
   private transcoder: FFmpegTranscoder;
   /** Warnings collected during execution */
   private warnings: ExecutionWarning[] = [];
@@ -498,11 +514,13 @@ export class MusicExecutor implements SyncExecutor {
   private syncTagConfig?: SyncTagConfig;
   /** Transfer mode for the current execution (set during execute()) */
   private transferMode?: string;
+  /** Artwork resize dimension for embedded artwork devices (set during execute()) */
+  private artworkResize?: number;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
 
   constructor(deps: ExecutorDependencies) {
-    this.ipod = deps.ipod;
+    this.device = deps.device;
     this.transcoder = deps.transcoder;
   }
 
@@ -561,12 +579,14 @@ export class MusicExecutor implements SyncExecutor {
       adapter,
       syncTagConfig,
       transferMode,
+      artworkResize,
       saveInterval = 50,
     } = options;
 
     // Store sync tag config for use during transfer
     this.syncTagConfig = syncTagConfig;
     this.transferMode = transferMode;
+    this.artworkResize = artworkResize;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -889,7 +909,7 @@ export class MusicExecutor implements SyncExecutor {
           // Checkpoint save: persist completed tracks periodically to reduce
           // data loss if the process is killed (force quit, SIGKILL, power loss)
           if (saveInterval > 0 && completed % saveInterval === 0) {
-            await this.ipod.save();
+            await this.device.save();
           }
         } else {
           // Transfer failed after retries
@@ -988,13 +1008,13 @@ export class MusicExecutor implements SyncExecutor {
         index: plan.operations.length - 1,
         current: plan.operations.length - 1,
         total,
-        currentTrack: 'Saving iPod database',
+        currentTrack: 'Saving device database',
         bytesProcessed,
         bytesTotal: totalBytes,
         completedCount: completed + failed + inlineCompleted,
       };
 
-      await this.ipod.save();
+      await this.device.save();
     }
 
     // Emit completion
@@ -1110,7 +1130,7 @@ export class MusicExecutor implements SyncExecutor {
     transcodeDir: string,
     signal?: AbortSignal,
     artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track?: IpodDatabaseTrack }> {
+  ): Promise<{ bytesTransferred: number; track?: DeviceTrack }> {
     switch (operation.type) {
       case 'add-transcode':
         return this.executeTranscode(operation, transcodeDir, signal, artworkEnabled);
@@ -1149,7 +1169,7 @@ export class MusicExecutor implements SyncExecutor {
    * @returns Artwork hash (8-char hex) if artwork was transferred, undefined otherwise
    */
   private async transferArtwork(
-    track: IpodDatabaseTrack,
+    track: DeviceTrack,
     sourceFilePath: string
   ): Promise<string | undefined> {
     try {
@@ -1187,7 +1207,7 @@ export class MusicExecutor implements SyncExecutor {
     transcodeDir: string,
     signal?: AbortSignal,
     artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
+  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { source, preset: presetRef } = operation;
 
     // Generate output path in temp directory
@@ -1198,18 +1218,19 @@ export class MusicExecutor implements SyncExecutor {
     const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
       signal,
       transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
+      artworkResize: this.artworkResize,
     });
 
-    // Add track to iPod database using IpodDatabase API
-    const trackInput: TrackInput = {
-      ...toTrackInput(source),
+    // Add track to device database
+    const trackInput: DeviceTrackInput = {
+      ...toDeviceTrackInput(source),
       bitrate: result.bitrate,
       filetype: 'AAC audio file',
     };
 
-    const track = this.ipod.addTrack(trackInput);
+    const track = this.device.addTrack(trackInput);
 
-    // Copy transcoded file to iPod using the fluent IPodTrack API
+    // Copy transcoded file to device
     track.copyFile(outputPath);
 
     // Extract and transfer artwork if enabled.
@@ -1227,18 +1248,18 @@ export class MusicExecutor implements SyncExecutor {
   private async executeCopy(
     operation: Extract<SyncOperation, { type: 'add-direct-copy' | 'add-optimized-copy' }>,
     artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
+  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { source } = operation;
 
-    // Add track to iPod database using IpodDatabase API
-    const trackInput: TrackInput = {
-      ...toTrackInput(source),
+    // Add track to device database
+    const trackInput: DeviceTrackInput = {
+      ...toDeviceTrackInput(source),
       filetype: getFileTypeLabel(source.filePath),
     };
 
-    const track = this.ipod.addTrack(trackInput);
+    const track = this.device.addTrack(trackInput);
 
-    // Copy source file to iPod using the fluent IPodTrack API
+    // Copy source file to device
     track.copyFile(source.filePath);
 
     // Extract and transfer artwork if enabled.
@@ -1263,9 +1284,9 @@ export class MusicExecutor implements SyncExecutor {
   ): Promise<{ bytesTransferred: number }> {
     const { track: targetTrack } = operation;
 
-    // The SyncOperation uses the old IPodTrack from sync/types.ts (data-only interface)
-    // We need to find the matching track in IpodDatabase and remove it
-    const tracks = this.ipod.getTracks();
+    // The SyncOperation stores a DeviceTrack snapshot (data-only)
+    // We need to find the matching live track on the device and remove it
+    const tracks = this.device.getTracks();
     const foundTrack = tracks.find(
       (t) =>
         t.title === targetTrack.title &&
@@ -1277,7 +1298,7 @@ export class MusicExecutor implements SyncExecutor {
       throw new Error(`Track not found in database: ${targetTrack.artist} - ${targetTrack.title}`);
     }
 
-    // Remove using the fluent IPodTrack API
+    // Remove using the DeviceTrack API
     foundTrack.remove();
 
     return { bytesTransferred: 0 };
@@ -1299,7 +1320,7 @@ export class MusicExecutor implements SyncExecutor {
 
     // Find the matching track in the database
     // Use filePath as primary identifier when available (most reliable)
-    const tracks = this.ipod.getTracks();
+    const tracks = this.device.getTracks();
     let foundTrack = tracks.find((t) => t.filePath === targetTrack.filePath);
 
     // Fall back to metadata matching if filePath doesn't match
@@ -1319,7 +1340,7 @@ export class MusicExecutor implements SyncExecutor {
 
     // Convert TrackMetadata to TrackFields format for update()
     // Only include fields that are actually being changed
-    const updateFields: Parameters<IpodDatabaseTrack['update']>[0] = {};
+    const updateFields: DeviceTrackMetadata = {};
 
     if (metadata.title !== undefined) {
       updateFields.title = metadata.title;
@@ -1405,6 +1426,7 @@ export class MusicExecutor implements SyncExecutor {
     const result = await this.transcoder.transcode(inputPath, outputPath, presetRef.name, {
       signal,
       transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
+      artworkResize: this.artworkResize,
     });
 
     return {
@@ -1498,7 +1520,9 @@ export class MusicExecutor implements SyncExecutor {
     const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${ext}`);
 
     // Build FFmpeg args and run
-    const args = buildOptimizedCopyArgs(inputPath, outputPath, format);
+    const args = buildOptimizedCopyArgs(inputPath, outputPath, format, {
+      artworkResize: this.artworkResize,
+    });
     await this.runFFmpeg(args, signal);
 
     // Get output file size
@@ -1633,7 +1657,7 @@ export class MusicExecutor implements SyncExecutor {
   private async transferToIpod(
     prepared: PreparedFile,
     artworkEnabled: boolean
-  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
+  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { operation, sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
 
     // Upgrade operations: replace file on existing track
@@ -1649,8 +1673,8 @@ export class MusicExecutor implements SyncExecutor {
     const source = operation.source;
 
     // Add track to iPod database
-    const trackInput: TrackInput = {
-      ...toTrackInput(source),
+    const trackInput: DeviceTrackInput = {
+      ...toDeviceTrackInput(source),
       filetype,
       ...(bitrate !== undefined && { bitrate }),
     };
@@ -1674,7 +1698,7 @@ export class MusicExecutor implements SyncExecutor {
       trackInput.comment = writeSyncTag(trackInput.comment, copySyncTag);
     }
 
-    const track = this.ipod.addTrack(trackInput);
+    const track = this.device.addTrack(trackInput);
 
     // Copy file to iPod
     track.copyFile(sourcePath);
@@ -1730,7 +1754,7 @@ export class MusicExecutor implements SyncExecutor {
   private async transferUpgradeToIpod(
     prepared: PreparedFile,
     artworkEnabled: boolean
-  ): Promise<{ bytesTransferred: number; track: IpodDatabaseTrack }> {
+  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { sourcePath, size, bitrate, filetype, artworkSourcePath } = prepared;
     const operation = prepared.operation as Extract<
       SyncOperation,
@@ -1739,7 +1763,7 @@ export class MusicExecutor implements SyncExecutor {
     const { source, target } = operation;
 
     // Find the existing track in the database by filePath
-    const tracks = this.ipod.getTracks();
+    const tracks = this.device.getTracks();
     let foundTrack = tracks.find((t) => t.filePath === target.filePath);
 
     // Fall back to metadata matching
@@ -1795,10 +1819,10 @@ export class MusicExecutor implements SyncExecutor {
     }
 
     // Replace the audio file (preserves database entry, playlists, play counts)
-    this.ipod.replaceTrackFile(foundTrack, sourcePath);
+    foundTrack = this.device.replaceTrackFile(foundTrack, sourcePath);
 
     // Update technical metadata to reflect the new file
-    const updateFields: Parameters<IpodDatabaseTrack['update']>[0] = {
+    const updateFields: DeviceTrackMetadata = {
       filetype,
       ...(bitrate !== undefined && { bitrate }),
       ...(source.duration !== undefined && { duration: source.duration }),

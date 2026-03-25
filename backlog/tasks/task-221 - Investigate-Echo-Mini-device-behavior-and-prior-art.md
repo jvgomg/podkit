@@ -1,13 +1,14 @@
 ---
 id: TASK-221
 title: Investigate Echo Mini device behavior and prior art
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:24'
+updated_date: '2026-03-24 16:08'
 labels:
   - research
   - device
-milestone: "Additional Device Support: Echo Mini"
+milestone: 'Additional Device Support: Echo Mini'
 dependencies: []
 references:
   - devices/echo-mini.md
@@ -50,3 +51,15 @@ Find and review GitHub projects for Echo Mini music management. Document:
 - [ ] #6 At least one existing open-source Echo Mini manager reviewed with findings noted
 - [ ] #7 devices/echo-mini.md updated with all findings
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+TASK-233 (knowledge capture) and TASK-232 (validation fixtures) together replace this task's scope. TASK-233 captures James's firsthand observations; TASK-232 creates structured test data to confirm remaining unknowns. Consider closing this task in favor of those two.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Superseded by TASK-233 (knowledge capture) and TASK-232 (validation fixtures). All acceptance criteria covered by those tasks. See devices/echo-mini.md for complete findings."]
+<!-- SECTION:FINAL_SUMMARY:END -->

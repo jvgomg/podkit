@@ -8,7 +8,8 @@
  * @module
  */
 
-import type { IpodDatabase } from '../ipod/database.js';
+import type { DeviceAdapter } from '../device/adapter.js';
+import type { AudioCodec } from '../device/capabilities.js';
 import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
 
 // =============================================================================
@@ -39,13 +40,43 @@ export interface HandlerPlanOptions {
   deviceSupportsAlac?: boolean;
   customBitrate?: number;
   hardwareAcceleration?: boolean;
+  /**
+   * Audio codecs the device can play natively without transcoding.
+   *
+   * When provided, the planner checks whether the source track's codec is in
+   * this list. If it is, the track is copied as-is instead of being transcoded.
+   * This enables devices like Echo Mini (which supports FLAC natively) to
+   * receive lossless files without unnecessary transcoding.
+   */
+  supportedAudioCodecs?: AudioCodec[];
+  /**
+   * Where the device reads artwork from (first = preferred).
+   * Used to determine whether embedded artwork should be stripped, resized, or preserved.
+   *
+   * - `'database'` → strip embedded artwork (iPod behavior)
+   * - `'embedded'` → resize to artworkMaxResolution in all modes
+   * - `'sidecar'` → future (TASK-204)
+   *
+   * @default undefined (falls back to strip behavior for backward compatibility)
+   */
+  primaryArtworkSource?: 'database' | 'embedded' | 'sidecar';
+  /**
+   * Maximum artwork display resolution in pixels (square).
+   * Used as the resize target when primaryArtworkSource is 'embedded'.
+   */
+  artworkMaxResolution?: number;
+  /**
+   * Transfer mode for file preparation.
+   * Used by planners to determine copy vs optimized-copy routing.
+   */
+  transferMode?: 'fast' | 'optimized' | 'portable';
 }
 
 /**
  * Context for executing sync operations
  */
 export interface ExecutionContext {
-  ipod: IpodDatabase;
+  device: DeviceAdapter;
   signal?: AbortSignal;
   dryRun?: boolean;
   tempDir?: string;
@@ -198,7 +229,10 @@ export interface ContentTypeHandler<TSource, TDevice> {
    * Called by SyncPlanner with all planned operations to generate
    * content-type-specific warnings (e.g., lossy-to-lossy conversion).
    */
-  collectPlanWarnings?(operations: SyncOperation[]): import('./types.js').SyncWarning[];
+  collectPlanWarnings?(
+    operations: SyncOperation[],
+    options?: HandlerPlanOptions
+  ): import('./types.js').SyncWarning[];
 
   // ---- Execution ----
 
@@ -213,8 +247,8 @@ export interface ContentTypeHandler<TSource, TDevice> {
 
   // ---- Device ----
 
-  /** Get all items of this content type from the iPod database */
-  getDeviceItems(ipod: IpodDatabase): TDevice[];
+  /** Get all items of this content type from the device */
+  getDeviceItems(device: DeviceAdapter): TDevice[];
 
   // ---- Display ----
 

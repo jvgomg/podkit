@@ -15,6 +15,11 @@
 #     --device /dev/bus/usb -e PUID=1000 -e PGID=1000 \
 #     ghcr.io/jvgomg/podkit:latest daemon
 #
+# Usage (daemon with mass-storage device support):
+#   docker run -v ./config:/config -v /path/to/music:/music:ro \
+#     -v /mnt/device:/mnt/device -e PODKIT_MASS_STORAGE_PATHS=/mnt/device \
+#     -e PUID=1000 -e PGID=1000 ghcr.io/jvgomg/podkit:latest daemon
+#
 
 FROM alpine:3.21
 

@@ -42,12 +42,14 @@ export type {
   ConfigFileDevice,
   ConfigFileDefaults,
 } from './types.js';
+export type { DeviceType } from './types.js';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
   TRANSFER_MODES,
   CONTENT_TYPES,
   VIDEO_QUALITY_PRESETS,
+  DEVICE_TYPES,
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
   isValidTransferMode,

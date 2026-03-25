@@ -53,6 +53,7 @@ export interface MusicContentConfig {
   forceMetadata: boolean;
   checkArtwork: boolean;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
+  capabilities?: import('@podkit/core').DeviceCapabilities;
 }
 
 /**
@@ -498,7 +499,9 @@ export async function genericSyncCollection<TSource, TDevice>(
       };
     }
     out.error(
-      presenter.type === 'video' ? 'Not enough space for video sync.' : 'Not enough space on iPod.'
+      presenter.type === 'video'
+        ? 'Not enough space for video sync.'
+        : 'Not enough space on device.'
     );
     out.error(`  Need: ${formatBytes(plan.estimatedSize)}`);
     out.error(`  Have: ${formatBytes(storage?.free ?? 0)}`);

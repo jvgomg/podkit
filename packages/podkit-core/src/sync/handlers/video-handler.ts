@@ -13,8 +13,7 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, stat, rm } from '../video-executor-fs.js';
 
 import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { IPodTrack } from '../../ipod/types.js';
-import type { IpodDatabase } from '../../ipod/database.js';
+import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
@@ -564,7 +563,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     }
 
     // Add track to iPod and copy file
-    const track = ctx.ipod.addTrack(trackInput);
+    const track = ctx.device.addTrack(trackInput);
     track.copyFile(tempOutputPath);
 
     yield { operation: op, phase: 'complete' };
@@ -600,7 +599,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     }
 
     // Add track to iPod and copy file
-    const track = ctx.ipod.addTrack(trackInput);
+    const track = ctx.device.addTrack(trackInput);
     track.copyFile(source.filePath);
 
     yield { operation: op, phase: 'complete' };
@@ -617,7 +616,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
 
     yield { operation: op, phase: 'starting' };
 
-    const tracks = ctx.ipod.getTracks();
+    const tracks = ctx.device.getTracks();
     const foundTrack = tracks.find(
       (t) =>
         t.filePath === video.filePath || (t.title === video.title && t.tvShow === video.seriesTitle)
@@ -643,7 +642,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
 
     yield { operation: op, phase: 'starting' };
 
-    const tracks = ctx.ipod.getTracks();
+    const tracks = ctx.device.getTracks();
     const foundTrack = tracks.find(
       (t) =>
         t.filePath === video.filePath || (t.title === video.title && t.tvShow === video.seriesTitle)
@@ -695,7 +694,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     yield { operation: op, phase: 'starting' };
 
     // Step 1: Remove the old iPod track
-    const tracks = ctx.ipod.getTracks();
+    const tracks = ctx.device.getTracks();
     const foundTrack = tracks.find(
       (t) =>
         t.filePath === target.filePath ||
@@ -734,11 +733,11 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
 
   // ---- Device ----
 
-  getDeviceItems(ipod: IpodDatabase): IPodVideo[] {
-    const tracks = ipod.getTracks().filter((track) => isVideoMediaType(track.mediaType));
+  getDeviceItems(device: DeviceAdapter): IPodVideo[] {
+    const tracks = device.getTracks().filter((track) => isVideoMediaType(track.mediaType));
 
-    // Map IPodTrack to IPodVideo for video-specific operations
-    return tracks.map((track) => ipodTrackToVideo(track));
+    // Map DeviceTrack to IPodVideo for video-specific operations
+    return tracks.map((track) => deviceTrackToVideo(track));
   }
 
   // ---- Display ----
@@ -802,12 +801,12 @@ function formatVideoEpisodeTitle(video: CollectionVideo): string {
 }
 
 /**
- * Convert an IPodTrack (from the database) to an IPodVideo for video operations.
+ * Convert a DeviceTrack (from the adapter) to an IPodVideo for video operations.
  *
  * Maps the track's metadata fields to the IPodVideo interface used by the
  * video differ and planner.
  */
-function ipodTrackToVideo(track: IPodTrack): IPodVideo {
+function deviceTrackToVideo(track: DeviceTrack): IPodVideo {
   // Determine content type from media type flags
   const MediaType = { Movie: 0x0002, TVShow: 0x0040 };
   const contentType = (track.mediaType & MediaType.TVShow) !== 0 ? 'tvshow' : 'movie';

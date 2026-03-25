@@ -11,7 +11,7 @@
  * @module
  */
 
-import type { IpodDatabase } from '../ipod/database.js';
+import type { DeviceAdapter } from '../device/adapter.js';
 import type {
   SyncPlan,
   SyncOperation,
@@ -38,12 +38,12 @@ export interface SyncExecuteOptions {
   continueOnError?: boolean;
   /** Abort signal for cancellation */
   signal?: AbortSignal;
-  /** iPod database instance (required for non-dry-run execution) */
-  ipod?: IpodDatabase;
+  /** Device adapter instance (required for non-dry-run execution) */
+  device?: DeviceAdapter;
   /** Temporary directory for transcoded files */
   tempDir?: string;
   /**
-   * Save the iPod database every N completed operations.
+   * Save the device database every N completed operations.
    * Set to 0 to disable checkpoint saves.
    * @default 10
    */
@@ -150,7 +150,7 @@ export class SyncExecutor<TSource, TDevice> {
       dryRun = false,
       continueOnError = false,
       signal,
-      ipod,
+      device,
       tempDir,
       saveInterval = 10,
     } = options ?? {};
@@ -165,7 +165,7 @@ export class SyncExecutor<TSource, TDevice> {
     let aborted = false;
 
     const ctx: ExecutionContext = {
-      ipod: ipod!,
+      device: device!,
       signal,
       dryRun,
       tempDir,
@@ -224,8 +224,8 @@ export class SyncExecutor<TSource, TDevice> {
         completed++;
 
         // Checkpoint save
-        if (saveInterval > 0 && completed % saveInterval === 0 && ipod && !signal?.aborted) {
-          await ipod.save();
+        if (saveInterval > 0 && completed % saveInterval === 0 && device && !signal?.aborted) {
+          await device.save();
         }
       } catch (err) {
         const error = err instanceof Error ? err : new Error(String(err));
@@ -277,7 +277,7 @@ export class SyncExecutor<TSource, TDevice> {
     ctx: ExecutionContext,
     options: SyncExecuteOptions
   ): AsyncGenerator<ExecutorProgress, ExecuteResult> {
-    const { continueOnError = false, signal, ipod, saveInterval = 10 } = options;
+    const { continueOnError = false, signal, device, saveInterval = 10 } = options;
 
     const total = plan.operations.length;
     let completed = 0;
@@ -315,8 +315,8 @@ export class SyncExecutor<TSource, TDevice> {
           completed++;
 
           // Checkpoint save
-          if (saveInterval > 0 && completed % saveInterval === 0 && ipod && !signal?.aborted) {
-            await ipod.save();
+          if (saveInterval > 0 && completed % saveInterval === 0 && device && !signal?.aborted) {
+            await device.save();
           }
         }
 

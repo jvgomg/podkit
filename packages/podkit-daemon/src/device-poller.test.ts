@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'bun:test';
-import { collectPartitions, parseLsblkJson } from './device-poller.js';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { collectPartitions, parseLsblkJson, scanMassStoragePaths } from './device-poller.js';
 import type { DetectedDevice } from './device-poller.js';
 
 // ---------------------------------------------------------------------------
@@ -192,6 +195,56 @@ describe('DevicePoller', () => {
     expect(disappeared[0]!.name).toBe('sdb1');
 
     poller.stop();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scanMassStoragePaths (pure function, uses real filesystem)
+// ---------------------------------------------------------------------------
+
+describe('scanMassStoragePaths', () => {
+  it('returns devices for existing directories', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'podkit-test-'));
+    try {
+      const devices = scanMassStoragePaths([dir]);
+      expect(devices).toHaveLength(1);
+      expect(devices[0]!.name).toBe(dir);
+      expect(devices[0]!.disk).toBe(dir);
+      expect(devices[0]!.size).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('returns empty array for non-existent paths', () => {
+    const devices = scanMassStoragePaths(['/tmp/podkit-nonexistent-path-abc123']);
+    expect(devices).toHaveLength(0);
+  });
+
+  it('skips paths that are files, not directories', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'podkit-test-'));
+    const filePath = join(dir, 'not-a-dir');
+    writeFileSync(filePath, 'hello');
+    try {
+      const devices = scanMassStoragePaths([filePath]);
+      expect(devices).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true });
+    }
+  });
+
+  it('returns multiple devices for multiple valid paths', () => {
+    const dir1 = mkdtempSync(join(tmpdir(), 'podkit-test-'));
+    const dir2 = mkdtempSync(join(tmpdir(), 'podkit-test-'));
+    try {
+      const devices = scanMassStoragePaths([dir1, '/tmp/nonexistent', dir2]);
+      expect(devices).toHaveLength(2);
+      expect(devices[0]!.name).toBe(dir1);
+      expect(devices[1]!.name).toBe(dir2);
+    } finally {
+      rmSync(dir1, { recursive: true });
+      rmSync(dir2, { recursive: true });
+    }
   });
 });
 
