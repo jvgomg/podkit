@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { MetadataReader } from './mass-storage-adapter.js';
+import type { TagWriter } from './mass-storage-tag-writer.js';
 import type { DeviceCapabilities } from './capabilities.js';
 import {
   sanitizeFilename,
@@ -909,6 +910,298 @@ describe('MassStorageAdapter', () => {
       });
 
       expect(adapter.mountPoint).toBe(mountPoint);
+    });
+  });
+
+  describe('sync tag persistence (comment tag writes)', () => {
+    /** Mock tag writer that records all writeComment calls */
+    function createMockTagWriter(): TagWriter & {
+      calls: Array<{ filePath: string; comment: string }>;
+    } {
+      const calls: Array<{ filePath: string; comment: string }> = [];
+      return {
+        calls,
+        async writeComment(filePath: string, comment: string) {
+          calls.push({ filePath, comment });
+        },
+      };
+    }
+
+    test('updateTrack with changed comment queues a pending write', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { comment: '[podkit:v1 quality=high encoding=vbr]' });
+
+      // No writes yet — pending until save()
+      expect(tagWriter.calls).toHaveLength(0);
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.filePath).toBe(
+        path.join(mountPoint, 'Music/Artist/Album/01 - Song.flac')
+      );
+      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+    });
+
+    test('updateTrack without comment change does not queue a write', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { title: 'New Title' });
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(0);
+    });
+
+    test('multiple comment updates to same track coalesce to latest value', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      const updated = adapter.updateTrack(track, { comment: '[podkit:v1 quality=high]' });
+      adapter.updateTrack(updated, { comment: '[podkit:v1 quality=high art=a1b2c3d4]' });
+
+      await adapter.save();
+
+      // Only one write with the final value
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high art=a1b2c3d4]');
+    });
+
+    test('pending writes for multiple tracks are flushed in save()', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song A.flac');
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/02 - Song B.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song A.flac': { title: 'Song A', artist: 'Artist', album: 'Album' },
+          '02 - Song B.flac': { title: 'Song B', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const tracks = adapter.getTracks();
+      adapter.updateTrack(tracks[0]!, { comment: 'tag-a' });
+      adapter.updateTrack(tracks[1]!, { comment: 'tag-b' });
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(2);
+      const comments = tagWriter.calls.map((c) => c.comment).sort();
+      expect(comments).toEqual(['tag-a', 'tag-b']);
+    });
+
+    test('save() clears pending writes after flushing', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { comment: 'sync-tag' });
+
+      await adapter.save();
+      expect(tagWriter.calls).toHaveLength(1);
+
+      // Second save should not re-write
+      await adapter.save();
+      expect(tagWriter.calls).toHaveLength(1);
+    });
+
+    test('save() with no pending writes does not call tagWriter', async () => {
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(0);
+    });
+
+    test('tag write error propagates from save()', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const failingWriter: TagWriter = {
+        async writeComment() {
+          throw new Error('FFmpeg exploded');
+        },
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter: failingWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, { comment: 'sync-tag' });
+
+      await expect(adapter.save()).rejects.toThrow('FFmpeg exploded');
+    });
+
+    test('comment set during addTrack is queued for persistence', async () => {
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      const track = adapter.addTrack({
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+        comment: '[podkit:v1 quality=high encoding=vbr]',
+      });
+
+      // Create the file so the tag writer has something to write to
+      createFakeAudioFile(mountPoint, track.filePath);
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+    });
+
+    test('replaceTrackFile queues comment write for the new file', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      // Set a sync tag on the track
+      const track = adapter.getTracks()[0]!;
+      const tagged = adapter.updateTrack(track, {
+        comment: '[podkit:v1 quality=high encoding=vbr]',
+      });
+
+      // Replace the file (simulating an upgrade — new file won't have the sync tag)
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'new-file.flac');
+      fs.writeFileSync(sourcePath, 'new audio data');
+
+      adapter.replaceTrackFile(tagged, sourcePath);
+
+      // Clear the mock to isolate replaceTrackFile's queued write
+      tagWriter.calls.length = 0;
+
+      await adapter.save();
+
+      // The old sync tag should be re-queued for the new file
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('replaceTrackFile comment write is overwritten by subsequent updateTrack', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      // Set initial sync tag
+      const track = adapter.getTracks()[0]!;
+      const tagged = adapter.updateTrack(track, {
+        comment: '[podkit:v1 quality=high encoding=vbr]',
+      });
+
+      // Replace the file
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'new-file.flac');
+      fs.writeFileSync(sourcePath, 'new audio data');
+
+      const replaced = adapter.replaceTrackFile(tagged, sourcePath);
+
+      // Executor sets a NEW sync tag after replacement
+      adapter.updateTrack(replaced, {
+        comment: '[podkit:v1 quality=medium encoding=cbr]',
+      });
+
+      tagWriter.calls.length = 0;
+      await adapter.save();
+
+      // Only the final sync tag should be written
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=medium encoding=cbr]');
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('copyTrackFile updates track list with new instance', async () => {
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        tagWriter,
+      });
+
+      const track = adapter.addTrack({
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        filetype: 'flac',
+      });
+
+      expect(adapter.getTracks()[0]!.hasFile).toBe(false);
+
+      // Create a source file
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'source.flac');
+      fs.writeFileSync(sourcePath, 'audio data');
+
+      const copied = adapter.copyTrackFile(track, sourcePath);
+
+      // The track list should reflect the updated state
+      expect(copied.hasFile).toBe(true);
+      expect(adapter.getTracks()[0]!.hasFile).toBe(true);
+      expect(adapter.getTracks()[0]!.size).toBe(copied.size);
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
     });
   });
 });
