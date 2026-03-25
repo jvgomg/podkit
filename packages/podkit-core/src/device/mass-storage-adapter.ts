@@ -38,6 +38,7 @@ import {
   type MassStorageManifest,
 } from './mass-storage-utils.js';
 import { isVideoMediaType } from '../ipod/video.js';
+import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';
 
 // =============================================================================
 // Types
@@ -90,6 +91,8 @@ export type MetadataReader = (
 export interface MassStorageAdapterOptions {
   /** Override the metadata reader (for testing) */
   metadataReader?: MetadataReader;
+  /** Override the tag writer (for testing) */
+  tagWriter?: TagWriter;
   /** Override the music directory name (default: "Music") */
   musicDir?: string;
 }
@@ -204,11 +207,11 @@ export class MassStorageTrack implements DeviceTrack {
   }
 
   /**
-   * Update in-memory metadata fields.
+   * Update in-memory metadata fields, returning a new track instance.
    *
-   * NOTE: This only updates in-memory state. Tag writing is deferred —
-   * not needed for initial sync. A future iteration can add tag writing
-   * using a library like node-taglib-sharp or mutagen.
+   * Callers should use `adapter.updateTrack()` rather than calling this
+   * directly — the adapter intercepts comment changes and queues them
+   * for persistence via the tag writer during save().
    */
   update(fields: DeviceTrackMetadata): DeviceTrack {
     return new MassStorageTrack({
@@ -373,6 +376,13 @@ export class MassStorageAdapter implements DeviceAdapter {
   private allocatedPaths: Set<string>;
   private readonly musicDir: string;
   private readonly metadataReader: MetadataReader;
+  private readonly tagWriter: TagWriter;
+
+  /**
+   * Pending comment tag writes, keyed by relative file path.
+   * Accumulated by updateTrack() and flushed by save().
+   */
+  private pendingCommentWrites = new Map<string, string>();
 
   private constructor(
     mountPoint: string,
@@ -383,6 +393,7 @@ export class MassStorageAdapter implements DeviceAdapter {
     this.capabilities = capabilities;
     this.musicDir = options?.musicDir ?? MUSIC_DIR;
     this.metadataReader = options?.metadataReader ?? defaultMetadataReader;
+    this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
     this.manifest = createEmptyManifest();
     this.managedFiles = new Set();
     this.allocatedPaths = new Set();
@@ -471,6 +482,12 @@ export class MassStorageAdapter implements DeviceAdapter {
     this.tracks.push(track);
     this.managedFiles.add(uniquePath);
 
+    // Queue comment write — the file doesn't exist yet (copyFile comes later),
+    // but the write is deferred to save() by which point the file will exist.
+    if (input.comment) {
+      this.pendingCommentWrites.set(uniquePath, input.comment);
+    }
+
     return track;
   }
 
@@ -478,6 +495,23 @@ export class MassStorageAdapter implements DeviceAdapter {
     const updated = track.update(fields);
 
     // Replace in our track list
+    const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
+    if (index >= 0) {
+      this.tracks[index] = updated as MassStorageTrack;
+    }
+
+    // Queue comment tag write if the comment changed
+    if (fields.comment !== undefined && fields.comment !== track.comment) {
+      this.pendingCommentWrites.set(track.filePath, fields.comment);
+    }
+
+    return updated;
+  }
+
+  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack {
+    const updated = track.copyFile(sourcePath);
+
+    // Replace in our track list (copyFile returns a new instance with hasFile/size updated)
     const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
     if (index >= 0) {
       this.tracks[index] = updated as MassStorageTrack;
@@ -503,6 +537,13 @@ export class MassStorageAdapter implements DeviceAdapter {
     }
 
     this.allocatedPaths.delete(track.filePath);
+  }
+
+  removeTrackArtwork(track: DeviceTrack): DeviceTrack {
+    // No-op for mass-storage — artwork is embedded by the transcode pipeline.
+    // The adapter intercept point exists so future artwork tag-stripping
+    // can be added here without changing the executor.
+    return track.removeArtwork();
   }
 
   replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack {
@@ -553,6 +594,13 @@ export class MassStorageAdapter implements DeviceAdapter {
       this.tracks[index] = updated;
     }
 
+    // The new file doesn't have the old track's comment tag. Queue a write
+    // to restore it — if the executor sets a new sync tag via updateTrack()
+    // before save(), that will overwrite this entry in the pending map.
+    if (msTrack.comment) {
+      this.pendingCommentWrites.set(msTrack.filePath, msTrack.comment);
+    }
+
     return updated;
   }
 
@@ -561,6 +609,16 @@ export class MassStorageAdapter implements DeviceAdapter {
   // ---------------------------------------------------------------------------
 
   async save(): Promise<void> {
+    // Flush pending comment tag writes to audio files
+    if (this.pendingCommentWrites.size > 0) {
+      const writes = [...this.pendingCommentWrites.entries()].map(([filePath, comment]) =>
+        this.tagWriter.writeComment(path.join(this.mountPoint, filePath), comment)
+      );
+      await Promise.all(writes);
+      this.pendingCommentWrites.clear();
+    }
+
+    // Write manifest
     this.manifest.managedFiles = [...this.managedFiles].sort();
     this.manifest.lastSync = new Date().toISOString();
 

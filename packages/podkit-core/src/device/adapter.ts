@@ -164,8 +164,14 @@ export interface DeviceAdapter {
   /** Remove a track from the device database */
   removeTrack(track: DeviceTrack, options?: { deleteFile?: boolean }): void;
 
+  /** Copy a source file to the track's allocated path on the device */
+  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack;
+
   /** Replace the audio file of an existing track (for upgrades/re-transcodes) */
   replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack;
+
+  /** Remove artwork from a track */
+  removeTrackArtwork(track: DeviceTrack): DeviceTrack;
 
   // Persistence
 
