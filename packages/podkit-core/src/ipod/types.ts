@@ -6,6 +6,7 @@
  */
 
 import type { SyncTagData } from '../sync/sync-tags.js';
+import type { DeviceTrack } from '../device/adapter.js';
 
 /**
  * Input for creating a new track.
@@ -217,7 +218,7 @@ export interface TrackFields {
  *     .setArtwork('/path/to/cover.jpg');
  * ```
  */
-export interface IPodTrack {
+export interface IPodTrack extends DeviceTrack {
   // Core metadata (read-only snapshot)
   /** Track title */
   readonly title: string;

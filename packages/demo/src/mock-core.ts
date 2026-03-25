@@ -232,17 +232,11 @@ export type {
   VideoFilter,
   VideoDirectoryAdapterConfig,
   IPodVideo,
-  MatchedVideo,
-  VideoSyncDiff,
-  VideoDiffOptions,
-  VideoSyncDiffer,
   VideoSyncPlanOptions,
   VideoSyncWarning,
   VideoSyncWarningType,
   VideoPlanSummary,
   VideoSyncPlanner,
-  VideoUpdateTrack,
-  VideoUpdateReason,
   VideoExecuteOptions,
   VideoSyncExecutor,
   VideoExecutorDependencies,
@@ -1082,24 +1076,6 @@ export const MUSIC_RETRY_CONFIG = {
 // =============================================================================
 // Video Differ (mock)
 // =============================================================================
-
-export function diffVideos(collectionVideos: any[], ipodVideos: any[], _options?: any) {
-  if (ipodVideos.length === 0) {
-    return {
-      toAdd: collectionVideos,
-      toRemove: [],
-      existing: [],
-    };
-  }
-  return {
-    toAdd: [],
-    toRemove: [],
-    existing: collectionVideos.map((cv: any, i: number) => ({
-      collection: cv,
-      ipod: ipodVideos[i],
-    })),
-  };
-}
 
 export function generateVideoMatchKey(video: any): string {
   if (video.contentType === 'movie') {

@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { VideoHandler, createVideoHandler } from './video-handler.js';
-import { diffVideos } from '../video-differ.js';
+import { diffVideos, generateVideoMatchKey } from '../video-differ.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { IPodVideo } from '../video-differ.js';
 import type { SyncOperation, SyncPlan } from '../types.js';
+import { getVideoTransformMatchKeys } from '../../transforms/video-pipeline.js';
 
 // =============================================================================
 // Test Fixtures
@@ -588,5 +589,494 @@ describe('diffVideos — metadata correction detection', () => {
     const diff = diffVideos([source], [device]);
     expect(diff.existing.length).toBe(1);
     expect(diff.toUpdate.length).toBe(0);
+  });
+});
+
+// =============================================================================
+// generateVideoMatchKey tests
+// =============================================================================
+
+describe('generateVideoMatchKey', () => {
+  describe('movies', () => {
+    test('generates key for movie without year', () => {
+      const key = generateVideoMatchKey({ contentType: 'movie', title: 'The Matrix' });
+      expect(key).toBe('movie:the matrix');
+    });
+
+    test('generates key for movie with year', () => {
+      const key = generateVideoMatchKey({ contentType: 'movie', title: 'The Matrix', year: 1999 });
+      expect(key).toBe('movie:the matrix:1999');
+    });
+
+    test('normalizes title (lowercase, trim, remove special chars)', () => {
+      const key = generateVideoMatchKey({
+        contentType: 'movie',
+        title: '  The Matrix: Reloaded!  ',
+        year: 2003,
+      });
+      expect(key).toBe('movie:the matrix reloaded:2003');
+    });
+
+    test('ignores invalid years (too old or too far in future)', () => {
+      const key1 = generateVideoMatchKey({ contentType: 'movie', title: 'Test', year: 1800 });
+      expect(key1).toBe('movie:test');
+
+      const key2 = generateVideoMatchKey({ contentType: 'movie', title: 'Test', year: 2100 });
+      expect(key2).toBe('movie:test');
+    });
+  });
+
+  describe('TV shows', () => {
+    test('generates key for TV episode with series title', () => {
+      const key = generateVideoMatchKey({
+        contentType: 'tvshow',
+        title: 'Pilot',
+        seriesTitle: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 1,
+      });
+      expect(key).toBe('tvshow:breaking bad:s01e01');
+    });
+
+    test('falls back to episode title if no series title', () => {
+      const key = generateVideoMatchKey({
+        contentType: 'tvshow',
+        title: 'The One Where They All Find Out',
+        seasonNumber: 5,
+        episodeNumber: 14,
+      });
+      expect(key).toBe('tvshow:the one where they all find out:s05e14');
+    });
+
+    test('handles missing season/episode numbers', () => {
+      const key = generateVideoMatchKey({
+        contentType: 'tvshow',
+        title: 'Special Episode',
+        seriesTitle: 'Doctor Who',
+      });
+      expect(key).toBe('tvshow:doctor who:special episode');
+    });
+
+    test('pads season and episode numbers', () => {
+      const key = generateVideoMatchKey({
+        contentType: 'tvshow',
+        title: 'Episode',
+        seriesTitle: 'Test Show',
+        seasonNumber: 1,
+        episodeNumber: 5,
+      });
+      expect(key).toBe('tvshow:test show:s01e05');
+    });
+  });
+});
+
+// =============================================================================
+// diffVideos — empty and basic matching scenarios
+// =============================================================================
+
+describe('diffVideos — empty scenarios', () => {
+  test('handles empty collection and empty iPod', () => {
+    const diff = diffVideos([], []);
+    expect(diff.toAdd).toEqual([]);
+    expect(diff.toRemove).toEqual([]);
+    expect(diff.existing).toEqual([]);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('adds all videos when iPod is empty', () => {
+    const sources = [
+      makeCollectionVideo({ title: 'Movie 1', year: 2020 }),
+      makeCollectionVideo({ title: 'Movie 2', year: 2021 }),
+    ];
+    const diff = diffVideos(sources, []);
+    expect(diff.toAdd).toHaveLength(2);
+    expect(diff.toRemove).toHaveLength(0);
+    expect(diff.existing).toHaveLength(0);
+  });
+
+  test('removes all videos when collection is empty', () => {
+    const devices = [
+      makeIPodVideo({ title: 'Movie 1', year: 2020 }),
+      makeIPodVideo({ title: 'Movie 2', year: 2021 }),
+    ];
+    const diff = diffVideos([], devices);
+    expect(diff.toAdd).toHaveLength(0);
+    expect(diff.toRemove).toHaveLength(2);
+    expect(diff.existing).toHaveLength(0);
+  });
+});
+
+describe('diffVideos — movie matching', () => {
+  test('matches movies by title', () => {
+    const source = makeCollectionVideo({ title: 'The Matrix', year: undefined });
+    const device = makeIPodVideo({ title: 'The Matrix', year: undefined });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(0);
+    expect(diff.toRemove).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.existing[0]!.collection.title).toBe('The Matrix');
+  });
+
+  test('matches movies by title and year', () => {
+    const source = makeCollectionVideo({ title: 'The Matrix', year: 1999 });
+    const device = makeIPodVideo({ title: 'The Matrix', year: 1999 });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+  });
+
+  test('distinguishes movies with same title but different years', () => {
+    const source = makeCollectionVideo({ title: 'Dune', year: 2021 });
+    const device = makeIPodVideo({ title: 'Dune', year: 1984 });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(1);
+    expect(diff.toRemove).toHaveLength(1);
+    expect(diff.existing).toHaveLength(0);
+  });
+
+  test('matches with case-insensitive comparison', () => {
+    const source = makeCollectionVideo({ title: 'THE MATRIX', year: undefined });
+    const device = makeIPodVideo({ title: 'the matrix', year: undefined });
+    const diff = diffVideos([source], [device]);
+    expect(diff.existing).toHaveLength(1);
+  });
+});
+
+describe('diffVideos — TV show matching', () => {
+  test('matches TV episodes by series/season/episode', () => {
+    const source = makeTVShowVideo({
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    const device = makeIPodTVShow({
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(0);
+    expect(diff.existing).toHaveLength(1);
+  });
+
+  test('distinguishes different episodes of same series', () => {
+    const sources = [
+      makeTVShowVideo({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
+      makeTVShowVideo({
+        seriesTitle: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 2,
+        id: '/videos/s01e02.mkv',
+        filePath: '/videos/s01e02.mkv',
+      }),
+    ];
+    const devices = [
+      makeIPodTVShow({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
+    ];
+    const diff = diffVideos(sources, devices);
+    expect(diff.toAdd).toHaveLength(1);
+    expect(diff.toAdd[0]!.episodeNumber).toBe(2);
+    expect(diff.existing).toHaveLength(1);
+  });
+
+  test('distinguishes different seasons of same series', () => {
+    const source = makeTVShowVideo({ seriesTitle: 'Show', seasonNumber: 2, episodeNumber: 1 });
+    const device = makeIPodTVShow({ seriesTitle: 'Show', seasonNumber: 1, episodeNumber: 1 });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(1);
+    expect(diff.toRemove).toHaveLength(1);
+  });
+});
+
+describe('diffVideos — mixed content scenarios', () => {
+  test('handles movies and TV shows together', () => {
+    const sources = [
+      makeCollectionVideo({ title: 'The Matrix', year: 1999 }),
+      makeTVShowVideo({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
+    ];
+    const devices = [
+      makeIPodVideo({ title: 'The Matrix', year: 1999 }),
+      makeIPodVideo({
+        title: 'Old Movie',
+        year: 2000,
+        id: ':iPod_Control:Music:F02:old.m4v',
+        filePath: ':iPod_Control:Music:F02:old.m4v',
+      }),
+    ];
+    const diff = diffVideos(sources, devices);
+    expect(diff.toAdd).toHaveLength(1); // Breaking Bad S01E01
+    expect(diff.toRemove).toHaveLength(1); // Old Movie
+    expect(diff.existing).toHaveLength(1); // The Matrix
+  });
+
+  test('does not match movie with TV show of same name', () => {
+    const source = makeCollectionVideo({ title: 'Fargo', year: 1996 });
+    const device = makeIPodTVShow({ seriesTitle: 'Fargo', seasonNumber: 1, episodeNumber: 1 });
+    const diff = diffVideos([source], [device]);
+    expect(diff.toAdd).toHaveLength(1); // Movie
+    expect(diff.toRemove).toHaveLength(1); // TV episode
+    expect(diff.existing).toHaveLength(0);
+  });
+});
+
+describe('diffVideos — duplicate handling', () => {
+  test('handles duplicate videos on iPod (first wins)', () => {
+    const source = makeCollectionVideo({ title: 'The Matrix', year: undefined });
+    const devices = [
+      makeIPodVideo({ id: 'first', filePath: ':first', title: 'The Matrix', year: undefined }),
+      makeIPodVideo({ id: 'second', filePath: ':second', title: 'The Matrix', year: undefined }),
+    ];
+    const diff = diffVideos([source], devices);
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.existing[0]!.ipod.id).toBe('first');
+    expect(diff.toRemove).toHaveLength(1);
+    expect(diff.toRemove[0]!.id).toBe('second');
+  });
+});
+
+// =============================================================================
+// diffVideos — additional preset change scenarios
+// =============================================================================
+
+describe('diffVideos — preset change (additional scenarios)', () => {
+  test('does not detect preset change when presetBitrate is not set', () => {
+    const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
+    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: 100 });
+    const diff = diffVideos([source], [device]);
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('does not detect preset change when iPod has no bitrate', () => {
+    const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
+    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: undefined });
+    const diff = diffVideos([source], [device], { presetBitrate: 728 });
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('does not detect preset change when iPod bitrate is below minimum threshold', () => {
+    const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
+    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: 30 });
+    const diff = diffVideos([source], [device], { presetBitrate: 728 });
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('detects both upgrade and downgrade in the same diff', () => {
+    const sources = [
+      makeCollectionVideo({ title: 'Movie A', year: 2020 }),
+      makeCollectionVideo({
+        title: 'Movie B',
+        year: 2021,
+        id: '/videos/b.mkv',
+        filePath: '/videos/b.mkv',
+      }),
+    ];
+    const devices = [
+      makeIPodVideo({ title: 'Movie A', year: 2020, bitrate: 396, id: ':a', filePath: ':a' }), // low → upgrade
+      makeIPodVideo({ title: 'Movie B', year: 2021, bitrate: 1200, id: ':b', filePath: ':b' }), // high → downgrade
+    ];
+    const diff = diffVideos(sources, devices, { presetBitrate: 728 });
+    expect(diff.toUpdate).toHaveLength(2);
+    expect(diff.toUpdate.every((u) => u.reason === 'preset-change')).toBe(true);
+    expect(diff.existing).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// diffVideos — video transform dual-key matching
+// =============================================================================
+
+describe('diffVideos — video transform dual-key matching', () => {
+  test('queues transform-apply when iPod has original metadata and transform is enabled', () => {
+    const source = makeTVShowVideo({
+      seriesTitle: 'Digimon Adventure (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    const device = makeIPodTVShow({
+      seriesTitle: 'Digimon Adventure (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+
+    const diff = diffVideos([source], [device], {
+      videoTransforms: { showLanguage: { enabled: true, format: '({})', expand: true } },
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transform-apply');
+    expect(diff.toUpdate[0]!.newSeriesTitle).toBe('Digimon Adventure (Japanese)');
+  });
+
+  test('queues transform-remove when iPod has transformed metadata and transform is disabled', () => {
+    const source = makeTVShowVideo({
+      seriesTitle: 'Digimon Adventure (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    // iPod has the expanded name (previously synced with transform enabled)
+    const device = makeIPodTVShow({
+      seriesTitle: 'Digimon Adventure (Japanese)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+
+    const diff = diffVideos([source], [device], {
+      videoTransforms: { showLanguage: { enabled: false, format: '({})', expand: true } },
+    });
+
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('transform-remove');
+    expect(diff.toUpdate[0]!.newSeriesTitle).toBe('Digimon Adventure (JPN)');
+  });
+
+  test('marks as existing when transform is enabled and iPod already has transformed data', () => {
+    const source = makeTVShowVideo({
+      seriesTitle: 'Digimon Adventure (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    // iPod already has the expanded name
+    const device = makeIPodTVShow({
+      seriesTitle: 'Digimon Adventure (Japanese)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+
+    const diff = diffVideos([source], [device], {
+      videoTransforms: { showLanguage: { enabled: true, format: '({})', expand: true } },
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('no transform changes when no language marker present', () => {
+    const source = makeTVShowVideo({
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+    const device = makeIPodTVShow({
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    });
+
+    const diff = diffVideos([source], [device], {
+      videoTransforms: { showLanguage: { enabled: true, format: '({})', expand: true } },
+    });
+
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+
+  test('initializes toUpdate as empty array when no transforms configured', () => {
+    const diff = diffVideos([], []);
+    expect(diff.toUpdate).toHaveLength(0);
+  });
+});
+
+// =============================================================================
+// getVideoTransformMatchKeys tests
+// =============================================================================
+
+describe('getVideoTransformMatchKeys', () => {
+  test('generates different keys when transform would apply', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Show (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey, {
+      showLanguage: { enabled: true, format: '({})', expand: true },
+    });
+    expect(result.originalKey).not.toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(true);
+    expect(result.transformedSeriesTitle).toBe('Show (Japanese)');
+  });
+
+  test('generates same keys when no language marker', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey, {
+      showLanguage: { enabled: true, format: '({})', expand: true },
+    });
+    expect(result.originalKey).toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(false);
+  });
+
+  test('returns original key when no transforms configured', () => {
+    const video = {
+      contentType: 'tvshow' as const,
+      title: 'S01E01',
+      seriesTitle: 'Show (JPN)',
+      seasonNumber: 1,
+      episodeNumber: 1,
+    };
+    const result = getVideoTransformMatchKeys(video, generateVideoMatchKey);
+    expect(result.originalKey).toBe(result.transformedKey);
+    expect(result.transformApplied).toBe(false);
+  });
+});
+
+// =============================================================================
+// diffVideos — force-metadata (additional scenarios)
+// =============================================================================
+
+describe('diffVideos — force-metadata (additional scenarios)', () => {
+  test('does not set newSeriesTitle for movies', () => {
+    const source = makeCollectionVideo({ title: 'Inception', year: 2010 });
+    const device = makeIPodVideo({ title: 'Inception', year: 2010 });
+    const diff = diffVideos([source], [device], { forceMetadata: true });
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.newSeriesTitle).toBeUndefined();
+  });
+
+  test('still adds new videos when forceMetadata is true', () => {
+    const sources = [
+      makeCollectionVideo({ title: 'The Matrix', year: 1999 }),
+      makeCollectionVideo({
+        title: 'Inception',
+        year: 2010,
+        id: '/videos/inception.mkv',
+        filePath: '/videos/inception.mkv',
+      }),
+    ];
+    const devices = [makeIPodVideo({ title: 'The Matrix', year: 1999 })];
+    const diff = diffVideos(sources, devices, { forceMetadata: true });
+    expect(diff.toAdd).toHaveLength(1);
+    expect(diff.toAdd[0]!.title).toBe('Inception');
+    expect(diff.toUpdate).toHaveLength(1);
+    expect(diff.toUpdate[0]!.reason).toBe('force-metadata');
+  });
+
+  test('still identifies removals when forceMetadata is true', () => {
+    const sources = [makeCollectionVideo({ title: 'The Matrix', year: 1999 })];
+    const devices = [
+      makeIPodVideo({ title: 'The Matrix', year: 1999, id: ':matrix', filePath: ':matrix' }),
+      makeIPodVideo({ title: 'Old Movie', year: 2000, id: ':old', filePath: ':old' }),
+    ];
+    const diff = diffVideos(sources, devices, { forceMetadata: true });
+    expect(diff.toRemove).toHaveLength(1);
+    expect(diff.toRemove[0]!.title).toBe('Old Movie');
+    expect(diff.toUpdate).toHaveLength(1);
+  });
+
+  test('does not move tracks to toUpdate when forceMetadata is false', () => {
+    const source = makeCollectionVideo({ title: 'The Matrix', year: 1999 });
+    const device = makeIPodVideo({ title: 'The Matrix', year: 1999 });
+    const diff = diffVideos([source], [device], { forceMetadata: false });
+    expect(diff.existing).toHaveLength(1);
+    expect(diff.toUpdate).toHaveLength(0);
   });
 });

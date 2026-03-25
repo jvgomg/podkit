@@ -82,8 +82,8 @@ export type DeviceTrackMetadata = Partial<DeviceTrackInput>;
  * Device-specific fields (iPod mediaType flags, ithmb references) stay
  * on the device-specific track type. The adapter maps between them.
  *
- * IPodTrack satisfies this interface naturally — the adapter can return
- * IPodTrack instances directly without mapping.
+ * IPodTrack extends this interface — the adapter can return IPodTrack
+ * instances directly without mapping or casting.
  */
 export interface DeviceTrack {
   // Identity
