@@ -452,16 +452,8 @@ import type { CollectionVideo, VideoFilter } from './video/directory-adapter.js'
 export type VideoAdapter = CollectionAdapter<CollectionVideo, VideoFilter>;
 
 // Video sync differ
-export type {
-  IPodVideo,
-  MatchedVideo,
-  VideoSyncDiff,
-  VideoDiffOptions,
-  VideoSyncDiffer,
-  VideoUpdateTrack,
-  VideoUpdateReason,
-} from './sync/video-differ.js';
-export { diffVideos, generateVideoMatchKey } from './sync/video-differ.js';
+export type { IPodVideo, MatchedVideo } from './sync/video-differ.js';
+export { generateVideoMatchKey } from './sync/video-differ.js';
 
 // Video sync planner
 export type {
