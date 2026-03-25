@@ -5,6 +5,8 @@
  * exposing libgpod-node internals like TrackHandle.
  */
 
+import type { SyncTagData } from '../sync/sync-tags.js';
+
 /**
  * Input for creating a new track.
  *
@@ -293,6 +295,10 @@ export interface IPodTrack {
   readonly hasFile: boolean;
   /** Whether the track is part of a compilation album */
   readonly compilation: boolean;
+
+  // Sync tag (parsed from comment field)
+  /** Parsed sync tag data, or null if no sync tag is present */
+  readonly syncTag: SyncTagData | null;
 
   // Video-specific fields
   /** TV show name (for TV show episodes) */

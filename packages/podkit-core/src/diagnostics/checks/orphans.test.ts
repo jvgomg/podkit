@@ -22,6 +22,7 @@ function makeTrack(filePath: string): IPodTrack {
     title: 'Test Track',
     artist: 'Test Artist',
     album: 'Test Album',
+    syncTag: null,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,

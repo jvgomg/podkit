@@ -23,6 +23,7 @@ function makeIpodTrack(hasArtwork: boolean): IPodTrack {
     artist: 'Test Artist',
     album: 'Test Album',
     comment: undefined,
+    syncTag: null,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,

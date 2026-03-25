@@ -74,6 +74,7 @@ function createIPodTrack(
     artist,
     title,
     album,
+    syncTag: null,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,

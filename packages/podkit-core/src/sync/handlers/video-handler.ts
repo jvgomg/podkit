@@ -13,19 +13,14 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, stat, rm } from '../video-executor-fs.js';
 
 import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
+import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/adapter.js';
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
 import { generateVideoMatchKey, type IPodVideo } from '../video-differ.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from '../video-planner.js';
 import { getVideoOperationDisplayName } from '../video-executor.js';
-import {
-  buildVideoSyncTag,
-  parseSyncTag,
-  syncTagMatchesConfig,
-  writeSyncTag,
-} from '../sync-tags.js';
+import { buildVideoSyncTag, syncTagMatchesConfig } from '../sync-tags.js';
 import { detectBitratePresetMismatch } from '../upgrades.js';
 import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
@@ -232,7 +227,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
 
       for (const match of diff.existing) {
         // Try sync tag comparison first
-        const syncTag = parseSyncTag(match.device.comment);
+        const syncTag = match.device.syncTag ?? null;
         let mismatch = false;
 
         if (syncTag && expectedSyncTag) {
@@ -557,13 +552,14 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     }
 
     // Write sync tag if quality preset is configured
+    const deviceTrackInput: DeviceTrackInput = trackInput;
     if (this.videoQuality) {
       const syncTag = buildVideoSyncTag(this.videoQuality);
-      trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
+      deviceTrackInput.syncTag = syncTag;
     }
 
     // Add track to device and copy file
-    const track = ctx.device.addTrack(trackInput);
+    const track = ctx.device.addTrack(deviceTrackInput);
     ctx.device.copyTrackFile(track, tempOutputPath);
 
     yield { operation: op, phase: 'complete' };
@@ -823,6 +819,7 @@ function deviceTrackToVideo(track: DeviceTrack): IPodVideo {
     duration: track.duration ? track.duration / 1000 : undefined, // ms to seconds
     bitrate: track.bitrate,
     comment: track.comment,
+    syncTag: track.syncTag,
   };
 }
 

@@ -14,7 +14,6 @@ import type { CollectionTrack } from '../adapters/interface.js';
 import type { EncodingMode } from '../transcode/types.js';
 import type { DeviceTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
-import { parseSyncTag } from './sync-tags.js';
 
 /**
  * Metadata fields to check for correction upgrades.
@@ -273,7 +272,7 @@ export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): Upgr
   // adapter fallback (TASK-142) will address this.
   if (source.hasArtwork === true && ipod.hasArtwork === false) {
     if (source.artworkHash) {
-      const syncTag = parseSyncTag(ipod.comment);
+      const syncTag = ipod.syncTag;
       if (!syncTag?.artworkHash || syncTag.artworkHash !== source.artworkHash) {
         reasons.push('artwork-added');
       }
@@ -292,7 +291,7 @@ export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): Upgr
   // Only check when source.artworkHash is defined (adapter had --check-artwork enabled)
   // and the iPod track has artwork (not trying to compare when iPod has no artwork).
   if (source.artworkHash && ipod.hasArtwork !== false) {
-    const syncTag = parseSyncTag(ipod.comment);
+    const syncTag = ipod.syncTag;
     if (syncTag?.artworkHash && syncTag.artworkHash !== source.artworkHash) {
       reasons.push('artwork-updated');
     }

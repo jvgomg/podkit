@@ -43,6 +43,7 @@ interface MockIpodDatabase {
   save: ReturnType<typeof mock>;
   replaceTrackFile: ReturnType<typeof mock>;
   removeTrackArtwork: ReturnType<typeof mock>;
+  writeSyncTag: ReturnType<typeof mock>;
 }
 
 interface MockTranscoder {
@@ -92,6 +93,7 @@ function createMockIPodTrack(
     hasArtwork: false,
     hasFile: true,
     compilation: false,
+    syncTag: null,
     // Methods
     remove: options.remove ?? (() => {}),
     copyFile: options.copyFile ?? (() => track),
@@ -143,6 +145,7 @@ function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDataba
     save: mock(async () => ({ warnings: [] })),
     replaceTrackFile: mock((track: IPodTrack, _newFilePath: string) => track),
     removeTrackArtwork: mock((track: IPodTrack) => track.removeArtwork()),
+    writeSyncTag: mock((track: IPodTrack, _update: Record<string, unknown>) => track),
   };
 }
 
@@ -2735,12 +2738,12 @@ describe('sync tag preservation after upgrade', () => {
   it('writes sync tag with NEW quality after preset-downgrade upgrade', async () => {
     // This tests the stale snapshot fix: after upgrade, the sync tag in the
     // comment field should reflect the NEW preset (low), not the old one (high).
-    let capturedUpdateFields: Record<string, unknown> | undefined;
+    let _capturedUpdateFields: Record<string, unknown> | undefined;
     const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
       filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
       comment: '[podkit:v1 quality=high encoding=vbr]',
       update: (fields: Record<string, unknown>) => {
-        capturedUpdateFields = fields;
+        _capturedUpdateFields = fields;
         return existingTrack;
       },
     });
@@ -2775,18 +2778,18 @@ describe('sync tag preservation after upgrade', () => {
       // consume
     }
 
-    // The update fields should contain a comment with the NEW quality=low
-    expect(capturedUpdateFields).toBeDefined();
-    expect(capturedUpdateFields!.comment).toContain('quality=low');
-    expect(capturedUpdateFields!.comment).not.toContain('quality=high');
+    // The sync tag should be written via writeSyncTag with the NEW quality=low
+    expect(db.writeSyncTag).toHaveBeenCalledTimes(1);
+    const syncTagUpdate = db.writeSyncTag.mock.calls[0]![1] as Record<string, unknown>;
+    expect(syncTagUpdate.quality).toBe('low');
   });
 
   it('writes sync tag with encoding mode after transcode upgrade', async () => {
-    let capturedUpdateFields: Record<string, unknown> | undefined;
+    let _capturedUpdateFields: Record<string, unknown> | undefined;
     const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
       filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
-        capturedUpdateFields = fields;
+        _capturedUpdateFields = fields;
         return existingTrack;
       },
     });
@@ -2820,17 +2823,19 @@ describe('sync tag preservation after upgrade', () => {
       // consume
     }
 
-    expect(capturedUpdateFields).toBeDefined();
-    expect(capturedUpdateFields!.comment).toContain('quality=high');
-    expect(capturedUpdateFields!.comment).toContain('encoding=cbr');
+    // The sync tag should be written via writeSyncTag with quality and encoding
+    expect(db.writeSyncTag).toHaveBeenCalledTimes(1);
+    const syncTagUpdate = db.writeSyncTag.mock.calls[0]![1] as Record<string, unknown>;
+    expect(syncTagUpdate.quality).toBe('high');
+    expect(syncTagUpdate.encoding).toBe('cbr');
   });
 
   it('does not write sync tag when syncTagConfig is not provided', async () => {
-    let capturedUpdateFields: Record<string, unknown> | undefined;
+    let _capturedUpdateFields: Record<string, unknown> | undefined;
     const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
       filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
-        capturedUpdateFields = fields;
+        _capturedUpdateFields = fields;
         return existingTrack;
       },
     });
@@ -2862,8 +2867,8 @@ describe('sync tag preservation after upgrade', () => {
       // consume
     }
 
-    expect(capturedUpdateFields).toBeDefined();
-    expect(capturedUpdateFields!.comment).toBeUndefined();
+    // writeSyncTag should not be called when syncTagConfig is absent
+    expect(db.writeSyncTag).not.toHaveBeenCalled();
   });
 
   it('writes sync tag for new transcode operations', async () => {
@@ -2888,11 +2893,13 @@ describe('sync tag preservation after upgrade', () => {
       // consume
     }
 
-    // Check the addTrack call for the comment field
+    // Check the addTrack call for the syncTag field
     expect(db.addTrack).toHaveBeenCalledTimes(1);
     const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
-    expect(trackInput.comment).toContain('quality=medium');
-    expect(trackInput.comment).toContain('encoding=vbr');
+    const syncTag = trackInput.syncTag as Record<string, unknown>;
+    expect(syncTag).toBeDefined();
+    expect(syncTag.quality).toBe('medium');
+    expect(syncTag.encoding).toBe('vbr');
   });
 });
 
@@ -3129,8 +3136,10 @@ describe('copy sync tags', () => {
 
     expect(db.addTrack).toHaveBeenCalledTimes(1);
     const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
-    expect(trackInput.comment).toContain('quality=copy');
-    expect(trackInput.comment).toContain('transfer=fast');
+    const syncTag = trackInput.syncTag as Record<string, unknown>;
+    expect(syncTag).toBeDefined();
+    expect(syncTag.quality).toBe('copy');
+    expect(syncTag.transferMode).toBe('fast');
   });
 
   it('writes copy sync tag with optimized transfer mode for add-direct-copy with optimized config', async () => {
@@ -3157,9 +3166,11 @@ describe('copy sync tags', () => {
     }
 
     expect(db.addTrack).toHaveBeenCalledTimes(1);
-    const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
-    expect(trackInput.comment).toContain('quality=copy');
-    expect(trackInput.comment).toContain('transfer=optimized');
+    const trackInput2 = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    const syncTag2 = trackInput2.syncTag as Record<string, unknown>;
+    expect(syncTag2).toBeDefined();
+    expect(syncTag2.quality).toBe('copy');
+    expect(syncTag2.transferMode).toBe('optimized');
   });
 
   it('does not write copy sync tag when syncTagConfig is absent', async () => {
@@ -3183,15 +3194,15 @@ describe('copy sync tags', () => {
 
     expect(db.addTrack).toHaveBeenCalledTimes(1);
     const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
-    expect(trackInput.comment).toBeUndefined();
+    expect(trackInput.syncTag).toBeUndefined();
   });
 
   it('writes copy sync tag for upgrade-direct-copy', async () => {
-    let capturedUpdateFields: Record<string, unknown> | undefined;
+    let _capturedUpdateFields: Record<string, unknown> | undefined;
     const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
       filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
-        capturedUpdateFields = fields;
+        _capturedUpdateFields = fields;
         return existingTrack;
       },
     });
@@ -3224,9 +3235,11 @@ describe('copy sync tags', () => {
       // consume
     }
 
-    expect(capturedUpdateFields).toBeDefined();
-    expect(capturedUpdateFields!.comment).toContain('quality=copy');
-    expect(capturedUpdateFields!.comment).toContain('transfer=fast');
+    // The sync tag should be written via writeSyncTag, not in updateFields
+    expect(db.writeSyncTag).toHaveBeenCalledTimes(1);
+    const syncTagUpdate = db.writeSyncTag.mock.calls[0]![1] as Record<string, unknown>;
+    expect(syncTagUpdate.quality).toBe('copy');
+    expect(syncTagUpdate.transferMode).toBe('fast');
   });
 
   it('falls back to transferMode from options when syncTagConfig has no transferMode', async () => {
@@ -3253,8 +3266,10 @@ describe('copy sync tags', () => {
 
     expect(db.addTrack).toHaveBeenCalledTimes(1);
     const trackInput = db.addTrack.mock.calls[0]![0] as Record<string, unknown>;
-    expect(trackInput.comment).toContain('quality=copy');
-    expect(trackInput.comment).toContain('transfer=optimized');
+    const syncTag = trackInput.syncTag as Record<string, unknown>;
+    expect(syncTag).toBeDefined();
+    expect(syncTag.quality).toBe('copy');
+    expect(syncTag.transferMode).toBe('optimized');
   });
 });
 

@@ -47,6 +47,7 @@ function createMockTrack(): IPodTrack {
     title: 'Test Song',
     artist: 'Test Artist',
     album: 'Test Album',
+    syncTag: null,
     duration: 180000,
     bitrate: 256,
     sampleRate: 44100,

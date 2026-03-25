@@ -7,6 +7,8 @@
 
 import type { TrackHandle, Track } from '@podkit/libgpod-node';
 import type { IPodTrack, TrackFields, RemoveTrackResult } from './types.js';
+import type { SyncTagData } from '../sync/sync-tags.js';
+import { parseSyncTag } from '../sync/sync-tags.js';
 import { IpodError } from './errors.js';
 
 /**
@@ -136,6 +138,9 @@ export class IpodTrackImpl implements IPodTrack {
   readonly hasFile: boolean;
   readonly compilation: boolean;
 
+  // Sync tag (parsed from comment)
+  readonly syncTag: SyncTagData | null;
+
   // Video-specific fields
   readonly tvShow?: string;
   readonly tvEpisode?: string;
@@ -200,6 +205,9 @@ export class IpodTrackImpl implements IPodTrack {
     this.hasArtwork = data.hasArtwork ?? false;
     this.hasFile = data.transferred ?? false;
     this.compilation = data.compilation ?? false;
+
+    // Sync tag (parsed from comment field)
+    this.syncTag = parseSyncTag(this.comment);
 
     // Video-specific fields
     this.tvShow = data.tvShow ?? undefined;
