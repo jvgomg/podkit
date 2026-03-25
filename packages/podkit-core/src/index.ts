@@ -114,15 +114,13 @@ export {
 } from './sync/matching.js';
 
 // Sync tags
-export type { SyncTagData } from './sync/sync-tags.js';
+export type { SyncTagData, SyncTagUpdate } from './sync/sync-tags.js';
 export {
-  parseSyncTag,
-  formatSyncTag,
-  writeSyncTag,
   syncTagMatchesConfig,
   buildAudioSyncTag,
   buildCopySyncTag,
   buildVideoSyncTag,
+  syncTagsEqual,
 } from './sync/sync-tags.js';
 
 // Shared error handling (canonical implementations)

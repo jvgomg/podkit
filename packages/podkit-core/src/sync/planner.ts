@@ -20,7 +20,7 @@
 
 import type { ContentTypeHandler, HandlerPlanOptions } from './content-type.js';
 import type { UnifiedSyncDiff } from './content-type.js';
-import type { SyncPlan, SyncOperation, SyncWarning } from './types.js';
+import type { SyncPlan, SyncOperation, SyncWarning, DeviceTrack } from './types.js';
 
 // =============================================================================
 // Types
@@ -51,6 +51,7 @@ const OPERATION_ORDER: Record<string, number> = {
   'video-remove': 0,
   // Metadata updates next — instant, no file transfer
   'update-metadata': 1,
+  'update-sync-tag': 1,
   'video-update-metadata': 1,
   // Copies next — fast, no CPU work
   'add-direct-copy': 2,
@@ -128,6 +129,28 @@ export class SyncPlanner<TSource, TDevice> {
 
     // Step 2: Create update operations
     for (const update of diff.toUpdate) {
+      // Sync tag writes bypass the handler — create update-sync-tag directly
+      if (update.syncTag && update.reasons.includes('sync-tag-write')) {
+        allOperations.push({
+          type: 'update-sync-tag',
+          track: update.device as DeviceTrack,
+          syncTag: update.syncTag,
+        });
+        // If sync-tag-write was the only reason, skip the handler entirely
+        const remainingReasons = update.reasons.filter((r) => r !== 'sync-tag-write');
+        if (remainingReasons.length === 0) continue;
+        // Otherwise, let the other reasons flow through to the handler
+        const ops = this.handler.planUpdate(
+          update.source,
+          update.device,
+          remainingReasons,
+          planOptions,
+          update.changes
+        );
+        allOperations.push(...ops);
+        continue;
+      }
+
       // Filter out artwork updates when artwork is disabled
       const reasons = artworkEnabled
         ? update.reasons

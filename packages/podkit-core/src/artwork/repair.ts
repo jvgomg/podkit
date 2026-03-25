@@ -29,6 +29,8 @@ import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.j
 import { getMatchKey } from '../sync/matching.js';
 import { cleanupAllTempArtwork as defaultCleanupAllTempArtwork } from './extractor.js';
 import type { ExtractedArtwork } from './types.js';
+// repair.ts operates at the IpodDatabase level, not the DeviceAdapter level,
+// so it uses the raw sync tag functions instead of adapter.writeSyncTag().
 import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
 import { AlbumArtworkCache } from './album-cache.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';

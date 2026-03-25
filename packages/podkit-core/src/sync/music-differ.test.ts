@@ -2117,11 +2117,11 @@ describe('forceSyncTags', () => {
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('sync-tag-write');
-    // The expected comment should contain the sync tag
-    const commentChange = diff.toUpdate[0]!.changes.find((c) => c.field === 'comment');
-    expect(commentChange).toBeDefined();
-    expect(commentChange!.to).toContain('quality=high');
-    expect(commentChange!.to).toContain('encoding=vbr');
+    // Sync tag write produces empty changes and a typed syncTag field
+    expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+    expect(diff.toUpdate[0]!.syncTag).toBeDefined();
+    expect(diff.toUpdate[0]!.syncTag!.quality).toBe('high');
+    expect(diff.toUpdate[0]!.syncTag!.encoding).toBe('vbr');
     expect(diff.existing).toHaveLength(0);
   });
 
@@ -2251,10 +2251,10 @@ describe('forceSyncTags', () => {
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('sync-tag-write');
-    const commentChange = diff.toUpdate[0]!.changes.find((c) => c.field === 'comment');
-    expect(commentChange).toBeDefined();
-    expect(commentChange!.to).toContain('quality=high');
-    expect(commentChange!.to).toContain('encoding=vbr');
+    expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+    expect(diff.toUpdate[0]!.syncTag).toBeDefined();
+    expect(diff.toUpdate[0]!.syncTag!.quality).toBe('high');
+    expect(diff.toUpdate[0]!.syncTag!.encoding).toBe('vbr');
   });
 
   it('does not activate without resolvedQuality even when forceSyncTags is true', () => {
@@ -2463,8 +2463,9 @@ describe('forceTransferMode', () => {
 
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reason).toBe('sync-tag-write');
-    const commentChange = diff.toUpdate[0]!.changes.find((c) => c.field === 'comment');
-    expect(commentChange!.to).toContain('transfer=fast');
+    expect(diff.toUpdate[0]!.changes).toHaveLength(0);
+    expect(diff.toUpdate[0]!.syncTag).toBeDefined();
+    expect(diff.toUpdate[0]!.syncTag!.transferMode).toBe('fast');
   });
 
   it('affects copy-format tracks (MP3) unlike forceTranscode', () => {

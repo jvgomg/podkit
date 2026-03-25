@@ -66,12 +66,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import {
-  formatGeneration,
-  validateDevice,
-  formatValidationMessages,
-  parseSyncTag,
-} from '@podkit/core';
+import { formatGeneration, validateDevice, formatValidationMessages } from '@podkit/core';
 import {
   openDevice,
   isMassStorageDevice,
@@ -129,7 +124,7 @@ function deviceTrackToDisplayTrack(t: DeviceTrack): DisplayTrack {
     format: parseFormat(t.filetype),
     bitrate: t.bitrate > 0 ? t.bitrate : undefined,
     soundcheck: t.soundcheck || undefined,
-    syncTag: parseSyncTag(t.comment),
+    syncTag: t.syncTag,
     hasArtwork: t.hasArtwork,
   };
 }
@@ -1771,7 +1766,7 @@ const infoSubcommand = new Command('info')
               const musicCount = musicTracks.length;
               const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
               const parsedSyncTags = musicTracks.map((t) => ({
-                tag: parseSyncTag(t.comment),
+                tag: t.syncTag,
                 hasArtwork: t.hasArtwork,
               }));
               const syncTagCount = parsedSyncTags.filter((t) => t.tag !== null).length;
@@ -2204,7 +2199,7 @@ const musicSubcommand = new Command('music')
           if (format === 'json') {
             const fullTracks = musicTracks.map((t) => ({
               ...fullJsonMapper(t),
-              syncTag: parseSyncTag(t.comment),
+              syncTag: t.syncTag,
             }));
             out.stdout(JSON.stringify(fullTracks, null, 2));
           } else if (format === 'csv') {
@@ -2370,7 +2365,7 @@ const videoSubcommand = new Command('video')
           if (format === 'json') {
             const fullTracks = videoTracks.map((t) => ({
               ...fullJsonMapper(t),
-              syncTag: parseSyncTag(t.comment),
+              syncTag: t.syncTag,
             }));
             out.stdout(JSON.stringify(fullTracks, null, 2));
           } else if (format === 'csv') {

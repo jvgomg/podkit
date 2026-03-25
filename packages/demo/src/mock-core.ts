@@ -183,7 +183,7 @@ export type {
 } from '@podkit/core';
 
 // Sync tag types
-export type { SyncTagData } from '@podkit/core';
+export type { SyncTagData, SyncTagUpdate } from '@podkit/core';
 
 // Sound Check types
 export type { SoundCheckResult } from '@podkit/core';
@@ -1419,10 +1419,6 @@ export function buildSyncWarnings(_validation: any, _config: any): string[] {
 
 export const IPOD_GENERATIONS = {} as any;
 
-export function parseSyncTag(_comment: string | null | undefined): null {
-  return null;
-}
-
 export function formatGeneration(generation: string): string {
   if (generation === 'classic_3') return 'Classic (3rd Generation)';
   if (generation === 'classic_2') return 'Classic (2nd Generation)';
@@ -1689,18 +1685,20 @@ export class VideoTranscodeError extends Error {
 // Sync Tags (mock)
 // =============================================================================
 
-export function formatSyncTag(_data: any): string {
-  return '';
+export function syncTagMatchesConfig(_tag: any, _config: any): boolean {
+  return true;
 }
 
-export function writeSyncTag(_filePath: string, _data: any): void {}
-
-export function syncTagMatchesConfig(_tag: any, _config: any): boolean {
+export function syncTagsEqual(_a: any, _b: any): boolean {
   return true;
 }
 
 export function buildAudioSyncTag(_config: any): any {
   return {};
+}
+
+export function buildCopySyncTag(_transferMode: string, _artworkHash?: string): any {
+  return { quality: 'copy' };
 }
 
 export function buildVideoSyncTag(_config: any): any {
