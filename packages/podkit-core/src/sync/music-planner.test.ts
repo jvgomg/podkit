@@ -1,7 +1,7 @@
 /**
  * Unit tests for the sync planner
  *
- * These tests verify the planning logic that converts a SyncDiff into
+ * These tests verify the planning logic that converts a UnifiedSyncDiff into
  * an executable SyncPlan with ordered operations.
  *
  * ## Test Coverage
@@ -37,7 +37,8 @@ import {
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
 import { parseSyncTag } from './sync-tags.js';
-import type { IPodTrack, SyncDiff, SyncOperation } from './types.js';
+import type { DeviceTrack, IPodTrack, SyncOperation } from './types.js';
+import type { UnifiedSyncDiff } from './content-type.js';
 
 // =============================================================================
 // Test Fixtures
@@ -69,8 +70,7 @@ function createCollectionTrack(
 let ipodTrackPathCounter = 0;
 
 /**
- * Create a minimal IPodTrack for testing.
- * The new IPodTrack interface from ipod/types.js includes methods and more fields.
+ * Create a minimal DeviceTrack for testing.
  * Each track gets a unique filePath which serves as its identifier.
  */
 function createIPodTrack(
@@ -79,11 +79,11 @@ function createIPodTrack(
   album: string,
   options: Partial<
     Omit<
-      IPodTrack,
+      DeviceTrack,
       'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'
     >
   > = {}
-): IPodTrack {
+): DeviceTrack {
   // Generate unique filePath if not provided
   const uniquePath =
     options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
@@ -133,9 +133,9 @@ function createIPodTrack(
 }
 
 /**
- * Create an empty SyncDiff for testing
+ * Create an empty UnifiedSyncDiff for testing
  */
-function createEmptyDiff(): SyncDiff {
+function createEmptyDiff(): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
   return {
     toAdd: [],
     toRemove: [],
@@ -493,7 +493,7 @@ describe('estimateCopySize', () => {
 
 describe('createMusicPlan - operation types', () => {
   it('creates transcode operation for FLAC files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -505,7 +505,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates transcode operation for OGG files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'ogg')],
     };
@@ -517,7 +517,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates transcode operation for OPUS files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'opus')],
     };
@@ -529,7 +529,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates transcode operation for WAV files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'wav')],
     };
@@ -541,7 +541,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates copy operation for MP3 files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -553,7 +553,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates copy operation for M4A files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'm4a')],
     };
@@ -565,7 +565,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates copy operation for AAC files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'aac')],
     };
@@ -577,7 +577,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates optimized-copy for MP3 when transferMode is optimized', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -589,7 +589,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates direct-copy for MP3 when transferMode is fast', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -601,7 +601,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('creates direct-copy for MP3 when transferMode is portable', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -616,7 +616,7 @@ describe('createMusicPlan - operation types', () => {
     const alacTrack = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
     alacTrack.codec = 'alac';
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [alacTrack],
     };
@@ -635,7 +635,7 @@ describe('createMusicPlan - operation types', () => {
     const alacTrack = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
     alacTrack.codec = 'alac';
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [alacTrack],
     };
@@ -651,7 +651,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('transcodes ALAC files to AAC by default (for space efficiency)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'alac')],
     };
@@ -663,7 +663,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('includes preset in transcode operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -678,7 +678,7 @@ describe('createMusicPlan - operation types', () => {
   });
 
   it('uses custom preset when provided', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -705,7 +705,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   };
 
   it('routes MP3 through optimized-copy for embedded-artwork device (fast mode)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -720,7 +720,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   });
 
   it('routes MP3 through optimized-copy for embedded-artwork device (portable mode)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -735,7 +735,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   });
 
   it('routes AAC through optimized-copy for embedded-artwork device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'm4a')],
     };
@@ -747,7 +747,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   });
 
   it('copies FLAC as-is when device supports FLAC natively', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -766,7 +766,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
       supportedAudioCodecs: ['aac' as const, 'mp3' as const],
       supportsVideo: false,
     };
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -778,7 +778,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   });
 
   it('produces embedded-artwork-resize warning in portable mode', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -794,7 +794,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
   });
 
   it('does not produce embedded-artwork-resize warning in fast mode', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -816,7 +816,7 @@ describe('createMusicPlan - embedded artwork devices', () => {
       supportsVideo: true,
     };
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'mp3')],
     };
@@ -852,7 +852,7 @@ describe('createMusicPlan - device codec compatibility', () => {
   };
 
   it('copies FLAC as-is when device supports FLAC natively', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -864,7 +864,7 @@ describe('createMusicPlan - device codec compatibility', () => {
   });
 
   it('copies OGG as-is when device supports OGG natively (no lossy-to-lossy warning)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'ogg')],
     };
@@ -877,7 +877,7 @@ describe('createMusicPlan - device codec compatibility', () => {
   });
 
   it('copies WAV as-is when device supports WAV natively', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'wav')],
     };
@@ -889,7 +889,7 @@ describe('createMusicPlan - device codec compatibility', () => {
   });
 
   it('transcodes Opus when device does not support Opus', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'opus')],
     };
@@ -909,7 +909,7 @@ describe('createMusicPlan - device codec compatibility', () => {
       supportsVideo: false,
     };
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -931,7 +931,7 @@ describe('createMusicPlan - device codec compatibility', () => {
       supportsVideo: true,
     };
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -943,13 +943,13 @@ describe('createMusicPlan - device codec compatibility', () => {
   });
 
   it('copies FLAC for upgrade when device supports FLAC', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
-          reason: 'format-upgrade',
+          device: createIPodTrack('Artist', 'Song', 'Album'),
+          reasons: ['format-upgrade'],
           changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
         },
       ],
@@ -963,7 +963,7 @@ describe('createMusicPlan - device codec compatibility', () => {
   });
 
   it('falls back to iPod-compatible format check when no capabilities provided', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -982,7 +982,7 @@ describe('createMusicPlan - device codec compatibility', () => {
 
 describe('createMusicPlan - remove operations', () => {
   it('does not create remove operations by default', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
     };
@@ -993,7 +993,7 @@ describe('createMusicPlan - remove operations', () => {
   });
 
   it('creates remove operations when removeOrphans is true', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
     };
@@ -1005,7 +1005,7 @@ describe('createMusicPlan - remove operations', () => {
   });
 
   it('creates remove operations for multiple tracks', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [
         createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
@@ -1024,7 +1024,7 @@ describe('createMusicPlan - remove operations', () => {
     const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', {
       filePath: ':iPod_Control:Music:F00:0123.m4a',
     });
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [ipodTrack],
     };
@@ -1044,7 +1044,7 @@ describe('createMusicPlan - remove operations', () => {
 
 describe('createMusicPlan - operation ordering', () => {
   it('orders removes before copies', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New Song', 'Album', 'mp3')],
       toRemove: [createIPodTrack('Artist', 'Old Song', 'Album')],
@@ -1058,7 +1058,7 @@ describe('createMusicPlan - operation ordering', () => {
   });
 
   it('orders removes before transcodes', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New Song', 'Album', 'flac')],
       toRemove: [createIPodTrack('Artist', 'Old Song', 'Album')],
@@ -1072,7 +1072,7 @@ describe('createMusicPlan - operation ordering', () => {
   });
 
   it('orders copies before transcodes', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'FLAC Song', 'Album', 'flac'),
@@ -1088,7 +1088,7 @@ describe('createMusicPlan - operation ordering', () => {
   });
 
   it('maintains full ordering: removes -> copies -> transcodes', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'FLAC 1', 'Album', 'flac'),
@@ -1126,7 +1126,7 @@ describe('createMusicPlan - operation ordering', () => {
 
 describe('createMusicPlan - size calculation', () => {
   it('calculates total size for transcode operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1143,7 +1143,7 @@ describe('createMusicPlan - size calculation', () => {
   });
 
   it('calculates total size for copy operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
@@ -1159,7 +1159,7 @@ describe('createMusicPlan - size calculation', () => {
   });
 
   it('sums sizes for multiple operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song 1', 'Album', 'flac', {
@@ -1179,7 +1179,7 @@ describe('createMusicPlan - size calculation', () => {
   });
 
   it('does not count remove operations in size', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [
         createIPodTrack('Artist', 'Song 1', 'Album'),
@@ -1195,7 +1195,7 @@ describe('createMusicPlan - size calculation', () => {
 
 describe('createMusicPlan - time calculation', () => {
   it('estimates time for transcode operations based on transfer speed', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1212,7 +1212,7 @@ describe('createMusicPlan - time calculation', () => {
   });
 
   it('estimates time for copy operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
@@ -1228,7 +1228,7 @@ describe('createMusicPlan - time calculation', () => {
   });
 
   it('includes small time for remove operations', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
     };
@@ -1350,7 +1350,7 @@ describe('calculateMusicOperationSize', () => {
 
 describe('willMusicFitInSpace', () => {
   it('returns true when plan fits in available space', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1366,7 +1366,7 @@ describe('willMusicFitInSpace', () => {
   });
 
   it('returns false when plan exceeds available space', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1382,7 +1382,7 @@ describe('willMusicFitInSpace', () => {
   });
 
   it('returns true when plan has zero size (only removes)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
     };
@@ -1393,7 +1393,7 @@ describe('willMusicFitInSpace', () => {
   });
 
   it('handles exact fit scenario', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1415,7 +1415,7 @@ describe('willMusicFitInSpace', () => {
 
 describe('getMusicPlanSummary', () => {
   it('counts operations by type', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'FLAC 1', 'Album', 'flac'),
@@ -1459,12 +1459,12 @@ describe('createMusicPlan - empty scenarios', () => {
   });
 
   it('handles diff with only existing matches', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       existing: [
         {
-          collection: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
+          source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
+          device: createIPodTrack('Artist', 'Song', 'Album'),
         },
       ],
     };
@@ -1475,7 +1475,7 @@ describe('createMusicPlan - empty scenarios', () => {
   });
 
   it('handles diff with nothing to do', () => {
-    const diff: SyncDiff = createEmptyDiff();
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = createEmptyDiff();
 
     const plan = createMusicPlan(diff);
 
@@ -1485,7 +1485,7 @@ describe('createMusicPlan - empty scenarios', () => {
 
 describe('createMusicPlan - tracks without duration', () => {
   it('uses default duration for transcode size estimation', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -1501,7 +1501,7 @@ describe('createMusicPlan - tracks without duration', () => {
   });
 
   it('uses default duration for copy size estimation', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
@@ -1522,7 +1522,7 @@ describe('createMusicPlan - tracks without duration', () => {
 
 describe('createMusicPlan - mixed scenarios', () => {
   it('handles realistic mixed format collection', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         // Transcodes
@@ -1581,7 +1581,7 @@ describe('createMusicPlan - mixed scenarios', () => {
       );
     }
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd,
     };
@@ -1606,7 +1606,7 @@ describe('createMusicPlan - source track references', () => {
       filePath: '/music/test.flac',
     });
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [track],
     };
@@ -1626,7 +1626,7 @@ describe('createMusicPlan - source track references', () => {
       filePath: '/music/test.mp3',
     });
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [track],
     };
@@ -1645,7 +1645,7 @@ describe('createMusicPlan - source track references', () => {
       filePath: ':iPod_Control:Music:F00:test.m4a',
     });
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [ipodTrack],
     };
@@ -1665,7 +1665,7 @@ describe('createMusicPlan - source track references', () => {
 
 describe('createMusicPlan - lossy-to-lossy warnings', () => {
   it('generates warning for OGG files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'ogg')],
     };
@@ -1680,7 +1680,7 @@ describe('createMusicPlan - lossy-to-lossy warnings', () => {
   });
 
   it('generates warning for Opus files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'opus')],
     };
@@ -1693,7 +1693,7 @@ describe('createMusicPlan - lossy-to-lossy warnings', () => {
   });
 
   it('generates warning for multiple OGG/Opus files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song 1', 'Album', 'ogg'),
@@ -1711,7 +1711,7 @@ describe('createMusicPlan - lossy-to-lossy warnings', () => {
   });
 
   it('does not generate warning for lossless files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
@@ -1721,7 +1721,7 @@ describe('createMusicPlan - lossy-to-lossy warnings', () => {
   });
 
   it('does not generate warning for compatible lossy files', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'MP3', 'Album', 'mp3'),
@@ -1740,7 +1740,7 @@ describe('createMusicPlan - lossy-to-lossy warnings', () => {
 
 describe('createMusicPlan - max preset', () => {
   it('resolves max to ALAC for lossless source on ALAC-capable device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -1761,7 +1761,7 @@ describe('createMusicPlan - max preset', () => {
     const track = createCollectionTrack('Artist', 'ALAC', 'Album', 'alac');
     track.codec = 'alac';
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [track],
     };
@@ -1776,7 +1776,7 @@ describe('createMusicPlan - max preset', () => {
   });
 
   it('resolves max to high for lossless source on non-ALAC device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -1794,7 +1794,7 @@ describe('createMusicPlan - max preset', () => {
   });
 
   it('resolves max to high for lossless source when deviceSupportsAlac not set', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -1811,7 +1811,7 @@ describe('createMusicPlan - max preset', () => {
   });
 
   it('copies compatible lossy with max preset regardless of ALAC support', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'MP3', 'Album', 'mp3')],
     };
@@ -1825,7 +1825,7 @@ describe('createMusicPlan - max preset', () => {
   });
 
   it('transcodes FLAC to ALAC with max on ALAC-capable device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -1842,7 +1842,7 @@ describe('createMusicPlan - max preset', () => {
   });
 
   it('transcodes FLAC to AAC at high quality with max on non-ALAC device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -1863,7 +1863,7 @@ describe('createMusicPlan - max preset', () => {
       codec: 'alac',
     });
 
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'FLAC', 'Album', 'flac'),
@@ -1903,7 +1903,7 @@ describe('createMusicPlan - max preset', () => {
 
 describe('createMusicPlan - incompatible lossy bitrate capping', () => {
   it('caps OGG at source bitrate when lower than preset', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
@@ -1922,7 +1922,7 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
   });
 
   it('uses preset bitrate when source bitrate is higher', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
@@ -1941,7 +1941,7 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
   });
 
   it('uses preset bitrate when source bitrate is unknown', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
@@ -1960,7 +1960,7 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
   });
 
   it('caps OGG at source bitrate with max preset (not at 256)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'OGG Song', 'Album', 'ogg', {
@@ -1982,7 +1982,7 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
   });
 
   it('caps Opus at source bitrate with medium preset', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Opus Song', 'Album', 'opus', {
@@ -2007,7 +2007,7 @@ describe('createMusicPlan - incompatible lossy bitrate capping', () => {
 
 describe('createMusicPlan - custom bitrate', () => {
   it('passes custom bitrate through for lossless sources', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'FLAC', 'Album', 'flac')],
     };
@@ -2023,7 +2023,7 @@ describe('createMusicPlan - custom bitrate', () => {
   });
 
   it('uses custom bitrate for size estimation', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'FLAC', 'Album', 'flac', {
@@ -2051,7 +2051,7 @@ describe('createMusicPlan - quality presets', () => {
 
   for (const preset of presets) {
     it(`uses ${preset} preset when configured`, () => {
-      const diff: SyncDiff = {
+      const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
         ...createEmptyDiff(),
         toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
       };
@@ -2068,7 +2068,7 @@ describe('createMusicPlan - quality presets', () => {
   }
 
   it('estimates larger size for high than low preset', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -2085,7 +2085,7 @@ describe('createMusicPlan - quality presets', () => {
   });
 
   it('estimates larger size for ALAC than AAC', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [
         createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
@@ -2111,13 +2111,13 @@ describe('createMusicPlan - quality presets', () => {
 
 describe('createMusicPlan - update operations', () => {
   it('creates update-metadata operations for toUpdate tracks', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist feat. B', 'Song', 'Album'),
-          reason: 'transform-apply',
+          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          reasons: ['transform-apply'],
           changes: [
             { field: 'artist', from: 'Artist feat. B', to: 'Artist' },
             { field: 'title', from: 'Song', to: 'Song (feat. B)' },
@@ -2133,13 +2133,13 @@ describe('createMusicPlan - update operations', () => {
   });
 
   it('includes correct metadata in update-metadata operation', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song (feat. B)', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist feat. B', 'Song', 'Album'),
-          reason: 'transform-apply',
+          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          reasons: ['transform-apply'],
           changes: [
             { field: 'artist', from: 'Artist feat. B', to: 'Artist' },
             { field: 'title', from: 'Song', to: 'Song (feat. B)' },
@@ -2159,14 +2159,14 @@ describe('createMusicPlan - update operations', () => {
   });
 
   it('orders update operations after transcodes', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New Song', 'Album', 'flac')],
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Existing', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist feat. B', 'Existing', 'Album'),
-          reason: 'transform-apply',
+          device: createIPodTrack('Artist feat. B', 'Existing', 'Album'),
+          reasons: ['transform-apply'],
           changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
         },
       ],
@@ -2180,13 +2180,13 @@ describe('createMusicPlan - update operations', () => {
   });
 
   it('does not count update operations in estimated size', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist feat. B', 'Song', 'Album'),
-          reason: 'transform-apply',
+          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          reasons: ['transform-apply'],
           changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
         },
       ],
@@ -2205,13 +2205,13 @@ describe('createMusicPlan - update operations', () => {
 describe('createMusicPlan - sync-tag-write operations', () => {
   it('creates update-sync-tag operation for sync-tag-write reason', () => {
     const syncTag = { quality: 'high' as const, encoding: 'vbr' as const };
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
-          reason: 'sync-tag-write',
+          device: createIPodTrack('Artist', 'Song', 'Album'),
+          reasons: ['sync-tag-write'],
           changes: [],
           syncTag,
         },
@@ -2229,13 +2229,13 @@ describe('createMusicPlan - sync-tag-write operations', () => {
   });
 
   it('falls through to update-metadata when syncTag is absent despite sync-tag-write reason', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
-          reason: 'sync-tag-write',
+          device: createIPodTrack('Artist', 'Song', 'Album'),
+          reasons: ['sync-tag-write'],
           changes: [],
           // syncTag intentionally omitted
         },
@@ -2249,13 +2249,13 @@ describe('createMusicPlan - sync-tag-write operations', () => {
   });
 
   it('does not count sync-tag-write operations in estimated size', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
-          reason: 'sync-tag-write',
+          device: createIPodTrack('Artist', 'Song', 'Album'),
+          reasons: ['sync-tag-write'],
           changes: [],
           syncTag: { quality: 'high', encoding: 'vbr' },
         },
@@ -2274,7 +2274,7 @@ describe('createMusicPlan - sync-tag-write operations', () => {
 
 describe('createMusicPlan - upgrade operations', () => {
   it('creates upgrade operation for format-upgrade reason (lossless source)', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
@@ -2282,11 +2282,11 @@ describe('createMusicPlan - upgrade operations', () => {
             duration: 200000,
             lossless: true,
           }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 192,
           }),
-          reason: 'format-upgrade',
+          reasons: ['format-upgrade'],
           changes: [
             { field: 'fileType', from: 'mp3', to: 'flac' },
             { field: 'lossless', from: 'false', to: 'true' },
@@ -2308,17 +2308,17 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('creates upgrade operation for format-upgrade with max + ALAC device', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
-          reason: 'format-upgrade',
+          reasons: ['format-upgrade'],
           changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
         },
       ],
@@ -2339,18 +2339,18 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('creates upgrade operation without preset for compatible lossy source', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             bitrate: 320,
           }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 128,
           }),
-          reason: 'quality-upgrade',
+          reasons: ['quality-upgrade'],
           changes: [{ field: 'bitrate', from: '128', to: '320' }],
         },
       ],
@@ -2366,15 +2366,15 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('creates update-metadata operation for soundcheck-update reason', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             soundcheck: 1234,
           }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album'),
-          reason: 'soundcheck-update',
+          device: createIPodTrack('Artist', 'Song', 'Album'),
+          reasons: ['soundcheck-update'],
           changes: [{ field: 'soundcheck', from: '', to: '1234' }],
         },
       ],
@@ -2387,7 +2387,7 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('includes upgrade operations in size estimates', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
@@ -2395,10 +2395,10 @@ describe('createMusicPlan - upgrade operations', () => {
             duration: 240000,
             lossless: true,
           }),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
-          reason: 'format-upgrade',
+          reasons: ['format-upgrade'],
           changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
         },
       ],
@@ -2411,15 +2411,15 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('generates lossy-to-lossy warning for OGG upgrade source', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'ogg'),
-          ipod: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createIPodTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
-          reason: 'format-upgrade',
+          reasons: ['format-upgrade'],
           changes: [],
         },
       ],
@@ -2432,7 +2432,7 @@ describe('createMusicPlan - upgrade operations', () => {
   });
 
   it('orders upgrade operations after removes and copies, before transcodes and updates', () => {
-    const diff: SyncDiff = {
+    const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New', 'Album', 'flac')],
       toRemove: [createIPodTrack('Artist', 'Old', 'Album')],
@@ -2441,17 +2441,17 @@ describe('createMusicPlan - upgrade operations', () => {
           source: createCollectionTrack('Artist', 'Upgrade', 'Album', 'mp3', {
             bitrate: 320,
           }),
-          ipod: createIPodTrack('Artist', 'Upgrade', 'Album', {
+          device: createIPodTrack('Artist', 'Upgrade', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 128,
           }),
-          reason: 'quality-upgrade',
+          reasons: ['quality-upgrade'],
           changes: [{ field: 'bitrate', from: '128', to: '320' }],
         },
         {
           source: createCollectionTrack('Artist', 'MetaUpdate', 'Album', 'mp3'),
-          ipod: createIPodTrack('Artist', 'MetaUpdate', 'Album'),
-          reason: 'soundcheck-update',
+          device: createIPodTrack('Artist', 'MetaUpdate', 'Album'),
+          reasons: ['soundcheck-update'],
           changes: [{ field: 'soundcheck', from: '', to: '1234' }],
         },
       ],

@@ -38,8 +38,6 @@ export type { SubsonicAdapterConfig } from './adapters/subsonic.js';
 
 // Sync engine
 export type {
-  MatchedTrack,
-  SyncDiff,
   SyncPlan,
   SyncOperation,
   ExecuteOptions,
@@ -53,7 +51,6 @@ export type {
   UpdateReason,
   UpgradeReason,
   MetadataChange,
-  UpdateTrack,
   DiffOptions,
   // Unified executor types (canonical definitions)
   ErrorCategory,

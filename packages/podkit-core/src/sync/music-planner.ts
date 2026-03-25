@@ -1,7 +1,7 @@
 /**
  * Sync planner for converting diffs into execution plans
  *
- * The planner takes a SyncDiff (from the diff engine) and produces a SyncPlan
+ * The planner takes a UnifiedSyncDiff (from the diff engine) and produces a SyncPlan
  * containing ordered operations. It determines whether each track needs
  * transcoding or can be copied directly, estimates output sizes, and checks
  * available space on the iPod.
@@ -40,18 +40,18 @@ import {
   getPresetBitrate,
 } from '../transcode/types.js';
 import type {
-  IPodTrack,
+  DeviceTrack,
   MetadataChange,
   PlanOptions,
   SourceCategory,
-  SyncDiff,
   SyncOperation,
   SyncPlan,
   SyncWarning,
   TranscodePresetRef,
-  UpdateTrack,
+  UpdateReason,
   UpgradeReason,
 } from './types.js';
+import type { UnifiedSyncDiff } from './content-type.js';
 import type { TrackMetadata } from '../types.js';
 import { estimateTransferTime } from './estimation.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from './video-planner.js';
@@ -401,9 +401,9 @@ function createCopyOperation(track: CollectionTrack, transferMode: TransferMode)
 }
 
 /**
- * Create a remove operation for an iPod track
+ * Create a remove operation for a device track
  */
-function createRemoveOperation(track: IPodTrack): SyncOperation {
+function createRemoveOperation(track: DeviceTrack): SyncOperation {
   return {
     type: 'remove',
     track,
@@ -457,13 +457,16 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
 }
 
 /**
- * Create an update-metadata operation for an iPod track
+ * Create an update-metadata operation for a device track
  */
-function createUpdateMetadataOperation(updateTrack: UpdateTrack): SyncOperation {
+function createUpdateMetadataOperation(
+  device: DeviceTrack,
+  changes: MetadataChange[]
+): SyncOperation {
   return {
     type: 'update-metadata',
-    track: updateTrack.ipod,
-    metadata: changesToMetadata(updateTrack.changes),
+    track: device,
+    metadata: changesToMetadata(changes),
   };
 }
 
@@ -596,7 +599,7 @@ function planAddOperations(
 /**
  * Plan operations for tracks to be removed
  */
-function planRemoveOperations(tracks: IPodTrack[], removeOrphans: boolean): SyncOperation[] {
+function planRemoveOperations(tracks: DeviceTrack[], removeOrphans: boolean): SyncOperation[] {
   if (!removeOrphans) {
     return [];
   }
@@ -625,7 +628,7 @@ interface PlanUpdateResult {
  * Metadata updates are handled as part of the upgrade transfer.
  */
 function planUpdateOperations(
-  tracks: UpdateTrack[],
+  tracks: UnifiedSyncDiff<CollectionTrack, DeviceTrack>['toUpdate'],
   config: TranscodeConfig,
   deviceSupportsAlac: boolean,
   transferMode: TransferMode,
@@ -636,7 +639,7 @@ function planUpdateOperations(
   const lossyToLossyTracks: CollectionTrack[] = [];
 
   for (const updateTrack of tracks) {
-    const { reason } = updateTrack;
+    const reason: UpdateReason = updateTrack.reasons[0]!;
 
     // artwork-updated needs source file access (to re-extract artwork bytes) but does NOT
     // replace the audio file. Route as upgrade-artwork so the executor can access
@@ -646,7 +649,7 @@ function planUpdateOperations(
       operations.push({
         type: 'upgrade-artwork',
         source: updateTrack.source,
-        target: updateTrack.ipod,
+        target: updateTrack.device,
         reason: reason as UpgradeReason,
       });
       continue;
@@ -706,7 +709,7 @@ function planUpdateOperations(
         operations.push({
           type: 'upgrade-transcode',
           source: updateTrack.source,
-          target: updateTrack.ipod,
+          target: updateTrack.device,
           reason: reason as UpgradeReason,
           preset: upgradePreset,
         });
@@ -722,7 +725,7 @@ function planUpdateOperations(
         operations.push({
           type: upgradeType,
           source: updateTrack.source,
-          target: updateTrack.ipod,
+          target: updateTrack.device,
           reason: reason as UpgradeReason,
         });
       }
@@ -730,12 +733,12 @@ function planUpdateOperations(
       // Sync tag write — direct operation, no metadata conversion needed
       operations.push({
         type: 'update-sync-tag',
-        track: updateTrack.ipod,
+        track: updateTrack.device,
         syncTag: updateTrack.syncTag,
       });
     } else {
       // Metadata-only update (transforms, soundcheck, metadata-correction)
-      operations.push(createUpdateMetadataOperation(updateTrack));
+      operations.push(createUpdateMetadataOperation(updateTrack.device, updateTrack.changes ?? []));
     }
   }
 
@@ -887,20 +890,23 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  * This function analyzes the diff and produces an ordered list of operations
  * to execute, along with estimated time and size requirements.
  *
- * @param diff - The diff from the diff engine
+ * @param diff - The unified diff from the diff engine
  * @param options - Planning options
  * @returns The sync plan with operations, estimated time, size, and warnings
  *
  * @example
- * const diff = computeDiff(collectionTracks, ipodTracks);
- * const plan = createPlan(diff, { removeOrphans: true });
+ * const diff = differ.diff(collectionTracks, ipodTracks);
+ * const plan = createMusicPlan(diff, { removeOrphans: true });
  * console.log(`${plan.operations.length} operations to execute`);
  * console.log(`Estimated size: ${plan.estimatedSize} bytes`);
  * if (plan.warnings.length > 0) {
  *   console.log(`Warnings: ${plan.warnings.length}`);
  * }
  */
-export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): SyncPlan {
+export function createMusicPlan(
+  diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
+  options: PlanOptions = {}
+): SyncPlan {
   const { removeOrphans = false } = options;
   const deviceSupportsAlac =
     options.capabilities?.supportedAudioCodecs.includes('alac') ??
@@ -930,7 +936,9 @@ export function createMusicPlan(diff: SyncDiff, options: PlanOptions = {}): Sync
   const artworkEnabled = options.artworkEnabled ?? true;
   const effectiveUpdates = artworkEnabled
     ? diff.toUpdate
-    : diff.toUpdate.filter((u) => u.reason !== 'artwork-updated' && u.reason !== 'artwork-removed');
+    : diff.toUpdate.filter(
+        (u) => !u.reasons.includes('artwork-updated') && !u.reasons.includes('artwork-removed')
+      );
 
   // Plan update/upgrade operations for metadata changes and file replacements
   const updateResult = planUpdateOperations(

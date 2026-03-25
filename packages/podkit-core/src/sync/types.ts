@@ -25,14 +25,6 @@ import type { IPodVideo } from './video-differ.js';
 // Re-export for use within sync module
 export type { IPodTrack, DeviceTrack };
 
-/**
- * A matched pair of collection track and iPod track
- */
-export interface MatchedTrack {
-  collection: CollectionTrack;
-  ipod: IPodTrack;
-}
-
 // =============================================================================
 // Update Types (for transforms)
 // =============================================================================
@@ -101,36 +93,6 @@ export interface MetadataChange {
     | 'transferMode';
   from: string;
   to: string;
-}
-
-/**
- * A track that needs metadata update (no file transfer needed)
- */
-export interface UpdateTrack {
-  /** Source track (always has original metadata) */
-  source: CollectionTrack;
-  /** iPod track to update */
-  ipod: IPodTrack;
-  /** Why the update is needed */
-  reason: UpdateReason;
-  /** What metadata fields are changing */
-  changes: MetadataChange[];
-  /** Typed sync tag to write (replaces raw comment field changes) */
-  syncTag?: SyncTagData;
-}
-
-/**
- * Result of comparing collection to iPod
- */
-export interface SyncDiff {
-  /** Tracks in collection but not on iPod */
-  toAdd: CollectionTrack[];
-  /** Tracks on iPod but not in collection (candidates for removal) */
-  toRemove: IPodTrack[];
-  /** Tracks that exist in both and are in sync */
-  existing: MatchedTrack[];
-  /** Tracks that need metadata updates (e.g., transform applied/removed, self-healing corrections) */
-  toUpdate: UpdateTrack[];
 }
 
 /**
@@ -477,30 +439,6 @@ export interface DiffOptions {
    * Only set when the user has explicitly configured a custom bitrate.
    */
   customBitrate?: number;
-}
-
-/**
- * Differ interface for comparing collections
- */
-export interface SyncDiffer {
-  /**
-   * Compare collection tracks to iPod tracks
-   */
-  diff(
-    collectionTracks: CollectionTrack[],
-    ipodTracks: IPodTrack[],
-    options?: DiffOptions
-  ): SyncDiff;
-}
-
-/**
- * Planner interface for creating sync plans
- */
-export interface SyncPlanner {
-  /**
-   * Create an execution plan from a diff
-   */
-  plan(diff: SyncDiff, options?: PlanOptions): SyncPlan;
 }
 
 /**

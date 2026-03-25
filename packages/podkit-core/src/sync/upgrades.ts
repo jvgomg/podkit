@@ -219,8 +219,8 @@ export function isQualityUpgrade(source: CollectionTrack, ipod: DeviceTrack): bo
  *
  * **Reason ordering:** Reasons are pushed in priority order (most significant first):
  * format-upgrade > quality-upgrade > artwork-added > artwork-removed > artwork-updated > soundcheck-update > metadata-correction.
- * The first reason (`reasons[0]`) is used as the primary/headline reason in `UpdateTrack.reason`,
- * while the full list of changes is available in `UpdateTrack.changes`.
+ * The first reason (`reasons[0]`) is used as the primary/headline reason by the caller,
+ * while all detected reasons are returned in the array for full context.
  *
  * @param source - Track from the collection source
  * @param ipod - Matched track currently on the iPod
