@@ -21,9 +21,13 @@ Support for syncing music from [Plex](https://www.plex.tv/) media servers is pla
 
 Support for [Jellyfin](https://jellyfin.org/) media servers is also planned. Like the Subsonic source, this would stream and cache tracks from your Jellyfin server for syncing. Vote or comment on the [discussion](https://github.com/jvgomg/podkit/discussions/7).
 
+### Lyrion Music Server
+
+Support for [Lyrion Music Server](https://lyrion.org/) (formerly Logitech Media Server / Squeezebox Server) is planned. Lyrion's JSON-RPC API provides full library enumeration, rich metadata, artwork, and original-quality audio file downloads. Vote or comment on the [discussion](https://github.com/jvgomg/podkit/discussions/53).
+
 ## Request a Source
 
-If there's a music source you'd like to see supported, [start a discussion on GitHub](https://github.com/jvgomg/podkit/discussions/new?category=ideas) describing the source and your use case. You can also vote on planned sources: [iTunes / Apple Music](https://github.com/jvgomg/podkit/discussions/35), [Plex](https://github.com/jvgomg/podkit/discussions/6), [Jellyfin](https://github.com/jvgomg/podkit/discussions/7).
+If there's a music source you'd like to see supported, [start a discussion on GitHub](https://github.com/jvgomg/podkit/discussions/new?category=ideas) describing the source and your use case. You can also vote on planned sources: [iTunes / Apple Music](https://github.com/jvgomg/podkit/discussions/35), [Plex](https://github.com/jvgomg/podkit/discussions/6), [Jellyfin](https://github.com/jvgomg/podkit/discussions/7), [Lyrion](https://github.com/jvgomg/podkit/discussions/53).
 
 ## Build Your Own
 
