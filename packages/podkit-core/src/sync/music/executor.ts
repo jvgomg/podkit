@@ -30,20 +30,20 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 
-import { AsyncQueue } from './async-queue.js';
-import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
-import { buildAudioSyncTag, buildCopySyncTag } from './sync-tags.js';
-import type { SyncTagData } from './sync-tags.js';
+import { AsyncQueue } from '../../utils/async-queue.js';
+import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
+import { buildAudioSyncTag, buildCopySyncTag } from '../../metadata/sync-tags.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 import {
   categorizeError as sharedCategorizeError,
   getRetriesForCategory as sharedGetRetriesForCategory,
   createCategorizedError as sharedCreateCategorizedError,
   type RetryConfig as SharedRetryConfig,
-} from './error-handling.js';
+} from '../engine/error-handling.js';
 
-import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.js';
-import type { FFmpegTranscoder, OptimizedCopyFormat } from '../transcode/ffmpeg.js';
-import { buildOptimizedCopyArgs } from '../transcode/ffmpeg.js';
+import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
+import type { FFmpegTranscoder, OptimizedCopyFormat } from '../../transcode/ffmpeg.js';
+import { buildOptimizedCopyArgs } from '../../transcode/ffmpeg.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -56,14 +56,14 @@ import type {
   ExecutionWarning as ExecutionWarningFromTypes,
   ExecutorProgress as ExecutorProgressFromTypes,
   ExecuteResult as ExecuteResultFromTypes,
-} from './types.js';
+} from '../engine/types.js';
 import type {
   DeviceAdapter,
   DeviceTrack,
   DeviceTrackInput,
   DeviceTrackMetadata,
-} from '../device/adapter.js';
-import { AlbumArtworkCache } from '../artwork/album-cache.js';
+} from '../../device/adapter.js';
+import { AlbumArtworkCache } from '../../artwork/album-cache.js';
 
 // =============================================================================
 // Extended Types — re-exported from types.ts (canonical definitions)
@@ -1226,7 +1226,9 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file (using the quality preset name directly)
     const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
       signal,
-      transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
+      transferMode: this.transferMode as
+        | import('../../transcode/types.js').TransferMode
+        | undefined,
       artworkResize: this.artworkResize,
     });
 
@@ -1456,7 +1458,9 @@ export class MusicExecutor implements SyncExecutor {
     // Transcode the file
     const result = await this.transcoder.transcode(inputPath, outputPath, presetRef.name, {
       signal,
-      transferMode: this.transferMode as import('../transcode/types.js').TransferMode | undefined,
+      transferMode: this.transferMode as
+        | import('../../transcode/types.js').TransferMode
+        | undefined,
       artworkResize: this.artworkResize,
     });
 

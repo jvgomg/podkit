@@ -29,7 +29,7 @@
  * @module
  */
 
-import { normalizeArtist, normalizeAlbum } from '../sync/matching.js';
+import { normalizeArtist, normalizeAlbum } from '../metadata/matching.js';
 import { extractArtwork as defaultExtractArtwork } from './extractor.js';
 import { hashArtwork } from './hash.js';
 import type { ExtractedArtwork } from './types.js';

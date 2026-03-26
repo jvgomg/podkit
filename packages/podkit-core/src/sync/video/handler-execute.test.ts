@@ -49,7 +49,7 @@ mock.module('../../video/probe.js', () => ({
   probeVideo: mockProbeVideo,
 }));
 
-mock.module('../video-executor-fs.js', () => ({
+mock.module('./executor-fs.js', () => ({
   stat: mockStat,
   mkdir: mockMkdir,
   rm: mockRm,
@@ -66,9 +66,9 @@ mock.module('../../ipod/video.js', () => ({
 }));
 
 // Import after mocks
-import { VideoHandler } from './video-handler.js';
-import type { SyncOperation } from '../types.js';
-import type { OperationProgress, ExecutionContext } from '../content-type.js';
+import { VideoHandler } from './handler.js';
+import type { SyncOperation } from '../engine/types.js';
+import type { OperationProgress, ExecutionContext } from '../engine/content-type.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../../video/types.js';
 import type { SaveResult } from '../../ipod/types.js';

@@ -5,7 +5,7 @@
  * exposing libgpod-node internals like TrackHandle.
  */
 
-import type { SyncTagData } from '../sync/sync-tags.js';
+import type { SyncTagData } from '../metadata/sync-tags.js';
 import type { DeviceTrack } from '../device/adapter.js';
 
 /**

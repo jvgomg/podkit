@@ -22,22 +22,22 @@
  * @module
  */
 
-import type { CollectionVideo } from '../video/directory-adapter.js';
+import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type {
   VideoDeviceProfile,
   VideoQualityPreset,
   VideoTranscodeSettings,
   VideoSourceAnalysis,
-} from '../video/types.js';
-import { getDefaultDeviceProfile } from '../video/types.js';
-import { checkVideoCompatibility } from '../video/compatibility.js';
-import { calculateEffectiveSettings } from '../video/quality.js';
-import type { SyncOperation, SyncPlan, SyncWarning } from './types.js';
-import type { DeviceVideo } from './video-types.js';
-import type { UnifiedSyncDiff } from './content-type.js';
-import type { VideoTransformsConfig } from '../transforms/types.js';
-import { applyVideoTransforms } from '../transforms/video-pipeline.js';
-import { estimateTransferTime } from './estimation.js';
+} from '../../video/types.js';
+import { getDefaultDeviceProfile } from '../../video/types.js';
+import { checkVideoCompatibility } from '../../video/compatibility.js';
+import { calculateEffectiveSettings } from '../../video/quality.js';
+import type { SyncOperation, SyncPlan, SyncWarning } from '../engine/types.js';
+import type { DeviceVideo } from './types.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
+import type { VideoTransformsConfig } from '../../transforms/types.js';
+import { applyVideoTransforms } from '../../transforms/video-pipeline.js';
+import { estimateTransferTime } from '../engine/estimation.js';
 
 // =============================================================================
 // Types
@@ -63,7 +63,7 @@ export interface VideoSyncPlanOptions {
   useHardwareAcceleration?: boolean;
 
   /** Video transform configuration for applying transforms on add */
-  videoTransforms?: import('../transforms/types.js').VideoTransformsConfig;
+  videoTransforms?: import('../../transforms/types.js').VideoTransformsConfig;
 }
 
 /**

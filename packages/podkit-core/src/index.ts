@@ -59,7 +59,7 @@ export type {
   ExecutionWarning,
   ExecutorProgress,
   ExecuteResult,
-} from './sync/types.js';
+} from './sync/engine/types.js';
 
 // Upgrade detection (self-healing sync)
 export {
@@ -72,8 +72,8 @@ export {
   DEFAULT_VBR_TOLERANCE,
   DEFAULT_CBR_TOLERANCE,
   DEFAULT_MIN_PRESET_BITRATE,
-} from './sync/upgrades.js';
-export type { PresetChangeOptions } from './sync/upgrades.js';
+} from './sync/engine/upgrades.js';
+export type { PresetChangeOptions } from './sync/engine/upgrades.js';
 
 // Planner
 export {
@@ -90,10 +90,10 @@ export {
   willWarnLossyToLossy,
   fileTypeToAudioCodec,
   isDeviceCompatible,
-} from './sync/music-planner.js';
+} from './sync/music/planner.js';
 
 // Track matching
-export type { Matchable, MatchResult, TransformMatchKeys } from './sync/matching.js';
+export type { Matchable, MatchResult, TransformMatchKeys } from './metadata/matching.js';
 export {
   normalizeString,
   normalizeArtist,
@@ -105,20 +105,20 @@ export {
   findMatches,
   findOrphanedTracks,
   getTransformMatchKeys,
-} from './sync/matching.js';
+} from './metadata/matching.js';
 
 // Sync tags
-export type { SyncTagData, SyncTagUpdate } from './sync/sync-tags.js';
+export type { SyncTagData, SyncTagUpdate } from './metadata/sync-tags.js';
 export {
   syncTagMatchesConfig,
   buildAudioSyncTag,
   buildCopySyncTag,
   buildVideoSyncTag,
   syncTagsEqual,
-} from './sync/sync-tags.js';
+} from './metadata/sync-tags.js';
 
 // Shared error handling (canonical implementations)
-export type { RetryConfig as SharedRetryConfig } from './sync/error-handling.js';
+export type { RetryConfig as SharedRetryConfig } from './sync/engine/error-handling.js';
 export {
   categorizeError as sharedCategorizeError,
   createCategorizedError as sharedCreateCategorizedError,
@@ -126,7 +126,7 @@ export {
   withRetry,
   DEFAULT_RETRY_CONFIG as SHARED_DEFAULT_RETRY_CONFIG,
   VIDEO_RETRY_CONFIG,
-} from './sync/error-handling.js';
+} from './sync/engine/error-handling.js';
 
 // Sync executor (implementation-specific types)
 export type {
@@ -134,7 +134,7 @@ export type {
   ExecutorDependencies,
   RetryConfig,
   SyncTagConfig,
-} from './sync/music-executor.js';
+} from './sync/music/executor.js';
 export {
   MusicExecutor,
   createExecutor,
@@ -144,7 +144,7 @@ export {
   createCategorizedError,
   getRetriesForCategory,
   MUSIC_RETRY_CONFIG,
-} from './sync/music-executor.js';
+} from './sync/music/executor.js';
 
 // Device capabilities
 export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './device/capabilities.js';
@@ -454,8 +454,8 @@ import type { CollectionVideo, VideoFilter } from './video/directory-adapter.js'
 export type VideoAdapter = CollectionAdapter<CollectionVideo, VideoFilter>;
 
 // Video types and match key generation
-export type { DeviceVideo } from './sync/video-types.js';
-export { generateVideoMatchKey } from './sync/video-types.js';
+export type { DeviceVideo } from './sync/video/types.js';
+export { generateVideoMatchKey } from './sync/video/types.js';
 
 // Video sync planner
 export type {
@@ -464,22 +464,22 @@ export type {
   VideoSyncWarningType,
   VideoPlanSummary,
   VideoSyncPlanner,
-} from './sync/video-planner.js';
+} from './sync/video/planner.js';
 export {
   planVideoSync,
   willVideoPlanFit,
   getVideoPlanSummary,
   estimateTranscodedSize as estimateVideoTranscodedSize,
   estimatePassthroughSize,
-} from './sync/video-planner.js';
+} from './sync/video/planner.js';
 
 // Video sync executor
 export type {
   VideoExecuteOptions,
   VideoSyncExecutor,
   VideoExecutorDependencies,
-} from './sync/video-executor.js';
-export { getVideoOperationDisplayName } from './sync/video-executor.js';
+} from './sync/video/executor.js';
+export { getVideoOperationDisplayName } from './sync/video/executor.js';
 
 // Device adapter interface
 export type {
@@ -534,12 +534,12 @@ export {
 } from './device/index.js';
 
 // Sound Check (volume normalization)
-export type { SoundCheckResult } from './sync/soundcheck.js';
+export type { SoundCheckResult } from './metadata/soundcheck.js';
 export {
   replayGainToSoundcheck,
   iTunNORMToSoundcheck,
   extractSoundcheck,
-} from './sync/soundcheck.js';
+} from './metadata/soundcheck.js';
 
 // ContentTypeHandler interface and registry
 export type {
@@ -551,28 +551,28 @@ export type {
   DryRunSummary,
   MatchInfo,
   UnifiedSyncDiff,
-} from './sync/content-type.js';
+} from './sync/engine/content-type.js';
 
 // Content type handlers
-export { MusicHandler, createMusicHandler } from './sync/handlers/music-handler.js';
-export type { MusicExecutionConfig } from './sync/handlers/music-handler.js';
+export { MusicHandler, createMusicHandler } from './sync/music/handler.js';
+export type { MusicExecutionConfig } from './sync/music/handler.js';
 export {
   VideoHandler,
   createVideoHandler,
   type VideoHandlerDiffOptions,
-} from './sync/handlers/video-handler.js';
+} from './sync/video/handler.js';
 
 // Generic differ
-export type { SyncDiffOptions } from './sync/differ.js';
-export { SyncDiffer, createSyncDiffer } from './sync/differ.js';
+export type { SyncDiffOptions } from './sync/engine/differ.js';
+export { SyncDiffer, createSyncDiffer } from './sync/engine/differ.js';
 
 // Generic planner
-export type { SyncPlanOptions } from './sync/planner.js';
-export { SyncPlanner, createSyncPlanner, orderOperations } from './sync/planner.js';
+export type { SyncPlanOptions } from './sync/engine/planner.js';
+export { SyncPlanner, createSyncPlanner, orderOperations } from './sync/engine/planner.js';
 
 // Generic executor
-export type { SyncExecuteOptions } from './sync/executor.js';
-export { SyncExecutor, createSyncExecutor } from './sync/executor.js';
+export type { SyncExecuteOptions } from './sync/engine/executor.js';
+export { SyncExecutor, createSyncExecutor } from './sync/engine/executor.js';
 
 // Stream utilities (for remote sources)
 export { streamToTempFile, cleanupTempFile } from './utils/stream.js';

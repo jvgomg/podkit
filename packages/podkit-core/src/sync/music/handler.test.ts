@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { MusicHandler, createMusicHandler } from './music-handler.js';
+import { MusicHandler, createMusicHandler } from './handler.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
-import type { SyncOperation, SyncPlan } from '../types.js';
-import type { UnifiedSyncDiff } from '../content-type.js';
-import { parseSyncTag } from '../sync-tags.js';
+import type { SyncOperation, SyncPlan } from '../engine/types.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
+import { parseSyncTag } from '../../metadata/sync-tags.js';
 
 // =============================================================================
 // Test Fixtures

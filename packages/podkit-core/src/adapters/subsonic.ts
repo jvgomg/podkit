@@ -14,7 +14,7 @@ import type {
   SoundCheckSource,
 } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
-import { replayGainToSoundcheck } from '../sync/soundcheck.js';
+import { replayGainToSoundcheck } from '../metadata/soundcheck.js';
 import { hashArtwork } from '../artwork/hash.js';
 
 /**

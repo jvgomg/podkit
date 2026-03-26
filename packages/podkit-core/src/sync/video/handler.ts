@@ -10,19 +10,19 @@
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { mkdir, stat, rm } from '../video-executor-fs.js';
+import { mkdir, stat, rm } from './executor-fs.js';
 
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/adapter.js';
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
-import { generateVideoMatchKey, type DeviceVideo } from '../video-types.js';
-import { calculateVideoOperationSize, calculateVideoOperationTime } from '../video-planner.js';
-import { getVideoOperationDisplayName } from '../video-executor.js';
-import { buildVideoSyncTag, syncTagMatchesConfig } from '../sync-tags.js';
-import { detectBitratePresetMismatch } from '../upgrades.js';
-import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../types.js';
+import { generateVideoMatchKey, type DeviceVideo } from './types.js';
+import { calculateVideoOperationSize, calculateVideoOperationTime } from './planner.js';
+import { getVideoOperationDisplayName } from './executor.js';
+import { buildVideoSyncTag, syncTagMatchesConfig } from '../../metadata/sync-tags.js';
+import { detectBitratePresetMismatch } from '../engine/upgrades.js';
+import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../engine/types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { VideoTransformsConfig } from '../../transforms/types.js';
 import {
@@ -36,8 +36,8 @@ import type {
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
-} from '../content-type.js';
-import type { UnifiedSyncDiff } from '../content-type.js';
+} from '../engine/content-type.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
 
 // =============================================================================
 // Types
@@ -306,7 +306,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     device: DeviceVideo,
     reasons: UpdateReason[],
     _options?: HandlerPlanOptions,
-    _changes?: import('../types.js').MetadataChange[]
+    _changes?: import('../engine/types.js').MetadataChange[]
   ): SyncOperation[] {
     if (reasons.length === 0) return [];
 
