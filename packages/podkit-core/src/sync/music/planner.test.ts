@@ -33,12 +33,12 @@ import {
   requiresTranscoding,
   willMusicFitInSpace,
   willWarnLossyToLossy,
-} from './music-planner.js';
-import type { CollectionTrack } from '../adapters/interface.js';
-import type { AudioFileType } from '../types.js';
-import { parseSyncTag } from './sync-tags.js';
-import type { DeviceTrack, SyncOperation } from './types.js';
-import type { UnifiedSyncDiff } from './content-type.js';
+} from './planner.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
+import type { AudioFileType } from '../../types.js';
+import { parseSyncTag } from '../../metadata/sync-tags.js';
+import type { DeviceTrack, SyncOperation } from '../engine/types.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
 
 // =============================================================================
 // Test Fixtures

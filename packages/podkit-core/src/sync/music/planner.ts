@@ -30,15 +30,15 @@
  * @module
  */
 
-import type { CollectionTrack } from '../adapters/interface.js';
-import type { AudioFileType } from '../types.js';
-import type { AudioCodec } from '../device/capabilities.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
+import type { AudioFileType } from '../../types.js';
+import type { AudioCodec } from '../../device/capabilities.js';
 import {
   type QualityPreset,
   type TranscodeConfig,
   type TransferMode,
   getPresetBitrate,
-} from '../transcode/types.js';
+} from '../../transcode/types.js';
 import type {
   DeviceTrack,
   MetadataChange,
@@ -50,12 +50,12 @@ import type {
   TranscodePresetRef,
   UpdateReason,
   UpgradeReason,
-} from './types.js';
-import type { UnifiedSyncDiff } from './content-type.js';
-import type { TrackMetadata } from '../types.js';
-import { estimateTransferTime } from './estimation.js';
-import { calculateVideoOperationSize, calculateVideoOperationTime } from './video-planner.js';
-import { isFileReplacementUpgrade } from './upgrades.js';
+} from '../engine/types.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
+import type { TrackMetadata } from '../../types.js';
+import { estimateTransferTime } from '../engine/estimation.js';
+import { calculateVideoOperationSize, calculateVideoOperationTime } from '../video/planner.js';
+import { isFileReplacementUpgrade } from '../engine/upgrades.js';
 
 // =============================================================================
 // Constants

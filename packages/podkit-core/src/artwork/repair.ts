@@ -26,12 +26,12 @@ import { existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { IpodDatabase } from '../ipod/database.js';
 import type { CollectionTrack, CollectionAdapter } from '../adapters/interface.js';
-import { getMatchKey } from '../sync/matching.js';
+import { getMatchKey } from '../metadata/matching.js';
 import { cleanupAllTempArtwork as defaultCleanupAllTempArtwork } from './extractor.js';
 import type { ExtractedArtwork } from './types.js';
 // repair.ts operates at the IpodDatabase level, not the DeviceAdapter level,
 // so it uses the raw sync tag functions instead of adapter.writeSyncTag().
-import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
+import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import { AlbumArtworkCache } from './album-cache.js';
 import { streamToTempFile, cleanupTempFile } from '../utils/stream.js';
 

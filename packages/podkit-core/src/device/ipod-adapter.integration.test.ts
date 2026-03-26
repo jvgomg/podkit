@@ -20,7 +20,7 @@ import { spawn } from 'node:child_process';
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodDeviceAdapter } from './ipod-adapter.js';
 import { getDeviceCapabilities } from '../ipod/capabilities.js';
-import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../sync/sync-tags.js';
+import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
 import { requireGpodTool, requireLibgpod, requireFFmpeg } from '../__tests__/helpers/test-setup.js';
 
 // Fail early if dependencies are not available

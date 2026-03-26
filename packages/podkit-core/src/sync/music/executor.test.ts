@@ -24,10 +24,10 @@ import {
   MUSIC_RETRY_CONFIG,
   type ExecutorDependencies,
   type ExecutorProgress,
-} from './music-executor.js';
-import type { CollectionTrack, CollectionAdapter, FileAccess } from '../adapters/interface.js';
-import type { AudioFileType, TrackFilter } from '../types.js';
-import type { DeviceTrack, SyncOperation, SyncPlan } from './types.js';
+} from './executor.js';
+import type { CollectionTrack, CollectionAdapter, FileAccess } from '../../adapters/interface.js';
+import type { AudioFileType, TrackFilter } from '../../types.js';
+import type { DeviceTrack, SyncOperation, SyncPlan } from '../engine/types.js';
 import { Readable } from 'node:stream';
 
 // =============================================================================

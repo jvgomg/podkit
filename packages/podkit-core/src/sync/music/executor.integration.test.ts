@@ -26,14 +26,14 @@ import {
   executePlan,
   type ExecutorProgress,
   type ExecutorDependencies,
-} from './music-executor.js';
-import { FFmpegTranscoder } from '../transcode/ffmpeg.js';
-import { IpodDatabase } from '../ipod/database.js';
-import { IpodDeviceAdapter } from '../device/ipod-adapter.js';
-import { getDeviceCapabilities } from '../ipod/capabilities.js';
-import type { CollectionTrack } from '../adapters/interface.js';
-import type { SyncPlan } from './types.js';
-import { requireAllDeps } from '../__tests__/helpers/test-setup.js';
+} from './executor.js';
+import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
+import { IpodDatabase } from '../../ipod/database.js';
+import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
+import { getDeviceCapabilities } from '../../ipod/capabilities.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
+import type { SyncPlan } from '../engine/types.js';
+import { requireAllDeps } from '../../__tests__/helpers/test-setup.js';
 
 // Fail early if dependencies are not available
 requireAllDeps();

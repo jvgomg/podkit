@@ -11,7 +11,7 @@
  * @module
  */
 
-import type { DeviceAdapter } from '../device/adapter.js';
+import type { DeviceAdapter } from '../../device/adapter.js';
 import type {
   SyncPlan,
   SyncOperation,
@@ -20,7 +20,7 @@ import type {
   CategorizedError,
   ExecutionWarning,
 } from './types.js';
-import type { TranscodeProgress } from '../transcode/types.js';
+import type { TranscodeProgress } from '../../transcode/types.js';
 import type { ContentTypeHandler, ExecutionContext, OperationProgress } from './content-type.js';
 import { categorizeError, createCategorizedError, type RetryConfig } from './error-handling.js';
 

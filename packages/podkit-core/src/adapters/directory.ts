@@ -10,7 +10,7 @@ import * as mm from 'music-metadata';
 import { extname, basename, resolve } from 'node:path';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { AudioFileType, TrackFilter } from '../types.js';
-import { extractSoundcheck } from '../sync/soundcheck.js';
+import { extractSoundcheck } from '../metadata/soundcheck.js';
 import { selectBestPicture } from '../artwork/extractor.js';
 import { hashArtwork } from '../artwork/hash.js';
 

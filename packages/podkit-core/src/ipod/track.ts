@@ -7,8 +7,8 @@
 
 import type { TrackHandle, Track } from '@podkit/libgpod-node';
 import type { IpodTrack, TrackFields, RemoveTrackResult } from './types.js';
-import type { SyncTagData } from '../sync/sync-tags.js';
-import { parseSyncTag } from '../sync/sync-tags.js';
+import type { SyncTagData } from '../metadata/sync-tags.js';
+import { parseSyncTag } from '../metadata/sync-tags.js';
 import { IpodError } from './errors.js';
 
 /**

@@ -5,21 +5,21 @@
  * and executing sync plans.
  */
 
-import type { CollectionTrack } from '../adapters/interface.js';
-import type { TrackMetadata } from '../types.js';
-import type { DeviceTrack } from '../device/adapter.js';
-import type { SyncTagData } from './sync-tags.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
+import type { TrackMetadata } from '../../types.js';
+import type { DeviceTrack } from '../../device/adapter.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   EncodingMode,
   QualityPreset,
   TranscodeConfig,
   TranscodeProgress,
   TransferMode,
-} from '../transcode/types.js';
-import type { DeviceCapabilities } from '../device/capabilities.js';
-import type { CollectionVideo } from '../video/directory-adapter.js';
-import type { VideoTranscodeSettings } from '../video/types.js';
-import type { DeviceVideo } from './video-types.js';
+} from '../../transcode/types.js';
+import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { CollectionVideo } from '../../video/directory-adapter.js';
+import type { VideoTranscodeSettings } from '../../video/types.js';
+import type { DeviceVideo } from '../video/types.js';
 
 // Re-export for use within sync module
 export type { DeviceTrack };
@@ -314,7 +314,7 @@ export interface SyncExecutor {
   execute(plan: SyncPlan, options: ExecuteOptions): AsyncIterable<SyncProgress>;
 }
 
-import type { TransformsConfig } from '../transforms/types.js';
+import type { TransformsConfig } from '../../transforms/types.js';
 
 /**
  * Options for diff computation

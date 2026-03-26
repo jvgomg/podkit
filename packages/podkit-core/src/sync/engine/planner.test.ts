@@ -11,7 +11,7 @@ import { SyncPlanner, createSyncPlanner, orderOperations } from './planner.js';
 import type { ContentTypeHandler, HandlerPlanOptions } from './content-type.js';
 import type { SyncOperation, UpdateReason } from './types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
-import type { SyncTagData } from './sync-tags.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 
 // =============================================================================
 // Test Types
