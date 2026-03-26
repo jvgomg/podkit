@@ -138,6 +138,7 @@ export type {
 
 // Diagnostics types
 export type {
+  DiagnosticDeviceType,
   DiagnosticContext,
   CheckResult,
   RepairRequirement,
@@ -147,6 +148,7 @@ export type {
   DiagnosticRepair,
   DiagnosticCheck,
   DiagnosticReport,
+  RunDiagnosticsInput,
 } from '@podkit/core';
 
 // Metadata types

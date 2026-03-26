@@ -250,8 +250,9 @@ export type {
 } from './artwork/repair.js';
 export { resetArtworkDatabase, rebuildArtworkDatabase } from './artwork/repair.js';
 
-// Diagnostics (iPod health checks)
+// Diagnostics (device health checks)
 export type {
+  DiagnosticDeviceType,
   DiagnosticContext,
   CheckResult,
   RepairRequirement,
@@ -261,6 +262,7 @@ export type {
   DiagnosticRepair,
   DiagnosticCheck,
   DiagnosticReport,
+  RunDiagnosticsInput,
 } from './diagnostics/index.js';
 export { runDiagnostics, getDiagnosticCheck, getDiagnosticCheckIds } from './diagnostics/index.js';
 

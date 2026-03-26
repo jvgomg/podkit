@@ -92,8 +92,13 @@ async function getOrphanSizes(
 export const orphanFilesCheck: DiagnosticCheck = {
   id: 'orphan-files',
   name: 'Orphan Files',
+  applicableTo: ['ipod'],
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {
+    if (!ctx.db) {
+      return { status: 'skip', summary: 'No iPod database', repairable: false };
+    }
+
     const musicDir = join(ctx.mountPoint, 'iPod_Control', 'Music');
 
     // Check if music directory exists
@@ -156,7 +161,7 @@ export const orphanFilesCheck: DiagnosticCheck = {
       const musicDir = join(ctx.mountPoint, 'iPod_Control', 'Music');
 
       // Build set of known track paths
-      const tracks = ctx.db.getTracks();
+      const tracks = ctx.db!.getTracks();
       const knownPaths = new Set<string>();
       for (const track of tracks) {
         if (track.filePath) {

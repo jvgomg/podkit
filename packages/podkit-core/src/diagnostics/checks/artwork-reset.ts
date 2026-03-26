@@ -25,6 +25,7 @@ import type {
 export const artworkResetCheck: DiagnosticCheck = {
   id: 'artwork-reset',
   name: 'Artwork Reset',
+  applicableTo: ['ipod'],
   repairOnly: true,
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
@@ -41,7 +42,7 @@ export const artworkResetCheck: DiagnosticCheck = {
     requirements: [],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
-      const result = await resetArtworkDatabase(ctx.db, ctx.mountPoint, {
+      const result = await resetArtworkDatabase(ctx.db!, ctx.mountPoint, {
         dryRun: options?.dryRun,
       });
 

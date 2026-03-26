@@ -1,21 +1,31 @@
 /**
- * Diagnostics framework — extensible health check runner for iPod devices
+ * Diagnostics framework — extensible health check runner for devices
  *
- * Provides a registry of diagnostic checks that can be run against an iPod.
+ * Provides a registry of diagnostic checks that can be run against a device.
  * Each check returns a structured result with pass/fail status, human-readable
  * summary, and optional repair capability. The repair interface describes
  * domain-level requirements without any CLI/UX awareness — the consuming
  * layer (CLI, GUI, etc.) maps requirements to its own UX patterns.
+ *
+ * Checks declare which device types they apply to via `applicableTo`.
+ * The runner filters the registry before executing, so mass-storage devices
+ * skip iPod-only checks automatically.
  */
 
 import { IpodDatabase } from '../ipod/database.js';
 import { artworkRebuildCheck } from './checks/artwork.js';
 import { artworkResetCheck } from './checks/artwork-reset.js';
 import { orphanFilesCheck } from './checks/orphans.js';
-import type { DiagnosticCheck, DiagnosticReport, DiagnosticContext } from './types.js';
+import type {
+  DiagnosticCheck,
+  DiagnosticReport,
+  DiagnosticContext,
+  DiagnosticDeviceType,
+} from './types.js';
 
 // Re-export types for consumers
 export type {
+  DiagnosticDeviceType,
   DiagnosticContext,
   CheckResult,
   RepairRequirement,
@@ -49,22 +59,55 @@ export function getDiagnosticCheckIds(): string[] {
 
 // ── Runner ──────────────────────────────────────────────────────────────────
 
+/** Input for runDiagnostics — structured to support both iPod and mass-storage devices */
+export interface RunDiagnosticsInput {
+  /** Device mount point path */
+  mountPoint: string;
+  /** Device type */
+  deviceType: DiagnosticDeviceType;
+  /** Pre-opened IpodDatabase — only for iPod devices */
+  db?: IpodDatabase;
+  /** Device model name for the report */
+  deviceModel?: string;
+}
+
 /**
- * Run all registered diagnostic checks against an iPod.
+ * Run all applicable diagnostic checks against a device.
  *
- * @param mountPoint - iPod mount point path
- * @returns Diagnostic report with results from all checks
+ * Filters the check registry by device type before running. For iPod devices,
+ * uses the provided `db` or opens one internally. For mass-storage devices,
+ * no checks currently apply — returns an empty healthy report.
+ *
+ * @param input - Device info and optional pre-opened database
+ * @returns Diagnostic report with results from applicable checks
  */
-export async function runDiagnostics(mountPoint: string): Promise<DiagnosticReport> {
-  const db = await IpodDatabase.open(mountPoint);
+export async function runDiagnostics(input: RunDiagnosticsInput): Promise<DiagnosticReport> {
+  const { mountPoint, deviceType } = input;
+
+  // Resolve iPod database: use provided handle, or open internally for backward compat
+  let db = input.db;
+  let ownedDb = false;
+  if (deviceType === 'ipod' && !db) {
+    db = await IpodDatabase.open(mountPoint);
+    ownedDb = true;
+  }
 
   try {
-    const ctx: DiagnosticContext = { mountPoint, db };
-    const info = db.getInfo();
+    const ctx: DiagnosticContext = { mountPoint, deviceType, db };
+
+    // Resolve device model
+    const deviceModel =
+      input.deviceModel ?? (db ? (db.getInfo().device.modelName ?? 'Unknown') : 'Unknown');
+
+    // Filter checks by device type (default applicableTo is ['ipod'])
+    const applicable = CHECKS.filter((c) => {
+      const types = c.applicableTo ?? ['ipod'];
+      return types.includes(deviceType);
+    });
 
     const checks: DiagnosticReport['checks'] = [];
 
-    for (const check of CHECKS) {
+    for (const check of applicable) {
       const result = await check.check(ctx);
       checks.push({
         id: check.id,
@@ -79,11 +122,14 @@ export async function runDiagnostics(mountPoint: string): Promise<DiagnosticRepo
 
     return {
       mountPoint,
-      deviceModel: info.device.modelName ?? 'Unknown',
+      deviceModel,
+      deviceType,
       checks,
       healthy,
     };
   } finally {
-    db.close();
+    if (ownedDb && db) {
+      db.close();
+    }
   }
 }
