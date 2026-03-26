@@ -1,9 +1,12 @@
 /**
- * Doctor command — run health checks on an iPod
+ * Doctor command — run health checks on a device
  *
- * Checks the iPod database for known issues and reports findings.
+ * Checks the device for known issues and reports findings.
  * When a check fails and is repairable, the CLI maps domain-level
  * repair requirements to flags and UX.
+ *
+ * For mass-storage devices, reports that no checks are currently available
+ * and suggests using `podkit sync --dry-run` to verify configuration.
  *
  * @example
  * ```bash
@@ -25,10 +28,12 @@ import {
   parseCliDeviceArg,
   resolveEffectiveDevice,
 } from '../device-resolver.js';
+import type { DeviceConfig } from '../config/types.js';
 import { OutputContext } from '../output/index.js';
 import { existsSync } from '../utils/fs.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
+import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 
 // ── Output types ────────────────────────────────────────────────────────────
 
@@ -46,6 +51,7 @@ interface DoctorOutput {
   healthy: boolean;
   mountPoint: string;
   deviceModel: string;
+  deviceType: 'ipod' | 'mass-storage';
   checks: DoctorCheckOutput[];
 }
 
@@ -85,7 +91,9 @@ function statusSymbol(status: string): string {
 
 // ── Resolve device helper ───────────────────────────────────────────────────
 
-async function resolveDevice(out: OutputContext): Promise<{ path: string } | { error: string }> {
+async function resolveDevice(
+  out: OutputContext
+): Promise<{ path: string; deviceConfig?: DeviceConfig } | { error: string }> {
   const { config, globalOpts } = getContext();
 
   const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
@@ -129,13 +137,13 @@ async function resolveDevice(out: OutputContext): Promise<{ path: string } | { e
     return { error: `Device path not found: ${resolveResult.path}` };
   }
 
-  return { path: resolveResult.path };
+  return { path: resolveResult.path, deviceConfig: resolvedDevice?.config };
 }
 
 // ── Doctor command ──────────────────────────────────────────────────────────
 
 export const doctorCommand = new Command('doctor')
-  .description('run health checks on an iPod')
+  .description('run health checks on a device')
   .option('--repair <check-id>', 'repair a specific check by ID (e.g. artwork-rebuild)')
   .option('-c, --collection <name>', 'music collection to use as artwork source')
   .option('--dry-run', 'preview repair without modifying the iPod')
@@ -203,6 +211,15 @@ export const doctorCommand = new Command('doctor')
         return;
       }
 
+      // Mass-storage devices don't support repair
+      const isMassStorage =
+        resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
+      if (isMassStorage) {
+        out.error('Repair is not available for mass-storage devices.');
+        process.exitCode = 1;
+        return;
+      }
+
       await runRepair(resolved.path, check, options, out, config);
       return;
     }
@@ -211,142 +228,184 @@ export const doctorCommand = new Command('doctor')
     const resolved = await resolveDevice(out);
     if ('error' in resolved) {
       out.result<DoctorOutput>(
-        { healthy: false, mountPoint: '', deviceModel: '', checks: [] },
+        { healthy: false, mountPoint: '', deviceModel: '', deviceType: 'ipod', checks: [] },
         () => out.error(resolved.error)
       );
       process.exitCode = 1;
       return;
     }
 
-    await runDiagnostics(resolved.path, out, options);
+    await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
   });
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
-async function runDiagnostics(
+async function runDoctorDiagnostics(
   devicePath: string,
+  deviceConfig: DeviceConfig | undefined,
   out: OutputContext,
   options: DoctorOptions
 ): Promise<void> {
-  let runDiagnostics: typeof import('@podkit/core').runDiagnostics;
-  let getDiagnosticCheck: typeof import('@podkit/core').getDiagnosticCheck;
+  let core: typeof import('@podkit/core');
   try {
-    const core = await import('@podkit/core');
-    runDiagnostics = core.runDiagnostics;
-    getDiagnosticCheck = core.getDiagnosticCheck;
+    core = await import('@podkit/core');
   } catch (err) {
     out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
     process.exitCode = 1;
     return;
   }
 
-  const report = await runDiagnostics(devicePath);
+  const { config } = getContext();
+  const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
 
-  const output: DoctorOutput = {
-    healthy: report.healthy,
-    mountPoint: report.mountPoint,
-    deviceModel: report.deviceModel,
-    checks: report.checks.map((c) => ({
-      id: c.id,
-      name: c.name,
-      status: c.status,
-      summary: c.summary,
-      repairable: c.repairable,
-      details: c.details,
-      docsUrl: c.docsUrl,
-    })),
-  };
-
-  // CSV format: dump orphan file list and exit
-  if (options.format === 'csv') {
-    const orphanCheck = report.checks.find((c) => c.id === 'orphan-files');
-    const orphans = (orphanCheck?.details as Record<string, unknown>)?.orphans as
-      | Array<{ path: string; size: number }>
-      | undefined;
-    if (orphans && orphans.length > 0) {
-      out.stdout('path,size');
-      for (const o of orphans) {
-        out.stdout(`${escapeCsvField(o.path)},${o.size}`);
-      }
-    }
+  // Mass-storage devices: no checks available yet
+  if (isMassStorage) {
+    const label = getDeviceTypeDisplayName(deviceConfig?.type);
+    const output: DoctorOutput = {
+      healthy: true,
+      mountPoint: devicePath,
+      deviceModel: label,
+      deviceType: 'mass-storage',
+      checks: [],
+    };
+    out.result<DoctorOutput>(output, () => {
+      out.print(`podkit doctor \u2014 ${label} at ${devicePath}`);
+      out.newline();
+      out.print('  No health checks are currently available for mass-storage devices.');
+      out.print('  Run `podkit sync --dry-run` to verify your collection configuration.');
+    });
     return;
   }
 
-  out.result<DoctorOutput>(output, () => {
-    out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
-    out.newline();
-
-    for (const check of report.checks) {
-      // Skip repair-only checks in diagnostic output (they have no detection logic)
-      if (check.repairOnly) continue;
-
-      const sym = statusSymbol(check.status);
-      out.print(`  ${sym} ${check.name}    ${check.summary}`);
-
-      // For failures, show details and repair instructions
-      if (check.status === 'fail' && check.details) {
-        out.newline();
-        const d = check.details as Record<string, unknown>;
-
-        if (d.totalEntries !== undefined) {
-          const total = (d.totalEntries as number).toLocaleString();
-          const corrupt = (d.corruptEntries as number).toLocaleString();
-          const healthy = (d.healthyEntries as number).toLocaleString();
-          const pct = d.corruptPercent;
-
-          out.print(
-            `    Corrupt:      ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
-          );
-          out.print(`    Healthy:      ${healthy} entries with valid offsets`);
-        }
-
-        out.newline();
-        out.print('    The artwork database is out of sync with the thumbnail files.');
-        out.print('    Affected tracks display wrong or missing artwork on the iPod.');
-      }
-
-      // Orphan files: verbose summary
-      if (check.id === 'orphan-files' && check.status === 'warn' && check.details) {
-        printOrphanSummary(check.details as Record<string, unknown>, out);
-      }
-
-      // Show repair instructions if the check is repairable
-      if (check.repairable) {
-        const diagCheck = getDiagnosticCheck(check.id);
-        if (diagCheck?.repair) {
-          out.newline();
-          const reqHints: string[] = [];
-          if (diagCheck.repair.requirements.includes('source-collection')) {
-            reqHints.push('-c <collection>');
-          }
-          const reqStr = reqHints.length > 0 ? ` ${reqHints.join(' ')}` : '';
-          out.print(`    To repair: podkit doctor --repair ${check.id}${reqStr}`);
-
-          // For artwork-rebuild, offer the reset alternative (no source needed)
-          if (check.id === 'artwork-rebuild') {
-            out.print(
-              `    Or clear all artwork (no source needed): podkit doctor --repair artwork-reset`
-            );
-          }
-        }
-      }
-
-      if (check.docsUrl) {
-        out.print(`    More info: ${check.docsUrl}`);
-      }
-    }
-
-    out.newline();
-    if (report.healthy) {
-      out.success('All checks passed.');
-    } else {
-      const failCount = report.checks.filter((c) => c.status === 'fail').length;
-      out.error(`${failCount} check${failCount === 1 ? '' : 's'} failed.`);
-    }
-  });
-
-  if (!report.healthy) {
+  // iPod device: open database and run checks
+  let opened: Awaited<ReturnType<typeof openDevice>>;
+  try {
+    opened = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : 'Failed to open device');
     process.exitCode = 1;
+    return;
+  }
+
+  try {
+    const report = await core.runDiagnostics({
+      mountPoint: devicePath,
+      deviceType: 'ipod',
+      db: opened.ipod,
+      deviceModel: opened.ipod?.getInfo().device.modelName ?? undefined,
+    });
+
+    const getDiagnosticCheck = core.getDiagnosticCheck;
+
+    const output: DoctorOutput = {
+      healthy: report.healthy,
+      mountPoint: report.mountPoint,
+      deviceModel: report.deviceModel,
+      deviceType: report.deviceType,
+      checks: report.checks.map((c) => ({
+        id: c.id,
+        name: c.name,
+        status: c.status,
+        summary: c.summary,
+        repairable: c.repairable,
+        details: c.details,
+        docsUrl: c.docsUrl,
+      })),
+    };
+
+    // CSV format: dump orphan file list and exit
+    if (options.format === 'csv') {
+      const orphanCheck = report.checks.find((c) => c.id === 'orphan-files');
+      const orphans = (orphanCheck?.details as Record<string, unknown>)?.orphans as
+        | Array<{ path: string; size: number }>
+        | undefined;
+      if (orphans && orphans.length > 0) {
+        out.stdout('path,size');
+        for (const o of orphans) {
+          out.stdout(`${escapeCsvField(o.path)},${o.size}`);
+        }
+      }
+      return;
+    }
+
+    out.result<DoctorOutput>(output, () => {
+      out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
+      out.newline();
+
+      for (const check of report.checks) {
+        // Skip repair-only checks in diagnostic output (they have no detection logic)
+        if (check.repairOnly) continue;
+
+        const sym = statusSymbol(check.status);
+        out.print(`  ${sym} ${check.name}    ${check.summary}`);
+
+        // For failures, show details and repair instructions
+        if (check.status === 'fail' && check.details) {
+          out.newline();
+          const d = check.details as Record<string, unknown>;
+
+          if (d.totalEntries !== undefined) {
+            const total = (d.totalEntries as number).toLocaleString();
+            const corrupt = (d.corruptEntries as number).toLocaleString();
+            const healthy = (d.healthyEntries as number).toLocaleString();
+            const pct = d.corruptPercent;
+
+            out.print(
+              `    Corrupt:      ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
+            );
+            out.print(`    Healthy:      ${healthy} entries with valid offsets`);
+          }
+
+          out.newline();
+          out.print('    The artwork database is out of sync with the thumbnail files.');
+          out.print('    Affected tracks display wrong or missing artwork on the iPod.');
+        }
+
+        // Orphan files: verbose summary
+        if (check.id === 'orphan-files' && check.status === 'warn' && check.details) {
+          printOrphanSummary(check.details as Record<string, unknown>, out);
+        }
+
+        // Show repair instructions if the check is repairable
+        if (check.repairable) {
+          const diagCheck = getDiagnosticCheck(check.id);
+          if (diagCheck?.repair) {
+            out.newline();
+            const reqHints: string[] = [];
+            if (diagCheck.repair.requirements.includes('source-collection')) {
+              reqHints.push('-c <collection>');
+            }
+            const reqStr = reqHints.length > 0 ? ` ${reqHints.join(' ')}` : '';
+            out.print(`    To repair: podkit doctor --repair ${check.id}${reqStr}`);
+
+            // For artwork-rebuild, offer the reset alternative (no source needed)
+            if (check.id === 'artwork-rebuild') {
+              out.print(
+                `    Or clear all artwork (no source needed): podkit doctor --repair artwork-reset`
+              );
+            }
+          }
+        }
+
+        if (check.docsUrl) {
+          out.print(`    More info: ${check.docsUrl}`);
+        }
+      }
+
+      out.newline();
+      if (report.healthy) {
+        out.success('All checks passed.');
+      } else {
+        const failCount = report.checks.filter((c) => c.status === 'fail').length;
+        out.error(`${failCount} check${failCount === 1 ? '' : 's'} failed.`);
+      }
+    });
+
+    if (!report.healthy) {
+      process.exitCode = 1;
+    }
+  } finally {
+    opened.ipod?.close();
   }
 }
 
@@ -432,7 +491,7 @@ async function runRepair(
 
   try {
     const result = await repair.run(
-      { mountPoint: devicePath, db, adapters },
+      { mountPoint: devicePath, deviceType: 'ipod', db, adapters },
       {
         dryRun,
         signal: shutdown.signal,

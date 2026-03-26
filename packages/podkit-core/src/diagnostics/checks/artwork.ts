@@ -29,8 +29,13 @@ const DOCS_URL = 'https://jvgomg.github.io/podkit/troubleshooting/artwork-repair
 export const artworkRebuildCheck: DiagnosticCheck = {
   id: 'artwork-rebuild',
   name: 'Artwork Integrity',
+  applicableTo: ['ipod'],
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {
+    if (!ctx.db) {
+      return { status: 'skip', summary: 'No iPod database', repairable: false };
+    }
+
     const artworkDbPath = join(ctx.mountPoint, 'iPod_Control', 'Artwork', 'ArtworkDB');
 
     // Skip if no ArtworkDB exists (iPod has no artwork)
@@ -132,7 +137,7 @@ export const artworkRebuildCheck: DiagnosticCheck = {
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
       const result = await rebuildArtworkDatabase(
-        { db: ctx.db, adapters: ctx.adapters },
+        { db: ctx.db!, adapters: ctx.adapters },
         {
           dryRun: options?.dryRun,
           onProgress: options?.onProgress

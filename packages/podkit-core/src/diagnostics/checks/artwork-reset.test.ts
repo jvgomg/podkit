@@ -62,11 +62,11 @@ function makeMockDb(tracks: IpodTrack[]): IpodDatabase {
 }
 
 function makeCtx(mountPoint: string, tracks: IpodTrack[]): DiagnosticContext {
-  return { mountPoint, db: makeMockDb(tracks) };
+  return { mountPoint, deviceType: 'ipod', db: makeMockDb(tracks) };
 }
 
 function makeRepairCtx(mountPoint: string, tracks: IpodTrack[]): RepairContext {
-  return { mountPoint, db: makeMockDb(tracks), adapters: [] };
+  return { mountPoint, deviceType: 'ipod', db: makeMockDb(tracks), adapters: [] };
 }
 
 // ── Tests ────────────────────────────────────────────────────────────────────
@@ -127,9 +127,9 @@ describe('artworkResetCheck', () => {
       expect(result.details?.totalTracks).toBe(3);
       // removeTrackArtwork was called for each track (may fail silently for tracks without artwork)
       expect(
-        (ctx.db.removeTrackArtwork as ReturnType<typeof mock>).mock.calls.length
+        (ctx.db!.removeTrackArtwork as ReturnType<typeof mock>).mock.calls.length
       ).toBeGreaterThan(0);
-      expect((ctx.db.save as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThan(0);
+      expect((ctx.db!.save as ReturnType<typeof mock>).mock.calls.length).toBeGreaterThan(0);
     });
 
     it('should report tracksCleared and totalTracks in result details', async () => {
@@ -151,7 +151,7 @@ describe('artworkResetCheck', () => {
       expect(result.success).toBe(true);
       expect(result.summary).toContain('Dry run');
       // In dry-run mode, save should NOT be called
-      expect((ctx.db.save as ReturnType<typeof mock>).mock.calls.length).toBe(0);
+      expect((ctx.db!.save as ReturnType<typeof mock>).mock.calls.length).toBe(0);
       // tracksCleared counts tracks that have artwork (hasArtwork=true)
       expect(result.details?.tracksCleared).toBe(1);
       expect(result.details?.totalTracks).toBe(2);
