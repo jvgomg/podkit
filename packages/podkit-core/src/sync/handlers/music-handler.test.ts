@@ -1152,7 +1152,7 @@ describe('MusicHandler', () => {
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('force-metadata');
       expect(diff.toUpdate[0]!.changes).toHaveLength(1);
-      expect(diff.toUpdate[0]!.changes[0]!.field).toBe('title');
+      expect(diff.toUpdate[0]!.changes![0]!.field).toBe('title');
     });
 
     test('does not move tracks when forceMetadata is false', () => {

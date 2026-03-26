@@ -731,54 +731,6 @@ export function createVideoDirectoryAdapter(config: { path: string }) {
 // Differ (mock)
 // =============================================================================
 
-export function computeMusicDiff(collectionTracks: any[], ipodTracks: any[], _options?: any) {
-  // If iPod is empty, all tracks are to-add
-  if (ipodTracks.length === 0) {
-    return {
-      toAdd: collectionTracks,
-      toRemove: [],
-      existing: [],
-      toUpdate: [],
-    };
-  }
-  // After sync, everything is existing
-  return {
-    toAdd: [],
-    toRemove: [],
-    existing: collectionTracks.map((ct: any, i: number) => ({
-      collection: ct,
-      ipod: ipodTracks[i],
-    })),
-    toUpdate: [],
-  };
-}
-
-// =============================================================================
-// Planner (mock)
-// =============================================================================
-
-export function createMusicPlan(diff: any, _options?: any) {
-  const operations: any[] = [];
-
-  for (const track of diff.toAdd || []) {
-    operations.push({
-      type: 'add-transcode',
-      source: track,
-      preset: { name: 'high' },
-    });
-  }
-
-  const estimatedSize = DEMO_SYNC_STATS.music.estimatedSizeBytes;
-  const estimatedTime = DEMO_SYNC_STATS.music.estimatedTimeSeconds;
-
-  return {
-    operations,
-    estimatedTime,
-    estimatedSize,
-    warnings: [],
-  };
-}
-
 export function isIPodCompatible(_fileType: string): boolean {
   return ['mp3', 'm4a', 'aac', 'alac'].includes(_fileType);
 }

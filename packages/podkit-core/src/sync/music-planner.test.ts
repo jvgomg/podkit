@@ -79,7 +79,7 @@ function createIPodTrack(
   album: string,
   options: Partial<
     Omit<
-      DeviceTrack,
+      IPodTrack,
       'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'
     >
   > = {}
