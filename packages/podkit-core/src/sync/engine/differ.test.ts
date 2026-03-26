@@ -60,6 +60,7 @@ function createMockHandler(
     planUpdate: () => [],
     estimateSize: () => 0,
     estimateTime: () => 0,
+    getOperationPriority: () => 5,
     execute: async function* () {},
     getDeviceItems: () => [],
     getDisplayName: () => '',

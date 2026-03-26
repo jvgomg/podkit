@@ -181,11 +181,20 @@ describe('VideoHandler', () => {
 
     test('includes settings with defaults', () => {
       const source = makeCollectionVideo();
-      const op = handler.planAdd(source, { hardwareAcceleration: false });
+      const op = handler.planAdd(source, {});
       if (op.type === 'video-transcode') {
-        expect(op.settings.useHardwareAcceleration).toBe(false);
+        expect(op.settings.useHardwareAcceleration).toBe(true);
         expect(op.settings.targetVideoBitrate).toBe(1500);
         expect(op.settings.targetAudioBitrate).toBe(128);
+      }
+    });
+
+    test('respects hardwareAcceleration=false from config', () => {
+      const h = createVideoHandler({ hardwareAcceleration: false });
+      const source = makeCollectionVideo();
+      const op = h.planAdd(source, {});
+      if (op.type === 'video-transcode') {
+        expect(op.settings.useHardwareAcceleration).toBe(false);
       }
     });
   });
@@ -481,7 +490,7 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
   });
 
   test('uses sync tag comparison when comment has sync tag', () => {
-    const handler = createVideoHandler();
+    const handler = createVideoHandler({ videoQuality: 'medium' });
     const source = makeCollectionVideo({ title: 'Movie C', year: 2022 });
     const device = makeDeviceVideo({
       title: 'Movie C',
@@ -493,7 +502,6 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
 
     const diff = createSyncDiffer(handler).diff([source], [device], {
       presetBitrate: 1500,
-      handlerOptions: { resolvedVideoQuality: 'medium' }, // Mismatch with sync tag quality=low
     });
 
     expect(diff.existing.length).toBe(0);
@@ -502,7 +510,7 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
   });
 
   test('keeps items in existing when sync tag matches resolved quality', () => {
-    const handler = createVideoHandler();
+    const handler = createVideoHandler({ videoQuality: 'medium' });
     const source = makeCollectionVideo({ title: 'Movie D', year: 2023 });
     const device = makeDeviceVideo({
       title: 'Movie D',
@@ -514,7 +522,6 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
 
     const diff = createSyncDiffer(handler).diff([source], [device], {
       presetBitrate: 1500,
-      handlerOptions: { resolvedVideoQuality: 'medium' }, // Matches sync tag
     });
 
     expect(diff.existing.length).toBe(1);
@@ -930,9 +937,10 @@ describe('VideoHandler + SyncDiffer — preset change (additional scenarios)', (
 
 describe('VideoHandler + SyncDiffer — video transform dual-key matching', () => {
   test('queues transform-apply when iPod has original metadata and transform is enabled', () => {
-    const handler = createVideoHandler();
-    handler.setVideoTransformsConfig({
-      showLanguage: { enabled: true, format: '({})', expand: true },
+    const handler = createVideoHandler({
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
     });
     const source = makeTVShowVideo({
       seriesTitle: 'Digimon Adventure (JPN)',
@@ -961,9 +969,10 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
   });
 
   test('queues transform-remove when iPod has transformed metadata and transform is disabled', () => {
-    const handler = createVideoHandler();
-    handler.setVideoTransformsConfig({
-      showLanguage: { enabled: false, format: '({})', expand: true },
+    const handler = createVideoHandler({
+      videoTransforms: {
+        showLanguage: { enabled: false, format: '({})', expand: true },
+      },
     });
     const source = makeTVShowVideo({
       seriesTitle: 'Digimon Adventure (JPN)',
@@ -993,9 +1002,10 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
   });
 
   test('marks as existing when transform is enabled and iPod already has transformed data', () => {
-    const handler = createVideoHandler();
-    handler.setVideoTransformsConfig({
-      showLanguage: { enabled: true, format: '({})', expand: true },
+    const handler = createVideoHandler({
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
     });
     const source = makeTVShowVideo({
       seriesTitle: 'Digimon Adventure (JPN)',
@@ -1016,9 +1026,10 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
   });
 
   test('no transform changes when no language marker present', () => {
-    const handler = createVideoHandler();
-    handler.setVideoTransformsConfig({
-      showLanguage: { enabled: true, format: '({})', expand: true },
+    const handler = createVideoHandler({
+      videoTransforms: {
+        showLanguage: { enabled: true, format: '({})', expand: true },
+      },
     });
     const source = makeTVShowVideo({
       seriesTitle: 'Breaking Bad',

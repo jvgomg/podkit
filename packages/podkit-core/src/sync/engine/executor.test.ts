@@ -112,6 +112,33 @@ function createMockHandler(
     estimateSize: () => 1000,
     estimateTime: () => 1,
 
+    getOperationPriority: (op: SyncOperation): number => {
+      switch (op.type) {
+        case 'remove':
+        case 'video-remove':
+          return 0;
+        case 'update-metadata':
+        case 'update-sync-tag':
+        case 'video-update-metadata':
+          return 1;
+        case 'add-direct-copy':
+        case 'add-optimized-copy':
+        case 'video-copy':
+          return 2;
+        case 'upgrade-transcode':
+        case 'upgrade-direct-copy':
+        case 'upgrade-optimized-copy':
+        case 'upgrade-artwork':
+        case 'video-upgrade':
+          return 3;
+        case 'add-transcode':
+        case 'video-transcode':
+          return 4;
+        default:
+          return 5;
+      }
+    },
+
     async *execute(op: SyncOperation, _ctx: ExecutionContext): AsyncGenerator<OperationProgress> {
       yield { operation: op, phase: 'starting' };
       yield { operation: op, phase: 'complete' };
@@ -633,7 +660,7 @@ describe('SyncExecutor', () => {
     });
   });
 
-  describe('video operation phase mapping', () => {
+  describe('operation phase mapping (convention-based)', () => {
     function makeVideoTranscodeOp(name: string): SyncOperation {
       return {
         type: 'video-transcode',
@@ -667,24 +694,24 @@ describe('SyncExecutor', () => {
       };
     }
 
-    it('maps video-transcode to video-transcoding phase', async () => {
+    it('maps video-transcode to transcoding phase', async () => {
       const handler = createMockHandler();
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoTranscodeOp('video.mkv')]);
 
       const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
-      expect(events[0]!.phase).toBe('video-transcoding');
+      expect(events[0]!.phase).toBe('transcoding');
     });
 
-    it('maps video-copy to video-copying phase', async () => {
+    it('maps video-copy to copying phase', async () => {
       const handler = createMockHandler();
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoCopyOp('video.m4v')]);
 
       const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
-      expect(events[0]!.phase).toBe('video-copying');
+      expect(events[0]!.phase).toBe('copying');
     });
 
     it('maps video-remove to removing phase', async () => {
@@ -697,24 +724,24 @@ describe('SyncExecutor', () => {
       expect(events[0]!.phase).toBe('removing');
     });
 
-    it('maps video-update-metadata to video-updating-metadata phase', async () => {
+    it('maps video-update-metadata to updating-metadata phase', async () => {
       const handler = createMockHandler();
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpdateMetadataOp('video.m4v')]);
 
       const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
-      expect(events[0]!.phase).toBe('video-updating-metadata');
+      expect(events[0]!.phase).toBe('updating-metadata');
     });
 
-    it('maps video-upgrade to video-upgrading phase', async () => {
+    it('maps video-upgrade to upgrading phase', async () => {
       const handler = createMockHandler();
       const executor = new SyncExecutor(handler);
       const plan = makePlan([makeVideoUpgradeOp('video.m4v')]);
 
       const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
-      expect(events[0]!.phase).toBe('video-upgrading');
+      expect(events[0]!.phase).toBe('upgrading');
     });
 
     it('maps all video types correctly in a single plan', async () => {
@@ -731,146 +758,11 @@ describe('SyncExecutor', () => {
       const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
 
       // Each op yields 2 events (starting + complete), first event of each has the phase
-      expect(events[0]!.phase).toBe('video-transcoding');
-      expect(events[2]!.phase).toBe('video-copying');
+      expect(events[0]!.phase).toBe('transcoding');
+      expect(events[2]!.phase).toBe('copying');
       expect(events[4]!.phase).toBe('removing');
-      expect(events[6]!.phase).toBe('video-updating-metadata');
-      expect(events[8]!.phase).toBe('video-upgrading');
-    });
-  });
-
-  describe('batch abort signal', () => {
-    it('stops batch execution when signal is aborted after first operation', async () => {
-      const controller = new AbortController();
-      let yieldCount = 0;
-
-      const handler = createMockHandler({
-        async *executeBatch(operations: SyncOperation[]): AsyncGenerator<OperationProgress> {
-          for (const op of operations) {
-            yield { operation: op, phase: 'starting' };
-            yield { operation: op, phase: 'complete' };
-            yieldCount++;
-            // Abort after first operation completes
-            if (yieldCount === 1) controller.abort();
-          }
-        },
-      });
-
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeCopyOp('a.mp3'), makeCopyOp('b.mp3'), makeCopyOp('c.mp3')]);
-
-      const { result } = await consumeExecutor(
-        executor.execute(plan, { device: {} as any, signal: controller.signal })
-      );
-
-      expect(result.aborted).toBe(true);
-      expect(result.completed).toBe(1);
-    });
-  });
-
-  describe('video operation phase mapping', () => {
-    function makeVideoTranscodeOp(name: string): SyncOperation {
-      return {
-        type: 'video-transcode',
-        source: { filePath: name } as any,
-        settings: {} as any,
-      };
-    }
-
-    function makeVideoCopyOp(name: string): SyncOperation {
-      return { type: 'video-copy', source: { filePath: name } as any };
-    }
-
-    function makeVideoRemoveOp(name: string): SyncOperation {
-      return { type: 'video-remove', video: { filePath: name } as any };
-    }
-
-    function makeVideoUpdateMetadataOp(name: string): SyncOperation {
-      return {
-        type: 'video-update-metadata',
-        source: { filePath: name } as any,
-        video: { filePath: name } as any,
-      };
-    }
-
-    function makeVideoUpgradeOp(name: string): SyncOperation {
-      return {
-        type: 'video-upgrade',
-        source: { filePath: name } as any,
-        target: { filePath: name } as any,
-        reason: 'format-upgrade' as any,
-      };
-    }
-
-    it('maps video-transcode to video-transcoding phase', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeVideoTranscodeOp('video.mkv')]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      expect(events[0]!.phase).toBe('video-transcoding');
-    });
-
-    it('maps video-copy to video-copying phase', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeVideoCopyOp('video.m4v')]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      expect(events[0]!.phase).toBe('video-copying');
-    });
-
-    it('maps video-remove to removing phase', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeVideoRemoveOp('old-video.m4v')]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      expect(events[0]!.phase).toBe('removing');
-    });
-
-    it('maps video-update-metadata to video-updating-metadata phase', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeVideoUpdateMetadataOp('video.m4v')]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      expect(events[0]!.phase).toBe('video-updating-metadata');
-    });
-
-    it('maps video-upgrade to video-upgrading phase', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([makeVideoUpgradeOp('video.m4v')]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      expect(events[0]!.phase).toBe('video-upgrading');
-    });
-
-    it('maps all video types correctly in a single plan', async () => {
-      const handler = createMockHandler();
-      const executor = new SyncExecutor(handler);
-      const plan = makePlan([
-        makeVideoTranscodeOp('a.mkv'),
-        makeVideoCopyOp('b.m4v'),
-        makeVideoRemoveOp('c.m4v'),
-        makeVideoUpdateMetadataOp('d.m4v'),
-        makeVideoUpgradeOp('e.m4v'),
-      ]);
-
-      const { events } = await consumeExecutor(executor.execute(plan, { device: {} as any }));
-
-      // Each op yields 2 events (starting + complete), first event of each has the phase
-      expect(events[0]!.phase).toBe('video-transcoding');
-      expect(events[2]!.phase).toBe('video-copying');
-      expect(events[4]!.phase).toBe('removing');
-      expect(events[6]!.phase).toBe('video-updating-metadata');
-      expect(events[8]!.phase).toBe('video-upgrading');
+      expect(events[6]!.phase).toBe('updating-metadata');
+      expect(events[8]!.phase).toBe('upgrading');
     });
   });
 

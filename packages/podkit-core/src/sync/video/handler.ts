@@ -24,7 +24,6 @@ import { buildVideoSyncTag, syncTagMatchesConfig } from '../../metadata/sync-tag
 import { detectBitratePresetMismatch } from '../engine/upgrades.js';
 import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../engine/types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
-import type { VideoTransformsConfig } from '../../transforms/types.js';
 import {
   getVideoTransformMatchKeys,
   hasEnabledVideoTransforms,
@@ -39,24 +38,9 @@ import type {
 } from '../engine/content-type.js';
 import type { UnifiedSyncDiff } from '../engine/content-type.js';
 import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../engine/diff-utils.js';
-
-// =============================================================================
-// Types
-// =============================================================================
-
-/**
- * Video-specific options for postProcessDiff.
- *
- * Passed via the `handlerOptions` field on the diff options object
- * when the caller needs video-specific post-processing (preset change
- * detection, force-metadata sweep).
- */
-export interface VideoHandlerDiffOptions {
-  /** Resolved video quality preset name for sync tag comparison */
-  resolvedVideoQuality?: string;
-  /** Video transform configuration */
-  videoTransforms?: VideoTransformsConfig;
-}
+import type { VideoSyncConfig } from './config.js';
+import { resolveVideoConfig, type ResolvedVideoConfig } from './config.js';
+import { VideoTrackClassifier } from './classifier.js';
 
 // =============================================================================
 // VideoHandler Implementation
@@ -71,16 +55,15 @@ export interface VideoHandlerDiffOptions {
 export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceVideo> {
   readonly type = 'video';
 
-  /** Stored video transforms config (set via setVideoTransformsConfig) */
-  private videoTransformsConfig?: VideoTransformsConfig;
+  /** Resolved configuration derived from the input VideoSyncConfig */
+  private readonly config: ResolvedVideoConfig;
 
-  /**
-   * Set the video transforms configuration for transform-aware matching.
-   * When set, applyTransformKey generates transformed keys and detectUpdates
-   * detects transform apply/remove scenarios.
-   */
-  setVideoTransformsConfig(config: VideoTransformsConfig | undefined): void {
-    this.videoTransformsConfig = config;
+  /** Classifier for passthrough vs transcode decisions */
+  private readonly classifier: VideoTrackClassifier;
+
+  constructor(config?: VideoSyncConfig) {
+    this.config = resolveVideoConfig(config);
+    this.classifier = new VideoTrackClassifier(this.config);
   }
 
   // ---- Diffing ----
@@ -94,14 +77,15 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
   }
 
   applyTransformKey(source: CollectionVideo): string {
-    if (!this.videoTransformsConfig) {
+    const videoTransforms = this.config.raw.videoTransforms;
+    if (!videoTransforms) {
       return generateVideoMatchKey(source);
     }
 
     const { transformedKey } = getVideoTransformMatchKeys(
       source,
       generateVideoMatchKey,
-      this.videoTransformsConfig
+      videoTransforms
     );
     return transformedKey;
   }
@@ -124,14 +108,15 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * @internal
    */
   private getTransformedSeriesTitle(source: CollectionVideo): string | undefined {
-    if (!this.videoTransformsConfig) return undefined;
-    if (!hasEnabledVideoTransforms(this.videoTransformsConfig)) return undefined;
+    const videoTransforms = this.config.raw.videoTransforms;
+    if (!videoTransforms) return undefined;
+    if (!hasEnabledVideoTransforms(videoTransforms)) return undefined;
     if (source.contentType !== 'tvshow') return undefined;
 
     const { transformedSeriesTitle, transformApplied } = getVideoTransformMatchKeys(
       source,
       generateVideoMatchKey,
-      this.videoTransformsConfig
+      videoTransforms
     );
 
     return transformApplied ? transformedSeriesTitle : undefined;
@@ -163,14 +148,13 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     }
 
     // Transform detection: determine if transforms need to be applied or removed.
-    // The unified differ matches by primary key first, then falls back to transform key.
-    // We can detect the match type by comparing the primary and transform keys.
-    if (this.videoTransformsConfig) {
-      const transformsEnabled = hasEnabledVideoTransforms(this.videoTransformsConfig);
+    const videoTransforms = this.config.raw.videoTransforms;
+    if (videoTransforms) {
+      const transformsEnabled = hasEnabledVideoTransforms(videoTransforms);
       const { originalKey, transformedKey, transformApplied } = getVideoTransformMatchKeys(
         source,
         generateVideoMatchKey,
-        this.videoTransformsConfig
+        videoTransforms
       );
 
       if (transformApplied) {
@@ -212,18 +196,13 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     options: HandlerDiffOptions & {
       forceMetadata?: boolean;
-      handlerOptions?: VideoHandlerDiffOptions;
     }
   ): void {
-    const handlerOpts = options.handlerOptions;
-
     // Pass 1: Preset change detection
     if (options.presetBitrate) {
       const presetBitrate = options.presetBitrate;
-      const resolvedVideoQuality = handlerOpts?.resolvedVideoQuality;
-      const expectedSyncTag = resolvedVideoQuality
-        ? buildVideoSyncTag(resolvedVideoQuality)
-        : undefined;
+      const resolvedVideoQuality = this.config.resolvedVideoQuality;
+      const expectedSyncTag = buildVideoSyncTag(resolvedVideoQuality);
 
       partitionExisting(diff, (match) => {
         // Try sync tag comparison first
@@ -248,9 +227,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     }
 
     // Pass 2: Force metadata sweep — move ALL remaining existing items to toUpdate.
-    // The effective series title (with transforms if configured) is computed
-    // downstream by planUpdate via transformSourceForAdd / videoTransformsConfig.
-    if (options.forceMetadata) {
+    if (options.forceMetadata ?? this.config.raw.forceMetadata) {
       sweepAllExisting(diff, 'force-metadata');
     }
   }
@@ -258,24 +235,21 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
   // ---- Planning ----
 
   planAdd(source: CollectionVideo, _options: HandlerPlanOptions): SyncOperation {
-    // Default to video-transcode; the actual planner determines passthrough vs transcode
-    // based on compatibility checking. This stub provides a reasonable default.
+    const { action } = this.classifier.classify(source);
     const transformedSeriesTitle = this.getTransformedSeriesTitle(source);
+
+    if (action.type === 'passthrough') {
+      return {
+        type: 'video-copy',
+        source,
+        ...(transformedSeriesTitle && { transformedSeriesTitle }),
+      };
+    }
 
     return {
       type: 'video-transcode',
       source,
-      settings: {
-        targetVideoBitrate: 1500,
-        targetAudioBitrate: 128,
-        targetWidth: 640,
-        targetHeight: 480,
-        videoProfile: 'baseline',
-        videoLevel: '3.0',
-        crf: 23,
-        frameRate: 30,
-        useHardwareAcceleration: _options.hardwareAcceleration ?? true,
-      },
+      settings: action.settings,
       ...(transformedSeriesTitle && { transformedSeriesTitle }),
     };
   }
@@ -371,18 +345,24 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     return 0;
   }
 
-  // ---- Execution ----
-
-  /** Video quality preset for sync tag writing (set via setVideoQuality) */
-  private videoQuality?: string;
-
-  /**
-   * Set the video quality preset name for sync tag writing.
-   * When set, sync tags are written to transcoded video tracks.
-   */
-  setVideoQuality(quality: string | undefined): void {
-    this.videoQuality = quality;
+  getOperationPriority(op: SyncOperation): number {
+    switch (op.type) {
+      case 'video-remove':
+        return 0;
+      case 'video-update-metadata':
+        return 1;
+      case 'video-copy':
+        return 2;
+      case 'video-upgrade':
+        return 3;
+      case 'video-transcode':
+        return 4;
+      default:
+        return 5;
+    }
   }
+
+  // ---- Execution ----
 
   async *execute(op: SyncOperation, ctx: ExecutionContext): AsyncGenerator<OperationProgress> {
     switch (op.type) {
@@ -536,8 +516,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
 
     // Write sync tag if quality preset is configured
     const deviceTrackInput: DeviceTrackInput = trackInput;
-    if (this.videoQuality) {
-      const syncTag = buildVideoSyncTag(this.videoQuality);
+    const videoQuality = this.config.videoQuality;
+    if (videoQuality) {
+      const syncTag = buildVideoSyncTag(videoQuality);
       deviceTrackInput.syncTag = syncTag;
     }
 
@@ -793,6 +774,6 @@ function deviceTrackToVideo(track: DeviceTrack): DeviceVideo {
 /**
  * Create a VideoHandler instance
  */
-export function createVideoHandler(): VideoHandler {
-  return new VideoHandler();
+export function createVideoHandler(config?: VideoSyncConfig): VideoHandler {
+  return new VideoHandler(config);
 }
