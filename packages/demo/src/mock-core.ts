@@ -264,8 +264,6 @@ export type {
 // ContentTypeHandler types
 export type {
   ContentTypeHandler,
-  HandlerDiffOptions,
-  HandlerPlanOptions,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,

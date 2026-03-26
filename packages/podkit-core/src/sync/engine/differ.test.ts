@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { SyncDiffer, createSyncDiffer } from './differ.js';
-import type { ContentTypeHandler, HandlerDiffOptions } from './content-type.js';
+import type { ContentTypeHandler } from './content-type.js';
 import type { UpdateReason } from './types.js';
 
 // =============================================================================
@@ -43,11 +43,7 @@ function createMockHandler(
     generateDeviceMatchKey: (device: TestDevice) => device.name.toLowerCase(),
     getDeviceItemId: (device: TestDevice) => device.deviceId,
 
-    detectUpdates: (
-      source: TestSource,
-      device: TestDevice,
-      _options: HandlerDiffOptions
-    ): UpdateReason[] => {
+    detectUpdates: (source: TestSource, device: TestDevice): UpdateReason[] => {
       if (source.version !== device.version) {
         return ['metadata-correction'];
       }
@@ -309,25 +305,37 @@ describe('SyncDiffer', () => {
     });
   });
 
-  describe('options pass-through', () => {
-    it('should pass options to handler.detectUpdates', () => {
-      let receivedOptions: HandlerDiffOptions | undefined;
+  describe('transformsEnabled option', () => {
+    it('should apply transformSourceForAdd when transformsEnabled is true', () => {
+      let transformCalled = false;
       const handler = createMockHandler({
-        detectUpdates: (
-          _source: TestSource,
-          _device: TestDevice,
-          options: HandlerDiffOptions
-        ): UpdateReason[] => {
-          receivedOptions = options;
-          return [];
+        transformSourceForAdd: (source: TestSource) => {
+          transformCalled = true;
+          return { ...source, name: `transformed-${source.name}` };
         },
       });
 
       const differ = new SyncDiffer(handler);
-      const opts = { skipUpgrades: true, forceTranscode: false };
-      differ.diff([src('Alpha')], [dev('Alpha')], opts);
+      const result = differ.diff([src('Alpha')], [], { transformsEnabled: true });
 
-      expect(receivedOptions).toEqual(opts);
+      expect(transformCalled).toBe(true);
+      expect(result.toAdd[0]!.name).toBe('transformed-Alpha');
+    });
+
+    it('should not apply transformSourceForAdd when transformsEnabled is false', () => {
+      let transformCalled = false;
+      const handler = createMockHandler({
+        transformSourceForAdd: (source: TestSource) => {
+          transformCalled = true;
+          return { ...source, name: `transformed-${source.name}` };
+        },
+      });
+
+      const differ = new SyncDiffer(handler);
+      const result = differ.diff([src('Alpha')], [], { transformsEnabled: false });
+
+      expect(transformCalled).toBe(false);
+      expect(result.toAdd[0]!.name).toBe('Alpha');
     });
   });
 
