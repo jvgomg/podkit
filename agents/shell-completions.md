@@ -21,11 +21,17 @@ The completion system supports three tiers:
 
 ## Testing Completions During Development
 
+The completions generator derives the function prefix from `--cmd`: `podkit-dev` → `_podkit_dev`,
+`podkit` → `_podkit`. This means each binary gets its own isolated function namespace and the
+two completion scripts can coexist without clobbering each other.
+
 ```bash
 bun run --filter podkit install:dev   # Build and install podkit-dev binary
 # Add to ~/.zshrc:
-#   source <(podkit-dev completions zsh --cmd podkit-dev)
-#   compdef _podkit podkit-dev
+#   source <(podkit completions zsh)                              # prod binary (_podkit namespace)
+#   source <(podkit-dev completions zsh --cmd podkit-dev)        # dev binary (_podkit_dev namespace)
 ```
+
+No extra `compdef` line needed — each source line registers its own binding.
 
 See [docs/developers/development.md](../docs/developers/development.md) for full setup.

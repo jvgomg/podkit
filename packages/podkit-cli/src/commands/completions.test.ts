@@ -179,6 +179,47 @@ describe('completions', () => {
     });
   });
 
+  describe('function prefix from --cmd', () => {
+    it('uses _podkit prefix by default (zsh)', () => {
+      const program = createTestProgram();
+      const output = generateZshCompletions(program);
+      expect(output).toContain('_podkit()');
+      expect(output).toContain('compdef _podkit podkit');
+    });
+
+    it('derives _podkit_dev prefix from --cmd podkit-dev (zsh)', () => {
+      const program = createTestProgram();
+      const output = generateZshCompletions(program, 'podkit-dev');
+      expect(output).toContain('_podkit_dev()');
+      expect(output).toContain('compdef _podkit_dev podkit-dev');
+      expect(output).not.toContain('_podkit()');
+      expect(output).not.toContain('compdef _podkit_dev podkit\n');
+    });
+
+    it('uses _podkit prefix for multi-word bun run cmd (zsh)', () => {
+      const program = createTestProgram();
+      const output = generateZshCompletions(program, 'bun run podkit');
+      expect(output).toContain('_podkit()');
+      expect(output).toContain('compdef _podkit podkit');
+    });
+
+    it('derives _podkit_dev prefix from --cmd podkit-dev (bash)', () => {
+      const program = createTestProgram();
+      const output = generateBashCompletions(program, 'podkit-dev');
+      expect(output).toContain('_podkit_dev()');
+      expect(output).toContain('complete -F _podkit_dev podkit-dev');
+      expect(output).not.toContain('_podkit()');
+    });
+
+    it('renames dynamic helpers to match prefix (zsh)', () => {
+      const program = createTestProgram();
+      const output = generateZshCompletions(program, 'podkit-dev');
+      expect(output).toContain('_podkit_dev_devices()');
+      expect(output).toContain('_podkit_dev_collections()');
+      expect(output).not.toContain('_podkit_devices()');
+    });
+  });
+
   describe('__complete command', () => {
     it('has expected subcommands', () => {
       expect(completeCommand.name()).toBe('__complete');
@@ -436,6 +477,7 @@ volumeUuid = "ABC-123"
         'source <(./bin/podkit-dev completions zsh --cmd "./bin/podkit-dev")'
       );
       expect(block).toContain('pk() { ./bin/podkit-dev "$@"; }');
+      expect(block).toContain('compdef _podkit_dev pk');
     });
 
     it('includes the config marker comment', () => {

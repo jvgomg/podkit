@@ -725,29 +725,47 @@ podkit mount --disk /dev/disk4s2
 
 ## `podkit completions`
 
-Generate and install shell completion scripts for tab completion support. The completions are generated from the actual CLI command tree, so they stay in sync automatically.
+Generate and install shell completion scripts. Completions are generated from the live CLI structure at runtime — new commands and options appear automatically without any maintenance.
 
-Completions include:
+### Quick setup
 
-- **Subcommands and flags** — all commands, subcommands, aliases, and options
-- **Static argument values** — options like `--quality`, `--type`, `--encoding`, and `--format` offer their known values (e.g. `max`, `high`, `medium`, `low`)
-- **Dynamic argument values** — `--device` and `--collection` complete with names from your config file
+```bash
+podkit completions install --append
+```
+
+Restart your shell or run `source ~/.zshrc`, then start tabbing:
+
+```bash
+podkit <TAB>                  # shows all commands
+podkit sync --quality <TAB>   # shows: max high medium low
+podkit sync -d <TAB>          # shows device names from your config
+```
+
+That's all most users need.
+
+### What gets completed
+
+| Context | Completions |
+|---------|-------------|
+| `podkit <TAB>` | All subcommands and aliases |
+| `podkit sync --<TAB>` | Flags: `--dry-run`, `--quality`, `--type`, `--filter`, ... |
+| `podkit sync --quality <TAB>` | `max`, `high`, `medium`, `low` |
+| `podkit sync --type <TAB>` | `music`, `video` |
+| `podkit sync --encoding <TAB>` | `vbr`, `cbr` |
+| `podkit device music --format <TAB>` | `table`, `json`, `csv` |
+| `podkit sync -d <TAB>` | Device names from your config file |
+| `podkit sync -c <TAB>` | Collection names from your config file |
 
 ### `podkit completions install`
 
-Detect your shell and show setup instructions. This is the easiest way to get started.
+Detect your shell and show setup instructions, with an option to apply them automatically.
 
 ```bash
-podkit completions install
+podkit completions install          # preview what will be added
+podkit completions install --append # write it to your config file
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--append` | Append the setup lines to your shell config file automatically |
-| `--alias <command>` | Create a dev shell function wrapping this command (e.g. `"bun run podkit"`) |
-| `--name <name>` | Name for the dev function (default: `pk`) |
-
-The `install` subcommand detects your shell from `$SHELL` and finds the correct config file:
+Supported shells and config files:
 
 | Shell | Config file |
 |-------|------------|
@@ -755,68 +773,64 @@ The `install` subcommand detects your shell from `$SHELL` and finds the correct 
 | bash (macOS) | `~/.bash_profile` |
 | bash (Linux) | `~/.bashrc` |
 
-```bash
-# Show what to add and where
-podkit completions install
+#### `--alias` and `--name`
 
-# Do it automatically
-podkit completions install --append
-```
-
-### `podkit completions zsh`
-
-Print the zsh completion script to stdout.
+Use these if you run podkit from source instead of an installed binary — for example, `bun run podkit` in a development checkout.
 
 ```bash
-podkit completions zsh
+podkit completions install --alias "bun run podkit" --name pk
 ```
+
+This creates a shell function called `pk` (or whatever `--name` you choose) that wraps the command and wires up completions to it. Useful when you want a short alias for a `bun run` invocation.
+
+### `podkit completions zsh` / `podkit completions bash`
+
+Print the completion script to stdout. Use `source <(...)` to load it without writing a file:
+
+```bash
+source <(podkit completions zsh)   # activate in current shell (temporary)
+```
+
+Both subcommands accept one option:
 
 | Option | Description |
 |--------|-------------|
-| `--cmd <command>` | CLI command for dynamic completions (default: `podkit`). Use when the binary has a different name, e.g. `--cmd podkit-dev`. |
+| `--cmd <command>` | Binary used for dynamic completions (device and collection name lookups). Defaults to `podkit`. |
 
-### `podkit completions bash`
+You only need `--cmd` if your binary has a non-standard name. When set, it controls which command is called at completion time to look up your device and collection names from config, and also determines the function namespace so multiple binaries can coexist. See [Developer setup](#developer-setup) below.
 
-Print the bash completion script to stdout.
+### Developer setup
+
+If you're developing podkit, you can install a `podkit-dev` binary from your working tree and run it alongside the production binary — with independent completions for each.
 
 ```bash
-podkit completions bash
+# Build and install the dev binary
+bun run --filter podkit install:dev
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--cmd <command>` | CLI command for dynamic completions (default: `podkit`). |
-
-### What Gets Completed
-
-| Context | Completions |
-|---------|-------------|
-| `podkit <TAB>` | Subcommands: `init`, `sync`, `device`, `collection`, `eject`, `mount` |
-| `podkit sync --<TAB>` | Flags: `--dry-run`, `--quality`, `--type`, `--filter`, ... |
-| `podkit sync --quality <TAB>` | Values: `max`, `high`, `medium`, `low` |
-| `podkit sync --type <TAB>` | Values: `music`, `video` |
-| `podkit sync --encoding <TAB>` | Values: `vbr`, `cbr` |
-| `podkit device music --format <TAB>` | Values: `table`, `json`, `csv` |
-| `podkit sync -d <TAB>` | Device names from config |
-| `podkit sync -c <TAB>` | Collection names from config |
-
-### Examples
+Then add both source lines to `~/.zshrc`:
 
 ```bash
-# Quickest setup — auto-detect shell and append to config
-podkit completions install --append
-
-# See what would be added first
-podkit completions install
-
-# Activate in current shell session (temporary)
+# Production binary (from Homebrew or system install)
 source <(podkit completions zsh)
 
-# Test completions after setup
-podkit <TAB>                    # Shows subcommands
-podkit sync --quality <TAB>     # Shows: max high medium low
-podkit sync -c <TAB>            # Shows collection names from config
-podkit sync -d <TAB>            # Shows device names from config
+# Dev binary (built from source)
+source <(podkit-dev completions zsh --cmd podkit-dev)
+```
+
+The `--cmd podkit-dev` flag gives the dev binary its own completion namespace (`_podkit_dev`) so the two scripts don't interfere with each other. Dynamic completions (device names, collection names) are also looked up via the correct binary.
+
+Rebuild after making CLI changes:
+
+```bash
+bun run --filter podkit install:dev
+source ~/.zshrc
+```
+
+To remove the dev binary:
+
+```bash
+bun run --filter podkit install:dev -- --clean
 ```
 
 ## Display Fields
