@@ -18,9 +18,9 @@
  * @module
  */
 
-import type { ContentTypeHandler, HandlerPlanOptions } from './content-type.js';
+import type { ContentTypeHandler } from './content-type.js';
 import type { UnifiedSyncDiff } from './content-type.js';
-import type { SyncPlan, SyncOperation, SyncWarning, DeviceTrack } from './types.js';
+import type { SyncPlan, SyncOperation, SyncWarning } from './types.js';
 
 // =============================================================================
 // Types
@@ -29,7 +29,7 @@ import type { SyncPlan, SyncOperation, SyncWarning, DeviceTrack } from './types.
 /**
  * Options for sync planning
  */
-export interface SyncPlanOptions extends HandlerPlanOptions {
+export interface SyncPlanOptions {
   /** Whether to remove items not in collection (default: true) */
   removeOrphans?: boolean;
 
@@ -95,7 +95,6 @@ export class SyncPlanner<TSource, TDevice> {
   plan(diff: UnifiedSyncDiff<TSource, TDevice>, options?: SyncPlanOptions): SyncPlan {
     const { removeOrphans = true, maxSize, artworkEnabled = true } = options ?? {};
 
-    const planOptions: HandlerPlanOptions = options ?? {};
     const allOperations: SyncOperation[] = [];
     const warnings: SyncWarning[] = [];
 
@@ -108,28 +107,6 @@ export class SyncPlanner<TSource, TDevice> {
 
     // Step 2: Create update operations
     for (const update of diff.toUpdate) {
-      // Sync tag writes bypass the handler — create update-sync-tag directly
-      if (update.syncTag && update.reasons.includes('sync-tag-write')) {
-        allOperations.push({
-          type: 'update-sync-tag',
-          track: update.device as DeviceTrack,
-          syncTag: update.syncTag,
-        });
-        // If sync-tag-write was the only reason, skip the handler entirely
-        const remainingReasons = update.reasons.filter((r) => r !== 'sync-tag-write');
-        if (remainingReasons.length === 0) continue;
-        // Otherwise, let the other reasons flow through to the handler
-        const ops = this.handler.planUpdate(
-          update.source,
-          update.device,
-          remainingReasons,
-          planOptions,
-          update.changes
-        );
-        allOperations.push(...ops);
-        continue;
-      }
-
       // Filter out artwork updates when artwork is disabled
       const reasons = artworkEnabled
         ? update.reasons
@@ -141,15 +118,15 @@ export class SyncPlanner<TSource, TDevice> {
         update.source,
         update.device,
         reasons,
-        planOptions,
-        update.changes
+        update.changes,
+        update.syncTag
       );
       allOperations.push(...ops);
     }
 
     // Step 3: Create add operations
     for (const source of diff.toAdd) {
-      const op = this.handler.planAdd(source, planOptions);
+      const op = this.handler.planAdd(source);
       allOperations.push(op);
     }
 
@@ -169,7 +146,7 @@ export class SyncPlanner<TSource, TDevice> {
 
     // Step 6: Content-type-specific warnings (e.g., lossy-to-lossy, embedded artwork resize)
     if (this.handler.collectPlanWarnings) {
-      warnings.push(...this.handler.collectPlanWarnings(orderedOperations, planOptions));
+      warnings.push(...this.handler.collectPlanWarnings(orderedOperations));
     }
 
     // Step 7: Space constraint warnings

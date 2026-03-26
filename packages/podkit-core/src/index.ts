@@ -544,8 +544,6 @@ export {
 // ContentTypeHandler interface and registry
 export type {
   ContentTypeHandler,
-  HandlerDiffOptions,
-  HandlerPlanOptions,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,

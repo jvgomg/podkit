@@ -16,7 +16,7 @@
  * @module
  */
 
-import type { ContentTypeHandler, HandlerDiffOptions, MatchInfo } from './content-type.js';
+import type { ContentTypeHandler, MatchInfo } from './content-type.js';
 import type { UpdateReason } from './types.js';
 
 import type { UnifiedSyncDiff } from './content-type.js';
@@ -28,7 +28,10 @@ import type { UnifiedSyncDiff } from './content-type.js';
 /**
  * Options for sync diff computation
  */
-export interface SyncDiffOptions extends HandlerDiffOptions {}
+export interface SyncDiffOptions {
+  /** When true, try transform keys as fallback during matching */
+  transformsEnabled?: boolean;
+}
 
 // =============================================================================
 // SyncDiffer
@@ -61,7 +64,7 @@ export class SyncDiffer<TSource, TDevice> {
     options?: SyncDiffOptions
   ): UnifiedSyncDiff<TSource, TDevice> {
     const handler = this.handler;
-    const diffOptions: HandlerDiffOptions = options ?? {};
+    const diffOptions = options ?? {};
 
     // Step 1: Build device index for O(1) lookup
     const deviceIndex = new Map<string, TDevice>();
@@ -120,7 +123,7 @@ export class SyncDiffer<TSource, TDevice> {
 
         // Step 3e-g: Detect updates
         const matchInfo: MatchInfo = { matchedByTransformKey };
-        const reasons = handler.detectUpdates(source, deviceMatch, diffOptions, matchInfo);
+        const reasons = handler.detectUpdates(source, deviceMatch, matchInfo);
 
         if (reasons.length > 0) {
           toUpdate.push({ source, device: deviceMatch, reasons });
@@ -156,7 +159,7 @@ export class SyncDiffer<TSource, TDevice> {
 
     // Post-process: allow handler to perform batch-level analysis
     if (handler.postProcessDiff) {
-      handler.postProcessDiff(diff, diffOptions);
+      handler.postProcessDiff(diff);
     }
 
     return diff;

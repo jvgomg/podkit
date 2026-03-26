@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { CollectionVideo, SyncPlan, UnifiedSyncDiff } from '@podkit/core';
+import type { CollectionVideo, SyncPlan, UnifiedSyncDiff, VideoHandler } from '@podkit/core';
 import type { DeviceVideo } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
@@ -91,8 +91,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     return handler.getDeviceItems(device);
   }
 
-  /** Stored during computeDiff for use in createPlan */
+  /** Stored during computeDiff for use in createPlan and executeSync */
   private _deviceProfile: any;
+  private handler?: VideoHandler;
 
   computeDiff(
     sourceItems: CollectionVideo[],
@@ -113,52 +114,69 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     }
     this._deviceProfile = deviceProfile;
 
-    const videoPresetSettings = core.getPresetSettingsWithFallback(
-      deviceProfile.name,
-      config.effectiveVideoQuality
-    );
-    const videoPresetBitrate = videoPresetSettings.videoBitrate + videoPresetSettings.audioBitrate;
     const transformsEnabled =
       !!config.effectiveVideoTransforms &&
       core.hasEnabledVideoTransforms(config.effectiveVideoTransforms);
 
     // Use the unified SyncDiffer + VideoHandler pipeline
-    const handler = core.createVideoHandler({
+    this.handler = core.createVideoHandler({
       videoQuality: config.effectiveVideoQuality,
       deviceProfile,
       videoTransforms: config.effectiveVideoTransforms,
       forceMetadata: config.forceMetadata,
     });
-    const differ = core.createSyncDiffer(handler);
+    const differ = core.createSyncDiffer(this.handler);
 
     return differ.diff(sourceItems, deviceItems, {
       transformsEnabled,
-      presetBitrate: videoPresetBitrate,
-      forceMetadata: config.forceMetadata,
     });
   }
 
   createPlan(
     diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     removeOrphans: boolean,
-    contentConfig: MusicContentConfig | VideoContentConfig,
+    _contentConfig: MusicContentConfig | VideoContentConfig,
     _ipod: any,
     core: typeof import('@podkit/core')
   ) {
-    const config = contentConfig as VideoContentConfig;
-    const plan = core.planVideoSync(diff, {
-      deviceProfile: this._deviceProfile,
-      qualityPreset: config.effectiveVideoQuality,
-      removeOrphans,
-      useHardwareAcceleration: true,
-      videoTransforms: config.effectiveVideoTransforms,
-    });
-    const summary = core.getVideoPlanSummary(plan);
+    const planner = core.createSyncPlanner(this.handler!);
+    const plan = planner.plan(diff, { removeOrphans });
+    const summary = this.buildSummary(plan);
     return { plan, summary };
   }
 
-  willFit(plan: SyncPlan, freeSpace: number, core: typeof import('@podkit/core')): boolean {
-    return core.willVideoPlanFit(plan, freeSpace);
+  private buildSummary(plan: SyncPlan) {
+    let transcodeCount = 0;
+    let copyCount = 0;
+    let removeCount = 0;
+    let updateCount = 0;
+    let upgradeCount = 0;
+
+    for (const op of plan.operations) {
+      switch (op.type) {
+        case 'video-transcode':
+          transcodeCount++;
+          break;
+        case 'video-copy':
+          copyCount++;
+          break;
+        case 'video-remove':
+          removeCount++;
+          break;
+        case 'video-update-metadata':
+          updateCount++;
+          break;
+        case 'video-upgrade':
+          upgradeCount++;
+          break;
+      }
+    }
+
+    return { transcodeCount, copyCount, removeCount, updateCount, upgradeCount };
+  }
+
+  willFit(plan: SyncPlan, freeSpace: number, _core: typeof import('@podkit/core')): boolean {
+    return plan.estimatedSize <= freeSpace;
   }
 
   renderDryRunText(
@@ -182,8 +200,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     const tvShowCount = sourceItems.filter((v) => v.contentType === 'tvshow').length;
 
     // Use handler for dry-run summary (for consistent estimated size/time)
-    const handler = core.createVideoHandler();
-    const dryRunSummary = handler.formatDryRun(plan);
+    const dryRunSummary = this.handler!.formatDryRun(plan);
 
     out.newline();
     out.print('=== Video Sync Plan (Dry Run) ===');
@@ -247,12 +264,11 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     summary: any,
     removeOrphans: boolean,
     _contentConfig: MusicContentConfig | VideoContentConfig,
-    core: typeof import('@podkit/core'),
+    _core: typeof import('@podkit/core'),
     _scanWarnings: Array<{ file: string; message: string }>,
     _sourceItems: CollectionVideo[]
   ): SyncOutput {
-    const handler = core.createVideoHandler();
-    const dryRunSummary = handler.formatDryRun(plan);
+    const dryRunSummary = this.handler!.formatDryRun(plan);
 
     const moviesToAdd = diff.toAdd.filter((v) => v.contentType === 'movie').length;
     const showsToAdd = diff.toAdd.filter((v) => v.contentType === 'tvshow');
@@ -316,21 +332,16 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     out: OutputContext,
     plan: SyncPlan,
     _adapter: any,
-    contentConfig: MusicContentConfig | VideoContentConfig,
+    _contentConfig: MusicContentConfig | VideoContentConfig,
     device: any,
     core: typeof import('@podkit/core'),
     signal?: AbortSignal
   ) {
-    const config = contentConfig as VideoContentConfig;
     let videoCompleted = 0;
     let lastIndex = -1;
     const videoDisplay = new DualProgressDisplay((content) => out.raw(content));
 
-    const handler = core.createVideoHandler({
-      videoQuality: config.effectiveVideoQuality,
-    });
-
-    const videoExecutor = core.createSyncExecutor(handler);
+    const videoExecutor = core.createSyncExecutor(this.handler!);
 
     let displayCount = 0;
 
@@ -360,7 +371,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
           });
           videoDisplay.update(overallLine, currentLine);
         } else {
-          const displayName = handler.getDisplayName(progress.operation);
+          const displayName = this.handler!.getDisplayName(progress.operation);
           const phaseStr = progress.phase.replace('video-', '');
           const phaseFormatted =
             phaseStr === 'updating-metadata'
