@@ -87,6 +87,6 @@ interface ContentTypeHandler<TSource, TDevice> {
 
 **Core types:** `packages/podkit-core/src/sync/types.ts`
 **Music pipeline:** `differ.ts`, `planner.ts`, `executor.ts`, `matching.ts`
-**Video pipeline:** `video-differ.ts`, `video-planner.ts`, `video-executor.ts`
+**Video pipeline:** `video-types.ts`, `video-planner.ts`, `video-executor.ts`
 **Adapters:** `packages/podkit-core/src/adapters/interface.ts`, `packages/podkit-core/src/video/directory-adapter.ts`
 **CLI:** `packages/podkit-cli/src/commands/sync.ts`
