@@ -11,7 +11,7 @@
  * Minimal track interface for transforms
  *
  * Contains only the metadata fields that transforms can read and modify.
- * This allows transforms to work with both CollectionTrack and IPodTrack.
+ * This allows transforms to work with both CollectionTrack and IpodTrack.
  */
 export interface TransformableTrack {
   artist: string;

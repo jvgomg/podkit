@@ -323,7 +323,7 @@ describe('SyncExecutor integration', () => {
             operations: [
               {
                 type: 'remove',
-                // Use the actual IPodTrack from IpodDatabase - it has the remove() method
+                // Use the actual IpodTrack from IpodDatabase - it has the remove() method
                 track: savedTrack,
               },
             ],

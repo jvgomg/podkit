@@ -22,7 +22,7 @@ import {
   type Matchable,
 } from './matching.js';
 import type { CollectionTrack } from '../adapters/interface.js';
-import type { IPodTrack } from './types.js';
+import type { DeviceTrack } from '../device/adapter.js';
 
 // =============================================================================
 // Test Fixtures
@@ -55,22 +55,21 @@ function createCollectionTrack(
 }
 
 // Counter for generating unique file paths in tests
-let ipodTrackPathCounter = 0;
+let deviceTrackPathCounter = 0;
 
 /**
- * Create a minimal IPodTrack for testing.
- * The new IPodTrack interface from ipod/types.js includes methods and more fields.
+ * Create a minimal DeviceTrack for testing.
  * Each track gets a unique filePath which serves as its identifier.
  */
-function createIPodTrack(
+function createDeviceTrack(
   artist: string,
   title: string,
   album: string,
   filePath?: string
-): IPodTrack {
+): DeviceTrack {
   // Generate unique filePath if not provided
-  const uniquePath = filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
-  const track: IPodTrack = {
+  const uniquePath = filePath ?? `Music/TRACK${deviceTrackPathCounter++}.m4a`;
+  const track: DeviceTrack = {
     artist,
     title,
     album,
@@ -81,13 +80,6 @@ function createIPodTrack(
     size: 5000000,
     mediaType: 1, // Audio
     filePath: uniquePath,
-    timeAdded: Math.floor(Date.now() / 1000),
-    timeModified: Math.floor(Date.now() / 1000),
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
     hasArtwork: false,
     hasFile: true,
     compilation: false,
@@ -798,33 +790,33 @@ describe('findMatches', () => {
       createCollectionTrack('Artist 2', 'Song 2', 'Album 2'),
     ];
 
-    const ipodTracks = [
-      createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
-      createIPodTrack('Artist 3', 'Song 3', 'Album 3'),
+    const deviceTracks = [
+      createDeviceTrack('Artist 1', 'Song 1', 'Album 1'),
+      createDeviceTrack('Artist 3', 'Song 3', 'Album 3'),
     ];
 
-    const results = findMatches(collectionTracks, ipodTracks);
+    const results = findMatches(collectionTracks, deviceTracks);
 
     expect(results).toHaveLength(2);
     expect(results[0]!.matched).toBe(true);
-    expect(results[0]!.ipodTrack).not.toBeNull();
+    expect(results[0]!.deviceTrack).not.toBeNull();
     expect(results[1]!.matched).toBe(false);
-    expect(results[1]!.ipodTrack).toBeNull();
+    expect(results[1]!.deviceTrack).toBeNull();
   });
 
   it('matches tracks with normalization', () => {
     const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
+    const deviceTracks = [createDeviceTrack('the beatles', 'hey jude', 'past masters')];
 
-    const results = findMatches(collectionTracks, ipodTracks);
+    const results = findMatches(collectionTracks, deviceTracks);
 
     expect(results[0]!.matched).toBe(true);
   });
 
   it('handles empty collections', () => {
     expect(findMatches([], [])).toEqual([]);
-    expect(findMatches([], [createIPodTrack('A', 'B', 'C')])).toEqual([]);
+    expect(findMatches([], [createDeviceTrack('A', 'B', 'C')])).toEqual([]);
 
     const results = findMatches([createCollectionTrack('A', 'B', 'C')], []);
     expect(results).toHaveLength(1);
@@ -837,12 +829,12 @@ describe('findMatches', () => {
       createCollectionTrack('Artist', 'Song 2', 'Album'),
     ];
 
-    const ipodTracks = [
-      createIPodTrack('Artist', 'Song 1', 'Album'),
-      createIPodTrack('Artist', 'Song 2', 'Album'),
+    const deviceTracks = [
+      createDeviceTrack('Artist', 'Song 1', 'Album'),
+      createDeviceTrack('Artist', 'Song 2', 'Album'),
     ];
 
-    const results = findMatches(collectionTracks, ipodTracks);
+    const results = findMatches(collectionTracks, deviceTracks);
 
     expect(results.every((r) => r.matched)).toBe(true);
   });
@@ -850,9 +842,9 @@ describe('findMatches', () => {
   it('handles no matches', () => {
     const collectionTracks = [createCollectionTrack('Artist 1', 'Song 1', 'Album 1')];
 
-    const ipodTracks = [createIPodTrack('Artist 2', 'Song 2', 'Album 2')];
+    const deviceTracks = [createDeviceTrack('Artist 2', 'Song 2', 'Album 2')];
 
-    const results = findMatches(collectionTracks, ipodTracks);
+    const results = findMatches(collectionTracks, deviceTracks);
 
     expect(results.every((r) => !r.matched)).toBe(true);
   });
@@ -863,46 +855,46 @@ describe('findMatches', () => {
 // =============================================================================
 
 describe('findOrphanedTracks', () => {
-  it('finds tracks on iPod not in collection', () => {
+  it('finds tracks on device not in collection', () => {
     const collectionTracks = [createCollectionTrack('Artist 1', 'Song 1', 'Album 1')];
 
-    const ipodTracks = [
-      createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
-      createIPodTrack('Artist 2', 'Song 2', 'Album 2'), // orphan
-      createIPodTrack('Artist 3', 'Song 3', 'Album 3'), // orphan
+    const deviceTracks = [
+      createDeviceTrack('Artist 1', 'Song 1', 'Album 1'),
+      createDeviceTrack('Artist 2', 'Song 2', 'Album 2'), // orphan
+      createDeviceTrack('Artist 3', 'Song 3', 'Album 3'), // orphan
     ];
 
-    const orphans = findOrphanedTracks(collectionTracks, ipodTracks);
+    const orphans = findOrphanedTracks(collectionTracks, deviceTracks);
 
     expect(orphans).toHaveLength(2);
     expect(orphans[0]!.artist).toBe('Artist 2');
     expect(orphans[1]!.artist).toBe('Artist 3');
   });
 
-  it('returns empty array when all iPod tracks are in collection', () => {
+  it('returns empty array when all device tracks are in collection', () => {
     const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
-    const ipodTracks = [createIPodTrack('Artist', 'Song', 'Album')];
+    const deviceTracks = [createDeviceTrack('Artist', 'Song', 'Album')];
 
-    const orphans = findOrphanedTracks(collectionTracks, ipodTracks);
+    const orphans = findOrphanedTracks(collectionTracks, deviceTracks);
 
     expect(orphans).toHaveLength(0);
   });
 
-  it('returns all iPod tracks when collection is empty', () => {
+  it('returns all device tracks when collection is empty', () => {
     const collectionTracks: CollectionTrack[] = [];
 
-    const ipodTracks = [
-      createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
-      createIPodTrack('Artist 2', 'Song 2', 'Album 2'),
+    const deviceTracks = [
+      createDeviceTrack('Artist 1', 'Song 1', 'Album 1'),
+      createDeviceTrack('Artist 2', 'Song 2', 'Album 2'),
     ];
 
-    const orphans = findOrphanedTracks(collectionTracks, ipodTracks);
+    const orphans = findOrphanedTracks(collectionTracks, deviceTracks);
 
     expect(orphans).toHaveLength(2);
   });
 
-  it('handles empty iPod', () => {
+  it('handles empty device', () => {
     const collectionTracks = [createCollectionTrack('Artist', 'Song', 'Album')];
 
     const orphans = findOrphanedTracks(collectionTracks, []);
@@ -913,9 +905,9 @@ describe('findOrphanedTracks', () => {
   it('matches with normalization', () => {
     const collectionTracks = [createCollectionTrack('THE BEATLES', 'HEY JUDE', 'PAST MASTERS')];
 
-    const ipodTracks = [createIPodTrack('the beatles', 'hey jude', 'past masters')];
+    const deviceTracks = [createDeviceTrack('the beatles', 'hey jude', 'past masters')];
 
-    const orphans = findOrphanedTracks(collectionTracks, ipodTracks);
+    const orphans = findOrphanedTracks(collectionTracks, deviceTracks);
 
     expect(orphans).toHaveLength(0);
   });

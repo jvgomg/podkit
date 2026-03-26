@@ -68,7 +68,7 @@ describe('sync command integration', () => {
       // Open iPod and get tracks using IpodDatabase
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         const diff = computeDiff(collectionTracks, ipodTracks);
@@ -95,7 +95,7 @@ describe('sync command integration', () => {
       // Open iPod and get tracks using IpodDatabase
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         const diff = computeDiff(collectionTracks, ipodTracks);
@@ -125,7 +125,7 @@ describe('sync command integration', () => {
 
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
@@ -149,7 +149,7 @@ describe('sync command integration', () => {
 
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IPodTrack[] directly
+        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff

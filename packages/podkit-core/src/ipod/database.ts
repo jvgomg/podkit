@@ -8,7 +8,7 @@
 
 import { Database, type TrackHandle, type Playlist } from '@podkit/libgpod-node';
 import type {
-  IPodTrack,
+  IpodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
@@ -58,7 +58,7 @@ import * as fs from 'node:fs';
 export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInternal {
   private db: Database;
   private _mountPoint: string;
-  private trackHandles = new WeakMap<IPodTrack, TrackHandle>();
+  private trackHandles = new WeakMap<IpodTrack, TrackHandle>();
   private playlistIds = new WeakMap<IpodPlaylist, bigint>();
   private _closed = false;
 
@@ -188,13 +188,13 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   }
 
   /**
-   * Gets the TrackHandle for an IPodTrack.
+   * Gets the TrackHandle for an IpodTrack.
    *
    * @param track - The track to get the handle for
    * @returns The underlying TrackHandle
    * @throws {IpodError} If the track is not known to this database (code: TRACK_REMOVED)
    */
-  private getTrackHandle(track: IPodTrack): TrackHandle {
+  private getTrackHandle(track: IpodTrack): TrackHandle {
     const handle = this.trackHandles.get(track);
     if (!handle) {
       throw new IpodError('Unknown track', 'TRACK_REMOVED');
@@ -218,12 +218,12 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   }
 
   /**
-   * Creates an IPodTrack from a TrackHandle.
+   * Creates an IpodTrack from a TrackHandle.
    *
    * @param handle - The TrackHandle from libgpod-node
    * @returns A new IpodTrackImpl instance
    */
-  private createTrackFromHandle(handle: TrackHandle): IPodTrack {
+  private createTrackFromHandle(handle: TrackHandle): IpodTrack {
     const data = this.db.getTrack(handle);
     const track = new IpodTrackImpl(this, handle, data);
     this.trackHandles.set(track, handle);
@@ -333,7 +333,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
   /**
    * Gets all tracks in the database.
    *
-   * @returns Array of IPodTrack objects
+   * @returns Array of IpodTrack objects
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    *
    * @example
@@ -343,7 +343,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * }
    * ```
    */
-  getTracks(): IPodTrack[] {
+  getTracks(): IpodTrack[] {
     this.assertOpen();
     return this.db.getTracks().map((handle) => this.createTrackFromHandle(handle));
   }
@@ -370,7 +370,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * track.copyFile('/path/to/song.mp3');
    * ```
    */
-  addTrack(input: TrackInput): IPodTrack {
+  addTrack(input: TrackInput): IpodTrack {
     this.assertOpen();
     const handle = this.db.addTrack(input);
     return this.createTrackFromHandle(handle);
@@ -381,11 +381,11 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @param track - The track to update
    * @param fields - Fields to update
-   * @returns A new IPodTrack snapshot with updated values
+   * @returns A new IpodTrack snapshot with updated values
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  updateTrack(track: IPodTrack, fields: TrackFields): IPodTrack {
+  updateTrack(track: IpodTrack, fields: TrackFields): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
     this.db.updateTrack(handle, fields);
@@ -412,7 +412,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * }
    * ```
    */
-  removeTrack(track: IPodTrack, options?: { deleteFile?: boolean }): RemoveTrackResult {
+  removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): RemoveTrackResult {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -532,13 +532,13 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @param track - The track to copy the file for
    * @param sourcePath - Path to the source audio file
-   * @returns A new IPodTrack snapshot with hasFile: true
+   * @returns A new IpodTrack snapshot with hasFile: true
    * @throws {IpodError} If the source file is not found (code: FILE_NOT_FOUND)
    * @throws {IpodError} If the copy operation fails (code: COPY_FAILED)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  copyFileToTrack(track: IPodTrack, sourcePath: string): IPodTrack {
+  copyFileToTrack(track: IpodTrack, sourcePath: string): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -567,7 +567,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @param track - The track to replace the file for
    * @param newFilePath - Path to the new audio file
-   * @returns A new IPodTrack snapshot with updated file info
+   * @returns A new IpodTrack snapshot with updated file info
    * @throws {IpodError} If the source file is not found (code: FILE_NOT_FOUND)
    * @throws {IpodError} If the replacement fails (code: COPY_FAILED)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
@@ -575,7 +575,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @see ADR-009 for self-healing sync design
    */
-  replaceTrackFile(track: IPodTrack, newFilePath: string): IPodTrack {
+  replaceTrackFile(track: IpodTrack, newFilePath: string): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -600,12 +600,12 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @param track - The track to set artwork for
    * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  setTrackArtwork(track: IPodTrack, imagePath: string): IPodTrack {
+  setTrackArtwork(track: IpodTrack, imagePath: string): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -623,12 +623,12 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    *
    * @param track - The track to set artwork for
    * @param imageData - Buffer containing image data (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  setTrackArtworkFromData(track: IPodTrack, imageData: Buffer): IPodTrack {
+  setTrackArtworkFromData(track: IpodTrack, imageData: Buffer): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -645,12 +645,12 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * Removes artwork from a track.
    *
    * @param track - The track to remove artwork from
-   * @returns A new IPodTrack snapshot with hasArtwork: false
+   * @returns A new IpodTrack snapshot with hasArtwork: false
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  removeTrackArtwork(track: IPodTrack): IPodTrack {
+  removeTrackArtwork(track: IpodTrack): IpodTrack {
     this.assertOpen();
     const handle = this.getTrackHandle(track);
 
@@ -781,7 +781,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  addTrackToPlaylist(playlist: IpodPlaylist, track: IPodTrack): IpodPlaylist {
+  addTrackToPlaylist(playlist: IpodPlaylist, track: IpodTrack): IpodPlaylist {
     this.assertOpen();
     const playlistId = this.getPlaylistId(playlist);
     const trackHandle = this.getTrackHandle(track);
@@ -801,7 +801,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  removeTrackFromPlaylist(playlist: IpodPlaylist, track: IPodTrack): IpodPlaylist {
+  removeTrackFromPlaylist(playlist: IpodPlaylist, track: IpodTrack): IpodPlaylist {
     this.assertOpen();
     const playlistId = this.getPlaylistId(playlist);
     const trackHandle = this.getTrackHandle(track);
@@ -817,7 +817,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * @throws {IpodError} If the playlist is unknown (code: PLAYLIST_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  getPlaylistTracks(playlist: IpodPlaylist): IPodTrack[] {
+  getPlaylistTracks(playlist: IpodPlaylist): IpodTrack[] {
     this.assertOpen();
     const playlistId = this.getPlaylistId(playlist);
     return this.db
@@ -835,7 +835,7 @@ export class IpodDatabase implements IpodDatabaseInternal, PlaylistDatabaseInter
    * @throws {IpodError} If the track is unknown (code: TRACK_REMOVED)
    * @throws {IpodError} If the database is closed (code: DATABASE_CLOSED)
    */
-  playlistContainsTrack(playlist: IpodPlaylist, track: IPodTrack): boolean {
+  playlistContainsTrack(playlist: IpodPlaylist, track: IpodTrack): boolean {
     this.assertOpen();
     const playlistId = this.getPlaylistId(playlist);
     const trackHandle = this.getTrackHandle(track);

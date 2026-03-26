@@ -12,12 +12,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { orphanFilesCheck } from './orphans.js';
 import type { DiagnosticContext, RepairContext } from '../types.js';
-import type { IPodTrack } from '../../ipod/types.js';
+import type { IpodTrack } from '../../ipod/types.js';
 import type { IpodDatabase } from '../../ipod/database.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeTrack(filePath: string): IPodTrack {
+function makeTrack(filePath: string): IpodTrack {
   return {
     title: 'Test Track',
     artist: 'Test Artist',
@@ -39,26 +39,26 @@ function makeTrack(filePath: string): IPodTrack {
     hasArtwork: false,
     hasFile: true,
     compilation: false,
-    update: mock(() => ({}) as IPodTrack),
+    update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IPodTrack),
-    setArtwork: mock(() => ({}) as IPodTrack),
-    setArtworkFromData: mock(() => ({}) as IPodTrack),
-    removeArtwork: mock(() => ({}) as IPodTrack),
-  } as IPodTrack;
+    copyFile: mock(() => ({}) as IpodTrack),
+    setArtwork: mock(() => ({}) as IpodTrack),
+    setArtworkFromData: mock(() => ({}) as IpodTrack),
+    removeArtwork: mock(() => ({}) as IpodTrack),
+  } as IpodTrack;
 }
 
-function makeMockDb(tracks: IPodTrack[]): IpodDatabase {
+function makeMockDb(tracks: IpodTrack[]): IpodDatabase {
   return {
     getTracks: () => tracks,
   } as unknown as IpodDatabase;
 }
 
-function makeCtx(mountPoint: string, tracks: IPodTrack[]): DiagnosticContext {
+function makeCtx(mountPoint: string, tracks: IpodTrack[]): DiagnosticContext {
   return { mountPoint, db: makeMockDb(tracks) };
 }
 
-function makeRepairCtx(mountPoint: string, tracks: IPodTrack[]): RepairContext {
+function makeRepairCtx(mountPoint: string, tracks: IpodTrack[]): RepairContext {
   return { mountPoint, db: makeMockDb(tracks), adapters: [] };
 }
 

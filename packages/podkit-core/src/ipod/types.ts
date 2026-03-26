@@ -197,7 +197,7 @@ export interface TrackFields {
  * itself identifies which track to operate on.
  *
  * Operations that modify the track (like `update()` or `copyFile()`) return
- * a new IPodTrack snapshot reflecting the changes.
+ * a new IpodTrack snapshot reflecting the changes.
  *
  * @example
  * ```typescript
@@ -218,7 +218,7 @@ export interface TrackFields {
  *     .setArtwork('/path/to/cover.jpg');
  * ```
  */
-export interface IPodTrack extends DeviceTrack {
+export interface IpodTrack extends DeviceTrack {
   // Core metadata (read-only snapshot)
   /** Track title */
   readonly title: string;
@@ -321,10 +321,10 @@ export interface IPodTrack extends DeviceTrack {
    * Updates track metadata.
    *
    * @param fields - Fields to update
-   * @returns A new IPodTrack snapshot with updated values
+   * @returns A new IpodTrack snapshot with updated values
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    */
-  update(fields: TrackFields): IPodTrack;
+  update(fields: TrackFields): IpodTrack;
 
   /**
    * Removes the track from the iPod database and deletes its file from disk.
@@ -342,37 +342,37 @@ export interface IPodTrack extends DeviceTrack {
    * Copies an audio file to the iPod for this track.
    *
    * @param sourcePath - Path to the source audio file
-   * @returns A new IPodTrack snapshot with hasFile: true
+   * @returns A new IpodTrack snapshot with hasFile: true
    * @throws {IpodError} If the source file is not found (code: FILE_NOT_FOUND)
    * @throws {IpodError} If the copy operation fails (code: COPY_FAILED)
    */
-  copyFile(sourcePath: string): IPodTrack;
+  copyFile(sourcePath: string): IpodTrack;
 
   /**
    * Sets artwork for the track from an image file.
    *
    * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  setArtwork(imagePath: string): IPodTrack;
+  setArtwork(imagePath: string): IpodTrack;
 
   /**
    * Sets artwork for the track from image data.
    *
    * @param imageData - Buffer containing image data (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  setArtworkFromData(imageData: Buffer): IPodTrack;
+  setArtworkFromData(imageData: Buffer): IpodTrack;
 
   /**
    * Removes artwork from the track.
    *
-   * @returns A new IPodTrack snapshot with hasArtwork: false
+   * @returns A new IpodTrack snapshot with hasArtwork: false
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  removeArtwork(): IPodTrack;
+  removeArtwork(): IpodTrack;
 }
 
 /**
@@ -440,7 +440,7 @@ export interface IpodPlaylist {
    * @returns Array of tracks in playlist order
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  getTracks(): IPodTrack[];
+  getTracks(): IpodTrack[];
 
   /**
    * Adds a track to the playlist.
@@ -449,7 +449,7 @@ export interface IpodPlaylist {
    * @returns A new IpodPlaylist snapshot with the track added
    * @throws {IpodError} If the playlist or track has been removed
    */
-  addTrack(track: IPodTrack): IpodPlaylist;
+  addTrack(track: IpodTrack): IpodPlaylist;
 
   /**
    * Removes a track from the playlist.
@@ -460,7 +460,7 @@ export interface IpodPlaylist {
    * @returns A new IpodPlaylist snapshot with the track removed
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  removeTrack(track: IPodTrack): IpodPlaylist;
+  removeTrack(track: IpodTrack): IpodPlaylist;
 
   /**
    * Checks if a track is in this playlist.
@@ -469,7 +469,7 @@ export interface IpodPlaylist {
    * @returns true if the track is in the playlist
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  containsTrack(track: IPodTrack): boolean;
+  containsTrack(track: IpodTrack): boolean;
 }
 
 /**

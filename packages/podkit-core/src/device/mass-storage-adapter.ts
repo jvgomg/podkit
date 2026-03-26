@@ -219,7 +219,7 @@ export class MassStorageTrack implements DeviceTrack {
    * directly — the adapter intercepts comment changes and queues them
    * for persistence via the tag writer during save().
    */
-  update(fields: DeviceTrackMetadata): DeviceTrack {
+  update(fields: DeviceTrackMetadata): MassStorageTrack {
     return new MassStorageTrack({
       mountPoint: this.mountPoint,
       filePath: this.filePath,
@@ -287,7 +287,7 @@ export class MassStorageTrack implements DeviceTrack {
    * Copy a source file to this track's allocated path on the device.
    * Creates parent directories if needed.
    */
-  copyFile(sourcePath: string): DeviceTrack {
+  copyFile(sourcePath: string): MassStorageTrack {
     const absolutePath = path.join(this.mountPoint, this.filePath);
     const dir = path.dirname(absolutePath);
 
@@ -336,7 +336,7 @@ export class MassStorageTrack implements DeviceTrack {
    * stores artwork in a separate database, mass-storage devices read
    * artwork directly from embedded tags.
    */
-  setArtwork(_imagePath: string): DeviceTrack {
+  setArtwork(_imagePath: string): MassStorageTrack {
     return this;
   }
 
@@ -345,7 +345,7 @@ export class MassStorageTrack implements DeviceTrack {
    *
    * No-op — see setArtwork() for rationale.
    */
-  setArtworkFromData(_imageData: Buffer): DeviceTrack {
+  setArtworkFromData(_imageData: Buffer): MassStorageTrack {
     return this;
   }
 
@@ -357,7 +357,7 @@ export class MassStorageTrack implements DeviceTrack {
    * For devices that could benefit from stripping (e.g., sidecar-artwork
    * devices in optimized mode), this would require tag rewriting.
    */
-  removeArtwork(): DeviceTrack {
+  removeArtwork(): MassStorageTrack {
     return this;
   }
 }
@@ -373,7 +373,7 @@ export class MassStorageTrack implements DeviceTrack {
  * the async filesystem scan and caches the track list so that `getTracks()`
  * can be synchronous (matching the DeviceAdapter interface contract).
  */
-export class MassStorageAdapter implements DeviceAdapter {
+export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   readonly capabilities: DeviceCapabilities;
   readonly mountPoint: string;
 
@@ -427,11 +427,11 @@ export class MassStorageAdapter implements DeviceAdapter {
   // Track lifecycle
   // ---------------------------------------------------------------------------
 
-  getTracks(): DeviceTrack[] {
+  getTracks(): MassStorageTrack[] {
     return this.tracks;
   }
 
-  addTrack(input: DeviceTrackInput): DeviceTrack {
+  addTrack(input: DeviceTrackInput): MassStorageTrack {
     const ext = input.filetype ? `.${input.filetype}` : '.mp3';
 
     // Route video tracks to Video/ directory, music to Music/
@@ -501,13 +501,13 @@ export class MassStorageAdapter implements DeviceAdapter {
     return track;
   }
 
-  updateTrack(track: DeviceTrack, fields: DeviceTrackMetadata): DeviceTrack {
+  updateTrack(track: MassStorageTrack, fields: DeviceTrackMetadata): MassStorageTrack {
     const updated = track.update(fields);
 
     // Replace in our track list
     const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
     if (index >= 0) {
-      this.tracks[index] = updated as MassStorageTrack;
+      this.tracks[index] = updated;
     }
 
     // Queue comment tag write if the comment changed
@@ -518,26 +518,25 @@ export class MassStorageAdapter implements DeviceAdapter {
     return updated;
   }
 
-  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack {
+  copyTrackFile(track: MassStorageTrack, sourcePath: string): MassStorageTrack {
     const updated = track.copyFile(sourcePath);
 
     // Replace in our track list (copyFile returns a new instance with hasFile/size updated)
     const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
     if (index >= 0) {
-      this.tracks[index] = updated as MassStorageTrack;
+      this.tracks[index] = updated;
     }
 
     return updated;
   }
 
-  removeTrack(track: DeviceTrack, options?: { deleteFile?: boolean }): void {
-    const msTrack = track as MassStorageTrack;
+  removeTrack(track: MassStorageTrack, options?: { deleteFile?: boolean }): void {
     const deleteFile = options?.deleteFile ?? true;
 
     // Only delete files that podkit manages
-    if (deleteFile && msTrack.managed) {
-      msTrack.remove();
-      this.managedFiles.delete(msTrack.filePath);
+    if (deleteFile && track.managed) {
+      track.remove();
+      this.managedFiles.delete(track.filePath);
     }
 
     // Remove from track list
@@ -549,15 +548,14 @@ export class MassStorageAdapter implements DeviceAdapter {
     this.allocatedPaths.delete(track.filePath);
   }
 
-  removeTrackArtwork(track: DeviceTrack): DeviceTrack {
+  removeTrackArtwork(track: MassStorageTrack): MassStorageTrack {
     // No-op — mass-storage devices with embedded artwork need it kept.
     // Delegates to the track's removeArtwork() which is also a no-op.
     return track.removeArtwork();
   }
 
-  replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack {
-    const msTrack = track as MassStorageTrack;
-    const absolutePath = path.join(this.mountPoint, msTrack.filePath);
+  replaceTrackFile(track: MassStorageTrack, newFilePath: string): MassStorageTrack {
+    const absolutePath = path.join(this.mountPoint, track.filePath);
 
     // Copy the new file over the existing one
     const dir = path.dirname(absolutePath);
@@ -572,29 +570,29 @@ export class MassStorageAdapter implements DeviceAdapter {
 
     const updated = new MassStorageTrack({
       mountPoint: this.mountPoint,
-      filePath: msTrack.filePath,
-      title: msTrack.title,
-      artist: msTrack.artist,
-      album: msTrack.album,
-      albumArtist: msTrack.albumArtist,
-      genre: msTrack.genre,
-      composer: msTrack.composer,
-      comment: msTrack.comment,
-      trackNumber: msTrack.trackNumber,
-      discNumber: msTrack.discNumber,
-      totalDiscs: msTrack.totalDiscs,
-      year: msTrack.year,
-      duration: msTrack.duration,
-      bitrate: msTrack.bitrate,
-      sampleRate: msTrack.sampleRate,
+      filePath: track.filePath,
+      title: track.title,
+      artist: track.artist,
+      album: track.album,
+      albumArtist: track.albumArtist,
+      genre: track.genre,
+      composer: track.composer,
+      comment: track.comment,
+      trackNumber: track.trackNumber,
+      discNumber: track.discNumber,
+      totalDiscs: track.totalDiscs,
+      year: track.year,
+      duration: track.duration,
+      bitrate: track.bitrate,
+      sampleRate: track.sampleRate,
       size: stats.size,
-      filetype: newExt || msTrack.filetype,
-      soundcheck: msTrack.soundcheck,
-      hasArtwork: msTrack.hasArtwork,
+      filetype: newExt || track.filetype,
+      soundcheck: track.soundcheck,
+      hasArtwork: track.hasArtwork,
       hasFile: true,
-      compilation: msTrack.compilation,
-      mediaType: msTrack.mediaType,
-      managed: msTrack.managed,
+      compilation: track.compilation,
+      mediaType: track.mediaType,
+      managed: track.managed,
     });
 
     // Replace in our track list
@@ -606,8 +604,8 @@ export class MassStorageAdapter implements DeviceAdapter {
     // The new file doesn't have the old track's comment tag. Queue a write
     // to restore it — if the executor sets a new sync tag via updateTrack()
     // before save(), that will overwrite this entry in the pending map.
-    if (msTrack.comment) {
-      this.pendingCommentWrites.set(msTrack.filePath, msTrack.comment);
+    if (track.comment) {
+      this.pendingCommentWrites.set(track.filePath, track.comment);
     }
 
     return updated;
@@ -617,9 +615,8 @@ export class MassStorageAdapter implements DeviceAdapter {
   // Sync tags
   // ---------------------------------------------------------------------------
 
-  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack {
-    const msTrack = track as MassStorageTrack;
-    const currentComment = msTrack.comment;
+  writeSyncTag(track: MassStorageTrack, update: SyncTagUpdate): MassStorageTrack {
+    const currentComment = track.comment;
     const existingTag = parseSyncTag(currentComment);
     // Merge: existing tag fields + update fields (update wins)
     const merged: SyncTagData = existingTag
@@ -629,9 +626,8 @@ export class MassStorageAdapter implements DeviceAdapter {
     return this.updateTrack(track, { comment: newComment });
   }
 
-  clearSyncTag(track: DeviceTrack): DeviceTrack {
-    const msTrack = track as MassStorageTrack;
-    const currentComment = msTrack.comment;
+  clearSyncTag(track: MassStorageTrack): MassStorageTrack {
+    const currentComment = track.comment;
     if (!parseSyncTag(currentComment)) {
       return track; // No sync tag to clear
     }

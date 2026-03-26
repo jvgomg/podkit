@@ -22,7 +22,7 @@
  */
 
 import type { CollectionTrack } from '../adapters/interface.js';
-import type { IPodTrack } from './types.js';
+import type { DeviceTrack } from '../device/adapter.js';
 import type { TransformsConfig } from '../transforms/types.js';
 import { applyTransforms } from '../transforms/pipeline.js';
 
@@ -216,13 +216,13 @@ export function tracksMatch(trackA: Matchable, trackB: Matchable): boolean {
 }
 
 /**
- * Result of matching a collection track to iPod tracks
+ * Result of matching a collection track to device tracks
  */
 export interface MatchResult {
   /** The collection track being matched */
   collectionTrack: CollectionTrack;
-  /** The matching iPod track, if found */
-  ipodTrack: IPodTrack | null;
+  /** The matching device track, if found */
+  deviceTrack: DeviceTrack | null;
   /** Whether a match was found */
   matched: boolean;
 }
@@ -250,29 +250,29 @@ export function buildMatchIndex<T extends Matchable>(tracks: T[]): Map<string, T
 }
 
 /**
- * Find matches between collection tracks and iPod tracks
+ * Find matches between collection tracks and device tracks
  *
- * Returns which collection tracks have matches on the iPod and which don't.
+ * Returns which collection tracks have matches on the device and which don't.
  *
  * @param collectionTracks - Tracks from the collection source
- * @param ipodTracks - Tracks currently on the iPod
+ * @param deviceTracks - Tracks currently on the device
  * @returns Array of match results
  */
 export function findMatches(
   collectionTracks: CollectionTrack[],
-  ipodTracks: IPodTrack[]
+  deviceTracks: DeviceTrack[]
 ): MatchResult[] {
-  const ipodIndex = buildMatchIndex(ipodTracks);
+  const deviceIndex = buildMatchIndex(deviceTracks);
   const results: MatchResult[] = [];
 
   for (const collectionTrack of collectionTracks) {
     const key = getMatchKey(collectionTrack);
-    const ipodTrack = ipodIndex.get(key) ?? null;
+    const deviceTrack = deviceIndex.get(key) ?? null;
 
     results.push({
       collectionTrack,
-      ipodTrack,
-      matched: ipodTrack !== null,
+      deviceTrack,
+      matched: deviceTrack !== null,
     });
   }
 
@@ -280,25 +280,25 @@ export function findMatches(
 }
 
 /**
- * Get tracks from the iPod that don't exist in the collection
+ * Get tracks from the device that don't exist in the collection
  *
  * These are candidates for removal during sync.
  *
  * @param collectionTracks - Tracks from the collection source
- * @param ipodTracks - Tracks currently on the iPod
- * @returns iPod tracks that have no match in the collection
+ * @param deviceTracks - Tracks currently on the device
+ * @returns Device tracks that have no match in the collection
  */
 export function findOrphanedTracks(
   collectionTracks: CollectionTrack[],
-  ipodTracks: IPodTrack[]
-): IPodTrack[] {
+  deviceTracks: DeviceTrack[]
+): DeviceTrack[] {
   const collectionIndex = buildMatchIndex(collectionTracks);
-  const orphaned: IPodTrack[] = [];
+  const orphaned: DeviceTrack[] = [];
 
-  for (const ipodTrack of ipodTracks) {
-    const key = getMatchKey(ipodTrack);
+  for (const deviceTrack of deviceTracks) {
+    const key = getMatchKey(deviceTrack);
     if (!collectionIndex.has(key)) {
-      orphaned.push(ipodTrack);
+      orphaned.push(deviceTrack);
     }
   }
 

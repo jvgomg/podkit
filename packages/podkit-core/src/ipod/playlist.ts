@@ -6,7 +6,7 @@
  */
 
 import type { Playlist } from '@podkit/libgpod-node';
-import type { IpodPlaylist, IPodTrack } from './types.js';
+import type { IpodPlaylist, IpodTrack } from './types.js';
 import { IpodError } from './errors.js';
 
 /**
@@ -19,10 +19,10 @@ import { IpodError } from './errors.js';
 export interface PlaylistDatabaseInternal {
   renamePlaylist(playlist: IpodPlaylist, newName: string): IpodPlaylist;
   removePlaylist(playlist: IpodPlaylist): void;
-  getPlaylistTracks(playlist: IpodPlaylist): IPodTrack[];
-  addTrackToPlaylist(playlist: IpodPlaylist, track: IPodTrack): IpodPlaylist;
-  removeTrackFromPlaylist(playlist: IpodPlaylist, track: IPodTrack): IpodPlaylist;
-  playlistContainsTrack(playlist: IpodPlaylist, track: IPodTrack): boolean;
+  getPlaylistTracks(playlist: IpodPlaylist): IpodTrack[];
+  addTrackToPlaylist(playlist: IpodPlaylist, track: IpodTrack): IpodPlaylist;
+  removeTrackFromPlaylist(playlist: IpodPlaylist, track: IpodTrack): IpodPlaylist;
+  playlistContainsTrack(playlist: IpodPlaylist, track: IpodTrack): boolean;
 }
 
 /**
@@ -155,7 +155,7 @@ export class IpodPlaylistImpl implements IpodPlaylist {
    * @returns Array of tracks in playlist order
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  getTracks(): IPodTrack[] {
+  getTracks(): IpodTrack[] {
     this.assertNotRemoved();
     return this._db.getPlaylistTracks(this);
   }
@@ -167,7 +167,7 @@ export class IpodPlaylistImpl implements IpodPlaylist {
    * @returns A new IpodPlaylist snapshot with the track added
    * @throws {IpodError} If the playlist or track has been removed
    */
-  addTrack(track: IPodTrack): IpodPlaylist {
+  addTrack(track: IpodTrack): IpodPlaylist {
     this.assertNotRemoved();
     return this._db.addTrackToPlaylist(this, track);
   }
@@ -181,7 +181,7 @@ export class IpodPlaylistImpl implements IpodPlaylist {
    * @returns A new IpodPlaylist snapshot with the track removed
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  removeTrack(track: IPodTrack): IpodPlaylist {
+  removeTrack(track: IpodTrack): IpodPlaylist {
     this.assertNotRemoved();
     return this._db.removeTrackFromPlaylist(this, track);
   }
@@ -193,7 +193,7 @@ export class IpodPlaylistImpl implements IpodPlaylist {
    * @returns true if the track is in the playlist
    * @throws {IpodError} If the playlist has been removed (code: PLAYLIST_REMOVED)
    */
-  containsTrack(track: IPodTrack): boolean {
+  containsTrack(track: IpodTrack): boolean {
     this.assertNotRemoved();
     return this._db.playlistContainsTrack(this, track);
   }
