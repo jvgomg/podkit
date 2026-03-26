@@ -222,10 +222,9 @@ To set up shell completions for the dev binary, add to your `~/.zshrc`:
 
 ```bash
 source <(podkit-dev completions zsh --cmd podkit-dev)
-compdef _podkit podkit-dev
 ```
 
-This gives you full tab completion including dynamic values (device names, collection names from your config). The `--cmd podkit-dev` flag tells the completion script to use the dev binary for dynamic lookups.
+This gives you full tab completion including dynamic values (device names, collection names from your config). The `--cmd podkit-dev` flag gives the dev binary its own completion namespace so it doesn't conflict with a production `podkit` install.
 
 To remove the dev binary:
 

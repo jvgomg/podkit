@@ -53,7 +53,7 @@ trap cleanup EXIT
 
 # Compile the CLI binary
 cd "$CLI_DIR"
-VERSION=$(bun -e "console.log(require('./package.json').version)")
+VERSION="${PODKIT_VERSION_OVERRIDE:-$(bun -e "console.log(require('./package.json').version)")}"
 bun build --compile src/compile-entry.js --outfile bin/podkit --define "PODKIT_VERSION='$VERSION'"
 
 echo "Compiled: bin/podkit (v$VERSION)"

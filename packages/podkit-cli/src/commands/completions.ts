@@ -22,6 +22,39 @@ import { DEFAULT_CONFIG_PATH } from '../config/index.js';
 /** Marker comment used to identify the completions line in shell config files */
 const CONFIG_MARKER = '# podkit shell completions';
 
+/**
+ * Derive the shell function prefix from the invoke command.
+ * Uses the last word as the binary name so multi-word commands like
+ * "bun run podkit" still produce _podkit, while "podkit-dev" produces _podkit_dev.
+ *
+ * Examples:
+ *   'podkit'         → '_podkit'
+ *   'podkit-dev'     → '_podkit_dev'
+ *   'bun run podkit' → '_podkit'
+ */
+function funcPrefixFromCmd(invokeCmd: string): string {
+  const lastWord = invokeCmd.trim().split(/\s+/).at(-1) ?? 'podkit';
+  return '_' + path.basename(lastWord).replace(/-/g, '_');
+}
+
+/** Extract the binary name from an invoke command (last word, basename only). */
+function binaryFromCmd(invokeCmd: string): string {
+  const lastWord = invokeCmd.trim().split(/\s+/).at(-1) ?? 'podkit';
+  return path.basename(lastWord);
+}
+
+/**
+ * Post-process a generated completion script to apply a non-default invoke command.
+ * Renames all _podkit* identifiers to the derived prefix and fixes the shell binding line.
+ */
+function applyInvokeCmd(script: string, invokeCmd: string, bindingPrefix: string): string {
+  const prefix = funcPrefixFromCmd(invokeCmd);
+  const binary = binaryFromCmd(invokeCmd);
+  return script
+    .replace(/_podkit/g, prefix)
+    .replace(`${bindingPrefix} ${prefix} podkit`, `${bindingPrefix} ${prefix} ${binary}`);
+}
+
 export interface ShellInfo {
   name: 'zsh' | 'bash';
   configFile: string;
@@ -57,7 +90,9 @@ export function buildConfigBlock(shell: ShellInfo, aliasCmd?: string, aliasName?
   const sourceLine = `source <(${quietAlias} completions ${shell.name} --cmd "${quietAlias}")`;
   const funcLine = `${name}() { ${quietAlias} "$@"; }`;
 
-  const compLine = shell.name === 'zsh' ? `compdef _podkit ${name}` : `complete -F _podkit ${name}`;
+  const aliasPrefix = funcPrefixFromCmd(quietAlias);
+  const compLine =
+    shell.name === 'zsh' ? `compdef ${aliasPrefix} ${name}` : `complete -F ${aliasPrefix} ${name}`;
 
   const lines = ['', CONFIG_MARKER, sourceLine, funcLine, compLine, ''];
 
@@ -464,7 +499,7 @@ export function generateZshCompletions(program: Command, invokeCmd = 'podkit'): 
   lines.push('compdef _podkit podkit');
   lines.push('');
 
-  return lines.join('\n');
+  return applyInvokeCmd(lines.join('\n'), invokeCmd, 'compdef');
 }
 
 export function generateBashCompletions(program: Command, invokeCmd = 'podkit'): string {
@@ -564,7 +599,7 @@ export function generateBashCompletions(program: Command, invokeCmd = 'podkit'):
   lines.push('complete -F _podkit podkit');
   lines.push('');
 
-  return lines.join('\n');
+  return applyInvokeCmd(lines.join('\n'), invokeCmd, 'complete -F');
 }
 
 function collectBashCommands(
