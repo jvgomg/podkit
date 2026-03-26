@@ -59,6 +59,7 @@ import type {
   MatchInfo,
   UnifiedSyncDiff,
 } from '../engine/content-type.js';
+import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../engine/diff-utils.js';
 
 // =============================================================================
 // Music Execution Configuration
@@ -433,14 +434,9 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       ? buildAudioSyncTag(resolvedQuality, musicOpts.encodingMode, musicOpts.customBitrate)
       : undefined;
 
-    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
-
-    for (const match of diff.existing) {
+    partitionExisting(diff, (match) => {
       // Only check lossless-source tracks (lossy are copied as-is)
-      if (!isSourceLossless(match.source)) {
-        stillExisting.push(match);
-        continue;
-      }
+      if (!isSourceLossless(match.source)) return null;
 
       // Try sync tag comparison first
       const syncTag = match.device.syncTag;
@@ -464,36 +460,26 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
         );
       }
 
-      if (presetChange) {
-        const changes: MetadataChange[] = musicOpts.isAlacPreset
-          ? [
-              {
-                field: 'lossless' as const,
-                from: String(match.device.filetype ?? 'AAC'),
-                to: 'ALAC',
-              },
-            ]
-          : [
-              {
-                field: 'bitrate' as const,
-                from: String(match.device.bitrate),
-                to: String(presetBitrate),
-              },
-            ];
+      if (!presetChange) return null;
 
-        diff.toUpdate.push({
-          source: match.source,
-          device: match.device,
-          reasons: [presetChange],
-          changes,
-        });
-      } else {
-        stillExisting.push(match);
-      }
-    }
+      const changes: MetadataChange[] = musicOpts.isAlacPreset
+        ? [
+            {
+              field: 'lossless' as const,
+              from: String(match.device.filetype ?? 'AAC'),
+              to: 'ALAC',
+            },
+          ]
+        : [
+            {
+              field: 'bitrate' as const,
+              from: String(match.device.bitrate),
+              to: String(presetBitrate),
+            },
+          ];
 
-    diff.existing.length = 0;
-    diff.existing.push(...stillExisting);
+      return { reasons: [presetChange], changes };
+    });
   }
 
   /**
@@ -507,25 +493,15 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   ): void {
     if (!options.forceTranscode) return;
 
-    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
-
-    for (const match of diff.existing) {
-      if (isSourceLossless(match.source)) {
-        diff.toUpdate.push({
-          source: match.source,
-          device: match.device,
-          reasons: ['force-transcode'],
-          changes: [
-            { field: 'bitrate', from: String(match.device.bitrate ?? 'unknown'), to: 'forced' },
-          ],
-        });
-      } else {
-        stillExisting.push(match);
-      }
-    }
-
-    diff.existing.length = 0;
-    diff.existing.push(...stillExisting);
+    partitionExisting(diff, (match) => {
+      if (!isSourceLossless(match.source)) return null;
+      return {
+        reasons: ['force-transcode'],
+        changes: [
+          { field: 'bitrate', from: String(match.device.bitrate ?? 'unknown'), to: 'forced' },
+        ],
+      };
+    });
   }
 
   /**
@@ -546,45 +522,33 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     if (!(musicOpts.forceTransferMode && musicOpts.effectiveTransferMode)) return;
 
     const targetTransferMode = musicOpts.effectiveTransferMode;
-    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
 
-    for (const match of diff.existing) {
+    partitionExisting(diff, (match) => {
       const syncTag = match.device.syncTag;
       const tagTransferMode = syncTag?.transferMode;
 
       if (tagTransferMode === targetTransferMode) {
-        stillExisting.push(match);
+        return null;
       } else if (!syncTag) {
         // No sync tag at all — can't stamp transfer mode. Treat as existing.
-        stillExisting.push(match);
+        return null;
       } else if (tagTransferMode === undefined && targetTransferMode === 'fast') {
         // Missing transfer mode + effective is 'fast': the file was already
         // transferred with fast behavior (the only behavior before transfer modes).
         // Just stamp the sync tag — no file re-transfer needed.
         const updatedTag: SyncTagData = { ...syncTag, transferMode: targetTransferMode };
-        diff.toUpdate.push({
-          source: match.source,
-          device: match.device,
-          reasons: ['sync-tag-write'],
-          changes: [],
-          syncTag: updatedTag,
-        });
+        return { reasons: ['sync-tag-write'], changes: [], syncTag: updatedTag };
       } else {
         // Transfer mode actually changed (or missing + effective is not 'fast')
         // — file needs re-processing.
-        diff.toUpdate.push({
-          source: match.source,
-          device: match.device,
+        return {
           reasons: ['transfer-mode-changed'],
           changes: [
             { field: 'transferMode', from: tagTransferMode ?? 'none', to: targetTransferMode },
           ],
-        });
+        };
       }
-    }
-
-    diff.existing.length = 0;
-    diff.existing.push(...stillExisting);
+    });
   }
 
   /**
@@ -608,9 +572,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       musicOpts.encodingMode,
       musicOpts.customBitrate
     );
-    const stillExisting: Array<{ source: CollectionTrack; device: DeviceTrack }> = [];
 
-    for (const match of diff.existing) {
+    partitionExisting(diff, (match) => {
       const sourceLossless = isSourceLossless(match.source);
 
       // For lossy (copied) sources, only process when the source has an artwork hash
@@ -629,18 +592,10 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
             const expectedTag: SyncTagData = currentTag
               ? { ...currentTag, artworkHash: match.source.artworkHash }
               : copyTag;
-            diff.toUpdate.push({
-              source: match.source,
-              device: match.device,
-              reasons: ['sync-tag-write'],
-              changes: [],
-              syncTag: expectedTag,
-            });
-            continue;
+            return { reasons: ['sync-tag-write'], changes: [], syncTag: expectedTag };
           }
         }
-        stillExisting.push(match);
-        continue;
+        return null;
       }
 
       // Include artwork hash in the expected tag when available (--check-artwork active).
@@ -657,21 +612,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       // This ensures all tags are complete and consistent.
       const currentTag = match.device.syncTag;
       if (currentTag && syncTagsEqual(currentTag, expectedTag)) {
-        stillExisting.push(match);
-        continue;
+        return null;
       }
 
-      diff.toUpdate.push({
-        source: match.source,
-        device: match.device,
-        reasons: ['sync-tag-write'],
-        changes: [],
-        syncTag: expectedTag,
-      });
-    }
-
-    diff.existing.length = 0;
-    diff.existing.push(...stillExisting);
+      return { reasons: ['sync-tag-write'], changes: [], syncTag: expectedTag };
+    });
   }
 
   /**
@@ -684,7 +629,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   ): void {
     if (!options.forceMetadata) return;
 
-    for (const match of diff.existing) {
+    sweepAllExisting(diff, 'force-metadata', (match) => {
       const { source, device } = match;
       const changes: MetadataChange[] = [];
 
@@ -724,14 +669,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
         });
       }
 
-      diff.toUpdate.push({
-        source,
-        device,
-        reasons: ['force-metadata'],
-        changes,
-      });
-    }
-    diff.existing.length = 0;
+      return { changes };
+    });
   }
 
   // ---- Planning ----
@@ -1079,50 +1018,26 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   }
 
   formatDryRun(plan: SyncPlan): DryRunSummary {
-    const operationCounts: Record<string, number> = {};
-    const operations: DryRunSummary['operations'] = [];
-    let toAdd = 0;
-    let toRemove = 0;
-    let toUpdate = 0;
-
-    for (const op of plan.operations) {
-      operationCounts[op.type] = (operationCounts[op.type] ?? 0) + 1;
-
-      if (
-        op.type === 'add-transcode' ||
-        op.type === 'add-direct-copy' ||
-        op.type === 'add-optimized-copy'
-      )
-        toAdd++;
-      else if (op.type === 'remove') toRemove++;
-      else if (
-        op.type === 'update-metadata' ||
-        op.type === 'update-sync-tag' ||
-        op.type === 'upgrade-transcode' ||
-        op.type === 'upgrade-direct-copy' ||
-        op.type === 'upgrade-optimized-copy' ||
-        op.type === 'upgrade-artwork'
-      )
-        toUpdate++;
-
-      operations.push({
-        type: op.type,
-        displayName: this.getDisplayName(op),
-        size: this.estimateSize(op),
-      });
-    }
-
-    return {
-      toAdd,
-      toRemove,
-      existing: 0, // Not available from plan alone
-      toUpdate,
-      operationCounts,
-      estimatedSize: plan.estimatedSize,
-      estimatedTime: plan.estimatedTime,
-      warnings: plan.warnings.map((w) => w.message),
-      operations,
-    };
+    return formatDryRunFromPlan(
+      plan,
+      (type) => {
+        if (type === 'add-transcode' || type === 'add-direct-copy' || type === 'add-optimized-copy')
+          return 'add';
+        if (type === 'remove') return 'remove';
+        if (
+          type === 'update-metadata' ||
+          type === 'update-sync-tag' ||
+          type === 'upgrade-transcode' ||
+          type === 'upgrade-direct-copy' ||
+          type === 'upgrade-optimized-copy' ||
+          type === 'upgrade-artwork'
+        )
+          return 'update';
+        return null;
+      },
+      (op) => this.getDisplayName(op),
+      (op) => this.estimateSize(op)
+    );
   }
 }
 
