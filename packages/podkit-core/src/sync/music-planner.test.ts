@@ -28,7 +28,7 @@ import {
   fileTypeToAudioCodec,
   getMusicPlanSummary,
   isDeviceCompatible,
-  isIPodCompatible,
+  isDefaultCompatibleFormat,
   isLosslessSource,
   requiresTranscoding,
   willMusicFitInSpace,
@@ -37,7 +37,7 @@ import {
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { AudioFileType } from '../types.js';
 import { parseSyncTag } from './sync-tags.js';
-import type { DeviceTrack, IPodTrack, SyncOperation } from './types.js';
+import type { DeviceTrack, SyncOperation } from './types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
 
 // =============================================================================
@@ -67,27 +67,26 @@ function createCollectionTrack(
 }
 
 // Counter for generating unique file paths in tests
-let ipodTrackPathCounter = 0;
+let deviceTrackPathCounter = 0;
 
 /**
  * Create a minimal DeviceTrack for testing.
  * Each track gets a unique filePath which serves as its identifier.
  */
-function createIPodTrack(
+function createDeviceTrack(
   artist: string,
   title: string,
   album: string,
   options: Partial<
     Omit<
-      IPodTrack,
+      DeviceTrack,
       'update' | 'remove' | 'copyFile' | 'setArtwork' | 'setArtworkFromData' | 'removeArtwork'
     >
   > = {}
 ): DeviceTrack {
   // Generate unique filePath if not provided
-  const uniquePath =
-    options.filePath ?? `:iPod_Control:Music:F00:TRACK${ipodTrackPathCounter++}.m4a`;
-  const track: IPodTrack = {
+  const uniquePath = options.filePath ?? `Music/TRACK${deviceTrackPathCounter++}.m4a`;
+  const track: DeviceTrack = {
     artist,
     title,
     album,
@@ -97,29 +96,17 @@ function createIPodTrack(
     size: options.size ?? 5000000,
     mediaType: options.mediaType ?? 1, // Audio
     filePath: uniquePath,
-    timeAdded: options.timeAdded ?? Math.floor(Date.now() / 1000),
-    timeModified: options.timeModified ?? Math.floor(Date.now() / 1000),
-    timePlayed: options.timePlayed ?? 0,
-    timeReleased: options.timeReleased ?? 0,
-    playCount: options.playCount ?? 0,
-    skipCount: options.skipCount ?? 0,
-    rating: options.rating ?? 0,
     hasArtwork: options.hasArtwork ?? false,
     hasFile: options.hasFile ?? true,
     compilation: options.compilation ?? false,
+    syncTag: options.comment ? parseSyncTag(options.comment) : null,
     // Optional fields
     albumArtist: options.albumArtist,
     genre: options.genre,
-    composer: options.composer,
     comment: options.comment,
-    syncTag: options.comment ? parseSyncTag(options.comment) : null,
-    grouping: options.grouping,
     trackNumber: options.trackNumber,
-    totalTracks: options.totalTracks,
     discNumber: options.discNumber,
-    totalDiscs: options.totalDiscs,
     year: options.year,
-    bpm: options.bpm,
     filetype: options.filetype,
     // Methods (stubs for testing)
     update: () => track,
@@ -148,37 +135,37 @@ function createEmptyDiff(): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
 // Format Detection Tests
 // =============================================================================
 
-describe('isIPodCompatible', () => {
+describe('isDefaultCompatibleFormat', () => {
   it('returns true for MP3 files', () => {
-    expect(isIPodCompatible('mp3')).toBe(true);
+    expect(isDefaultCompatibleFormat('mp3')).toBe(true);
   });
 
   it('returns true for M4A files', () => {
-    expect(isIPodCompatible('m4a')).toBe(true);
+    expect(isDefaultCompatibleFormat('m4a')).toBe(true);
   });
 
   it('returns true for AAC files', () => {
-    expect(isIPodCompatible('aac')).toBe(true);
+    expect(isDefaultCompatibleFormat('aac')).toBe(true);
   });
 
   it('returns true for ALAC files', () => {
-    expect(isIPodCompatible('alac')).toBe(true);
+    expect(isDefaultCompatibleFormat('alac')).toBe(true);
   });
 
   it('returns false for FLAC files', () => {
-    expect(isIPodCompatible('flac')).toBe(false);
+    expect(isDefaultCompatibleFormat('flac')).toBe(false);
   });
 
   it('returns false for OGG files', () => {
-    expect(isIPodCompatible('ogg')).toBe(false);
+    expect(isDefaultCompatibleFormat('ogg')).toBe(false);
   });
 
   it('returns false for OPUS files', () => {
-    expect(isIPodCompatible('opus')).toBe(false);
+    expect(isDefaultCompatibleFormat('opus')).toBe(false);
   });
 
   it('returns false for WAV files', () => {
-    expect(isIPodCompatible('wav')).toBe(false);
+    expect(isDefaultCompatibleFormat('wav')).toBe(false);
   });
 });
 
@@ -923,8 +910,8 @@ describe('createMusicPlan - device codec compatibility', () => {
     expect(plan.operations[0]!.type).toBe('add-direct-copy');
   });
 
-  it('still transcodes FLAC for iPod (no FLAC in supportedAudioCodecs)', () => {
-    const ipodCapabilities = {
+  it('still transcodes FLAC when not in supportedAudioCodecs', () => {
+    const deviceCapabilities = {
       artworkSources: ['database' as const],
       artworkMaxResolution: 320,
       supportedAudioCodecs: ['aac' as const, 'mp3' as const],
@@ -936,7 +923,7 @@ describe('createMusicPlan - device codec compatibility', () => {
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
 
-    const plan = createMusicPlan(diff, { capabilities: ipodCapabilities });
+    const plan = createMusicPlan(diff, { capabilities: deviceCapabilities });
 
     expect(plan.operations).toHaveLength(1);
     expect(plan.operations[0]!.type).toBe('add-transcode');
@@ -948,7 +935,7 @@ describe('createMusicPlan - device codec compatibility', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
           reasons: ['format-upgrade'],
           changes: [{ field: 'fileType', from: 'mp3', to: 'flac' }],
         },
@@ -962,13 +949,13 @@ describe('createMusicPlan - device codec compatibility', () => {
     expect(plan.operations[0]!.type).toBe('upgrade-optimized-copy');
   });
 
-  it('falls back to iPod-compatible format check when no capabilities provided', () => {
+  it('falls back to native format check when no capabilities provided', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'Song', 'Album', 'flac')],
     };
 
-    // No capabilities = legacy iPod behavior, FLAC must be transcoded
+    // No capabilities = default behavior, FLAC must be transcoded
     const plan = createMusicPlan(diff);
 
     expect(plan.operations).toHaveLength(1);
@@ -984,7 +971,7 @@ describe('createMusicPlan - remove operations', () => {
   it('does not create remove operations by default', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff);
@@ -995,7 +982,7 @@ describe('createMusicPlan - remove operations', () => {
   it('creates remove operations when removeOrphans is true', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1008,9 +995,9 @@ describe('createMusicPlan - remove operations', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [
-        createIPodTrack('Artist 1', 'Song 1', 'Album 1'),
-        createIPodTrack('Artist 2', 'Song 2', 'Album 2'),
-        createIPodTrack('Artist 3', 'Song 3', 'Album 3'),
+        createDeviceTrack('Artist 1', 'Song 1', 'Album 1'),
+        createDeviceTrack('Artist 2', 'Song 2', 'Album 2'),
+        createDeviceTrack('Artist 3', 'Song 3', 'Album 3'),
       ],
     };
 
@@ -1020,20 +1007,20 @@ describe('createMusicPlan - remove operations', () => {
     expect(plan.operations.every((op) => op.type === 'remove')).toBe(true);
   });
 
-  it('includes iPod track reference in remove operation', () => {
-    const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:0123.m4a',
+  it('includes device track reference in remove operation', () => {
+    const deviceTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/0123.m4a',
     });
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [ipodTrack],
+      toRemove: [deviceTrack],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
 
     expect(plan.operations[0]!.type).toBe('remove');
     if (plan.operations[0]!.type === 'remove') {
-      expect(plan.operations[0]!.track.filePath).toBe(':iPod_Control:Music:F00:0123.m4a');
+      expect(plan.operations[0]!.track.filePath).toBe('Music/0123.m4a');
     }
   });
 });
@@ -1047,7 +1034,7 @@ describe('createMusicPlan - operation ordering', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New Song', 'Album', 'mp3')],
-      toRemove: [createIPodTrack('Artist', 'Old Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Old Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1061,7 +1048,7 @@ describe('createMusicPlan - operation ordering', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New Song', 'Album', 'flac')],
-      toRemove: [createIPodTrack('Artist', 'Old Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Old Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1097,8 +1084,8 @@ describe('createMusicPlan - operation ordering', () => {
         createCollectionTrack('Artist', 'M4A 1', 'Album', 'm4a'),
       ],
       toRemove: [
-        createIPodTrack('Artist', 'Old 1', 'Album'),
-        createIPodTrack('Artist', 'Old 2', 'Album'),
+        createDeviceTrack('Artist', 'Old 1', 'Album'),
+        createDeviceTrack('Artist', 'Old 2', 'Album'),
       ],
     };
 
@@ -1182,8 +1169,8 @@ describe('createMusicPlan - size calculation', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toRemove: [
-        createIPodTrack('Artist', 'Song 1', 'Album'),
-        createIPodTrack('Artist', 'Song 2', 'Album'),
+        createDeviceTrack('Artist', 'Song 1', 'Album'),
+        createDeviceTrack('Artist', 'Song 2', 'Album'),
       ],
     };
 
@@ -1230,7 +1217,7 @@ describe('createMusicPlan - time calculation', () => {
   it('includes small time for remove operations', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1280,7 +1267,7 @@ describe('calculateMusicOperationSize', () => {
   it('returns 0 for remove operation', () => {
     const op: SyncOperation = {
       type: 'remove',
-      track: createIPodTrack('Artist', 'Song', 'Album'),
+      track: createDeviceTrack('Artist', 'Song', 'Album'),
     };
 
     const size = calculateMusicOperationSize(op);
@@ -1291,7 +1278,7 @@ describe('calculateMusicOperationSize', () => {
   it('returns 0 for update-metadata operation', () => {
     const op: SyncOperation = {
       type: 'update-metadata',
-      track: createIPodTrack('Artist', 'Song', 'Album'),
+      track: createDeviceTrack('Artist', 'Song', 'Album'),
       metadata: { genre: 'Rock' },
     };
 
@@ -1384,7 +1371,7 @@ describe('willMusicFitInSpace', () => {
   it('returns true when plan has zero size (only removes)', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [createIPodTrack('Artist', 'Song', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Song', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1422,7 +1409,7 @@ describe('getMusicPlanSummary', () => {
         createCollectionTrack('Artist', 'FLAC 2', 'Album', 'flac'),
         createCollectionTrack('Artist', 'MP3 1', 'Album', 'mp3'),
       ],
-      toRemove: [createIPodTrack('Artist', 'Old', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Old', 'Album')],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
@@ -1464,7 +1451,7 @@ describe('createMusicPlan - empty scenarios', () => {
       existing: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
         },
       ],
     };
@@ -1547,8 +1534,8 @@ describe('createMusicPlan - mixed scenarios', () => {
         }),
       ],
       toRemove: [
-        createIPodTrack('Old Artist 1', 'Old Song 1', 'Old Album'),
-        createIPodTrack('Old Artist 2', 'Old Song 2', 'Old Album'),
+        createDeviceTrack('Old Artist 1', 'Old Song 1', 'Old Album'),
+        createDeviceTrack('Old Artist 2', 'Old Song 2', 'Old Album'),
       ],
     };
 
@@ -1640,21 +1627,21 @@ describe('createMusicPlan - source track references', () => {
     }
   });
 
-  it('preserves iPod track reference in remove operation', () => {
-    const ipodTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:test.m4a',
+  it('preserves device track reference in remove operation', () => {
+    const deviceTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/test.m4a',
     });
 
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
-      toRemove: [ipodTrack],
+      toRemove: [deviceTrack],
     };
 
     const plan = createMusicPlan(diff, { removeOrphans: true });
 
     expect(plan.operations[0]!.type).toBe('remove');
     if (plan.operations[0]!.type === 'remove') {
-      expect(plan.operations[0]!.track.filePath).toBe(':iPod_Control:Music:F00:test.m4a');
+      expect(plan.operations[0]!.track.filePath).toBe('Music/test.m4a');
     }
   });
 });
@@ -2116,7 +2103,7 @@ describe('createMusicPlan - update operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          device: createDeviceTrack('Artist feat. B', 'Song', 'Album'),
           reasons: ['transform-apply'],
           changes: [
             { field: 'artist', from: 'Artist feat. B', to: 'Artist' },
@@ -2138,7 +2125,7 @@ describe('createMusicPlan - update operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song (feat. B)', 'Album', 'mp3'),
-          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          device: createDeviceTrack('Artist feat. B', 'Song', 'Album'),
           reasons: ['transform-apply'],
           changes: [
             { field: 'artist', from: 'Artist feat. B', to: 'Artist' },
@@ -2165,7 +2152,7 @@ describe('createMusicPlan - update operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Existing', 'Album', 'mp3'),
-          device: createIPodTrack('Artist feat. B', 'Existing', 'Album'),
+          device: createDeviceTrack('Artist feat. B', 'Existing', 'Album'),
           reasons: ['transform-apply'],
           changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
         },
@@ -2185,7 +2172,7 @@ describe('createMusicPlan - update operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3'),
-          device: createIPodTrack('Artist feat. B', 'Song', 'Album'),
+          device: createDeviceTrack('Artist feat. B', 'Song', 'Album'),
           reasons: ['transform-apply'],
           changes: [{ field: 'artist', from: 'Artist feat. B', to: 'Artist' }],
         },
@@ -2210,7 +2197,7 @@ describe('createMusicPlan - sync-tag-write operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
           reasons: ['sync-tag-write'],
           changes: [],
           syncTag,
@@ -2234,7 +2221,7 @@ describe('createMusicPlan - sync-tag-write operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
           reasons: ['sync-tag-write'],
           changes: [],
           // syncTag intentionally omitted
@@ -2254,7 +2241,7 @@ describe('createMusicPlan - sync-tag-write operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac'),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
           reasons: ['sync-tag-write'],
           changes: [],
           syncTag: { quality: 'high', encoding: 'vbr' },
@@ -2282,7 +2269,7 @@ describe('createMusicPlan - upgrade operations', () => {
             duration: 200000,
             lossless: true,
           }),
-          device: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createDeviceTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 192,
           }),
@@ -2315,7 +2302,7 @@ describe('createMusicPlan - upgrade operations', () => {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'flac', {
             lossless: true,
           }),
-          device: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createDeviceTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
           reasons: ['format-upgrade'],
@@ -2346,7 +2333,7 @@ describe('createMusicPlan - upgrade operations', () => {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             bitrate: 320,
           }),
-          device: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createDeviceTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 128,
           }),
@@ -2373,7 +2360,7 @@ describe('createMusicPlan - upgrade operations', () => {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'mp3', {
             soundcheck: 1234,
           }),
-          device: createIPodTrack('Artist', 'Song', 'Album'),
+          device: createDeviceTrack('Artist', 'Song', 'Album'),
           reasons: ['soundcheck-update'],
           changes: [{ field: 'soundcheck', from: '', to: '1234' }],
         },
@@ -2395,7 +2382,7 @@ describe('createMusicPlan - upgrade operations', () => {
             duration: 240000,
             lossless: true,
           }),
-          device: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createDeviceTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
           reasons: ['format-upgrade'],
@@ -2416,7 +2403,7 @@ describe('createMusicPlan - upgrade operations', () => {
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Song', 'Album', 'ogg'),
-          device: createIPodTrack('Artist', 'Song', 'Album', {
+          device: createDeviceTrack('Artist', 'Song', 'Album', {
             filetype: 'MPEG audio file',
           }),
           reasons: ['format-upgrade'],
@@ -2435,13 +2422,13 @@ describe('createMusicPlan - upgrade operations', () => {
     const diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack> = {
       ...createEmptyDiff(),
       toAdd: [createCollectionTrack('Artist', 'New', 'Album', 'flac')],
-      toRemove: [createIPodTrack('Artist', 'Old', 'Album')],
+      toRemove: [createDeviceTrack('Artist', 'Old', 'Album')],
       toUpdate: [
         {
           source: createCollectionTrack('Artist', 'Upgrade', 'Album', 'mp3', {
             bitrate: 320,
           }),
-          device: createIPodTrack('Artist', 'Upgrade', 'Album', {
+          device: createDeviceTrack('Artist', 'Upgrade', 'Album', {
             filetype: 'MPEG audio file',
             bitrate: 128,
           }),
@@ -2450,7 +2437,7 @@ describe('createMusicPlan - upgrade operations', () => {
         },
         {
           source: createCollectionTrack('Artist', 'MetaUpdate', 'Album', 'mp3'),
-          device: createIPodTrack('Artist', 'MetaUpdate', 'Album'),
+          device: createDeviceTrack('Artist', 'MetaUpdate', 'Album'),
           reasons: ['soundcheck-update'],
           changes: [{ field: 'soundcheck', from: '', to: '1234' }],
         },

@@ -3,7 +3,7 @@
  *
  * Provides a generic abstraction over device-specific database implementations
  * (iPod, mass-storage DAPs, etc.). The sync engine works against this interface
- * rather than directly referencing IpodDatabase or IPodTrack.
+ * rather than directly referencing IpodDatabase or IpodTrack.
  *
  * Design principle: thin interface, fat implementations. The interface covers
  * track CRUD + save/close + capabilities. Device-specific concerns (folder
@@ -82,7 +82,7 @@ export type DeviceTrackMetadata = Partial<DeviceTrackInput>;
  * Device-specific fields (iPod mediaType flags, ithmb references) stay
  * on the device-specific track type. The adapter maps between them.
  *
- * IPodTrack extends this interface — the adapter can return IPodTrack
+ * IpodTrack extends this interface — the adapter can return IpodTrack
  * instances directly without mapping or casting.
  */
 export interface DeviceTrack {
@@ -150,7 +150,7 @@ export interface DeviceTrack {
  * The adapter owns the device database lifecycle: open is handled before
  * construction, save() persists changes, close() releases resources.
  */
-export interface DeviceAdapter {
+export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
   /** Device capabilities (codec support, artwork handling, etc.) */
   readonly capabilities: DeviceCapabilities;
 
@@ -160,33 +160,33 @@ export interface DeviceAdapter {
   // Track lifecycle
 
   /** Get all tracks currently on the device */
-  getTracks(): DeviceTrack[];
+  getTracks(): T[];
 
   /** Add a new track to the device database */
-  addTrack(input: DeviceTrackInput): DeviceTrack;
+  addTrack(input: DeviceTrackInput): T;
 
   /** Update metadata on an existing track */
-  updateTrack(track: DeviceTrack, fields: DeviceTrackMetadata): DeviceTrack;
+  updateTrack(track: T, fields: DeviceTrackMetadata): T;
 
   /** Remove a track from the device database */
-  removeTrack(track: DeviceTrack, options?: { deleteFile?: boolean }): void;
+  removeTrack(track: T, options?: { deleteFile?: boolean }): void;
 
   /** Copy a source file to the track's allocated path on the device */
-  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack;
+  copyTrackFile(track: T, sourcePath: string): T;
 
   /** Replace the audio file of an existing track (for upgrades/re-transcodes) */
-  replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack;
+  replaceTrackFile(track: T, newFilePath: string): T;
 
   /** Remove artwork from a track */
-  removeTrackArtwork(track: DeviceTrack): DeviceTrack;
+  removeTrackArtwork(track: T): T;
 
   // Sync tags
 
   /** Write or update sync tag on a track (merge semantics) */
-  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack;
+  writeSyncTag(track: T, update: SyncTagUpdate): T;
 
   /** Remove sync tag from a track */
-  clearSyncTag(track: DeviceTrack): DeviceTrack;
+  clearSyncTag(track: T): T;
 
   // Persistence
 

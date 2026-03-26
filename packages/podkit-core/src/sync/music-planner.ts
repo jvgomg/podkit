@@ -4,7 +4,7 @@
  * The planner takes a UnifiedSyncDiff (from the diff engine) and produces a SyncPlan
  * containing ordered operations. It determines whether each track needs
  * transcoding or can be copied directly, estimates output sizes, and checks
- * available space on the iPod.
+ * available space on the device.
  *
  * ## Source File Categories
  *
@@ -62,17 +62,21 @@ import { isFileReplacementUpgrade } from './upgrades.js';
 // =============================================================================
 
 /**
- * Audio formats that are natively compatible with iPod (no transcoding needed)
+ * Default compatible audio formats when no DeviceCapabilities are provided.
+ *
+ * These are the formats that can be copied directly without transcoding.
+ * When a device provides supportedAudioCodecs via capabilities, those
+ * take priority via isDeviceCompatible() instead.
  *
  * - mp3: MPEG Audio Layer 3 - universally supported
  * - m4a: AAC in MP4 container - native iTunes format
  * - aac: Raw AAC - supported but less common
- * - alac: Apple Lossless - supported on newer iPods
+ * - alac: Apple Lossless
  */
-const IPOD_COMPATIBLE_FORMATS: Set<AudioFileType> = new Set(['mp3', 'm4a', 'aac', 'alac']);
+const DEFAULT_COMPATIBLE_FORMATS: Set<AudioFileType> = new Set(['mp3', 'm4a', 'aac', 'alac']);
 
 /**
- * Formats that require transcoding to iPod-compatible format
+ * Formats that require transcoding to a compatible format
  *
  * - flac: Free Lossless Audio Codec - needs transcoding
  * - ogg: Ogg Vorbis - needs transcoding
@@ -89,7 +93,7 @@ const TRANSCODE_REQUIRED_FORMATS: Set<AudioFileType> = new Set([
 ]);
 
 /**
- * Lossy formats that are NOT iPod-compatible (require lossy→lossy conversion)
+ * Lossy formats that are NOT natively compatible (require lossy→lossy conversion)
  */
 const INCOMPATIBLE_LOSSY_FORMATS: Set<AudioFileType> = new Set(['ogg', 'opus']);
 
@@ -109,10 +113,13 @@ const M4A_CONTAINER_OVERHEAD_BYTES = 2048;
 // =============================================================================
 
 /**
- * Check if an audio format is iPod-compatible (can be copied directly)
+ * Check if an audio format is compatible by default (can be copied directly).
+ *
+ * This is the fallback when no DeviceCapabilities are provided.
+ * When capabilities are available, use isDeviceCompatible() instead.
  */
-export function isIPodCompatible(fileType: AudioFileType): boolean {
-  return IPOD_COMPATIBLE_FORMATS.has(fileType);
+export function isDefaultCompatibleFormat(fileType: AudioFileType): boolean {
+  return DEFAULT_COMPATIBLE_FORMATS.has(fileType);
 }
 
 /**
@@ -188,7 +195,7 @@ export function isDeviceCompatible(
  *
  * Categories:
  * - lossless: FLAC, WAV, AIFF, ALAC - can convert to any target
- * - compatible-lossy: MP3, AAC/M4A - already iPod-playable, copy as-is
+ * - compatible-lossy: MP3, AAC/M4A - natively playable, copy as-is
  * - incompatible-lossy: OGG, Opus - must transcode (lossy→lossy warning)
  *
  * Note: M4A files can be either AAC (lossy) or ALAC (lossless).

@@ -18,7 +18,7 @@ import type {
   ArtworkSource,
   TrackInput,
   TrackFields,
-  IPodTrack,
+  IpodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
@@ -312,10 +312,10 @@ describe('podkit-core', () => {
       expect(result.warnings).toHaveLength(1);
     });
 
-    // IPodTrack and IpodPlaylist are interfaces with methods
-    it('IPodTrack type is exported', () => {
+    // IpodTrack and IpodPlaylist are interfaces with methods
+    it('IpodTrack type is exported', () => {
       // Compile-time check - we can reference the type
-      type TrackType = IPodTrack;
+      type TrackType = IpodTrack;
       const _typeCheck: TrackType | null = null;
       expect(_typeCheck).toBeNull();
     });

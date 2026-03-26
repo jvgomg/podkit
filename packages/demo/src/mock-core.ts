@@ -156,7 +156,7 @@ export type { FileDisplayMetadata } from '@podkit/core';
 export type {
   TrackInput,
   TrackFields,
-  IPodTrack,
+  IpodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
@@ -335,10 +335,10 @@ export class IpodError extends Error {
 }
 
 // =============================================================================
-// Mock IPodTrack implementation
+// Mock IpodTrack implementation
 // =============================================================================
 
-function createMockIPodTrack(data: Record<string, unknown>): any {
+function createMockIpodTrack(data: Record<string, unknown>): any {
   return {
     title: data.title ?? '',
     artist: data.artist ?? '',
@@ -378,20 +378,20 @@ function createMockIPodTrack(data: Record<string, unknown>): any {
     episodeNumber: data.episodeNumber,
     movieFlag: data.movieFlag,
     update(_fields: Record<string, unknown>) {
-      return createMockIPodTrack({ ...data, ..._fields });
+      return createMockIpodTrack({ ...data, ..._fields });
     },
     remove() {},
     copyFile(_path: string) {
-      return createMockIPodTrack({ ...data, hasFile: true });
+      return createMockIpodTrack({ ...data, hasFile: true });
     },
     setArtwork(_path: string) {
-      return createMockIPodTrack({ ...data, hasArtwork: true });
+      return createMockIpodTrack({ ...data, hasArtwork: true });
     },
     setArtworkFromData(_buf: Buffer) {
-      return createMockIPodTrack({ ...data, hasArtwork: true });
+      return createMockIpodTrack({ ...data, hasArtwork: true });
     },
     removeArtwork() {
-      return createMockIPodTrack({ ...data, hasArtwork: false });
+      return createMockIpodTrack({ ...data, hasArtwork: false });
     },
   };
 }
@@ -465,20 +465,20 @@ export class IpodDatabase {
     const state = readState();
     const tracks: any[] = [];
     if (state.musicSynced) {
-      tracks.push(...getDemoIpodTracks().map((t) => createMockIPodTrack(t)));
+      tracks.push(...getDemoIpodTracks().map((t) => createMockIpodTrack(t)));
     }
     if (state.videoSynced) {
-      tracks.push(...getDemoIpodVideoTracks().map((t) => createMockIPodTrack(t)));
+      tracks.push(...getDemoIpodVideoTracks().map((t) => createMockIpodTrack(t)));
     }
     return tracks;
   }
 
   addTrack(input: Record<string, unknown>): any {
-    return createMockIPodTrack(input);
+    return createMockIpodTrack(input);
   }
 
   updateTrack(track: any, fields: Record<string, unknown>): any {
-    return createMockIPodTrack({ ...track, ...fields });
+    return createMockIpodTrack({ ...track, ...fields });
   }
 
   removeTrack(_track: any, _options?: { deleteFile?: boolean }) {
@@ -494,19 +494,19 @@ export class IpodDatabase {
   }
 
   copyFileToTrack(track: any, _sourcePath: string): any {
-    return createMockIPodTrack({ ...track, hasFile: true });
+    return createMockIpodTrack({ ...track, hasFile: true });
   }
 
   setTrackArtwork(track: any, _imagePath: string): any {
-    return createMockIPodTrack({ ...track, hasArtwork: true });
+    return createMockIpodTrack({ ...track, hasArtwork: true });
   }
 
   setTrackArtworkFromData(track: any, _imageData: Buffer): any {
-    return createMockIPodTrack({ ...track, hasArtwork: true });
+    return createMockIpodTrack({ ...track, hasArtwork: true });
   }
 
   removeTrackArtwork(track: any): any {
-    return createMockIPodTrack({ ...track, hasArtwork: false });
+    return createMockIpodTrack({ ...track, hasArtwork: false });
   }
 
   getPlaylists(): any[] {
@@ -731,7 +731,7 @@ export function createVideoDirectoryAdapter(config: { path: string }) {
 // Differ (mock)
 // =============================================================================
 
-export function isIPodCompatible(_fileType: string): boolean {
+export function isDefaultCompatibleFormat(_fileType: string): boolean {
   return ['mp3', 'm4a', 'aac', 'alac'].includes(_fileType);
 }
 

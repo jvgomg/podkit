@@ -10,7 +10,7 @@
  *   IpodDatabase,
  *   IpodError,
  *   MediaType,
- *   type IPodTrack,
+ *   type IpodTrack,
  *   type IpodPlaylist,
  * } from '@podkit/core';
  *
@@ -36,7 +36,7 @@
 export type {
   TrackInput,
   TrackFields,
-  IPodTrack,
+  IpodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,
