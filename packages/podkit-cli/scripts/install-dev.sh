@@ -22,10 +22,11 @@ if [[ "${1:-}" == "--clean" ]]; then
   exit 0
 fi
 
-# Build using the existing compile script
+# Build using the existing compile script, with a -dev version suffix
 echo "Building..."
 cd "$CLI_DIR"
-bash scripts/compile.sh
+BASE_VERSION=$(bun -e "console.log(require('./package.json').version)")
+PODKIT_VERSION_OVERRIDE="${BASE_VERSION}-dev" bash scripts/compile.sh
 
 # Install
 mkdir -p "$INSTALL_DIR"
