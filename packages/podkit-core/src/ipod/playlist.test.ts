@@ -6,7 +6,7 @@ import { describe, it, expect, mock, beforeEach } from 'bun:test';
 import type { Playlist } from '@podkit/libgpod-node';
 import { IpodPlaylistImpl, type PlaylistDatabaseInternal } from './playlist.js';
 import { IpodError } from './errors.js';
-import type { IPodTrack } from './types.js';
+import type { IpodTrack } from './types.js';
 
 // Helper to create a mock Playlist data object
 function createMockPlaylistData(overrides: Partial<Playlist> = {}): Playlist {
@@ -42,7 +42,7 @@ function createMockDatabase(): PlaylistDatabaseInternal & {
 }
 
 // Helper to create a mock track
-function createMockTrack(): IPodTrack {
+function createMockTrack(): IpodTrack {
   return {
     title: 'Test Song',
     artist: 'Test Artist',

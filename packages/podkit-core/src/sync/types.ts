@@ -7,7 +7,6 @@
 
 import type { CollectionTrack } from '../adapters/interface.js';
 import type { TrackMetadata } from '../types.js';
-import type { IPodTrack } from '../ipod/types.js';
 import type { DeviceTrack } from '../device/adapter.js';
 import type { SyncTagData } from './sync-tags.js';
 import type {
@@ -23,7 +22,7 @@ import type { VideoTranscodeSettings } from '../video/types.js';
 import type { DeviceVideo } from './video-types.js';
 
 // Re-export for use within sync module
-export type { IPodTrack, DeviceTrack };
+export type { DeviceTrack };
 
 // =============================================================================
 // Update Types (for transforms)

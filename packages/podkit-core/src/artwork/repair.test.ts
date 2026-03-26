@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, mock } from 'bun:test';
-import type { IPodTrack, TrackFields } from '../ipod/types.js';
+import type { IpodTrack, TrackFields } from '../ipod/types.js';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from '../adapters/interface.js';
 import type { RebuildDependencies, RebuildProgress } from './repair.js';
 import { rebuildArtworkDatabase, resetArtworkDatabase } from './repair.js';
@@ -21,14 +21,14 @@ import type { ExtractedArtwork } from './types.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-/** Create a minimal mock IPodTrack with the fields used by repair */
+/** Create a minimal mock IpodTrack with the fields used by repair */
 function makeIpodTrack(overrides: {
   artist: string;
   title: string;
   album: string;
   comment?: string;
   hasArtwork?: boolean;
-}): IPodTrack {
+}): IpodTrack {
   return {
     title: overrides.title,
     artist: overrides.artist,
@@ -51,13 +51,13 @@ function makeIpodTrack(overrides: {
     hasArtwork: overrides.hasArtwork ?? true,
     hasFile: true,
     compilation: false,
-    update: mock(() => ({}) as IPodTrack),
+    update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IPodTrack),
-    setArtwork: mock(() => ({}) as IPodTrack),
-    setArtworkFromData: mock(() => ({}) as IPodTrack),
-    removeArtwork: mock(() => ({}) as IPodTrack),
-  } as IPodTrack;
+    copyFile: mock(() => ({}) as IpodTrack),
+    setArtwork: mock(() => ({}) as IpodTrack),
+    setArtworkFromData: mock(() => ({}) as IpodTrack),
+    removeArtwork: mock(() => ({}) as IpodTrack),
+  } as IpodTrack;
 }
 
 /** Create a minimal mock CollectionTrack */
@@ -114,12 +114,12 @@ interface MockDb {
 }
 
 /** Create a mock IpodDatabase */
-function makeMockDb(ipodTracks: IPodTrack[]): MockDb {
+function makeMockDb(ipodTracks: IpodTrack[]): MockDb {
   return {
     getTracks: mock(() => ipodTracks),
-    removeTrackArtwork: mock((_track: IPodTrack) => {}),
-    setTrackArtworkFromData: mock((_track: IPodTrack, _data: Buffer) => {}),
-    updateTrack: mock((_track: IPodTrack, _fields: TrackFields) => {}),
+    removeTrackArtwork: mock((_track: IpodTrack) => {}),
+    setTrackArtworkFromData: mock((_track: IpodTrack, _data: Buffer) => {}),
+    updateTrack: mock((_track: IpodTrack, _fields: TrackFields) => {}),
     save: mock(async () => ({ warnings: [] })),
     trackCount: ipodTracks.length,
   };

@@ -12,12 +12,12 @@ import { describe, it, expect, mock } from 'bun:test';
 import { artworkResetCheck } from './artwork-reset.js';
 import { getDiagnosticCheckIds, getDiagnosticCheck } from '../index.js';
 import type { DiagnosticContext, RepairContext } from '../types.js';
-import type { IPodTrack } from '../../ipod/types.js';
+import type { IpodTrack } from '../../ipod/types.js';
 import type { IpodDatabase } from '../../ipod/database.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeIpodTrack(hasArtwork: boolean): IPodTrack {
+function makeIpodTrack(hasArtwork: boolean): IpodTrack {
   return {
     title: 'Test Track',
     artist: 'Test Artist',
@@ -40,20 +40,20 @@ function makeIpodTrack(hasArtwork: boolean): IPodTrack {
     hasArtwork,
     hasFile: true,
     compilation: false,
-    update: mock(() => ({}) as IPodTrack),
+    update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IPodTrack),
-    setArtwork: mock(() => ({}) as IPodTrack),
-    setArtworkFromData: mock(() => ({}) as IPodTrack),
-    removeArtwork: mock(() => ({}) as IPodTrack),
-  } as IPodTrack;
+    copyFile: mock(() => ({}) as IpodTrack),
+    setArtwork: mock(() => ({}) as IpodTrack),
+    setArtworkFromData: mock(() => ({}) as IpodTrack),
+    removeArtwork: mock(() => ({}) as IpodTrack),
+  } as IpodTrack;
 }
 
-function makeMockDb(tracks: IPodTrack[]): IpodDatabase {
+function makeMockDb(tracks: IpodTrack[]): IpodDatabase {
   return {
     getTracks: () => tracks,
     removeTrackArtwork: mock(() => {}),
-    updateTrack: mock((_track: IPodTrack, _fields: Partial<IPodTrack>) => {}),
+    updateTrack: mock((_track: IpodTrack, _fields: Partial<IpodTrack>) => {}),
     save: mock(async () => {}),
     trackCount: tracks.length,
     close: mock(() => {}),
@@ -61,11 +61,11 @@ function makeMockDb(tracks: IPodTrack[]): IpodDatabase {
   } as unknown as IpodDatabase;
 }
 
-function makeCtx(mountPoint: string, tracks: IPodTrack[]): DiagnosticContext {
+function makeCtx(mountPoint: string, tracks: IpodTrack[]): DiagnosticContext {
   return { mountPoint, db: makeMockDb(tracks) };
 }
 
-function makeRepairCtx(mountPoint: string, tracks: IPodTrack[]): RepairContext {
+function makeRepairCtx(mountPoint: string, tracks: IpodTrack[]): RepairContext {
   return { mountPoint, db: makeMockDb(tracks), adapters: [] };
 }
 

@@ -163,7 +163,7 @@ export interface UnifiedSyncDiff<TSource, TDevice> {
  * (e.g., music tracks, videos).
  *
  * @typeParam TSource - The source item type (e.g., CollectionTrack, CollectionVideo)
- * @typeParam TDevice - The device item type (e.g., IPodTrack, DeviceVideo)
+ * @typeParam TDevice - The device item type (e.g., IpodTrack, DeviceVideo)
  */
 export interface ContentTypeHandler<TSource, TDevice> {
   /** Content type identifier (e.g., 'music', 'video') */

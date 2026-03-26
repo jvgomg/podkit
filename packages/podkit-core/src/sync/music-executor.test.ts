@@ -27,14 +27,14 @@ import {
 } from './music-executor.js';
 import type { CollectionTrack, CollectionAdapter, FileAccess } from '../adapters/interface.js';
 import type { AudioFileType, TrackFilter } from '../types.js';
-import type { IPodTrack, SyncOperation, SyncPlan } from './types.js';
+import type { DeviceTrack, SyncOperation, SyncPlan } from './types.js';
 import { Readable } from 'node:stream';
 
 // =============================================================================
 // Mock Types
 // =============================================================================
 
-interface MockIpodDatabase {
+interface MockDeviceAdapter {
   addTrack: ReturnType<typeof mock>;
   getTracks: ReturnType<typeof mock>;
   removeTrack: ReturnType<typeof mock>;
@@ -57,23 +57,23 @@ interface MockTranscoder {
 // =============================================================================
 
 /**
- * Create a mock IPodTrack with all required fields
+ * Create a mock DeviceTrack with all required fields
  */
-function createMockIPodTrack(
+function createMockDeviceTrack(
   artist: string,
   title: string,
   album: string,
   filePath: string,
   options: Partial<{
     remove: () => void;
-    copyFile: (path: string) => IPodTrack;
-    update: (fields: Record<string, unknown>) => IPodTrack;
-    setArtwork: (path: string) => IPodTrack;
-    setArtworkFromData: (data: Buffer) => IPodTrack;
-    removeArtwork: () => IPodTrack;
+    copyFile: (path: string) => DeviceTrack;
+    update: (fields: Record<string, unknown>) => DeviceTrack;
+    setArtwork: (path: string) => DeviceTrack;
+    setArtworkFromData: (data: Buffer) => DeviceTrack;
+    removeArtwork: () => DeviceTrack;
   }> = {}
-): IPodTrack {
-  const track: IPodTrack = {
+): DeviceTrack {
+  const track: DeviceTrack = {
     title,
     artist,
     album,
@@ -83,13 +83,6 @@ function createMockIPodTrack(
     size: 5000000,
     mediaType: 1,
     filePath,
-    timeAdded: Date.now() / 1000,
-    timeModified: Date.now() / 1000,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
     hasArtwork: false,
     hasFile: true,
     compilation: false,
@@ -105,15 +98,15 @@ function createMockIPodTrack(
   return track;
 }
 
-function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDatabase {
+function createMockDeviceAdapter(initialTracks: DeviceTrack[] = []): MockDeviceAdapter {
   // Store tracks for lookup
-  const tracks: IPodTrack[] = [...initialTracks];
+  const tracks: DeviceTrack[] = [...initialTracks];
   let pathCounter = 0;
 
   return {
     addTrack: mock((input: { title: string; artist: string; album?: string }) => {
-      const filePath = `:iPod_Control:Music:F00:MOCK${pathCounter++}.m4a`;
-      const track = createMockIPodTrack(
+      const filePath = `Music/MOCK${pathCounter++}.m4a`;
+      const track = createMockDeviceTrack(
         input.artist ?? '',
         input.title,
         input.album ?? '',
@@ -123,14 +116,14 @@ function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDataba
       return track;
     }),
     getTracks: mock(() => [...tracks]),
-    removeTrack: mock((track: IPodTrack) => {
+    removeTrack: mock((track: DeviceTrack) => {
       const index = tracks.findIndex((t) => t.filePath === track.filePath);
       if (index >= 0) {
         tracks.splice(index, 1);
       }
       return { removed: true };
     }),
-    updateTrack: mock((track: IPodTrack, fields: Record<string, unknown>) => {
+    updateTrack: mock((track: DeviceTrack, fields: Record<string, unknown>) => {
       const updated = track.update(fields);
       // Replace in tracks array (mirrors real adapter behavior)
       const index = tracks.findIndex((t) => t.filePath === track.filePath);
@@ -139,13 +132,13 @@ function createMockIpodDatabase(initialTracks: IPodTrack[] = []): MockIpodDataba
       }
       return updated;
     }),
-    copyTrackFile: mock((track: IPodTrack, _sourcePath: string) => {
+    copyTrackFile: mock((track: DeviceTrack, _sourcePath: string) => {
       return track.copyFile(_sourcePath);
     }),
     save: mock(async () => ({ warnings: [] })),
-    replaceTrackFile: mock((track: IPodTrack, _newFilePath: string) => track),
-    removeTrackArtwork: mock((track: IPodTrack) => track.removeArtwork()),
-    writeSyncTag: mock((track: IPodTrack, _update: Record<string, unknown>) => track),
+    replaceTrackFile: mock((track: DeviceTrack, _newFilePath: string) => track),
+    removeTrackArtwork: mock((track: DeviceTrack) => track.removeArtwork()),
+    writeSyncTag: mock((track: DeviceTrack, _update: Record<string, unknown>) => track),
   };
 }
 
@@ -186,16 +179,15 @@ function createCollectionTrack(
   };
 }
 
-function createIPodTrack(
+function createDeviceTrack(
   artist: string,
   title: string,
   album: string,
-  options: Partial<IPodTrack> & { removeFn?: () => void } = {}
-): IPodTrack {
+  options: Partial<DeviceTrack> & { removeFn?: () => void } = {}
+): DeviceTrack {
   const { removeFn, ...rest } = options;
-  const filePath =
-    rest.filePath ?? `:iPod_Control:Music:F00:${Math.random().toString(36).slice(2)}.m4a`;
-  return createMockIPodTrack(artist, title, album, filePath, {
+  const filePath = rest.filePath ?? `Music/${Math.random().toString(36).slice(2)}.m4a`;
+  return createMockDeviceTrack(artist, title, album, filePath, {
     remove: removeFn,
     ...rest,
   });
@@ -211,12 +203,12 @@ function createEmptyPlan(): SyncPlan {
 }
 
 function createDependencies(
-  db: MockIpodDatabase,
+  adapter: MockDeviceAdapter,
   transcoder: MockTranscoder
 ): ExecutorDependencies {
   // Cast mocks to satisfy the interface
   return {
-    device: db as unknown as ExecutorDependencies['device'],
+    device: adapter as unknown as ExecutorDependencies['device'],
     transcoder: transcoder as unknown as ExecutorDependencies['transcoder'],
   };
 }
@@ -248,7 +240,7 @@ describe('getMusicOperationDisplayName', () => {
   it('returns artist - title for remove operation', () => {
     const op: SyncOperation = {
       type: 'remove',
-      track: createIPodTrack('The Beatles', 'Yesterday', 'Help!'),
+      track: createDeviceTrack('The Beatles', 'Yesterday', 'Help!'),
     };
 
     expect(getMusicOperationDisplayName(op)).toBe('The Beatles - Yesterday');
@@ -260,14 +252,14 @@ describe('getMusicOperationDisplayName', () => {
 // =============================================================================
 
 describe('MusicExecutor - basic execution', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('handles empty plan', async () => {
@@ -281,7 +273,7 @@ describe('MusicExecutor - basic execution', () => {
 
     // Should emit complete even for empty plan
     expect(progress.length).toBeGreaterThanOrEqual(0);
-    expect(mockDb.save.mock.calls.length).toBe(0);
+    expect(mockAdapter.save.mock.calls.length).toBe(0);
   });
 
   it('executes copy operation', async () => {
@@ -304,8 +296,8 @@ describe('MusicExecutor - basic execution', () => {
     }
 
     // Should have called addTrack (which returns a track with copyFile method)
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
-    expect(mockDb.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(1);
   });
 
   it('passes compilation flag to addTrack', async () => {
@@ -329,8 +321,8 @@ describe('MusicExecutor - basic execution', () => {
       progress.push(p);
     }
 
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
-    const trackInput = mockDb.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as Record<string, unknown>;
     expect(trackInput.compilation).toBe(true);
   });
 
@@ -355,8 +347,8 @@ describe('MusicExecutor - basic execution', () => {
       progress.push(p);
     }
 
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
-    const trackInput = mockDb.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as Record<string, unknown>;
     expect(trackInput.bitrate).toBe(192);
   });
 
@@ -368,7 +360,7 @@ describe('MusicExecutor - basic execution', () => {
       duration: 1000,
       bitrate: 128,
     }));
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -391,8 +383,8 @@ describe('MusicExecutor - basic execution', () => {
       progress.push(p);
     }
 
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
-    const trackInput = mockDb.addTrack.mock.calls[0]![0] as Record<string, unknown>;
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as Record<string, unknown>;
     // Should use the transcoder output bitrate (128), not the source bitrate (1000)
     expect(trackInput.bitrate).toBe(128);
   });
@@ -419,22 +411,22 @@ describe('MusicExecutor - basic execution', () => {
 
     // Should have called transcoder and addTrack (which returns a track with copyFile method)
     expect(mockTranscoder.transcode.mock.calls.length).toBe(1);
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
-    expect(mockDb.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(1);
   });
 
   it('executes remove operation', async () => {
     // Create a track to be removed - it must be in the mock database
     let removed = false;
-    const trackToRemove = createIPodTrack('Artist', 'Song', 'Album', {
+    const trackToRemove = createDeviceTrack('Artist', 'Song', 'Album', {
       removeFn: () => {
         removed = true;
       },
     });
 
     // Create a mock database that already contains the track
-    mockDb = createMockIpodDatabase([trackToRemove]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([trackToRemove]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -456,21 +448,21 @@ describe('MusicExecutor - basic execution', () => {
 
     // Should have called the track's remove method
     expect(removed).toBe(true);
-    expect(mockDb.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(1);
   });
 
   it('executes multiple operations in order', async () => {
     // Create a track to be removed - it must be in the mock database
     let removed = false;
-    const trackToRemove = createIPodTrack('Old Artist', 'Old Song', 'Old Album', {
+    const trackToRemove = createDeviceTrack('Old Artist', 'Old Song', 'Old Album', {
       removeFn: () => {
         removed = true;
       },
     });
 
     // Create a mock database that already contains the track
-    mockDb = createMockIpodDatabase([trackToRemove]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([trackToRemove]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -500,9 +492,9 @@ describe('MusicExecutor - basic execution', () => {
     }
 
     expect(removed).toBe(true);
-    expect(mockDb.addTrack.mock.calls.length).toBe(2);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(2);
     expect(mockTranscoder.transcode.mock.calls.length).toBe(1);
-    expect(mockDb.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(1);
   });
 });
 
@@ -511,14 +503,14 @@ describe('MusicExecutor - basic execution', () => {
 // =============================================================================
 
 describe('MusicExecutor - progress reporting', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('emits progress when operations complete (pipeline model)', async () => {
@@ -673,14 +665,14 @@ describe('MusicExecutor - progress reporting', () => {
 // =============================================================================
 
 describe('MusicExecutor - dry-run mode', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('does not call database methods in dry-run', async () => {
@@ -693,7 +685,7 @@ describe('MusicExecutor - dry-run mode', () => {
           source: createCollectionTrack('B', 'T', 'Album', 'flac'),
           preset: { name: 'high' },
         },
-        { type: 'remove', track: createIPodTrack('C', 'U', 'Album') },
+        { type: 'remove', track: createDeviceTrack('C', 'U', 'Album') },
       ],
       estimatedTime: 20,
       estimatedSize: 10000000,
@@ -705,9 +697,9 @@ describe('MusicExecutor - dry-run mode', () => {
       progress.push(p);
     }
 
-    expect(mockDb.addTrack.mock.calls.length).toBe(0);
-    expect(mockDb.removeTrack.mock.calls.length).toBe(0);
-    expect(mockDb.save.mock.calls.length).toBe(0);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(0);
+    expect(mockAdapter.removeTrack.mock.calls.length).toBe(0);
+    expect(mockAdapter.save.mock.calls.length).toBe(0);
     expect(mockTranscoder.transcode.mock.calls.length).toBe(0);
   });
 
@@ -758,14 +750,14 @@ describe('MusicExecutor - dry-run mode', () => {
 // =============================================================================
 
 describe('MusicExecutor - error handling', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('stops on error by default', async () => {
@@ -773,7 +765,7 @@ describe('MusicExecutor - error handling', () => {
     mockTranscoder.transcode = mock(async () => {
       throw new Error('Transcode failed');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -802,7 +794,7 @@ describe('MusicExecutor - error handling', () => {
 
     expect(errorThrown).toBe(true);
     // Second operation should not have been executed
-    expect(mockDb.addTrack.mock.calls.length).toBe(0);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(0);
   });
 
   it('continues on error when continueOnError is true', async () => {
@@ -810,7 +802,7 @@ describe('MusicExecutor - error handling', () => {
     mockTranscoder.transcode = mock(async () => {
       throw new Error('Transcode failed permanently');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -841,14 +833,14 @@ describe('MusicExecutor - error handling', () => {
     expect(errorEvents[0]!.error!.message).toBe('Transcode failed permanently');
 
     // Second operation should have been executed
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
   });
 
   it('includes error in progress event', async () => {
-    mockDb.addTrack = mock(() => {
+    mockAdapter.addTrack = mock(() => {
       throw new Error('Database error');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -880,14 +872,14 @@ describe('MusicExecutor - error handling', () => {
 // =============================================================================
 
 describe('MusicExecutor - abort signal', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('respects abort signal', async () => {
@@ -951,7 +943,7 @@ describe('MusicExecutor - abort signal', () => {
     }
 
     expect(errorThrown).toBe(true);
-    expect(mockDb.addTrack.mock.calls.length).toBe(0);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(0);
   });
 });
 
@@ -961,9 +953,9 @@ describe('MusicExecutor - abort signal', () => {
 
 describe('createExecutor', () => {
   it('creates a SyncExecutor instance', () => {
-    const mockDb = createMockIpodDatabase();
+    const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
-    const deps = createDependencies(mockDb, mockTranscoder);
+    const deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = createExecutor(deps);
 
@@ -974,9 +966,9 @@ describe('createExecutor', () => {
 
 describe('executePlan', () => {
   it('returns execution result', async () => {
-    const mockDb = createMockIpodDatabase();
+    const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
-    const deps = createDependencies(mockDb, mockTranscoder);
+    const deps = createDependencies(mockAdapter, mockTranscoder);
 
     const plan: SyncPlan = {
       operations: [
@@ -997,9 +989,9 @@ describe('executePlan', () => {
   });
 
   it('counts skipped operations in dry-run', async () => {
-    const mockDb = createMockIpodDatabase();
+    const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
-    const deps = createDependencies(mockDb, mockTranscoder);
+    const deps = createDependencies(mockAdapter, mockTranscoder);
 
     const plan: SyncPlan = {
       operations: [
@@ -1018,25 +1010,20 @@ describe('executePlan', () => {
   });
 
   it('collects errors when continueOnError is true', async () => {
-    const mockDb = createMockIpodDatabase();
+    const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
 
     // Make first copy fail permanently with a database error (no retry)
     let callCount = 0;
-    mockDb.addTrack = mock((input: { title: string }) => {
+    mockAdapter.addTrack = mock((input: { title: string }) => {
       callCount++;
       if (callCount === 1) {
-        throw new Error('iPod database error: add failed');
+        throw new Error('database error: add failed');
       }
-      return createMockIPodTrack(
-        '',
-        input.title,
-        '',
-        `:iPod_Control:Music:F00:MOCK${callCount}.m4a`
-      );
+      return createMockDeviceTrack('', input.title, '', `Music/MOCK${callCount}.m4a`);
     });
 
-    const deps = createDependencies(mockDb, mockTranscoder);
+    const deps = createDependencies(mockAdapter, mockTranscoder);
 
     const plan: SyncPlan = {
       operations: [
@@ -1056,7 +1043,7 @@ describe('executePlan', () => {
     expect(result.failed).toBe(1);
     expect(result.completed).toBe(1);
     expect(result.errors).toHaveLength(1);
-    expect(result.errors[0]!.error.message).toBe('iPod database error: add failed');
+    expect(result.errors[0]!.error.message).toBe('database error: add failed');
   });
 });
 
@@ -1065,14 +1052,14 @@ describe('executePlan', () => {
 // =============================================================================
 
 describe('phase detection', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('reports transcoding phase for transcode operations', async () => {
@@ -1125,14 +1112,14 @@ describe('phase detection', () => {
 // =============================================================================
 
 describe('filetype detection', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('sets MPEG audio file for MP3', async () => {
@@ -1155,7 +1142,7 @@ describe('filetype detection', () => {
       // iterate
     }
 
-    const trackInput = mockDb.addTrack.mock.calls[0]![0] as { filetype: string };
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
     expect(trackInput.filetype).toBe('MPEG audio file');
   });
 
@@ -1179,7 +1166,7 @@ describe('filetype detection', () => {
       // iterate
     }
 
-    const trackInput = mockDb.addTrack.mock.calls[0]![0] as { filetype: string };
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
     expect(trackInput.filetype).toBe('AAC audio file');
   });
 });
@@ -1267,14 +1254,14 @@ describe('getRetriesForCategory', () => {
 // =============================================================================
 
 describe('MusicExecutor - retry logic', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('retries transcode operation once on failure then succeeds', async () => {
@@ -1291,7 +1278,7 @@ describe('MusicExecutor - retry logic', () => {
         bitrate: 256,
       };
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1317,7 +1304,7 @@ describe('MusicExecutor - retry logic', () => {
 
     // Should have succeeded after retry
     expect(transcodeAttempts).toBe(2);
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
     // No error events since it succeeded on retry
     const errorEvents = progress.filter((p) => p.error !== undefined);
     expect(errorEvents.length).toBe(0);
@@ -1327,7 +1314,7 @@ describe('MusicExecutor - retry logic', () => {
     mockTranscoder.transcode = mock(async () => {
       throw new Error('FFmpeg permanent failure');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1364,25 +1351,19 @@ describe('MusicExecutor - retry logic', () => {
   it('retries copy operation once on failure', async () => {
     let copyAttempts = 0;
     // Make addTrack return a track whose copyFile method fails initially
-    mockDb.addTrack = mock((input: { title: string }) => {
-      const track = createMockIPodTrack(
-        '',
-        input.title,
-        '',
-        `:iPod_Control:Music:F00:MOCK${copyAttempts}.m4a`,
-        {
-          copyFile: () => {
-            copyAttempts++;
-            if (copyAttempts === 1) {
-              throw new Error('ENOENT: file not found');
-            }
-            return track;
-          },
-        }
-      );
+    mockAdapter.addTrack = mock((input: { title: string }) => {
+      const track = createMockDeviceTrack('', input.title, '', `Music/MOCK${copyAttempts}.m4a`, {
+        copyFile: () => {
+          copyAttempts++;
+          if (copyAttempts === 1) {
+            throw new Error('ENOENT: file not found');
+          }
+          return track;
+        },
+      });
       return track;
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1412,10 +1393,10 @@ describe('MusicExecutor - retry logic', () => {
   });
 
   it('does not retry database errors', async () => {
-    mockDb.addTrack = mock(() => {
-      throw new Error('iPod database corruption');
+    mockAdapter.addTrack = mock(() => {
+      throw new Error('database corruption');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1439,7 +1420,7 @@ describe('MusicExecutor - retry logic', () => {
     }
 
     // Should only try once (no retry for database errors)
-    expect(mockDb.addTrack.mock.calls.length).toBe(1);
+    expect(mockAdapter.addTrack.mock.calls.length).toBe(1);
     const errorEvents = progress.filter((p) => p.error !== undefined);
     expect(errorEvents.length).toBe(1);
     expect(errorEvents[0]!.categorizedError?.wasRetried).toBe(false);
@@ -1459,7 +1440,7 @@ describe('MusicExecutor - retry logic', () => {
         bitrate: 256,
       };
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1494,7 +1475,7 @@ describe('MusicExecutor - retry logic', () => {
     mockTranscoder.transcode = mock(async () => {
       throw new Error('FFmpeg failure');
     });
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
@@ -1528,7 +1509,7 @@ describe('MusicExecutor - retry logic', () => {
 
 describe('executePlan - categorized errors', () => {
   it('collects categorized errors in result', async () => {
-    const mockDb = createMockIpodDatabase();
+    const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
 
     // Make transcode fail
@@ -1536,7 +1517,7 @@ describe('executePlan - categorized errors', () => {
       throw new Error('FFmpeg error');
     });
 
-    const deps = createDependencies(mockDb, mockTranscoder);
+    const deps = createDependencies(mockAdapter, mockTranscoder);
 
     const plan: SyncPlan = {
       operations: [
@@ -1571,43 +1552,43 @@ describe('executePlan - categorized errors', () => {
 // =============================================================================
 
 describe('MusicExecutor - update-metadata operations', () => {
-  let mockDb: MockIpodDatabase;
+  let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
 
   beforeEach(() => {
-    mockDb = createMockIpodDatabase();
+    mockAdapter = createMockDeviceAdapter();
     mockTranscoder = createMockTranscoder();
-    deps = createDependencies(mockDb, mockTranscoder);
+    deps = createDependencies(mockAdapter, mockTranscoder);
   });
 
   it('executes update-metadata operation', async () => {
-    // Track already on iPod that needs updating
+    // Track already on device that needs updating
     let updateCalled = false;
     let updateFields: Record<string, unknown> | null = null;
-    const ipodTrack = createMockIPodTrack(
+    const deviceTrack = createMockDeviceTrack(
       'Artist feat. B',
       'Song',
       'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a',
+      'Music/UPDATE.m4a',
       {
         update: (fields: Record<string, unknown>) => {
           updateCalled = true;
           updateFields = fields;
-          return ipodTrack;
+          return deviceTrack;
         },
       }
     );
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: {
             artist: 'Artist',
             title: 'Song (feat. B)',
@@ -1627,33 +1608,33 @@ describe('MusicExecutor - update-metadata operations', () => {
     expect(updateFields).not.toBeNull();
     expect(updateFields!.artist).toBe('Artist');
     expect(updateFields!.title).toBe('Song (feat. B)');
-    expect(mockDb.save.mock.calls.length).toBe(1);
+    expect(mockAdapter.save.mock.calls.length).toBe(1);
   });
 
   it('finds track by filePath for update', async () => {
     let foundByPath = false;
-    const ipodTrack = createMockIPodTrack(
+    const deviceTrack = createMockDeviceTrack(
       'Old Artist',
       'Old Title',
       'Album',
-      ':iPod_Control:Music:F00:PATH.m4a',
+      'Music/PATH.m4a',
       {
         update: () => {
           foundByPath = true;
-          return ipodTrack;
+          return deviceTrack;
         },
       }
     );
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack, // Same filePath
+          track: deviceTrack, // Same filePath
           metadata: { artist: 'New Artist' },
         },
       ],
@@ -1671,30 +1652,19 @@ describe('MusicExecutor - update-metadata operations', () => {
 
   it('falls back to metadata matching when filePath differs', async () => {
     let updateCalled = false;
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:ACTUAL.m4a',
-      {
-        update: () => {
-          updateCalled = true;
-          return ipodTrack;
-        },
-      }
-    );
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/ACTUAL.m4a', {
+      update: () => {
+        updateCalled = true;
+        return deviceTrack;
+      },
+    });
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     // Use different filePath in operation, but same metadata
-    const operationTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:DIFFERENT.m4a'
-    );
+    const operationTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/DIFFERENT.m4a');
     const plan: SyncPlan = {
       operations: [
         {
@@ -1716,15 +1686,15 @@ describe('MusicExecutor - update-metadata operations', () => {
   });
 
   it('throws error when track not found', async () => {
-    mockDb = createMockIpodDatabase([]); // Empty database
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([]); // Empty database
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
-    const nonExistentTrack = createMockIPodTrack(
+    const nonExistentTrack = createMockDeviceTrack(
       'Missing',
       'Track',
       'Album',
-      ':iPod_Control:Music:F00:MISSING.m4a'
+      'Music/MISSING.m4a'
     );
     const plan: SyncPlan = {
       operations: [
@@ -1753,21 +1723,16 @@ describe('MusicExecutor - update-metadata operations', () => {
   });
 
   it('reports updating-db phase for update-metadata operations', async () => {
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a'
-    );
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a');
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: { artist: 'New Artist' },
         },
       ],
@@ -1787,21 +1752,16 @@ describe('MusicExecutor - update-metadata operations', () => {
   });
 
   it('does not transfer bytes for update-metadata', async () => {
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a'
-    );
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a');
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: { artist: 'New Artist' },
         },
       ],
@@ -1821,28 +1781,22 @@ describe('MusicExecutor - update-metadata operations', () => {
 
   it('skips update-metadata in dry-run mode', async () => {
     let updateCalled = false;
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a',
-      {
-        update: () => {
-          updateCalled = true;
-          return ipodTrack;
-        },
-      }
-    );
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a', {
+      update: () => {
+        updateCalled = true;
+        return deviceTrack;
+      },
+    });
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: { artist: 'New Artist' },
         },
       ],
@@ -1857,35 +1811,29 @@ describe('MusicExecutor - update-metadata operations', () => {
     }
 
     expect(updateCalled).toBe(false);
-    expect(mockDb.save.mock.calls.length).toBe(0);
+    expect(mockAdapter.save.mock.calls.length).toBe(0);
     const skippedEvents = progress.filter((p) => p.skipped === true);
     expect(skippedEvents.length).toBeGreaterThan(0);
   });
 
   it('updates only specified fields', async () => {
     let updateFields: Record<string, unknown> | null = null;
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a',
-      {
-        update: (fields: Record<string, unknown>) => {
-          updateFields = fields;
-          return ipodTrack;
-        },
-      }
-    );
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a', {
+      update: (fields: Record<string, unknown>) => {
+        updateFields = fields;
+        return deviceTrack;
+      },
+    });
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: {
             artist: 'New Artist',
             // title not specified - should not be included
@@ -1909,28 +1857,22 @@ describe('MusicExecutor - update-metadata operations', () => {
 
   it('handles all metadata fields', async () => {
     let updateFields: Record<string, unknown> | null = null;
-    const ipodTrack = createMockIPodTrack(
-      'Artist',
-      'Song',
-      'Album',
-      ':iPod_Control:Music:F00:UPDATE.m4a',
-      {
-        update: (fields: Record<string, unknown>) => {
-          updateFields = fields;
-          return ipodTrack;
-        },
-      }
-    );
+    const deviceTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/UPDATE.m4a', {
+      update: (fields: Record<string, unknown>) => {
+        updateFields = fields;
+        return deviceTrack;
+      },
+    });
 
-    mockDb = createMockIpodDatabase([ipodTrack]);
-    deps = createDependencies(mockDb, mockTranscoder);
+    mockAdapter = createMockDeviceAdapter([deviceTrack]);
+    deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicExecutor(deps);
     const plan: SyncPlan = {
       operations: [
         {
           type: 'update-metadata',
-          track: ipodTrack,
+          track: deviceTrack,
           metadata: {
             artist: 'New Artist',
             title: 'New Title',
@@ -1968,7 +1910,7 @@ describe('getMusicOperationDisplayName - update-metadata', () => {
   it('returns artist - title for update-metadata operation', () => {
     const op: SyncOperation = {
       type: 'update-metadata',
-      track: createIPodTrack('Daft Punk', 'Get Lucky', 'Random Access Memories'),
+      track: createDeviceTrack('Daft Punk', 'Get Lucky', 'Random Access Memories'),
       metadata: { artist: 'Daft Punk', title: 'Get Lucky (feat. Pharrell Williams)' },
     };
 
@@ -1985,7 +1927,7 @@ describe('getMusicOperationDisplayName - upgrade', () => {
     const op: SyncOperation = {
       type: 'upgrade-transcode',
       source: createCollectionTrack('Pink Floyd', 'Comfortably Numb', 'The Wall', 'flac'),
-      target: createIPodTrack('Pink Floyd', 'Comfortably Numb', 'The Wall'),
+      target: createDeviceTrack('Pink Floyd', 'Comfortably Numb', 'The Wall'),
       reason: 'format-upgrade',
       preset: { name: 'high' },
     };
@@ -1995,19 +1937,17 @@ describe('getMusicOperationDisplayName - upgrade', () => {
 });
 
 describe('upgrade operations - dry run', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
   it('reports upgrade operations in dry run without making changes', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
-      playCount: 42,
-      rating: 80,
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
     });
 
     const plan: SyncPlan = {
@@ -2047,19 +1987,17 @@ describe('upgrade operations - dry run', () => {
 });
 
 describe('upgrade operations - execution', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
   it('executes upgrade with transcode preset (format-upgrade)', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
-      playCount: 42,
-      rating: 80,
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
     });
 
     // Add replaceTrackFile to the mock database
@@ -2109,8 +2047,8 @@ describe('upgrade operations - execution', () => {
   });
 
   it('executes upgrade without preset (copy-based quality-upgrade)', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       bitrate: 128,
     });
 
@@ -2153,10 +2091,8 @@ describe('upgrade operations - execution', () => {
 
   it('updates metadata fields after file replacement', async () => {
     let capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
-      playCount: 42,
-      rating: 80,
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
         capturedUpdateFields = fields;
         return existingTrack;
@@ -2211,12 +2147,12 @@ describe('upgrade operations - execution', () => {
 
   it('reports error when upgrade target track is not found in database', async () => {
     // Empty database — the target track won't be found during transfer
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     const replaceTrackFile = mock(() => {});
     (db as any).replaceTrackFile = replaceTrackFile;
 
-    const targetTrack = createIPodTrack('Missing', 'Track', 'Album', {
-      filePath: ':iPod_Control:Music:F00:GONE.m4a',
+    const targetTrack = createDeviceTrack('Missing', 'Track', 'Album', {
+      filePath: 'Music/GONE.m4a',
     });
 
     const plan: SyncPlan = {
@@ -2251,12 +2187,12 @@ describe('upgrade operations - execution', () => {
 
   it('continues past upgrade-not-found error with continueOnError', async () => {
     // Empty database — the target track won't be found
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     const replaceTrackFile = mock(() => {});
     (db as any).replaceTrackFile = replaceTrackFile;
 
-    const targetTrack = createIPodTrack('Missing', 'Track', 'Album', {
-      filePath: ':iPod_Control:Music:F00:GONE.m4a',
+    const targetTrack = createDeviceTrack('Missing', 'Track', 'Album', {
+      filePath: 'Music/GONE.m4a',
     });
 
     const plan: SyncPlan = {
@@ -2299,8 +2235,8 @@ describe('upgrade operations - execution', () => {
 
   it('does not include identity fields (title, artist, album) in upgrade metadata update', async () => {
     let capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
         capturedUpdateFields = fields;
         return existingTrack;
@@ -2395,11 +2331,11 @@ function createMockStreamAdapter(options?: {
 }
 
 describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
@@ -2616,12 +2552,12 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
 
     // Create an existing track for removal with a spy on remove()
     let trackRemoved = false;
-    const existingTrack = createIPodTrack('Old Artist', 'Old Song', 'Old Album', {
+    const existingTrack = createDeviceTrack('Old Artist', 'Old Song', 'Old Album', {
       removeFn: () => {
         trackRemoved = true;
       },
     });
-    db = createMockIpodDatabase([existingTrack]);
+    db = createMockDeviceAdapter([existingTrack]);
     transcoder = createMockTranscoder();
 
     const plan: SyncPlan = {
@@ -2727,11 +2663,11 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
 // =============================================================================
 
 describe('sync tag preservation after upgrade', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
@@ -2739,8 +2675,8 @@ describe('sync tag preservation after upgrade', () => {
     // This tests the stale snapshot fix: after upgrade, the sync tag in the
     // comment field should reflect the NEW preset (low), not the old one (high).
     let _capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       comment: '[podkit:v1 quality=high encoding=vbr]',
       update: (fields: Record<string, unknown>) => {
         _capturedUpdateFields = fields;
@@ -2786,8 +2722,8 @@ describe('sync tag preservation after upgrade', () => {
 
   it('writes sync tag with encoding mode after transcode upgrade', async () => {
     let _capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
         _capturedUpdateFields = fields;
         return existingTrack;
@@ -2832,8 +2768,8 @@ describe('sync tag preservation after upgrade', () => {
 
   it('does not write sync tag when syncTagConfig is not provided', async () => {
     let _capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
         _capturedUpdateFields = fields;
         return existingTrack;
@@ -2908,11 +2844,11 @@ describe('sync tag preservation after upgrade', () => {
 // =============================================================================
 
 describe('artwork during upgrade operations', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
@@ -2931,8 +2867,8 @@ describe('artwork during upgrade operations', () => {
 
     // Mock addTrack to return a track that records setArtworkFromData calls
     db.addTrack = mock((input: Record<string, unknown>) => {
-      const filePath = `:iPod_Control:Music:F00:MOCK_ART.m4a`;
-      return createMockIPodTrack(
+      const filePath = `Music/MOCK_ART.m4a`;
+      return createMockDeviceTrack(
         String(input.artist ?? ''),
         String(input.title ?? ''),
         String(input.album ?? ''),
@@ -2940,7 +2876,7 @@ describe('artwork during upgrade operations', () => {
         {
           setArtworkFromData: (_data: Buffer) => {
             artworkSet = true;
-            return createMockIPodTrack(
+            return createMockDeviceTrack(
               String(input.artist ?? ''),
               String(input.title ?? ''),
               String(input.album ?? ''),
@@ -2972,8 +2908,8 @@ describe('artwork during upgrade operations', () => {
 
   it('skips artwork during upgrade when artwork is disabled', async () => {
     let artworkSet = false;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       hasArtwork: false,
       update: (_fields: Record<string, unknown>) => existingTrack,
       setArtworkFromData: (_data: Buffer) => {
@@ -3013,9 +2949,9 @@ describe('artwork during upgrade operations', () => {
     expect(executor.getWarnings()).toHaveLength(0);
   });
 
-  it('artwork-added upgrade replaces the file on iPod', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+  it('artwork-added upgrade replaces the file on device', async () => {
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       hasArtwork: false,
       update: (_fields: Record<string, unknown>) => existingTrack,
     });
@@ -3058,8 +2994,8 @@ describe('artwork during upgrade operations', () => {
   });
 
   it('upgrade with no preset does not transfer significantly large bytes', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       bitrate: 128,
       update: (_fields: Record<string, unknown>) => existingTrack,
     });
@@ -3105,11 +3041,11 @@ describe('artwork during upgrade operations', () => {
 // =============================================================================
 
 describe('copy sync tags', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
@@ -3201,8 +3137,8 @@ describe('copy sync tags', () => {
 
   it('writes copy sync tag for upgrade-direct-copy', async () => {
     let _capturedUpdateFields: Record<string, unknown> | undefined;
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (fields: Record<string, unknown>) => {
         _capturedUpdateFields = fields;
         return existingTrack;
@@ -3281,11 +3217,11 @@ describe('copy sync tags', () => {
 // =============================================================================
 
 describe('optimized copy operations', () => {
-  let db: MockIpodDatabase;
+  let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
   beforeEach(() => {
-    db = createMockIpodDatabase();
+    db = createMockDeviceAdapter();
     transcoder = createMockTranscoder();
   });
 
@@ -3322,8 +3258,8 @@ describe('optimized copy operations', () => {
   });
 
   it('routes upgrade-optimized-copy through FFmpeg, not transcoder.transcode', async () => {
-    const existingTrack = createIPodTrack('Artist', 'Song', 'Album', {
-      filePath: ':iPod_Control:Music:F00:EXISTING.m4a',
+    const existingTrack = createDeviceTrack('Artist', 'Song', 'Album', {
+      filePath: 'Music/EXISTING.m4a',
       update: (_fields: Record<string, unknown>) => existingTrack,
     });
 

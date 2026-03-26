@@ -75,7 +75,7 @@ import {
 } from './open-device.js';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
-import type { DeviceTrack, IPodTrack } from '@podkit/core';
+import type { DeviceTrack, IpodTrack } from '@podkit/core';
 
 // =============================================================================
 // Shared utilities
@@ -463,7 +463,7 @@ function escapeCsvField(value: string): string {
 }
 
 /**
- * Map an IPodTrack to a full JSON object with all metadata fields.
+ * Map an IpodTrack to a full JSON object with all metadata fields.
  */
 function ipodTrackToFullJson(t: {
   title: string;
@@ -2227,10 +2227,10 @@ const musicSubcommand = new Command('music')
         const heading = `Music on ${deviceName}:`;
         const displayTracks = musicTracks.map(deviceTrackToDisplayTrack);
 
-        // When isIpodDevice, the DeviceTrack objects are IPodTrack instances
+        // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
         // (IpodDeviceAdapter returns them directly), so the cast is safe.
         const jsonMapper = deviceResult.isIpodDevice
-          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IPodTrack)
+          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
           : deviceTrackToFullJson;
         outputMusicTracks(musicTracks, displayTracks, heading, jsonMapper);
       } finally {
@@ -2403,10 +2403,10 @@ const videoSubcommand = new Command('video')
         const heading = `Video on ${deviceName}:`;
         const displayTracks = videoTracks.map(deviceTrackToDisplayTrack);
 
-        // When isIpodDevice, the DeviceTrack objects are IPodTrack instances
+        // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
         // (IpodDeviceAdapter returns them directly), so the cast is safe.
         const jsonMapper = deviceResult.isIpodDevice
-          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IPodTrack)
+          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
           : deviceTrackToFullJson;
         outputVideoTracks(videoTracks, displayTracks, heading, jsonMapper);
       } finally {

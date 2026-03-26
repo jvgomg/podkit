@@ -1,12 +1,12 @@
 /**
- * Implementation of the IPodTrack interface.
+ * Implementation of the IpodTrack interface.
  *
  * IpodTrackImpl wraps a libgpod-node TrackHandle and provides fluent methods
  * for track operations. All operations are delegated to the parent IpodDatabase.
  */
 
 import type { TrackHandle, Track } from '@podkit/libgpod-node';
-import type { IPodTrack, TrackFields, RemoveTrackResult } from './types.js';
+import type { IpodTrack, TrackFields, RemoveTrackResult } from './types.js';
 import type { SyncTagData } from '../sync/sync-tags.js';
 import { parseSyncTag } from '../sync/sync-tags.js';
 import { IpodError } from './errors.js';
@@ -24,9 +24,9 @@ export interface IpodDatabaseInternal {
    *
    * @param track - The track to update
    * @param fields - Fields to update
-   * @returns A new IPodTrack snapshot with updated values
+   * @returns A new IpodTrack snapshot with updated values
    */
-  updateTrack(track: IPodTrack, fields: TrackFields): IPodTrack;
+  updateTrack(track: IpodTrack, fields: TrackFields): IpodTrack;
 
   /**
    * Removes a track from the database.
@@ -35,46 +35,46 @@ export interface IpodDatabaseInternal {
    * @param options - Optional settings for the removal
    * @returns Result indicating success and any file deletion errors
    */
-  removeTrack(track: IPodTrack, options?: { deleteFile?: boolean }): RemoveTrackResult;
+  removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): RemoveTrackResult;
 
   /**
    * Copies an audio file to the iPod for a track.
    *
    * @param track - The track to copy the file for
    * @param sourcePath - Path to the source audio file
-   * @returns A new IPodTrack snapshot with hasFile: true
+   * @returns A new IpodTrack snapshot with hasFile: true
    */
-  copyFileToTrack(track: IPodTrack, sourcePath: string): IPodTrack;
+  copyFileToTrack(track: IpodTrack, sourcePath: string): IpodTrack;
 
   /**
    * Sets artwork for a track from an image file.
    *
    * @param track - The track to set artwork for
    * @param imagePath - Path to the image file
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    */
-  setTrackArtwork(track: IPodTrack, imagePath: string): IPodTrack;
+  setTrackArtwork(track: IpodTrack, imagePath: string): IpodTrack;
 
   /**
    * Sets artwork for a track from image data.
    *
    * @param track - The track to set artwork for
    * @param imageData - Buffer containing image data
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    */
-  setTrackArtworkFromData(track: IPodTrack, imageData: Buffer): IPodTrack;
+  setTrackArtworkFromData(track: IpodTrack, imageData: Buffer): IpodTrack;
 
   /**
    * Removes artwork from a track.
    *
    * @param track - The track to remove artwork from
-   * @returns A new IPodTrack snapshot with hasArtwork: false
+   * @returns A new IpodTrack snapshot with hasArtwork: false
    */
-  removeTrackArtwork(track: IPodTrack): IPodTrack;
+  removeTrackArtwork(track: IpodTrack): IpodTrack;
 }
 
 /**
- * Implementation of the IPodTrack interface.
+ * Implementation of the IpodTrack interface.
  *
  * This class wraps a libgpod-node TrackHandle and provides:
  * - Read-only snapshot properties from the Track data
@@ -98,7 +98,7 @@ export interface IpodDatabaseInternal {
  * // track.update({ title: 'New' }); // Throws IpodError('TRACK_REMOVED')
  * ```
  */
-export class IpodTrackImpl implements IPodTrack {
+export class IpodTrackImpl implements IpodTrack {
   // Internal state
   private readonly _db: IpodDatabaseInternal;
   private readonly _handle: TrackHandle;
@@ -253,10 +253,10 @@ export class IpodTrackImpl implements IPodTrack {
    * Updates track metadata.
    *
    * @param fields - Fields to update
-   * @returns A new IPodTrack snapshot with updated values
+   * @returns A new IpodTrack snapshot with updated values
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    */
-  update(fields: TrackFields): IPodTrack {
+  update(fields: TrackFields): IpodTrack {
     this.assertNotRemoved();
     return this._db.updateTrack(this, fields);
   }
@@ -280,12 +280,12 @@ export class IpodTrackImpl implements IPodTrack {
    * Copies an audio file to the iPod for this track.
    *
    * @param sourcePath - Path to the source audio file
-   * @returns A new IPodTrack snapshot with hasFile: true
+   * @returns A new IpodTrack snapshot with hasFile: true
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    * @throws {IpodError} If the source file is not found (code: FILE_NOT_FOUND)
    * @throws {IpodError} If the copy operation fails (code: COPY_FAILED)
    */
-  copyFile(sourcePath: string): IPodTrack {
+  copyFile(sourcePath: string): IpodTrack {
     this.assertNotRemoved();
     return this._db.copyFileToTrack(this, sourcePath);
   }
@@ -294,11 +294,11 @@ export class IpodTrackImpl implements IPodTrack {
    * Sets artwork for the track from an image file.
    *
    * @param imagePath - Path to the image file (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  setArtwork(imagePath: string): IPodTrack {
+  setArtwork(imagePath: string): IpodTrack {
     this.assertNotRemoved();
     return this._db.setTrackArtwork(this, imagePath);
   }
@@ -307,11 +307,11 @@ export class IpodTrackImpl implements IPodTrack {
    * Sets artwork for the track from image data.
    *
    * @param imageData - Buffer containing image data (JPEG or PNG)
-   * @returns A new IPodTrack snapshot with hasArtwork: true
+   * @returns A new IpodTrack snapshot with hasArtwork: true
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  setArtworkFromData(imageData: Buffer): IPodTrack {
+  setArtworkFromData(imageData: Buffer): IpodTrack {
     this.assertNotRemoved();
     return this._db.setTrackArtworkFromData(this, imageData);
   }
@@ -319,11 +319,11 @@ export class IpodTrackImpl implements IPodTrack {
   /**
    * Removes artwork from the track.
    *
-   * @returns A new IPodTrack snapshot with hasArtwork: false
+   * @returns A new IpodTrack snapshot with hasArtwork: false
    * @throws {IpodError} If the track has been removed (code: TRACK_REMOVED)
    * @throws {IpodError} If artwork operation fails (code: ARTWORK_FAILED)
    */
-  removeArtwork(): IPodTrack {
+  removeArtwork(): IpodTrack {
     this.assertNotRemoved();
     return this._db.removeTrackArtwork(this);
   }

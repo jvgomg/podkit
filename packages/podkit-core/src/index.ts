@@ -78,7 +78,7 @@ export type { PresetChangeOptions } from './sync/upgrades.js';
 // Planner
 export {
   createMusicPlan,
-  isIPodCompatible,
+  isDefaultCompatibleFormat,
   requiresTranscoding,
   estimateTranscodedSize,
   estimateCopySize,
@@ -272,7 +272,7 @@ export { getFileDisplayMetadata, getFilesDisplayMetadata } from './metadata/extr
 export type {
   TrackInput,
   TrackFields,
-  IPodTrack,
+  IpodTrack,
   IpodPlaylist,
   IpodDeviceInfo,
   IpodInfo,

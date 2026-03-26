@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, mock } from 'bun:test';
 import type { TrackHandle, Track } from '@podkit/libgpod-node';
 import { IpodTrackImpl, type IpodDatabaseInternal } from './track.js';
 import { IpodError } from './errors.js';
-import type { IPodTrack, TrackFields } from './types.js';
+import type { IpodTrack, TrackFields } from './types.js';
 
 /**
  * Creates a mock TrackHandle.
@@ -77,12 +77,12 @@ function createMockDatabase(): IpodDatabaseInternal & {
   setTrackArtworkFromDataMock: ReturnType<typeof mock>;
   removeTrackArtworkMock: ReturnType<typeof mock>;
 } {
-  const updateTrackMock = mock(() => ({}) as IPodTrack);
+  const updateTrackMock = mock(() => ({}) as IpodTrack);
   const removeTrackMock = mock(() => ({ removed: true }));
-  const copyFileToTrackMock = mock(() => ({}) as IPodTrack);
-  const setTrackArtworkMock = mock(() => ({}) as IPodTrack);
-  const setTrackArtworkFromDataMock = mock(() => ({}) as IPodTrack);
-  const removeTrackArtworkMock = mock(() => ({}) as IPodTrack);
+  const copyFileToTrackMock = mock(() => ({}) as IpodTrack);
+  const setTrackArtworkMock = mock(() => ({}) as IpodTrack);
+  const setTrackArtworkFromDataMock = mock(() => ({}) as IpodTrack);
+  const removeTrackArtworkMock = mock(() => ({}) as IpodTrack);
 
   return {
     updateTrack: updateTrackMock,

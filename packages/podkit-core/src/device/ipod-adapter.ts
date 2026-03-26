@@ -5,31 +5,26 @@
  * sync engine can work against the generic DeviceAdapter interface without
  * knowing about iPod-specific concerns (playlists, artwork database, etc.).
  *
- * IPodTrack extends DeviceTrack, so no mapping is needed for
- * getTracks() — we return IPodTrack instances directly.
+ * IpodTrack extends DeviceTrack, so no mapping is needed for
+ * getTracks() — we return IpodTrack instances directly.
  *
  * @module
  */
 
-import type {
-  DeviceAdapter,
-  DeviceTrack,
-  DeviceTrackInput,
-  DeviceTrackMetadata,
-} from './adapter.js';
+import type { DeviceAdapter, DeviceTrackInput, DeviceTrackMetadata } from './adapter.js';
 import type { DeviceCapabilities } from './capabilities.js';
 import type { IpodDatabase } from '../ipod/database.js';
-import type { IPodTrack, TrackInput, TrackFields } from '../ipod/types.js';
+import type { IpodTrack, TrackInput, TrackFields } from '../ipod/types.js';
 import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
 
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.
  *
- * IPodTrack extends DeviceTrack, so this wrapper simply delegates calls
+ * IpodTrack extends DeviceTrack, so this wrapper simply delegates calls
  * without data transformation.
  */
-export class IpodDeviceAdapter implements DeviceAdapter {
+export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
   private readonly ipod: IpodDatabase;
   readonly capabilities: DeviceCapabilities;
 
@@ -57,12 +52,11 @@ export class IpodDeviceAdapter implements DeviceAdapter {
 
   // Track lifecycle
 
-  getTracks(): DeviceTrack[] {
-    // IPodTrack extends DeviceTrack — return directly
+  getTracks(): IpodTrack[] {
     return this.ipod.getTracks();
   }
 
-  addTrack(input: DeviceTrackInput): DeviceTrack {
+  addTrack(input: DeviceTrackInput): IpodTrack {
     // If a syncTag is provided, embed it into the comment field for iPod storage
     const { syncTag, ...rest } = input;
     const trackInput = rest as TrackInput;
@@ -72,32 +66,31 @@ export class IpodDeviceAdapter implements DeviceAdapter {
     return this.ipod.addTrack(trackInput);
   }
 
-  updateTrack(track: DeviceTrack, fields: DeviceTrackMetadata): DeviceTrack {
-    return this.ipod.updateTrack(track as IPodTrack, fields as TrackFields);
+  updateTrack(track: IpodTrack, fields: DeviceTrackMetadata): IpodTrack {
+    return this.ipod.updateTrack(track, fields as TrackFields);
   }
 
-  removeTrack(track: DeviceTrack, options?: { deleteFile?: boolean }): void {
-    this.ipod.removeTrack(track as IPodTrack, options);
+  removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): void {
+    this.ipod.removeTrack(track, options);
   }
 
-  copyTrackFile(track: DeviceTrack, sourcePath: string): DeviceTrack {
-    // IPodTrack.copyFile() mutates in place and returns the same instance
+  copyTrackFile(track: IpodTrack, sourcePath: string): IpodTrack {
+    // IpodTrack.copyFile() mutates in place and returns the same instance
     return track.copyFile(sourcePath);
   }
 
-  replaceTrackFile(track: DeviceTrack, newFilePath: string): DeviceTrack {
-    return this.ipod.replaceTrackFile(track as IPodTrack, newFilePath);
+  replaceTrackFile(track: IpodTrack, newFilePath: string): IpodTrack {
+    return this.ipod.replaceTrackFile(track, newFilePath);
   }
 
-  removeTrackArtwork(track: DeviceTrack): DeviceTrack {
+  removeTrackArtwork(track: IpodTrack): IpodTrack {
     return track.removeArtwork();
   }
 
   // Sync tags
 
-  writeSyncTag(track: DeviceTrack, update: SyncTagUpdate): DeviceTrack {
-    const ipodTrack = track as IPodTrack;
-    const currentComment = ipodTrack.comment;
+  writeSyncTag(track: IpodTrack, update: SyncTagUpdate): IpodTrack {
+    const currentComment = track.comment;
     const existingTag = parseSyncTag(currentComment);
     // Merge: existing tag fields + update fields (update wins)
     const merged: SyncTagData = existingTag
@@ -107,9 +100,8 @@ export class IpodDeviceAdapter implements DeviceAdapter {
     return this.updateTrack(track, { comment: newComment });
   }
 
-  clearSyncTag(track: DeviceTrack): DeviceTrack {
-    const ipodTrack = track as IPodTrack;
-    const currentComment = ipodTrack.comment;
+  clearSyncTag(track: IpodTrack): IpodTrack {
+    const currentComment = track.comment;
     if (!parseSyncTag(currentComment)) {
       return track; // No sync tag to clear
     }
