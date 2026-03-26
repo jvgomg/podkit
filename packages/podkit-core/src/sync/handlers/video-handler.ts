@@ -17,7 +17,7 @@ import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
-import { generateVideoMatchKey, type IPodVideo } from '../video-differ.js';
+import { generateVideoMatchKey, type DeviceVideo } from '../video-types.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from '../video-planner.js';
 import { getVideoOperationDisplayName } from '../video-executor.js';
 import { buildVideoSyncTag, syncTagMatchesConfig } from '../sync-tags.js';
@@ -64,10 +64,10 @@ export interface VideoHandlerDiffOptions {
 /**
  * ContentTypeHandler implementation for video content.
  *
- * Delegates to existing video sync functions from video-differ.ts,
+ * Delegates to existing video sync functions from video-types.ts,
  * video-planner.ts, and video-executor.ts.
  */
-export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVideo> {
+export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceVideo> {
   readonly type = 'video';
 
   /** Stored video transforms config (set via setVideoTransformsConfig) */
@@ -88,7 +88,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     return generateVideoMatchKey(source);
   }
 
-  generateDeviceMatchKey(device: IPodVideo): string {
+  generateDeviceMatchKey(device: DeviceVideo): string {
     return generateVideoMatchKey(device);
   }
 
@@ -136,18 +136,18 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     return transformApplied ? transformedSeriesTitle : undefined;
   }
 
-  getDeviceItemId(device: IPodVideo): string {
+  getDeviceItemId(device: DeviceVideo): string {
     return device.id;
   }
 
   detectUpdates(
     source: CollectionVideo,
-    device: IPodVideo,
+    device: DeviceVideo,
     _options: HandlerDiffOptions
   ): UpdateReason[] {
     const reasons: UpdateReason[] = [];
 
-    // Detect numeric metadata corrections (same logic as video-differ.ts)
+    // Detect numeric metadata corrections (same logic as video-types.ts)
     const hasMetadataCorrection =
       (source.seasonNumber !== undefined &&
         device.seasonNumber !== undefined &&
@@ -208,7 +208,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
    * @param options - Diff options including presetBitrate and forceMetadata
    */
   postProcessDiff(
-    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     options: HandlerDiffOptions & {
       forceMetadata?: boolean;
       handlerOptions?: VideoHandlerDiffOptions;
@@ -223,7 +223,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
       const expectedSyncTag = resolvedVideoQuality
         ? buildVideoSyncTag(resolvedVideoQuality)
         : undefined;
-      const stillExisting: Array<{ source: CollectionVideo; device: IPodVideo }> = [];
+      const stillExisting: Array<{ source: CollectionVideo; device: DeviceVideo }> = [];
 
       for (const match of diff.existing) {
         // Try sync tag comparison first
@@ -297,13 +297,13 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
     };
   }
 
-  planRemove(device: IPodVideo): SyncOperation {
+  planRemove(device: DeviceVideo): SyncOperation {
     return { type: 'video-remove', video: device };
   }
 
   planUpdate(
     source: CollectionVideo,
-    device: IPodVideo,
+    device: DeviceVideo,
     reasons: UpdateReason[],
     _options?: HandlerPlanOptions,
     _changes?: import('../types.js').MetadataChange[]
@@ -729,10 +729,10 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, IPodVid
 
   // ---- Device ----
 
-  getDeviceItems(device: DeviceAdapter): IPodVideo[] {
+  getDeviceItems(device: DeviceAdapter): DeviceVideo[] {
     const tracks = device.getTracks().filter((track) => isVideoMediaType(track.mediaType));
 
-    // Map DeviceTrack to IPodVideo for video-specific operations
+    // Map DeviceTrack to DeviceVideo for video-specific operations
     return tracks.map((track) => deviceTrackToVideo(track));
   }
 
@@ -797,12 +797,12 @@ function formatVideoEpisodeTitle(video: CollectionVideo): string {
 }
 
 /**
- * Convert a DeviceTrack (from the adapter) to an IPodVideo for video operations.
+ * Convert a DeviceTrack (from the adapter) to an DeviceVideo for video operations.
  *
- * Maps the track's metadata fields to the IPodVideo interface used by the
+ * Maps the track's metadata fields to the DeviceVideo interface used by the
  * video differ and planner.
  */
-function deviceTrackToVideo(track: DeviceTrack): IPodVideo {
+function deviceTrackToVideo(track: DeviceTrack): DeviceVideo {
   // Determine content type from media type flags
   const MediaType = { Movie: 0x0002, TVShow: 0x0040 };
   const contentType = (track.mediaType & MediaType.TVShow) !== 0 ? 'tvshow' : 'movie';

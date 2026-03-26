@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { VideoHandler, createVideoHandler } from './video-handler.js';
-import { generateVideoMatchKey } from '../video-differ.js';
+import { generateVideoMatchKey } from '../video-types.js';
 import { createSyncDiffer } from '../differ.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { IPodVideo } from '../video-differ.js';
+import type { DeviceVideo } from '../video-types.js';
 import type { SyncOperation, SyncPlan } from '../types.js';
 import { getVideoTransformMatchKeys } from '../../transforms/video-pipeline.js';
 
@@ -43,7 +43,7 @@ function makeTVShowVideo(overrides: Partial<CollectionVideo> = {}): CollectionVi
   });
 }
 
-function makeIPodVideo(overrides: Partial<IPodVideo> = {}): IPodVideo {
+function makeDeviceVideo(overrides: Partial<DeviceVideo> = {}): DeviceVideo {
   return {
     id: ':iPod_Control:Music:F00:test.m4v',
     filePath: ':iPod_Control:Music:F00:test.m4v',
@@ -56,8 +56,8 @@ function makeIPodVideo(overrides: Partial<IPodVideo> = {}): IPodVideo {
   };
 }
 
-function makeIPodTVShow(overrides: Partial<IPodVideo> = {}): IPodVideo {
-  return makeIPodVideo({
+function makeDeviceTVShow(overrides: Partial<DeviceVideo> = {}): DeviceVideo {
+  return makeDeviceVideo({
     id: ':iPod_Control:Music:F01:show.m4v',
     filePath: ':iPod_Control:Music:F01:show.m4v',
     contentType: 'tvshow',
@@ -116,7 +116,7 @@ describe('VideoHandler', () => {
 
   describe('generateDeviceMatchKey', () => {
     test('generates key for iPod video', () => {
-      const video = makeIPodVideo({ title: 'Inception', year: 2010 });
+      const video = makeDeviceVideo({ title: 'Inception', year: 2010 });
       const key = handler.generateDeviceMatchKey(video);
       expect(key).toContain('movie');
       expect(key).toContain('inception');
@@ -124,20 +124,20 @@ describe('VideoHandler', () => {
 
     test('matches source key for same metadata', () => {
       const source = makeCollectionVideo({ title: 'Inception', year: 2010 });
-      const device = makeIPodVideo({ title: 'Inception', year: 2010 });
+      const device = makeDeviceVideo({ title: 'Inception', year: 2010 });
       expect(handler.generateMatchKey(source)).toBe(handler.generateDeviceMatchKey(device));
     });
 
     test('matches TV show keys', () => {
       const source = makeTVShowVideo({ seriesTitle: 'Lost', seasonNumber: 1, episodeNumber: 1 });
-      const device = makeIPodTVShow({ seriesTitle: 'Lost', seasonNumber: 1, episodeNumber: 1 });
+      const device = makeDeviceTVShow({ seriesTitle: 'Lost', seasonNumber: 1, episodeNumber: 1 });
       expect(handler.generateMatchKey(source)).toBe(handler.generateDeviceMatchKey(device));
     });
   });
 
   describe('getDeviceItemId', () => {
     test('returns video id', () => {
-      const device = makeIPodVideo({ id: 'video-123' });
+      const device = makeDeviceVideo({ id: 'video-123' });
       expect(handler.getDeviceItemId(device)).toBe('video-123');
     });
   });
@@ -145,28 +145,28 @@ describe('VideoHandler', () => {
   describe('detectUpdates', () => {
     test('returns empty array when metadata matches', () => {
       const source = makeTVShowVideo({ seasonNumber: 1, episodeNumber: 1 });
-      const device = makeIPodTVShow({ seasonNumber: 1, episodeNumber: 1 });
+      const device = makeDeviceTVShow({ seasonNumber: 1, episodeNumber: 1 });
       const reasons = handler.detectUpdates(source, device, {});
       expect(reasons).toEqual([]);
     });
 
     test('detects season number correction', () => {
       const source = makeTVShowVideo({ seasonNumber: 2, episodeNumber: 1 });
-      const device = makeIPodTVShow({ seasonNumber: 1, episodeNumber: 1 });
+      const device = makeDeviceTVShow({ seasonNumber: 1, episodeNumber: 1 });
       const reasons = handler.detectUpdates(source, device, {});
       expect(reasons).toContain('metadata-correction');
     });
 
     test('detects episode number correction', () => {
       const source = makeTVShowVideo({ seasonNumber: 1, episodeNumber: 5 });
-      const device = makeIPodTVShow({ seasonNumber: 1, episodeNumber: 3 });
+      const device = makeDeviceTVShow({ seasonNumber: 1, episodeNumber: 3 });
       const reasons = handler.detectUpdates(source, device, {});
       expect(reasons).toContain('metadata-correction');
     });
 
     test('detects year correction', () => {
       const source = makeCollectionVideo({ year: 2024 });
-      const device = makeIPodVideo({ year: 2023 });
+      const device = makeDeviceVideo({ year: 2023 });
       const reasons = handler.detectUpdates(source, device, {});
       expect(reasons).toContain('metadata-correction');
     });
@@ -192,7 +192,7 @@ describe('VideoHandler', () => {
 
   describe('planRemove', () => {
     test('returns video-remove operation', () => {
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const op = handler.planRemove(device);
       expect(op.type).toBe('video-remove');
       if (op.type === 'video-remove') {
@@ -204,7 +204,7 @@ describe('VideoHandler', () => {
   describe('planUpdate', () => {
     test('returns video-upgrade for preset-upgrade reason', () => {
       const source = makeCollectionVideo();
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const ops = handler.planUpdate(source, device, ['preset-upgrade']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-upgrade');
@@ -212,7 +212,7 @@ describe('VideoHandler', () => {
 
     test('returns video-update-metadata for metadata-correction', () => {
       const source = makeCollectionVideo();
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const ops = handler.planUpdate(source, device, ['metadata-correction']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-update-metadata');
@@ -220,7 +220,7 @@ describe('VideoHandler', () => {
 
     test('returns empty array for no reasons', () => {
       const source = makeCollectionVideo();
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const ops = handler.planUpdate(source, device, []);
       expect(ops).toEqual([]);
     });
@@ -247,7 +247,7 @@ describe('VideoHandler', () => {
     });
 
     test('returns 0 for video-remove', () => {
-      const op: SyncOperation = { type: 'video-remove', video: makeIPodVideo() };
+      const op: SyncOperation = { type: 'video-remove', video: makeDeviceVideo() };
       expect(handler.estimateSize(op)).toBe(0);
     });
 
@@ -301,7 +301,7 @@ describe('VideoHandler', () => {
     });
 
     test('returns 0.1 for video-remove', () => {
-      const op: SyncOperation = { type: 'video-remove', video: makeIPodVideo() };
+      const op: SyncOperation = { type: 'video-remove', video: makeDeviceVideo() };
       expect(handler.estimateTime(op)).toBe(0.1);
     });
   });
@@ -351,7 +351,7 @@ describe('VideoHandler', () => {
     test('returns title for video-remove', () => {
       const op: SyncOperation = {
         type: 'video-remove',
-        video: makeIPodVideo({ title: 'Old Movie' }),
+        video: makeDeviceVideo({ title: 'Old Movie' }),
       };
       expect(handler.getDisplayName(op)).toContain('Old Movie');
     });
@@ -376,11 +376,11 @@ describe('VideoHandler', () => {
               useHardwareAcceleration: true,
             },
           },
-          { type: 'video-remove', video: makeIPodVideo() },
+          { type: 'video-remove', video: makeDeviceVideo() },
           {
             type: 'video-update-metadata',
             source: makeTVShowVideo(),
-            video: makeIPodTVShow(),
+            video: makeDeviceTVShow(),
           },
         ],
         estimatedSize: 50000000,
@@ -403,7 +403,7 @@ describe('VideoHandler', () => {
   describe('planUpdate (additional branches)', () => {
     test('returns video-update-metadata for force-metadata reason', () => {
       const source = makeCollectionVideo();
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const ops = handler.planUpdate(source, device, ['force-metadata']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-update-metadata');
@@ -411,7 +411,7 @@ describe('VideoHandler', () => {
 
     test('returns video-upgrade for preset-downgrade reason', () => {
       const source = makeCollectionVideo();
-      const device = makeIPodVideo();
+      const device = makeDeviceVideo();
       const ops = handler.planUpdate(source, device, ['preset-downgrade']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-upgrade');
@@ -422,7 +422,7 @@ describe('VideoHandler', () => {
 
     test('returns video-update-metadata for transform-apply reason', () => {
       const source = makeTVShowVideo();
-      const device = makeIPodTVShow();
+      const device = makeDeviceTVShow();
       const ops = handler.planUpdate(source, device, ['transform-apply']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-update-metadata');
@@ -430,7 +430,7 @@ describe('VideoHandler', () => {
 
     test('returns video-update-metadata for transform-remove reason', () => {
       const source = makeTVShowVideo();
-      const device = makeIPodTVShow();
+      const device = makeDeviceTVShow();
       const ops = handler.planUpdate(source, device, ['transform-remove']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('video-update-metadata');
@@ -441,14 +441,14 @@ describe('VideoHandler', () => {
 // =============================================================================
 // VideoHandler + SyncDiffer integration tests (preset change detection, force-metadata)
 //
-// These test the diff logic from VideoHandler + SyncDiffer that replaced video-differ.ts.
+// These test the diff logic from VideoHandler + SyncDiffer that replaced the old video-differ.ts.
 // =============================================================================
 
 describe('VideoHandler + SyncDiffer — preset change detection', () => {
   test('moves existing items to toUpdate when bitrate differs from presetBitrate', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie A', year: 2020 });
-    const device = makeIPodVideo({
+    const device = makeDeviceVideo({
       title: 'Movie A',
       year: 2020,
       bitrate: 800, // Much lower than preset
@@ -466,7 +466,7 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
   test('keeps items in existing when bitrate matches presetBitrate', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie B', year: 2021 });
-    const device = makeIPodVideo({
+    const device = makeDeviceVideo({
       title: 'Movie B',
       year: 2021,
       bitrate: 1500, // Matches preset
@@ -483,7 +483,7 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
   test('uses sync tag comparison when comment has sync tag', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie C', year: 2022 });
-    const device = makeIPodVideo({
+    const device = makeDeviceVideo({
       title: 'Movie C',
       year: 2022,
       bitrate: 1500,
@@ -504,7 +504,7 @@ describe('VideoHandler + SyncDiffer — preset change detection', () => {
   test('keeps items in existing when sync tag matches resolved quality', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie D', year: 2023 });
-    const device = makeIPodVideo({
+    const device = makeDeviceVideo({
       title: 'Movie D',
       year: 2023,
       bitrate: 1500,
@@ -530,8 +530,8 @@ describe('VideoHandler + SyncDiffer — force-metadata', () => {
       makeTVShowVideo({ seriesTitle: 'Show 1', seasonNumber: 1, episodeNumber: 1 }),
     ];
     const devices = [
-      makeIPodVideo({ title: 'Movie 1', year: 2020 }),
-      makeIPodTVShow({ seriesTitle: 'Show 1', seasonNumber: 1, episodeNumber: 1 }),
+      makeDeviceVideo({ title: 'Movie 1', year: 2020 }),
+      makeDeviceTVShow({ seriesTitle: 'Show 1', seasonNumber: 1, episodeNumber: 1 }),
     ];
 
     const diff = createSyncDiffer(handler).diff(sources, devices, {
@@ -546,7 +546,7 @@ describe('VideoHandler + SyncDiffer — force-metadata', () => {
   test('planUpdate computes newSeriesTitle on tvshow items during force-metadata', () => {
     const handler = createVideoHandler();
     const source = makeTVShowVideo({ seriesTitle: 'My Show', seasonNumber: 1, episodeNumber: 1 });
-    const device = makeIPodTVShow({ seriesTitle: 'My Show', seasonNumber: 1, episodeNumber: 1 });
+    const device = makeDeviceTVShow({ seriesTitle: 'My Show', seasonNumber: 1, episodeNumber: 1 });
 
     const diff = createSyncDiffer(handler).diff([source], [device], {
       forceMetadata: true,
@@ -570,7 +570,7 @@ describe('VideoHandler + SyncDiffer — metadata correction detection', () => {
   test('different season numbers produce different keys (toAdd/toRemove, not update)', () => {
     const handler = createVideoHandler();
     const source = makeTVShowVideo({ seriesTitle: 'Show', seasonNumber: 2, episodeNumber: 1 });
-    const device = makeIPodTVShow({ seriesTitle: 'Show', seasonNumber: 1, episodeNumber: 1 });
+    const device = makeDeviceTVShow({ seriesTitle: 'Show', seasonNumber: 1, episodeNumber: 1 });
 
     const diff = createSyncDiffer(handler).diff([source], [device]);
 
@@ -587,7 +587,7 @@ describe('VideoHandler + SyncDiffer — metadata correction detection', () => {
     // Use a movie without year in key (year = 0 or missing from one side).
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Test Film', year: 2024 });
-    const device = makeIPodVideo({ title: 'Test Film', year: 2023 });
+    const device = makeDeviceVideo({ title: 'Test Film', year: 2023 });
 
     // Both generate "movie:test film:2024" vs "movie:test film:2023" — different keys.
     // They won't match. This is expected — year is part of the key for movies.
@@ -601,7 +601,7 @@ describe('VideoHandler + SyncDiffer — metadata correction detection', () => {
     // if neither has a "valid" year for key generation (year <= 1800 or >= 2100)
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'No Year Movie', year: undefined });
-    const device = makeIPodVideo({ title: 'No Year Movie', year: undefined });
+    const device = makeDeviceVideo({ title: 'No Year Movie', year: undefined });
 
     // Both generate "movie:no year movie" — same key, they match.
     // No year mismatch since both are undefined.
@@ -718,8 +718,8 @@ describe('VideoHandler + SyncDiffer — empty scenarios', () => {
   test('removes all videos when collection is empty', () => {
     const handler = createVideoHandler();
     const devices = [
-      makeIPodVideo({ title: 'Movie 1', year: 2020 }),
-      makeIPodVideo({ title: 'Movie 2', year: 2021 }),
+      makeDeviceVideo({ title: 'Movie 1', year: 2020 }),
+      makeDeviceVideo({ title: 'Movie 2', year: 2021 }),
     ];
     const diff = createSyncDiffer(handler).diff([], devices);
     expect(diff.toAdd).toHaveLength(0);
@@ -732,7 +732,7 @@ describe('VideoHandler + SyncDiffer — movie matching', () => {
   test('matches movies by title', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'The Matrix', year: undefined });
-    const device = makeIPodVideo({ title: 'The Matrix', year: undefined });
+    const device = makeDeviceVideo({ title: 'The Matrix', year: undefined });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.toAdd).toHaveLength(0);
     expect(diff.toRemove).toHaveLength(0);
@@ -743,7 +743,7 @@ describe('VideoHandler + SyncDiffer — movie matching', () => {
   test('matches movies by title and year', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'The Matrix', year: 1999 });
-    const device = makeIPodVideo({ title: 'The Matrix', year: 1999 });
+    const device = makeDeviceVideo({ title: 'The Matrix', year: 1999 });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.toAdd).toHaveLength(0);
     expect(diff.existing).toHaveLength(1);
@@ -752,7 +752,7 @@ describe('VideoHandler + SyncDiffer — movie matching', () => {
   test('distinguishes movies with same title but different years', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Dune', year: 2021 });
-    const device = makeIPodVideo({ title: 'Dune', year: 1984 });
+    const device = makeDeviceVideo({ title: 'Dune', year: 1984 });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.toAdd).toHaveLength(1);
     expect(diff.toRemove).toHaveLength(1);
@@ -762,7 +762,7 @@ describe('VideoHandler + SyncDiffer — movie matching', () => {
   test('matches with case-insensitive comparison', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'THE MATRIX', year: undefined });
-    const device = makeIPodVideo({ title: 'the matrix', year: undefined });
+    const device = makeDeviceVideo({ title: 'the matrix', year: undefined });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.existing).toHaveLength(1);
   });
@@ -776,7 +776,7 @@ describe('VideoHandler + SyncDiffer — TV show matching', () => {
       seasonNumber: 1,
       episodeNumber: 1,
     });
-    const device = makeIPodTVShow({
+    const device = makeDeviceTVShow({
       seriesTitle: 'Breaking Bad',
       seasonNumber: 1,
       episodeNumber: 1,
@@ -799,7 +799,7 @@ describe('VideoHandler + SyncDiffer — TV show matching', () => {
       }),
     ];
     const devices = [
-      makeIPodTVShow({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
+      makeDeviceTVShow({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
     ];
     const diff = createSyncDiffer(handler).diff(sources, devices);
     expect(diff.toAdd).toHaveLength(1);
@@ -810,7 +810,7 @@ describe('VideoHandler + SyncDiffer — TV show matching', () => {
   test('distinguishes different seasons of same series', () => {
     const handler = createVideoHandler();
     const source = makeTVShowVideo({ seriesTitle: 'Show', seasonNumber: 2, episodeNumber: 1 });
-    const device = makeIPodTVShow({ seriesTitle: 'Show', seasonNumber: 1, episodeNumber: 1 });
+    const device = makeDeviceTVShow({ seriesTitle: 'Show', seasonNumber: 1, episodeNumber: 1 });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.toAdd).toHaveLength(1);
     expect(diff.toRemove).toHaveLength(1);
@@ -825,8 +825,8 @@ describe('VideoHandler + SyncDiffer — mixed content scenarios', () => {
       makeTVShowVideo({ seriesTitle: 'Breaking Bad', seasonNumber: 1, episodeNumber: 1 }),
     ];
     const devices = [
-      makeIPodVideo({ title: 'The Matrix', year: 1999 }),
-      makeIPodVideo({
+      makeDeviceVideo({ title: 'The Matrix', year: 1999 }),
+      makeDeviceVideo({
         title: 'Old Movie',
         year: 2000,
         id: ':iPod_Control:Music:F02:old.m4v',
@@ -842,7 +842,7 @@ describe('VideoHandler + SyncDiffer — mixed content scenarios', () => {
   test('does not match movie with TV show of same name', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Fargo', year: 1996 });
-    const device = makeIPodTVShow({ seriesTitle: 'Fargo', seasonNumber: 1, episodeNumber: 1 });
+    const device = makeDeviceTVShow({ seriesTitle: 'Fargo', seasonNumber: 1, episodeNumber: 1 });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.toAdd).toHaveLength(1); // Movie
     expect(diff.toRemove).toHaveLength(1); // TV episode
@@ -855,8 +855,8 @@ describe('VideoHandler + SyncDiffer — duplicate handling', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'The Matrix', year: undefined });
     const devices = [
-      makeIPodVideo({ id: 'first', filePath: ':first', title: 'The Matrix', year: undefined }),
-      makeIPodVideo({ id: 'second', filePath: ':second', title: 'The Matrix', year: undefined }),
+      makeDeviceVideo({ id: 'first', filePath: ':first', title: 'The Matrix', year: undefined }),
+      makeDeviceVideo({ id: 'second', filePath: ':second', title: 'The Matrix', year: undefined }),
     ];
     const diff = createSyncDiffer(handler).diff([source], devices);
     expect(diff.existing).toHaveLength(1);
@@ -874,7 +874,7 @@ describe('VideoHandler + SyncDiffer — preset change (additional scenarios)', (
   test('does not detect preset change when presetBitrate is not set', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
-    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: 100 });
+    const device = makeDeviceVideo({ title: 'Movie', year: 2020, bitrate: 100 });
     const diff = createSyncDiffer(handler).diff([source], [device]);
     expect(diff.existing).toHaveLength(1);
     expect(diff.toUpdate).toHaveLength(0);
@@ -883,7 +883,7 @@ describe('VideoHandler + SyncDiffer — preset change (additional scenarios)', (
   test('does not detect preset change when iPod has no bitrate', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
-    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: undefined });
+    const device = makeDeviceVideo({ title: 'Movie', year: 2020, bitrate: undefined });
     const diff = createSyncDiffer(handler).diff([source], [device], { presetBitrate: 728 });
     expect(diff.existing).toHaveLength(1);
     expect(diff.toUpdate).toHaveLength(0);
@@ -892,7 +892,7 @@ describe('VideoHandler + SyncDiffer — preset change (additional scenarios)', (
   test('does not detect preset change when iPod bitrate is below minimum threshold', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Movie', year: 2020 });
-    const device = makeIPodVideo({ title: 'Movie', year: 2020, bitrate: 30 });
+    const device = makeDeviceVideo({ title: 'Movie', year: 2020, bitrate: 30 });
     const diff = createSyncDiffer(handler).diff([source], [device], { presetBitrate: 728 });
     expect(diff.existing).toHaveLength(1);
     expect(diff.toUpdate).toHaveLength(0);
@@ -910,8 +910,8 @@ describe('VideoHandler + SyncDiffer — preset change (additional scenarios)', (
       }),
     ];
     const devices = [
-      makeIPodVideo({ title: 'Movie A', year: 2020, bitrate: 396, id: ':a', filePath: ':a' }), // low → upgrade
-      makeIPodVideo({ title: 'Movie B', year: 2021, bitrate: 1200, id: ':b', filePath: ':b' }), // high → downgrade
+      makeDeviceVideo({ title: 'Movie A', year: 2020, bitrate: 396, id: ':a', filePath: ':a' }), // low → upgrade
+      makeDeviceVideo({ title: 'Movie B', year: 2021, bitrate: 1200, id: ':b', filePath: ':b' }), // high → downgrade
     ];
     const diff = createSyncDiffer(handler).diff(sources, devices, { presetBitrate: 728 });
     expect(diff.toUpdate).toHaveLength(2);
@@ -939,7 +939,7 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
       seasonNumber: 1,
       episodeNumber: 1,
     });
-    const device = makeIPodTVShow({
+    const device = makeDeviceTVShow({
       seriesTitle: 'Digimon Adventure (JPN)',
       seasonNumber: 1,
       episodeNumber: 1,
@@ -971,7 +971,7 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
       episodeNumber: 1,
     });
     // iPod has the expanded name (previously synced with transform enabled)
-    const device = makeIPodTVShow({
+    const device = makeDeviceTVShow({
       seriesTitle: 'Digimon Adventure (Japanese)',
       seasonNumber: 1,
       episodeNumber: 1,
@@ -1003,7 +1003,7 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
       episodeNumber: 1,
     });
     // iPod already has the expanded name
-    const device = makeIPodTVShow({
+    const device = makeDeviceTVShow({
       seriesTitle: 'Digimon Adventure (Japanese)',
       seasonNumber: 1,
       episodeNumber: 1,
@@ -1025,7 +1025,7 @@ describe('VideoHandler + SyncDiffer — video transform dual-key matching', () =
       seasonNumber: 1,
       episodeNumber: 1,
     });
-    const device = makeIPodTVShow({
+    const device = makeDeviceTVShow({
       seriesTitle: 'Breaking Bad',
       seasonNumber: 1,
       episodeNumber: 1,
@@ -1102,9 +1102,9 @@ describe('force-metadata (additional scenarios)', () => {
   test('does not set newSeriesTitle for movies', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'Inception', year: 2010 });
-    const device = makeIPodVideo({ title: 'Inception', year: 2010 });
+    const device = makeDeviceVideo({ title: 'Inception', year: 2010 });
     const diff = createSyncDiffer(handler).diff([source], [device], {
-      handlerOptions: { forceMetadata: true },
+      forceMetadata: true,
     });
     expect(diff.toUpdate).toHaveLength(1);
     expect(diff.toUpdate[0]!.reasons[0]).toBe('force-metadata');
@@ -1121,9 +1121,9 @@ describe('force-metadata (additional scenarios)', () => {
         filePath: '/videos/inception.mkv',
       }),
     ];
-    const devices = [makeIPodVideo({ title: 'The Matrix', year: 1999 })];
+    const devices = [makeDeviceVideo({ title: 'The Matrix', year: 1999 })];
     const diff = createSyncDiffer(handler).diff(sources, devices, {
-      handlerOptions: { forceMetadata: true },
+      forceMetadata: true,
     });
     expect(diff.toAdd).toHaveLength(1);
     expect(diff.toAdd[0]!.title).toBe('Inception');
@@ -1135,11 +1135,11 @@ describe('force-metadata (additional scenarios)', () => {
     const handler = createVideoHandler();
     const sources = [makeCollectionVideo({ title: 'The Matrix', year: 1999 })];
     const devices = [
-      makeIPodVideo({ title: 'The Matrix', year: 1999, id: ':matrix', filePath: ':matrix' }),
-      makeIPodVideo({ title: 'Old Movie', year: 2000, id: ':old', filePath: ':old' }),
+      makeDeviceVideo({ title: 'The Matrix', year: 1999, id: ':matrix', filePath: ':matrix' }),
+      makeDeviceVideo({ title: 'Old Movie', year: 2000, id: ':old', filePath: ':old' }),
     ];
     const diff = createSyncDiffer(handler).diff(sources, devices, {
-      handlerOptions: { forceMetadata: true },
+      forceMetadata: true,
     });
     expect(diff.toRemove).toHaveLength(1);
     expect(diff.toRemove[0]!.title).toBe('Old Movie');
@@ -1149,9 +1149,9 @@ describe('force-metadata (additional scenarios)', () => {
   test('does not move tracks to toUpdate when forceMetadata is false', () => {
     const handler = createVideoHandler();
     const source = makeCollectionVideo({ title: 'The Matrix', year: 1999 });
-    const device = makeIPodVideo({ title: 'The Matrix', year: 1999 });
+    const device = makeDeviceVideo({ title: 'The Matrix', year: 1999 });
     const diff = createSyncDiffer(handler).diff([source], [device], {
-      handlerOptions: { forceMetadata: false },
+      forceMetadata: false,
     });
     expect(diff.existing).toHaveLength(1);
     expect(diff.toUpdate).toHaveLength(0);
