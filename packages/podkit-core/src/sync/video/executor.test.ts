@@ -9,8 +9,8 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { getVideoOperationDisplayName } from './video-executor.js';
-import type { SyncOperation } from './types.js';
+import { getVideoOperationDisplayName } from './executor.js';
+import type { SyncOperation } from '../engine/types.js';
 
 describe('getVideoOperationDisplayName', () => {
   it('should format movie title with year', () => {

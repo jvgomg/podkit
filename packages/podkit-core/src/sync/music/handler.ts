@@ -14,7 +14,7 @@ import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { isMusicMediaType } from '../../ipod/constants.js';
 import { applyTransforms, hasEnabledTransforms } from '../../transforms/pipeline.js';
-import { getMatchKey, getTransformMatchKeys } from '../matching.js';
+import { getMatchKey, getTransformMatchKeys } from '../../metadata/matching.js';
 import {
   detectUpgrades,
   getIpodFormatFamily,
@@ -22,7 +22,7 @@ import {
   isSourceLossless,
   metadataValuesDiffer,
   detectPresetChange,
-} from '../upgrades.js';
+} from '../engine/upgrades.js';
 import {
   calculateMusicOperationSize,
   categorizeSource,
@@ -30,12 +30,16 @@ import {
   isDeviceCompatible,
   isLosslessSource,
   willWarnLossyToLossy,
-} from '../music-planner.js';
-import { MusicExecutor, getMusicOperationDisplayName } from '../music-executor.js';
-import type { SyncTagConfig, RetryConfig } from '../music-executor.js';
-import { estimateTransferTime } from '../estimation.js';
-import { buildAudioSyncTag, syncTagMatchesConfig, syncTagsEqual } from '../sync-tags.js';
-import type { SyncTagData } from '../sync-tags.js';
+} from './planner.js';
+import { MusicExecutor, getMusicOperationDisplayName } from './executor.js';
+import type { SyncTagConfig, RetryConfig } from './executor.js';
+import { estimateTransferTime } from '../engine/estimation.js';
+import {
+  buildAudioSyncTag,
+  syncTagMatchesConfig,
+  syncTagsEqual,
+} from '../../metadata/sync-tags.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   MetadataChange,
   SyncOperation,
@@ -44,7 +48,7 @@ import type {
   ExecutorProgress,
   UpdateReason,
   UpgradeReason,
-} from '../types.js';
+} from '../engine/types.js';
 import type {
   ContentTypeHandler,
   HandlerDiffOptions,
@@ -54,7 +58,7 @@ import type {
   DryRunSummary,
   MatchInfo,
   UnifiedSyncDiff,
-} from '../content-type.js';
+} from '../engine/content-type.js';
 
 // =============================================================================
 // Music Execution Configuration

@@ -10,8 +10,8 @@
  * @module
  */
 
-import type { CollectionTrack } from '../adapters/interface.js';
-import type { EncodingMode } from '../transcode/types.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
+import type { EncodingMode } from '../../transcode/types.js';
 import type { DeviceTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
 

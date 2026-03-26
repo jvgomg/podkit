@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { VideoHandler, createVideoHandler } from './video-handler.js';
-import { generateVideoMatchKey } from '../video-types.js';
-import { createSyncDiffer } from '../differ.js';
+import { VideoHandler, createVideoHandler } from './handler.js';
+import { generateVideoMatchKey } from './types.js';
+import { createSyncDiffer } from '../engine/differ.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { DeviceVideo } from '../video-types.js';
-import type { SyncOperation, SyncPlan } from '../types.js';
+import type { DeviceVideo } from './types.js';
+import type { SyncOperation, SyncPlan } from '../engine/types.js';
 import { getVideoTransformMatchKeys } from '../../transforms/video-pipeline.js';
 
 // =============================================================================

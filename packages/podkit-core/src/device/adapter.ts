@@ -14,7 +14,7 @@
  */
 
 import type { DeviceCapabilities } from './capabilities.js';
-import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
+import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 
 // =============================================================================
 // DeviceTrack

@@ -8,9 +8,9 @@
  * @module
  */
 
-import type { DeviceAdapter } from '../device/adapter.js';
-import type { AudioCodec } from '../device/capabilities.js';
-import type { SyncTagData } from './sync-tags.js';
+import type { DeviceAdapter } from '../../device/adapter.js';
+import type { AudioCodec } from '../../device/capabilities.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
 
 // =============================================================================

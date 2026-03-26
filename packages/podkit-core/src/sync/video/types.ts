@@ -7,8 +7,8 @@
  * @module
  */
 
-import type { ContentType } from '../video/metadata.js';
-import type { SyncTagData } from './sync-tags.js';
+import type { ContentType } from '../../video/metadata.js';
+import type { SyncTagData } from '../../metadata/sync-tags.js';
 
 // =============================================================================
 // Types

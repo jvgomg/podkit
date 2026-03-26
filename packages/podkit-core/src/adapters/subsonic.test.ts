@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from 'bun:test';
 import { SubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
-import { replayGainToSoundcheck } from '../sync/soundcheck.js';
+import { replayGainToSoundcheck } from '../metadata/soundcheck.js';
 import { hashArtwork } from '../artwork/hash.js';
 
 // We need to mock the subsonic-api module before importing SubsonicAdapter

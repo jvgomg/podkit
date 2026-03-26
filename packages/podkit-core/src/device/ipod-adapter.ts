@@ -15,8 +15,8 @@ import type { DeviceAdapter, DeviceTrackInput, DeviceTrackMetadata } from './ada
 import type { DeviceCapabilities } from './capabilities.js';
 import type { IpodDatabase } from '../ipod/database.js';
 import type { IpodTrack, TrackInput, TrackFields } from '../ipod/types.js';
-import type { SyncTagData, SyncTagUpdate } from '../sync/sync-tags.js';
-import { parseSyncTag, writeSyncTag } from '../sync/sync-tags.js';
+import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
+import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.

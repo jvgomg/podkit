@@ -20,11 +20,11 @@ import {
   willVideoPlanFit,
   estimateTranscodedSize,
   estimatePassthroughSize,
-} from './video-planner.js';
-import type { DeviceVideo } from './video-types.js';
-import type { UnifiedSyncDiff } from './content-type.js';
-import type { CollectionVideo } from '../video/directory-adapter.js';
-import { getDefaultDeviceProfile } from '../video/types.js';
+} from './planner.js';
+import type { DeviceVideo } from './types.js';
+import type { UnifiedSyncDiff } from '../engine/content-type.js';
+import type { CollectionVideo } from '../../video/directory-adapter.js';
+import { getDefaultDeviceProfile } from '../../video/types.js';
 
 // =============================================================================
 // Test Fixtures
@@ -97,7 +97,7 @@ function createCollectionVideo(
 type TestUpdateEntry = {
   source: CollectionVideo;
   device: DeviceVideo;
-  reasons: import('./types.js').UpdateReason[];
+  reasons: import('../engine/types.js').UpdateReason[];
 };
 
 /**

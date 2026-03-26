@@ -22,9 +22,9 @@
  * @module
  */
 
-import type { SyncOperation, SyncPlan, ExecuteOptions, ExecutorProgress } from './types.js';
-import type { TranscodeProgress } from '../transcode/types.js';
-import type { IpodDatabase } from '../ipod/index.js';
+import type { SyncOperation, SyncPlan, ExecuteOptions, ExecutorProgress } from '../engine/types.js';
+import type { TranscodeProgress } from '../../transcode/types.js';
+import type { IpodDatabase } from '../../ipod/index.js';
 
 // =============================================================================
 // Types
