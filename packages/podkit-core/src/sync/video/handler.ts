@@ -38,6 +38,7 @@ import type {
   DryRunSummary,
 } from '../engine/content-type.js';
 import type { UnifiedSyncDiff } from '../engine/content-type.js';
+import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../engine/diff-utils.js';
 
 // =============================================================================
 // Types
@@ -223,9 +224,8 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
       const expectedSyncTag = resolvedVideoQuality
         ? buildVideoSyncTag(resolvedVideoQuality)
         : undefined;
-      const stillExisting: Array<{ source: CollectionVideo; device: DeviceVideo }> = [];
 
-      for (const match of diff.existing) {
+      partitionExisting(diff, (match) => {
         // Try sync tag comparison first
         const syncTag = match.device.syncTag ?? null;
         let mismatch = false;
@@ -238,37 +238,20 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
           mismatch = detectBitratePresetMismatch(match.device.bitrate, presetBitrate) !== null;
         }
 
-        if (mismatch) {
-          // Determine direction from bitrate comparison (default to upgrade)
-          const direction =
-            detectBitratePresetMismatch(match.device.bitrate, presetBitrate) ?? 'preset-upgrade';
-          diff.toUpdate.push({
-            source: match.source,
-            device: match.device,
-            reasons: [direction],
-          });
-        } else {
-          stillExisting.push(match);
-        }
-      }
+        if (!mismatch) return null;
 
-      diff.existing.length = 0;
-      diff.existing.push(...stillExisting);
+        // Determine direction from bitrate comparison (default to upgrade)
+        const direction =
+          detectBitratePresetMismatch(match.device.bitrate, presetBitrate) ?? 'preset-upgrade';
+        return { reasons: [direction] };
+      });
     }
 
     // Pass 2: Force metadata sweep — move ALL remaining existing items to toUpdate.
     // The effective series title (with transforms if configured) is computed
     // downstream by planUpdate via transformSourceForAdd / videoTransformsConfig.
     if (options.forceMetadata) {
-      for (const match of diff.existing) {
-        diff.toUpdate.push({
-          source: match.source,
-          device: match.device,
-          reasons: ['force-metadata'],
-        });
-      }
-
-      diff.existing.length = 0;
+      sweepAllExisting(diff, 'force-metadata');
     }
   }
 
@@ -743,37 +726,17 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
   }
 
   formatDryRun(plan: SyncPlan): DryRunSummary {
-    const operationCounts: Record<string, number> = {};
-    const operations: DryRunSummary['operations'] = [];
-    let toAdd = 0;
-    let toRemove = 0;
-    let toUpdate = 0;
-
-    for (const op of plan.operations) {
-      operationCounts[op.type] = (operationCounts[op.type] ?? 0) + 1;
-
-      if (op.type === 'video-transcode' || op.type === 'video-copy') toAdd++;
-      else if (op.type === 'video-remove') toRemove++;
-      else if (op.type === 'video-update-metadata' || op.type === 'video-upgrade') toUpdate++;
-
-      operations.push({
-        type: op.type,
-        displayName: this.getDisplayName(op),
-        size: this.estimateSize(op),
-      });
-    }
-
-    return {
-      toAdd,
-      toRemove,
-      existing: 0, // Not available from plan alone
-      toUpdate,
-      operationCounts,
-      estimatedSize: plan.estimatedSize,
-      estimatedTime: plan.estimatedTime,
-      warnings: plan.warnings.map((w) => w.message),
-      operations,
-    };
+    return formatDryRunFromPlan(
+      plan,
+      (type) => {
+        if (type === 'video-transcode' || type === 'video-copy') return 'add';
+        if (type === 'video-remove') return 'remove';
+        if (type === 'video-update-metadata' || type === 'video-upgrade') return 'update';
+        return null;
+      },
+      (op) => this.getDisplayName(op),
+      (op) => this.estimateSize(op)
+    );
   }
 }
 
