@@ -20,7 +20,7 @@ import type {
 import type { DeviceCapabilities } from '../device/capabilities.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../video/types.js';
-import type { IPodVideo } from './video-differ.js';
+import type { DeviceVideo } from './video-types.js';
 
 // Re-export for use within sync module
 export type { IPodTrack, DeviceTrack };
@@ -236,18 +236,18 @@ export type SyncOperation =
     }
   | {
       type: 'video-remove';
-      video: IPodVideo;
+      video: DeviceVideo;
     }
   | {
       type: 'video-update-metadata';
       source: CollectionVideo;
-      video: IPodVideo;
+      video: DeviceVideo;
       newSeriesTitle?: string;
     }
   | {
       type: 'video-upgrade';
       source: CollectionVideo;
-      target: IPodVideo;
+      target: DeviceVideo;
       reason: UpgradeReason;
       settings?: VideoTranscodeSettings;
     };

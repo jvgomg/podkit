@@ -1,7 +1,7 @@
 /**
  * Video sync planner for converting video diffs into execution plans
  *
- * The planner takes a UnifiedSyncDiff<CollectionVideo, IPodVideo> and produces a
+ * The planner takes a UnifiedSyncDiff<CollectionVideo, DeviceVideo> and produces a
  * VideoSyncPlan containing ordered operations. It determines whether each video
  * needs transcoding or can be copied directly (passthrough), estimates output
  * sizes, and calculates estimated times.
@@ -33,7 +33,7 @@ import { getDefaultDeviceProfile } from '../video/types.js';
 import { checkVideoCompatibility } from '../video/compatibility.js';
 import { calculateEffectiveSettings } from '../video/quality.js';
 import type { SyncOperation, SyncPlan, SyncWarning } from './types.js';
-import type { IPodVideo } from './video-differ.js';
+import type { DeviceVideo } from './video-types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
 import type { VideoTransformsConfig } from '../transforms/types.js';
 import { applyVideoTransforms } from '../transforms/video-pipeline.js';
@@ -410,7 +410,7 @@ function planAddOperations(
 /**
  * Plan operations for videos to be removed
  */
-function planRemoveOperations(videos: IPodVideo[], removeOrphans: boolean): SyncOperation[] {
+function planRemoveOperations(videos: DeviceVideo[], removeOrphans: boolean): SyncOperation[] {
   if (!removeOrphans) {
     return [];
   }
@@ -549,7 +549,7 @@ function orderOperations(operations: SyncOperation[]): SyncOperation[] {
  * ```
  */
 export function planVideoSync(
-  diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+  diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
   options: VideoSyncPlanOptions = {}
 ): SyncPlan {
   const {
@@ -733,5 +733,8 @@ export interface VideoSyncPlanner {
   /**
    * Create an execution plan from a video diff
    */
-  plan(diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>, options?: VideoSyncPlanOptions): SyncPlan;
+  plan(
+    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
+    options?: VideoSyncPlanOptions
+  ): SyncPlan;
 }

@@ -5,7 +5,7 @@
  */
 
 import type { CollectionVideo, SyncPlan, UnifiedSyncDiff } from '@podkit/core';
-import type { IPodVideo } from '@podkit/core';
+import type { DeviceVideo } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
   formatBytes,
@@ -40,7 +40,7 @@ interface ResolvedCollection {
 /**
  * Presenter for video content type.
  */
-export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPodVideo> {
+export class VideoPresenter implements ContentTypePresenter<CollectionVideo, DeviceVideo> {
   readonly type = 'video' as const;
   readonly itemNoun = 'videos';
   readonly sectionTitle = 'Video';
@@ -86,7 +86,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     // Video doesn't display scan warnings in the current implementation
   }
 
-  getDeviceItems(device: any, core: typeof import('@podkit/core')): IPodVideo[] {
+  getDeviceItems(device: any, core: typeof import('@podkit/core')): DeviceVideo[] {
     const handler = core.createVideoHandler();
     return handler.getDeviceItems(device);
   }
@@ -96,11 +96,11 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
 
   computeDiff(
     sourceItems: CollectionVideo[],
-    deviceItems: IPodVideo[],
+    deviceItems: DeviceVideo[],
     contentConfig: MusicContentConfig | VideoContentConfig,
     device: any,
     core: typeof import('@podkit/core')
-  ): UnifiedSyncDiff<CollectionVideo, IPodVideo> {
+  ): UnifiedSyncDiff<CollectionVideo, DeviceVideo> {
     const config = contentConfig as VideoContentConfig;
 
     // Resolve device profile: iPod uses generation metadata, mass-storage uses default
@@ -139,7 +139,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
   }
 
   createPlan(
-    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     removeOrphans: boolean,
     contentConfig: MusicContentConfig | VideoContentConfig,
     _ipod: any,
@@ -165,7 +165,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     plan: SyncPlan,
     summary: any,
     _storage: { total: number; free: number; used: number } | null,
@@ -242,7 +242,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, IPo
     _out: OutputContext,
     sourcePath: string,
     devicePath: string,
-    diff: UnifiedSyncDiff<CollectionVideo, IPodVideo>,
+    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
     plan: SyncPlan,
     summary: any,
     removeOrphans: boolean,

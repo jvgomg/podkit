@@ -21,7 +21,7 @@ import {
   estimateTranscodedSize,
   estimatePassthroughSize,
 } from './video-planner.js';
-import type { IPodVideo } from './video-differ.js';
+import type { DeviceVideo } from './video-types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
 import type { CollectionVideo } from '../video/directory-adapter.js';
 import { getDefaultDeviceProfile } from '../video/types.js';
@@ -62,13 +62,13 @@ function createVideo(title: string, options: Partial<CollectionVideo> = {}): Col
 let plannerIpodVideoIdCounter = 0;
 
 /**
- * Create a minimal IPodVideo for planner testing
+ * Create a minimal DeviceVideo for planner testing
  */
-function createIPodVideo(
+function createDeviceVideo(
   title: string,
   contentType: 'movie' | 'tvshow',
-  options: Partial<IPodVideo> = {}
-): IPodVideo {
+  options: Partial<DeviceVideo> = {}
+): DeviceVideo {
   return {
     id: options.id ?? `planner-ipod-video-${plannerIpodVideoIdCounter++}`,
     filePath: options.filePath ?? `:iPod_Control:Videos:V00:VIDEO${plannerIpodVideoIdCounter}.m4v`,
@@ -96,7 +96,7 @@ function createCollectionVideo(
 
 type TestUpdateEntry = {
   source: CollectionVideo;
-  device: IPodVideo;
+  device: DeviceVideo;
   reasons: import('./types.js').UpdateReason[];
 };
 
@@ -105,28 +105,28 @@ type TestUpdateEntry = {
  */
 function createDiff(options: {
   toAdd?: CollectionVideo[];
-  toRemove?: IPodVideo[];
-  existing?: { source: CollectionVideo; device: IPodVideo }[];
+  toRemove?: DeviceVideo[];
+  existing?: { source: CollectionVideo; device: DeviceVideo }[];
   toUpdate?: TestUpdateEntry[];
-}): UnifiedSyncDiff<CollectionVideo, IPodVideo>;
+}): UnifiedSyncDiff<CollectionVideo, DeviceVideo>;
 function createDiff(
   toAdd?: CollectionVideo[],
-  toRemove?: IPodVideo[],
-  existing?: { source: CollectionVideo; device: IPodVideo }[]
-): UnifiedSyncDiff<CollectionVideo, IPodVideo>;
+  toRemove?: DeviceVideo[],
+  existing?: { source: CollectionVideo; device: DeviceVideo }[]
+): UnifiedSyncDiff<CollectionVideo, DeviceVideo>;
 function createDiff(
   toAddOrOptions:
     | CollectionVideo[]
     | {
         toAdd?: CollectionVideo[];
-        toRemove?: IPodVideo[];
-        existing?: { source: CollectionVideo; device: IPodVideo }[];
+        toRemove?: DeviceVideo[];
+        existing?: { source: CollectionVideo; device: DeviceVideo }[];
         toUpdate?: TestUpdateEntry[];
       }
     | undefined = [],
-  toRemove: IPodVideo[] = [],
-  existing: { source: CollectionVideo; device: IPodVideo }[] = []
-): UnifiedSyncDiff<CollectionVideo, IPodVideo> {
+  toRemove: DeviceVideo[] = [],
+  existing: { source: CollectionVideo; device: DeviceVideo }[] = []
+): UnifiedSyncDiff<CollectionVideo, DeviceVideo> {
   if (toAddOrOptions && !Array.isArray(toAddOrOptions)) {
     return {
       toAdd: toAddOrOptions.toAdd ?? [],
@@ -493,7 +493,7 @@ describe('planVideoSync - toUpdate', () => {
             seasonNumber: 1,
             episodeNumber: 1,
           }),
-          device: createIPodVideo('S01E01', 'tvshow', {
+          device: createDeviceVideo('S01E01', 'tvshow', {
             seriesTitle: 'Show (JPN)',
             seasonNumber: 1,
             episodeNumber: 1,
@@ -519,7 +519,7 @@ describe('planVideoSync - toUpdate', () => {
             seasonNumber: 1,
             episodeNumber: 1,
           }),
-          device: createIPodVideo('S01E01', 'tvshow', {
+          device: createDeviceVideo('S01E01', 'tvshow', {
             seriesTitle: 'Show (Japanese)',
             seasonNumber: 1,
             episodeNumber: 1,
@@ -552,7 +552,7 @@ describe('planVideoSync - toUpdate', () => {
             seasonNumber: 1,
             episodeNumber: 1,
           }),
-          device: createIPodVideo('S01E01', 'tvshow', {
+          device: createDeviceVideo('S01E01', 'tvshow', {
             seriesTitle: 'Old Title',
             seasonNumber: 1,
             episodeNumber: 1,

@@ -1,7 +1,7 @@
 /**
  * Video types and match key generation
  *
- * Provides the `IPodVideo` interface (device-side video representation)
+ * Provides the `DeviceVideo` interface (device-side video representation)
  * and `generateVideoMatchKey` for matching collection videos to device videos.
  *
  * @module
@@ -15,15 +15,15 @@ import type { SyncTagData } from './sync-tags.js';
 // =============================================================================
 
 /**
- * Representation of a video on the iPod
+ * Representation of a video on the device
  *
- * This is the iPod-side video data used for diff comparison.
+ * This is the device-side video data used for diff comparison.
  */
-export interface IPodVideo {
-  /** Unique identifier on iPod (dbid or similar) */
+export interface DeviceVideo {
+  /** Unique identifier on device (dbid or similar) */
   id: string;
 
-  /** Path to video file on iPod */
+  /** Path to video file on device */
   filePath: string;
 
   /** Content type: movie or tvshow */
@@ -47,10 +47,10 @@ export interface IPodVideo {
   /** Duration in seconds */
   duration?: number;
 
-  /** Combined video+audio bitrate in kbps (from iPod database) */
+  /** Combined video+audio bitrate in kbps (from device database) */
   bitrate?: number;
 
-  /** Comment field from iPod database (may contain sync tags) */
+  /** Comment field from device database (may contain sync tags) */
   comment?: string;
 
   /** Pre-computed sync tag data (parsed from comment field) */

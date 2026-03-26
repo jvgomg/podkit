@@ -231,7 +231,7 @@ export type {
   VideoScanWarning,
   VideoFilter,
   VideoDirectoryAdapterConfig,
-  IPodVideo,
+  DeviceVideo,
   VideoSyncPlanOptions,
   VideoSyncWarning,
   VideoSyncWarningType,
