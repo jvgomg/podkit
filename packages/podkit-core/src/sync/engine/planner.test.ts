@@ -124,6 +124,28 @@ function createMockHandler(
       }
     },
 
+    getOperationPriority: (op: SyncOperation): number => {
+      switch (op.type) {
+        case 'remove':
+          return 0;
+        case 'update-metadata':
+        case 'update-sync-tag':
+          return 1;
+        case 'add-direct-copy':
+        case 'add-optimized-copy':
+          return 2;
+        case 'upgrade-transcode':
+        case 'upgrade-direct-copy':
+        case 'upgrade-optimized-copy':
+        case 'upgrade-artwork':
+          return 3;
+        case 'add-transcode':
+          return 4;
+        default:
+          return 5;
+      }
+    },
+
     execute: async function* () {},
     getDeviceItems: () => [],
     getDisplayName: () => '',
@@ -585,6 +607,47 @@ describe('SyncPlanner', () => {
 });
 
 describe('orderOperations', () => {
+  /** Simple priority function for testing */
+  const testPriority = (op: SyncOperation): number => {
+    switch (op.type) {
+      case 'remove':
+        return 0;
+      case 'update-metadata':
+      case 'update-sync-tag':
+        return 1;
+      case 'add-direct-copy':
+      case 'add-optimized-copy':
+        return 2;
+      case 'upgrade-transcode':
+      case 'upgrade-direct-copy':
+      case 'upgrade-optimized-copy':
+      case 'upgrade-artwork':
+        return 3;
+      case 'add-transcode':
+        return 4;
+      default:
+        return 5;
+    }
+  };
+
+  /** Video-aware priority function for testing */
+  const videoPriority = (op: SyncOperation): number => {
+    switch (op.type) {
+      case 'video-remove':
+        return 0;
+      case 'video-update-metadata':
+        return 1;
+      case 'video-copy':
+        return 2;
+      case 'video-upgrade':
+        return 3;
+      case 'video-transcode':
+        return 4;
+      default:
+        return 5;
+    }
+  };
+
   it('should sort operations by type priority', () => {
     const ops: SyncOperation[] = [
       { type: 'add-transcode', source: {} as any, preset: { name: 'high' } },
@@ -600,7 +663,7 @@ describe('orderOperations', () => {
       },
     ];
 
-    const ordered = orderOperations(ops);
+    const ordered = orderOperations(ops, testPriority);
     const types = ordered.map((op) => op.type);
 
     expect(types).toEqual([
@@ -620,7 +683,7 @@ describe('orderOperations', () => {
       { type: 'video-update-metadata', source: {} as any, video: {} as any },
     ];
 
-    const ordered = orderOperations(ops);
+    const ordered = orderOperations(ops, videoPriority);
     const types = ordered.map((op) => op.type);
 
     expect(types).toEqual([
@@ -638,7 +701,7 @@ describe('orderOperations', () => {
       { type: 'add-direct-copy', source: { filePath: 'c' } as any },
     ];
 
-    const ordered = orderOperations(ops);
+    const ordered = orderOperations(ops, testPriority);
 
     // Stable sort should preserve insertion order
     expect((ordered[0] as any).source.filePath).toBe('a');
@@ -647,6 +710,6 @@ describe('orderOperations', () => {
   });
 
   it('should return empty array for empty input', () => {
-    expect(orderOperations([])).toEqual([]);
+    expect(orderOperations([], testPriority)).toEqual([]);
   });
 });

@@ -1,14 +1,40 @@
 import { describe, expect, test } from 'bun:test';
 import { MusicHandler, createMusicHandler } from './handler.js';
+import type { MusicSyncConfig } from './config.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
 import type { SyncOperation, SyncPlan } from '../engine/types.js';
 import type { UnifiedSyncDiff } from '../engine/content-type.js';
 import { parseSyncTag } from '../../metadata/sync-tags.js';
+import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
+import type { DeviceCapabilities } from '../../device/capabilities.js';
 
 // =============================================================================
 // Test Fixtures
 // =============================================================================
+
+/** Stub transcoder — never called in unit tests */
+const stubTranscoder = {} as FFmpegTranscoder;
+
+/** Build a complete DeviceCapabilities for tests */
+function makeCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCapabilities {
+  return {
+    artworkSources: ['database'],
+    artworkMaxResolution: 320,
+    supportedAudioCodecs: [],
+    supportsVideo: false,
+    ...overrides,
+  };
+}
+
+/** Default config for tests — high quality, no special options */
+function makeConfig(overrides: Partial<MusicSyncConfig> = {}): MusicSyncConfig {
+  return {
+    quality: 'high',
+    transcoder: stubTranscoder,
+    ...overrides,
+  };
+}
 
 function makeCollectionTrack(overrides: Partial<CollectionTrack> = {}): CollectionTrack {
   return {
@@ -52,14 +78,14 @@ function makeDeviceTrack(overrides: Partial<DeviceTrack> = {}): DeviceTrack {
 // =============================================================================
 
 describe('MusicHandler', () => {
-  const handler = createMusicHandler();
+  const handler = createMusicHandler(makeConfig());
 
   test('type is "music"', () => {
     expect(handler.type).toBe('music');
   });
 
   test('createMusicHandler returns MusicHandler instance', () => {
-    const h = createMusicHandler();
+    const h = createMusicHandler(makeConfig());
     expect(h).toBeInstanceOf(MusicHandler);
     expect(h.type).toBe('music');
   });
@@ -122,9 +148,10 @@ describe('MusicHandler', () => {
     });
 
     test('filters file-replacement upgrades when skipUpgrades is set', () => {
+      const h = createMusicHandler(makeConfig({ skipUpgrades: true }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true, bitrate: 1000 });
       const device = makeDeviceTrack({ bitrate: 128, filetype: 'MPEG audio file' });
-      const reasons = handler.detectUpdates(source, device, { skipUpgrades: true });
+      const reasons = h.detectUpdates(source, device, {});
       // File-replacement reasons should be filtered
       const fileReplacement = [
         'format-upgrade',
@@ -141,25 +168,47 @@ describe('MusicHandler', () => {
   describe('planAdd', () => {
     test('returns transcode for lossless source', () => {
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const op = handler.planAdd(source, { qualityPreset: 'high' });
+      const op = handler.planAdd(source, {});
       expect(op.type).toBe('add-transcode');
     });
 
     test('returns copy for compatible lossy source', () => {
-      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const op = handler.planAdd(source, { qualityPreset: 'high' });
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        filePath: '/music/test.mp3',
+      });
+      const op = handler.planAdd(source, {});
       expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns copy for ALAC source with lossless preset', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['alac', 'aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'alac', lossless: true, codec: 'alac' });
-      const op = handler.planAdd(source, { qualityPreset: 'max', deviceSupportsAlac: true });
+      const op = h.planAdd(source, {});
       expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns transcode for FLAC with lossless preset', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['alac', 'aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const op = handler.planAdd(source, { qualityPreset: 'max', deviceSupportsAlac: true });
+      const op = h.planAdd(source, {});
       expect(op.type).toBe('add-transcode');
       if (op.type === 'add-transcode') {
         expect(op.preset.name).toBe('lossless');
@@ -167,35 +216,48 @@ describe('MusicHandler', () => {
     });
 
     test('returns optimized-copy for compatible lossy with embedded artwork source', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['embedded'],
+            artworkMaxResolution: 600,
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const op = handler.planAdd(source, {
-        qualityPreset: 'high',
-        primaryArtworkSource: 'embedded',
-      });
+      const op = h.planAdd(source, {});
       expect(op.type).toBe('add-optimized-copy');
     });
 
     test('returns direct-copy for compatible lossy with database artwork source', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const op = handler.planAdd(source, {
-        qualityPreset: 'high',
-        primaryArtworkSource: 'database',
-      });
+      const op = h.planAdd(source, {});
       expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns direct-copy for compatible lossy with no artwork source (backward compat)', () => {
-      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const op = handler.planAdd(source, { qualityPreset: 'high' });
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        filePath: '/music/backward.mp3',
+      });
+      const op = handler.planAdd(source, {});
       expect(op.type).toBe('add-direct-copy');
     });
 
     test('returns optimized-copy for compatible lossy with optimized transfer mode', () => {
+      const h = createMusicHandler(makeConfig({ transferMode: 'optimized' }));
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
-      const op = handler.planAdd(source, {
-        qualityPreset: 'high',
-        transferMode: 'optimized',
-      });
+      const op = h.planAdd(source, {});
       expect(op.type).toBe('add-optimized-copy');
     });
   });
@@ -236,21 +298,34 @@ describe('MusicHandler', () => {
     });
 
     test('returns upgrade-optimized-copy for compatible lossy with embedded artwork source', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['embedded'],
+            artworkMaxResolution: 600,
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack();
-      const ops = handler.planUpdate(source, device, ['format-upgrade'], {
-        primaryArtworkSource: 'embedded',
-      });
+      const ops = h.planUpdate(source, device, ['format-upgrade']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-optimized-copy');
     });
 
     test('returns upgrade-direct-copy for compatible lossy with database artwork source', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack();
-      const ops = handler.planUpdate(source, device, ['format-upgrade'], {
-        primaryArtworkSource: 'database',
-      });
+      const ops = h.planUpdate(source, device, ['format-upgrade']);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('upgrade-direct-copy');
     });
@@ -316,49 +391,67 @@ describe('MusicHandler', () => {
 
   describe('collectPlanWarnings', () => {
     test('produces embedded-artwork-resize warning for portable + embedded artwork', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['embedded'],
+            artworkMaxResolution: 600,
+          }),
+          transferMode: 'portable',
+        })
+      );
       const ops: SyncOperation[] = [
         {
           type: 'add-optimized-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
         },
       ];
-      const warnings = handler.collectPlanWarnings(ops, {
-        primaryArtworkSource: 'embedded',
-        transferMode: 'portable',
-        artworkMaxResolution: 600,
-      });
+      const warnings = h.collectPlanWarnings(ops);
       const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
       expect(resizeWarning).toBeDefined();
       expect(resizeWarning!.message).toContain('600px');
     });
 
     test('no embedded-artwork-resize warning for database artwork', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+          transferMode: 'portable',
+        })
+      );
       const ops: SyncOperation[] = [
         {
           type: 'add-direct-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
         },
       ];
-      const warnings = handler.collectPlanWarnings(ops, {
-        primaryArtworkSource: 'database',
-        transferMode: 'portable',
-      });
+      const warnings = h.collectPlanWarnings(ops);
       const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
       expect(resizeWarning).toBeUndefined();
     });
 
     test('no embedded-artwork-resize warning for non-portable mode', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['embedded'],
+            artworkMaxResolution: 600,
+          }),
+          transferMode: 'fast',
+        })
+      );
       const ops: SyncOperation[] = [
         {
           type: 'add-optimized-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
         },
       ];
-      const warnings = handler.collectPlanWarnings(ops, {
-        primaryArtworkSource: 'embedded',
-        transferMode: 'fast',
-        artworkMaxResolution: 600,
-      });
+      const warnings = h.collectPlanWarnings(ops);
       const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
       expect(resizeWarning).toBeUndefined();
     });
@@ -366,38 +459,40 @@ describe('MusicHandler', () => {
 
   describe('detectUpdates with forceTranscode', () => {
     test('adds force-transcode for lossless source when no file-replacement upgrade exists', () => {
+      const h = createMusicHandler(makeConfig({ forceTranscode: true }));
       // transcodingActive suppresses format-upgrade, then forceTranscode can add force-transcode
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file' });
-      const reasons = handler.detectUpdates(source, device, {
-        forceTranscode: true,
+      const reasons = h.detectUpdates(source, device, {
         transcodingActive: true,
       });
       expect(reasons).toContain('force-transcode');
     });
 
     test('does not add force-transcode for lossy source', () => {
+      const h = createMusicHandler(makeConfig({ forceTranscode: true }));
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
-      const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
+      const reasons = h.detectUpdates(source, device, {});
       expect(reasons).not.toContain('force-transcode');
     });
 
     test('does not add force-transcode when file-replacement upgrade already exists', () => {
+      const h = createMusicHandler(makeConfig({ forceTranscode: true }));
       // Lossless source with lossy device triggers format-upgrade, which is a file-replacement
       // upgrade, so force-transcode is not added (redundant)
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
-      const reasons = handler.detectUpdates(source, device, { forceTranscode: true });
+      const reasons = h.detectUpdates(source, device, {});
       expect(reasons).toContain('format-upgrade');
       expect(reasons).not.toContain('force-transcode');
     });
 
     test('prepends force-transcode as first reason when added', () => {
+      const h = createMusicHandler(makeConfig({ forceTranscode: true }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file' });
-      const reasons = handler.detectUpdates(source, device, {
-        forceTranscode: true,
+      const reasons = h.detectUpdates(source, device, {
         transcodingActive: true,
       });
       expect(reasons[0]).toBe('force-transcode');
@@ -425,6 +520,9 @@ describe('MusicHandler', () => {
     }
 
     test('moves tracks with mismatched transfer mode to toUpdate with reason transfer-mode-changed', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, transferMode: 'optimized' })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -433,13 +531,7 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'optimized',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
@@ -449,6 +541,9 @@ describe('MusicHandler', () => {
     });
 
     test('leaves tracks already at the target transfer mode in existing', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, transferMode: 'optimized' })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -458,19 +553,16 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'optimized',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(0);
       expect(diff.existing).toHaveLength(1);
     });
 
     test('treats missing transfer field in sync tag as needing update when effective mode is not fast', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, transferMode: 'portable' })
+      );
       // Legacy sync tag has no transfer field; if effective mode is portable, file re-processing needed
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
@@ -480,13 +572,7 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'portable',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
@@ -495,6 +581,7 @@ describe('MusicHandler', () => {
     });
 
     test('stamps sync tag (metadata-only) when transfer mode missing and effective mode is fast', () => {
+      const h = createMusicHandler(makeConfig({ forceTransferMode: true, transferMode: 'fast' }));
       // Missing transfer field + effective mode 'fast' = legacy track; stamp the tag only
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
@@ -504,13 +591,7 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'fast',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('sync-tag-write');
@@ -520,6 +601,9 @@ describe('MusicHandler', () => {
     });
 
     test('affects copy-format (MP3) tracks unlike forceTranscode which only affects lossless', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, transferMode: 'portable' })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack({
         filetype: 'MPEG audio file',
@@ -528,19 +612,16 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'portable',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('transfer-mode-changed');
     });
 
     test('forceTransferMode + forceTranscode: each track processed once with no duplicates', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, forceTranscode: true, transferMode: 'portable' })
+      );
       // Lossless track is caught by forceTranscode pass (earlier), not double-counted by forceTransferMode.
       // Lossy track is unaffected by forceTranscode but caught by forceTransferMode.
       const losslessSource = makeCollectionTrack({ fileType: 'flac', lossless: true });
@@ -575,14 +656,7 @@ describe('MusicHandler', () => {
         toUpdate: [],
       };
 
-      handler.postProcessDiff(diff, {
-        forceTranscode: true,
-        transcodingActive: true,
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'portable',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(2);
 
@@ -593,7 +667,9 @@ describe('MusicHandler', () => {
       expect(diff.existing).toHaveLength(0);
     });
 
-    test('does nothing when forceTransferMode is true but effectiveTransferMode is not provided', () => {
+    test('does nothing when forceTransferMode is true but transferMode defaults to fast (no mismatch)', () => {
+      // forceTransferMode is true but transferMode is not set — defaults to 'fast'
+      const h = createMusicHandler(makeConfig({ forceTransferMode: true }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -602,19 +678,16 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          // effectiveTransferMode not provided
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(0);
       expect(diff.existing).toHaveLength(1);
     });
 
-    test('does nothing when effectiveTransferMode is provided but forceTransferMode is false', () => {
+    test('does nothing when transferMode is provided but forceTransferMode is false', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: false, transferMode: 'optimized' })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -623,19 +696,16 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: false,
-          effectiveTransferMode: 'optimized',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(0);
       expect(diff.existing).toHaveLength(1);
     });
 
     test('leaves tracks with no sync tag in existing (cannot detect transfer mode)', () => {
+      const h = createMusicHandler(
+        makeConfig({ forceTransferMode: true, transferMode: 'optimized' })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -644,13 +714,7 @@ describe('MusicHandler', () => {
       });
 
       const diff = makeDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        handlerOptions: {
-          forceTransferMode: true,
-          effectiveTransferMode: 'optimized',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(0);
       expect(diff.existing).toHaveLength(1);
@@ -658,23 +722,28 @@ describe('MusicHandler', () => {
   });
 
   describe('detectUpdates with transcodingActive', () => {
-    test('suppresses format-upgrade for AAC device when transcodingActive is true', () => {
-      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    test('suppresses format-upgrade for AAC device (handler is always transcoding-aware)', () => {
+      const source = makeCollectionTrack({
+        fileType: 'flac',
+        lossless: true,
+        filePath: '/music/transcode-aac.flac',
+      });
       const device = makeDeviceTrack({ filetype: 'AAC audio file' });
-      // Without transcodingActive, lossless→AAC should detect format-upgrade
-      const reasonsWithout = handler.detectUpdates(source, device, {});
-      expect(reasonsWithout).toContain('format-upgrade');
-      // With transcodingActive, format-upgrade should be suppressed for AAC (expected target format)
-      const reasonsWith = handler.detectUpdates(source, device, { transcodingActive: true });
-      expect(reasonsWith).not.toContain('format-upgrade');
+      // Handler is always transcoding-aware, so AAC format-upgrade is suppressed
+      const reasons = handler.detectUpdates(source, device, {});
+      expect(reasons).not.toContain('format-upgrade');
     });
 
-    test('preserves format-upgrade for MP3 device even with transcodingActive', () => {
-      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+    test('preserves format-upgrade for MP3 device', () => {
+      const source = makeCollectionTrack({
+        fileType: 'flac',
+        lossless: true,
+        filePath: '/music/transcode-mp3.flac',
+      });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file' });
       // MP3 on iPod means the track was copied before the source was upgraded to FLAC.
-      // This IS a genuine upgrade opportunity even when transcoding is active.
-      const reasons = handler.detectUpdates(source, device, { transcodingActive: true });
+      // This IS a genuine upgrade opportunity.
+      const reasons = handler.detectUpdates(source, device, {});
       expect(reasons).toContain('format-upgrade');
     });
   });
@@ -740,14 +809,12 @@ describe('MusicHandler', () => {
     }
 
     test('moves lossless-source track from existing to toUpdate with preset-upgrade', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
@@ -760,14 +827,12 @@ describe('MusicHandler', () => {
     });
 
     test('moves lossless-source track from existing to toUpdate with preset-downgrade', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'low' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 128,
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
@@ -775,63 +840,43 @@ describe('MusicHandler', () => {
     });
 
     test('leaves lossless-source track in existing when bitrate is within tolerance', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 240 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-      });
-
-      expect(diff.existing).toHaveLength(1);
-      expect(diff.toUpdate).toHaveLength(0);
-    });
-
-    test('does not detect preset change when presetBitrate is not provided', () => {
-      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
-      const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
-      const diff = makePresetDiff(source, device);
-
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        // no presetBitrate
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
     test('does not detect preset change when skipUpgrades is true', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', skipUpgrades: true }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        skipUpgrades: true,
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
     test('does not detect preset change for lossy source tracks', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high' }));
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, bitrate: 128 });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 128 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
     test('uses sync tag comparison when resolvedQuality is provided — match keeps as existing', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -840,20 +885,14 @@ describe('MusicHandler', () => {
       });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
     test('uses sync tag comparison when resolvedQuality is provided — mismatch triggers preset-upgrade', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -862,20 +901,14 @@ describe('MusicHandler', () => {
       });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
     });
 
     test('uses sync tag comparison — quality downgrade triggers preset-downgrade', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'low', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -884,47 +917,39 @@ describe('MusicHandler', () => {
       });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 128,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'low',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-downgrade');
     });
 
     test('no sync tag falls back to bitrate tolerance detection', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 128 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
     });
 
     test('detects ALAC format-based preset upgrade when isAlacPreset is true', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['alac', 'aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: { isAlacPreset: true },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
@@ -936,15 +961,20 @@ describe('MusicHandler', () => {
     });
 
     test('keeps ALAC track as existing when isAlacPreset is true', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['alac', 'aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'Apple Lossless audio file', bitrate: 900 });
       const diff = makePresetDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: { isAlacPreset: true },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
@@ -957,6 +987,7 @@ describe('MusicHandler', () => {
 
   describe('postProcessForceTranscode (extended)', () => {
     test('moves lossless-source tracks from existing to toUpdate while leaving lossy in existing', () => {
+      const h = createMusicHandler(makeConfig({ forceTranscode: true }));
       const losslessSource = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const lossySource = makeCollectionTrack({
         artist: 'Artist2',
@@ -983,10 +1014,7 @@ describe('MusicHandler', () => {
         toUpdate: [],
       };
 
-      handler.postProcessDiff(diff, {
-        forceTranscode: true,
-        transcodingActive: true,
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('force-transcode');
@@ -1015,19 +1043,18 @@ describe('MusicHandler', () => {
     }
 
     test('writes sync tag for lossless sources missing a tag', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
       const diff = makeSyncTagDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-          forceSyncTags: true,
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('sync-tag-write');
@@ -1039,6 +1066,13 @@ describe('MusicHandler', () => {
     });
 
     test('keeps lossless source in existing when sync tag already matches', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({
         filetype: 'AAC audio file',
@@ -1047,53 +1081,39 @@ describe('MusicHandler', () => {
       });
       const diff = makeSyncTagDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-          forceSyncTags: true,
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
     test('skips lossy sources', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          encoding: 'vbr',
+          forceSyncTags: true,
+        })
+      );
       const source = makeCollectionTrack({ fileType: 'mp3', lossless: false });
       const device = makeDeviceTrack({ filetype: 'MPEG audio file', bitrate: 192 });
       const diff = makeSyncTagDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          encodingMode: 'vbr',
-          resolvedQuality: 'high',
-          forceSyncTags: true,
-        },
-      });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
 
-    test('does not activate without resolvedQuality even when forceSyncTags is true', () => {
+    test('does not activate without forceSyncTags', () => {
+      const h = createMusicHandler(makeConfig({ quality: 'high', encoding: 'vbr' }));
       const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
       const device = makeDeviceTrack({ filetype: 'AAC audio file', bitrate: 256 });
       const diff = makeSyncTagDiff(source, device);
 
-      handler.postProcessDiff(diff, {
-        transcodingActive: true,
-        presetBitrate: 256,
-        handlerOptions: {
-          forceSyncTags: true,
-          // resolvedQuality NOT provided
-        },
-      });
+      h.postProcessDiff(diff, {});
 
+      // Without forceSyncTags, presetBitrate match means no change
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
     });
@@ -1105,6 +1125,7 @@ describe('MusicHandler', () => {
 
   describe('postProcessForceMetadata', () => {
     test('moves all matched tracks to toUpdate with force-metadata reason', () => {
+      const h = createMusicHandler(makeConfig({ forceMetadata: true }));
       const source1 = makeCollectionTrack({ artist: 'Artist A', title: 'Song 1' });
       const source2 = makeCollectionTrack({
         artist: 'Artist B',
@@ -1128,7 +1149,7 @@ describe('MusicHandler', () => {
         toUpdate: [],
       };
 
-      handler.postProcessDiff(diff, { forceMetadata: true });
+      h.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(0);
       expect(diff.toUpdate).toHaveLength(2);
@@ -1137,6 +1158,7 @@ describe('MusicHandler', () => {
     });
 
     test('includes no-op title change when metadata is identical', () => {
+      const h = createMusicHandler(makeConfig({ forceMetadata: true }));
       const source = makeCollectionTrack();
       const device = makeDeviceTrack();
 
@@ -1147,7 +1169,7 @@ describe('MusicHandler', () => {
         toUpdate: [],
       };
 
-      handler.postProcessDiff(diff, { forceMetadata: true });
+      h.postProcessDiff(diff, {});
 
       expect(diff.toUpdate).toHaveLength(1);
       expect(diff.toUpdate[0]!.reasons[0]).toBe('force-metadata');
@@ -1166,10 +1188,40 @@ describe('MusicHandler', () => {
         toUpdate: [],
       };
 
-      handler.postProcessDiff(diff, { forceMetadata: false });
+      handler.postProcessDiff(diff, {});
 
       expect(diff.existing).toHaveLength(1);
       expect(diff.toUpdate).toHaveLength(0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // getOperationPriority
+  // ---------------------------------------------------------------------------
+
+  describe('getOperationPriority', () => {
+    test('remove has lowest priority (executes first)', () => {
+      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
+      expect(handler.getOperationPriority(op)).toBe(0);
+    });
+
+    test('metadata updates have priority 1', () => {
+      const op: SyncOperation = { type: 'update-metadata', track: makeDeviceTrack(), metadata: {} };
+      expect(handler.getOperationPriority(op)).toBe(1);
+    });
+
+    test('direct copies have priority 2', () => {
+      const op: SyncOperation = { type: 'add-direct-copy', source: makeCollectionTrack() };
+      expect(handler.getOperationPriority(op)).toBe(2);
+    });
+
+    test('transcodes have priority 4', () => {
+      const op: SyncOperation = {
+        type: 'add-transcode',
+        source: makeCollectionTrack(),
+        preset: { name: 'high' },
+      };
+      expect(handler.getOperationPriority(op)).toBe(4);
     });
   });
 });

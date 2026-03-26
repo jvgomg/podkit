@@ -555,12 +555,18 @@ export type {
 
 // Content type handlers
 export { MusicHandler, createMusicHandler } from './sync/music/handler.js';
-export type { MusicExecutionConfig } from './sync/music/handler.js';
-export {
-  VideoHandler,
-  createVideoHandler,
-  type VideoHandlerDiffOptions,
-} from './sync/video/handler.js';
+export type { MusicSyncConfig, ResolvedMusicConfig } from './sync/music/config.js';
+export { MusicTrackClassifier, classifierFromConfig } from './sync/music/classifier.js';
+export type {
+  MusicAction,
+  TrackClassification,
+  ClassifierContext,
+} from './sync/music/classifier.js';
+export { MusicOperationFactory } from './sync/music/operation-factory.js';
+export { VideoHandler, createVideoHandler } from './sync/video/handler.js';
+export type { VideoSyncConfig, ResolvedVideoConfig } from './sync/video/config.js';
+export { VideoTrackClassifier } from './sync/video/classifier.js';
+export type { VideoAction, VideoClassification } from './sync/video/classifier.js';
 
 // Generic differ
 export type { SyncDiffOptions } from './sync/engine/differ.js';

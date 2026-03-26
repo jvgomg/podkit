@@ -123,18 +123,18 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
       core.hasEnabledVideoTransforms(config.effectiveVideoTransforms);
 
     // Use the unified SyncDiffer + VideoHandler pipeline
-    const handler = core.createVideoHandler();
-    handler.setVideoTransformsConfig(config.effectiveVideoTransforms);
+    const handler = core.createVideoHandler({
+      videoQuality: config.effectiveVideoQuality,
+      deviceProfile,
+      videoTransforms: config.effectiveVideoTransforms,
+      forceMetadata: config.forceMetadata,
+    });
     const differ = core.createSyncDiffer(handler);
 
     return differ.diff(sourceItems, deviceItems, {
       transformsEnabled,
       presetBitrate: videoPresetBitrate,
       forceMetadata: config.forceMetadata,
-      handlerOptions: {
-        resolvedVideoQuality: config.effectiveVideoQuality,
-        videoTransforms: config.effectiveVideoTransforms,
-      },
     });
   }
 
@@ -326,8 +326,9 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     let lastIndex = -1;
     const videoDisplay = new DualProgressDisplay((content) => out.raw(content));
 
-    const handler = core.createVideoHandler();
-    handler.setVideoQuality(config.effectiveVideoQuality);
+    const handler = core.createVideoHandler({
+      videoQuality: config.effectiveVideoQuality,
+    });
 
     const videoExecutor = core.createSyncExecutor(handler);
 

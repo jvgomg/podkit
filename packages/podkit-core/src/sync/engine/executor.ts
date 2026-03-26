@@ -57,38 +57,20 @@ export interface SyncExecuteOptions {
 // =============================================================================
 
 /**
- * Map an operation type to the corresponding SyncProgress phase
+ * Derive a progress phase from an operation type string using naming conventions.
+ *
+ * This is content-type-agnostic — it works for any content type whose operation
+ * types follow the naming conventions (e.g., `remove`, `add-transcode`,
+ * `video-copy`, `podcast-download`). The handler's operation type naming
+ * determines the phase.
  */
-function getPhaseForOperation(type: SyncOperation['type']): ExecutorProgress['phase'] {
-  switch (type) {
-    case 'add-transcode':
-      return 'transcoding';
-    case 'add-direct-copy':
-    case 'add-optimized-copy':
-      return 'copying';
-    case 'remove':
-      return 'removing';
-    case 'update-metadata':
-    case 'update-sync-tag':
-      return 'updating-metadata';
-    case 'upgrade-transcode':
-    case 'upgrade-direct-copy':
-    case 'upgrade-optimized-copy':
-    case 'upgrade-artwork':
-      return 'upgrading';
-    case 'video-transcode':
-      return 'video-transcoding';
-    case 'video-copy':
-      return 'video-copying';
-    case 'video-remove':
-      return 'removing';
-    case 'video-update-metadata':
-      return 'video-updating-metadata';
-    case 'video-upgrade':
-      return 'video-upgrading';
-    default:
-      return 'preparing';
-  }
+function getDefaultPhaseForOperation(type: string): ExecutorProgress['phase'] {
+  if (type.includes('remove')) return 'removing';
+  if (type.includes('update') || type.includes('sync-tag')) return 'updating-metadata';
+  if (type.includes('transcode')) return 'transcoding';
+  if (type.includes('copy')) return 'copying';
+  if (type.includes('upgrade')) return 'upgrading';
+  return 'preparing';
 }
 
 /**
@@ -103,7 +85,7 @@ function buildExecutorProgress(
   overrides?: Partial<ExecutorProgress>
 ): ExecutorProgress {
   return {
-    phase: getPhaseForOperation(progress.operation.type),
+    phase: getDefaultPhaseForOperation(progress.operation.type),
     operation: progress.operation,
     index,
     current: index,
@@ -193,7 +175,7 @@ export class SyncExecutor<TSource, TDevice> {
       if (dryRun) {
         skipped++;
         yield {
-          phase: getPhaseForOperation(operation.type),
+          phase: getDefaultPhaseForOperation(operation.type),
           operation,
           index,
           current: index,
@@ -239,7 +221,7 @@ export class SyncExecutor<TSource, TDevice> {
 
         // Yield error progress
         yield {
-          phase: getPhaseForOperation(operation.type),
+          phase: getDefaultPhaseForOperation(operation.type),
           operation,
           index,
           current: index,
