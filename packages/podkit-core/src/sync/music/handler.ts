@@ -41,8 +41,6 @@ import type {
 } from '../engine/types.js';
 import type {
   ContentTypeHandler,
-  HandlerDiffOptions,
-  HandlerPlanOptions,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
@@ -197,7 +195,6 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   detectUpdates(
     source: CollectionTrack,
     device: DeviceTrack,
-    options: HandlerDiffOptions,
     matchInfo?: MatchInfo
   ): UpdateReason[] {
     // Transform detection (when matchInfo available)
@@ -249,10 +246,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Post-processing ----
 
-  postProcessDiff(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    _options: HandlerDiffOptions
-  ): void {
+  postProcessDiff(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     // Pass 0: Populate changes for transform and upgrade updates from detectUpdates
     this.postProcessBuildChanges(diff);
 
@@ -601,7 +595,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Planning ----
 
-  planAdd(source: CollectionTrack, _options: HandlerPlanOptions): SyncOperation {
+  planAdd(source: CollectionTrack): SyncOperation {
     const { action } = this.classifier.classify(source);
     return this.factory.createAdd(source, action);
   }
@@ -614,27 +608,40 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     source: CollectionTrack,
     device: DeviceTrack,
     reasons: UpdateReason[],
-    _options?: HandlerPlanOptions,
-    changes?: MetadataChange[]
+    changes?: MetadataChange[],
+    syncTag?: SyncTagData
   ): SyncOperation[] {
     if (reasons.length === 0) return [];
 
-    const primaryReason = reasons[0]!;
+    // Handle sync-tag-write: create update-sync-tag operation
+    const ops: SyncOperation[] = [];
+    const nonSyncTagReasons = reasons.filter((r) => r !== 'sync-tag-write');
+
+    if (reasons.includes('sync-tag-write') && syncTag) {
+      ops.push(this.factory.createSyncTagUpdate(device, syncTag));
+    }
+
+    if (nonSyncTagReasons.length === 0) return ops;
+
+    const primaryReason = nonSyncTagReasons[0]!;
 
     // artwork-updated and artwork-removed need source file access for artwork re-extraction
     // or removal, but don't replace the audio file — route as upgrade-artwork
     if (primaryReason === 'artwork-updated' || primaryReason === 'artwork-removed') {
-      return [this.factory.createArtworkUpgrade(source, device, primaryReason as UpgradeReason)];
+      ops.push(this.factory.createArtworkUpgrade(source, device, primaryReason as UpgradeReason));
+      return ops;
     }
 
     // File-replacement upgrades
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
       const { action } = this.classifier.classify(source);
-      return [this.factory.createUpgrade(source, device, primaryReason as UpgradeReason, action)];
+      ops.push(this.factory.createUpgrade(source, device, primaryReason as UpgradeReason, action));
+      return ops;
     }
 
     // Metadata-only updates — populate metadata from changes
-    return [this.factory.createMetadataUpdate(device, changes ?? [])];
+    ops.push(this.factory.createMetadataUpdate(device, changes ?? []));
+    return ops;
   }
 
   estimateSize(op: SyncOperation): number {
@@ -648,7 +655,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     return estimateTransferTime(size);
   }
 
-  collectPlanWarnings(operations: SyncOperation[], _options?: HandlerPlanOptions): SyncWarning[] {
+  collectPlanWarnings(operations: SyncOperation[]): SyncWarning[] {
     const warnings: SyncWarning[] = [];
     const lossyToLossyTracks: CollectionTrack[] = [];
 

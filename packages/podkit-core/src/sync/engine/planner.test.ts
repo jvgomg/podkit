@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'bun:test';
 import { SyncPlanner, createSyncPlanner, orderOperations } from './planner.js';
-import type { ContentTypeHandler, HandlerPlanOptions } from './content-type.js';
+import type { ContentTypeHandler } from './content-type.js';
 import type { SyncOperation, UpdateReason } from './types.js';
 import type { UnifiedSyncDiff } from './content-type.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
@@ -46,7 +46,7 @@ function createMockHandler(
 
     detectUpdates: (): UpdateReason[] => [],
 
-    planAdd: (source: TestSource, _options: HandlerPlanOptions): SyncOperation => {
+    planAdd: (source: TestSource): SyncOperation => {
       if (source.needsTranscode) {
         return {
           type: 'add-transcode',
@@ -68,27 +68,40 @@ function createMockHandler(
     planUpdate: (
       source: TestSource,
       device: TestDevice,
-      reasons: UpdateReason[]
+      reasons: UpdateReason[],
+      _changes?: any,
+      syncTag?: SyncTagData
     ): SyncOperation[] => {
-      const primary = reasons[0];
-      if (primary === 'format-upgrade') {
-        return [
-          {
-            type: 'upgrade-transcode',
-            source: { filePath: source.name } as any,
-            target: { filePath: device.name } as any,
-            reason: 'format-upgrade',
-            preset: { name: 'high' },
-          },
-        ];
-      }
-      return [
-        {
-          type: 'update-metadata',
+      const ops: SyncOperation[] = [];
+      const nonSyncTagReasons = reasons.filter((r) => r !== 'sync-tag-write');
+
+      if (reasons.includes('sync-tag-write') && syncTag) {
+        ops.push({
+          type: 'update-sync-tag',
           track: { filePath: device.name } as any,
-          metadata: {},
-        },
-      ];
+          syncTag,
+        });
+      }
+
+      if (nonSyncTagReasons.length === 0) return ops;
+
+      const primary = nonSyncTagReasons[0];
+      if (primary === 'format-upgrade') {
+        ops.push({
+          type: 'upgrade-transcode',
+          source: { filePath: source.name } as any,
+          target: { filePath: device.name } as any,
+          reason: 'format-upgrade',
+          preset: { name: 'high' },
+        });
+        return ops;
+      }
+      ops.push({
+        type: 'update-metadata',
+        track: { filePath: device.name } as any,
+        metadata: {},
+      });
+      return ops;
     },
 
     estimateSize: (op: SyncOperation): number => {
@@ -226,23 +239,21 @@ describe('SyncPlanner', () => {
       expect(plan.operations[1]!.type).toBe('add-transcode');
     });
 
-    it('should pass plan options to handler.planAdd', () => {
-      let capturedOptions: HandlerPlanOptions | undefined;
+    it('should call handler.planAdd for each source', () => {
+      let planAddCalls = 0;
       const handler = createMockHandler({
-        planAdd: (_source, options) => {
-          capturedOptions = options;
+        planAdd: (_source) => {
+          planAddCalls++;
           return { type: 'add-direct-copy', source: {} as any };
         },
       });
 
       const planner = new SyncPlanner(handler);
-      const diff = { ...emptyDiff(), toAdd: [src('track')] };
+      const diff = { ...emptyDiff(), toAdd: [src('track-a'), src('track-b')] };
 
-      planner.plan(diff, { qualityPreset: 'medium', deviceSupportsAlac: true });
+      planner.plan(diff);
 
-      expect(capturedOptions).toBeDefined();
-      expect(capturedOptions!.qualityPreset).toBe('medium');
-      expect(capturedOptions!.deviceSupportsAlac).toBe(true);
+      expect(planAddCalls).toBe(2);
     });
   });
 

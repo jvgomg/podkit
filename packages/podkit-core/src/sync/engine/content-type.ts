@@ -9,69 +9,8 @@
  */
 
 import type { DeviceAdapter } from '../../device/adapter.js';
-import type { AudioCodec } from '../../device/capabilities.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
-
-// =============================================================================
-// Option Types
-// =============================================================================
-
-/**
- * Options passed to handler diff methods
- */
-export interface HandlerDiffOptions<THandlerOptions = Record<string, unknown>> {
-  skipUpgrades?: boolean;
-  forceTranscode?: boolean;
-  transcodingActive?: boolean;
-  presetBitrate?: number;
-  presetChanged?: boolean;
-  transformsEnabled?: boolean;
-  transforms?: Record<string, string>;
-  forceMetadata?: boolean;
-  /** Content-type-specific options, typed by the handler */
-  handlerOptions?: THandlerOptions;
-}
-
-/**
- * Options passed to handler plan methods
- */
-export interface HandlerPlanOptions {
-  qualityPreset?: string;
-  deviceSupportsAlac?: boolean;
-  customBitrate?: number;
-  hardwareAcceleration?: boolean;
-  /**
-   * Audio codecs the device can play natively without transcoding.
-   *
-   * When provided, the planner checks whether the source track's codec is in
-   * this list. If it is, the track is copied as-is instead of being transcoded.
-   * This enables devices like Echo Mini (which supports FLAC natively) to
-   * receive lossless files without unnecessary transcoding.
-   */
-  supportedAudioCodecs?: AudioCodec[];
-  /**
-   * Where the device reads artwork from (first = preferred).
-   * Used to determine whether embedded artwork should be stripped, resized, or preserved.
-   *
-   * - `'database'` → strip embedded artwork (iPod behavior)
-   * - `'embedded'` → resize to artworkMaxResolution in all modes
-   * - `'sidecar'` → future (TASK-204)
-   *
-   * @default undefined (falls back to strip behavior for backward compatibility)
-   */
-  primaryArtworkSource?: 'database' | 'embedded' | 'sidecar';
-  /**
-   * Maximum artwork display resolution in pixels (square).
-   * Used as the resize target when primaryArtworkSource is 'embedded'.
-   */
-  artworkMaxResolution?: number;
-  /**
-   * Transfer mode for file preparation.
-   * Used by planners to determine copy vs optimized-copy routing.
-   */
-  transferMode?: 'fast' | 'optimized' | 'portable';
-}
 
 /**
  * Context for executing sync operations
@@ -187,12 +126,7 @@ export interface ContentTypeHandler<TSource, TDevice> {
   getDeviceItemId(device: TDevice): string;
 
   /** Detect reasons a matched pair needs updating */
-  detectUpdates(
-    source: TSource,
-    device: TDevice,
-    options: HandlerDiffOptions,
-    matchInfo?: MatchInfo
-  ): UpdateReason[];
+  detectUpdates(source: TSource, device: TDevice, matchInfo?: MatchInfo): UpdateReason[];
 
   /**
    * Post-process a completed diff result.
@@ -202,12 +136,12 @@ export interface ContentTypeHandler<TSource, TDevice> {
    * Use cases: preset change detection, force-transcode sweeps,
    * sync tag writing, force-metadata rewrites.
    */
-  postProcessDiff?(diff: UnifiedSyncDiff<TSource, TDevice>, options: HandlerDiffOptions): void;
+  postProcessDiff?(diff: UnifiedSyncDiff<TSource, TDevice>): void;
 
   // ---- Planning ----
 
   /** Plan an add operation for a source item */
-  planAdd(source: TSource, options: HandlerPlanOptions): SyncOperation;
+  planAdd(source: TSource): SyncOperation;
 
   /** Plan a remove operation for a device item */
   planRemove(device: TDevice): SyncOperation;
@@ -217,8 +151,8 @@ export interface ContentTypeHandler<TSource, TDevice> {
     source: TSource,
     device: TDevice,
     reasons: UpdateReason[],
-    options?: HandlerPlanOptions,
-    changes?: MetadataChange[]
+    changes?: MetadataChange[],
+    syncTag?: SyncTagData
   ): SyncOperation[];
 
   /** Estimate the output size in bytes for an operation */
@@ -232,10 +166,7 @@ export interface ContentTypeHandler<TSource, TDevice> {
    * Called by SyncPlanner with all planned operations to generate
    * content-type-specific warnings (e.g., lossy-to-lossy conversion).
    */
-  collectPlanWarnings?(
-    operations: SyncOperation[],
-    options?: HandlerPlanOptions
-  ): import('./types.js').SyncWarning[];
+  collectPlanWarnings?(operations: SyncOperation[]): import('./types.js').SyncWarning[];
 
   // ---- Execution ----
 

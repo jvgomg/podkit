@@ -30,8 +30,6 @@ import {
 } from '../../transforms/video-pipeline.js';
 import type {
   ContentTypeHandler,
-  HandlerDiffOptions,
-  HandlerPlanOptions,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
@@ -126,11 +124,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     return device.id;
   }
 
-  detectUpdates(
-    source: CollectionVideo,
-    device: DeviceVideo,
-    _options: HandlerDiffOptions
-  ): UpdateReason[] {
+  detectUpdates(source: CollectionVideo, device: DeviceVideo): UpdateReason[] {
     const reasons: UpdateReason[] = [];
 
     // Detect numeric metadata corrections (same logic as video-types.ts)
@@ -181,26 +175,21 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    *
    * This method handles two passes over the diff's `existing` array:
    *
-   * 1. **Preset change detection** — When `options.presetBitrate` is set, checks each
+   * 1. **Preset change detection** — When `this.config.presetBitrate` is set, checks each
    *    existing video against sync tags and/or bitrate comparison. Mismatches are
    *    moved from `existing` to `toUpdate` with reason `'preset-upgrade'` or `'preset-downgrade'`.
    *
-   * 2. **Force metadata sweep** — When `options.forceMetadata` is true, moves ALL
+   * 2. **Force metadata sweep** — When `this.config.raw.forceMetadata` is true, moves ALL
    *    remaining `existing` items to `toUpdate` with reason `'force-metadata'`.
    *    For TV shows, computes the effective series title (with transforms if configured).
    *
    * @param diff - The unified diff to post-process (mutated in place)
-   * @param options - Diff options including presetBitrate and forceMetadata
+   * @param _options - Diff options (unused; config is read from this.config)
    */
-  postProcessDiff(
-    diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
-    options: HandlerDiffOptions & {
-      forceMetadata?: boolean;
-    }
-  ): void {
+  postProcessDiff(diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>): void {
     // Pass 1: Preset change detection
-    if (options.presetBitrate) {
-      const presetBitrate = options.presetBitrate;
+    if (this.config.presetBitrate) {
+      const presetBitrate = this.config.presetBitrate;
       const resolvedVideoQuality = this.config.resolvedVideoQuality;
       const expectedSyncTag = buildVideoSyncTag(resolvedVideoQuality);
 
@@ -227,14 +216,14 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     }
 
     // Pass 2: Force metadata sweep — move ALL remaining existing items to toUpdate.
-    if (options.forceMetadata ?? this.config.raw.forceMetadata) {
+    if (this.config.raw.forceMetadata) {
       sweepAllExisting(diff, 'force-metadata');
     }
   }
 
   // ---- Planning ----
 
-  planAdd(source: CollectionVideo, _options: HandlerPlanOptions): SyncOperation {
+  planAdd(source: CollectionVideo): SyncOperation {
     const { action } = this.classifier.classify(source);
     const transformedSeriesTitle = this.getTransformedSeriesTitle(source);
 
@@ -262,8 +251,8 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     source: CollectionVideo,
     device: DeviceVideo,
     reasons: UpdateReason[],
-    _options?: HandlerPlanOptions,
-    _changes?: import('../engine/types.js').MetadataChange[]
+    _changes?: import('../engine/types.js').MetadataChange[],
+    _syncTag?: import('../../metadata/sync-tags.js').SyncTagData
   ): SyncOperation[] {
     if (reasons.length === 0) return [];
 
@@ -271,12 +260,15 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
 
     // Preset changes require re-transcoding via upgrade
     if (primaryReason === 'preset-upgrade' || primaryReason === 'preset-downgrade') {
+      const { action } = this.classifier.classify(source);
       return [
         {
           type: 'video-upgrade',
           source,
           target: device,
           reason: primaryReason as UpgradeReason,
+          // Include settings if the classifier says transcode is needed
+          ...(action.type === 'transcode' && { settings: action.settings }),
         },
       ];
     }

@@ -10,6 +10,8 @@ import type {
   SyncPlan,
   SyncOperation,
   UnifiedSyncDiff,
+  MusicHandler,
+  CollectionAdapter,
 } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
@@ -58,6 +60,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
   readonly itemNoun = 'tracks';
   readonly sectionTitle = 'Music';
 
+  private handler?: MusicHandler;
+  private sourceAdapter?: CollectionAdapter;
+
   createAdapter(
     out: OutputContext,
     collection: ResolvedCollection,
@@ -89,6 +94,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         scanWarnings.push(warning);
       },
     });
+
+    this.sourceAdapter = adapter as CollectionAdapter;
 
     return { adapter, scanWarnings, spinner };
   }
@@ -128,7 +135,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
 
     // The handler derives isAlacPreset, resolvedQuality, presetBitrate, etc.
     // internally from the MusicSyncConfig
-    const handler = core.createMusicHandler({
+    this.handler = core.createMusicHandler({
       quality: config.effectiveQuality,
       transcoder: config.transcoder,
       capabilities: config.capabilities,
@@ -143,8 +150,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       forceSyncTags: config.forceSyncTags,
       forceTransferMode: config.forceTransferMode,
       skipUpgrades: config.skipUpgrades,
+      adapter: this.sourceAdapter,
     });
-    const differ = core.createSyncDiffer(handler);
+    const differ = core.createSyncDiffer(this.handler);
 
     return differ.diff(sourceItems, deviceItems);
   }
@@ -187,25 +195,67 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     core: typeof import('@podkit/core')
   ) {
     const config = contentConfig as MusicContentConfig;
-    const transcodeConfig = {
-      quality: config.effectiveQuality,
-      encoding: config.effectiveEncoding,
-      customBitrate: config.effectiveCustomBitrate,
-    };
-    const plan = core.createMusicPlan(diff, {
+    const planner = core.createSyncPlanner(this.handler!);
+    const plan = planner.plan(diff, {
       removeOrphans,
-      transcodeConfig,
-      deviceSupportsAlac: config.deviceSupportsAlac,
       artworkEnabled: config.effectiveArtwork,
-      capabilities: config.capabilities,
-      transferMode: config.effectiveTransferMode,
     });
-    const summary = core.getMusicPlanSummary(plan);
+    const summary = this.buildPlanSummary(plan);
     return { plan, summary };
   }
 
-  willFit(plan: SyncPlan, freeSpace: number, core: typeof import('@podkit/core')): boolean {
-    return core.willMusicFitInSpace(plan, freeSpace);
+  /**
+   * Build a plan summary by counting operation types.
+   * Replaces the legacy `getMusicPlanSummary()`.
+   */
+  private buildPlanSummary(plan: SyncPlan) {
+    let addTranscodeCount = 0;
+    let addDirectCopyCount = 0;
+    let addOptimizedCopyCount = 0;
+    let upgradeTranscodeCount = 0;
+    let upgradeDirectCopyCount = 0;
+    let upgradeOptimizedCopyCount = 0;
+    let upgradeArtworkCount = 0;
+
+    for (const op of plan.operations) {
+      switch (op.type) {
+        case 'add-transcode':
+          addTranscodeCount++;
+          break;
+        case 'add-direct-copy':
+          addDirectCopyCount++;
+          break;
+        case 'add-optimized-copy':
+          addOptimizedCopyCount++;
+          break;
+        case 'upgrade-transcode':
+          upgradeTranscodeCount++;
+          break;
+        case 'upgrade-direct-copy':
+          upgradeDirectCopyCount++;
+          break;
+        case 'upgrade-optimized-copy':
+          upgradeOptimizedCopyCount++;
+          break;
+        case 'upgrade-artwork':
+          upgradeArtworkCount++;
+          break;
+      }
+    }
+
+    return {
+      addTranscodeCount,
+      addDirectCopyCount,
+      addOptimizedCopyCount,
+      upgradeTranscodeCount,
+      upgradeDirectCopyCount,
+      upgradeOptimizedCopyCount,
+      upgradeArtworkCount,
+    };
+  }
+
+  willFit(plan: SyncPlan, freeSpace: number, _core: typeof import('@podkit/core')): boolean {
+    return plan.estimatedSize <= freeSpace;
   }
 
   renderDryRunText(
@@ -507,37 +557,24 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
   async executeSync(
     out: OutputContext,
     plan: SyncPlan,
-    adapter: any,
-    contentConfig: MusicContentConfig | VideoContentConfig,
+    _adapter: any,
+    _contentConfig: MusicContentConfig | VideoContentConfig,
     ipod: any,
     core: typeof import('@podkit/core'),
     signal?: AbortSignal
   ) {
-    const config = contentConfig as MusicContentConfig;
     const collectedErrors: CollectedError[] = [];
     let completed = 0;
     let failed = 0;
 
-    const artworkResize =
-      config.capabilities?.artworkSources[0] === 'embedded'
-        ? config.capabilities.artworkMaxResolution
-        : undefined;
-    const executor = new core.MusicExecutor({ device: ipod, transcoder: config.transcoder });
+    const executor = core.createSyncExecutor(this.handler!);
     const musicDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     try {
       for await (const progress of executor.execute(plan, {
-        dryRun: false,
+        device: ipod,
         continueOnError: true,
-        artwork: config.effectiveArtwork,
-        adapter,
         signal,
-        syncTagConfig: {
-          encodingMode: config.effectiveEncoding,
-          customBitrate: config.effectiveCustomBitrate,
-        },
-        transferMode: config.effectiveTransferMode,
-        artworkResize,
       })) {
         if (progress.error) {
           const categorized = progress.categorizedError;
@@ -551,21 +588,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
             stack: progress.error.stack,
           });
           failed++;
-        } else if (
-          progress.phase !== 'preparing' &&
-          progress.phase !== 'updating-db' &&
-          progress.phase !== 'complete'
-        ) {
+        } else if (progress.phase !== 'preparing') {
           completed++;
         }
 
-        if (progress.phase === 'complete') {
-          musicDisplay.finish();
-          out.print('Music sync complete!');
-        } else if (progress.phase === 'updating-db') {
-          musicDisplay.finish();
-          out.raw('Saving device database...');
-        } else if (progress.phase !== 'preparing') {
+        if (progress.phase !== 'preparing') {
           const overallLine = formatOverallLine(completed, progress.total, 'tracks');
           const phaseStr =
             progress.phase === 'updating-metadata'
@@ -586,12 +613,14 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       throw err;
     }
 
-    // Check if aborted after normal generator completion (belt-and-suspenders
-    // — MusicExecutor throws on abort, but check here too in case it doesn't)
+    musicDisplay.finish();
+
+    // Check if aborted after normal generator completion
     if (signal?.aborted) {
-      musicDisplay.finish();
       return { completed, failed, interrupted: true, collectedErrors };
     }
+
+    out.print('Music sync complete!');
 
     return { completed, failed, collectedErrors };
   }
