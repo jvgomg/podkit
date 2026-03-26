@@ -55,11 +55,11 @@ function makeMockDb(tracks: IpodTrack[]): IpodDatabase {
 }
 
 function makeCtx(mountPoint: string, tracks: IpodTrack[]): DiagnosticContext {
-  return { mountPoint, db: makeMockDb(tracks) };
+  return { mountPoint, deviceType: 'ipod', db: makeMockDb(tracks) };
 }
 
 function makeRepairCtx(mountPoint: string, tracks: IpodTrack[]): RepairContext {
-  return { mountPoint, db: makeMockDb(tracks), adapters: [] };
+  return { mountPoint, deviceType: 'ipod', db: makeMockDb(tracks), adapters: [] };
 }
 
 /** Create an iPod-like Music directory structure with files */

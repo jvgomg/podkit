@@ -1,7 +1,7 @@
 /**
  * Diagnostic framework types
  *
- * Provides a check + repair interface for iPod health diagnostics.
+ * Provides a check + repair interface for device health diagnostics.
  * The core defines domain-level requirements (e.g. "needs source collection")
  * without any awareness of CLI flags or UX. The CLI layer maps requirements
  * to flags, prompts, and user-facing messages.
@@ -10,13 +10,19 @@
 import type { IpodDatabase } from '../ipod/database.js';
 import type { CollectionAdapter } from '../adapters/interface.js';
 
+// ── Device type ──────────────────────────────────────────────────────────────
+
+export type DiagnosticDeviceType = 'ipod' | 'mass-storage';
+
 // ── Check types ──────────────────────────────────────────────────────────────
 
 export interface DiagnosticContext {
-  /** iPod mount point path */
+  /** Device mount point path */
   mountPoint: string;
-  /** Open iPod database */
-  db: IpodDatabase;
+  /** Device type discriminant */
+  deviceType: DiagnosticDeviceType;
+  /** Open iPod database — only present for iPod devices */
+  db?: IpodDatabase;
 }
 
 export interface CheckResult {
@@ -73,6 +79,11 @@ export interface DiagnosticCheck {
   id: string;
   /** Human-readable name, e.g. "Artwork Integrity" */
   name: string;
+  /**
+   * Which device types this check applies to.
+   * Defaults to `['ipod']` if omitted (backward-compatible).
+   */
+  applicableTo?: ReadonlyArray<DiagnosticDeviceType>;
   /** Run the check */
   check(ctx: DiagnosticContext): Promise<CheckResult>;
   /** If this check can auto-repair, how */
@@ -84,10 +95,12 @@ export interface DiagnosticCheck {
 // ── Report ───────────────────────────────────────────────────────────────────
 
 export interface DiagnosticReport {
-  /** iPod mount point */
+  /** Device mount point */
   mountPoint: string;
   /** Device model name */
   deviceModel: string;
+  /** Device type */
+  deviceType: DiagnosticDeviceType;
   /** Individual check results */
   checks: Array<
     { id: string; name: string; hasRepair: boolean; repairOnly: boolean } & CheckResult
