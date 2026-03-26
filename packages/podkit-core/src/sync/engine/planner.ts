@@ -44,49 +44,28 @@ export interface SyncPlanOptions extends HandlerPlanOptions {
 // Operation Ordering
 // =============================================================================
 
-/** Priority order for operation types during ordering */
-const OPERATION_ORDER: Record<string, number> = {
-  // Removes first — free up space
-  remove: 0,
-  'video-remove': 0,
-  // Metadata updates next — instant, no file transfer
-  'update-metadata': 1,
-  'update-sync-tag': 1,
-  'video-update-metadata': 1,
-  // Copies next — fast, no CPU work
-  'add-direct-copy': 2,
-  'add-optimized-copy': 2,
-  'video-copy': 2,
-  // Upgrades next — replace existing files
-  'upgrade-transcode': 3,
-  'upgrade-direct-copy': 3,
-  'upgrade-optimized-copy': 3,
-  'upgrade-artwork': 3,
-  'video-upgrade': 3,
-  // Transcodes last — CPU intensive, benefits from pipeline parallelism
-  'add-transcode': 4,
-  'video-transcode': 4,
-};
-
 /**
- * Order operations for efficient execution.
+ * Order operations for efficient execution using a handler-provided priority function.
  *
- * Strategy:
+ * The engine is content-type-agnostic — the handler defines priorities via
+ * `getOperationPriority()`. The general convention is:
  * 1. Remove operations first (free up space before adding)
  * 2. Metadata updates next (instant, in-database only)
  * 3. Copy operations next (fast, not CPU intensive)
  * 4. Upgrade operations next (replace existing files)
  * 5. Transcode operations last (CPU intensive, benefits from pipeline)
  *
- * Within each category, original insertion order is preserved.
+ * Within each priority level, original insertion order is preserved.
+ *
+ * @param operations - Operations to sort
+ * @param getPriority - Priority function (lower = execute first)
  */
-export function orderOperations(operations: SyncOperation[]): SyncOperation[] {
+export function orderOperations(
+  operations: SyncOperation[],
+  getPriority: (op: SyncOperation) => number
+): SyncOperation[] {
   // Stable sort by type priority (preserves original order within categories)
-  return [...operations].sort((a, b) => {
-    const orderA = OPERATION_ORDER[a.type] ?? 5;
-    const orderB = OPERATION_ORDER[b.type] ?? 5;
-    return orderA - orderB;
-  });
+  return [...operations].sort((a, b) => getPriority(a) - getPriority(b));
 }
 
 // =============================================================================
@@ -174,8 +153,10 @@ export class SyncPlanner<TSource, TDevice> {
       allOperations.push(op);
     }
 
-    // Step 4: Order operations
-    const orderedOperations = orderOperations(allOperations);
+    // Step 4: Order operations (delegate priority to handler)
+    const orderedOperations = orderOperations(allOperations, (op) =>
+      this.handler.getOperationPriority(op)
+    );
 
     // Step 5: Calculate estimates
     let estimatedSize = 0;

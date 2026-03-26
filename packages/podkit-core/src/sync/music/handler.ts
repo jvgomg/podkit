@@ -1,19 +1,17 @@
 /**
  * MusicHandler — ContentTypeHandler implementation for music tracks
  *
- * Thin wrapper that delegates to existing music sync functions
- * (matching, differ, planner, executor) via the ContentTypeHandler interface.
+ * Thin wrapper that delegates to the Classifier + Factory + Config pattern
+ * for routing decisions, and to existing music sync functions for matching,
+ * diffing, and execution.
  *
  * @module
  */
 
-import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
-import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
-import type { EncodingMode } from '../../transcode/types.js';
+import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceAdapter, DeviceTrack } from '../../device/adapter.js';
-import type { TransformsConfig } from '../../transforms/types.js';
 import { isMusicMediaType } from '../../ipod/constants.js';
-import { applyTransforms, hasEnabledTransforms } from '../../transforms/pipeline.js';
+import { applyTransforms } from '../../transforms/pipeline.js';
 import { getMatchKey, getTransformMatchKeys } from '../../metadata/matching.js';
 import {
   detectUpgrades,
@@ -23,16 +21,8 @@ import {
   metadataValuesDiffer,
   detectPresetChange,
 } from '../engine/upgrades.js';
-import {
-  calculateMusicOperationSize,
-  categorizeSource,
-  changesToMetadata,
-  isDeviceCompatible,
-  isLosslessSource,
-  willWarnLossyToLossy,
-} from './planner.js';
+import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
 import { MusicExecutor, getMusicOperationDisplayName } from './executor.js';
-import type { SyncTagConfig, RetryConfig } from './executor.js';
 import { estimateTransferTime } from '../engine/estimation.js';
 import {
   buildAudioSyncTag,
@@ -60,46 +50,10 @@ import type {
   UnifiedSyncDiff,
 } from '../engine/content-type.js';
 import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../engine/diff-utils.js';
-
-// =============================================================================
-// Music Execution Configuration
-// =============================================================================
-
-/** Configuration for the music execution pipeline */
-export interface MusicExecutionConfig {
-  transcoder: FFmpegTranscoder;
-  adapter?: CollectionAdapter;
-  syncTagConfig?: SyncTagConfig;
-  artwork?: boolean;
-  continueOnError?: boolean;
-  retryConfig?: RetryConfig;
-  /**
-   * Resize embedded artwork to this maximum dimension (pixels, square).
-   * Used for devices where embedded artwork is the primary display source.
-   */
-  artworkResize?: number;
-}
-
-/** Music-specific diff options passed via handlerOptions */
-export interface MusicHandlerDiffOptions {
-  forceSyncTags?: boolean;
-  encodingMode?: EncodingMode;
-  bitrateTolerance?: number;
-  isAlacPreset?: boolean;
-  resolvedQuality?: string;
-  customBitrate?: number;
-  /**
-   * When true, move tracks whose sync tag `transfer` field doesn't match
-   * `effectiveTransferMode` to `toUpdate` with reason `'transfer-mode-changed'`.
-   * Only checked when effectiveTransferMode is also provided.
-   */
-  forceTransferMode?: boolean;
-  /**
-   * The current effective transfer mode. Used for mismatch detection when
-   * `forceTransferMode` is true.
-   */
-  effectiveTransferMode?: string;
-}
+import type { MusicSyncConfig, ResolvedMusicConfig } from './config.js';
+import { resolveMusicConfig } from './config.js';
+import { MusicTrackClassifier, classifierFromConfig } from './classifier.js';
+import { MusicOperationFactory } from './operation-factory.js';
 
 // =============================================================================
 // Helpers
@@ -185,29 +139,20 @@ function buildMusicMetadataChanges(
 /**
  * ContentTypeHandler implementation for music tracks.
  *
- * Delegates to existing music sync functions from matching.ts, differ.ts,
- * planner.ts, and executor.ts.
+ * Takes a `MusicSyncConfig` at construction and derives all internal state
+ * up front via the Classifier + Factory + Config pattern.
  */
 export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceTrack> {
   readonly type = 'music';
 
-  private executionConfig?: MusicExecutionConfig;
-  private transformsConfig?: TransformsConfig;
+  private readonly config: ResolvedMusicConfig;
+  private readonly classifier: MusicTrackClassifier;
+  private readonly factory: MusicOperationFactory;
 
-  /**
-   * Configure the music execution pipeline.
-   * Must be called before executeBatch() for non-dry-run execution.
-   */
-  setExecutionConfig(config: MusicExecutionConfig): void {
-    this.executionConfig = config;
-  }
-
-  /**
-   * Set the transforms configuration for dual-key matching.
-   * Must be called before diff() when transforms are in use.
-   */
-  setTransformsConfig(config: TransformsConfig | undefined): void {
-    this.transformsConfig = config;
+  constructor(config: MusicSyncConfig) {
+    this.config = resolveMusicConfig(config);
+    this.classifier = new MusicTrackClassifier(classifierFromConfig(this.config));
+    this.factory = new MusicOperationFactory();
   }
 
   // ---- Diffing ----
@@ -222,7 +167,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   applyTransformKey(source: CollectionTrack): string {
     // getTransformMatchKeys always computes both keys; return the transformed one
-    const keys = getTransformMatchKeys(source, this.transformsConfig);
+    const keys = getTransformMatchKeys(source, this.config.raw.transforms);
     return keys.transformedKey;
   }
 
@@ -232,11 +177,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   }
 
   transformSourceForAdd(source: CollectionTrack): CollectionTrack {
-    if (!this.transformsConfig || !hasEnabledTransforms(this.transformsConfig)) {
+    if (!this.config.transformsEnabled) {
       return source;
     }
 
-    const result = applyTransforms(source, this.transformsConfig);
+    const result = applyTransforms(source, this.config.raw.transforms);
     if (!result.applied) {
       return source;
     }
@@ -259,11 +204,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     if (matchInfo) {
       const hasTransform = this.generateMatchKey(source) !== this.applyTransformKey(source);
       if (hasTransform) {
-        if (!matchInfo.matchedByTransformKey && options.transformsEnabled) {
+        if (!matchInfo.matchedByTransformKey && this.config.transformsEnabled) {
           // iPod has original metadata, transforms are enabled -> apply
           return ['transform-apply'];
         }
-        if (matchInfo.matchedByTransformKey && !options.transformsEnabled) {
+        if (matchInfo.matchedByTransformKey && !this.config.transformsEnabled) {
           // iPod has transformed metadata, transforms are disabled -> remove
           return ['transform-remove'];
         }
@@ -276,7 +221,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     // ONLY if the iPod track is already in the target format (AAC).
     // If the iPod track is MP3 (a compatible-lossy copy from before the source
     // was upgraded to FLAC), that IS a genuine format upgrade opportunity.
-    if (options.transcodingActive && reasons.includes('format-upgrade')) {
+    if (reasons.includes('format-upgrade')) {
       const ipodFamily = getIpodFormatFamily(device);
       if (ipodFamily === 'aac') {
         reasons = reasons.filter((r) => r !== 'format-upgrade');
@@ -284,7 +229,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     }
 
     // When forceTranscode is on and source is lossless, ensure file-replacement
-    if (options.forceTranscode) {
+    if (this.config.raw.forceTranscode) {
       const category = categorizeSource(source);
       if (
         isLosslessSource(category) &&
@@ -295,7 +240,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     }
 
     // When skipUpgrades is set, filter out file-replacement upgrades
-    if (options.skipUpgrades) {
+    if (this.config.raw.skipUpgrades) {
       reasons = reasons.filter((r) => !isFileReplacementUpgrade(r as UpgradeReason));
     }
 
@@ -306,27 +251,25 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   postProcessDiff(
     diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    options: HandlerDiffOptions
+    _options: HandlerDiffOptions
   ): void {
-    const musicOpts = (options.handlerOptions ?? {}) as MusicHandlerDiffOptions;
-
     // Pass 0: Populate changes for transform and upgrade updates from detectUpdates
     this.postProcessBuildChanges(diff);
 
     // Pass 1: Preset change detection
-    this.postProcessPresetChanges(diff, options, musicOpts);
+    this.postProcessPresetChanges(diff);
 
     // Pass 2: Force transcode sweep
-    this.postProcessForceTranscode(diff, options);
+    this.postProcessForceTranscode(diff);
 
     // Pass 3: Transfer mode mismatch detection
-    this.postProcessTransferMode(diff, musicOpts);
+    this.postProcessTransferMode(diff);
 
     // Pass 4: Sync tag writing
-    this.postProcessSyncTags(diff, musicOpts);
+    this.postProcessSyncTags(diff);
 
     // Pass 5: Force metadata rewrite
-    this.postProcessForceMetadata(diff, options);
+    this.postProcessForceMetadata(diff);
   }
 
   /**
@@ -404,34 +347,30 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   /**
    * Pass 1: Detect quality preset changes on existing tracks.
    * When isAlacPreset is true, check format-based detection (no presetBitrate needed).
-   * Otherwise, when transcoding is active and presetBitrate is provided, check bitrate.
+   * Otherwise, when presetBitrate is provided, check bitrate.
    * Tracks with a mismatch are moved from existing -> toUpdate.
    *
    * Sync tag priority: if a track has a sync tag, use exact comparison against
    * the current config. If no sync tag, fall back to bitrate tolerance detection.
    */
-  private postProcessPresetChanges(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    options: HandlerDiffOptions,
-    musicOpts: MusicHandlerDiffOptions
-  ): void {
+  private postProcessPresetChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     const shouldCheckPreset =
-      !(options.skipUpgrades ?? false) &&
-      (musicOpts.isAlacPreset || (options.transcodingActive && options.presetBitrate));
+      !(this.config.raw.skipUpgrades ?? false) &&
+      (this.config.isAlacPreset || this.config.presetBitrate);
 
     if (!shouldCheckPreset) return;
 
-    const presetBitrate = options.presetBitrate ?? 0;
+    const presetBitrate = this.config.presetBitrate ?? 0;
     const presetChangeOptions = {
-      encodingMode: musicOpts.encodingMode,
-      bitrateTolerance: musicOpts.bitrateTolerance,
-      isAlacPreset: musicOpts.isAlacPreset,
+      encodingMode: this.config.raw.encoding,
+      bitrateTolerance: this.config.raw.bitrateTolerance,
+      isAlacPreset: this.config.isAlacPreset,
     };
 
     // Build expected sync tag from current config (for sync tag comparison)
-    const resolvedQuality = musicOpts.resolvedQuality;
+    const resolvedQuality = this.config.resolvedQuality;
     const expectedSyncTag = resolvedQuality
-      ? buildAudioSyncTag(resolvedQuality, musicOpts.encodingMode, musicOpts.customBitrate)
+      ? buildAudioSyncTag(resolvedQuality, this.config.raw.encoding, this.config.raw.customBitrate)
       : undefined;
 
     partitionExisting(diff, (match) => {
@@ -451,7 +390,6 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
         // else: sync tag matches -> in sync, presetChange stays null
       } else {
         // No sync tag on track, or no resolvedQuality in options — fall back to bitrate tolerance.
-        // Callers must pass resolvedQuality to enable sync tag comparison.
         presetChange = detectPresetChange(
           match.source,
           match.device,
@@ -462,7 +400,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
       if (!presetChange) return null;
 
-      const changes: MetadataChange[] = musicOpts.isAlacPreset
+      const changes: MetadataChange[] = this.config.isAlacPreset
         ? [
             {
               field: 'lossless' as const,
@@ -487,11 +425,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
    * Only lossless sources are affected — compatible lossy (MP3, AAC) are always
    * copied as-is and re-encoding them would only degrade quality.
    */
-  private postProcessForceTranscode(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    options: HandlerDiffOptions
-  ): void {
-    if (!options.forceTranscode) return;
+  private postProcessForceTranscode(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!this.config.raw.forceTranscode) return;
 
     partitionExisting(diff, (match) => {
       if (!isSourceLossless(match.source)) return null;
@@ -515,13 +450,10 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
    *    the tag). If the effective mode is different, the file needs re-processing.
    * 2. Transfer mode is present but differs — file replacement needed.
    */
-  private postProcessTransferMode(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    musicOpts: MusicHandlerDiffOptions
-  ): void {
-    if (!(musicOpts.forceTransferMode && musicOpts.effectiveTransferMode)) return;
+  private postProcessTransferMode(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!(this.config.raw.forceTransferMode && this.config.transferMode)) return;
 
-    const targetTransferMode = musicOpts.effectiveTransferMode;
+    const targetTransferMode = this.config.transferMode;
 
     partitionExisting(diff, (match) => {
       const syncTag = match.device.syncTag;
@@ -561,16 +493,13 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
    * The baseline assumes the iPod artwork currently matches the source, which is the
    * expected state for a freshly synced collection.
    */
-  private postProcessSyncTags(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    musicOpts: MusicHandlerDiffOptions
-  ): void {
-    if (!(musicOpts.forceSyncTags && musicOpts.resolvedQuality)) return;
+  private postProcessSyncTags(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!(this.config.raw.forceSyncTags && this.config.resolvedQuality)) return;
 
     const baseExpectedTag = buildAudioSyncTag(
-      musicOpts.resolvedQuality,
-      musicOpts.encodingMode,
-      musicOpts.customBitrate
+      this.config.resolvedQuality,
+      this.config.raw.encoding,
+      this.config.raw.customBitrate
     );
 
     partitionExisting(diff, (match) => {
@@ -620,14 +549,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   }
 
   /**
-   * Pass 4: Force-metadata moves ALL remaining existing tracks to toUpdate.
+   * Pass 5: Force-metadata moves ALL remaining existing tracks to toUpdate.
    * This rewrites metadata on every matched track without re-transcoding or re-transferring.
    */
-  private postProcessForceMetadata(
-    diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    options: HandlerDiffOptions
-  ): void {
-    if (!options.forceMetadata) return;
+  private postProcessForceMetadata(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    if (!this.config.raw.forceMetadata) return;
 
     sweepAllExisting(diff, 'force-metadata', (match) => {
       const { source, device } = match;
@@ -675,66 +601,20 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Planning ----
 
-  planAdd(source: CollectionTrack, options: HandlerPlanOptions): SyncOperation {
-    // Device-level codec check: if the device natively supports this format,
-    // copy directly regardless of source category
-    if (isDeviceCompatible(source, options.supportedAudioCodecs)) {
-      if (options.primaryArtworkSource === 'embedded') {
-        return { type: 'add-optimized-copy', source };
-      }
-      if (options.transferMode === 'optimized') {
-        return { type: 'add-optimized-copy', source };
-      }
-      return { type: 'add-direct-copy', source };
-    }
-
-    const category = categorizeSource(source);
-
-    if (category === 'compatible-lossy') {
-      // Embedded-artwork devices need FFmpeg to resize artwork in all modes
-      if (options.primaryArtworkSource === 'embedded') {
-        return { type: 'add-optimized-copy', source };
-      }
-      // Database-artwork devices: fast/portable = direct copy, optimized = FFmpeg strip
-      if (options.transferMode === 'optimized') {
-        return { type: 'add-optimized-copy', source };
-      }
-      return { type: 'add-direct-copy', source };
-    }
-
-    // Lossless or incompatible lossy — needs transcoding
-    // Determine preset name based on options
-    const presetName =
-      options.qualityPreset === 'max'
-        ? options.deviceSupportsAlac
-          ? 'lossless'
-          : 'high'
-        : ((options.qualityPreset as 'high' | 'medium' | 'low') ?? 'high');
-
-    // ALAC source with lossless preset can be copied directly
-    if (presetName === 'lossless' && source.codec?.toLowerCase() === 'alac') {
-      return { type: 'add-direct-copy', source };
-    }
-
-    return {
-      type: 'add-transcode',
-      source,
-      preset: {
-        name: presetName as Exclude<typeof presetName, 'max'>,
-        ...(options.customBitrate !== undefined && { bitrateOverride: options.customBitrate }),
-      },
-    };
+  planAdd(source: CollectionTrack, _options: HandlerPlanOptions): SyncOperation {
+    const { action } = this.classifier.classify(source);
+    return this.factory.createAdd(source, action);
   }
 
   planRemove(device: DeviceTrack): SyncOperation {
-    return { type: 'remove', track: device };
+    return this.factory.createRemove(device);
   }
 
   planUpdate(
     source: CollectionTrack,
     device: DeviceTrack,
     reasons: UpdateReason[],
-    options?: HandlerPlanOptions,
+    _options?: HandlerPlanOptions,
     changes?: MetadataChange[]
   ): SyncOperation[] {
     if (reasons.length === 0) return [];
@@ -744,120 +624,17 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     // artwork-updated and artwork-removed need source file access for artwork re-extraction
     // or removal, but don't replace the audio file — route as upgrade-artwork
     if (primaryReason === 'artwork-updated' || primaryReason === 'artwork-removed') {
-      return [
-        {
-          type: 'upgrade-artwork',
-          source,
-          target: device,
-          reason: primaryReason as UpgradeReason,
-        },
-      ];
+      return [this.factory.createArtworkUpgrade(source, device, primaryReason as UpgradeReason)];
     }
 
     // File-replacement upgrades
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
-      // Device-level codec check: if the device natively supports this format,
-      // always use a copy upgrade regardless of source category
-      if (isDeviceCompatible(source, options?.supportedAudioCodecs)) {
-        if (options?.primaryArtworkSource === 'embedded') {
-          return [
-            {
-              type: 'upgrade-optimized-copy',
-              source,
-              target: device,
-              reason: primaryReason as UpgradeReason,
-            },
-          ];
-        }
-        if (options?.transferMode === 'optimized') {
-          return [
-            {
-              type: 'upgrade-optimized-copy',
-              source,
-              target: device,
-              reason: primaryReason as UpgradeReason,
-            },
-          ];
-        }
-        return [
-          {
-            type: 'upgrade-direct-copy',
-            source,
-            target: device,
-            reason: primaryReason as UpgradeReason,
-          },
-        ];
-      }
-
-      // Resolve the transcode preset for the upgrade (same logic as planAdd)
-      const category = categorizeSource(source);
-
-      if (category !== 'compatible-lossy') {
-        const presetName =
-          options?.qualityPreset === 'max'
-            ? options?.deviceSupportsAlac
-              ? 'lossless'
-              : 'high'
-            : ((options?.qualityPreset as 'high' | 'medium' | 'low') ?? 'high');
-
-        // ALAC source with lossless preset can be copied directly
-        if (presetName === 'lossless' && source.codec?.toLowerCase() === 'alac') {
-          return [
-            {
-              type: 'upgrade-direct-copy',
-              source,
-              target: device,
-              reason: primaryReason as UpgradeReason,
-            },
-          ];
-        }
-
-        return [
-          {
-            type: 'upgrade-transcode',
-            source,
-            target: device,
-            reason: primaryReason as UpgradeReason,
-            preset: {
-              name: presetName as Exclude<typeof presetName, 'max'>,
-              ...(options?.customBitrate !== undefined && {
-                bitrateOverride: options.customBitrate,
-              }),
-            },
-          },
-        ];
-      }
-
-      // compatible-lossy — copy upgrade
-      if (options?.primaryArtworkSource === 'embedded') {
-        return [
-          {
-            type: 'upgrade-optimized-copy',
-            source,
-            target: device,
-            reason: primaryReason as UpgradeReason,
-          },
-        ];
-      }
-      return [
-        {
-          type: 'upgrade-direct-copy',
-          source,
-          target: device,
-          reason: primaryReason as UpgradeReason,
-        },
-      ];
+      const { action } = this.classifier.classify(source);
+      return [this.factory.createUpgrade(source, device, primaryReason as UpgradeReason, action)];
     }
 
     // Metadata-only updates — populate metadata from changes
-    const metadata = changes ? changesToMetadata(changes) : {};
-    return [
-      {
-        type: 'update-metadata',
-        track: device,
-        metadata,
-      },
-    ];
+    return [this.factory.createMetadataUpdate(device, changes ?? [])];
   }
 
   estimateSize(op: SyncOperation): number {
@@ -871,14 +648,14 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     return estimateTransferTime(size);
   }
 
-  collectPlanWarnings(operations: SyncOperation[], options?: HandlerPlanOptions): SyncWarning[] {
+  collectPlanWarnings(operations: SyncOperation[], _options?: HandlerPlanOptions): SyncWarning[] {
     const warnings: SyncWarning[] = [];
     const lossyToLossyTracks: CollectionTrack[] = [];
 
     for (const op of operations) {
       if (op.type === 'add-transcode' || op.type === 'upgrade-transcode') {
-        const category = categorizeSource(op.source as CollectionTrack);
-        if (willWarnLossyToLossy(category)) {
+        const { warnLossyToLossy } = this.classifier.classify(op.source as CollectionTrack);
+        if (warnLossyToLossy) {
           lossyToLossyTracks.push(op.source as CollectionTrack);
         }
       }
@@ -894,19 +671,47 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
     // Warn when portable mode is used with an embedded-artwork device
     if (
-      options?.primaryArtworkSource === 'embedded' &&
-      options?.transferMode === 'portable' &&
-      options?.artworkMaxResolution &&
+      this.config.primaryArtworkSource === 'embedded' &&
+      this.config.transferMode === 'portable' &&
+      this.config.artworkResize &&
       operations.length > 0
     ) {
       warnings.push({
         type: 'embedded-artwork-resize',
-        message: `Artwork resized to device maximum (${options.artworkMaxResolution}px) — this device reads artwork from embedded file data and cannot use full-resolution images. Portable mode preserves audio quality but artwork is optimized for the device.`,
+        message: `Artwork resized to device maximum (${this.config.artworkResize}px) — this device reads artwork from embedded file data and cannot use full-resolution images. Portable mode preserves audio quality but artwork is optimized for the device.`,
         tracks: [],
       });
     }
 
     return warnings;
+  }
+
+  // ---- Priority ----
+
+  /**
+   * Get the execution priority for a sync operation.
+   * Lower numbers execute first. Used by the engine for ordering.
+   */
+  getOperationPriority(op: SyncOperation): number {
+    switch (op.type) {
+      case 'remove':
+        return 0;
+      case 'update-metadata':
+      case 'update-sync-tag':
+        return 1;
+      case 'add-direct-copy':
+      case 'add-optimized-copy':
+        return 2;
+      case 'upgrade-transcode':
+      case 'upgrade-direct-copy':
+      case 'upgrade-optimized-copy':
+      case 'upgrade-artwork':
+        return 3;
+      case 'add-transcode':
+        return 4;
+      default:
+        return 5;
+    }
   }
 
   // ---- Execution ----
@@ -921,23 +726,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     operations: SyncOperation[],
     ctx: ExecutionContext
   ): AsyncGenerator<OperationProgress> {
-    if (!this.executionConfig) {
-      // Fallback to sequential stub when no execution config set
-      for (const op of operations) {
-        yield* this.execute(op, ctx);
-      }
-      return;
-    }
-
-    const {
-      transcoder,
-      adapter,
-      syncTagConfig,
-      artwork,
-      continueOnError,
-      retryConfig,
-      artworkResize,
-    } = this.executionConfig;
+    const transcoder = this.config.raw.transcoder;
 
     // Wrap operations in a SyncPlan for MusicExecutor
     const plan: SyncPlan = {
@@ -955,12 +744,15 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
       dryRun: ctx.dryRun,
       signal: ctx.signal,
       tempDir: ctx.tempDir,
-      artwork,
-      adapter,
-      syncTagConfig,
-      continueOnError,
-      retryConfig,
-      artworkResize,
+      artwork: this.config.raw.artwork,
+      adapter: this.config.raw.adapter,
+      syncTagConfig: {
+        encodingMode: this.config.raw.encoding,
+        customBitrate: this.config.raw.customBitrate,
+      },
+      continueOnError: this.config.raw.continueOnError,
+      retryConfig: this.config.raw.retryConfig,
+      artworkResize: this.config.artworkResize,
     })) {
       // Filter out batch-level events that don't map to per-operation progress
       if (progress.phase === 'updating-db' || progress.phase === 'complete') {
@@ -1048,6 +840,6 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 /**
  * Create a MusicHandler instance
  */
-export function createMusicHandler(): MusicHandler {
-  return new MusicHandler();
+export function createMusicHandler(config: MusicSyncConfig): MusicHandler {
+  return new MusicHandler(config);
 }

@@ -1864,12 +1864,18 @@ export const ENCODING_MODES = ['vbr', 'cbr'] as const;
 export class MusicHandler {
   readonly type = 'music';
 
-  setTransformsConfig(_config: any): void {
-    // no-op in mock
+  constructor(_config?: any) {
+    // Config accepted but ignored in mock
   }
 
-  setExecutionConfig(_config: any): void {
-    // no-op in mock
+  getOperationPriority(op: any): number {
+    const type = op?.type ?? '';
+    if (type.includes('remove')) return 0;
+    if (type.includes('update') || type.includes('sync-tag')) return 1;
+    if (type.includes('copy')) return 2;
+    if (type.includes('upgrade')) return 3;
+    if (type.includes('transcode')) return 4;
+    return 5;
   }
 
   generateMatchKey(source: any): string {
@@ -1939,8 +1945,8 @@ export class MusicHandler {
   }
 }
 
-export function createMusicHandler(): MusicHandler {
-  return new MusicHandler();
+export function createMusicHandler(config?: any): MusicHandler {
+  return new MusicHandler(config);
 }
 
 // =============================================================================
@@ -1949,6 +1955,20 @@ export function createMusicHandler(): MusicHandler {
 
 export class VideoHandler {
   readonly type = 'video';
+
+  constructor(_config?: any) {
+    // Config accepted but ignored in mock
+  }
+
+  getOperationPriority(op: any): number {
+    const type = op?.type ?? '';
+    if (type.includes('remove')) return 0;
+    if (type.includes('update')) return 1;
+    if (type.includes('copy')) return 2;
+    if (type.includes('upgrade')) return 3;
+    if (type.includes('transcode')) return 4;
+    return 5;
+  }
 
   generateMatchKey(source: any): string {
     return generateVideoMatchKey(source);
@@ -2017,8 +2037,8 @@ export class VideoHandler {
   }
 }
 
-export function createVideoHandler(): VideoHandler {
-  return new VideoHandler();
+export function createVideoHandler(config?: any): VideoHandler {
+  return new VideoHandler(config);
 }
 
 // =============================================================================

@@ -125,37 +125,28 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     core: typeof import('@podkit/core')
   ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
     const config = contentConfig as MusicContentConfig;
-    const isAlacPreset = config.effectiveQuality === 'max' && config.deviceSupportsAlac;
-    const resolvedQuality = isAlacPreset
-      ? 'lossless'
-      : config.effectiveQuality === 'max'
-        ? 'high'
-        : config.effectiveQuality;
 
-    // Use the unified SyncDiffer + MusicHandler pipeline
-    const handler = core.createMusicHandler();
-    handler.setTransformsConfig(config.effectiveTransforms);
-    const differ = core.createSyncDiffer(handler);
-    const transformsEnabled = core.hasEnabledTransforms(config.effectiveTransforms);
-
-    return differ.diff(sourceItems, deviceItems, {
-      transformsEnabled,
-      skipUpgrades: config.skipUpgrades,
+    // The handler derives isAlacPreset, resolvedQuality, presetBitrate, etc.
+    // internally from the MusicSyncConfig
+    const handler = core.createMusicHandler({
+      quality: config.effectiveQuality,
+      transcoder: config.transcoder,
+      capabilities: config.capabilities,
+      encoding: config.effectiveEncoding,
+      customBitrate: config.effectiveCustomBitrate,
+      bitrateTolerance: config.effectiveBitrateTolerance,
+      transferMode: config.effectiveTransferMode,
+      artwork: config.effectiveArtwork,
+      transforms: config.effectiveTransforms,
       forceTranscode: config.forceTranscode,
       forceMetadata: config.forceMetadata,
-      transcodingActive: true,
-      presetBitrate: core.getPresetBitrate(config.effectiveQuality),
-      handlerOptions: {
-        forceSyncTags: config.forceSyncTags,
-        encodingMode: config.effectiveEncoding,
-        bitrateTolerance: config.effectiveBitrateTolerance,
-        isAlacPreset,
-        resolvedQuality,
-        customBitrate: config.effectiveCustomBitrate,
-        forceTransferMode: config.forceTransferMode,
-        effectiveTransferMode: config.effectiveTransferMode,
-      },
+      forceSyncTags: config.forceSyncTags,
+      forceTransferMode: config.forceTransferMode,
+      skipUpgrades: config.skipUpgrades,
     });
+    const differ = core.createSyncDiffer(handler);
+
+    return differ.diff(sourceItems, deviceItems);
   }
 
   collectPostDiffData(

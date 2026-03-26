@@ -10,6 +10,7 @@ import {
   createMusicPlan,
   getMusicPlanSummary,
   createDirectoryAdapter,
+  createFFmpegTranscoder,
 } from '@podkit/core';
 import type { CollectionTrack, DeviceTrack } from '@podkit/core';
 
@@ -17,7 +18,10 @@ import type { CollectionTrack, DeviceTrack } from '@podkit/core';
  * Compute music diff using the unified SyncDiffer + MusicHandler pipeline.
  */
 function computeDiff(collectionTracks: CollectionTrack[], ipodTracks: DeviceTrack[]) {
-  const handler = createMusicHandler();
+  const handler = createMusicHandler({
+    quality: 'high',
+    transcoder: createFFmpegTranscoder(),
+  });
   const differ = createSyncDiffer(handler);
   return differ.diff(collectionTracks, ipodTracks);
 }

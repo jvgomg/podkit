@@ -260,4 +260,15 @@ export interface ContentTypeHandler<TSource, TDevice> {
 
   /** Format a sync plan into a dry-run summary */
   formatDryRun(plan: SyncPlan): DryRunSummary;
+
+  // ---- Priority ----
+
+  /**
+   * Return the execution priority for an operation (lower = execute first).
+   *
+   * Used by the engine's planner to order operations. Each content type
+   * defines its own priority scheme (e.g., removes before copies before
+   * transcodes).
+   */
+  getOperationPriority(op: SyncOperation): number;
 }

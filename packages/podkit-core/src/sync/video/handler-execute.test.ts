@@ -630,11 +630,11 @@ describe('VideoHandler execution', () => {
     });
   });
 
-  describe('setVideoQuality (sync tag writing)', () => {
-    it('writes sync tag to track comment when videoQuality is set', async () => {
+  describe('videoQuality config (sync tag writing)', () => {
+    it('writes sync tag to track comment when videoQuality is configured', async () => {
       const mockIpod = createMockIpod();
 
-      handler.setVideoQuality('medium');
+      const qualityHandler = new VideoHandler({ videoQuality: 'medium' });
 
       const op: SyncOperation = {
         type: 'video-transcode',
@@ -642,7 +642,7 @@ describe('VideoHandler execution', () => {
         settings: defaultSettings,
       };
 
-      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+      await collectProgress(qualityHandler.execute(op, makeCtx(mockIpod)));
 
       // Capture what addTrack was called with
       expect(mockIpod.addTrack).toHaveBeenCalledTimes(1);
@@ -653,10 +653,10 @@ describe('VideoHandler execution', () => {
       expect(trackInput.syncTag).toMatchObject({ quality: 'medium' });
     });
 
-    it('does not write sync tag when videoQuality is not set', async () => {
+    it('writes sync tag with default quality (high) when no config provided', async () => {
       const mockIpod = createMockIpod();
 
-      // No setVideoQuality call — default behavior
+      // Default handler — videoQuality defaults to 'high'
       const op: SyncOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
@@ -666,14 +666,15 @@ describe('VideoHandler execution', () => {
       await collectProgress(handler.execute(op, makeCtx(mockIpod)));
 
       const trackInput = mockIpod.addTrack.mock.calls[0]![0];
-      // No syncTag should be set when videoQuality is not configured
-      expect(trackInput.syncTag).toBeUndefined();
+      // Default quality is 'high', so a sync tag should be written
+      expect(trackInput.syncTag).toBeDefined();
+      expect(trackInput.syncTag).toMatchObject({ quality: 'high' });
     });
 
     it('writes sync tag with different quality presets', async () => {
       const mockIpod = createMockIpod();
 
-      handler.setVideoQuality('high');
+      const qualityHandler = new VideoHandler({ videoQuality: 'high' });
 
       const op: SyncOperation = {
         type: 'video-transcode',
@@ -681,7 +682,7 @@ describe('VideoHandler execution', () => {
         settings: defaultSettings,
       };
 
-      await collectProgress(handler.execute(op, makeCtx(mockIpod)));
+      await collectProgress(qualityHandler.execute(op, makeCtx(mockIpod)));
 
       const trackInput = mockIpod.addTrack.mock.calls[0]![0];
       expect(trackInput.syncTag).toMatchObject({ quality: 'high' });
