@@ -12,7 +12,6 @@ import {
   DEMO_MOUNT_POINT,
   DEMO_DEVICE_INFO,
   DEMO_PLATFORM_DEVICE,
-  DEMO_SYNC_STATS,
   getDemoCollectionTracks,
   getDemoCollectionVideos,
   getDemoIpodTracks,
@@ -234,11 +233,6 @@ export type {
   VideoFilter,
   VideoDirectoryAdapterConfig,
   DeviceVideo,
-  VideoSyncPlanOptions,
-  VideoSyncWarning,
-  VideoSyncWarningType,
-  VideoPlanSummary,
-  VideoSyncPlanner,
   VideoExecuteOptions,
   VideoSyncExecutor,
   VideoExecutorDependencies,
@@ -761,44 +755,6 @@ export function calculateMusicOperationSize(operation: any): number {
   return 0;
 }
 
-export function willMusicFitInSpace(_plan: any, _availableSpace: number): boolean {
-  return true;
-}
-
-export function getMusicPlanSummary(plan: any) {
-  let addTranscodeCount = 0;
-  let addDirectCopyCount = 0;
-  let addOptimizedCopyCount = 0;
-  let removeCount = 0;
-  let updateCount = 0;
-  let upgradeTranscodeCount = 0;
-  let upgradeDirectCopyCount = 0;
-  let upgradeOptimizedCopyCount = 0;
-  let upgradeArtworkCount = 0;
-  for (const op of plan.operations || []) {
-    if (op.type === 'add-transcode') addTranscodeCount++;
-    else if (op.type === 'add-direct-copy') addDirectCopyCount++;
-    else if (op.type === 'add-optimized-copy') addOptimizedCopyCount++;
-    else if (op.type === 'remove') removeCount++;
-    else if (op.type === 'update-metadata') updateCount++;
-    else if (op.type === 'upgrade-transcode') upgradeTranscodeCount++;
-    else if (op.type === 'upgrade-direct-copy') upgradeDirectCopyCount++;
-    else if (op.type === 'upgrade-optimized-copy') upgradeOptimizedCopyCount++;
-    else if (op.type === 'upgrade-artwork') upgradeArtworkCount++;
-  }
-  return {
-    addTranscodeCount,
-    addDirectCopyCount,
-    addOptimizedCopyCount,
-    removeCount,
-    updateCount,
-    upgradeTranscodeCount,
-    upgradeDirectCopyCount,
-    upgradeOptimizedCopyCount,
-    upgradeArtworkCount,
-  };
-}
-
 export function categorizeSource(track: any) {
   if (track.lossless || ['flac', 'wav', 'aiff'].includes(track.fileType)) return 'lossless';
   if (['ogg', 'opus'].includes(track.fileType)) return 'incompatible-lossy';
@@ -821,7 +777,7 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export class MusicExecutor {
+export class MusicPipeline {
   private _ipod: any;
   private _transcoder: any;
 
@@ -939,12 +895,12 @@ export class MusicExecutor {
   }
 }
 
-export function createExecutor(deps: any) {
-  return new MusicExecutor(deps);
+export function createMusicPipeline(deps: any) {
+  return new MusicPipeline(deps);
 }
 
-export async function executePlan(plan: any, deps: any, options: any = {}) {
-  const executor = new MusicExecutor(deps);
+export async function executeMusicPlan(plan: any, deps: any, options: any = {}) {
+  const executor = new MusicPipeline(deps);
   let completed = 0;
   let failed = 0;
   let skipped = 0;
@@ -1037,42 +993,8 @@ export function generateVideoMatchKey(video: any): string {
 }
 
 // =============================================================================
-// Video Planner (mock)
+// Video Estimation (mock)
 // =============================================================================
-
-export function planVideoSync(diff: any, _options?: any) {
-  const operations: any[] = [];
-  for (const video of diff.toAdd || []) {
-    // M4V with H.264 can be copied directly
-    operations.push({
-      type: 'video-copy',
-      source: video,
-    });
-  }
-
-  return {
-    operations,
-    estimatedTime: DEMO_SYNC_STATS.video.estimatedTimeSeconds,
-    estimatedSize: DEMO_SYNC_STATS.video.estimatedSizeBytes,
-    warnings: [],
-  };
-}
-
-export function willVideoPlanFit(_plan: any, _availableSpace: number): boolean {
-  return true;
-}
-
-export function getVideoPlanSummary(plan: any) {
-  let transcodeCount = 0;
-  let copyCount = 0;
-  let removeCount = 0;
-  for (const op of plan.operations || []) {
-    if (op.type === 'video-transcode') transcodeCount++;
-    else if (op.type === 'video-copy') copyCount++;
-    else if (op.type === 'video-remove') removeCount++;
-  }
-  return { transcodeCount, copyCount, removeCount, updateCount: 0, skippedCount: 0 };
-}
 
 export function estimateVideoTranscodedSize(
   durationSeconds: number,

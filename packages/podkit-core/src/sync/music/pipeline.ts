@@ -1,15 +1,15 @@
 /**
- * Sync executor - executes sync plans
+ * Music sync pipeline — three-stage execution engine (ADR-011)
  *
- * The executor takes a SyncPlan (from the planner) and executes each operation:
- * - transcode: Convert audio with FFmpeg, then add to iPod
- * - copy: Add track to iPod directly
- * - remove: Remove track from iPod database
+ * The pipeline takes a SyncPlan (from the planner) and executes each operation:
+ * - transcode: Convert audio with FFmpeg, then add to device
+ * - copy: Add track to device directly
+ * - remove: Remove track from device database
  *
- * Uses a three-stage pipeline architecture (see ADR-011):
+ * Three-stage pipeline architecture:
  * 1. Downloader: resolves file access (downloads for remote sources)
  * 2. Preparer: transcodes/prepares files (CPU-bound)
- * 3. Consumer: transfers to iPod (USB I/O)
+ * 3. Consumer: transfers to device (USB I/O)
  *
  * For remote sources, file downloads are pipelined ahead of transcoding
  * so network I/O overlaps with CPU work.
@@ -19,6 +19,9 @@
  * - Dry-run mode (simulate without writing)
  * - Error handling with continue-on-error option
  * - Abort signal support for cancellation
+ *
+ * This is the handler's internal execution pipeline, not a public API.
+ * External consumers should use MusicHandler.executeBatch() instead.
  *
  * @module
  */
@@ -503,12 +506,12 @@ function sleep(ms: number): Promise<void> {
 // =============================================================================
 
 /**
- * Default sync executor implementation
+ * Three-stage music sync pipeline (ADR-011)
  *
  * Handles execution of sync operations including transcoding, copying,
- * removing, updating metadata, and upgrading tracks on the iPod.
+ * removing, updating metadata, and upgrading tracks on the device.
  */
-export class MusicExecutor implements SyncExecutor {
+export class MusicPipeline implements SyncExecutor {
   private device: DeviceAdapter;
   private transcoder: FFmpegTranscoder;
   /** Warnings collected during execution */
@@ -1987,24 +1990,24 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
 // =============================================================================
 
 /**
- * Create a new sync executor
+ * Create a new music sync pipeline
  */
-export function createExecutor(deps: ExecutorDependencies): SyncExecutor {
-  return new MusicExecutor(deps);
+export function createMusicPipeline(deps: ExecutorDependencies): SyncExecutor {
+  return new MusicPipeline(deps);
 }
 
 /**
- * Execute a sync plan with simplified interface
+ * Execute a music sync plan with simplified interface
  *
  * This is a convenience function that collects all progress events
  * and returns a final result.
  */
-export async function executePlan(
+export async function executeMusicPlan(
   plan: SyncPlan,
   deps: ExecutorDependencies,
   options: ExtendedExecuteOptions = {}
 ): Promise<ExecuteResult> {
-  const executor = new MusicExecutor(deps);
+  const executor = new MusicPipeline(deps);
 
   let completed = 0;
   let failed = 0;

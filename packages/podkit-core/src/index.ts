@@ -75,21 +75,19 @@ export {
 } from './sync/engine/upgrades.js';
 export type { PresetChangeOptions } from './sync/engine/upgrades.js';
 
-// Planner
+// Music planning utilities
 export {
-  createMusicPlan,
   isDefaultCompatibleFormat,
   requiresTranscoding,
   estimateTranscodedSize,
   estimateCopySize,
   calculateMusicOperationSize,
-  willMusicFitInSpace,
-  getMusicPlanSummary,
   categorizeSource,
   isLosslessSource,
   willWarnLossyToLossy,
   fileTypeToAudioCodec,
   isDeviceCompatible,
+  changesToMetadata,
 } from './sync/music/planner.js';
 
 // Track matching
@@ -128,23 +126,23 @@ export {
   VIDEO_RETRY_CONFIG,
 } from './sync/engine/error-handling.js';
 
-// Sync executor (implementation-specific types)
+// Music sync pipeline (three-stage execution engine, ADR-011)
 export type {
   ExtendedExecuteOptions,
   ExecutorDependencies,
   RetryConfig,
   SyncTagConfig,
-} from './sync/music/executor.js';
+} from './sync/music/pipeline.js';
 export {
-  MusicExecutor,
-  createExecutor,
-  executePlan,
+  MusicPipeline,
+  createMusicPipeline,
+  executeMusicPlan,
   getMusicOperationDisplayName,
   categorizeError,
   createCategorizedError,
   getRetriesForCategory,
   MUSIC_RETRY_CONFIG,
-} from './sync/music/executor.js';
+} from './sync/music/pipeline.js';
 
 // Device capabilities
 export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './device/capabilities.js';
@@ -457,20 +455,12 @@ export type VideoAdapter = CollectionAdapter<CollectionVideo, VideoFilter>;
 export type { DeviceVideo } from './sync/video/types.js';
 export { generateVideoMatchKey } from './sync/video/types.js';
 
-// Video sync planner
-export type {
-  VideoSyncPlanOptions,
-  VideoSyncWarning,
-  VideoSyncWarningType,
-  VideoPlanSummary,
-  VideoSyncPlanner,
-} from './sync/video/planner.js';
+// Video sync estimation
 export {
-  planVideoSync,
-  willVideoPlanFit,
-  getVideoPlanSummary,
   estimateTranscodedSize as estimateVideoTranscodedSize,
   estimatePassthroughSize,
+  calculateVideoOperationSize,
+  calculateVideoOperationTime,
 } from './sync/video/planner.js';
 
 // Video sync executor

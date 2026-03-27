@@ -16,7 +16,7 @@ import type { DeviceCapabilities, AudioCodec } from '../../device/capabilities.j
 import type { CollectionAdapter } from '../../adapters/interface.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { hasEnabledTransforms } from '../../transforms/pipeline.js';
-import type { RetryConfig } from './executor.js';
+import type { RetryConfig } from './pipeline.js';
 
 // =============================================================================
 // Public Config

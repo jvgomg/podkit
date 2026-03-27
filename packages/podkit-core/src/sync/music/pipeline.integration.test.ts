@@ -1,5 +1,5 @@
 /**
- * Integration tests for the sync executor
+ * Integration tests for the music sync pipeline
  *
  * These tests require:
  * - gpod-tool (for creating test iPod environments)
@@ -22,11 +22,11 @@ import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 
 import {
-  MusicExecutor,
-  executePlan,
+  MusicPipeline,
+  executeMusicPlan,
   type ExecutorProgress,
   type ExecutorDependencies,
-} from './executor.js';
+} from './pipeline.js';
 import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import { IpodDatabase } from '../../ipod/database.js';
 import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
@@ -210,7 +210,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executePlan(plan, deps);
+          const result = await executeMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -269,7 +269,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executePlan(plan, deps);
+          const result = await executeMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -332,7 +332,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executePlan(plan, deps);
+          const result = await executeMusicPlan(plan, deps);
 
           expect(result.completed).toBe(1);
           expect(result.failed).toBe(0);
@@ -393,7 +393,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executePlan(plan, deps);
+          const result = await executeMusicPlan(plan, deps);
 
           expect(result.completed).toBe(3);
           expect(result.failed).toBe(0);
@@ -441,7 +441,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const executor = new MusicExecutor(deps);
+          const executor = new MusicPipeline(deps);
           const progress: ExecutorProgress[] = [];
 
           for await (const p of executor.execute(plan)) {
@@ -499,7 +499,7 @@ describe('SyncExecutor integration', () => {
             warnings: [],
           };
 
-          const result = await executePlan(plan, deps, { dryRun: true });
+          const result = await executeMusicPlan(plan, deps, { dryRun: true });
 
           expect(result.skipped).toBe(1);
           expect(result.completed).toBe(0);
