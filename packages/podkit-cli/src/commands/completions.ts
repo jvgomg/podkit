@@ -221,7 +221,8 @@ completionsCommand
       console.error('You can still generate completions manually:');
       console.error('  podkit completions zsh');
       console.error('  podkit completions bash');
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     const aliasName = opts.alias ? opts.name : undefined;
@@ -247,7 +248,8 @@ completionsCommand
         console.log(`Restart your shell or run: source ${shell.configFile}`);
       } catch (err: any) {
         console.error(`Failed to write to ${shell.configFile}: ${err.message}`);
-        process.exit(1);
+        process.exitCode = 1;
+        return;
       }
     } else {
       if (isAlreadyInstalled(shell.configFile, aliasName)) {
@@ -281,8 +283,7 @@ completionsCommand
 function getRootCommand(): Command {
   const rootCommand = completionsCommand.parent;
   if (!rootCommand) {
-    console.error('Error: completions command must be attached to a parent program');
-    process.exit(1);
+    throw new Error('completions command must be attached to a parent program');
   }
   return rootCommand;
 }

@@ -2,7 +2,14 @@ import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
-import { configExists, createConfigFile, formatSuccessMessage, CONFIG_TEMPLATE } from './init.js';
+import { Command } from 'commander';
+import {
+  configExists,
+  createConfigFile,
+  formatSuccessMessage,
+  CONFIG_TEMPLATE,
+  initCommand,
+} from './init.js';
 import { DEFAULT_CONFIG, CURRENT_CONFIG_VERSION } from '../config/index.js';
 
 describe('init command', () => {
@@ -259,5 +266,44 @@ describe('init command', () => {
       expect(message).toContain('3.');
       expect(message).toContain('4.');
     });
+  });
+});
+
+describe('initCommand action exit codes', () => {
+  let tempDir: string;
+  let savedExitCode: number | undefined;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-init-test-'));
+    savedExitCode = process.exitCode as number | undefined;
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+    process.exitCode = savedExitCode;
+  });
+
+  it('sets process.exitCode = 1 when config already exists without --force', async () => {
+    const configPath = path.join(tempDir, 'config.toml');
+    fs.writeFileSync(configPath, '# existing');
+
+    const program = new Command('podkit');
+    program.addCommand(initCommand);
+
+    await program.parseAsync(['init', '--path', configPath], { from: 'user' });
+
+    expect(process.exitCode).toBe(1);
+  });
+
+  it('does not set process.exitCode = 1 on success', async () => {
+    const configPath = path.join(tempDir, 'new-config.toml');
+
+    const program = new Command('podkit');
+    program.addCommand(initCommand);
+
+    await program.parseAsync(['init', '--path', configPath], { from: 'user' });
+
+    expect(process.exitCode).toBe(0);
   });
 });
