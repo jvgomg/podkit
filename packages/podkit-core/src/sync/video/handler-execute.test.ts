@@ -67,7 +67,7 @@ mock.module('../../ipod/video.js', () => ({
 
 // Import after mocks
 import { VideoHandler } from './handler.js';
-import type { SyncOperation } from '../engine/types.js';
+import type { VideoOperation } from './types.js';
 import type { OperationProgress, ExecutionContext } from '../engine/content-type.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { VideoTranscodeSettings } from '../../video/types.js';
@@ -174,7 +174,7 @@ describe('VideoHandler execution', () => {
   describe('executeTranscode (video-transcode)', () => {
     it('yields starting, in-progress with transcodeProgress, and complete', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
         settings: defaultSettings,
@@ -204,7 +204,7 @@ describe('VideoHandler execution', () => {
     it('calls transcodeVideo with correct arguments', async () => {
       const mockIpod = createMockIpod();
       const source = makeVideoSource({ filePath: '/videos/my-movie.mkv' });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source,
         settings: defaultSettings,
@@ -221,7 +221,7 @@ describe('VideoHandler execution', () => {
 
     it('adds track to iPod database', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
         settings: defaultSettings,
@@ -237,7 +237,7 @@ describe('VideoHandler execution', () => {
   describe('executeCopy (video-copy)', () => {
     it('yields starting and complete', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-copy',
         source: makeVideoSource(),
       };
@@ -251,7 +251,7 @@ describe('VideoHandler execution', () => {
 
     it('does not yield transcodeProgress', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-copy',
         source: makeVideoSource(),
       };
@@ -265,7 +265,7 @@ describe('VideoHandler execution', () => {
   describe('executeRemove (video-remove)', () => {
     it('yields starting and complete', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-remove',
         video: {
           id: '/iPod_Control/Music/test.m4v',
@@ -286,7 +286,7 @@ describe('VideoHandler execution', () => {
       const mockIpod = createMockIpod();
       mockIpod.getTracks.mockReturnValue([]);
 
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-remove',
         video: {
           id: 'nonexistent',
@@ -305,7 +305,7 @@ describe('VideoHandler execution', () => {
   describe('executeUpgrade (video-upgrade)', () => {
     it('yields transcodeProgress when upgrade requires transcoding', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-upgrade',
         source: makeVideoSource(),
         target: {
@@ -332,7 +332,7 @@ describe('VideoHandler execution', () => {
 
     it('uses copy path when no settings provided', async () => {
       const mockIpod = createMockIpod();
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-upgrade',
         source: makeVideoSource(),
         target: {
@@ -377,7 +377,7 @@ describe('VideoHandler execution', () => {
         episodeNumber: 1,
         episodeId: 'S01E01',
       });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source,
         video: {
@@ -413,7 +413,7 @@ describe('VideoHandler execution', () => {
         title: 'Inception',
         director: 'Christopher Nolan',
       });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source,
         video: {
@@ -441,7 +441,7 @@ describe('VideoHandler execution', () => {
         title: 'Toy Story',
         studio: 'Pixar',
       });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source,
         video: {
@@ -468,7 +468,7 @@ describe('VideoHandler execution', () => {
         seasonNumber: 2,
         episodeNumber: 3,
       });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source,
         video: {
@@ -499,7 +499,7 @@ describe('VideoHandler execution', () => {
         contentType: undefined as unknown as CollectionVideo['contentType'], // not tvshow or movie
         title: 'Test',
       });
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source,
         video: {
@@ -526,7 +526,7 @@ describe('VideoHandler execution', () => {
       const mockIpod = createMockIpod();
       mockIpod.getTracks.mockReturnValue([]);
 
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-update-metadata',
         source: makeVideoSource(),
         video: {
@@ -551,7 +551,7 @@ describe('VideoHandler execution', () => {
 
     it('creates and cleans up temp dir for transcode operations', async () => {
       const mockIpod = createMockIpod();
-      const ops: SyncOperation[] = [
+      const ops: VideoOperation[] = [
         {
           type: 'video-transcode',
           source: makeVideoSource(),
@@ -571,7 +571,7 @@ describe('VideoHandler execution', () => {
 
     it('does not create temp dir for non-transcode operations', async () => {
       const mockIpod = createMockIpod();
-      const ops: SyncOperation[] = [
+      const ops: VideoOperation[] = [
         {
           type: 'video-remove',
           video: {
@@ -597,7 +597,7 @@ describe('VideoHandler execution', () => {
       const mockIpod = createMockIpod();
       // First op: transcode (will trigger temp dir creation)
       // Second op: remove with nonexistent track (will throw)
-      const ops: SyncOperation[] = [
+      const ops: VideoOperation[] = [
         {
           type: 'video-transcode',
           source: makeVideoSource(),
@@ -636,7 +636,7 @@ describe('VideoHandler execution', () => {
 
       const qualityHandler = new VideoHandler({ videoQuality: 'medium' });
 
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
         settings: defaultSettings,
@@ -657,7 +657,7 @@ describe('VideoHandler execution', () => {
       const mockIpod = createMockIpod();
 
       // Default handler — videoQuality defaults to 'high'
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
         settings: defaultSettings,
@@ -676,7 +676,7 @@ describe('VideoHandler execution', () => {
 
       const qualityHandler = new VideoHandler({ videoQuality: 'high' });
 
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeVideoSource(),
         settings: defaultSettings,

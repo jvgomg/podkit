@@ -38,6 +38,7 @@ export type { SubsonicAdapterConfig } from './adapters/subsonic.js';
 
 // Sync engine
 export type {
+  BaseOperation,
   SyncPlan,
   SyncOperation,
   ExecuteOptions,
@@ -60,6 +61,10 @@ export type {
   ExecutorProgress,
   ExecuteResult,
 } from './sync/engine/types.js';
+
+// Per-handler operation types
+export type { MusicOperation } from './sync/music/types.js';
+export type { VideoOperation } from './sync/video/types.js';
 
 // Upgrade detection (self-healing sync)
 export {

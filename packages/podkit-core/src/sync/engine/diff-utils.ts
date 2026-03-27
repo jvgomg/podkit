@@ -9,7 +9,7 @@
  */
 
 import type { SyncTagData } from '../../metadata/sync-tags.js';
-import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
+import type { BaseOperation, MetadataChange, SyncPlan, UpdateReason } from './types.js';
 import type { DryRunSummary, UnifiedSyncDiff } from './content-type.js';
 
 /**
@@ -93,11 +93,11 @@ export function sweepAllExisting<TSource, TDevice>(
  * @param getDisplayName - Returns a human-readable name for an operation
  * @param estimateSize - Returns estimated size in bytes for an operation
  */
-export function formatDryRunFromPlan(
-  plan: SyncPlan,
+export function formatDryRunFromPlan<TOp extends BaseOperation>(
+  plan: SyncPlan<TOp>,
   classify: (type: string) => 'add' | 'remove' | 'update' | null,
-  getDisplayName: (op: SyncOperation) => string,
-  estimateSize: (op: SyncOperation) => number
+  getDisplayName: (op: TOp) => string,
+  estimateSize: (op: TOp) => number
 ): DryRunSummary {
   const operationCounts: Record<string, number> = {};
   const operations: Array<{ type: string; displayName: string; size?: number }> = [];

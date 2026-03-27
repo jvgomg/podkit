@@ -32,13 +32,13 @@ import {
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   MetadataChange,
-  SyncOperation,
   SyncPlan,
   SyncWarning,
   ExecutorProgress,
   UpdateReason,
   UpgradeReason,
 } from '../engine/types.js';
+import type { MusicOperation } from './types.js';
 import type {
   ContentTypeHandler,
   ExecutionContext,
@@ -140,7 +140,11 @@ function buildMusicMetadataChanges(
  * Takes a `MusicSyncConfig` at construction and derives all internal state
  * up front via the Classifier + Factory + Config pattern.
  */
-export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceTrack> {
+export class MusicHandler implements ContentTypeHandler<
+  CollectionTrack,
+  DeviceTrack,
+  MusicOperation
+> {
   readonly type = 'music';
 
   private readonly config: ResolvedMusicConfig;
@@ -595,12 +599,12 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Planning ----
 
-  planAdd(source: CollectionTrack): SyncOperation {
+  planAdd(source: CollectionTrack): MusicOperation {
     const { action } = this.classifier.classify(source);
     return this.factory.createAdd(source, action);
   }
 
-  planRemove(device: DeviceTrack): SyncOperation {
+  planRemove(device: DeviceTrack): MusicOperation {
     return this.factory.createRemove(device);
   }
 
@@ -610,11 +614,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     reasons: UpdateReason[],
     changes?: MetadataChange[],
     syncTag?: SyncTagData
-  ): SyncOperation[] {
+  ): MusicOperation[] {
     if (reasons.length === 0) return [];
 
     // Handle sync-tag-write: create update-sync-tag operation
-    const ops: SyncOperation[] = [];
+    const ops: MusicOperation[] = [];
     const nonSyncTagReasons = reasons.filter((r) => r !== 'sync-tag-write');
 
     if (reasons.includes('sync-tag-write') && syncTag) {
@@ -644,18 +648,18 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     return ops;
   }
 
-  estimateSize(op: SyncOperation): number {
+  estimateSize(op: MusicOperation): number {
     return calculateMusicOperationSize(op);
   }
 
-  estimateTime(op: SyncOperation): number {
+  estimateTime(op: MusicOperation): number {
     const size = calculateMusicOperationSize(op);
     if (op.type === 'remove') return 0.1;
     if (op.type === 'update-metadata' || op.type === 'update-sync-tag') return 0.01;
     return estimateTransferTime(size);
   }
 
-  collectPlanWarnings(operations: SyncOperation[]): SyncWarning[] {
+  collectPlanWarnings(operations: MusicOperation[]): SyncWarning[] {
     const warnings: SyncWarning[] = [];
     const lossyToLossyTracks: CollectionTrack[] = [];
 
@@ -699,7 +703,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
    * Get the execution priority for a sync operation.
    * Lower numbers execute first. Used by the engine for ordering.
    */
-  getOperationPriority(op: SyncOperation): number {
+  getOperationPriority(op: MusicOperation): number {
     switch (op.type) {
       case 'remove':
         return 0;
@@ -723,20 +727,23 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Execution ----
 
-  async *execute(op: SyncOperation, _ctx: ExecutionContext): AsyncGenerator<OperationProgress> {
+  async *execute(
+    op: MusicOperation,
+    _ctx: ExecutionContext
+  ): AsyncGenerator<OperationProgress<MusicOperation>> {
     // Stub — real execution stays in MusicPipeline for now
     yield { operation: op, phase: 'starting' };
     yield { operation: op, phase: 'complete' };
   }
 
   async *executeBatch(
-    operations: SyncOperation[],
+    operations: MusicOperation[],
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<MusicOperation>> {
     const transcoder = this.config.raw.transcoder;
 
     // Wrap operations in a SyncPlan for MusicPipeline
-    const plan: SyncPlan = {
+    const plan: SyncPlan<MusicOperation> = {
       operations,
       estimatedSize: operations.reduce((sum, op) => sum + this.estimateSize(op), 0),
       estimatedTime: operations.reduce((sum, op) => sum + this.estimateTime(op), 0),
@@ -777,8 +784,8 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
    * MusicPipeline yields one event per completed/failed/skipped operation
    * (plus batch-level 'updating-db' and 'complete' which are filtered before this).
    */
-  private bridgeProgress(progress: ExecutorProgress): OperationProgress {
-    let phase: OperationProgress['phase'];
+  private bridgeProgress(progress: ExecutorProgress): OperationProgress<MusicOperation> {
+    let phase: OperationProgress<MusicOperation>['phase'];
 
     if (progress.error) {
       phase = 'failed';
@@ -790,7 +797,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     }
 
     return {
-      operation: progress.operation,
+      operation: progress.operation as MusicOperation,
       phase,
       progress: progress.bytesTotal > 0 ? progress.bytesProcessed / progress.bytesTotal : undefined,
       error: progress.error,
@@ -812,11 +819,11 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
 
   // ---- Display ----
 
-  getDisplayName(op: SyncOperation): string {
+  getDisplayName(op: MusicOperation): string {
     return getMusicOperationDisplayName(op);
   }
 
-  formatDryRun(plan: SyncPlan): DryRunSummary {
+  formatDryRun(plan: SyncPlan<MusicOperation>): DryRunSummary {
     return formatDryRunFromPlan(
       plan,
       (type) => {
