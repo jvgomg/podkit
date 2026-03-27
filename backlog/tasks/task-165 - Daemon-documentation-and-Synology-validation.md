@@ -1,10 +1,10 @@
 ---
 id: TASK-165
 title: 'Daemon: documentation and Synology validation'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-03-18 23:57'
-updated_date: '2026-03-19 16:09'
+updated_date: '2026-03-27 12:55'
 labels:
   - daemon
   - docker
@@ -48,15 +48,15 @@ Test the full daemon flow on a Synology NAS:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Daemon mode docs page exists with Docker Compose setup, USB passthrough, Apprise config, and env var reference
-- [ ] #2 Synology-specific setup guide covers Container Manager USB passthrough configuration
-- [ ] #3 Docs note untested compatibility with Unraid and TrueNAS
-- [ ] #4 Existing Docker docs page links to daemon mode documentation
-- [ ] #5 AGENTS.md Docker section updated with daemon mode information
-- [ ] #6 Minimum Docker permissions for daemon mode are identified and documented (testing ladder: cap_add → /dev mount → privileged)
-- [ ] #7 Daemon has been tested end-to-end on Synology NAS hardware (iPod detected, synced, ejected, notifications received)
-- [ ] #8 Any Synology-specific issues discovered during testing are documented or fixed
-- [ ] #9 docker-compose.daemon.yml and docs updated with minimum required permissions
+- [x] #1 Daemon mode docs page exists with Docker Compose setup, USB passthrough, Apprise config, and env var reference
+- [x] #2 Synology-specific setup guide covers Container Manager USB passthrough configuration
+- [x] #3 Docs note untested compatibility with Unraid and TrueNAS
+- [x] #4 Existing Docker docs page links to daemon mode documentation
+- [x] #5 AGENTS.md Docker section updated with daemon mode information
+- [x] #6 Minimum Docker permissions for daemon mode are identified and documented (testing ladder: cap_add → /dev mount → privileged)
+- [x] #7 Daemon has been tested end-to-end on Synology NAS hardware (iPod detected, synced, ejected, notifications received)
+- [x] #8 Any Synology-specific issues discovered during testing are documented or fixed
+- [x] #9 docker-compose.daemon.yml and docs updated with minimum required permissions
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -155,3 +155,18 @@ For each tier, plug in an iPod and verify:
 
 TASK-168 originally included an acceptance criterion to verify `/sys/block/<device>/device/` symlink resolution inside Docker for USB vendor ID detection. This is not a CI/build concern — it belongs here as part of the privilege minimization testing ladder (already covered by Tier 1-4 checkpoints above, specifically the `idVendor` checkpoint). Removed from TASK-168 scope.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All documentation complete and Synology hardware validation done.
+
+- Daemon mode docs page created (`docs/getting-started/docker-daemon.md`) with full coverage: Docker Compose setup, USB passthrough, Apprise notifications, env var reference, health monitoring, and troubleshooting.
+- Synology-specific guide covers Container Manager limitations (GUI doesn't support `privileged: true` — use SSH/Docker Compose instead). Tested end-to-end on DS923+ running DSM 7.3.2.
+- Privilege minimization testing ladder completed: all four tiers tested. `privileged: true` is required — intermediate configurations fail because Docker's AppArmor/seccomp profile blocks `mount` even with `CAP_SYS_ADMIN`. Documented with a comparison table.
+- Synology-specific findings: non-standard block device names (`/dev/usb1p2`), additional Docker restrictions beyond standard Linux. podkit handles device names automatically.
+- Unraid/TrueNAS noted as untested.
+- `docker.md` updated to link to daemon guide.
+- AGENTS.md Docker section updated.
+- `docker-compose.daemon.yml` updated with `privileged: true`.
+<!-- SECTION:FINAL_SUMMARY:END -->
