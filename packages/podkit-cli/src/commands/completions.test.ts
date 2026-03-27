@@ -11,6 +11,7 @@ import {
   buildConfigBlock,
   completeCommand,
   loadCompletionConfig,
+  completionsCommand,
 } from './completions.js';
 
 function createTestProgram(): Command {
@@ -487,5 +488,32 @@ volumeUuid = "ABC-123"
       const aliasBlock = buildConfigBlock(zshShell, 'bun run podkit');
       expect(aliasBlock).toContain('# podkit shell completions');
     });
+  });
+});
+
+describe('completions install action exit codes', () => {
+  const originalShell = process.env.SHELL;
+  let savedExitCode: number | undefined;
+
+  beforeEach(() => {
+    savedExitCode = process.exitCode as number | undefined;
+    process.exitCode = 0;
+  });
+
+  afterEach(() => {
+    process.exitCode = savedExitCode;
+    if (originalShell !== undefined) {
+      process.env.SHELL = originalShell;
+    } else {
+      delete process.env.SHELL;
+    }
+  });
+
+  it('sets process.exitCode = 1 for unsupported shell', async () => {
+    process.env.SHELL = '/bin/fish';
+
+    await completionsCommand.parseAsync(['install'], { from: 'user' });
+
+    expect(process.exitCode).toBe(1);
   });
 });

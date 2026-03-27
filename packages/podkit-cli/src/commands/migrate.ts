@@ -219,7 +219,8 @@ export const migrateCommand = new Command('migrate')
         out.error(`Config file not found: ${configPath}`);
         out.print("Run 'podkit init' to create a config file.");
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // Read raw TOML content
@@ -236,7 +237,8 @@ export const migrateCommand = new Command('migrate')
       } else {
         out.error(`Error reading config version: ${message}`);
       }
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     // Check if already up to date
