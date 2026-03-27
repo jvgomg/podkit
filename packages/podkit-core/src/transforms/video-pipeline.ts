@@ -15,7 +15,7 @@ import type {
   VideoTransformResult,
   VideoTransformsConfig,
 } from './types.js';
-import { DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './types.js';
+import { DEFAULT_VIDEO_TRANSFORMS_CONFIG, DEFAULT_SHOW_LANGUAGE_CONFIG } from './types.js';
 import { showLanguageTransform } from './video-show-language.js';
 import type { ContentType } from '../video/metadata.js';
 
@@ -139,8 +139,10 @@ export function getVideoTransformMatchKeys(
   }
 
   // Force-enable transforms for key generation purposes
+  // Spread defaults first to ensure format/expand are always present
   const forceEnabledConfig: VideoTransformsConfig = {
     showLanguage: {
+      ...DEFAULT_SHOW_LANGUAGE_CONFIG,
       ...transforms.showLanguage,
       enabled: true,
     },
