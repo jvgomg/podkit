@@ -2088,12 +2088,14 @@ const musicSubcommand = new Command('music')
   .addOption(
     new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
-  .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
+  .option(
+    '--fields <list>',
+    `fields to show (comma-separated, for --tracks). Valid: ${[...AVAILABLE_FIELDS].join(', ')}`
+  )
   .action(async (options: MusicVideoOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
-    const fields = parseFields(options.fields);
     const mode = options.tracks
       ? 'tracks'
       : options.albums
@@ -2113,6 +2115,14 @@ const musicSubcommand = new Command('music')
 
     if (options.fields && mode !== 'tracks') {
       outputError('--fields can only be used with --tracks');
+      return;
+    }
+
+    let fields;
+    try {
+      fields = parseFields(options.fields);
+    } catch (err) {
+      outputError(err instanceof Error ? err.message : String(err));
       return;
     }
 
@@ -2254,12 +2264,14 @@ const videoSubcommand = new Command('video')
   .addOption(
     new Option('--format <fmt>', 'output format').choices([...OUTPUT_FORMATS]).default('table')
   )
-  .option('--fields <list>', 'fields to show (comma-separated, for --tracks)')
+  .option(
+    '--fields <list>',
+    `fields to show (comma-separated, for --tracks). Valid: ${[...AVAILABLE_FIELDS].join(', ')}`
+  )
   .action(async (options: MusicVideoOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
     const format = out.isJson ? 'json' : options.format;
-    const fields = parseFields(options.fields);
     const mode = options.tracks
       ? 'tracks'
       : options.albums
@@ -2279,6 +2291,14 @@ const videoSubcommand = new Command('video')
 
     if (options.fields && mode !== 'tracks') {
       outputError('--fields can only be used with --tracks');
+      return;
+    }
+
+    let fields;
+    try {
+      fields = parseFields(options.fields);
+    } catch (err) {
+      outputError(err instanceof Error ? err.message : String(err));
       return;
     }
 

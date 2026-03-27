@@ -239,21 +239,32 @@ for (const field of AVAILABLE_FIELDS) {
 
 /**
  * Parse a comma-separated field list option into validated field names.
- * Returns DEFAULT_FIELDS if no valid fields are found.
+ * Returns DEFAULT_FIELDS if no option is provided.
+ * Throws an error if any invalid field names are specified.
  */
 export function parseFields(fieldsOption: string | undefined): FieldName[] {
   if (!fieldsOption) {
     return DEFAULT_FIELDS;
   }
 
-  const requested = fieldsOption.split(',').map((f) => f.trim().toLowerCase());
+  const requested = fieldsOption.split(',').map((f) => f.trim());
   const valid: FieldName[] = [];
+  const invalid: string[] = [];
 
   for (const field of requested) {
-    const mappedField = FIELD_NAME_MAP[field];
+    const mappedField = FIELD_NAME_MAP[field.toLowerCase()];
     if (mappedField) {
       valid.push(mappedField);
+    } else if (field.length > 0) {
+      invalid.push(field);
     }
+  }
+
+  if (invalid.length > 0) {
+    const label = invalid.length === 1 ? 'Unknown field' : 'Unknown fields';
+    const quoted = invalid.map((f) => `'${f}'`).join(', ');
+    const validList = [...AVAILABLE_FIELDS].join(', ');
+    throw new Error(`${label}: ${quoted}. Valid fields: ${validList}`);
   }
 
   return valid.length > 0 ? valid : DEFAULT_FIELDS;
