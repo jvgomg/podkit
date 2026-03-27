@@ -23,8 +23,8 @@ import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioFileType, TrackMetadata } from '../../types.js';
 import type { AudioCodec } from '../../device/capabilities.js';
 import { getPresetBitrate } from '../../transcode/types.js';
-import type { MetadataChange, SourceCategory, SyncOperation } from '../engine/types.js';
-import { calculateVideoOperationSize } from '../video/planner.js';
+import type { MetadataChange, SourceCategory } from '../engine/types.js';
+import type { MusicOperation } from './types.js';
 
 // =============================================================================
 // Constants
@@ -339,7 +339,7 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
 /**
  * Calculate estimated size for an operation
  */
-export function calculateMusicOperationSize(operation: SyncOperation): number {
+export function calculateMusicOperationSize(operation: MusicOperation): number {
   switch (operation.type) {
     case 'add-transcode': {
       const duration = operation.source.duration ?? 240000; // default 4 min
@@ -372,11 +372,5 @@ export function calculateMusicOperationSize(operation: SyncOperation): number {
     case 'update-sync-tag':
       // These operations free space rather than consume it
       return 0;
-    case 'video-transcode':
-    case 'video-copy':
-    case 'video-remove':
-    case 'video-update-metadata':
-    case 'video-upgrade':
-      return calculateVideoOperationSize(operation);
   }
 }

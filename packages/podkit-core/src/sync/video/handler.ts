@@ -17,12 +17,12 @@ import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
-import { generateVideoMatchKey, type DeviceVideo } from './types.js';
+import { generateVideoMatchKey, type DeviceVideo, type VideoOperation } from './types.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from './planner.js';
 import { getVideoOperationDisplayName } from './executor.js';
 import { buildVideoSyncTag, syncTagMatchesConfig } from '../../metadata/sync-tags.js';
 import { detectBitratePresetMismatch } from '../engine/upgrades.js';
-import type { SyncOperation, SyncPlan, UpdateReason, UpgradeReason } from '../engine/types.js';
+import type { SyncPlan, UpdateReason, UpgradeReason } from '../engine/types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import {
   getVideoTransformMatchKeys,
@@ -50,7 +50,11 @@ import { VideoTrackClassifier } from './classifier.js';
  * Delegates to existing video sync functions from video-types.ts,
  * video-planner.ts, and video-executor.ts.
  */
-export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceVideo> {
+export class VideoHandler implements ContentTypeHandler<
+  CollectionVideo,
+  DeviceVideo,
+  VideoOperation
+> {
   readonly type = 'video';
 
   /** Resolved configuration derived from the input VideoSyncConfig */
@@ -223,7 +227,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
 
   // ---- Planning ----
 
-  planAdd(source: CollectionVideo): SyncOperation {
+  planAdd(source: CollectionVideo): VideoOperation {
     const { action } = this.classifier.classify(source);
     const transformedSeriesTitle = this.getTransformedSeriesTitle(source);
 
@@ -243,7 +247,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     };
   }
 
-  planRemove(device: DeviceVideo): SyncOperation {
+  planRemove(device: DeviceVideo): VideoOperation {
     return { type: 'video-remove', video: device };
   }
 
@@ -253,7 +257,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     reasons: UpdateReason[],
     _changes?: import('../engine/types.js').MetadataChange[],
     _syncTag?: import('../../metadata/sync-tags.js').SyncTagData
-  ): SyncOperation[] {
+  ): VideoOperation[] {
     if (reasons.length === 0) return [];
 
     const primaryReason = reasons[0]!;
@@ -311,33 +315,15 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     ];
   }
 
-  estimateSize(op: SyncOperation): number {
-    if (
-      op.type === 'video-transcode' ||
-      op.type === 'video-copy' ||
-      op.type === 'video-remove' ||
-      op.type === 'video-update-metadata' ||
-      op.type === 'video-upgrade'
-    ) {
-      return calculateVideoOperationSize(op);
-    }
-    return 0;
+  estimateSize(op: VideoOperation): number {
+    return calculateVideoOperationSize(op);
   }
 
-  estimateTime(op: SyncOperation): number {
-    if (
-      op.type === 'video-transcode' ||
-      op.type === 'video-copy' ||
-      op.type === 'video-remove' ||
-      op.type === 'video-update-metadata' ||
-      op.type === 'video-upgrade'
-    ) {
-      return calculateVideoOperationTime(op);
-    }
-    return 0;
+  estimateTime(op: VideoOperation): number {
+    return calculateVideoOperationTime(op);
   }
 
-  getOperationPriority(op: SyncOperation): number {
+  getOperationPriority(op: VideoOperation): number {
     switch (op.type) {
       case 'video-remove':
         return 0;
@@ -356,7 +342,10 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
 
   // ---- Execution ----
 
-  async *execute(op: SyncOperation, ctx: ExecutionContext): AsyncGenerator<OperationProgress> {
+  async *execute(
+    op: VideoOperation,
+    ctx: ExecutionContext
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     switch (op.type) {
       case 'video-transcode':
         yield* this.executeTranscode(op, ctx);
@@ -380,9 +369,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
   }
 
   async *executeBatch(
-    operations: SyncOperation[],
+    operations: VideoOperation[],
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     // Create a shared temp directory for all transcodes in this batch
     const tempDir = ctx.tempDir ?? tmpdir();
     const transcodeDir = join(tempDir, `podkit-video-${randomUUID()}`);
@@ -420,9 +409,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * from transcodeVideo() into the async generator yield pattern.
    */
   private async *executeTranscode(
-    op: Extract<SyncOperation, { type: 'video-transcode' }>,
+    op: Extract<VideoOperation, { type: 'video-transcode' }>,
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     const { source, settings } = op;
 
     yield { operation: op, phase: 'starting' };
@@ -525,9 +514,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * Execute a video copy (passthrough) operation.
    */
   private async *executeCopy(
-    op: Extract<SyncOperation, { type: 'video-copy' }>,
+    op: Extract<VideoOperation, { type: 'video-copy' }>,
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     const { source } = op;
 
     yield { operation: op, phase: 'starting' };
@@ -561,9 +550,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * Execute a video remove operation.
    */
   private async *executeRemove(
-    op: Extract<SyncOperation, { type: 'video-remove' }>,
+    op: Extract<VideoOperation, { type: 'video-remove' }>,
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     const { video } = op;
 
     yield { operation: op, phase: 'starting' };
@@ -587,9 +576,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * Execute a video metadata update operation.
    */
   private async *executeUpdateMetadata(
-    op: Extract<SyncOperation, { type: 'video-update-metadata' }>,
+    op: Extract<VideoOperation, { type: 'video-update-metadata' }>,
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     const { video, source, newSeriesTitle } = op;
 
     yield { operation: op, phase: 'starting' };
@@ -638,9 +627,9 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
    * Execute a video upgrade operation (remove old + transcode/copy new).
    */
   private async *executeUpgrade(
-    op: Extract<SyncOperation, { type: 'video-upgrade' }>,
+    op: Extract<VideoOperation, { type: 'video-upgrade' }>,
     ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress> {
+  ): AsyncGenerator<OperationProgress<VideoOperation>> {
     const { source, target, settings } = op;
 
     yield { operation: op, phase: 'starting' };
@@ -660,7 +649,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
     // Step 2: Transcode or copy the new source
     if (settings) {
       // Needs transcoding — delegate to executeTranscode
-      const transcodeOp: Extract<SyncOperation, { type: 'video-transcode' }> = {
+      const transcodeOp: Extract<VideoOperation, { type: 'video-transcode' }> = {
         type: 'video-transcode',
         source,
         settings,
@@ -672,7 +661,7 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
       }
     } else {
       // Passthrough copy
-      const copyOp: Extract<SyncOperation, { type: 'video-copy' }> = {
+      const copyOp: Extract<VideoOperation, { type: 'video-copy' }> = {
         type: 'video-copy',
         source,
       };
@@ -694,11 +683,11 @@ export class VideoHandler implements ContentTypeHandler<CollectionVideo, DeviceV
 
   // ---- Display ----
 
-  getDisplayName(op: SyncOperation): string {
+  getDisplayName(op: VideoOperation): string {
     return getVideoOperationDisplayName(op);
   }
 
-  formatDryRun(plan: SyncPlan): DryRunSummary {
+  formatDryRun(plan: SyncPlan<VideoOperation>): DryRunSummary {
     return formatDryRunFromPlan(
       plan,
       (type) => {

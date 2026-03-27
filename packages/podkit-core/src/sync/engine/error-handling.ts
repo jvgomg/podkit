@@ -23,7 +23,7 @@
  * @module
  */
 
-import type { ErrorCategory, CategorizedError, SyncOperation } from './types.js';
+import type { ErrorCategory, CategorizedError } from './types.js';
 
 // =============================================================================
 // Retry Configuration
@@ -85,7 +85,7 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
  * 1. Check error message for specific keywords (most reliable)
  * 2. Fall back to operation type as a hint
  */
-export function categorizeError(error: Error, operationType: SyncOperation['type']): ErrorCategory {
+export function categorizeError(error: Error, operationType: string): ErrorCategory {
   const message = error.message.toLowerCase();
 
   // Check for database errors FIRST (most specific, no retry)
@@ -218,7 +218,7 @@ function sleep(ms: number): Promise<void> {
 export async function withRetry<T>(
   fn: () => Promise<T>,
   config: Required<RetryConfig>,
-  operationType: SyncOperation['type'],
+  operationType: string,
   trackName: string
 ): Promise<
   | { ok: true; result: T; attempts: number }

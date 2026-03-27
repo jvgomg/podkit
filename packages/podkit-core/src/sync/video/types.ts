@@ -9,6 +9,9 @@
 
 import type { ContentType } from '../../video/metadata.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
+import type { CollectionVideo } from '../../video/directory-adapter.js';
+import type { VideoTranscodeSettings } from '../../video/types.js';
+import type { UpgradeReason } from '../engine/types.js';
 
 // =============================================================================
 // Types
@@ -56,6 +59,34 @@ export interface DeviceVideo {
   /** Pre-computed sync tag data (parsed from comment field) */
   syncTag?: SyncTagData | null;
 }
+
+// =============================================================================
+// Video Operations
+// =============================================================================
+
+/** All video sync operation variants */
+export type VideoOperation =
+  | {
+      type: 'video-transcode';
+      source: CollectionVideo;
+      settings: VideoTranscodeSettings;
+      transformedSeriesTitle?: string;
+    }
+  | { type: 'video-copy'; source: CollectionVideo; transformedSeriesTitle?: string }
+  | { type: 'video-remove'; video: DeviceVideo }
+  | {
+      type: 'video-update-metadata';
+      source: CollectionVideo;
+      video: DeviceVideo;
+      newSeriesTitle?: string;
+    }
+  | {
+      type: 'video-upgrade';
+      source: CollectionVideo;
+      target: DeviceVideo;
+      reason: UpgradeReason;
+      settings?: VideoTranscodeSettings;
+    };
 
 // =============================================================================
 // Match Key Generation

@@ -10,8 +10,9 @@
 
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
-import type { DeviceTrack, MetadataChange, SyncOperation, UpgradeReason } from '../engine/types.js';
+import type { DeviceTrack, MetadataChange, UpgradeReason } from '../engine/types.js';
 import type { MusicAction } from './classifier.js';
+import type { MusicOperation } from './types.js';
 import { changesToMetadata } from './planner.js';
 
 /**
@@ -23,7 +24,7 @@ import { changesToMetadata } from './planner.js';
  */
 export class MusicOperationFactory {
   /** Create an add operation from a classification */
-  createAdd(source: CollectionTrack, action: MusicAction): SyncOperation {
+  createAdd(source: CollectionTrack, action: MusicAction): MusicOperation {
     switch (action.type) {
       case 'direct-copy':
         return { type: 'add-direct-copy', source };
@@ -40,7 +41,7 @@ export class MusicOperationFactory {
     target: DeviceTrack,
     reason: UpgradeReason,
     action: MusicAction
-  ): SyncOperation {
+  ): MusicOperation {
     switch (action.type) {
       case 'direct-copy':
         return { type: 'upgrade-direct-copy', source, target, reason };
@@ -56,17 +57,17 @@ export class MusicOperationFactory {
     source: CollectionTrack,
     target: DeviceTrack,
     reason: UpgradeReason
-  ): SyncOperation {
+  ): MusicOperation {
     return { type: 'upgrade-artwork', source, target, reason };
   }
 
   /** Create a remove operation */
-  createRemove(device: DeviceTrack): SyncOperation {
+  createRemove(device: DeviceTrack): MusicOperation {
     return { type: 'remove', track: device };
   }
 
   /** Create a metadata-only update */
-  createMetadataUpdate(device: DeviceTrack, changes: MetadataChange[]): SyncOperation {
+  createMetadataUpdate(device: DeviceTrack, changes: MetadataChange[]): MusicOperation {
     return {
       type: 'update-metadata',
       track: device,
@@ -75,7 +76,7 @@ export class MusicOperationFactory {
   }
 
   /** Create a sync-tag-write operation */
-  createSyncTagUpdate(device: DeviceTrack, syncTag: SyncTagData): SyncOperation {
+  createSyncTagUpdate(device: DeviceTrack, syncTag: SyncTagData): MusicOperation {
     return { type: 'update-sync-tag', track: device, syncTag };
   }
 }

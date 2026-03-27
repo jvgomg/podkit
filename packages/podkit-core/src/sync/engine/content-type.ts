@@ -10,7 +10,13 @@
 
 import type { DeviceAdapter } from '../../device/adapter.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
-import type { MetadataChange, SyncOperation, SyncPlan, UpdateReason } from './types.js';
+import type {
+  BaseOperation,
+  MetadataChange,
+  SyncOperation,
+  SyncPlan,
+  UpdateReason,
+} from './types.js';
 
 /**
  * Context for executing sync operations
@@ -28,9 +34,12 @@ export interface ExecutionContext {
 
 /**
  * Progress update for a single operation
+ *
+ * Generic over operation type. Defaults to `SyncOperation` (all content types)
+ * so existing code compiles unchanged.
  */
-export interface OperationProgress {
-  operation: SyncOperation;
+export interface OperationProgress<TOp extends BaseOperation = SyncOperation> {
+  operation: TOp;
   phase: 'starting' | 'in-progress' | 'complete' | 'failed';
   progress?: number;
   error?: Error;
@@ -104,7 +113,7 @@ export interface UnifiedSyncDiff<TSource, TDevice> {
  * @typeParam TSource - The source item type (e.g., CollectionTrack, CollectionVideo)
  * @typeParam TDevice - The device item type (e.g., IpodTrack, DeviceVideo)
  */
-export interface ContentTypeHandler<TSource, TDevice> {
+export interface ContentTypeHandler<TSource, TDevice, TOp extends BaseOperation = SyncOperation> {
   /** Content type identifier (e.g., 'music', 'video') */
   readonly type: string;
 
@@ -141,10 +150,10 @@ export interface ContentTypeHandler<TSource, TDevice> {
   // ---- Planning ----
 
   /** Plan an add operation for a source item */
-  planAdd(source: TSource): SyncOperation;
+  planAdd(source: TSource): TOp;
 
   /** Plan a remove operation for a device item */
-  planRemove(device: TDevice): SyncOperation;
+  planRemove(device: TDevice): TOp;
 
   /** Plan update operations for a matched pair with detected reasons */
   planUpdate(
@@ -153,31 +162,28 @@ export interface ContentTypeHandler<TSource, TDevice> {
     reasons: UpdateReason[],
     changes?: MetadataChange[],
     syncTag?: SyncTagData
-  ): SyncOperation[];
+  ): TOp[];
 
   /** Estimate the output size in bytes for an operation */
-  estimateSize(op: SyncOperation): number;
+  estimateSize(op: TOp): number;
 
   /** Estimate the time in seconds for an operation */
-  estimateTime(op: SyncOperation): number;
+  estimateTime(op: TOp): number;
 
   /**
    * Collect plan-level warnings after operations are created.
    * Called by SyncPlanner with all planned operations to generate
    * content-type-specific warnings (e.g., lossy-to-lossy conversion).
    */
-  collectPlanWarnings?(operations: SyncOperation[]): import('./types.js').SyncWarning[];
+  collectPlanWarnings?(operations: TOp[]): import('./types.js').SyncWarning[];
 
   // ---- Execution ----
 
   /** Execute a single operation, yielding progress updates */
-  execute(op: SyncOperation, ctx: ExecutionContext): AsyncGenerator<OperationProgress>;
+  execute(op: TOp, ctx: ExecutionContext): AsyncGenerator<OperationProgress<TOp>>;
 
   /** Execute a batch of operations sequentially (optional optimization) */
-  executeBatch?(
-    operations: SyncOperation[],
-    ctx: ExecutionContext
-  ): AsyncGenerator<OperationProgress>;
+  executeBatch?(operations: TOp[], ctx: ExecutionContext): AsyncGenerator<OperationProgress<TOp>>;
 
   // ---- Device ----
 
@@ -187,10 +193,10 @@ export interface ContentTypeHandler<TSource, TDevice> {
   // ---- Display ----
 
   /** Get a human-readable display name for an operation */
-  getDisplayName(op: SyncOperation): string;
+  getDisplayName(op: TOp): string;
 
   /** Format a sync plan into a dry-run summary */
-  formatDryRun(plan: SyncPlan): DryRunSummary;
+  formatDryRun(plan: SyncPlan<TOp>): DryRunSummary;
 
   // ---- Priority ----
 
@@ -201,5 +207,5 @@ export interface ContentTypeHandler<TSource, TDevice> {
    * defines its own priority scheme (e.g., removes before copies before
    * transcodes).
    */
-  getOperationPriority(op: SyncOperation): number;
+  getOperationPriority(op: TOp): number;
 }

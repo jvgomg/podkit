@@ -6,9 +6,7 @@
  */
 
 import type { CollectionTrack } from '../../adapters/interface.js';
-import type { TrackMetadata } from '../../types.js';
 import type { DeviceTrack } from '../../device/adapter.js';
-import type { SyncTagData } from '../../metadata/sync-tags.js';
 import type {
   EncodingMode,
   QualityPreset,
@@ -17,9 +15,8 @@ import type {
   TransferMode,
 } from '../../transcode/types.js';
 import type { DeviceCapabilities } from '../../device/capabilities.js';
-import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { VideoTranscodeSettings } from '../../video/types.js';
-import type { DeviceVideo } from '../video/types.js';
+import type { MusicOperation } from '../music/types.js';
+import type { VideoOperation } from '../video/types.js';
 
 // Re-export for use within sync module
 export type { DeviceTrack };
@@ -144,119 +141,44 @@ export interface SyncWarning {
   tracks: CollectionTrack[];
 }
 
+// =============================================================================
+// Base Operation Interface
+// =============================================================================
+
 /**
- * Individual sync operation
+ * Minimum interface for sync operations.
  *
- * Music add operations:
- * - add-transcode: Transcode source to target format (e.g., FLAC → AAC)
- * - add-direct-copy: Copy source file as-is (fast/portable mode)
- * - add-optimized-copy: Copy via FFmpeg passthrough for metadata normalization (optimized mode)
- *
- * Music upgrade operations:
- * - upgrade-transcode: Re-transcode an existing track (e.g., preset change)
- * - upgrade-direct-copy: Re-copy an existing track as-is
- * - upgrade-optimized-copy: Re-copy an existing track via FFmpeg passthrough
- * - upgrade-artwork: Update artwork only (no audio file replacement)
- *
- * Common operations (unchanged):
- * - remove: Remove a track from the iPod
- * - update-metadata: Update metadata fields without file transfer
- *
- * Video operations (unchanged):
- * - video-transcode, video-copy, video-remove, video-update-metadata, video-upgrade
+ * All operation types (music, video, etc.) must have a `type` discriminant.
+ * Used as the constraint for the `TOp` type parameter throughout the engine.
  */
-export type SyncOperation =
-  // Music add operations
-  | {
-      type: 'add-transcode';
-      source: CollectionTrack;
-      preset: TranscodePresetRef;
-    }
-  | {
-      type: 'add-direct-copy';
-      source: CollectionTrack;
-    }
-  | {
-      type: 'add-optimized-copy';
-      source: CollectionTrack;
-    }
-  // Music upgrade operations
-  | {
-      type: 'upgrade-transcode';
-      source: CollectionTrack;
-      target: DeviceTrack;
-      reason: UpgradeReason;
-      preset: TranscodePresetRef;
-    }
-  | {
-      type: 'upgrade-direct-copy';
-      source: CollectionTrack;
-      target: DeviceTrack;
-      reason: UpgradeReason;
-    }
-  | {
-      type: 'upgrade-optimized-copy';
-      source: CollectionTrack;
-      target: DeviceTrack;
-      reason: UpgradeReason;
-    }
-  | {
-      type: 'upgrade-artwork';
-      source: CollectionTrack;
-      target: DeviceTrack;
-      reason: UpgradeReason;
-    }
-  // Common operations (unchanged)
-  | {
-      type: 'remove';
-      track: DeviceTrack;
-    }
-  | {
-      type: 'update-metadata';
-      track: DeviceTrack;
-      metadata: Partial<TrackMetadata>;
-    }
-  | {
-      type: 'update-sync-tag';
-      track: DeviceTrack;
-      syncTag: SyncTagData;
-    }
-  // Video operations (unchanged)
-  | {
-      type: 'video-transcode';
-      source: CollectionVideo;
-      settings: VideoTranscodeSettings;
-      transformedSeriesTitle?: string;
-    }
-  | {
-      type: 'video-copy';
-      source: CollectionVideo;
-      transformedSeriesTitle?: string;
-    }
-  | {
-      type: 'video-remove';
-      video: DeviceVideo;
-    }
-  | {
-      type: 'video-update-metadata';
-      source: CollectionVideo;
-      video: DeviceVideo;
-      newSeriesTitle?: string;
-    }
-  | {
-      type: 'video-upgrade';
-      source: CollectionVideo;
-      target: DeviceVideo;
-      reason: UpgradeReason;
-      settings?: VideoTranscodeSettings;
-    };
+export interface BaseOperation {
+  readonly type: string;
+}
+
+/**
+ * All sync operations across content types.
+ *
+ * This is the union of all per-handler operation types. Used as the default
+ * for the `TOp` type parameter so existing code compiles unchanged.
+ *
+ * Music operations: add-transcode, add-direct-copy, add-optimized-copy,
+ * upgrade-transcode, upgrade-direct-copy, upgrade-optimized-copy,
+ * upgrade-artwork, remove, update-metadata, update-sync-tag
+ *
+ * Video operations: video-transcode, video-copy, video-remove,
+ * video-update-metadata, video-upgrade
+ */
+export type SyncOperation = MusicOperation | VideoOperation;
 
 /**
  * Execution plan for sync operations
+ *
+ * Generic over operation type. Defaults to `SyncOperation` (all content types)
+ * so existing code compiles unchanged.
  */
-export interface SyncPlan {
+export interface SyncPlan<TOp extends BaseOperation = SyncOperation> {
   /** Ordered list of operations to execute */
-  operations: SyncOperation[];
+  operations: TOp[];
   /** Estimated time in seconds */
   estimatedTime: number;
   /** Estimated total size in bytes */
@@ -548,11 +470,14 @@ export interface ExecutionWarning {
 /**
  * Extended progress information for sync operations.
  *
+ * Generic over operation type. Defaults to `SyncOperation` (all content types)
+ * so existing code compiles unchanged.
+ *
  * Used by both music and video executors.
  */
-export interface ExecutorProgress extends SyncProgress {
+export interface ExecutorProgress<TOp extends BaseOperation = SyncOperation> extends SyncProgress {
   /** Current operation being executed */
-  operation: SyncOperation;
+  operation: TOp;
   /** Index of current operation (0-based) */
   index: number;
   /** Error if operation failed */
@@ -572,9 +497,12 @@ export interface ExecutorProgress extends SyncProgress {
 /**
  * Result of sync execution.
  *
+ * Generic over operation type. Defaults to `SyncOperation` (all content types)
+ * so existing code compiles unchanged.
+ *
  * Used by both music and video executors.
  */
-export interface ExecuteResult {
+export interface ExecuteResult<TOp extends BaseOperation = SyncOperation> {
   /** Number of operations completed successfully */
   completed: number;
   /** Number of operations that failed */
@@ -582,7 +510,7 @@ export interface ExecuteResult {
   /** Number of operations skipped (dry-run) */
   skipped: number;
   /** Errors encountered during execution (legacy format) */
-  errors: Array<{ operation: SyncOperation; error: Error }>;
+  errors: Array<{ operation: TOp; error: Error }>;
   /** Categorized errors with full context */
   categorizedErrors: CategorizedError[];
   /** Non-fatal warnings (e.g., artwork extraction failures) */

@@ -3,7 +3,8 @@ import { MusicHandler, createMusicHandler } from './handler.js';
 import type { MusicSyncConfig } from './config.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
-import type { SyncOperation, SyncPlan } from '../engine/types.js';
+import type { SyncPlan } from '../engine/types.js';
+import type { MusicOperation } from './types.js';
 import type { UnifiedSyncDiff } from '../engine/content-type.js';
 import { parseSyncTag } from '../../metadata/sync-tags.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
@@ -304,7 +305,7 @@ describe('MusicHandler', () => {
       const ops = handler.planUpdate(source, device, ['sync-tag-write'], undefined, syncTag);
       expect(ops.length).toBe(1);
       expect(ops[0]!.type).toBe('update-sync-tag');
-      const op = ops[0] as Extract<SyncOperation, { type: 'update-sync-tag' }>;
+      const op = ops[0] as Extract<MusicOperation, { type: 'update-sync-tag' }>;
       expect(op.syncTag).toEqual(syncTag);
     });
 
@@ -361,7 +362,7 @@ describe('MusicHandler', () => {
 
   describe('estimateSize', () => {
     test('returns positive number for transcode operation', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'add-transcode',
         source: makeCollectionTrack({ duration: 240000 }),
         preset: { name: 'high' },
@@ -370,14 +371,14 @@ describe('MusicHandler', () => {
     });
 
     test('returns 0 for remove operation', () => {
-      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
+      const op: MusicOperation = { type: 'remove', track: makeDeviceTrack() };
       expect(handler.estimateSize(op)).toBe(0);
     });
   });
 
   describe('estimateTime', () => {
     test('returns positive number for copy operation', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'add-direct-copy',
         source: makeCollectionTrack({ duration: 240000 }),
       };
@@ -385,14 +386,14 @@ describe('MusicHandler', () => {
     });
 
     test('returns small number for remove operation', () => {
-      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
+      const op: MusicOperation = { type: 'remove', track: makeDeviceTrack() };
       expect(handler.estimateTime(op)).toBe(0.1);
     });
   });
 
   describe('getDisplayName', () => {
     test('returns artist - title for transcode', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'add-transcode',
         source: makeCollectionTrack({ artist: 'Radiohead', title: 'Creep' }),
         preset: { name: 'high' },
@@ -401,7 +402,7 @@ describe('MusicHandler', () => {
     });
 
     test('returns artist - title for copy', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'add-direct-copy',
         source: makeCollectionTrack({ artist: 'Björk', title: 'Army of Me' }),
       };
@@ -409,7 +410,7 @@ describe('MusicHandler', () => {
     });
 
     test('returns artist - title for remove', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'remove',
         track: makeDeviceTrack({ artist: 'Nirvana', title: 'Smells Like Teen Spirit' }),
       };
@@ -429,7 +430,7 @@ describe('MusicHandler', () => {
           transferMode: 'portable',
         })
       );
-      const ops: SyncOperation[] = [
+      const ops: MusicOperation[] = [
         {
           type: 'add-optimized-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
@@ -451,7 +452,7 @@ describe('MusicHandler', () => {
           transferMode: 'portable',
         })
       );
-      const ops: SyncOperation[] = [
+      const ops: MusicOperation[] = [
         {
           type: 'add-direct-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
@@ -473,7 +474,7 @@ describe('MusicHandler', () => {
           transferMode: 'fast',
         })
       );
-      const ops: SyncOperation[] = [
+      const ops: MusicOperation[] = [
         {
           type: 'add-optimized-copy',
           source: makeCollectionTrack({ fileType: 'mp3', lossless: false }),
@@ -774,7 +775,7 @@ describe('MusicHandler', () => {
 
   describe('formatDryRun', () => {
     test('summarizes a plan', () => {
-      const plan: SyncPlan = {
+      const plan: SyncPlan<MusicOperation> = {
         operations: [
           { type: 'add-transcode', source: makeCollectionTrack(), preset: { name: 'high' } },
           {
@@ -801,7 +802,7 @@ describe('MusicHandler', () => {
     });
 
     test('includes warnings', () => {
-      const plan: SyncPlan = {
+      const plan: SyncPlan<MusicOperation> = {
         operations: [],
         estimatedSize: 0,
         estimatedTime: 0,
@@ -1225,22 +1226,26 @@ describe('MusicHandler', () => {
 
   describe('getOperationPriority', () => {
     test('remove has lowest priority (executes first)', () => {
-      const op: SyncOperation = { type: 'remove', track: makeDeviceTrack() };
+      const op: MusicOperation = { type: 'remove', track: makeDeviceTrack() };
       expect(handler.getOperationPriority(op)).toBe(0);
     });
 
     test('metadata updates have priority 1', () => {
-      const op: SyncOperation = { type: 'update-metadata', track: makeDeviceTrack(), metadata: {} };
+      const op: MusicOperation = {
+        type: 'update-metadata',
+        track: makeDeviceTrack(),
+        metadata: {},
+      };
       expect(handler.getOperationPriority(op)).toBe(1);
     });
 
     test('direct copies have priority 2', () => {
-      const op: SyncOperation = { type: 'add-direct-copy', source: makeCollectionTrack() };
+      const op: MusicOperation = { type: 'add-direct-copy', source: makeCollectionTrack() };
       expect(handler.getOperationPriority(op)).toBe(2);
     });
 
     test('transcodes have priority 4', () => {
-      const op: SyncOperation = {
+      const op: MusicOperation = {
         type: 'add-transcode',
         source: makeCollectionTrack(),
         preset: { name: 'high' },
