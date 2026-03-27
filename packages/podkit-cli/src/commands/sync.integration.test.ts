@@ -7,8 +7,7 @@ import {
   IpodDatabase,
   createMusicHandler,
   createSyncDiffer,
-  createMusicPlan,
-  getMusicPlanSummary,
+  createSyncPlanner,
   createDirectoryAdapter,
   createFFmpegTranscoder,
 } from '@podkit/core';
@@ -129,19 +128,29 @@ describe('sync command integration', () => {
 
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
         const diff = computeDiff([], ipodTracks);
 
-        // Create plan with removeOrphans
-        const plan = createMusicPlan(diff, { removeOrphans: true });
-        const summary = getMusicPlanSummary(plan);
+        // Create plan with SyncPlanner + MusicHandler
+        const handler = createMusicHandler({
+          quality: 'high',
+          transcoder: createFFmpegTranscoder(),
+        });
+        const planner = createSyncPlanner(handler);
+        const plan = planner.plan(diff, { removeOrphans: true });
 
-        expect(summary.removeCount).toBe(2);
-        expect(summary.addTranscodeCount).toBe(0);
-        expect(summary.addDirectCopyCount + summary.addOptimizedCopyCount).toBe(0);
+        const removeOps = plan.operations.filter((op) => op.type === 'remove');
+        const addOps = plan.operations.filter(
+          (op) =>
+            op.type === 'add-transcode' ||
+            op.type === 'add-direct-copy' ||
+            op.type === 'add-optimized-copy'
+        );
+
+        expect(removeOps).toHaveLength(2);
+        expect(addOps).toHaveLength(0);
       } finally {
         ipod.close();
       }
@@ -153,17 +162,21 @@ describe('sync command integration', () => {
 
       const ipod = await IpodDatabase.open(testIpod!.path);
       try {
-        // IpodDatabase.getTracks() returns IpodTrack[] directly
         const ipodTracks = ipod.getTracks();
 
         // Empty collection diff
         const diff = computeDiff([], ipodTracks);
 
         // Create plan without removeOrphans
-        const plan = createMusicPlan(diff, { removeOrphans: false });
-        const summary = getMusicPlanSummary(plan);
+        const handler = createMusicHandler({
+          quality: 'high',
+          transcoder: createFFmpegTranscoder(),
+        });
+        const planner = createSyncPlanner(handler);
+        const plan = planner.plan(diff, { removeOrphans: false });
 
-        expect(summary.removeCount).toBe(0);
+        const removeOps = plan.operations.filter((op) => op.type === 'remove');
+        expect(removeOps).toHaveLength(0);
         expect(plan.operations).toHaveLength(0);
       } finally {
         ipod.close();

@@ -22,7 +22,7 @@ import {
   detectPresetChange,
 } from '../engine/upgrades.js';
 import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
-import { MusicExecutor, getMusicOperationDisplayName } from './executor.js';
+import { MusicPipeline, getMusicOperationDisplayName } from './pipeline.js';
 import { estimateTransferTime } from '../engine/estimation.js';
 import {
   buildAudioSyncTag,
@@ -724,7 +724,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   // ---- Execution ----
 
   async *execute(op: SyncOperation, _ctx: ExecutionContext): AsyncGenerator<OperationProgress> {
-    // Stub — real execution stays in MusicExecutor for now
+    // Stub — real execution stays in MusicPipeline for now
     yield { operation: op, phase: 'starting' };
     yield { operation: op, phase: 'complete' };
   }
@@ -735,7 +735,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   ): AsyncGenerator<OperationProgress> {
     const transcoder = this.config.raw.transcoder;
 
-    // Wrap operations in a SyncPlan for MusicExecutor
+    // Wrap operations in a SyncPlan for MusicPipeline
     const plan: SyncPlan = {
       operations,
       estimatedSize: operations.reduce((sum, op) => sum + this.estimateSize(op), 0),
@@ -744,7 +744,7 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
     };
 
     // Create the 3-stage pipeline executor.
-    const executor = new MusicExecutor({ device: ctx.device, transcoder });
+    const executor = new MusicPipeline({ device: ctx.device, transcoder });
 
     // Execute and bridge events
     for await (const progress of executor.execute(plan, {
@@ -772,9 +772,9 @@ export class MusicHandler implements ContentTypeHandler<CollectionTrack, DeviceT
   }
 
   /**
-   * Bridge an ExecutorProgress event from MusicExecutor to an OperationProgress event.
+   * Bridge an ExecutorProgress event from MusicPipeline to an OperationProgress event.
    *
-   * MusicExecutor yields one event per completed/failed/skipped operation
+   * MusicPipeline yields one event per completed/failed/skipped operation
    * (plus batch-level 'updating-db' and 'complete' which are filtered before this).
    */
   private bridgeProgress(progress: ExecutorProgress): OperationProgress {
