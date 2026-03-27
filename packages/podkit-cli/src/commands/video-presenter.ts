@@ -4,7 +4,13 @@
  * @module
  */
 
-import type { CollectionVideo, SyncPlan, UnifiedSyncDiff, VideoHandler } from '@podkit/core';
+import type {
+  CollectionVideo,
+  SyncPlan,
+  UnifiedSyncDiff,
+  VideoHandler,
+  VideoOperation,
+} from '@podkit/core';
 import type { DeviceVideo } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
@@ -145,7 +151,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     return { plan, summary };
   }
 
-  private buildSummary(plan: SyncPlan) {
+  private buildSummary(plan: SyncPlan<VideoOperation>) {
     let transcodeCount = 0;
     let copyCount = 0;
     let removeCount = 0;
@@ -175,7 +181,11 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     return { transcodeCount, copyCount, removeCount, updateCount, upgradeCount };
   }
 
-  willFit(plan: SyncPlan, freeSpace: number, _core: typeof import('@podkit/core')): boolean {
+  willFit(
+    plan: SyncPlan<VideoOperation>,
+    freeSpace: number,
+    _core: typeof import('@podkit/core')
+  ): boolean {
     return plan.estimatedSize <= freeSpace;
   }
 
@@ -184,7 +194,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     sourcePath: string,
     devicePath: string,
     diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
-    plan: SyncPlan,
+    plan: SyncPlan<VideoOperation>,
     summary: any,
     _storage: { total: number; free: number; used: number } | null,
     _hasEnoughSpace: boolean,
@@ -260,7 +270,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     sourcePath: string,
     devicePath: string,
     diff: UnifiedSyncDiff<CollectionVideo, DeviceVideo>,
-    plan: SyncPlan,
+    plan: SyncPlan<VideoOperation>,
     summary: any,
     removeOrphans: boolean,
     _contentConfig: MusicContentConfig | VideoContentConfig,
@@ -319,7 +329,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     out.print('Videos already in sync! No changes needed.');
   }
 
-  renderExecutionHeader(out: OutputContext, plan: SyncPlan, summary: any): void {
+  renderExecutionHeader(out: OutputContext, plan: SyncPlan<VideoOperation>, summary: any): void {
     out.newline();
     out.print(`Videos to process: ${formatNumber(plan.operations.length)}`);
     out.print(`  - Transcode: ${formatNumber(summary.transcodeCount)}`);
@@ -330,7 +340,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
 
   async executeSync(
     out: OutputContext,
-    plan: SyncPlan,
+    plan: SyncPlan<VideoOperation>,
     _adapter: any,
     _contentConfig: MusicContentConfig | VideoContentConfig,
     device: any,

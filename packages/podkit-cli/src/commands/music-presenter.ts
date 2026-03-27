@@ -8,7 +8,7 @@ import type {
   CollectionTrack,
   DeviceTrack,
   SyncPlan,
-  SyncOperation,
+  MusicOperation,
   UnifiedSyncDiff,
   MusicHandler,
   CollectionAdapter,
@@ -208,7 +208,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
    * Build a plan summary by counting operation types.
    * Replaces the legacy `getMusicPlanSummary()`.
    */
-  private buildPlanSummary(plan: SyncPlan) {
+  private buildPlanSummary(plan: SyncPlan<MusicOperation>) {
     let addTranscodeCount = 0;
     let addDirectCopyCount = 0;
     let addOptimizedCopyCount = 0;
@@ -254,7 +254,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     };
   }
 
-  willFit(plan: SyncPlan, freeSpace: number, _core: typeof import('@podkit/core')): boolean {
+  willFit(
+    plan: SyncPlan<MusicOperation>,
+    freeSpace: number,
+    _core: typeof import('@podkit/core')
+  ): boolean {
     return plan.estimatedSize <= freeSpace;
   }
 
@@ -263,7 +267,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     sourcePath: string,
     devicePath: string,
     diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    plan: SyncPlan,
+    plan: SyncPlan<MusicOperation>,
     summary: any,
     storage: { total: number; free: number; used: number } | null,
     hasEnoughSpace: boolean,
@@ -411,7 +415,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     sourcePath: string,
     devicePath: string,
     diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
-    plan: SyncPlan,
+    plan: SyncPlan<MusicOperation>,
     summary: any,
     removeOrphans: boolean,
     contentConfig: MusicContentConfig | VideoContentConfig,
@@ -421,7 +425,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
   ): SyncOutput {
     const config = contentConfig as MusicContentConfig;
 
-    const operations: SyncOutput['operations'] = plan.operations.map((op: SyncOperation) => {
+    const operations: SyncOutput['operations'] = plan.operations.map((op: MusicOperation) => {
       const base = {
         type: op.type,
         track: core.getMusicOperationDisplayName(op),
@@ -544,7 +548,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     out.print(`  Device tracks: ${formatNumber(deviceCount)}`);
   }
 
-  renderExecutionHeader(out: OutputContext, plan: SyncPlan): void {
+  renderExecutionHeader(out: OutputContext, plan: SyncPlan<MusicOperation>): void {
     out.newline();
     out.print('=== Syncing Music ===');
     out.newline();
@@ -556,7 +560,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
 
   async executeSync(
     out: OutputContext,
-    plan: SyncPlan,
+    plan: SyncPlan<MusicOperation>,
     _adapter: any,
     _contentConfig: MusicContentConfig | VideoContentConfig,
     ipod: any,
