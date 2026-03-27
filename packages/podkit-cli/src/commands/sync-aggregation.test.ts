@@ -21,6 +21,7 @@ function createJsonOutput(): OutputContext {
     verbose: 0,
     color: false,
     tips: false,
+    tty: false,
   });
 }
 

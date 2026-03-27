@@ -20,6 +20,7 @@ function createTestOutput(mode: 'text' | 'json' = 'text'): OutputContext {
     verbose: 0,
     color: false,
     tips: false,
+    tty: false,
   });
 }
 

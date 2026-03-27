@@ -40,7 +40,7 @@ class Spinner implements SpinnerControl {
     this.message = message;
     this.interval = setInterval(() => {
       // \x1b[K clears from cursor to end of line to prevent remnant characters
-      process.stdout.write(`\r\x1b[K${this.frames[this.current]} ${this.message}`);
+      process.stderr.write(`\r\x1b[K${this.frames[this.current]} ${this.message}`);
       this.current = (this.current + 1) % this.frames.length;
     }, 100);
   }
@@ -56,9 +56,9 @@ class Spinner implements SpinnerControl {
     }
     // \x1b[K clears from cursor to end of line to prevent remnant characters
     if (finalMessage) {
-      process.stdout.write(`\r\x1b[K${finalMessage}\n`);
+      process.stderr.write(`\r\x1b[K${finalMessage}\n`);
     } else {
-      process.stdout.write('\r\x1b[K');
+      process.stderr.write('\r\x1b[K');
     }
   }
 }
@@ -73,6 +73,7 @@ export class OutputContext {
   private readonly verbose: number;
   private readonly useColor: boolean;
   private readonly showTips: boolean;
+  private readonly tty: boolean;
 
   constructor(config: OutputContextConfig) {
     this.mode = config.mode;
@@ -80,6 +81,7 @@ export class OutputContext {
     this.verbose = config.verbose;
     this.useColor = config.color;
     this.showTips = config.tips;
+    this.tty = config.tty;
   }
 
   /**
@@ -92,17 +94,21 @@ export class OutputContext {
       verbose: number;
       color: boolean;
       tips?: boolean;
+      tty?: boolean;
     },
     config?: { tips?: boolean }
   ): OutputContext {
     // Tips are enabled only if both CLI (--no-tips) and config (tips = false) allow them
     const tips = (opts.tips ?? true) && (config?.tips ?? true);
+    // Interactive output is suppressed when --no-tty is set or stdout is not a TTY
+    const tty = (opts.tty ?? true) && (process.stdout.isTTY ?? false);
     return new OutputContext({
       mode: opts.json ? 'json' : 'text',
       quiet: opts.quiet,
       verbose: opts.verbose,
       color: opts.color,
       tips,
+      tty,
     });
   }
 
@@ -269,10 +275,10 @@ export class OutputContext {
 
   /**
    * Create a spinner for showing progress.
-   * Returns a no-op spinner in JSON mode or quiet mode.
+   * Returns a no-op spinner in JSON mode, quiet mode, or non-TTY mode.
    */
   spinner(message: string): SpinnerControl {
-    if (this.isJson || this.quiet) {
+    if (this.isJson || this.quiet || !this.tty) {
       return nullSpinner;
     }
 
@@ -329,12 +335,12 @@ export class OutputContext {
   }
 
   /**
-   * Write raw output to stdout (bypasses mode checks)
+   * Write raw output to stderr (bypasses mode checks)
    * Useful for progress bars that need direct control
    */
   raw(content: string): void {
-    if (!this.isJson && !this.quiet) {
-      process.stdout.write(content);
+    if (!this.isJson && !this.quiet && this.tty) {
+      process.stderr.write(content);
     }
   }
 
@@ -350,8 +356,8 @@ export class OutputContext {
    * Clear the current line (for progress updates)
    */
   clearLine(): void {
-    if (!this.isJson && !this.quiet) {
-      process.stdout.write('\x1b[2K\r');
+    if (!this.isJson && !this.quiet && this.tty) {
+      process.stderr.write('\x1b[2K\r');
     }
   }
 }
