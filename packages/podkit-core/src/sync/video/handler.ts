@@ -118,13 +118,15 @@ export class VideoHandler implements ContentTypeHandler<
     if (!videoTransforms.showLanguage) return undefined;
     if (source.contentType !== 'tvshow') return undefined;
 
-    const { transformedSeriesTitle, transformApplied } = getVideoTransformMatchKeys(
+    const { transformedSeriesTitle } = getVideoTransformMatchKeys(
       source,
       generateVideoMatchKey,
       videoTransforms
     );
 
-    return transformApplied ? transformedSeriesTitle : undefined;
+    // Return the transformed title if it differs from the original
+    // (covers both enabled=true expansion AND enabled=false stripping)
+    return transformedSeriesTitle !== source.seriesTitle ? transformedSeriesTitle : undefined;
   }
 
   getDeviceItemId(device: DeviceVideo): string {
