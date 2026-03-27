@@ -418,13 +418,25 @@ describe('parseFields', () => {
     expect(parseFields('AlbumArtist')).toEqual(['albumArtist']);
   });
 
-  it('ignores invalid fields', () => {
-    expect(parseFields('title,invalid,artist')).toEqual(['title', 'artist']);
-    expect(parseFields('foo,bar,baz')).toEqual(DEFAULT_FIELDS); // All invalid -> defaults
+  it('throws on invalid fields', () => {
+    expect(() => parseFields('title,invalid,artist')).toThrow(
+      "Unknown field: 'invalid'. Valid fields:"
+    );
+    expect(() => parseFields('foo,bar,baz')).toThrow("Unknown fields: 'foo', 'bar', 'baz'");
   });
 
-  it('returns only valid fields when mixed with invalid', () => {
-    expect(parseFields('invalid1,title,invalid2,duration')).toEqual(['title', 'duration']);
+  it('error message includes all invalid field names', () => {
+    expect(() => parseFields('invalid1,title,invalid2,duration')).toThrow(
+      "Unknown fields: 'invalid1', 'invalid2'. Valid fields:"
+    );
+  });
+
+  it('error message lists valid fields', () => {
+    try {
+      parseFields('badfield');
+    } catch (err) {
+      expect(err instanceof Error ? err.message : '').toContain('title, artist, album');
+    }
   });
 
   it('handles whitespace around field names', () => {
