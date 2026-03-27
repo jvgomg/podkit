@@ -37,6 +37,10 @@ program
   .option('--json', 'output in JSON format')
   .option('--no-color', 'disable colored output')
   .option('--no-tips', 'suppress contextual tips')
+  .option(
+    '--no-tty',
+    'suppress interactive output (spinners/progress); auto-detected when stdout is not a TTY'
+  )
   .option('-d, --device <name|path>', 'device name or path (auto-detect if omitted)')
   .option('--config <path>', `config file path (default: ${DEFAULT_CONFIG_PATH})`);
 

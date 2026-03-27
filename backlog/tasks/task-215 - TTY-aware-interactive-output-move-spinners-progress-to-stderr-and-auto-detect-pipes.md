@@ -3,9 +3,10 @@ id: TASK-215
 title: >-
   TTY-aware interactive output: move spinners/progress to stderr and auto-detect
   pipes
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 18:25'
+updated_date: '2026-03-27 13:01'
 labels:
   - cli
   - ux
@@ -35,11 +36,32 @@ Key files:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Spinners and progress bars write to stderr, not stdout
-- [ ] #2 When stdout is not a TTY, spinners and progress bars are automatically suppressed without any flags
-- [ ] #3 New `--no-tty` global flag manually triggers the same suppression as auto TTY detection
-- [ ] #4 `--quiet` continues to work as a superset (spinners + progress + tips + status messages)
+- [x] #1 Spinners and progress bars write to stderr, not stdout
+- [x] #2 When stdout is not a TTY, spinners and progress bars are automatically suppressed without any flags
+- [x] #3 New `--no-tty` global flag manually triggers the same suppression as auto TTY detection
+- [x] #4 `--quiet` continues to work as a superset (spinners + progress + tips + status messages)
 - [ ] #5 `podkit collection music --tracks --format json | jq .` produces valid JSON without any extra flags
-- [ ] #6 Existing text-mode terminal experience is unchanged (spinners and progress still visible in interactive use)
-- [ ] #7 Tests cover: auto-detection logic, --no-tty flag, --quiet superset behavior
+- [x] #6 Existing text-mode terminal experience is unchanged (spinners and progress still visible in interactive use)
+- [x] #7 Tests cover: auto-detection logic, --no-tty flag, --quiet superset behavior
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Changes
+
+- **`output/types.ts`**: Added `tty: boolean` to `OutputContextConfig`
+- **`config/types.ts`**: Added `tty: boolean` to `GlobalOptions`
+- **`output/context.ts`**:
+  - `Spinner` now writes to `process.stderr` instead of `process.stdout`
+  - `raw()` and `clearLine()` now write to `process.stderr`
+  - `raw()` and `clearLine()` are suppressed when `tty=false`
+  - `spinner()` suppressed when `!tty` (in addition to existing json/quiet checks)
+  - `fromGlobalOpts()` auto-detects TTY: `tty = opts.tty && process.stdout.isTTY`
+- **`main.ts`**: Added `--no-tty` global flag
+- **`utils/progress.ts`**: `getTerminalWidth()` checks `process.stderr.columns` first
+- **`output/context.test.ts`**: New test file covering auto-detection, `--no-tty`, and `--quiet` superset
+- Fixed `tty: false` in two test helper constructors (`sync-empty-source.test.ts`, `sync-aggregation.test.ts`)
+
+All 905 tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->

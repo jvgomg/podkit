@@ -317,6 +317,8 @@ export interface GlobalOptions {
   color: boolean;
   /** Show contextual tips */
   tips: boolean;
+  /** Enable interactive output (spinners/progress); false when --no-tty is passed */
+  tty: boolean;
   /** Custom config file path */
   config?: string;
   /** iPod device path (CLI override) */

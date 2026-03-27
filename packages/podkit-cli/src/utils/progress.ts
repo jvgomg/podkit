@@ -45,9 +45,10 @@ export function truncateTrackName(name: string | undefined, maxLength = 40): str
 
 /**
  * Get the current terminal width, with a sensible default.
+ * Checks stderr first (since progress output goes there), then stdout.
  */
 export function getTerminalWidth(): number {
-  return process.stdout.columns || 80;
+  return process.stderr.columns || process.stdout.columns || 80;
 }
 
 /**

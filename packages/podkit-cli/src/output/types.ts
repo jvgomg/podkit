@@ -30,6 +30,11 @@ export interface OutputContextConfig extends OutputOptions {
   color: boolean;
   /** Whether contextual tips are enabled */
   tips: boolean;
+  /**
+   * Whether interactive output (spinners, progress) is enabled.
+   * False when --no-tty is passed or stdout is not a TTY.
+   */
+  tty: boolean;
 }
 
 /**
