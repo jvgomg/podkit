@@ -162,7 +162,8 @@ export const initCommand = new Command('init')
     if (!result.success) {
       out.error(`Error: ${result.error}`);
       out.json({ success: false, error: result.error, configPath: result.configPath });
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     out.print(formatSuccessMessage(result.configPath));

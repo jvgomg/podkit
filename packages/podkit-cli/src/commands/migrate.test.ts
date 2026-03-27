@@ -1,10 +1,11 @@
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtempSync, writeFileSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Command } from 'commander';
 import { runMigrations } from '../config/migrations/index.js';
 import { readConfigVersion, CURRENT_CONFIG_VERSION } from '../config/version.js';
-import { simpleDiff, generateBackupPath } from './migrate.js';
+import { simpleDiff, generateBackupPath, migrateCommand } from './migrate.js';
 import { createTestContext } from '../config/migrations/test-utils.js';
 
 describe('migrate command integration', () => {
@@ -130,5 +131,36 @@ describe('generateBackupPath', () => {
     expect(third).not.toBe(first);
     expect(third).not.toBe(second);
     expect(third).toMatch(/\.3$/);
+  });
+});
+
+describe('migrateCommand action exit codes', () => {
+  let savedExitCode: number | undefined;
+  let savedEnv: string | undefined;
+
+  beforeEach(() => {
+    savedExitCode = process.exitCode as number | undefined;
+    process.exitCode = 0;
+    savedEnv = process.env.PODKIT_CONFIG;
+  });
+
+  afterEach(() => {
+    process.exitCode = savedExitCode;
+    if (savedEnv !== undefined) {
+      process.env.PODKIT_CONFIG = savedEnv;
+    } else {
+      delete process.env.PODKIT_CONFIG;
+    }
+  });
+
+  it('sets process.exitCode = 1 when config file does not exist', async () => {
+    process.env.PODKIT_CONFIG = '/nonexistent/path/config.toml';
+
+    const program = new Command('podkit');
+    program.addCommand(migrateCommand);
+
+    await program.parseAsync(['migrate'], { from: 'user' });
+
+    expect(process.exitCode).toBe(1);
   });
 });
