@@ -9,7 +9,7 @@ labels:
   - feature
   - core
   - architecture
-milestone: '"Additional Device Support: Echo Mini"'
+milestone: "Additional Device Support: Echo Mini"
 dependencies:
   - TASK-203
 references:
