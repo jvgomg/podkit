@@ -562,7 +562,6 @@ export { VideoTrackClassifier } from './sync/video/classifier.js';
 export type { VideoAction, VideoClassification } from './sync/video/classifier.js';
 
 // Generic differ
-export type { SyncDiffOptions } from './sync/engine/differ.js';
 export { SyncDiffer, createSyncDiffer } from './sync/engine/differ.js';
 
 // Generic planner

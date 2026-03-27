@@ -120,10 +120,6 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     }
     this._deviceProfile = deviceProfile;
 
-    const transformsEnabled =
-      !!config.effectiveVideoTransforms &&
-      core.hasEnabledVideoTransforms(config.effectiveVideoTransforms);
-
     // Use the unified SyncDiffer + VideoHandler pipeline
     this.handler = core.createVideoHandler({
       videoQuality: config.effectiveVideoQuality,
@@ -133,9 +129,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     });
     const differ = core.createSyncDiffer(this.handler);
 
-    return differ.diff(sourceItems, deviceItems, {
-      transformsEnabled,
-    });
+    return differ.diff(sourceItems, deviceItems);
   }
 
   createPlan(

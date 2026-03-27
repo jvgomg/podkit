@@ -316,25 +316,23 @@ describe('SyncDiffer', () => {
       });
 
       const differ = new SyncDiffer(handler);
-      const result = differ.diff([src('Alpha')], [], { transformsEnabled: true });
+      const result = differ.diff([src('Alpha')], []);
 
       expect(transformCalled).toBe(true);
       expect(result.toAdd[0]!.name).toBe('transformed-Alpha');
     });
 
-    it('should not apply transformSourceForAdd when transformsEnabled is false', () => {
-      let transformCalled = false;
+    it('should not transform when transformSourceForAdd returns source unchanged', () => {
       const handler = createMockHandler({
         transformSourceForAdd: (source: TestSource) => {
-          transformCalled = true;
-          return { ...source, name: `transformed-${source.name}` };
+          // Handler returns source unchanged (transforms disabled internally)
+          return source;
         },
       });
 
       const differ = new SyncDiffer(handler);
-      const result = differ.diff([src('Alpha')], [], { transformsEnabled: false });
+      const result = differ.diff([src('Alpha')], []);
 
-      expect(transformCalled).toBe(false);
       expect(result.toAdd[0]!.name).toBe('Alpha');
     });
   });
