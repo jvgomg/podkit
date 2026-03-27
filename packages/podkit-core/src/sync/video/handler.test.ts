@@ -4,7 +4,8 @@ import { generateVideoMatchKey } from './types.js';
 import { createSyncDiffer } from '../engine/differ.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { DeviceVideo } from './types.js';
-import type { SyncOperation, SyncPlan } from '../engine/types.js';
+import type { SyncPlan } from '../engine/types.js';
+import type { VideoOperation } from './types.js';
 import { getVideoTransformMatchKeys } from '../../transforms/video-pipeline.js';
 import { getDefaultDeviceProfile } from '../../video/types.js';
 
@@ -238,7 +239,7 @@ describe('VideoHandler', () => {
 
   describe('estimateSize', () => {
     test('returns positive number for video-transcode', () => {
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeCollectionVideo({ duration: 3600 }),
         settings: {
@@ -257,42 +258,16 @@ describe('VideoHandler', () => {
     });
 
     test('returns 0 for video-remove', () => {
-      const op: SyncOperation = { type: 'video-remove', video: makeDeviceVideo() };
+      const op: VideoOperation = { type: 'video-remove', video: makeDeviceVideo() };
       expect(handler.estimateSize(op)).toBe(0);
     });
 
-    test('returns 0 for non-video operation', () => {
-      const op: SyncOperation = {
-        type: 'remove',
-        track: {
-          artist: 'Test',
-          title: 'Test',
-          album: 'Test',
-          filePath: ':test',
-          duration: 0,
-          bitrate: 0,
-          sampleRate: 0,
-          size: 0,
-          mediaType: 1,
-          timeAdded: 0,
-          timeModified: 0,
-          timePlayed: 0,
-          timeReleased: 0,
-          playCount: 0,
-          skipCount: 0,
-          rating: 0,
-          hasArtwork: false,
-          hasFile: true,
-          compilation: false,
-        } as any,
-      };
-      expect(handler.estimateSize(op)).toBe(0);
-    });
+    // Non-video operations are now prevented at the type level by VideoOperation
   });
 
   describe('estimateTime', () => {
     test('returns positive number for video-transcode', () => {
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeCollectionVideo({ duration: 3600 }),
         settings: {
@@ -311,14 +286,14 @@ describe('VideoHandler', () => {
     });
 
     test('returns 0.1 for video-remove', () => {
-      const op: SyncOperation = { type: 'video-remove', video: makeDeviceVideo() };
+      const op: VideoOperation = { type: 'video-remove', video: makeDeviceVideo() };
       expect(handler.estimateTime(op)).toBe(0.1);
     });
   });
 
   describe('getDisplayName', () => {
     test('returns title for movie', () => {
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeCollectionVideo({ title: 'Inception', year: 2010 }),
         settings: {
@@ -338,7 +313,7 @@ describe('VideoHandler', () => {
     });
 
     test('returns series - episode for TV show', () => {
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-transcode',
         source: makeTVShowVideo({ seriesTitle: 'Breaking Bad', episodeId: 'S01E01' }),
         settings: {
@@ -359,7 +334,7 @@ describe('VideoHandler', () => {
     });
 
     test('returns title for video-remove', () => {
-      const op: SyncOperation = {
+      const op: VideoOperation = {
         type: 'video-remove',
         video: makeDeviceVideo({ title: 'Old Movie' }),
       };
@@ -369,7 +344,7 @@ describe('VideoHandler', () => {
 
   describe('formatDryRun', () => {
     test('summarizes a video plan', () => {
-      const plan: SyncPlan = {
+      const plan: SyncPlan<VideoOperation> = {
         operations: [
           {
             type: 'video-transcode',

@@ -17,6 +17,7 @@
  */
 
 import type { ContentTypeHandler, MatchInfo } from './content-type.js';
+import type { BaseOperation, SyncOperation } from './types.js';
 import type { UpdateReason } from './types.js';
 
 import type { UnifiedSyncDiff } from './content-type.js';
@@ -47,8 +48,8 @@ export interface SyncDiffOptions {
  * @typeParam TSource - Source item type
  * @typeParam TDevice - Device item type
  */
-export class SyncDiffer<TSource, TDevice> {
-  constructor(private handler: ContentTypeHandler<TSource, TDevice>) {}
+export class SyncDiffer<TSource, TDevice, TOp extends BaseOperation = SyncOperation> {
+  constructor(private handler: ContentTypeHandler<TSource, TDevice, TOp>) {}
 
   /**
    * Compute the diff between source items and device items
@@ -176,8 +177,8 @@ export class SyncDiffer<TSource, TDevice> {
  * @param handler - ContentTypeHandler implementation
  * @returns A new SyncDiffer instance
  */
-export function createSyncDiffer<TSource, TDevice>(
-  handler: ContentTypeHandler<TSource, TDevice>
-): SyncDiffer<TSource, TDevice> {
+export function createSyncDiffer<TSource, TDevice, TOp extends BaseOperation = SyncOperation>(
+  handler: ContentTypeHandler<TSource, TDevice, TOp>
+): SyncDiffer<TSource, TDevice, TOp> {
   return new SyncDiffer(handler);
 }

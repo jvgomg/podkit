@@ -13,6 +13,7 @@
 
 import type { DeviceAdapter } from '../../device/adapter.js';
 import type {
+  BaseOperation,
   SyncPlan,
   SyncOperation,
   ExecutorProgress,
@@ -76,14 +77,14 @@ function getDefaultPhaseForOperation(type: string): ExecutorProgress['phase'] {
 /**
  * Build an ExecutorProgress from an OperationProgress event
  */
-function buildExecutorProgress(
-  progress: OperationProgress,
+function buildExecutorProgress<TOp extends BaseOperation>(
+  progress: OperationProgress<TOp>,
   index: number,
   total: number,
   displayName: string,
   completedCount: number,
-  overrides?: Partial<ExecutorProgress>
-): ExecutorProgress {
+  overrides?: Partial<ExecutorProgress<TOp>>
+): ExecutorProgress<TOp> {
   return {
     phase: getDefaultPhaseForOperation(progress.operation.type),
     operation: progress.operation,
@@ -117,8 +118,8 @@ function buildExecutorProgress(
  * @typeParam TSource - The source item type
  * @typeParam TDevice - The device item type
  */
-export class SyncExecutor<TSource, TDevice> {
-  constructor(private handler: ContentTypeHandler<TSource, TDevice>) {}
+export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOperation> {
+  constructor(private handler: ContentTypeHandler<TSource, TDevice, TOp>) {}
 
   /**
    * Execute a sync plan, yielding progress updates.
@@ -126,9 +127,9 @@ export class SyncExecutor<TSource, TDevice> {
    * Returns an `ExecuteResult` summary when the generator completes.
    */
   async *execute(
-    plan: SyncPlan,
+    plan: SyncPlan<TOp>,
     options?: SyncExecuteOptions
-  ): AsyncGenerator<ExecutorProgress, ExecuteResult> {
+  ): AsyncGenerator<ExecutorProgress<TOp>, ExecuteResult<TOp>> {
     const {
       dryRun = false,
       continueOnError = false,
@@ -142,7 +143,7 @@ export class SyncExecutor<TSource, TDevice> {
     let completed = 0;
     let failed = 0;
     let skipped = 0;
-    const errors: Array<{ operation: SyncOperation; error: Error }> = [];
+    const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
     const warnings: ExecutionWarning[] = [];
     let aborted = false;
@@ -185,7 +186,7 @@ export class SyncExecutor<TSource, TDevice> {
           bytesTotal: plan.estimatedSize,
           skipped: true,
           completedCount: completed + failed + skipped,
-        };
+        } as ExecutorProgress<TOp>;
         continue;
       }
 
@@ -232,7 +233,7 @@ export class SyncExecutor<TSource, TDevice> {
           completedCount: completed + failed + skipped,
           error,
           categorizedError: catError,
-        };
+        } as ExecutorProgress<TOp>;
 
         if (!continueOnError) {
           break;
@@ -256,10 +257,10 @@ export class SyncExecutor<TSource, TDevice> {
    * Batch execution path — delegates to handler.executeBatch
    */
   private async *executeBatch(
-    plan: SyncPlan,
+    plan: SyncPlan<TOp>,
     ctx: ExecutionContext,
     options: SyncExecuteOptions
-  ): AsyncGenerator<ExecutorProgress, ExecuteResult> {
+  ): AsyncGenerator<ExecutorProgress<TOp>, ExecuteResult<TOp>> {
     const { continueOnError = false, signal, device, saveInterval = 10 } = options;
 
     const total = plan.operations.length;
@@ -267,7 +268,7 @@ export class SyncExecutor<TSource, TDevice> {
     let failed = 0;
     // Intentionally const: batch execution has no skip path — dry-run uses per-operation path instead.
     const skipped = 0;
-    const errors: Array<{ operation: SyncOperation; error: Error }> = [];
+    const errors: Array<{ operation: TOp; error: Error }> = [];
     const categorizedErrors: CategorizedError[] = [];
     const warnings: ExecutionWarning[] = [];
     let aborted = false;
@@ -275,7 +276,7 @@ export class SyncExecutor<TSource, TDevice> {
 
     try {
       const gen = this.handler.executeBatch!(plan.operations, ctx);
-      let currentOp: SyncOperation | undefined;
+      let currentOp: TOp | undefined;
 
       for await (const progress of gen) {
         // Check abort signal
@@ -386,8 +387,8 @@ export class SyncExecutor<TSource, TDevice> {
 /**
  * Create a SyncExecutor for a given content type handler
  */
-export function createSyncExecutor<TSource, TDevice>(
-  handler: ContentTypeHandler<TSource, TDevice>
-): SyncExecutor<TSource, TDevice> {
+export function createSyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOperation>(
+  handler: ContentTypeHandler<TSource, TDevice, TOp>
+): SyncExecutor<TSource, TDevice, TOp> {
   return new SyncExecutor(handler);
 }

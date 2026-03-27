@@ -20,7 +20,7 @@
 
 import type { ContentTypeHandler } from './content-type.js';
 import type { UnifiedSyncDiff } from './content-type.js';
-import type { SyncPlan, SyncOperation, SyncWarning } from './types.js';
+import type { BaseOperation, SyncPlan, SyncOperation, SyncWarning } from './types.js';
 
 // =============================================================================
 // Types
@@ -60,10 +60,10 @@ export interface SyncPlanOptions {
  * @param operations - Operations to sort
  * @param getPriority - Priority function (lower = execute first)
  */
-export function orderOperations(
-  operations: SyncOperation[],
-  getPriority: (op: SyncOperation) => number
-): SyncOperation[] {
+export function orderOperations<TOp extends BaseOperation = SyncOperation>(
+  operations: TOp[],
+  getPriority: (op: TOp) => number
+): TOp[] {
   // Stable sort by type priority (preserves original order within categories)
   return [...operations].sort((a, b) => getPriority(a) - getPriority(b));
 }
@@ -82,8 +82,8 @@ export function orderOperations(
  * @typeParam TSource - Source item type
  * @typeParam TDevice - Device item type
  */
-export class SyncPlanner<TSource, TDevice> {
-  constructor(private handler: ContentTypeHandler<TSource, TDevice>) {}
+export class SyncPlanner<TSource, TDevice, TOp extends BaseOperation = SyncOperation> {
+  constructor(private handler: ContentTypeHandler<TSource, TDevice, TOp>) {}
 
   /**
    * Create a sync plan from a unified diff
@@ -92,10 +92,10 @@ export class SyncPlanner<TSource, TDevice> {
    * @param options - Planning options
    * @returns A SyncPlan with ordered operations, estimates, and warnings
    */
-  plan(diff: UnifiedSyncDiff<TSource, TDevice>, options?: SyncPlanOptions): SyncPlan {
+  plan(diff: UnifiedSyncDiff<TSource, TDevice>, options?: SyncPlanOptions): SyncPlan<TOp> {
     const { removeOrphans = true, maxSize, artworkEnabled = true } = options ?? {};
 
-    const allOperations: SyncOperation[] = [];
+    const allOperations: TOp[] = [];
     const warnings: SyncWarning[] = [];
 
     // Step 1: Create remove operations
@@ -179,8 +179,8 @@ export class SyncPlanner<TSource, TDevice> {
  * @param handler - ContentTypeHandler implementation
  * @returns A new SyncPlanner instance
  */
-export function createSyncPlanner<TSource, TDevice>(
-  handler: ContentTypeHandler<TSource, TDevice>
-): SyncPlanner<TSource, TDevice> {
+export function createSyncPlanner<TSource, TDevice, TOp extends BaseOperation = SyncOperation>(
+  handler: ContentTypeHandler<TSource, TDevice, TOp>
+): SyncPlanner<TSource, TDevice, TOp> {
   return new SyncPlanner(handler);
 }

@@ -22,7 +22,8 @@
  * @module
  */
 
-import type { SyncOperation, SyncPlan, ExecuteOptions, ExecutorProgress } from '../engine/types.js';
+import type { SyncPlan, ExecuteOptions, ExecutorProgress } from '../engine/types.js';
+import type { VideoOperation } from './types.js';
 import type { TranscodeProgress } from '../../transcode/types.js';
 import type { IpodDatabase } from '../../ipod/index.js';
 
@@ -108,7 +109,7 @@ export interface VideoSyncExecutor {
 /**
  * Get display name for a video operation
  */
-export function getVideoOperationDisplayName(operation: SyncOperation): string {
+export function getVideoOperationDisplayName(operation: VideoOperation): string {
   switch (operation.type) {
     case 'video-transcode':
     case 'video-copy': {

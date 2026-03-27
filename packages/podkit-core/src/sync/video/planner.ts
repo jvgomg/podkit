@@ -8,7 +8,7 @@
  */
 
 import type { CollectionVideo } from '../../video/directory-adapter.js';
-import type { SyncOperation } from '../engine/types.js';
+import type { VideoOperation } from './types.js';
 import { estimateTransferTime } from '../engine/estimation.js';
 
 // =============================================================================
@@ -77,19 +77,7 @@ function estimateTranscodeTime(durationSeconds: number, useHardwareAcceleration:
  *
  * Used by the audio planner to handle video operations in mixed plans.
  */
-export function calculateVideoOperationSize(
-  operation: Extract<
-    SyncOperation,
-    {
-      type:
-        | 'video-transcode'
-        | 'video-copy'
-        | 'video-remove'
-        | 'video-update-metadata'
-        | 'video-upgrade';
-    }
-  >
-): number {
+export function calculateVideoOperationSize(operation: VideoOperation): number {
   switch (operation.type) {
     case 'video-transcode': {
       // Estimate video size based on duration and bitrate
@@ -130,19 +118,7 @@ export function calculateVideoOperationSize(
  * Used by the audio planner to handle video operations in mixed plans.
  * Assumes hardware acceleration is available (the default).
  */
-export function calculateVideoOperationTime(
-  operation: Extract<
-    SyncOperation,
-    {
-      type:
-        | 'video-transcode'
-        | 'video-copy'
-        | 'video-remove'
-        | 'video-update-metadata'
-        | 'video-upgrade';
-    }
-  >
-): number {
+export function calculateVideoOperationTime(operation: VideoOperation): number {
   switch (operation.type) {
     case 'video-transcode': {
       const duration = operation.source.duration ?? 3600;
