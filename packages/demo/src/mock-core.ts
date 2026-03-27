@@ -264,7 +264,7 @@ export type {
 } from '@podkit/core';
 
 // Generic differ types
-export type { UnifiedSyncDiff, SyncDiffOptions } from '@podkit/core';
+export type { UnifiedSyncDiff } from '@podkit/core';
 
 // Generic planner types
 export type { SyncPlanOptions } from '@podkit/core';
