@@ -26,14 +26,6 @@ import type { UnifiedSyncDiff } from './content-type.js';
 // Types
 // =============================================================================
 
-/**
- * Options for sync diff computation
- */
-export interface SyncDiffOptions {
-  /** When true, try transform keys as fallback during matching */
-  transformsEnabled?: boolean;
-}
-
 // =============================================================================
 // SyncDiffer
 // =============================================================================
@@ -56,16 +48,10 @@ export class SyncDiffer<TSource, TDevice, TOp extends BaseOperation = SyncOperat
    *
    * @param sourceItems - Items from the collection source
    * @param deviceItems - Items currently on the device
-   * @param options - Diff options (passed through to handler.detectUpdates)
    * @returns The computed diff
    */
-  diff(
-    sourceItems: TSource[],
-    deviceItems: TDevice[],
-    options?: SyncDiffOptions
-  ): UnifiedSyncDiff<TSource, TDevice> {
+  diff(sourceItems: TSource[], deviceItems: TDevice[]): UnifiedSyncDiff<TSource, TDevice> {
     const handler = this.handler;
-    const diffOptions = options ?? {};
 
     // Step 1: Build device index for O(1) lookup
     const deviceIndex = new Map<string, TDevice>();
@@ -133,8 +119,8 @@ export class SyncDiffer<TSource, TDevice, TOp extends BaseOperation = SyncOperat
         }
       } else {
         // Step 3d: No match → toAdd
-        // Apply transforms if available and transforms are enabled
-        if (diffOptions.transformsEnabled && handler.transformSourceForAdd) {
+        // Apply transforms if handler supports them (handler returns source unchanged when disabled)
+        if (handler.transformSourceForAdd) {
           toAdd.push(handler.transformSourceForAdd(source));
         } else {
           toAdd.push(source);
