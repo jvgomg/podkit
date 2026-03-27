@@ -68,14 +68,14 @@ describe('resolveVideoConfig', () => {
       expect(resolved.videoQuality).toBe('medium');
     });
 
-    it('resolvedVideoQuality matches videoQuality', () => {
+    it('videoQuality is set from config', () => {
       const resolved = resolveVideoConfig({ videoQuality: 'low' });
-      expect(resolved.resolvedVideoQuality).toBe('low');
+      expect(resolved.videoQuality).toBe('low');
     });
 
-    it('resolvedVideoQuality defaults to high', () => {
+    it('videoQuality defaults to high', () => {
       const resolved = resolveVideoConfig({});
-      expect(resolved.resolvedVideoQuality).toBe('high');
+      expect(resolved.videoQuality).toBe('high');
     });
   });
 

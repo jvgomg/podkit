@@ -199,8 +199,7 @@ export class VideoHandler implements ContentTypeHandler<
     // Pass 1: Preset change detection
     if (this.config.presetBitrate) {
       const presetBitrate = this.config.presetBitrate;
-      const resolvedVideoQuality = this.config.resolvedVideoQuality;
-      const expectedSyncTag = buildVideoSyncTag(resolvedVideoQuality);
+      const expectedSyncTag = buildVideoSyncTag(this.config.videoQuality);
 
       partitionExisting(diff, (match) => {
         // Try sync tag comparison first

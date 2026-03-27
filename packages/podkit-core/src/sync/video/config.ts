@@ -82,13 +82,6 @@ export interface ResolvedVideoConfig {
    */
   readonly presetBitrate: number | undefined;
 
-  /**
-   * Quality string for sync tag comparison.
-   *
-   * This is the quality preset name used to build and compare sync tags.
-   */
-  readonly resolvedVideoQuality: string;
-
   /** Whether any video transforms are enabled */
   readonly videoTransformsEnabled: boolean;
 
@@ -165,7 +158,6 @@ export function resolveVideoConfig(config: VideoSyncConfig = {}): ResolvedVideoC
     videoQuality,
     deviceProfile,
     presetBitrate,
-    resolvedVideoQuality: videoQuality,
     videoTransformsEnabled,
     hardwareAcceleration,
     supportsVideo,
