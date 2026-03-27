@@ -1,7 +1,7 @@
 /**
- * Unit tests for the sync executor
+ * Unit tests for the music sync pipeline
  *
- * These tests verify the executor logic using mocked dependencies.
+ * These tests verify the pipeline logic using mocked dependencies.
  *
  * ## Test Coverage
  *
@@ -15,16 +15,16 @@
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import {
-  MusicExecutor,
-  createExecutor,
-  executePlan,
+  MusicPipeline,
+  createMusicPipeline,
+  executeMusicPlan,
   getMusicOperationDisplayName,
   categorizeError,
   getRetriesForCategory,
   MUSIC_RETRY_CONFIG,
   type ExecutorDependencies,
   type ExecutorProgress,
-} from './executor.js';
+} from './pipeline.js';
 import type { CollectionTrack, CollectionAdapter, FileAccess } from '../../adapters/interface.js';
 import type { AudioFileType, TrackFilter } from '../../types.js';
 import type { DeviceTrack, SyncOperation, SyncPlan } from '../engine/types.js';
@@ -251,7 +251,7 @@ describe('getMusicOperationDisplayName', () => {
 // Basic Execution Tests
 // =============================================================================
 
-describe('MusicExecutor - basic execution', () => {
+describe('MusicPipeline - basic execution', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -263,7 +263,7 @@ describe('MusicExecutor - basic execution', () => {
   });
 
   it('handles empty plan', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan = createEmptyPlan();
 
     const progress: ExecutorProgress[] = [];
@@ -277,7 +277,7 @@ describe('MusicExecutor - basic execution', () => {
   });
 
   it('executes copy operation', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -301,7 +301,7 @@ describe('MusicExecutor - basic execution', () => {
   });
 
   it('passes compilation flag to addTrack', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -327,7 +327,7 @@ describe('MusicExecutor - basic execution', () => {
   });
 
   it('passes source bitrate to addTrack for copy operation', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -362,7 +362,7 @@ describe('MusicExecutor - basic execution', () => {
     }));
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -390,7 +390,7 @@ describe('MusicExecutor - basic execution', () => {
   });
 
   it('executes transcode operation', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -428,7 +428,7 @@ describe('MusicExecutor - basic execution', () => {
     mockAdapter = createMockDeviceAdapter([trackToRemove]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -464,7 +464,7 @@ describe('MusicExecutor - basic execution', () => {
     mockAdapter = createMockDeviceAdapter([trackToRemove]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -502,7 +502,7 @@ describe('MusicExecutor - basic execution', () => {
 // Progress Reporting Tests
 // =============================================================================
 
-describe('MusicExecutor - progress reporting', () => {
+describe('MusicPipeline - progress reporting', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -516,7 +516,7 @@ describe('MusicExecutor - progress reporting', () => {
   it('emits progress when operations complete (pipeline model)', async () => {
     // Note: In the pipeline model, progress is emitted when transfers complete,
     // not when operations start. This replaces the old "preparing" phase behavior.
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -541,7 +541,7 @@ describe('MusicExecutor - progress reporting', () => {
   });
 
   it('includes operation index and total', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
@@ -571,7 +571,7 @@ describe('MusicExecutor - progress reporting', () => {
   });
 
   it('includes current track name', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -594,7 +594,7 @@ describe('MusicExecutor - progress reporting', () => {
   });
 
   it('tracks bytes processed', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -620,7 +620,7 @@ describe('MusicExecutor - progress reporting', () => {
   });
 
   it('emits updating-db phase before save', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -640,7 +640,7 @@ describe('MusicExecutor - progress reporting', () => {
   });
 
   it('emits complete phase at end', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -664,7 +664,7 @@ describe('MusicExecutor - progress reporting', () => {
 // Dry-Run Mode Tests
 // =============================================================================
 
-describe('MusicExecutor - dry-run mode', () => {
+describe('MusicPipeline - dry-run mode', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -676,7 +676,7 @@ describe('MusicExecutor - dry-run mode', () => {
   });
 
   it('does not call database methods in dry-run', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -704,7 +704,7 @@ describe('MusicExecutor - dry-run mode', () => {
   });
 
   it('marks progress as skipped in dry-run', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -724,7 +724,7 @@ describe('MusicExecutor - dry-run mode', () => {
   });
 
   it('still emits progress events in dry-run', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
@@ -749,7 +749,7 @@ describe('MusicExecutor - dry-run mode', () => {
 // Error Handling Tests
 // =============================================================================
 
-describe('MusicExecutor - error handling', () => {
+describe('MusicPipeline - error handling', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -767,7 +767,7 @@ describe('MusicExecutor - error handling', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -804,7 +804,7 @@ describe('MusicExecutor - error handling', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -842,7 +842,7 @@ describe('MusicExecutor - error handling', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -871,7 +871,7 @@ describe('MusicExecutor - error handling', () => {
 // Abort Signal Tests
 // =============================================================================
 
-describe('MusicExecutor - abort signal', () => {
+describe('MusicPipeline - abort signal', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -885,7 +885,7 @@ describe('MusicExecutor - abort signal', () => {
   it('respects abort signal', async () => {
     const controller = new AbortController();
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S1', 'Album', 'mp3') },
@@ -922,7 +922,7 @@ describe('MusicExecutor - abort signal', () => {
     const controller = new AbortController();
     controller.abort(); // Abort immediately
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -951,20 +951,20 @@ describe('MusicExecutor - abort signal', () => {
 // Factory Function Tests
 // =============================================================================
 
-describe('createExecutor', () => {
+describe('createMusicPipeline', () => {
   it('creates a SyncExecutor instance', () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
     const deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = createExecutor(deps);
+    const executor = createMusicPipeline(deps);
 
-    expect(executor).toBeInstanceOf(MusicExecutor);
+    expect(executor).toBeInstanceOf(MusicPipeline);
     expect(typeof executor.execute).toBe('function');
   });
 });
 
-describe('executePlan', () => {
+describe('executeMusicPlan', () => {
   it('returns execution result', async () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
@@ -980,7 +980,7 @@ describe('executePlan', () => {
       warnings: [],
     };
 
-    const result = await executePlan(plan, deps);
+    const result = await executeMusicPlan(plan, deps);
 
     expect(result.completed).toBe(2);
     expect(result.failed).toBe(0);
@@ -1003,7 +1003,7 @@ describe('executePlan', () => {
       warnings: [],
     };
 
-    const result = await executePlan(plan, deps, { dryRun: true });
+    const result = await executeMusicPlan(plan, deps, { dryRun: true });
 
     expect(result.completed).toBe(0);
     expect(result.skipped).toBe(2);
@@ -1035,7 +1035,7 @@ describe('executePlan', () => {
       warnings: [],
     };
 
-    const result = await executePlan(plan, deps, {
+    const result = await executeMusicPlan(plan, deps, {
       continueOnError: true,
       retryConfig: { retryDelayMs: 0 },
     });
@@ -1063,7 +1063,7 @@ describe('phase detection', () => {
   });
 
   it('reports transcoding phase for transcode operations', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1087,7 +1087,7 @@ describe('phase detection', () => {
   });
 
   it('reports copying phase for copy operations', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         { type: 'add-direct-copy', source: createCollectionTrack('A', 'S', 'Album', 'mp3') },
@@ -1123,7 +1123,7 @@ describe('filetype detection', () => {
   });
 
   it('sets MPEG audio file for MP3', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1147,7 +1147,7 @@ describe('filetype detection', () => {
   });
 
   it('sets AAC audio file for M4A', async () => {
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1253,7 +1253,7 @@ describe('getRetriesForCategory', () => {
 // Retry Logic Tests
 // =============================================================================
 
-describe('MusicExecutor - retry logic', () => {
+describe('MusicPipeline - retry logic', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -1280,7 +1280,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1316,7 +1316,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1365,7 +1365,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1398,7 +1398,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1442,7 +1442,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1477,7 +1477,7 @@ describe('MusicExecutor - retry logic', () => {
     });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1504,10 +1504,10 @@ describe('MusicExecutor - retry logic', () => {
 });
 
 // =============================================================================
-// executePlan with categorized errors Tests
+// executeMusicPlan with categorized errors Tests
 // =============================================================================
 
-describe('executePlan - categorized errors', () => {
+describe('executeMusicPlan - categorized errors', () => {
   it('collects categorized errors in result', async () => {
     const mockAdapter = createMockDeviceAdapter();
     const mockTranscoder = createMockTranscoder();
@@ -1533,7 +1533,7 @@ describe('executePlan - categorized errors', () => {
       warnings: [],
     };
 
-    const result = await executePlan(plan, deps, {
+    const result = await executeMusicPlan(plan, deps, {
       continueOnError: true,
       retryConfig: { retryDelayMs: 0 },
     });
@@ -1551,7 +1551,7 @@ describe('executePlan - categorized errors', () => {
 // Update Metadata Operation Tests
 // =============================================================================
 
-describe('MusicExecutor - update-metadata operations', () => {
+describe('MusicPipeline - update-metadata operations', () => {
   let mockAdapter: MockDeviceAdapter;
   let mockTranscoder: MockTranscoder;
   let deps: ExecutorDependencies;
@@ -1583,7 +1583,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1629,7 +1629,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1662,7 +1662,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     // Use different filePath in operation, but same metadata
     const operationTrack = createMockDeviceTrack('Artist', 'Song', 'Album', 'Music/DIFFERENT.m4a');
     const plan: SyncPlan = {
@@ -1689,7 +1689,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([]); // Empty database
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const nonExistentTrack = createMockDeviceTrack(
       'Missing',
       'Track',
@@ -1727,7 +1727,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1756,7 +1756,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1791,7 +1791,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1828,7 +1828,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1867,7 +1867,7 @@ describe('MusicExecutor - update-metadata operations', () => {
     mockAdapter = createMockDeviceAdapter([deviceTrack]);
     deps = createDependencies(mockAdapter, mockTranscoder);
 
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
     const plan: SyncPlan = {
       operations: [
         {
@@ -1966,7 +1966,7 @@ describe('upgrade operations - dry run', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { dryRun: true })) {
@@ -2024,7 +2024,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { artwork: false })) {
@@ -2073,7 +2073,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { artwork: false })) {
       // consume
@@ -2124,7 +2124,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { artwork: false })) {
       // consume
@@ -2171,7 +2171,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     // The error is reported via progress events (not thrown)
     const progress: ExecutorProgress[] = [];
@@ -2211,7 +2211,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     // With continueOnError: true, should not throw
     const progress: ExecutorProgress[] = [];
@@ -2265,7 +2265,7 @@ describe('upgrade operations - execution', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { artwork: false })) {
       // consume
@@ -2330,7 +2330,7 @@ function createMockStreamAdapter(options?: {
   return { adapter, downloadLog };
 }
 
-describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
+describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
   let db: MockDeviceAdapter;
   let transcoder: MockTranscoder;
 
@@ -2360,7 +2360,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { adapter, artwork: false })) {
@@ -2419,7 +2419,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { adapter, artwork: false })) {
       // consume
@@ -2463,7 +2463,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     // With continueOnError=false, should stop after first failure
@@ -2528,7 +2528,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, {
@@ -2582,7 +2582,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { adapter, artwork: false })) {
@@ -2633,7 +2633,7 @@ describe('MusicExecutor - prefetch pipeline (ADR-011)', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const controller = new AbortController();
 
@@ -2705,7 +2705,7 @@ describe('sync tag preservation after upgrade', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -2750,7 +2750,7 @@ describe('sync tag preservation after upgrade', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -2796,7 +2796,7 @@ describe('sync tag preservation after upgrade', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     // No syncTagConfig provided
     for await (const _p of executor.execute(plan, { artwork: false })) {
@@ -2820,7 +2820,7 @@ describe('sync tag preservation after upgrade', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -2888,7 +2888,7 @@ describe('artwork during upgrade operations', () => {
     });
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     // artwork: true — extractArtwork is called on the source file.
     // Since our test source file doesn't exist, extraction returns null.
@@ -2938,7 +2938,7 @@ describe('artwork during upgrade operations', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { artwork: false })) {
       // consume
@@ -2977,7 +2977,7 @@ describe('artwork during upgrade operations', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, { artwork: true })) {
       // consume
@@ -3020,7 +3020,7 @@ describe('artwork during upgrade operations', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { artwork: false })) {
@@ -3061,7 +3061,7 @@ describe('copy sync tags', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -3093,7 +3093,7 @@ describe('copy sync tags', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -3123,7 +3123,7 @@ describe('copy sync tags', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     // No syncTagConfig
     for await (const _p of executor.execute(plan, { artwork: false })) {
@@ -3164,7 +3164,7 @@ describe('copy sync tags', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -3193,7 +3193,7 @@ describe('copy sync tags', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     for await (const _p of executor.execute(plan, {
       artwork: false,
@@ -3239,7 +3239,7 @@ describe('optimized copy operations', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { artwork: false, continueOnError: true })) {
@@ -3280,7 +3280,7 @@ describe('optimized copy operations', () => {
     };
 
     const deps = createDependencies(db, transcoder);
-    const executor = new MusicExecutor(deps);
+    const executor = new MusicPipeline(deps);
 
     const progress: ExecutorProgress[] = [];
     for await (const p of executor.execute(plan, { artwork: false, continueOnError: true })) {
