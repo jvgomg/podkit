@@ -112,7 +112,10 @@ export class VideoHandler implements ContentTypeHandler<
   private getTransformedSeriesTitle(source: CollectionVideo): string | undefined {
     const videoTransforms = this.config.raw.videoTransforms;
     if (!videoTransforms) return undefined;
-    if (!hasEnabledVideoTransforms(videoTransforms)) return undefined;
+    // Don't guard on hasEnabledVideoTransforms — when showLanguage is disabled,
+    // the transform strips language markers (that IS the transform behavior).
+    // The config existing means the user has configured transforms.
+    if (!videoTransforms.showLanguage) return undefined;
     if (source.contentType !== 'tvshow') return undefined;
 
     const { transformedSeriesTitle, transformApplied } = getVideoTransformMatchKeys(
