@@ -295,6 +295,13 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     const transformsDisplay = formatTransformsConfig(config.effectiveTransforms);
     if (transformsDisplay) {
       out.print(`Transforms: ${transformsDisplay}`);
+      if (config.transformWarnings) {
+        for (const warning of config.transformWarnings) {
+          out.warn(warning.message);
+        }
+      }
+    } else if (config.cleanArtistsResolutionReason === 'auto-suppressed') {
+      out.print('Clean artists: skipped (device supports Album Artist browsing)');
     }
     if (config.effectiveTransferMode) {
       out.print(`Transfer mode: ${config.effectiveTransferMode}`);
@@ -505,6 +512,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
 
     const transformsInfo: TransformInfo[] = [];
     if (config.effectiveTransforms.cleanArtists.enabled) {
+      const warningMessages = config.transformWarnings
+        ?.filter((w) => w.type === 'clean-artists-unnecessary')
+        .map((w) => w.message);
       transformsInfo.push({
         name: 'cleanArtists',
         enabled: true,
@@ -512,6 +522,14 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         format: config.effectiveTransforms.cleanArtists.drop
           ? undefined
           : config.effectiveTransforms.cleanArtists.format,
+        reason: config.cleanArtistsResolutionReason,
+        warnings: warningMessages && warningMessages.length > 0 ? warningMessages : undefined,
+      });
+    } else if (config.cleanArtistsResolutionReason) {
+      transformsInfo.push({
+        name: 'cleanArtists',
+        enabled: false,
+        reason: config.cleanArtistsResolutionReason,
       });
     }
 

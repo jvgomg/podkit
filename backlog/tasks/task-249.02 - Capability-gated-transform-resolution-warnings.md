@@ -1,9 +1,10 @@
 ---
 id: TASK-249.02
 title: Capability-gated transform resolution + warnings
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 12:47'
+updated_date: '2026-03-28 15:15'
 labels:
   - feature
   - transforms
@@ -55,17 +56,33 @@ Wire `supportsAlbumArtistBrowsing` into the transform resolution logic so that `
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 getEffectiveTransforms uses supportsAlbumArtistBrowsing to auto-suppress cleanArtists when the device supports Album Artist browsing
-- [ ] #2 Per-device cleanArtists config overrides the auto-suppress (force-enable works)
-- [ ] #3 Global cleanArtists disabled results in disabled for all devices regardless of capability
-- [ ] #4 Resolution returns state metadata indicating why the transform is in its current state
-- [ ] #5 Warning utility returns 'enabled but unnecessary' when cleanArtists is explicitly enabled per-device on a device with supportsAlbumArtistBrowsing true (not overridden)
-- [ ] #6 Warning utility returns no warning when user has overridden supportsAlbumArtistBrowsing to false
-- [ ] #7 sync --dry-run shows terse auto-suppress message in pre-sync summary when cleanArtists is globally enabled but suppressed for the device
-- [ ] #8 sync --dry-run shows warning when cleanArtists is force-enabled on a device that supports Album Artist browsing
-- [ ] #9 device info text output shows transform warnings when applicable
-- [ ] #10 device info JSON output includes transform warnings in the output structure
-- [ ] #11 Existing self-healing behavior works: tracks with transformed metadata are reverted when cleanArtists is auto-suppressed (via existing dual-key matching)
-- [ ] #12 User documentation updated to cover capability gating and per-device override
-- [ ] #13 Unit tests cover: transform resolution precedence matrix (all 4 rules + combinations), warning utility (all conditions including capability override edge case), dry-run output variations, device info warning display
+- [x] #1 getEffectiveTransforms uses supportsAlbumArtistBrowsing to auto-suppress cleanArtists when the device supports Album Artist browsing
+- [x] #2 Per-device cleanArtists config overrides the auto-suppress (force-enable works)
+- [x] #3 Global cleanArtists disabled results in disabled for all devices regardless of capability
+- [x] #4 Resolution returns state metadata indicating why the transform is in its current state
+- [x] #5 Warning utility returns 'enabled but unnecessary' when cleanArtists is explicitly enabled per-device on a device with supportsAlbumArtistBrowsing true (not overridden)
+- [x] #6 Warning utility returns no warning when user has overridden supportsAlbumArtistBrowsing to false
+- [x] #7 sync --dry-run shows terse auto-suppress message in pre-sync summary when cleanArtists is globally enabled but suppressed for the device
+- [x] #8 sync --dry-run shows warning when cleanArtists is force-enabled on a device that supports Album Artist browsing
+- [x] #9 device info text output shows transform warnings when applicable
+- [x] #10 device info JSON output includes transform warnings in the output structure
+- [x] #11 Existing self-healing behavior works: tracks with transformed metadata are reverted when cleanArtists is auto-suppressed (via existing dual-key matching)
+- [x] #12 User documentation updated to cover capability gating and per-device override
+- [x] #13 Unit tests cover: transform resolution precedence matrix (all 4 rules + combinations), warning utility (all conditions including capability override edge case), dry-run output variations, device info warning display
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented in the same commit as TASK-249.01.
+
+Added capability-gated transform resolution and warning system:
+
+- **Transform resolution:** New `resolveCleanArtistsTransform()` pure function implements 4 precedence rules: per-device explicit > global disabled > capability gate (auto-suppress when `supportsAlbumArtistBrowsing: true`, auto-enable when `false`). Returns resolution reason metadata.
+- **Warning utility:** New `computeTransformWarnings()` fires "enabled but unnecessary" when cleanArtists is force-enabled per-device on a capable device, unless user overrode `supportsAlbumArtistBrowsing`.
+- **Sync dry-run:** Text shows `Clean artists: skipped (device supports Album Artist browsing)` when auto-suppressed, warnings when force-enabled. JSON includes all resolution states with reasons.
+- **Device info:** Transform warnings in both text and JSON output when per-device cleanArtists is configured.
+- **Self-healing:** No new code — existing dual-key matching + transform-remove reverts tracks when auto-suppressed.
+- **Tests:** 17 unit tests covering all precedence rules, warning conditions, and edge cases.
+- **Docs:** New "Automatic Device Gating" section in artist-transforms.md.
+<!-- SECTION:FINAL_SUMMARY:END -->

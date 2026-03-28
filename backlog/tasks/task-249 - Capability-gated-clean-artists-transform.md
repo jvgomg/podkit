@@ -1,9 +1,10 @@
 ---
 id: TASK-249
 title: Capability-gated clean artists transform
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 12:46'
+updated_date: '2026-03-28 15:15'
 labels:
   - feature
   - transforms
