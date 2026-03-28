@@ -124,6 +124,7 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
         name: check.name,
         hasRepair: check.repair !== undefined,
         repairOnly: check.repairOnly ?? false,
+        scope: check.scope ?? 'device',
         ...result,
       });
     }
