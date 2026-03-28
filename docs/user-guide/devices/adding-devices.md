@@ -1,22 +1,22 @@
 ---
 title: Adding a Device
-description: Register iPod devices with podkit using auto-detection or manual configuration.
+description: Register devices with podkit using auto-detection or manual configuration.
 sidebar:
   order: 4
 ---
 
-Before you can sync music to an iPod, you need to register it with podkit. This page covers automatic and manual device registration.
+Before you can sync music, you need to register your device with podkit. This page covers automatic and manual device registration for both iPods and mass-storage DAPs.
 
 ## Auto-Detection with `podkit device add`
 
 The easiest way to register a device is to plug it in and let podkit detect it:
 
 ```bash
-# With the iPod mounted, auto-detect and register
-podkit device add -d classic
+# Auto-detect and register a connected device
+podkit device add -d mydevice
 
 # Specify mount point explicitly
-podkit device add -d classic --path /Volumes/IPOD
+podkit device add -d mydevice --path /Volumes/DEVICE
 
 # Add with quality settings
 podkit device add -d nano --quality medium --no-artwork
@@ -26,6 +26,20 @@ podkit device add -d classic --audio-quality max --video-quality high
 ```
 
 podkit reads the volume UUID and name from the mounted filesystem and adds the device to your config file. The first device added is automatically set as the default.
+
+### Mass-storage DAPs
+
+For non-iPod devices, specify the device type so podkit knows its capabilities:
+
+```bash
+# Register with a predefined device profile
+podkit device add -d echomini --type echo-mini
+
+# Register any mass-storage DAP with the generic profile
+podkit device add -d mydap --type generic
+```
+
+See [Supported Devices](/devices/supported-devices) for predefined profiles and their capabilities. If your device isn't listed, `generic` works with any mass-storage player — you can [override capabilities](/devices/supported-devices#custom-device-configuration) in your config file for more precise codec and artwork handling.
 
 ## Changing Device Settings
 
@@ -47,7 +61,9 @@ podkit device set -d classic --clear-quality
 
 ## Manual Configuration
 
-You can also add a device by editing `~/.config/podkit/config.toml` directly:
+You can also add a device by editing `~/.config/podkit/config.toml` directly.
+
+### iPod
 
 ```toml
 [devices.classic]
@@ -55,20 +71,38 @@ volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
 ```
 
+### Mass-storage DAP
+
+```toml
+[devices.echomini]
+type = "echo-mini"
+volumeUuid = "WXYZ-9012"
+```
+
+For a device without a predefined profile, use `generic` and specify its capabilities:
+
+```toml
+[devices.mydap]
+type = "generic"
+volumeUuid = "HIJK-3456"
+supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
+artworkMaxResolution = 320
+```
+
 ### Finding the Volume UUID
 
-The easiest way to find your iPod's volume UUID is with the `scan` command:
+The easiest way to find your device's volume UUID is with the `scan` command:
 
 ```bash
 podkit device scan
 ```
 
-This shows the volume name, UUID, size, and mount point for each connected iPod.
+This shows the volume name, UUID, size, and mount point for each connected device.
 
 Alternatively, you can use platform tools directly. On macOS:
 
 ```bash
-diskutil info /Volumes/IPOD | grep "Volume UUID"
+diskutil info /Volumes/DEVICE | grep "Volume UUID"
 ```
 
 On Linux:
@@ -81,12 +115,13 @@ sudo blkid /dev/sdX1
 
 | Option | Description | Required |
 |--------|-------------|----------|
+| `type` | Device type: `ipod`, `echo-mini`, `rockbox`, `generic` | No (auto-detected for iPods) |
 | `volumeUuid` | Filesystem UUID used to identify the device | Yes |
-| `volumeName` | Volume label shown in Finder/file manager | Yes |
+| `volumeName` | Volume label shown in Finder/file manager | No |
 | `quality` | Transcoding quality preset for this device | No |
 | `artwork` | Whether to sync album artwork | No |
 
-The `volumeUuid` uniquely identifies the device regardless of which port or mount point it uses. The `volumeName` is the label shown when the iPod mounts (e.g., "IPOD", "CLASSIC").
+The `volumeUuid` uniquely identifies the device regardless of which port or mount point it uses.
 
 ## Removing a Device
 
@@ -96,10 +131,10 @@ To unregister a device:
 podkit device remove -d classic
 ```
 
-This removes the device entry from your config file. It does not modify anything on the iPod itself.
+This removes the device entry from your config file. It does not modify anything on the device itself.
 
 ## See Also
 
-- [Supported Devices](/devices/supported-devices/) for iPod model compatibility
+- [Supported Devices](/devices/supported-devices) for device profiles and custom configuration
 - [Managing Devices](/user-guide/devices) for working with multiple devices
 - [Mounting and Ejecting](/user-guide/devices/mounting-ejecting) for connecting devices

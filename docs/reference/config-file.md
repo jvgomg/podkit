@@ -187,9 +187,10 @@ path = "/path/to/movies"
 
 ## Devices
 
-Each device is defined under `[devices.<name>]`. Use `podkit device add -d <name>` to auto-detect and register a connected iPod.
+Each device is defined under `[devices.<name>]`. Use `podkit device add -d <name>` to auto-detect and register a connected device.
 
 ```toml
+# iPod — type is auto-detected
 [devices.classic]
 volumeUuid = "ABCD-1234"
 volumeName = "IPOD"
@@ -199,6 +200,19 @@ encoding = "vbr"              # Encoding mode for this device
 transferMode = "fast"         # Transfer mode for this device
 artwork = true
 skipUpgrades = false          # Allow file-replacement upgrades (default)
+
+# Mass-storage DAP — specify type for predefined capabilities
+[devices.echomini]
+type = "echo-mini"
+volumeUuid = "WXYZ-9012"
+quality = "high"
+
+# Generic mass-storage player with custom capabilities
+[devices.mydap]
+type = "generic"
+volumeUuid = "HIJK-3456"
+supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
+artworkMaxResolution = 320
 ```
 
 A minimal device entry only needs the settings you want to override — `volumeUuid` is only required for auto-detection:
@@ -210,7 +224,8 @@ quality = "max"               # Use --device <path> to specify mount point
 
 | Key | Type | Required | Default | Description |
 |-----|------|----------|---------|-------------|
-| `volumeUuid` | string | no | - | Volume UUID for device auto-detection. Required if you want podkit to automatically find your iPod without specifying `--device <path>`. |
+| `type` | string | no | auto-detected | Device type: `ipod`, `echo-mini`, `rockbox`, or `generic`. iPods are auto-detected; mass-storage devices should specify a type. See [Supported Devices](/devices/supported-devices) for predefined profiles. |
+| `volumeUuid` | string | no | - | Volume UUID for device auto-detection. Required if you want podkit to automatically find your device without specifying `--device <path>`. |
 | `volumeName` | string | no | - | Volume name for display |
 | `quality` | string | no | global `quality` | Unified quality preset override for this device |
 | `audioQuality` | string | no | global `audioQuality` | Audio-specific quality override for this device |
@@ -222,6 +237,21 @@ quality = "max"               # Use --device <path> to specify mount point
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
 | `checkArtwork` | boolean | no | global `checkArtwork` | Detect changed artwork for this device |
 | `skipUpgrades` | boolean | no | global `skipUpgrades` | Skip file-replacement upgrades for this device |
+
+### Device Capability Overrides
+
+Mass-storage devices use predefined capability profiles based on their `type`. You can override individual capabilities for devices that differ from their profile, or to configure the `generic` type for your specific hardware:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `supportedAudioCodecs` | string[] | from profile | Audio codecs the device can play natively: `aac`, `alac`, `mp3`, `flac`, `ogg`, `opus`, `wav`, `aiff` |
+| `artworkSources` | string[] | from profile | How the device reads artwork, in priority order (first = preferred): `embedded`, `sidecar`, `database` |
+| `artworkMaxResolution` | integer | from profile | Maximum artwork dimension in pixels (square). podkit resizes artwork to fit. |
+| `supportsVideo` | boolean | from profile | Whether the device supports video playback |
+| `audioNormalization` | string | from profile | Volume normalization mode: `soundcheck` (writes to iPod database), `replaygain` (Rockbox reads tags natively), or `none` (skip normalization). podkit adapts its behavior — hiding normalization UI, skipping soundcheck upgrade detection — based on this value. |
+| `musicDir` | string | `"Music"` | Custom music directory path on the device |
+
+These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation.
 
 ### Per-Device Clean Artists
 
@@ -344,6 +374,11 @@ volumeName = "CLASSIC"
 audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 artwork = true
+
+[devices.echomini]
+type = "echo-mini"
+volumeUuid = "WXYZ-9012"
+quality = "high"
 
 [devices.nano]
 volumeUuid = "EFGH-5678"

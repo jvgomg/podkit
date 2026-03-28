@@ -23,6 +23,7 @@ export default defineConfig({
     '/roadmap/': '/project/roadmap/',
     '/feedback/': '/project/feedback/',
     '/similar-projects/': '/project/similar-projects/',
+    '/devices/other-devices/': '/devices/supported-devices/',
   },
   markdown: {
     remarkPlugins: [remarkBaseUrl({ base }), remarkEmoji],
@@ -53,7 +54,7 @@ export default defineConfig({
         starlightLlmsTxt(llmsTxtConfig),
       ],
       title: 'podkit',
-      description: 'Sync your music collection to iPod devices',
+      description: 'Sync your music collection to portable music players',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/jvgomg/podkit' }],
       editLink: {
         baseUrl: 'https://github.com/jvgomg/podkit/edit/main/',

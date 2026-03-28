@@ -1,24 +1,24 @@
 ---
 title: Artist Transforms
-description: Clean up messy artist lists on your iPod by moving featured artist credits into the track title.
+description: Clean up messy artist lists on your device by moving featured artist credits into the track title.
 sidebar:
   order: 3
 ---
 
-Classic iPods don't use the Album Artist field for navigation — when you browse by Artist, it uses the track-level Artist field. If your music tags tracks as "Daft Punk feat. Pharrell Williams", you end up with dozens of one-off artist entries cluttering your artist list.
+Many portable players browse by the track-level Artist field rather than Album Artist. If your music tags tracks as "Daft Punk feat. Pharrell Williams", you end up with dozens of one-off artist entries cluttering your artist list. This is especially common on classic iPods and mass-storage DAPs that don't support Album Artist navigation.
 
 For the full configuration reference including all recognized patterns, bracket positioning, and edge cases, see the [Clean Artists Transform Reference](/reference/clean-artists).
 
 ## The Clean Artists Feature
 
-The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync. Your source files are never modified.
+The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync. Your source files are never modified. This works on all device types — iPods, mass-storage DAPs, and Rockbox devices.
 
 | | Artist | Title |
 |---|--------|-------|
 | **Before** | Daft Punk feat. Pharrell Williams | Get Lucky |
 | **After** | Daft Punk | Get Lucky (feat. Pharrell Williams) |
 
-Your iPod artist list goes from a mess of one-off entries to a clean, browsable list — and you still see who's featured in the track title.
+Your device's artist list goes from a mess of one-off entries to a clean, browsable list — and you still see who's featured in the track title.
 
 ## Quick Setup
 
@@ -61,7 +61,7 @@ cleanArtists = false
 
 ## Reversibility
 
-Transforms are reversible. If you disable a transform and re-sync, podkit updates the iPod tracks back to their original metadata — without re-copying or re-transcoding the audio files.
+Transforms are reversible. If you disable a transform and re-sync, podkit updates the device tracks back to their original metadata — without re-copying or re-transcoding the audio files.
 
 ## More Options
 

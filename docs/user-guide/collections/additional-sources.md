@@ -15,7 +15,7 @@ Support for using an [iTunes or Apple Music](https://www.apple.com/apple-music/)
 
 ### Plex
 
-Support for syncing music from [Plex](https://www.plex.tv/) media servers is planned. This would allow you to sync your Plex music library directly to your iPod without needing local files. Vote or comment on the [discussion](https://github.com/jvgomg/podkit/discussions/6).
+Support for syncing music from [Plex](https://www.plex.tv/) media servers is planned. This would allow you to sync your Plex music library directly to your device without needing local files. Vote or comment on the [discussion](https://github.com/jvgomg/podkit/discussions/6).
 
 ### Jellyfin
 

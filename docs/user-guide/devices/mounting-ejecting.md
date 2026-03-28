@@ -1,11 +1,11 @@
 ---
 title: Mounting and Ejecting
-description: Mount and safely eject iPod devices with podkit on macOS and Linux, including how iFlash devices are handled.
+description: Mount and safely eject devices with podkit on macOS and Linux, including how iFlash devices are handled.
 sidebar:
   order: 5
 ---
 
-Mounting makes an iPod's filesystem accessible so podkit can read and write to it. Ejecting flushes pending writes and unmounts the volume safely before you disconnect the cable.
+Mounting makes a device's filesystem accessible so podkit can read and write to it. Ejecting flushes pending writes and unmounts the volume safely before you disconnect the cable.
 
 ## When mounting is handled automatically
 
@@ -33,7 +33,7 @@ podkit identifies the device by its `volumeUuid` and mounts it to the expected m
 
 ### Ejecting
 
-Always eject your iPod before disconnecting the cable to avoid database corruption:
+Always eject your device before disconnecting the cable to avoid data corruption:
 
 ```bash
 # Eject the default device
@@ -112,7 +112,7 @@ For the full iFlash troubleshooting guide — including manual workarounds and a
 
 ## Linux
 
-podkit supports mounting and ejecting iPods on Linux (Debian, Ubuntu, Alpine, and other distributions).
+podkit supports mounting and ejecting devices on Linux (Debian, Ubuntu, Alpine, and other distributions).
 
 ### Automatic Mount
 

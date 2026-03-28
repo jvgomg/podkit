@@ -1,12 +1,12 @@
 ---
 title: podkit
-description: Scriptable CLI for iPod sync with automatic transcoding, full metadata preservation, and intelligent duplicate detection.
+description: Scriptable CLI for syncing music to portable players — iPods, DAPs, and more — with automatic transcoding, full metadata preservation, and intelligent duplicate detection.
 template: splash
 sidebar:
   hidden: true
 hero:
-  title: Modern sync for classic iPods.
-  tagline: Keep the stock firmware and ditch the old software. A CLI that makes syncing your iPod a breeze.
+  title: Modern sync for portable music players.
+  tagline: Sync your music collection to iPods, DAPs, and other portable players. Automatic transcoding, clean metadata, and no old software required.
   actions:
     - text: Get Started
       link: /podkit/getting-started/installation
@@ -21,7 +21,7 @@ hero:
 import { Card, CardGrid } from '@astrojs/starlight/components';
 
 :::caution[Beta software]
-podkit is in early development. Things may break and iPod databases may get corrupted during use. **Only use podkit with an iPod you're willing to wipe.** If you're up for that, I'd love your help — [join as a beta tester](https://github.com/jvgomg/podkit/discussions/22) and help shape the project.
+podkit is in early development. Things may break and device databases may get corrupted during use. **Only use podkit with a device you're willing to wipe.** If you're up for that, I'd love your help — [join as a beta tester](https://github.com/jvgomg/podkit/discussions/22) and help shape the project.
 :::
 
 <img src="/podkit/demo.gif" alt="podkit demo — syncing music to an iPod from the terminal" />
@@ -30,16 +30,16 @@ podkit is in early development. Things may break and iPod databases may get corr
 
 <CardGrid>
   <Card title="Clean Artist Browsing" icon="star">
-    No more dozens of "Artist feat. X" cluttering your iPod. The clean artists feature tidies up
+    No more dozens of "Artist feat. X" cluttering your library. The clean artists feature tidies up
     artist names on the fly — your source files stay untouched.
   </Card>
   <Card title="Automatic Transcoding" icon="setting">
     Music and video transcoded on the fly with device-aware quality presets. Keep your high-quality
-    collection — podkit optimises for your iPod.
+    collection — podkit optimises for your device.
   </Card>
   <Card title="Non-Destructive" icon="approve-check-circle">
     Your music collection is never modified. Transforms, transcoding, and format conversion only
-    affect what lands on the iPod.
+    affect what lands on the device.
   </Card>
   <Card title="Incremental Sync" icon="rocket">
     Only new, changed, or removed tracks are touched. Re-syncing a large library takes seconds, not
@@ -49,8 +49,8 @@ podkit is in early development. Things may break and iPod databases may get corr
     Sync from local directories or a Subsonic-compatible server like Navidrome. Define multiple
     collections and sync independently.
   </Card>
-  <Card title="Every Classic iPod" icon="open-book">
-    Stock firmware on all classic iPod models, including modded iPods with iFlash adapters.
+  <Card title="iPods and DAPs" icon="open-book">
+    Classic iPods with stock firmware, Rockbox devices, and mass-storage DAPs like the Snowsky Echo Mini.
   </Card>
 </CardGrid>
 
@@ -71,8 +71,8 @@ podkit collection add -t music -c main --path ~/Music/library
 # Add a video collection
 podkit collection add -t video -c movies --path ~/Movies
 
-# Register your iPod
-podkit device add -d myipod
+# Register your device
+podkit device add -d mydevice
 
 # Mount, sync, and eject
 podkit device mount
@@ -86,15 +86,12 @@ podkit --help
 
 ## Supported Devices
 
-podkit works with iPods that use USB Mass Storage mode with the iTunesDB database format:
+podkit works with two categories of portable player:
 
-- **iPod Classic** — all generations
-- **iPod Video** — 5th and 5.5th generation
-- **iPod Nano** — 1st through 5th generation
-- **iPod Mini** — 1st and 2nd generation
-- **iPod Shuffle** — 1st and 2nd generation
+- **iPods** — all classic models with stock firmware, including iFlash-modded devices
+- **Mass-storage DAPs** — standalone digital audio players like the Snowsky Echo Mini, Rockbox devices, and any USB mass-storage player
 
-Modded iPods with iFlash SD card adapters are fully supported. See the [complete compatibility list](/devices/supported-devices).
+podkit ships with predefined profiles for tested devices and a `generic` type that works with any mass-storage player. See the [complete compatibility list](/devices/supported-devices).
 
 **Not supported:** iOS devices (iPod Touch, iPhone, iPad) use a different sync protocol.
 

@@ -5,17 +5,21 @@ sidebar:
   order: 3
 ---
 
-podkit syncs movies and TV shows from your [video collections](/user-guide/collections) to iPods that support video playback.
+podkit syncs movies and TV shows from your [video collections](/user-guide/collections) to devices that support video playback.
 
 ## Supported Devices
 
-Not all iPods support video. These models can play video:
+Video sync is currently supported on these iPod models:
 
 - **iPod Video** — 5th and 5.5th generation
 - **iPod Classic** — 6th and 7th generation
 - **iPod Nano** — 3rd through 5th generation
 
 See [Supported Devices](/devices/supported-devices) for the full compatibility matrix.
+
+:::note[Mass-storage devices]
+Mass-storage DAPs (Echo Mini, Rockbox, generic) do not support video sync. If you attempt to sync video to one of these devices, podkit will skip the video collections automatically. This is controlled by the `supportsVideo` device capability.
+:::
 
 ## Supported Input Formats
 
