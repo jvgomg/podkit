@@ -1,10 +1,10 @@
 ---
 id: TASK-231
 title: Documentation for mass-storage device support and Echo Mini
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:35'
-updated_date: '2026-03-24 16:11'
+updated_date: '2026-03-28 14:04'
 labels:
   - docs
 milestone: 'Additional Device Support: Echo Mini'
@@ -52,11 +52,11 @@ Update user-facing documentation to cover non-iPod device support. Users should 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Device setup guide written for Echo Mini / mass-storage DAPs
-- [ ] #2 Supported devices page lists device types with formats, artwork, and limitations
-- [ ] #3 Caveats clearly documented (no database, folder structure, sidecar artwork, no smart playlists)
-- [ ] #4 Config reference updated with [[devices]] schema and capability overrides
-- [ ] #5 Getting started guide updated to mention non-iPod support
+- [x] #1 Device setup guide written for Echo Mini / mass-storage DAPs
+- [x] #2 Supported devices page lists device types with formats, artwork, and limitations
+- [x] #3 Caveats clearly documented (no database, folder structure, sidecar artwork, no smart playlists)
+- [x] #4 Config reference updated with [[devices]] schema and capability overrides
+- [x] #5 Getting started guide updated to mention non-iPod support
 - [ ] #6 Shell completions updated for new commands
 <!-- AC:END -->
 
@@ -78,3 +78,40 @@ Update user-facing documentation to cover non-iPod device support. Users should 
 **USB detection details for setup guide:**
 VID 0x071b, PID 0x3203, manufacturer "ECHO MINI"
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Documentation for mass-storage device support
+
+Comprehensive documentation update to integrate mass-storage DAP support across the docs site. The docs now frame podkit as a tool for portable music players broadly — iPods and mass-storage DAPs alike — while calling out device-specific differences where they matter.
+
+### Changes
+
+**Major rewrites:**
+- **Supported Devices page** — restructured from iPod-only to a two-category device hub with mass-storage profiles table (Echo Mini, Rockbox, generic), custom device configuration guide, and "request your device" callout
+- **Landing page** — hero, features, supported devices section, and quick start all reframed for multi-device
+- **Rockbox page** — now presents Rockbox as a first-class device type with native folder-based sync
+- **Quick Start** — device-agnostic flow with tip callout for `--type` usage
+- **Adding a Device** — new mass-storage DAP section with `--type` flag and capability overrides
+- **Managing Devices** — examples include mass-storage device alongside iPods
+
+**Config reference:**
+- Added `type`, `supportedAudioCodecs`, `artworkSources`, `artworkMaxResolution`, `supportsVideo`, `audioNormalization`, `musicDir` capability overrides
+
+**Feature-specific accuracy (verified via code review):**
+- **Artwork**: table shows source type + max resolution per device; `artworkSources` documented as ordered priority list
+- **Audio normalization**: documented as device-aware capability (`soundcheck`/`replaygain`/`none`) with per-mode behavior
+- **Video**: note callout on video page that mass-storage devices don't support video (`supportsVideo: false`)
+- **Clean artists**: confirmed device-agnostic, page updated accordingly
+- **Mount/eject**: works for all device types, iPod-specific language removed
+
+**Other updates:**
+- Deleted `other-devices.md`, added redirect to supported-devices
+- Roadmap: moved mass-storage support to Shipped
+- Device-agnostic language across ~15 pages (syncing, transcoding, collections, etc.)
+
+### Not included
+- GitHub discussion updates (not ready to release)
+- Shell completions docs (AC #6 — separate task, depends on new commands being finalized)
+<!-- SECTION:FINAL_SUMMARY:END -->

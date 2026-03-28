@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-podkit's goal is to get your media onto your iPod at the best possible quality. It only transcodes what it needs to — compatible files are copied as-is, and output quality is never higher than the source.
+podkit's goal is to get your media onto your device at the best possible quality. It only transcodes what it needs to — compatible files are copied as-is, and output quality is never higher than the source.
 
 ## Core Principles
 

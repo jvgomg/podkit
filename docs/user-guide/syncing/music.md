@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-podkit syncs music tracks from your [collections](/user-guide/collections) to your iPod. It handles format conversion automatically — lossless files are transcoded, compatible lossy files are copied directly.
+podkit syncs music tracks from your [collections](/user-guide/collections) to your device. It handles format conversion automatically — lossless files are transcoded, compatible lossy files are copied directly.
 
 ## Supported Audio Formats
 
@@ -29,7 +29,7 @@ podkit preserves all standard metadata through syncing and transcoding:
 - **Core fields:** Title, artist, album, album artist
 - **Track info:** Track number, disc number, year, genre, composer
 - **Technical info:** Duration, bitrate, sample rate
-- **Album artwork:** Embedded artwork is synced to the iPod (see [Artwork](/user-guide/syncing/artwork))
+- **Album artwork:** Embedded artwork is synced to the device (see [Artwork](/user-guide/syncing/artwork))
 
 ### Track Matching
 
@@ -72,10 +72,10 @@ podkit sync -t music --quality medium
 
 ## Listing Music
 
-See what's on your iPod or in your collections:
+See what's on your device or in your collections:
 
 ```bash
-# Music on your iPod (shows stats by default)
+# Music on your device (shows stats by default)
 podkit device music
 
 # List all tracks

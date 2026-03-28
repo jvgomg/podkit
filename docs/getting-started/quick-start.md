@@ -1,16 +1,16 @@
 ---
 title: Quick Start
-description: Get syncing music to your iPod in 5 minutes with podkit.
+description: Get syncing music to your device in 5 minutes with podkit.
 sidebar:
   order: 2
 ---
 
-Get your music on your iPod in 5 minutes. This guide walks you through each step — from first install to hearing your music play.
+Get your music on your device in 5 minutes. This guide walks you through each step — from first install to hearing your music play.
 
 ## Prerequisites
 
 - **podkit installed** — the quickest way is `brew install jvgomg/podkit/podkit` (see [Installation](/getting-started/installation) for other methods)
-- A supported iPod connected to your computer
+- A supported device connected to your computer (iPod, mass-storage DAP, or other portable player — see [Supported Devices](/devices/supported-devices))
 - Music files on your computer (or a Subsonic-compatible server)
 
 :::note[Using Docker?]
@@ -41,19 +41,23 @@ podkit scans this directory for audio files (FLAC, MP3, M4A, WAV, and more) and 
 You can also sync from a **Navidrome** or other Subsonic-compatible server — see [Subsonic Source](/user-guide/collections/subsonic). For video, see [Video Transcoding](/user-guide/transcoding/video). You can add as many collections as you need — see [Media Sources](/user-guide/collections) for an overview.
 :::
 
-## 3. Register Your iPod
+## 3. Register Your Device
 
-1. Connect your iPod and wait for it to mount (it should appear in Finder on macOS)
+1. Connect your device and wait for it to mount
 2. Optionally, preview what's connected:
    ```bash
    podkit device scan
    ```
 3. Register it with podkit:
    ```bash
-   podkit device add -d myipod
+   podkit device add -d mydevice
    ```
 
-podkit auto-detects the connected iPod and saves its identity to your config. Since this is your first device, it's set as the default.
+podkit auto-detects the connected device and saves its identity to your config. Since this is your first device, it's set as the default.
+
+:::tip[Non-iPod devices]
+For mass-storage DAPs like the Snowsky Echo Mini, specify the device type during registration: `podkit device add -d myplayer --type echo-mini`. See [Supported Devices](/devices/supported-devices) for predefined profiles, or use `--type generic` for any mass-storage player.
+:::
 
 You can manage multiple devices with different quality settings — see [Managing Devices](/user-guide/devices) for more.
 
@@ -65,7 +69,7 @@ See what podkit will do before it does anything:
 podkit sync --dry-run
 ```
 
-This shows how many tracks will be added, what needs transcoding (e.g., FLAC to AAC), and estimated size. Nothing is written to your iPod.
+This shows how many tracks will be added, what needs transcoding (e.g., FLAC to AAC), and estimated size. Nothing is written to your device.
 
 ## 5. Sync
 
@@ -75,7 +79,7 @@ When you're happy with the plan:
 podkit sync
 ```
 
-podkit scans your collection, transcodes lossless files if needed (selecting the [best codec your device supports](/user-guide/transcoding/codec-preferences)), copies everything to your iPod, and updates the iPod database. Lossy files that are already device-compatible (MP3, AAC) are copied directly without re-encoding.
+podkit scans your collection, transcodes lossless files if needed (selecting the [best codec your device supports](/user-guide/transcoding/codec-preferences)), copies everything to your device, and updates its library. Lossy files that are already device-compatible (MP3, AAC) are copied directly without re-encoding.
 
 ## 6. Eject and Enjoy
 
@@ -91,7 +95,7 @@ Or combine sync and eject in one step:
 podkit sync --eject
 ```
 
-Disconnect your iPod and enjoy your music!
+Disconnect your device and enjoy your music!
 
 ## Explore More
 

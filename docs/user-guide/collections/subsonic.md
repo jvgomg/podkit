@@ -1,6 +1,6 @@
 ---
 title: Subsonic Source
-description: Sync music from Subsonic-compatible servers like Navidrome, Airsonic, and Gonic to your iPod.
+description: Sync music from Subsonic-compatible servers like Navidrome, Airsonic, and Gonic to your device.
 sidebar:
   order: 3
 ---
@@ -70,7 +70,7 @@ Keychain and secret manager integration is on the [roadmap](/project/roadmap/). 
 
 ## Sound Check / ReplayGain
 
-Servers that implement the [OpenSubsonic](https://opensubsonic.netlify.app/) extensions (Navidrome, Gonic, LMS) expose ReplayGain data via the API. podkit reads this automatically and writes Sound Check values to the iPod database during sync — no extra configuration needed.
+Servers that implement the [OpenSubsonic](https://opensubsonic.netlify.app/) extensions (Navidrome, Gonic, LMS) expose ReplayGain data via the API. podkit reads this automatically and handles normalization based on your device's `audioNormalization` capability — writing Sound Check values on iPods, preserving existing ReplayGain tags on Rockbox, or skipping normalization on devices set to `none`. No extra configuration needed. See [Sound Check](/user-guide/syncing/sound-check) for details.
 
 Classic Subsonic and Airsonic servers do not expose ReplayGain data. Tracks synced from these servers will have no Sound Check adjustment.
 
@@ -78,7 +78,7 @@ See [Sound Check](/user-guide/syncing/sound-check) for more details.
 
 ## Artwork
 
-Album artwork embedded in audio files is automatically transferred to the iPod during sync.
+Album artwork embedded in audio files is automatically transferred to your device during sync.
 
 With `--check-artwork` enabled, podkit fetches cover art from the server to detect artwork changes — including artwork being added, removed, or replaced with a different image. Navidrome generates placeholder images for albums without real artwork; podkit detects and filters these automatically.
 

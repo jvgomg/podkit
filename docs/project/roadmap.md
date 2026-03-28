@@ -63,12 +63,6 @@ These features are on the roadmap but not yet scheduled. Votes and comments help
 |---------|-------------|------------|
 | **Windows** | Full Windows platform support | [#8](https://github.com/jvgomg/podkit/discussions/8) |
 
-### Device Support
-
-| Feature | Description | Discussion |
-|---------|-------------|------------|
-| **Rockbox and non-iTunesDB devices** | Folder-based sync mode for Rockbox firmware and standalone DAPs | [#34](https://github.com/jvgomg/podkit/discussions/34) |
-
 ### Device Management
 
 | Feature | Description | Discussion |
@@ -104,6 +98,7 @@ Features that have been completed and released.
 | **Docker distribution** | Official Docker image (`ghcr.io/jvgomg/podkit`) for linux/amd64 and linux/arm64, with musl release binaries | [#12](https://github.com/jvgomg/podkit/discussions/12) |
 | **Linux mount/eject** | Native mount and eject commands for Linux (Debian, Ubuntu, Alpine, and more) | [#9](https://github.com/jvgomg/podkit/discussions/9) |
 | **Homebrew distribution** | Install podkit via `brew install jvgomg/podkit/podkit` with automatic dependency management | [#19](https://github.com/jvgomg/podkit/discussions/19) |
+| **Mass-storage device support** | Folder-based sync for Rockbox firmware, standalone DAPs (Snowsky Echo Mini), and generic mass-storage players | [#34](https://github.com/jvgomg/podkit/discussions/34) |
 
 ## Help Shape podkit
 
