@@ -35,6 +35,7 @@ import type {
   DefaultsConfig,
   DeviceType,
   AudioCodec,
+  AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
 } from './types.js';
@@ -925,6 +926,21 @@ function parseDevices(
       device.supportsVideo = rawDevice.supportsVideo;
     }
 
+    // Parse optional audioNormalization
+    if (rawDevice.audioNormalization !== undefined) {
+      const valid = ['soundcheck', 'replaygain', 'none'];
+      if (
+        typeof rawDevice.audioNormalization !== 'string' ||
+        !valid.includes(rawDevice.audioNormalization)
+      ) {
+        throw new Error(
+          `Invalid audioNormalization value "${rawDevice.audioNormalization}" in [devices.${name}]. ` +
+            `Must be one of: ${valid.join(', ')}.`
+        );
+      }
+      device.audioNormalization = rawDevice.audioNormalization as AudioNormalizationMode;
+    }
+
     // Parse optional musicDir
     if (rawDevice.musicDir !== undefined) {
       if (typeof rawDevice.musicDir !== 'string' || rawDevice.musicDir.trim().length === 0) {
@@ -943,6 +959,7 @@ function parseDevices(
         'artworkSources',
         'supportedAudioCodecs',
         'supportsVideo',
+        'audioNormalization',
         'musicDir',
       ] as const;
       const presentFields = massStorageFields.filter((f) => device[f] !== undefined);

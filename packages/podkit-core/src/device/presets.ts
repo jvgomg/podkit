@@ -22,21 +22,24 @@ export type DeviceTypeId = 'echo-mini' | 'rockbox' | 'generic';
 export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
   'echo-mini': {
     artworkSources: ['embedded'],
-    artworkMaxResolution: 600,
+    artworkMaxResolution: 127,
     supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
     supportsVideo: false,
+    audioNormalization: 'none',
   },
   rockbox: {
     artworkSources: ['sidecar', 'embedded'],
     artworkMaxResolution: 320,
     supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
     supportsVideo: false,
+    audioNormalization: 'replaygain',
   },
   generic: {
     artworkSources: ['embedded'],
     artworkMaxResolution: 500,
     supportedAudioCodecs: ['aac', 'mp3', 'flac'],
     supportsVideo: false,
+    audioNormalization: 'none',
   },
 };
 
@@ -76,5 +79,6 @@ export function resolveDeviceCapabilities(
     artworkMaxResolution: overrides.artworkMaxResolution ?? preset.artworkMaxResolution,
     supportedAudioCodecs: overrides.supportedAudioCodecs ?? preset.supportedAudioCodecs,
     supportsVideo: overrides.supportsVideo ?? preset.supportsVideo,
+    audioNormalization: overrides.audioNormalization ?? preset.audioNormalization,
   };
 }

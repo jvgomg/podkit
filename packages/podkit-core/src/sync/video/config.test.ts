@@ -155,6 +155,7 @@ describe('resolveVideoConfig', () => {
         artworkMaxResolution: 320,
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: false,
+        audioNormalization: 'soundcheck',
       };
 
       const resolved = resolveVideoConfig({ capabilities });
@@ -167,6 +168,7 @@ describe('resolveVideoConfig', () => {
         artworkMaxResolution: 320,
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: true,
+        audioNormalization: 'soundcheck',
       };
 
       const resolved = resolveVideoConfig({ capabilities });

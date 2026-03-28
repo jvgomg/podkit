@@ -24,6 +24,7 @@ function makeCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCa
     artworkMaxResolution: 320,
     supportedAudioCodecs: [],
     supportsVideo: false,
+    audioNormalization: 'soundcheck',
     ...overrides,
   };
 }
@@ -521,6 +522,53 @@ describe('MusicHandler', () => {
       const device = makeDeviceTrack({ filetype: 'AAC audio file' });
       const reasons = h.detectUpdates(source, device);
       expect(reasons[0]).toBe('force-transcode');
+    });
+  });
+
+  describe('detectUpdates with audioNormalization', () => {
+    test('filters out soundcheck-update when audioNormalization is none', () => {
+      const h = createMusicHandler(
+        makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'none' }) })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        soundcheck: 5000,
+      });
+      const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).not.toContain('soundcheck-update');
+    });
+
+    test('keeps soundcheck-update when audioNormalization is soundcheck', () => {
+      const h = createMusicHandler(
+        makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'soundcheck' }) })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        soundcheck: 5000,
+      });
+      const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).toContain('soundcheck-update');
+    });
+
+    test('keeps soundcheck-update when audioNormalization is replaygain', () => {
+      const h = createMusicHandler(
+        makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'replaygain' }) })
+      );
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        soundcheck: 5000,
+      });
+      const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).toContain('soundcheck-update');
     });
   });
 

@@ -22,6 +22,15 @@ export type DeviceArtworkSource = 'database' | 'embedded' | 'sidecar';
 /** Audio codecs a device can play natively */
 export type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'ogg' | 'opus' | 'wav' | 'aiff';
 
+/**
+ * Audio normalization mode the device supports.
+ *
+ * - `'soundcheck'` — Apple Sound Check (iPod; stored in device database)
+ * - `'replaygain'` — ReplayGain tags (Rockbox, some DAPs; read from file tags)
+ * - `'none'` — Device does not support volume normalization
+ */
+export type AudioNormalizationMode = 'soundcheck' | 'replaygain' | 'none';
+
 /** Device capabilities for sync engine decisions */
 export interface DeviceCapabilities {
   /** Where the device reads artwork from, ordered by priority (first = preferred) */
@@ -32,4 +41,6 @@ export interface DeviceCapabilities {
   supportedAudioCodecs: AudioCodec[];
   /** Whether the device supports video playback */
   supportsVideo: boolean;
+  /** Audio normalization mode the device supports */
+  audioNormalization: AudioNormalizationMode;
 }

@@ -16,6 +16,7 @@ export type {
   ShowLanguageConfig,
   VideoTransformsConfig,
   AudioCodec,
+  AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
 } from '@podkit/core';
@@ -44,6 +45,7 @@ import type {
   VideoQualityPreset,
   VideoTransformsConfig,
   AudioCodec,
+  AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
 } from '@podkit/core';
@@ -218,6 +220,8 @@ export interface DeviceConfig {
   supportedAudioCodecs?: AudioCodec[];
   /** Override whether the device supports video playback */
   supportsVideo?: boolean;
+  /** Override audio normalization mode ('soundcheck', 'replaygain', 'none') */
+  audioNormalization?: AudioNormalizationMode;
   /** Override the music directory name on the device (default: "Music") */
   musicDir?: string;
 }
@@ -330,6 +334,7 @@ export interface PodkitConfig {
     artworkSources?: DeviceArtworkSource[];
     supportedAudioCodecs?: AudioCodec[];
     supportsVideo?: boolean;
+    audioNormalization?: AudioNormalizationMode;
     musicDir?: string;
   };
 }
@@ -448,6 +453,7 @@ export interface ConfigFileDevice {
   artworkSources?: string[];
   supportedAudioCodecs?: string[];
   supportsVideo?: boolean;
+  audioNormalization?: string;
   musicDir?: string;
 }
 

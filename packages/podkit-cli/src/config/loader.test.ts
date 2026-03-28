@@ -1033,6 +1033,55 @@ musicDir = ""
 
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid musicDir.*non-empty string/);
       });
+
+      it('parses audioNormalization on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+audioNormalization = "replaygain"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.audioNormalization).toBe('replaygain');
+      });
+
+      it('rejects invalid audioNormalization value', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+audioNormalization = "invalid"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Invalid audioNormalization value "invalid"/
+        );
+      });
+
+      it('rejects audioNormalization on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+audioNormalization = "none"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*audioNormalization.*only valid for mass-storage/
+        );
+      });
     });
 
     describe('defaults', () => {

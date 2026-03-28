@@ -218,6 +218,11 @@ export class MusicHandler implements ContentTypeHandler<
 
     let reasons = detectUpgrades(source, device) as UpdateReason[];
 
+    // When the device doesn't support audio normalization, soundcheck updates are meaningless
+    if (this.config.audioNormalization === 'none') {
+      reasons = reasons.filter((r) => r !== 'soundcheck-update');
+    }
+
     // When transcoding is active, lossless source → lossy iPod is expected
     // ONLY if the iPod track is already in the target format (AAC).
     // If the iPod track is MP3 (a compatible-lossy copy from before the source
