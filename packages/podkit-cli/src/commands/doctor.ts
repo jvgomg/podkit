@@ -34,6 +34,8 @@ import { existsSync } from '../utils/fs.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
+import { STAGE_DISPLAY_NAMES } from '@podkit/core';
+import type { ReadinessStageResult, ReadinessResult } from '@podkit/core';
 
 // ── Output types ────────────────────────────────────────────────────────────
 
@@ -52,6 +54,15 @@ interface DoctorOutput {
   mountPoint: string;
   deviceModel: string;
   deviceType: 'ipod' | 'mass-storage';
+  readiness?: {
+    level: string;
+    stages: Array<{
+      stage: string;
+      status: 'pass' | 'fail' | 'warn' | 'skip';
+      summary: string;
+      details?: Record<string, unknown>;
+    }>;
+  };
   checks: DoctorCheckOutput[];
 }
 
@@ -238,6 +249,36 @@ export const doctorCommand = new Command('doctor')
     await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
   });
 
+// ── Readiness display helpers ────────────────────────────────────────────────
+
+function printReadinessStages(out: OutputContext, stages: ReadinessStageResult[]): void {
+  for (const stage of stages) {
+    const marker = statusSymbol(stage.status);
+    const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
+    out.print(`  ${marker} ${name}`);
+
+    // Show detail line for certain stages
+    if (stage.stage === 'mount' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.stage === 'mount' && stage.status === 'warn') {
+      out.print(`    ${stage.details?.mountPoint} (read-only)`);
+    } else if (stage.stage === 'sysinfo' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.stage === 'database' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (
+      stage.status === 'fail' &&
+      stage.stage !== 'usb' &&
+      stage.stage !== 'partition' &&
+      stage.stage !== 'filesystem'
+    ) {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.status === 'skip') {
+      out.print(`    ${stage.summary}`);
+    }
+  }
+}
+
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
 async function runDoctorDiagnostics(
@@ -277,32 +318,91 @@ async function runDoctorDiagnostics(
     return;
   }
 
-  // iPod device: open database and run checks
-  let opened: Awaited<ReturnType<typeof openDevice>>;
-  try {
-    opened = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
-  } catch (err) {
-    out.error(err instanceof Error ? err.message : 'Failed to open device');
-    process.exitCode = 1;
-    return;
+  // ── Phase 1: Readiness checks ──────────────────────────────────────────
+
+  // Build a PlatformDeviceInfo for the readiness pipeline.
+  // Try to find the real device info from the platform device manager first,
+  // fall back to a minimal constructed info if not found.
+  const manager = core.getDeviceManager();
+  let deviceInfo: import('@podkit/core').PlatformDeviceInfo | undefined;
+
+  if (manager.isSupported) {
+    try {
+      const ipods = await manager.findIpodDevices();
+      deviceInfo = ipods.find((d) => d.mountPoint === devicePath);
+    } catch {
+      // Platform scanning not available — fall back to constructed info
+    }
   }
 
-  try {
-    const report = await core.runDiagnostics({
+  if (!deviceInfo) {
+    deviceInfo = {
+      identifier: 'unknown',
+      volumeName: basename(devicePath),
+      volumeUuid: '',
+      size: 0,
+      isMounted: true,
       mountPoint: devicePath,
-      deviceType: 'ipod',
-      db: opened.ipod,
-      deviceModel: opened.ipod?.getInfo().device.modelName ?? undefined,
-    });
+    };
+  }
 
-    const getDiagnosticCheck = core.getDiagnosticCheck;
+  let readinessResult: ReadinessResult | undefined;
+  try {
+    readinessResult = await core.checkReadiness({ device: deviceInfo });
+  } catch {
+    // Readiness check failed — proceed without it
+  }
 
-    const output: DoctorOutput = {
-      healthy: report.healthy,
-      mountPoint: report.mountPoint,
-      deviceModel: report.deviceModel,
-      deviceType: report.deviceType,
-      checks: report.checks.map((c) => ({
+  // Determine if the database is available from readiness results
+  const dbStage = readinessResult?.stages.find((s) => s.stage === 'database');
+  const dbAvailable = dbStage?.status === 'pass';
+
+  // ── Phase 2: Database health checks (conditional) ──────────────────────
+
+  let opened: Awaited<ReturnType<typeof openDevice>> | undefined;
+  let report: import('@podkit/core').DiagnosticReport | undefined;
+
+  if (dbAvailable) {
+    try {
+      opened = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
+    } catch {
+      // Failed to open device — we'll show readiness results and skip DB checks
+    }
+
+    if (opened) {
+      try {
+        report = await core.runDiagnostics({
+          mountPoint: devicePath,
+          deviceType: 'ipod',
+          db: opened.ipod,
+          deviceModel: opened.ipod?.getInfo().device.modelName ?? undefined,
+        });
+      } catch {
+        // Diagnostics failed — we'll show readiness results and skip DB checks
+      }
+    }
+  }
+
+  // ── Build output ───────────────────────────────────────────────────────
+
+  const deviceModel =
+    report?.deviceModel ??
+    (readinessResult?.summary?.modelName ? readinessResult.summary.modelName : 'Unknown');
+
+  const readinessOutput = readinessResult
+    ? {
+        level: readinessResult.level,
+        stages: readinessResult.stages.map((s) => ({
+          stage: s.stage,
+          status: s.status,
+          summary: s.summary,
+          details: s.details,
+        })),
+      }
+    : undefined;
+
+  const checksOutput: DoctorCheckOutput[] = report
+    ? report.checks.map((c) => ({
         id: c.id,
         name: c.name,
         status: c.status,
@@ -310,11 +410,26 @@ async function runDoctorDiagnostics(
         repairable: c.repairable,
         details: c.details,
         docsUrl: c.docsUrl,
-      })),
-    };
+      }))
+    : [];
 
-    // CSV format: dump orphan file list and exit
-    if (options.format === 'csv') {
+  // Healthy = readiness OK + all DB checks pass
+  const readinessHealthy = !readinessResult || readinessResult.level === 'ready';
+  const dbHealthy = report ? report.healthy : dbAvailable !== false || !readinessResult;
+  const healthy = readinessHealthy && dbHealthy;
+
+  const output: DoctorOutput = {
+    healthy,
+    mountPoint: devicePath,
+    deviceModel,
+    deviceType: 'ipod',
+    readiness: readinessOutput,
+    checks: checksOutput,
+  };
+
+  // CSV format: dump orphan file list and exit
+  if (options.format === 'csv') {
+    if (report) {
       const orphanCheck = report.checks.find((c) => c.id === 'orphan-files');
       const orphans = (orphanCheck?.details as Record<string, unknown>)?.orphans as
         | Array<{ path: string; size: number }>
@@ -325,13 +440,39 @@ async function runDoctorDiagnostics(
           out.stdout(`${escapeCsvField(o.path)},${o.size}`);
         }
       }
-      return;
+    }
+    opened?.ipod?.close();
+    return;
+  }
+
+  const getDiagnosticCheck = core.getDiagnosticCheck;
+
+  out.result<DoctorOutput>(output, () => {
+    out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
+
+    // ── Phase 1 output: Device Readiness ──
+    if (readinessResult) {
+      out.newline();
+      out.print('Device Readiness');
+      printReadinessStages(out, readinessResult.stages);
     }
 
-    out.result<DoctorOutput>(output, () => {
-      out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
-      out.newline();
+    // ── Phase 2 output: Database Health ──
+    out.newline();
+    out.print('Database Health');
 
+    if (!report) {
+      // DB not available — show skip message
+      if (readinessResult && !dbAvailable) {
+        out.print('  Skipped \u2014 device database is not available.');
+        out.print('  Run `podkit device init` to initialize the iPod database.');
+      } else if (!readinessResult) {
+        // No readiness results and no report — something went wrong
+        out.print('  Skipped \u2014 could not run database health checks.');
+      } else {
+        out.print('  Skipped \u2014 could not open the device database.');
+      }
+    } else {
       for (const check of report.checks) {
         // Skip repair-only checks in diagnostic output (they have no detection logic)
         if (check.repairOnly) continue;
@@ -347,13 +488,13 @@ async function runDoctorDiagnostics(
           if (d.totalEntries !== undefined) {
             const total = (d.totalEntries as number).toLocaleString();
             const corrupt = (d.corruptEntries as number).toLocaleString();
-            const healthy = (d.healthyEntries as number).toLocaleString();
+            const healthyEntries = (d.healthyEntries as number).toLocaleString();
             const pct = d.corruptPercent;
 
             out.print(
               `    Corrupt:      ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
             );
-            out.print(`    Healthy:      ${healthy} entries with valid offsets`);
+            out.print(`    Healthy:      ${healthyEntries} entries with valid offsets`);
           }
 
           out.newline();
@@ -391,21 +532,31 @@ async function runDoctorDiagnostics(
           out.print(`    More info: ${check.docsUrl}`);
         }
       }
-
-      out.newline();
-      if (report.healthy) {
-        out.success('All checks passed.');
-      } else {
-        const failCount = report.checks.filter((c) => c.status === 'fail').length;
-        out.error(`${failCount} check${failCount === 1 ? '' : 's'} failed.`);
-      }
-    });
-
-    if (!report.healthy) {
-      process.exitCode = 1;
     }
-  } finally {
-    opened.ipod?.close();
+
+    // ── Summary line ──
+    out.newline();
+    if (healthy) {
+      out.success('All checks passed.');
+    } else {
+      // Count issues: readiness failures + DB check failures
+      let issueCount = 0;
+      if (readinessResult) {
+        issueCount += readinessResult.stages.filter((s) => s.status === 'fail').length;
+      }
+      if (report) {
+        issueCount += report.checks.filter((c) => c.status === 'fail' && !c.repairOnly).length;
+      }
+      // Ensure at least 1 if unhealthy
+      if (issueCount === 0) issueCount = 1;
+      out.error(`${issueCount} issue${issueCount === 1 ? '' : 's'} found.`);
+    }
+  });
+
+  opened?.ipod?.close();
+
+  if (!healthy) {
+    process.exitCode = 1;
   }
 }
 

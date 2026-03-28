@@ -2282,3 +2282,31 @@ export class MassStorageTrack {
 export class IpodDeviceAdapter {
   constructor(_ipod: any) {}
 }
+
+// ── Device readiness (mock) ─────────────────────────────────────────────────
+
+export const STAGE_DISPLAY_NAMES: Record<string, string> = {
+  usb: 'USB Connection',
+  partition: 'Partition Table',
+  filesystem: 'Filesystem',
+  mount: 'Mounted',
+  sysinfo: 'SysInfo',
+  database: 'Database',
+};
+
+export async function checkReadiness(_input: any): Promise<any> {
+  return { level: 'ready', stages: [], summary: { trackCount: 0 } };
+}
+
+export async function discoverUsbIpods(): Promise<any[]> {
+  return [];
+}
+
+export function createUsbOnlyReadinessResult(_device: any): any {
+  return { level: 'needs-partition', stages: [] };
+}
+
+export function interpretError(error: Error | string): any {
+  const msg = typeof error === 'string' ? error : error.message;
+  return { explanation: msg, rawMessage: msg };
+}

@@ -9,6 +9,22 @@ Solutions for frequently encountered problems with podkit.
 
 ## Device Issues
 
+### Diagnosing device problems
+
+If something isn't working, start with `podkit device scan`. It runs a full readiness check and tells you exactly where the problem is:
+
+```bash
+podkit device scan
+```
+
+Each of the six stages (USB Connection, Partition Table, Filesystem, Mounted, SysInfo, Database) is shown with a ✓ or ✗. The readiness level at the end tells you what to do next. See [Device Readiness Levels](/reference/cli-commands#device-readiness-levels) for the full reference.
+
+To generate a report you can share for support:
+
+```bash
+podkit device scan --report
+```
+
 ### "iPod not found" or "Device path not found"
 
 **Symptoms:** podkit can't detect your iPod
@@ -18,19 +34,25 @@ Solutions for frequently encountered problems with podkit.
 2. Run `podkit device scan` to check if podkit can see the iPod
 3. Check the mount point: `ls /Volumes/` (macOS) or `lsblk` (Linux)
 4. Try specifying the path directly: `podkit sync --device /Volumes/IPOD`
-5. On macOS with large iFlash cards, see [macOS Mounting Issues](/troubleshooting/macos-mounting)
+5. If the device is detected but not mounted, run `podkit device scan --mount` to auto-mount it
+6. On macOS with large iFlash cards, see [macOS Mounting Issues](/troubleshooting/macos-mounting)
 
 ### "Cannot read iPod database"
 
 **Symptoms:** iPod is mounted but podkit can't read it
 
 **Solutions:**
-1. The iPod may need initialization. If it's a fresh iPod or was recently restored:
+1. Run `podkit device scan` — it will show a readiness level and suggest the correct action
+2. If the device needs initialization (`Needs init`):
    ```bash
-   podkit device init --device /Volumes/IPOD
+   podkit device init
    ```
-2. Check if the iPod_Control folder exists: `ls /Volumes/IPOD/iPod_Control/`
-3. Try restoring the iPod with iTunes/Finder first
+3. If the database is corrupt (`Needs repair`):
+   ```bash
+   podkit device reset
+   ```
+4. Check if the iPod_Control folder exists: `ls /Volumes/IPOD/iPod_Control/`
+5. Try restoring the iPod with iTunes/Finder first
 
 ### "Unknown" Model Detection
 
@@ -43,6 +65,19 @@ Solutions for frequently encountered problems with podkit.
    echo "ModelNumStr: MA147" > /Volumes/IPOD/iPod_Control/Device/SysInfo
    ```
 3. See [iPod Internals](/devices/ipod-internals) for model number reference
+
+### USB / communication errors
+
+If `podkit device scan` shows a hardware error, or you see errno codes in verbose output:
+
+| Error code | Meaning | What to try |
+|-----------|---------|------------|
+| errno 71 (EPROTO) | Communication protocol failure | Reconnect the device; try a different cable or USB port |
+| errno 13 (EACCES) | Permission denied | Run with `sudo`, or check that your user has access to the device |
+| errno 19 (ENODEV) | Device not found | Device may have disconnected during the command; reconnect and retry |
+| errno 5 (EIO) | I/O error | Possible hardware or cable fault; try a different cable |
+
+For EPROTO errors specifically: unplug the iPod, wait a few seconds, then reconnect. If the error persists on multiple cables and ports, the device connector may need cleaning.
 
 ## Dependency Issues
 
@@ -240,3 +275,5 @@ podkit device --help    # Device command help
 - [macOS Mounting Issues](/troubleshooting/macos-mounting) - iFlash mounting problems
 - [Supported Devices](/devices/supported-devices) - Device compatibility
 - [iPod Internals](/devices/ipod-internals) - Technical details
+- [Device Readiness Levels](/reference/cli-commands#device-readiness-levels) - What each readiness level means and how to resolve it
+- [iPod Health Checks](/user-guide/devices/doctor) - Using `podkit doctor` for database diagnostics

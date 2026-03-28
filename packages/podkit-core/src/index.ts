@@ -561,6 +561,31 @@ export {
   stripPartitionSuffix,
 } from './device/index.js';
 
+// Device readiness pipeline
+export type {
+  ReadinessStage,
+  ReadinessStageResult,
+  ReadinessLevel,
+  ReadinessResult,
+  ReadinessInput,
+} from './device/index.js';
+export {
+  checkReadiness,
+  checkIpodStructure,
+  checkSysInfo,
+  checkDatabase,
+  createUsbOnlyReadinessResult,
+  STAGE_DISPLAY_NAMES,
+} from './device/index.js';
+
+// USB discovery
+export type { UsbDiscoveredDevice } from './device/index.js';
+export { discoverUsbIpods } from './device/index.js';
+
+// OS error code interpreter
+export type { InterpretedError } from './device/index.js';
+export { interpretError } from './device/index.js';
+
 // Sound Check (volume normalization)
 export type { SoundCheckResult } from './metadata/soundcheck.js';
 export {
