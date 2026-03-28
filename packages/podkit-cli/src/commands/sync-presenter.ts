@@ -39,6 +39,10 @@ interface ResolvedCollection {
 export interface MusicContentConfig {
   type: 'music';
   effectiveTransforms: TransformsConfig;
+  /** Why the cleanArtists transform is in its current state (capability gating) */
+  cleanArtistsResolutionReason?: import('./transform-warnings.js').CleanArtistsResolutionReason;
+  /** Transform warnings to display */
+  transformWarnings?: import('./transform-warnings.js').TransformWarning[];
   effectiveQuality: QualityPreset;
   effectiveEncoding: EncodingMode | undefined;
   effectiveTransferMode: TransferMode | undefined;

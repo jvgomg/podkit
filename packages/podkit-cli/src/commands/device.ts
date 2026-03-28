@@ -310,6 +310,7 @@ export interface DeviceInfoOutput {
     videoQuality?: string;
     artwork?: boolean;
     transforms?: Record<string, unknown>;
+    transformWarnings?: Array<{ type: string; message: string }>;
     isDefault: boolean;
   };
   status?: {
@@ -1878,6 +1879,41 @@ const infoSubcommand = new Command('info')
       databaseErrorIsUnexpected = true;
     }
 
+    // Compute transform warnings for JSON output
+    let deviceTransformWarnings: Array<{ type: string; message: string }> | undefined;
+    if (
+      device &&
+      isMassStorageDevice(device.type) &&
+      resolvedDeviceCapabilities &&
+      device.transforms?.cleanArtists
+    ) {
+      const { resolveCleanArtistsTransform, computeTransformWarnings } =
+        await import('./transform-warnings.js');
+      const deviceCleanArtists = device.transforms.cleanArtists as Partial<
+        import('@podkit/core').CleanArtistsConfig
+      >;
+      const effectiveTransforms: import('@podkit/core').TransformsConfig = {
+        cleanArtists: {
+          ...podkitConfig.transforms.cleanArtists,
+          ...deviceCleanArtists,
+        },
+      };
+      const resolution = resolveCleanArtistsTransform(
+        effectiveTransforms,
+        resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+        true
+      );
+      const hasCapabilityOverride = device.supportsAlbumArtistBrowsing !== undefined;
+      const warnings = computeTransformWarnings(
+        resolution,
+        resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+        hasCapabilityOverride
+      );
+      if (warnings.length > 0) {
+        deviceTransformWarnings = warnings.map((w) => ({ type: w.type, message: w.message }));
+      }
+    }
+
     out.result<DeviceInfoOutput>(
       {
         success: true,
@@ -1891,6 +1927,7 @@ const infoSubcommand = new Command('info')
               videoQuality: device.videoQuality,
               artwork: device.artwork,
               transforms: device.transforms as unknown as Record<string, unknown> | undefined,
+              transformWarnings: deviceTransformWarnings,
               isDefault,
             }
           : undefined,
@@ -2073,6 +2110,13 @@ const infoSubcommand = new Command('info')
 
               const detailStr = details.length > 0 ? ` (${details.join(', ')})` : '';
               out.print(`    ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
+            }
+          }
+
+          // Show transform warnings (computed before out.result for JSON)
+          if (deviceTransformWarnings) {
+            for (const warning of deviceTransformWarnings) {
+              out.warn(warning.message);
             }
           }
 
