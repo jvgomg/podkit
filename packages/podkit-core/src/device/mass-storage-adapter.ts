@@ -40,6 +40,7 @@ import {
   type MassStorageManifest,
 } from './mass-storage-utils.js';
 import { isVideoMediaType } from '../ipod/video.js';
+import { CODEC_METADATA } from '../transcode/codecs.js';
 import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';
 
 // =============================================================================
@@ -432,7 +433,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   addTrack(input: DeviceTrackInput): MassStorageTrack {
-    const ext = input.filetype ? `.${input.filetype}` : '.mp3';
+    const ext = input.filetype ? resolveFileExtension(input.filetype) : '.mp3';
 
     // Route video tracks to Video/ directory, music to Music/
     const isVideo = input.mediaType !== undefined && isVideoMediaType(input.mediaType);
@@ -556,21 +557,71 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
   replaceTrackFile(track: MassStorageTrack, newFilePath: string): MassStorageTrack {
     const absolutePath = path.join(this.mountPoint, track.filePath);
+    const newExt = path.extname(newFilePath).toLowerCase();
+    const oldExt = path.extname(track.filePath).toLowerCase();
 
-    // Copy the new file over the existing one
-    const dir = path.dirname(absolutePath);
+    let targetAbsolutePath: string;
+    let targetRelativePath: string;
+
+    if (newExt !== oldExt) {
+      // Extension changed (codec change) — need a new path
+      const newRelPath = track.filePath.replace(/\.[^.]+$/, newExt);
+
+      targetRelativePath = newRelPath;
+      targetAbsolutePath = path.join(this.mountPoint, targetRelativePath);
+
+      // Deduplicate if there's a collision
+      if (this.allocatedPaths.has(targetRelativePath) || fs.existsSync(targetAbsolutePath)) {
+        const parsed = path.parse(targetRelativePath);
+        let counter = 1;
+        do {
+          targetRelativePath = path.join(parsed.dir, `${parsed.name}-${counter}${parsed.ext}`);
+          targetAbsolutePath = path.join(this.mountPoint, targetRelativePath);
+          counter++;
+        } while (this.allocatedPaths.has(targetRelativePath) || fs.existsSync(targetAbsolutePath));
+      }
+    } else {
+      // Same extension — replace in place (existing behavior)
+      targetRelativePath = track.filePath;
+      targetAbsolutePath = absolutePath;
+    }
+
+    // Copy the new file to the target path
+    const dir = path.dirname(targetAbsolutePath);
     fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(newFilePath, absolutePath);
+    fs.copyFileSync(newFilePath, targetAbsolutePath);
 
-    // Update size from the new file
-    const stats = fs.statSync(absolutePath);
+    // If path changed, delete the old file and update bookkeeping
+    if (targetRelativePath !== track.filePath) {
+      try {
+        fs.unlinkSync(absolutePath);
+      } catch {
+        /* old file may not exist */
+      }
 
-    // Derive filetype from the new file's extension
-    const newExt = path.extname(newFilePath).slice(1).toLowerCase();
+      // Update allocatedPaths
+      this.allocatedPaths.delete(track.filePath);
+      this.allocatedPaths.add(targetRelativePath);
+
+      // Update managedFiles
+      this.managedFiles.delete(track.filePath);
+      this.managedFiles.add(targetRelativePath);
+
+      // Update pendingCommentWrites if keyed on old path
+      if (this.pendingCommentWrites.has(track.filePath)) {
+        const comment = this.pendingCommentWrites.get(track.filePath)!;
+        this.pendingCommentWrites.delete(track.filePath);
+        this.pendingCommentWrites.set(targetRelativePath, comment);
+      }
+    }
+
+    // Update file stats
+    const stats = fs.statSync(targetAbsolutePath);
+    const derivedExt = path.extname(newFilePath).slice(1).toLowerCase();
 
     const updated = new MassStorageTrack({
       mountPoint: this.mountPoint,
-      filePath: track.filePath,
+      filePath: targetRelativePath,
       title: track.title,
       artist: track.artist,
       album: track.album,
@@ -586,7 +637,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       bitrate: track.bitrate,
       sampleRate: track.sampleRate,
       size: stats.size,
-      filetype: newExt || track.filetype,
+      filetype: derivedExt || track.filetype,
       soundcheck: track.soundcheck,
       hasArtwork: track.hasArtwork,
       hasFile: true,
@@ -595,7 +646,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       managed: track.managed,
     });
 
-    // Replace in our track list
+    // Replace in our track list (use old filePath to find the entry)
     const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
     if (index >= 0) {
       this.tracks[index] = updated;
@@ -605,7 +656,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // to restore it — if the executor sets a new sync tag via updateTrack()
     // before save(), that will overwrite this entry in the pending map.
     if (track.comment) {
-      this.pendingCommentWrites.set(track.filePath, track.comment);
+      this.pendingCommentWrites.set(targetRelativePath, track.comment);
     }
 
     return updated;
@@ -852,6 +903,41 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 // =============================================================================
 // Helpers
 // =============================================================================
+
+/**
+ * Resolve a filetype string to a file extension.
+ *
+ * The `filetype` field in DeviceTrackInput serves dual purposes:
+ * - iPod: display label stored in the database ("AAC audio file")
+ * - Mass-storage: file extension for the output file ("m4a", "opus")
+ *
+ * The sync pipeline passes display labels (e.g., "Opus audio file") which
+ * are appropriate for iPod but not for filesystem paths. This function
+ * normalizes both forms to a dotted extension.
+ */
+function resolveFileExtension(filetype: string): string {
+  // Already looks like a bare extension (short, no spaces) — just prefix with dot
+  if (!filetype.includes(' ') && filetype.length <= 5) {
+    return filetype.startsWith('.') ? filetype : `.${filetype}`;
+  }
+
+  // Match against CODEC_METADATA filetype labels (single source of truth)
+  const label = filetype.toLowerCase();
+  for (const meta of Object.values(CODEC_METADATA)) {
+    if (label === meta.filetypeLabel.toLowerCase()) {
+      return meta.extension;
+    }
+  }
+
+  // Additional non-codec labels (video, legacy formats)
+  if (label.includes('ogg') || label.includes('vorbis')) return '.ogg';
+  if (label.includes('wav')) return '.wav';
+  if (label.includes('aiff')) return '.aiff';
+  if (label.includes('mp4') || label.includes('m4v')) return '.m4v';
+
+  // Fallback: use as-is with dot prefix (best effort)
+  return `.${filetype}`;
+}
 
 /**
  * Extract the first comment string from music-metadata's comment array.

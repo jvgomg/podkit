@@ -257,6 +257,9 @@ export class MusicHandler implements ContentTypeHandler<
     // Pass 1: Preset change detection
     this.postProcessPresetChanges(diff);
 
+    // Pass 1.5: Codec change detection
+    this.postProcessCodecChanges(diff);
+
     // Pass 2: Force transcode sweep
     this.postProcessForceTranscode(diff);
 
@@ -368,7 +371,13 @@ export class MusicHandler implements ContentTypeHandler<
     // Build expected sync tag from current config (for sync tag comparison)
     const resolvedQuality = this.config.resolvedQuality;
     const expectedSyncTag = resolvedQuality
-      ? buildAudioSyncTag(resolvedQuality, this.config.raw.encoding, this.config.raw.customBitrate)
+      ? buildAudioSyncTag(
+          resolvedQuality,
+          this.config.raw.encoding,
+          this.config.raw.customBitrate,
+          undefined,
+          this.config.resolvedLossyCodec
+        )
       : undefined;
 
     partitionExisting(diff, (match) => {
@@ -415,6 +424,75 @@ export class MusicHandler implements ContentTypeHandler<
           ];
 
       return { reasons: [presetChange], changes };
+    });
+  }
+
+  /**
+   * Pass 1.5: Detect codec changes on existing tracks.
+   *
+   * When a resolved lossy or lossless codec is available, compare it against the
+   * existing track's sync tag codec field. If they differ, the track needs
+   * re-transcoding with the new codec.
+   *
+   * Legacy tags without a `codec` field: infer AAC for lossy transcoded tracks,
+   * ALAC for lossless transcoded tracks.
+   */
+  private postProcessCodecChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
+    // Only relevant when codec preferences have been resolved
+    const resolvedLossyCodec = this.config.resolvedLossyCodec;
+    const resolvedLosslessStack = this.config.resolvedLosslessStack;
+    if (!resolvedLossyCodec && !resolvedLosslessStack) return;
+    if (this.config.raw.skipUpgrades) return;
+
+    partitionExisting(diff, (match) => {
+      const syncTag = match.device.syncTag;
+      if (!syncTag) return null;
+
+      const sourceLossless = isSourceLossless(match.source);
+
+      // Determine what codec the existing track was transcoded with
+      let existingCodec: string | undefined;
+      if (syncTag.codec) {
+        existingCodec = syncTag.codec;
+      } else if (syncTag.quality === 'copy') {
+        // Copied tracks don't need codec change detection (they weren't transcoded)
+        return null;
+      } else if (syncTag.quality === 'lossless') {
+        // Legacy lossless tag without codec → infer ALAC
+        existingCodec = 'alac';
+      } else {
+        // Legacy lossy tag without codec → infer AAC
+        existingCodec = 'aac';
+      }
+
+      // Determine what codec we'd use now
+      let targetCodec: string | undefined;
+      if (sourceLossless && this.config.resolvedQuality === 'lossless' && resolvedLosslessStack) {
+        // Walk the lossless stack to find the target codec for this source
+        const classification = this.classifier.classify(match.source);
+        if (classification.action.type === 'transcode') {
+          targetCodec = classification.action.preset.targetCodec ?? 'alac';
+        } else {
+          // Direct/optimized copy — no codec change applicable
+          return null;
+        }
+      } else if (!sourceLossless || this.config.resolvedQuality !== 'lossless') {
+        // Lossy transcoding path
+        targetCodec = resolvedLossyCodec;
+      }
+
+      if (!targetCodec || existingCodec === targetCodec) return null;
+
+      return {
+        reasons: ['codec-changed' as const],
+        changes: [
+          {
+            field: 'fileType' as const,
+            from: existingCodec,
+            to: targetCodec,
+          },
+        ],
+      };
     });
   }
 
@@ -497,7 +575,9 @@ export class MusicHandler implements ContentTypeHandler<
     const baseExpectedTag = buildAudioSyncTag(
       this.config.resolvedQuality,
       this.config.raw.encoding,
-      this.config.raw.customBitrate
+      this.config.raw.customBitrate,
+      undefined,
+      this.config.resolvedLossyCodec
     );
 
     partitionExisting(diff, (match) => {

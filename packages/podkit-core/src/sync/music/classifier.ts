@@ -21,7 +21,9 @@ import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioCodec } from '../../device/capabilities.js';
 import type { SourceCategory, TranscodePresetRef } from '../engine/types.js';
 import type { ResolvedMusicConfig } from './config.js';
-import { categorizeSource, isDeviceCompatible } from './planner.js';
+import { categorizeSource, isDeviceCompatible, fileTypeToAudioCodec } from './planner.js';
+import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
+import { CODEC_METADATA } from '../../transcode/codecs.js';
 
 // =============================================================================
 // Types
@@ -73,6 +75,10 @@ export interface ClassifierContext {
   readonly primaryArtworkSource?: 'database' | 'embedded' | 'sidecar';
   /** Transfer mode for file preparation */
   readonly transferMode: 'fast' | 'optimized' | 'portable';
+  /** Resolved codec for lossy transcoding */
+  readonly resolvedLossyCodec?: TranscodeTargetCodec;
+  /** Resolved lossless stack */
+  readonly resolvedLosslessStack?: (TranscodeTargetCodec | 'source')[];
 }
 
 // =============================================================================
@@ -104,7 +110,7 @@ export class MusicTrackClassifier {
 
   private computeClassification(track: CollectionTrack): TrackClassification {
     const deviceNative = isDeviceCompatible(track, this.ctx.supportedAudioCodecs);
-    const sourceCategory = categorizeSource(track);
+    const sourceCategory = categorizeSource(track, this.ctx.supportedAudioCodecs);
     const isLossless = sourceCategory === 'lossless';
     const warnLossyToLossy = sourceCategory === 'incompatible-lossy';
 
@@ -133,20 +139,37 @@ export class MusicTrackClassifier {
     // 3-5. Lossless or incompatible lossy -- needs transcoding
     const presetName = this.resolvePresetName();
 
-    // 3. Lossless + preset 'lossless' + source is ALAC -> direct copy
-    if (presetName === 'lossless' && track.codec?.toLowerCase() === 'alac') {
+    // 3. Lossless + preset 'lossless' -> walk the lossless stack
+    if (presetName === 'lossless' && isLossless) {
+      const losslessAction = this.resolveLosslessAction(track);
+      if (losslessAction) {
+        return {
+          sourceCategory,
+          deviceNative,
+          isLossless,
+          warnLossyToLossy,
+          action: losslessAction,
+        };
+      }
+      // No lossless codec matched -> fall through to lossy at 'high'
+      const fallbackPreset: TranscodePresetRef = {
+        name: 'high',
+        ...(this.ctx.resolvedLossyCodec && { targetCodec: this.ctx.resolvedLossyCodec }),
+        ...(this.ctx.customBitrate !== undefined && { bitrateOverride: this.ctx.customBitrate }),
+      };
       return {
         sourceCategory,
         deviceNative,
         isLossless,
-        warnLossyToLossy,
-        action: { type: 'direct-copy' },
+        warnLossyToLossy: false,
+        action: { type: 'transcode', preset: fallbackPreset },
       };
     }
 
-    // 4-5. Transcode with resolved preset
+    // 4-5. Transcode with resolved preset (lossy transcoding)
     const preset: TranscodePresetRef = {
       name: presetName as TranscodePresetRef['name'],
+      ...(this.ctx.resolvedLossyCodec && { targetCodec: this.ctx.resolvedLossyCodec }),
       ...(this.ctx.customBitrate !== undefined && {
         bitrateOverride: this.ctx.customBitrate,
       }),
@@ -159,6 +182,69 @@ export class MusicTrackClassifier {
       warnLossyToLossy,
       action: { type: 'transcode', preset },
     };
+  }
+
+  /**
+   * Walk the resolved lossless stack to find a suitable lossless action.
+   *
+   * For `'source'`: if the source track's lossless codec is a valid transcoding
+   * target AND the device supports it, use direct copy. Skip WAV/AIFF (not
+   * transcoding targets, too large to copy).
+   *
+   * For specific codecs (FLAC, ALAC): if the device supports it and the encoder
+   * is available (implied by presence in the resolved stack), transcode to that codec.
+   *
+   * Returns undefined if no lossless codec matches (caller should fall through to lossy).
+   */
+  private resolveLosslessAction(track: CollectionTrack): MusicAction | undefined {
+    const stack = this.ctx.resolvedLosslessStack;
+
+    if (!stack) {
+      // Legacy path: no resolved stack. Use old ALAC-only behavior.
+      if (track.codec?.toLowerCase() === 'alac') {
+        return { type: 'direct-copy' };
+      }
+      // Legacy: transcode to lossless (ALAC)
+      return {
+        type: 'transcode',
+        preset: { name: 'lossless' as TranscodePresetRef['name'] },
+      };
+    }
+
+    if (stack.length === 0) {
+      // Resolved stack is empty — no lossless codec available, fall through to lossy
+      return undefined;
+    }
+
+    const supportedCodecs = this.ctx.supportedAudioCodecs;
+
+    for (const entry of stack) {
+      if (entry === 'source') {
+        // Check if the source's lossless codec is a valid transcoding target
+        // and the device supports it. Skip WAV/AIFF (not in CODEC_METADATA).
+        const sourceCodec = fileTypeToAudioCodec(track.fileType, track.codec);
+        if (
+          sourceCodec &&
+          sourceCodec in CODEC_METADATA &&
+          supportedCodecs?.includes(sourceCodec)
+        ) {
+          return this.resolveCopyAction();
+        }
+        // Source codec not suitable for direct copy — try next in stack
+        continue;
+      }
+
+      // Specific codec entry — already validated by the resolver as device-supported
+      // and encoder-available. Transcode to this codec.
+      const preset: TranscodePresetRef = {
+        name: 'lossless' as TranscodePresetRef['name'],
+        targetCodec: entry,
+      };
+      return { type: 'transcode', preset };
+    }
+
+    // No lossless codec matched
+    return undefined;
   }
 
   /**
@@ -206,5 +292,7 @@ export function classifierFromConfig(config: ResolvedMusicConfig): ClassifierCon
     customBitrate: config.raw.customBitrate,
     primaryArtworkSource: config.primaryArtworkSource,
     transferMode: config.transferMode,
+    resolvedLossyCodec: config.resolvedLossyCodec,
+    resolvedLosslessStack: config.resolvedLosslessStack,
   };
 }

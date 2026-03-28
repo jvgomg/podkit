@@ -34,6 +34,8 @@ export type {
   VideoCollectionConfig,
   DeviceConfig,
   DefaultsConfig,
+  // Codec preference
+  CodecPreferenceConfig,
   // Raw config file types
   ConfigFileCleanArtists,
   ConfigFileShowLanguage,
@@ -41,8 +43,9 @@ export type {
   ConfigFileVideoCollection,
   ConfigFileDevice,
   ConfigFileDefaults,
+  ConfigFileCodecPreference,
 } from './types.js';
-export type { DeviceType } from './types.js';
+export type { DeviceType, TranscodeTargetCodec } from './types.js';
 export {
   QUALITY_PRESETS,
   ENCODING_MODES,
@@ -55,6 +58,9 @@ export {
   DEFAULT_TRANSFORMS_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
   isValidTransferMode,
+  CODEC_METADATA,
+  DEFAULT_LOSSY_STACK,
+  DEFAULT_LOSSLESS_STACK,
 } from './types.js';
 
 // Defaults

@@ -1,9 +1,10 @@
 ---
 id: TASK-248.11
 title: E2E test coverage for codec preferences
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:43'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -32,7 +33,7 @@ See PRD: doc-024, section "E2E tests."
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 E2E test: sync to mass-storage mock device with Opus preference produces `.opus` files
-- [ ] #2 E2E test: codec change re-sync removes old `.m4a` file and produces new `.opus` file
-- [ ] #3 Tests validate correct file extension, not just file existence
+- [x] #1 E2E test: sync to mass-storage mock device with Opus preference produces `.opus` files
+- [x] #2 E2E test: codec change re-sync removes old `.m4a` file and produces new `.opus` file
+- [x] #3 Tests validate correct file extension, not just file existence
 <!-- AC:END -->

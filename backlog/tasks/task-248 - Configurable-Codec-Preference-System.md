@@ -1,9 +1,10 @@
 ---
 id: TASK-248
 title: Configurable Codec Preference System
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:40'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding

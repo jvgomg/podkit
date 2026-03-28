@@ -164,8 +164,18 @@ export function isDeviceCompatible(
  *
  * Note: M4A files can be either AAC (lossy) or ALAC (lossless).
  * Uses the codec field for accurate detection.
+ *
+ * When `supportedCodecs` is provided, lossy categorization is device-aware:
+ * a lossy source whose codec is in the device's supported list is `compatible-lossy`,
+ * otherwise it's `incompatible-lossy`. When `supportedCodecs` is undefined, falls
+ * back to hardcoded iPod-centric sets (MP3/AAC compatible, OGG/Opus incompatible).
+ *
+ * Lossless sources are always categorized as `lossless` regardless of device support.
  */
-export function categorizeSource(track: CollectionTrack): SourceCategory {
+export function categorizeSource(
+  track: CollectionTrack,
+  supportedCodecs?: readonly string[]
+): SourceCategory {
   // Check if explicitly marked as lossless
   if (track.lossless === true) {
     return 'lossless';
@@ -176,29 +186,43 @@ export function categorizeSource(track: CollectionTrack): SourceCategory {
     return 'lossless';
   }
 
-  // Incompatible lossy (requires transcoding)
-  if (INCOMPATIBLE_LOSSY_FORMATS.has(track.fileType)) {
-    return 'incompatible-lossy';
-  }
-
-  // MP3 is always compatible lossy
-  if (track.fileType === 'mp3') {
-    return 'compatible-lossy';
+  // ALAC extension is unambiguously lossless
+  if (track.fileType === 'alac') {
+    return 'lossless';
   }
 
   // M4A/AAC requires codec detection (could be AAC or ALAC)
   if (track.fileType === 'm4a' || track.fileType === 'aac') {
-    // Check codec if available
     if (track.codec?.toLowerCase() === 'alac') {
       return 'lossless';
     }
-    // Assume AAC (lossy) if no codec info or codec is aac
+    // Fall through to lossy categorization below
+  }
+
+  // --- Lossy categorization ---
+  // When supportedCodecs is provided, use device-aware categorization.
+  // When undefined, fall back to hardcoded iPod-centric sets.
+  if (supportedCodecs !== undefined) {
+    const trackCodec = fileTypeToAudioCodec(track.fileType, track.codec);
+    if (trackCodec && supportedCodecs.includes(trackCodec)) {
+      return 'compatible-lossy';
+    }
+    // Device doesn't support this lossy codec
+    return 'incompatible-lossy';
+  }
+
+  // Legacy fallback: hardcoded iPod-centric categorization
+  if (INCOMPATIBLE_LOSSY_FORMATS.has(track.fileType)) {
+    return 'incompatible-lossy';
+  }
+
+  if (track.fileType === 'mp3') {
     return 'compatible-lossy';
   }
 
-  // ALAC extension is unambiguously lossless
-  if (track.fileType === 'alac') {
-    return 'lossless';
+  // M4A/AAC (lossy) is compatible for iPod
+  if (track.fileType === 'm4a' || track.fileType === 'aac') {
+    return 'compatible-lossy';
   }
 
   // Unknown formats: treat as incompatible (safe default, triggers warning)

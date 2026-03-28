@@ -52,6 +52,7 @@ function createTestContext(
     verbose: 0,
     color: true,
     tips: true,
+    tty: false,
     ...overrides.globalOpts,
   };
 

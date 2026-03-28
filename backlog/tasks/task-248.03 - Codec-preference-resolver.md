@@ -1,9 +1,10 @@
 ---
 id: TASK-248.03
 title: Codec preference resolver
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:41'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -30,15 +31,15 @@ The `source` keyword in the lossless stack is passed through — it is resolved 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Resolves first codec from preference list that is both device-supported and encoder-available
-- [ ] #2 Falls through silently when top preference's encoder is unavailable
-- [ ] #3 Returns structured error when no codec in list is both supported and encodable
-- [ ] #4 Merges device-level codec config over global config correctly
-- [ ] #5 Device config inherits from global when not overridden
-- [ ] #6 Normalizes single string to array
-- [ ] #7 Passes through `source` keyword in lossless list without resolving it
-- [ ] #8 Uses default stacks when no codec config is provided
-- [ ] #9 Returns correct container metadata (extension, format flag, filetype label, sample rate) for each resolved codec
-- [ ] #10 Validates codec names and rejects unknown values
-- [ ] #11 Unit tests cover all resolution paths including fallthrough, error, merge, and defaults
+- [x] #1 Resolves first codec from preference list that is both device-supported and encoder-available
+- [x] #2 Falls through silently when top preference's encoder is unavailable
+- [x] #3 Returns structured error when no codec in list is both supported and encodable
+- [x] #4 Merges device-level codec config over global config correctly
+- [x] #5 Device config inherits from global when not overridden
+- [x] #6 Normalizes single string to array
+- [x] #7 Passes through `source` keyword in lossless list without resolving it
+- [x] #8 Uses default stacks when no codec config is provided
+- [x] #9 Returns correct container metadata (extension, format flag, filetype label, sample rate) for each resolved codec
+- [x] #10 Validates codec names and rejects unknown values
+- [x] #11 Unit tests cover all resolution paths including fallthrough, error, merge, and defaults
 <!-- AC:END -->

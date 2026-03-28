@@ -18,6 +18,10 @@
  * @see ADR-010 for full design context
  */
 
+import type { TranscodeTargetCodec } from './codecs.js';
+import type { EncoderConfig } from './ffmpeg.js';
+import type { EncoderAvailability } from './codec-resolver.js';
+
 // =============================================================================
 // Quality Presets
 // =============================================================================
@@ -49,7 +53,7 @@ export function isValidQualityPreset(value: string): value is QualityPreset {
 // =============================================================================
 
 /**
- * Encoding mode for AAC transcoding
+ * Encoding mode for audio transcoding
  *
  * - `vbr`: Variable bitrate — better quality per byte (default)
  * - `cbr`: Constant bitrate — predictable file sizes
@@ -124,7 +128,7 @@ export interface TranscodeConfig {
   /**
    * Custom bitrate override in kbps (64-320).
    *
-   * When set, overrides the preset's target bitrate for AAC encoding.
+   * When set, overrides the preset's target bitrate for lossy encoding.
    * Ignored when `max` resolves to ALAC (lossless has no target bitrate).
    */
   customBitrate?: number;
@@ -168,6 +172,114 @@ export const ALAC_PRESET = {
   /** Estimated average bitrate for ALAC (CD quality ~900 kbps) */
   estimatedKbps: 900,
 } as const;
+
+// =============================================================================
+// Per-Codec Preset Tables
+// =============================================================================
+
+/**
+ * Codec-specific preset configuration for lossy codecs.
+ */
+export interface CodecPreset {
+  /** Target bitrate in kbps */
+  targetKbps: number;
+  /** VBR quality parameter (codec-specific meaning) */
+  vbrQuality?: number;
+}
+
+/**
+ * Opus preset definitions for the three lossy tiers.
+ *
+ * Opus is highly efficient, so target bitrates are lower than AAC/MP3
+ * for perceptually equivalent quality.
+ */
+export const OPUS_PRESETS: Record<Exclude<QualityPreset, 'max'>, CodecPreset> = {
+  high: { targetKbps: 160 },
+  medium: { targetKbps: 128 },
+  low: { targetKbps: 96 },
+} as const;
+
+/**
+ * MP3 preset definitions for the three lossy tiers.
+ *
+ * `vbrQuality` maps to FFmpeg's `-q:a` parameter (LAME VBR quality scale,
+ * 0 = best, 9 = worst).
+ */
+export const MP3_PRESETS: Record<Exclude<QualityPreset, 'max'>, CodecPreset> = {
+  high: { targetKbps: 256, vbrQuality: 0 },
+  medium: { targetKbps: 192, vbrQuality: 2 },
+  low: { targetKbps: 128, vbrQuality: 4 },
+} as const;
+
+// =============================================================================
+// Lossless Size Estimation Constants
+// =============================================================================
+
+/** Estimated average bitrate for FLAC (CD quality, ~700 kbps) */
+export const FLAC_ESTIMATED_KBPS = 700;
+
+/** Estimated average bitrate for ALAC (CD quality, ~900 kbps) */
+export const ALAC_ESTIMATED_KBPS = 900;
+
+// =============================================================================
+// Generic Codec Preset Lookup
+// =============================================================================
+
+/**
+ * Get the target bitrate for a quality preset and codec combination.
+ * Returns undefined for lossless codecs (FLAC, ALAC) since they have no bitrate control.
+ */
+export function getCodecPresetBitrate(
+  codec: TranscodeTargetCodec,
+  preset: Exclude<QualityPreset, 'max'>,
+  customBitrate?: number
+): number | undefined {
+  if (customBitrate !== undefined) return customBitrate;
+
+  switch (codec) {
+    case 'aac':
+      return AAC_PRESETS[preset].targetKbps;
+    case 'opus':
+      return OPUS_PRESETS[preset].targetKbps;
+    case 'mp3':
+      return MP3_PRESETS[preset].targetKbps;
+    case 'flac':
+    case 'alac':
+      return undefined;
+  }
+}
+
+/**
+ * Get VBR quality parameter for a codec and preset.
+ * Returns undefined if codec doesn't have VBR quality params or for lossless.
+ */
+export function getCodecVbrQuality(
+  codec: TranscodeTargetCodec,
+  preset: Exclude<QualityPreset, 'max'>
+): number | undefined {
+  switch (codec) {
+    case 'aac':
+      return AAC_PRESETS[preset].quality;
+    case 'mp3':
+      return MP3_PRESETS[preset].vbrQuality;
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * Get estimated bitrate for lossless codecs (size estimation only).
+ */
+export function getLosslessEstimatedKbps(codec: TranscodeTargetCodec): number {
+  switch (codec) {
+    case 'flac':
+      return FLAC_ESTIMATED_KBPS;
+    case 'alac':
+      return ALAC_ESTIMATED_KBPS;
+    default:
+      throw new Error(`Not a lossless codec: ${codec}`);
+  }
+}
 
 /**
  * Get the target bitrate for a preset (for size estimation and preset change detection).
@@ -227,6 +339,10 @@ export interface TranscoderCapabilities {
   aacEncoders: string[];
   /** Preferred AAC encoder */
   preferredEncoder: string;
+  /** Available encoders per codec */
+  encoders: Record<TranscodeTargetCodec, string[]>;
+  /** Preferred encoder per codec (first available in priority order) */
+  preferredEncoders: Record<TranscodeTargetCodec, string | undefined>;
 }
 
 /**
@@ -273,7 +389,11 @@ export interface Transcoder {
   /**
    * Transcode an audio file to iPod-compatible format
    */
-  transcode(input: string, output: string, preset: QualityPreset): Promise<TranscodeResult>;
+  transcode(
+    input: string,
+    output: string,
+    preset: QualityPreset | 'lossless' | EncoderConfig
+  ): Promise<TranscodeResult>;
 
   /**
    * Probe an audio file for metadata
@@ -332,4 +452,22 @@ export interface TranscodeOptions {
    * handling — the device cannot use full-res artwork, so it is always resized.
    */
   artworkResize?: number;
+}
+
+// =============================================================================
+// Encoder Availability Bridge
+// =============================================================================
+
+/**
+ * Create an EncoderAvailability adapter from TranscoderCapabilities.
+ *
+ * Bridges the detailed capabilities object to the minimal interface
+ * expected by the codec preference resolver.
+ */
+export function encoderAvailabilityFrom(caps: TranscoderCapabilities): EncoderAvailability {
+  return {
+    hasEncoder(codec: TranscodeTargetCodec): boolean {
+      return caps.preferredEncoders[codec] !== undefined;
+    },
+  };
 }

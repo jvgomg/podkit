@@ -1,9 +1,10 @@
 ---
 id: TASK-248.02
 title: Sync tag codec field and UpgradeReason
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:41'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -29,10 +30,10 @@ See PRD: doc-024, sections "Sync tag codec field" and "UpgradeReason for codec c
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sync tag parser reads `codec` field from tags like `[podkit:v1 quality=high encoding=vbr codec=aac]`
-- [ ] #2 Sync tag serializer writes `codec` field when present
-- [ ] #3 Legacy tags without `codec` field parse successfully — `quality=lossless` infers ALAC, other qualities infer AAC
-- [ ] #4 Direct-copy tracks without `codec` field infer source file's codec
-- [ ] #5 `'codec-changed'` exists as an `UpgradeReason` variant
-- [ ] #6 Unit tests cover parsing, serialization, and legacy inference for all cases
+- [x] #1 Sync tag parser reads `codec` field from tags like `[podkit:v1 quality=high encoding=vbr codec=aac]`
+- [x] #2 Sync tag serializer writes `codec` field when present
+- [x] #3 Legacy tags without `codec` field parse successfully — `quality=lossless` infers ALAC, other qualities infer AAC
+- [x] #4 Direct-copy tracks without `codec` field infer source file's codec
+- [x] #5 `'codec-changed'` exists as an `UpgradeReason` variant
+- [x] #6 Unit tests cover parsing, serialization, and legacy inference for all cases
 <!-- AC:END -->

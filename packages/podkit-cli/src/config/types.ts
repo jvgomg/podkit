@@ -17,6 +17,7 @@ export type {
   VideoTransformsConfig,
   AudioCodec,
   DeviceArtworkSource,
+  TranscodeTargetCodec,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
@@ -29,6 +30,9 @@ export {
   DEFAULT_SHOW_LANGUAGE_CONFIG,
   DEFAULT_VIDEO_TRANSFORMS_CONFIG,
   isValidTransferMode,
+  CODEC_METADATA,
+  DEFAULT_LOSSY_STACK,
+  DEFAULT_LOSSLESS_STACK,
 } from '@podkit/core';
 
 // Import type for local use
@@ -41,7 +45,30 @@ import type {
   VideoTransformsConfig,
   AudioCodec,
   DeviceArtworkSource,
+  TranscodeTargetCodec,
 } from '@podkit/core';
+
+/**
+ * Codec preference configuration
+ *
+ * Specifies ordered lists of preferred codecs for lossy and lossless transcoding.
+ * The first codec in each list that the target device supports will be used.
+ *
+ * String values are normalized to single-element arrays during config loading.
+ *
+ * @example
+ * ```toml
+ * [codec]
+ * lossy = ["opus", "aac", "mp3"]
+ * lossless = ["source", "flac", "alac"]
+ * ```
+ */
+export interface CodecPreferenceConfig {
+  /** Ordered lossy codec preference (first supported wins) */
+  lossy?: TranscodeTargetCodec[];
+  /** Ordered lossless codec preference ('source' = copy without transcoding) */
+  lossless?: (TranscodeTargetCodec | 'source')[];
+}
 
 /** Supported device types */
 export type DeviceType = 'ipod' | 'echo-mini' | 'rockbox' | 'generic';
@@ -158,7 +185,7 @@ export interface DeviceConfig {
   audioQuality?: QualityPreset;
   /** Video transcoding quality preset (overrides quality) */
   videoQuality?: VideoQualityPreset;
-  /** Encoding mode for AAC transcoding (overrides global) */
+  /** Encoding mode for audio transcoding (overrides global) */
   encoding?: EncodingMode;
   /** Custom bitrate override in kbps (overrides global) */
   customBitrate?: number;
@@ -172,6 +199,8 @@ export interface DeviceConfig {
   transferMode?: TransferMode;
   /** Skip file-replacement upgrades during sync for this device */
   skipUpgrades?: boolean;
+  /** Device-specific codec preference */
+  codec?: CodecPreferenceConfig;
   /** Device-specific transform settings */
   transforms?: TransformsConfig;
   /** Device-specific video transform settings */
@@ -234,14 +263,14 @@ export interface PodkitConfig {
   /** Video transcoding quality preset (overrides quality for video) */
   videoQuality?: VideoQualityPreset;
   /**
-   * Encoding mode for AAC transcoding.
+   * Encoding mode for audio transcoding.
    * VBR (variable bitrate) is the default and provides better quality per byte.
    * CBR (constant bitrate) produces predictable file sizes.
    */
   encoding?: EncodingMode;
   /**
    * Custom bitrate override in kbps (64-320).
-   * Overrides the preset's target bitrate for AAC encoding.
+   * Overrides the preset's target bitrate for lossy encoding.
    */
   customBitrate?: number;
   /**
@@ -275,6 +304,8 @@ export interface PodkitConfig {
   transforms: TransformsConfig;
   /** Video transform configuration (global default, can be overridden per-device) */
   videoTransforms: VideoTransformsConfig;
+  /** Codec preference configuration (global default, can be overridden per-device) */
+  codec?: CodecPreferenceConfig;
 
   // ===========================================================================
   // Multi-collection/device fields (ADR-008)
@@ -364,6 +395,17 @@ export type ConfigFileShowLanguage =
     };
 
 /**
+ * Raw codec preference config as parsed from TOML
+ *
+ * Values can be a single string or an array of strings.
+ * Single strings are normalized to arrays during config loading.
+ */
+export interface ConfigFileCodecPreference {
+  lossy?: string | string[];
+  lossless?: string | string[];
+}
+
+/**
  * Raw music collection config as parsed from TOML
  */
 export interface ConfigFileMusicCollection {
@@ -401,6 +443,7 @@ export interface ConfigFileDevice {
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
+  codec?: ConfigFileCodecPreference;
   artworkMaxResolution?: number;
   artworkSources?: string[];
   supportedAudioCodecs?: string[];
@@ -468,6 +511,8 @@ export interface ConfigFileContent {
   skipUpgrades?: boolean;
   cleanArtists?: ConfigFileCleanArtists;
   showLanguage?: ConfigFileShowLanguage;
+  /** Codec preference: [codec] */
+  codec?: ConfigFileCodecPreference;
 
   /** Named music collections: [music.{name}] */
   music?: Record<string, ConfigFileMusicCollection>;

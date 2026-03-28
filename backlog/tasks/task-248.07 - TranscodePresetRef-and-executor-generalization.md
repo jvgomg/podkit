@@ -1,9 +1,10 @@
 ---
 id: TASK-248.07
 title: TranscodePresetRef and executor generalization
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:42'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -44,14 +45,14 @@ This changes the method's contract from "replace in-place" to "replace with poss
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `TranscodePresetRef` has a `targetCodec` field
-- [ ] #2 All `prepareTranscode()` call sites use codec-derived extension instead of `.m4a`
-- [ ] #3 Temp file path construction uses codec-derived extension
-- [ ] #4 Filetype strings use codec-derived labels from metadata table instead of hardcoded `'AAC audio file'`
-- [ ] #5 `getFileTypeLabel()` returns correct label for `.opus`, `.flac` extensions and derives from target codec for transcodes
-- [ ] #6 `getOptimizedCopyFormat()` return type includes opus and flac
-- [ ] #7 Mass-storage `replaceTrackFile()` handles codec-change renames: new path with correct extension, old file removed, allocatedPaths/managedFiles/filePath/pendingCommentWrites updated
-- [ ] #8 Manifest and playlist references remain correct after codec-change rename
-- [ ] #9 Existing test expectations updated for new extension/filetype behavior
-- [ ] #10 Integration test: codec-change rename on mass-storage produces correct file path and cleans up old file
+- [x] #1 `TranscodePresetRef` has a `targetCodec` field
+- [x] #2 All `prepareTranscode()` call sites use codec-derived extension instead of `.m4a`
+- [x] #3 Temp file path construction uses codec-derived extension
+- [x] #4 Filetype strings use codec-derived labels from metadata table instead of hardcoded `'AAC audio file'`
+- [x] #5 `getFileTypeLabel()` returns correct label for `.opus`, `.flac` extensions and derives from target codec for transcodes
+- [x] #6 `getOptimizedCopyFormat()` return type includes opus and flac
+- [x] #7 Mass-storage `replaceTrackFile()` handles codec-change renames: new path with correct extension, old file removed, allocatedPaths/managedFiles/filePath/pendingCommentWrites updated
+- [x] #8 Manifest and playlist references remain correct after codec-change rename
+- [x] #9 Existing test expectations updated for new extension/filetype behavior
+- [x] #10 Integration test: codec-change rename on mass-storage produces correct file path and cleans up old file
 <!-- AC:END -->

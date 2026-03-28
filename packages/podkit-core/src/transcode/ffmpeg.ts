@@ -2,7 +2,7 @@
  * FFmpeg Transcoder - Audio transcoding using FFmpeg
  *
  * Implements the Transcoder interface using FFmpeg for converting audio files
- * to iPod-compatible AAC/M4A or ALAC format.
+ * to various target formats: AAC, ALAC, Opus, MP3, and FLAC.
  *
  * Encoder priority for AAC: aac_at (macOS) > libfdk_aac (custom build) > aac (native)
  */
@@ -20,6 +20,8 @@ import type {
   TransferMode,
 } from './types.js';
 import { AAC_PRESETS } from './types.js';
+import type { TranscodeTargetCodec } from './codecs.js';
+import { getCodecMetadata } from './codecs.js';
 import { parseFFmpegProgressLine } from './progress.js';
 
 /**
@@ -147,14 +149,19 @@ function aacAtQualityFromLevel(quality: number): number {
 }
 
 /**
- * Resolved AAC transcode configuration for FFmpeg argument building.
+ * Resolved encoder configuration for FFmpeg argument building.
  *
  * This is the resolved form after the planner has:
  * - Resolved `max` to either ALAC or `high`
  * - Applied bitrate capping for incompatible lossy sources
  * - Applied custom bitrate overrides
+ *
+ * The `codec` field identifies which target codec this config is for.
+ * When omitted, AAC is assumed for backward compatibility.
  */
-export interface AacTranscodeConfig {
+export interface EncoderConfig {
+  /** Target codec (defaults to 'aac' when omitted for backward compat) */
+  codec?: TranscodeTargetCodec;
   /** Target bitrate in kbps */
   bitrateKbps: number;
   /** Encoding mode */
@@ -164,10 +171,15 @@ export interface AacTranscodeConfig {
 }
 
 /**
+ * @deprecated Use `EncoderConfig` instead. Alias preserved for backward compatibility.
+ */
+export type AacTranscodeConfig = EncoderConfig;
+
+/**
  * Build FFmpeg command arguments for transcoding.
  *
  * Accepts either a `QualityPreset` name (for backward compatibility and simple cases)
- * or an `AacTranscodeConfig` object for full control over bitrate and encoding mode.
+ * or an `EncoderConfig` object for full control over bitrate and encoding mode.
  *
  * The `'lossless'` string triggers ALAC encoding.
  * The `'max'` preset should never reach this function — the planner resolves it
@@ -183,7 +195,7 @@ export function buildTranscodeArgs(
   input: string,
   output: string,
   encoder: string,
-  preset: QualityPreset | 'lossless' | AacTranscodeConfig,
+  preset: QualityPreset | 'lossless' | EncoderConfig,
   options?: { transferMode?: TransferMode; artworkResize?: number }
 ): string[] {
   // Handle ALAC encoding
@@ -191,7 +203,24 @@ export function buildTranscodeArgs(
     return buildAlacArgs(input, output, options);
   }
 
-  // Resolve preset to AAC config
+  // Dispatch based on codec when EncoderConfig has a codec field
+  if (typeof preset === 'object' && preset.codec) {
+    switch (preset.codec) {
+      case 'opus':
+        return buildOpusArgs(input, output, preset, options);
+      case 'mp3':
+        return buildMp3Args(input, output, preset, options);
+      case 'flac':
+        return buildFlacArgs(input, output, options);
+      case 'alac':
+        return buildAlacArgs(input, output, options);
+      case 'aac':
+        // Fall through to AAC logic below
+        break;
+    }
+  }
+
+  // AAC path: resolve preset to AAC config
   let bitrateKbps: number;
   let encoding: EncodingMode;
   let quality: number | undefined;
@@ -210,6 +239,8 @@ export function buildTranscodeArgs(
     encoding = aacPreset.mode === 'vbr' ? 'vbr' : 'cbr';
     quality = aacPreset.quality;
   }
+
+  const codecMeta = getCodecMetadata('aac');
 
   const args: string[] = [
     // Input
@@ -230,21 +261,44 @@ export function buildTranscodeArgs(
     args.push('-b:a', `${bitrateKbps}k`);
   }
 
-  // Sample rate (44100 Hz standard)
-  args.push('-ar', '44100');
+  // Sample rate from codec metadata
+  args.push('-ar', String(codecMeta.sampleRate));
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on device artwork source and transfer mode.
-  // artworkResize takes priority: when set, the device reads artwork from embedded
-  // tags and ALWAYS needs resized artwork regardless of transfer mode.
+  // Artwork handling
+  pushArtworkArgs(args, options);
+
+  // Output format from codec metadata
+  args.push('-f', codecMeta.ffmpegFormat);
+
+  // Overwrite output file
+  args.push('-y');
+
+  // Progress output for parsing
+  args.push('-progress', 'pipe:1');
+
+  // Output file
+  args.push(output);
+
+  return args;
+}
+
+/**
+ * Push artwork handling args onto an args array based on transfer mode and artwork resize.
+ *
+ * Shared logic for all codec builders.
+ */
+function pushArtworkArgs(
+  args: string[],
+  options?: { transferMode?: TransferMode; artworkResize?: number }
+): void {
   const transferMode = options?.transferMode ?? 'fast';
   const artworkResize = options?.artworkResize;
 
   if (artworkResize && artworkResize > 0) {
     // Resize — device needs optimized embedded artwork regardless of mode.
-    // Re-encode artwork as MJPEG at the target resolution.
     args.push(
       '-c:v',
       'mjpeg',
@@ -260,17 +314,138 @@ export function buildTranscodeArgs(
     // Database device fast/optimized: strip embedded artwork
     args.push('-vn');
   }
+}
 
-  // Output format (M4A container optimized for iPod)
-  args.push('-f', 'ipod');
+/**
+ * Build FFmpeg command arguments for Opus encoding.
+ *
+ * Opus uses libopus with target bitrate for both VBR and CBR modes.
+ * The `-vbr on/off` flag controls the mode.
+ *
+ * @param input - Input file path
+ * @param output - Output file path
+ * @param config - Encoder configuration with bitrate and encoding mode
+ * @param options - Transfer mode and artwork options
+ * @returns Array of FFmpeg arguments
+ */
+export function buildOpusArgs(
+  input: string,
+  output: string,
+  config: EncoderConfig,
+  options?: { transferMode?: TransferMode; artworkResize?: number }
+): string[] {
+  const codecMeta = getCodecMetadata('opus');
 
-  // Overwrite output file
+  const args: string[] = ['-i', input, '-c:a', 'libopus'];
+
+  // Sample rate from codec metadata (48000 Hz for Opus)
+  args.push('-ar', String(codecMeta.sampleRate));
+
+  // Bitrate (used for both VBR and CBR)
+  args.push('-b:a', `${config.bitrateKbps}k`);
+
+  // VBR mode flag
+  args.push('-vbr', config.encoding === 'vbr' ? 'on' : 'off');
+
+  // Preserve metadata from source
+  args.push('-map_metadata', '0');
+
+  // Artwork handling
+  pushArtworkArgs(args, options);
+
+  // Output format from codec metadata
+  args.push('-f', codecMeta.ffmpegFormat);
+
   args.push('-y');
-
-  // Progress output for parsing
   args.push('-progress', 'pipe:1');
+  args.push(output);
 
-  // Output file
+  return args;
+}
+
+/**
+ * Build FFmpeg command arguments for MP3 encoding.
+ *
+ * MP3 uses libmp3lame. VBR uses `-q:a` quality scale (0=best, 9=worst).
+ * CBR uses `-b:a` with target bitrate.
+ *
+ * @param input - Input file path
+ * @param output - Output file path
+ * @param config - Encoder configuration with bitrate, encoding mode, and quality
+ * @param options - Transfer mode and artwork options
+ * @returns Array of FFmpeg arguments
+ */
+export function buildMp3Args(
+  input: string,
+  output: string,
+  config: EncoderConfig,
+  options?: { transferMode?: TransferMode; artworkResize?: number }
+): string[] {
+  const codecMeta = getCodecMetadata('mp3');
+
+  const args: string[] = ['-i', input, '-c:a', 'libmp3lame'];
+
+  // Quality settings based on encoding mode
+  if (config.encoding === 'vbr' && config.quality !== undefined) {
+    // VBR mode — use -q:a (LAME VBR quality: 0=best, 9=worst)
+    args.push('-q:a', String(config.quality));
+  } else {
+    // CBR mode
+    args.push('-b:a', `${config.bitrateKbps}k`);
+  }
+
+  // Sample rate from codec metadata (44100 Hz for MP3)
+  args.push('-ar', String(codecMeta.sampleRate));
+
+  // Preserve metadata from source
+  args.push('-map_metadata', '0');
+
+  // Artwork handling
+  pushArtworkArgs(args, options);
+
+  // Output format from codec metadata
+  args.push('-f', codecMeta.ffmpegFormat);
+
+  args.push('-y');
+  args.push('-progress', 'pipe:1');
+  args.push(output);
+
+  return args;
+}
+
+/**
+ * Build FFmpeg command arguments for FLAC encoding (lossless).
+ *
+ * FLAC is lossless — no quality or bitrate parameters.
+ * Source sample rate is preserved (no `-ar` flag).
+ *
+ * @param input - Input file path
+ * @param output - Output file path
+ * @param options - Transfer mode and artwork options
+ * @returns Array of FFmpeg arguments
+ */
+export function buildFlacArgs(
+  input: string,
+  output: string,
+  options?: { transferMode?: TransferMode; artworkResize?: number }
+): string[] {
+  const codecMeta = getCodecMetadata('flac');
+
+  const args: string[] = ['-i', input, '-c:a', 'flac'];
+
+  // No sample rate conversion — preserve source sample rate
+
+  // Preserve metadata from source
+  args.push('-map_metadata', '0');
+
+  // Artwork handling
+  pushArtworkArgs(args, options);
+
+  // Output format from codec metadata
+  args.push('-f', codecMeta.ffmpegFormat);
+
+  args.push('-y');
+  args.push('-progress', 'pipe:1');
   args.push(output);
 
   return args;
@@ -288,49 +463,21 @@ export function buildAlacArgs(
   output: string,
   options?: { transferMode?: TransferMode; artworkResize?: number }
 ): string[] {
-  const args: string[] = [
-    // Input
-    '-i',
-    input,
+  const codecMeta = getCodecMetadata('alac');
 
-    // ALAC audio codec
-    '-c:a',
-    'alac',
-  ];
+  const args: string[] = ['-i', input, '-c:a', 'alac'];
 
-  // Sample rate (44100 Hz standard)
-  args.push('-ar', '44100');
+  // Sample rate from codec metadata
+  args.push('-ar', String(codecMeta.sampleRate));
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
-  // Embedded artwork handling based on device artwork source and transfer mode.
-  // artworkResize takes priority: when set, the device reads artwork from embedded
-  // tags and ALWAYS needs resized artwork regardless of transfer mode.
-  const transferMode = options?.transferMode ?? 'fast';
-  const artworkResize = options?.artworkResize;
+  // Artwork handling
+  pushArtworkArgs(args, options);
 
-  if (artworkResize && artworkResize > 0) {
-    // Resize — device needs optimized embedded artwork regardless of mode.
-    // Re-encode artwork as MJPEG at the target resolution.
-    args.push(
-      '-c:v',
-      'mjpeg',
-      '-filter:v',
-      buildArtworkScaleFilter(artworkResize),
-      '-disposition:v',
-      'attached_pic'
-    );
-  } else if (transferMode === 'portable') {
-    // Database device portable: preserve full-res for file portability
-    args.push('-c:v', 'copy', '-disposition:v', 'attached_pic');
-  } else {
-    // Database device fast/optimized: strip embedded artwork
-    args.push('-vn');
-  }
-
-  // Output format (M4A container optimized for iPod)
-  args.push('-f', 'ipod');
+  // Output format from codec metadata
+  args.push('-f', codecMeta.ffmpegFormat);
 
   // Overwrite output file
   args.push('-y');
@@ -347,7 +494,7 @@ export function buildAlacArgs(
 /**
  * Optimized copy output format — determines container format flag
  */
-export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a';
+export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a' | 'opus' | 'flac';
 
 /**
  * Build FFmpeg arguments for optimized-copy (stream copy with artwork processing).
@@ -383,9 +530,21 @@ export function buildOptimizedCopyArgs(
     args.push('-vn');
   }
 
-  // MP3 doesn't use -f ipod container format
-  if (format !== 'mp3') {
-    args.push('-f', 'ipod');
+  // Container format dispatch
+  switch (format) {
+    case 'opus':
+      args.push('-f', 'ogg');
+      break;
+    case 'flac':
+      args.push('-f', 'flac');
+      break;
+    case 'mp3':
+      args.push('-f', 'mp3');
+      break;
+    case 'alac':
+    case 'm4a':
+      args.push('-f', 'ipod');
+      break;
   }
 
   args.push('-y');
@@ -480,13 +639,14 @@ export class FFmpegTranscoder implements Transcoder {
       throw new FFmpegNotFoundError('Failed to detect FFmpeg version');
     }
 
-    // Get available AAC encoders
+    // Get available encoders
     const encoderResult = await this.exec(this.ffmpegPath, ['-encoders']);
-    const aacEncoders: string[] = [];
+    const encoderOutput = encoderResult.stdout;
 
-    // Parse encoder list for AAC encoders
+    // --- AAC encoders (existing logic, preserved for backward compat) ---
+    const aacEncoders: string[] = [];
     for (const encoder of ENCODER_PRIORITY) {
-      if (encoderResult.stdout.includes(encoder)) {
+      if (encoderOutput.includes(encoder)) {
         aacEncoders.push(encoder);
       }
     }
@@ -495,14 +655,34 @@ export class FFmpegTranscoder implements Transcoder {
       throw new TranscodeError('No AAC encoder available');
     }
 
-    // Select best available encoder
+    // Select best available AAC encoder
     const preferredEncoder = aacEncoders[0]!;
+
+    // --- Multi-codec encoder detection ---
+    const encoders: Record<TranscodeTargetCodec, string[]> = {
+      aac: aacEncoders,
+      opus: encoderOutput.includes('libopus') ? ['libopus'] : [],
+      mp3: encoderOutput.includes('libmp3lame') ? ['libmp3lame'] : [],
+      // Built-in encoders — always available in any FFmpeg build
+      flac: ['flac'],
+      alac: ['alac'],
+    };
+
+    const preferredEncoders: Record<TranscodeTargetCodec, string | undefined> = {
+      aac: preferredEncoder,
+      opus: encoders.opus[0],
+      mp3: encoders.mp3[0],
+      flac: 'flac',
+      alac: 'alac',
+    };
 
     this.capabilities = {
       version,
       path: this.ffmpegPath,
       aacEncoders,
       preferredEncoder,
+      encoders,
+      preferredEncoders,
     };
 
     return this.capabilities;
@@ -514,7 +694,7 @@ export class FFmpegTranscoder implements Transcoder {
   async transcode(
     input: string,
     output: string,
-    preset: QualityPreset | 'lossless' | AacTranscodeConfig,
+    preset: QualityPreset | 'lossless' | EncoderConfig,
     options: TranscodeOptions = {}
   ): Promise<TranscodeResult> {
     // Check if already aborted

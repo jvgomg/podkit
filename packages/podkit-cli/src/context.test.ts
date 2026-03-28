@@ -35,6 +35,7 @@ describe('CLI context', () => {
     json: false,
     color: true,
     tips: true,
+    tty: false,
     config: '/test/config.toml',
   };
 

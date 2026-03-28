@@ -1,9 +1,10 @@
 ---
 id: TASK-248.04
 title: Codec-aware quality mapping
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:41'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -28,9 +29,9 @@ Each lossy codec gets its own preset-to-bitrate table: AAC (high=256, medium=192
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Per-codec bitrate tables exist for AAC, Opus, and MP3 with correct values at each preset tier
-- [ ] #2 Lossless codecs return no bitrate preset, with size estimation using ~700 kbps for FLAC and ~900 kbps for ALAC
-- [ ] #3 `customBitrate` overrides the preset mapping for all codecs
-- [ ] #4 VBR quality parameters are specified per codec (not just target bitrates)
-- [ ] #5 Unit tests verify correct mapping for each preset × codec combination
+- [x] #1 Per-codec bitrate tables exist for AAC, Opus, and MP3 with correct values at each preset tier
+- [x] #2 Lossless codecs return no bitrate preset, with size estimation using ~700 kbps for FLAC and ~900 kbps for ALAC
+- [x] #3 `customBitrate` overrides the preset mapping for all codecs
+- [x] #4 VBR quality parameters are specified per codec (not just target bitrates)
+- [x] #5 Unit tests verify correct mapping for each preset × codec combination
 <!-- AC:END -->

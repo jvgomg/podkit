@@ -14,6 +14,7 @@ import type {
   TranscodeProgress,
   TransferMode,
 } from '../../transcode/types.js';
+import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
 import type { DeviceCapabilities } from '../../device/capabilities.js';
 import type { MusicOperation } from '../music/types.js';
 import type { VideoOperation } from '../video/types.js';
@@ -35,6 +36,7 @@ export type UpgradeReason =
   | 'quality-upgrade'
   | 'preset-upgrade'
   | 'preset-downgrade'
+  | 'codec-changed'
   | 'force-transcode'
   | 'transfer-mode-changed'
   | 'artwork-added'
@@ -106,6 +108,8 @@ export interface TranscodePresetRef {
   name: Exclude<QualityPreset, 'max'> | 'lossless';
   /** Bitrate override in kbps (replaces preset default) */
   bitrateOverride?: number;
+  /** Target codec for transcoding. When omitted, defaults to AAC behavior. */
+  targetCodec?: TranscodeTargetCodec;
 }
 
 // =============================================================================

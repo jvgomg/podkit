@@ -1173,6 +1173,144 @@ describe('MassStorageAdapter', () => {
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });
 
+    test('replaceTrackFile with same extension replaces in place', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      expect(track.filePath).toBe('Music/Artist/Album/01 - Song.flac');
+
+      // Replace with same extension
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'new-file.flac');
+      fs.writeFileSync(sourcePath, 'new audio data');
+
+      const replaced = adapter.replaceTrackFile(track, sourcePath);
+
+      // Path should be unchanged
+      expect(replaced.filePath).toBe('Music/Artist/Album/01 - Song.flac');
+      expect(replaced.filetype).toBe('flac');
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('replaceTrackFile with different extension renames path and cleans up old file', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.m4a');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.m4a': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      expect(track.filePath).toBe('Music/Artist/Album/01 - Song.m4a');
+
+      // Replace with different extension (codec change: AAC → Opus)
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'transcoded.opus');
+      fs.writeFileSync(sourcePath, 'opus audio data');
+
+      const replaced = adapter.replaceTrackFile(track, sourcePath);
+
+      // Path should have new extension
+      expect(replaced.filePath).toBe('Music/Artist/Album/01 - Song.opus');
+      expect(replaced.filetype).toBe('opus');
+
+      // Old file should be deleted
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/Album/01 - Song.m4a'))).toBe(false);
+
+      // New file should exist
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/Album/01 - Song.opus'))).toBe(true);
+
+      // Track list should be updated
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(1);
+      expect(tracks[0]!.filePath).toBe('Music/Artist/Album/01 - Song.opus');
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('replaceTrackFile with different extension updates bookkeeping sets', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.m4a');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.m4a': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      // First set a sync tag so there's a pending comment write
+      const track = adapter.getTracks()[0]!;
+      const tagged = adapter.updateTrack(track, {
+        comment: '[podkit:v1 quality=high encoding=vbr]',
+      });
+
+      // Replace with different extension
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'transcoded.opus');
+      fs.writeFileSync(sourcePath, 'opus audio data');
+
+      adapter.replaceTrackFile(tagged, sourcePath);
+
+      // Save should write comment to the new path
+      tagWriter.calls.length = 0;
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      // The comment should be written to the new .opus file path
+      expect(tagWriter.calls[0]!.filePath).toContain('01 - Song.opus');
+
+      // Verify the manifest includes the new path, not the old
+      const manifestPath = path.join(mountPoint, '.podkit', 'state.json');
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      expect(manifest.managedFiles).not.toContain('Music/Artist/Album/01 - Song.m4a');
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
+    test('replaceTrackFile deduplicates when new path collides', async () => {
+      // Create two files that would collide after extension change
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.m4a');
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.opus');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.m4a': { title: 'Song', artist: 'Artist', album: 'Album' },
+          '01 - Song.opus': { title: 'Song 2', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const tracks = adapter.getTracks();
+      const m4aTrack = tracks.find((t) => t.filePath.endsWith('.m4a'))!;
+
+      // Replace m4a with opus — but 01 - Song.opus already exists
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'transcoded.opus');
+      fs.writeFileSync(sourcePath, 'opus audio data');
+
+      const replaced = adapter.replaceTrackFile(m4aTrack, sourcePath);
+
+      // Should be deduplicated (e.g., "01 - Song-1.opus")
+      expect(replaced.filePath).not.toBe('Music/Artist/Album/01 - Song.opus');
+      expect(replaced.filePath).toMatch(/01 - Song-\d+\.opus$/);
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+
     test('copyTrackFile updates track list with new instance', async () => {
       const tagWriter = createMockTagWriter();
       const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {

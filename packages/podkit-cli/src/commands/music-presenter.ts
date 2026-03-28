@@ -134,7 +134,13 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     const config = contentConfig as MusicContentConfig;
 
     // The handler derives isAlacPreset, resolvedQuality, presetBitrate, etc.
-    // internally from the MusicSyncConfig
+    // internally from the MusicSyncConfig.
+    // Derive encoder availability from the transcoder's cached capabilities
+    // so the handler can resolve codec preferences with full encoder knowledge.
+    const encoderAvailability = config.transcoderCapabilities
+      ? core.encoderAvailabilityFrom(config.transcoderCapabilities)
+      : undefined;
+
     this.handler = core.createMusicHandler({
       quality: config.effectiveQuality,
       transcoder: config.transcoder,
@@ -151,6 +157,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       forceTransferMode: config.forceTransferMode,
       skipUpgrades: config.skipUpgrades,
       adapter: this.sourceAdapter,
+      codecPreference: config.effectiveCodecPreference,
+      encoderAvailability,
     });
     const differ = core.createSyncDiffer(this.handler);
 
@@ -293,6 +301,18 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     }
     if (config.skipUpgrades) {
       out.print(`Skip upgrades: enabled`);
+    }
+    if (config.resolvedLossyCodec && config.lossyPreferenceStack) {
+      const chain = config.lossyPreferenceStack.join(' \u2192 ');
+      out.print(`Codec: ${config.resolvedLossyCodec} (first supported from preference: ${chain})`);
+    }
+
+    // Codec change count
+    const codecChangeCount = diff.toUpdate.filter((u) =>
+      u.reasons.includes('codec-changed')
+    ).length;
+    if (codecChangeCount > 0) {
+      out.print(`Codec change: ${formatNumber(codecChangeCount)} tracks need re-transcoding`);
     }
     out.newline();
 
@@ -510,6 +530,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       source: sourcePath,
       device: devicePath,
       quality: config.effectiveQuality,
+      codec: config.resolvedLossyCodec,
+      codecPreference: config.lossyPreferenceStack,
       transferMode: config.effectiveTransferMode,
       transforms: transformsInfo.length > 0 ? transformsInfo : undefined,
       skipUpgrades: config.skipUpgrades || undefined,
@@ -606,7 +628,15 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
             phase: phaseStr,
             trackName: progress.currentTrack,
           });
-          musicDisplay.update(overallLine, currentLine);
+          if (out.isTty) {
+            musicDisplay.update(overallLine, currentLine);
+          } else {
+            // Non-interactive mode: print plain-text progress to stdout so
+            // scripts, CI pipelines, and E2E tests can observe sync progress.
+            out.print(
+              `${overallLine}  ${phaseStr}${progress.currentTrack ? ': ' + progress.currentTrack : ''}`
+            );
+          }
         }
       }
     } catch (err) {
