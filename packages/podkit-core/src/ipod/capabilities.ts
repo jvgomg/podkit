@@ -129,5 +129,6 @@ export function getDeviceCapabilities(generation: string): DeviceCapabilities {
     supportedAudioCodecs,
     supportsVideo,
     audioNormalization: 'soundcheck',
+    supportsAlbumArtistBrowsing: false,
   };
 }

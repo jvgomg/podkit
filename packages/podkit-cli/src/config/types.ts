@@ -222,6 +222,8 @@ export interface DeviceConfig {
   supportsVideo?: boolean;
   /** Override audio normalization mode ('soundcheck', 'replaygain', 'none') */
   audioNormalization?: AudioNormalizationMode;
+  /** Override whether the device supports Album Artist browsing */
+  supportsAlbumArtistBrowsing?: boolean;
   /** Override the music directory name on the device (default: "Music") */
   musicDir?: string;
 }
@@ -335,6 +337,7 @@ export interface PodkitConfig {
     supportedAudioCodecs?: AudioCodec[];
     supportsVideo?: boolean;
     audioNormalization?: AudioNormalizationMode;
+    supportsAlbumArtistBrowsing?: boolean;
     musicDir?: string;
   };
 }
@@ -454,6 +457,7 @@ export interface ConfigFileDevice {
   supportedAudioCodecs?: string[];
   supportsVideo?: boolean;
   audioNormalization?: string;
+  supportsAlbumArtistBrowsing?: boolean;
   musicDir?: string;
 }
 

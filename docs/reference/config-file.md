@@ -249,6 +249,7 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 | `artworkMaxResolution` | integer | from profile | Maximum artwork dimension in pixels (square). podkit resizes artwork to fit. |
 | `supportsVideo` | boolean | from profile | Whether the device supports video playback |
 | `audioNormalization` | string | from profile | Volume normalization mode: `soundcheck` (writes to iPod database), `replaygain` (Rockbox reads tags natively), or `none` (skip normalization). podkit adapts its behavior — hiding normalization UI, skipping soundcheck upgrade detection — based on this value. |
+| `supportsAlbumArtistBrowsing` | boolean | from profile | Whether the device uses Album Artist for browse navigation. When `true`, the device groups tracks by Album Artist in its artist list. When `false` (e.g. iPod stock firmware), the device only uses the Artist field for browsing. |
 | `musicDir` | string | `"Music"` | Custom music directory path on the device |
 
 These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation.

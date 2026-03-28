@@ -119,6 +119,13 @@ function buildCapabilityOverrides(
     hasOverrides = true;
   }
 
+  const supportsAlbumArtistBrowsing =
+    deviceConfig.supportsAlbumArtistBrowsing ?? deviceDefaults?.supportsAlbumArtistBrowsing;
+  if (supportsAlbumArtistBrowsing !== undefined) {
+    overrides.supportsAlbumArtistBrowsing = supportsAlbumArtistBrowsing;
+    hasOverrides = true;
+  }
+
   return hasOverrides ? overrides : undefined;
 }
 
@@ -170,6 +177,7 @@ export async function openDevice(
       supportedAudioCodecs: ['aac', 'mp3'] as const,
       supportsVideo: false,
       audioNormalization: 'soundcheck' as const,
+      supportsAlbumArtistBrowsing: false,
     };
 
     const adapter = new core.IpodDeviceAdapter(ipod, capabilities);

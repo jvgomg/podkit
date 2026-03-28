@@ -353,6 +353,14 @@ export interface DeviceInfoOutput {
     syncTagComplete?: number;
     syncTagMissingArt?: number;
     syncTagMissingTransfer?: number;
+    massStorageCapabilities?: {
+      supportedAudioCodecs: string[];
+      artworkSources: string[];
+      artworkMaxResolution: number;
+      supportsVideo: boolean;
+      audioNormalization: string;
+      supportsAlbumArtistBrowsing: boolean;
+    };
     databaseError?: string;
   };
   error?: string;
@@ -1813,6 +1821,19 @@ const infoSubcommand = new Command('info')
                 };
               }
 
+              // Mass-storage capabilities for JSON output
+              if (!deviceResult.ipod && resolvedDeviceCapabilities) {
+                liveStatus.massStorageCapabilities = {
+                  supportedAudioCodecs: [...resolvedDeviceCapabilities.supportedAudioCodecs],
+                  artworkSources: [...resolvedDeviceCapabilities.artworkSources],
+                  artworkMaxResolution: resolvedDeviceCapabilities.artworkMaxResolution,
+                  supportsVideo: resolvedDeviceCapabilities.supportsVideo,
+                  audioNormalization: resolvedDeviceCapabilities.audioNormalization,
+                  supportsAlbumArtistBrowsing:
+                    resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+                };
+              }
+
               if (storage) {
                 liveStatus.storage = {
                   used: storage.used,
@@ -1946,13 +1967,17 @@ const infoSubcommand = new Command('info')
           } else if (isMassStorage && resolvedDeviceCapabilities) {
             out.print('  Capabilities:');
             out.print(
-              `    Audio codecs: ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')}`
+              `    Audio Codecs:    ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')}`
             );
             out.print(
-              `    Artwork:      ${resolvedDeviceCapabilities.artworkSources.join(', ')} (max ${resolvedDeviceCapabilities.artworkMaxResolution}px)`
+              `    Artwork:         ${resolvedDeviceCapabilities.artworkSources.join(', ')} (max ${resolvedDeviceCapabilities.artworkMaxResolution}px)`
             );
             out.print(
-              `    Video:        ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
+              `    Video:           ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
+            );
+            out.print(`    Normalization:   ${resolvedDeviceCapabilities.audioNormalization}`);
+            out.print(
+              `    Album Artist:    ${resolvedDeviceCapabilities.supportsAlbumArtistBrowsing ? 'yes' : 'no'}`
             );
           }
 
@@ -2070,6 +2095,14 @@ const infoSubcommand = new Command('info')
             if (device.supportsVideo !== undefined) {
               overrides.push(
                 `  Video Support:      ${device.supportsVideo ? 'yes' : 'no'} (override)`
+              );
+            }
+            if (device.audioNormalization !== undefined) {
+              overrides.push(`  Normalization:      ${device.audioNormalization} (override)`);
+            }
+            if (device.supportsAlbumArtistBrowsing !== undefined) {
+              overrides.push(
+                `  Album Artist:       ${device.supportsAlbumArtistBrowsing ? 'yes' : 'no'} (override)`
               );
             }
             if (device.musicDir !== undefined) {

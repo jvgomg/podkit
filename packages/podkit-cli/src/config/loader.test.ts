@@ -1082,6 +1082,55 @@ audioNormalization = "none"
           /Mass-storage settings.*audioNormalization.*only valid for mass-storage/
         );
       });
+
+      it('parses supportsAlbumArtistBrowsing on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+supportsAlbumArtistBrowsing = false
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.supportsAlbumArtistBrowsing).toBe(false);
+      });
+
+      it('rejects invalid supportsAlbumArtistBrowsing value', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+supportsAlbumArtistBrowsing = "maybe"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Invalid type for "supportsAlbumArtistBrowsing"/
+        );
+      });
+
+      it('rejects supportsAlbumArtistBrowsing on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+supportsAlbumArtistBrowsing = false
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*supportsAlbumArtistBrowsing.*only valid for mass-storage/
+        );
+      });
     });
 
     describe('defaults', () => {
@@ -1586,6 +1635,20 @@ device = "terapod"
         const result = loadEnvConfig();
         expect(result.deviceDefaults?.supportsVideo).toBe(true);
         delete process.env[ENV_KEYS.supportsVideo];
+      });
+
+      it('parses PODKIT_SUPPORTS_ALBUM_ARTIST_BROWSING', () => {
+        process.env[ENV_KEYS.supportsAlbumArtistBrowsing] = 'true';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.supportsAlbumArtistBrowsing).toBe(true);
+        delete process.env[ENV_KEYS.supportsAlbumArtistBrowsing];
+      });
+
+      it('parses PODKIT_SUPPORTS_ALBUM_ARTIST_BROWSING = false', () => {
+        process.env[ENV_KEYS.supportsAlbumArtistBrowsing] = 'false';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.supportsAlbumArtistBrowsing).toBe(false);
+        delete process.env[ENV_KEYS.supportsAlbumArtistBrowsing];
       });
 
       it('parses PODKIT_MUSIC_DIR', () => {

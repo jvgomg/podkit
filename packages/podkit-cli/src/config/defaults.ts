@@ -59,5 +59,6 @@ export const ENV_KEYS = {
   artworkSources: `${ENV_PREFIX}ARTWORK_SOURCES`,
   supportedAudioCodecs: `${ENV_PREFIX}SUPPORTED_AUDIO_CODECS`,
   supportsVideo: `${ENV_PREFIX}SUPPORTS_VIDEO`,
+  supportsAlbumArtistBrowsing: `${ENV_PREFIX}SUPPORTS_ALBUM_ARTIST_BROWSING`,
   musicDir: `${ENV_PREFIX}MUSIC_DIR`,
 } as const;
