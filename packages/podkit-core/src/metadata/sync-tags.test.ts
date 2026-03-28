@@ -157,6 +157,29 @@ describe('parseSyncTag', () => {
       artworkHash: 'deadbeef',
     });
   });
+
+  // --- codec= field tests ---
+
+  it('parses sync tag with codec=aac', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=aac]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', codec: 'aac' });
+  });
+
+  it('parses sync tag with codec=opus', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=opus]');
+    expect(result).toEqual({ quality: 'high', encoding: 'vbr', codec: 'opus' });
+  });
+
+  it('parses legacy tag without codec field as codec: undefined', () => {
+    const result = parseSyncTag('[podkit:v1 quality=high encoding=vbr]');
+    expect(result).not.toBeNull();
+    expect(result!.codec).toBeUndefined();
+  });
+
+  it('parses codec field in any key position', () => {
+    const result = parseSyncTag('[podkit:v1 codec=alac quality=lossless]');
+    expect(result).toEqual({ quality: 'lossless', codec: 'alac' });
+  });
 });
 
 // =============================================================================
@@ -205,6 +228,27 @@ describe('formatSyncTag', () => {
     expect(
       formatSyncTag({ quality: 'high', encoding: 'cbr', bitrate: 320, artworkHash: 'deadbeef' })
     ).toBe('[podkit:v1 quality=high encoding=cbr bitrate=320 art=deadbeef]');
+  });
+
+  it('formats a tag with codec', () => {
+    expect(formatSyncTag({ quality: 'high', encoding: 'vbr', codec: 'aac' })).toBe(
+      '[podkit:v1 quality=high encoding=vbr codec=aac]'
+    );
+  });
+
+  it('omits codec field when codec is undefined', () => {
+    const result = formatSyncTag({ quality: 'high', encoding: 'vbr' });
+    expect(result).not.toContain('codec=');
+  });
+
+  it('places codec between encoding and art in output', () => {
+    const result = formatSyncTag({
+      quality: 'high',
+      encoding: 'vbr',
+      codec: 'aac',
+      artworkHash: 'a1b2c3d4',
+    });
+    expect(result).toBe('[podkit:v1 quality=high encoding=vbr codec=aac art=a1b2c3d4]');
   });
 });
 
@@ -484,6 +528,26 @@ describe('buildAudioSyncTag', () => {
     const result = buildAudioSyncTag('high', 'vbr');
     expect(result.transferMode).toBeUndefined();
   });
+
+  it('includes codec when provided', () => {
+    expect(buildAudioSyncTag('high', 'vbr', undefined, undefined, 'aac')).toEqual({
+      quality: 'high',
+      encoding: 'vbr',
+      codec: 'aac',
+    });
+  });
+
+  it('omits codec when not provided', () => {
+    const result = buildAudioSyncTag('high', 'vbr');
+    expect(result.codec).toBeUndefined();
+  });
+
+  it('includes codec for lossless preset', () => {
+    expect(buildAudioSyncTag('lossless', undefined, undefined, undefined, 'alac')).toEqual({
+      quality: 'lossless',
+      codec: 'alac',
+    });
+  });
 });
 
 // =============================================================================
@@ -528,6 +592,26 @@ describe('buildCopySyncTag', () => {
   it('formats correctly via formatSyncTag', () => {
     const tag = buildCopySyncTag('fast', 'a1b2c3d4');
     expect(formatSyncTag(tag)).toBe('[podkit:v1 quality=copy art=a1b2c3d4 transfer=fast]');
+  });
+
+  it('includes codec when provided', () => {
+    expect(buildCopySyncTag('fast', undefined, 'mp3')).toEqual({
+      quality: 'copy',
+      transferMode: 'fast',
+      codec: 'mp3',
+    });
+  });
+
+  it('omits codec when not provided', () => {
+    const result = buildCopySyncTag('fast');
+    expect(result.codec).toBeUndefined();
+  });
+
+  it('formats correctly with codec via formatSyncTag', () => {
+    const tag = buildCopySyncTag('optimized', 'a1b2c3d4', 'aac');
+    expect(formatSyncTag(tag)).toBe(
+      '[podkit:v1 quality=copy codec=aac art=a1b2c3d4 transfer=optimized]'
+    );
   });
 });
 
@@ -574,6 +658,25 @@ describe('round-trip: format → parse → compare', () => {
       name: 'CBR with bitrate and artworkHash',
       data: { quality: 'high', encoding: 'cbr', bitrate: 320, artworkHash: '00112233' },
     },
+    {
+      name: 'high VBR with codec=aac',
+      data: { quality: 'high', encoding: 'vbr', codec: 'aac' },
+    },
+    {
+      name: 'lossless with codec=alac',
+      data: { quality: 'lossless', codec: 'alac' },
+    },
+    {
+      name: 'all fields with codec',
+      data: {
+        quality: 'high',
+        encoding: 'cbr',
+        bitrate: 320,
+        codec: 'aac',
+        artworkHash: 'deadbeef',
+        transferMode: 'fast',
+      },
+    },
   ];
 
   for (const { name, data } of testCases) {
@@ -591,6 +694,29 @@ describe('round-trip: format → parse → compare', () => {
     const parsed = parseSyncTag(formatted);
     expect(parsed).not.toBeNull();
     expect(parsed!.artworkHash).toBe('a1b2c3d4');
+  });
+
+  it('round-trips codec through format then parse', () => {
+    const data: SyncTagData = { quality: 'high', encoding: 'vbr', codec: 'aac' };
+    const formatted = formatSyncTag(data);
+    const parsed = parseSyncTag(formatted);
+    expect(parsed).not.toBeNull();
+    expect(parsed!.codec).toBe('aac');
+  });
+
+  it('format → parse → format produces identical output for tag with codec', () => {
+    const data: SyncTagData = {
+      quality: 'high',
+      encoding: 'vbr',
+      codec: 'aac',
+      artworkHash: 'a1b2c3d4',
+      transferMode: 'fast',
+    };
+    const first = formatSyncTag(data);
+    const parsed = parseSyncTag(first);
+    expect(parsed).not.toBeNull();
+    const second = formatSyncTag(parsed!);
+    expect(second).toBe(first);
   });
 
   it('round-trips through writeSyncTag with existing comment', () => {

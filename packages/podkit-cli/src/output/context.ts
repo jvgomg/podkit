@@ -141,6 +141,14 @@ export class OutputContext {
   }
 
   /**
+   * Whether interactive TTY output (spinners, progress bars) is enabled.
+   * False when --no-tty is passed or stdout is not a TTY.
+   */
+  get isTty(): boolean {
+    return this.tty;
+  }
+
+  /**
    * Get the verbosity level (0-3)
    */
   get verbosity(): number {

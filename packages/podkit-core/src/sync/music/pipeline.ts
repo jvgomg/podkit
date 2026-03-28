@@ -45,8 +45,16 @@ import {
 } from '../engine/error-handling.js';
 
 import type { CollectionTrack, CollectionAdapter } from '../../adapters/interface.js';
-import type { FFmpegTranscoder, OptimizedCopyFormat } from '../../transcode/ffmpeg.js';
+import type {
+  FFmpegTranscoder,
+  OptimizedCopyFormat,
+  EncoderConfig,
+} from '../../transcode/ffmpeg.js';
 import { buildOptimizedCopyArgs } from '../../transcode/ffmpeg.js';
+import { getCodecMetadata } from '../../transcode/codecs.js';
+import { fileTypeToAudioCodec } from './planner.js';
+import { getCodecPresetBitrate, getCodecVbrQuality } from '../../transcode/types.js';
+import type { TranscodePresetRef } from '../engine/types.js';
 import type {
   ExecuteOptions,
   SyncExecutor,
@@ -367,6 +375,10 @@ function getFileTypeLabel(filePath: string): string {
       return 'AAC audio file';
     case '.alac':
       return 'Apple Lossless audio file';
+    case '.opus':
+      return 'Opus audio file';
+    case '.flac':
+      return 'FLAC audio file';
     default:
       return 'Audio file';
   }
@@ -381,7 +393,66 @@ function getFileTypeLabel(filePath: string): string {
 function getOptimizedCopyFormat(track: CollectionTrack): OptimizedCopyFormat {
   if (track.fileType === 'mp3') return 'mp3';
   if (track.codec?.toLowerCase() === 'alac' || track.fileType === 'alac') return 'alac';
+  if (track.fileType === 'opus') return 'opus';
+  if (track.fileType === 'flac') return 'flac';
   return 'm4a'; // m4a, aac, and other M4A-container formats
+}
+
+/**
+ * Build a transcode preset argument for the transcoder.
+ *
+ * When the preset has a targetCodec, builds a full EncoderConfig so the
+ * transcoder knows which codec to use. Otherwise falls back to passing
+ * the preset name directly (legacy AAC path).
+ */
+function buildTranscodePreset(
+  preset: TranscodePresetRef,
+  encodingMode?: import('../../transcode/types.js').EncodingMode
+): import('../../transcode/types.js').QualityPreset | 'lossless' | EncoderConfig {
+  if (!preset.targetCodec) {
+    // Legacy path: pass preset name (resolves to AAC internally)
+    return preset.name;
+  }
+
+  // Lossless: ALAC uses the legacy 'lossless' string path; FLAC uses EncoderConfig
+  if (preset.name === 'lossless') {
+    if (preset.targetCodec === 'flac') {
+      return { codec: 'flac', bitrateKbps: 0, encoding: 'vbr' };
+    }
+    return 'lossless';
+  }
+
+  // Build EncoderConfig for codec-aware transcoding
+  const config: EncoderConfig = {
+    codec: preset.targetCodec,
+    bitrateKbps:
+      preset.bitrateOverride ?? getCodecPresetBitrate(preset.targetCodec, preset.name) ?? 256,
+    encoding: encodingMode ?? 'vbr',
+    quality: getCodecVbrQuality(preset.targetCodec, preset.name),
+  };
+  return config;
+}
+
+/**
+ * Get the output file extension for a transcode preset.
+ * When the preset has a targetCodec, uses codec metadata; otherwise defaults to `.m4a` (AAC).
+ */
+function getTranscodeOutputExtension(preset: TranscodePresetRef): string {
+  if (preset.targetCodec) {
+    return getCodecMetadata(preset.targetCodec).extension;
+  }
+  return '.m4a';
+}
+
+/**
+ * Get the filetype label for a transcode preset.
+ * When the preset has a targetCodec, uses codec metadata; otherwise defaults to `'AAC audio file'`.
+ */
+function getTranscodeFiletypeLabel(preset: TranscodePresetRef): string {
+  if (preset.targetCodec) {
+    return getCodecMetadata(preset.targetCodec).filetypeLabel;
+  }
+  return 'AAC audio file';
 }
 
 /**
@@ -1222,12 +1293,19 @@ export class MusicPipeline implements SyncExecutor {
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { source, preset: presetRef } = operation;
 
-    // Generate output path in temp directory
+    // Generate output path in temp directory — derive extension from target codec
     const baseName = basename(source.filePath, extname(source.filePath));
-    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}.m4a`);
+    const outputExt = getTranscodeOutputExtension(presetRef);
+    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${outputExt}`);
 
-    // Transcode the file (using the quality preset name directly)
-    const result = await this.transcoder.transcode(source.filePath, outputPath, presetRef.name, {
+    // Transcode the file — use EncoderConfig when targetCodec is set
+    const transcodePreset = buildTranscodePreset(
+      presetRef,
+      this.syncTagConfig?.encodingMode as
+        | import('../../transcode/types.js').EncodingMode
+        | undefined
+    );
+    const result = await this.transcoder.transcode(source.filePath, outputPath, transcodePreset, {
       signal,
       transferMode: this.transferMode as
         | import('../../transcode/types.js').TransferMode
@@ -1239,7 +1317,7 @@ export class MusicPipeline implements SyncExecutor {
     const trackInput: DeviceTrackInput = {
       ...toDeviceTrackInput(source),
       bitrate: result.bitrate,
-      filetype: 'AAC audio file',
+      filetype: getTranscodeFiletypeLabel(presetRef),
     };
 
     const track = this.device.addTrack(trackInput);
@@ -1454,12 +1532,19 @@ export class MusicPipeline implements SyncExecutor {
     const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
     const inputPath = fileAccess.path;
 
-    // Generate output path in temp directory
+    // Generate output path in temp directory — derive extension from target codec
     const baseName = basename(source.filePath, extname(source.filePath));
-    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}.m4a`);
+    const outputExt = getTranscodeOutputExtension(presetRef);
+    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${outputExt}`);
 
-    // Transcode the file
-    const result = await this.transcoder.transcode(inputPath, outputPath, presetRef.name, {
+    // Transcode the file — use EncoderConfig when targetCodec is set
+    const transcodePreset = buildTranscodePreset(
+      presetRef,
+      this.syncTagConfig?.encodingMode as
+        | import('../../transcode/types.js').EncodingMode
+        | undefined
+    );
+    const result = await this.transcoder.transcode(inputPath, outputPath, transcodePreset, {
       signal,
       transferMode: this.transferMode as
         | import('../../transcode/types.js').TransferMode
@@ -1473,7 +1558,7 @@ export class MusicPipeline implements SyncExecutor {
       isTemp: true,
       size: result.size,
       bitrate: result.bitrate,
-      filetype: 'AAC audio file',
+      filetype: getTranscodeFiletypeLabel(presetRef),
       // Use the resolved input path for artwork extraction
       artworkSourcePath: inputPath,
       // Track downloaded file for cleanup after transfer (for artwork extraction)
@@ -1719,7 +1804,10 @@ export class MusicPipeline implements SyncExecutor {
 
     // Write sync tag for transcode operations
     if (operation.type === 'add-transcode' && operation.preset) {
-      const syncTag = this.buildSyncTagForPreset(operation.preset.name);
+      const syncTag = this.buildSyncTagForPreset(
+        operation.preset.name,
+        operation.preset.targetCodec
+      );
       if (syncTag) {
         trackInput.syncTag = syncTag;
       }
@@ -1730,7 +1818,8 @@ export class MusicPipeline implements SyncExecutor {
       (operation.type === 'add-direct-copy' || operation.type === 'add-optimized-copy') &&
       this.syncTagConfig
     ) {
-      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast');
+      const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
+      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast', undefined, sourceCodec);
       trackInput.syncTag = copySyncTag;
     }
 
@@ -1867,7 +1956,10 @@ export class MusicPipeline implements SyncExecutor {
 
     // Write sync tag for upgrade-transcode operations (has preset)
     if (operation.type === 'upgrade-transcode') {
-      const syncTag = this.buildSyncTagForPreset(operation.preset.name);
+      const syncTag = this.buildSyncTagForPreset(
+        operation.preset.name,
+        operation.preset.targetCodec
+      );
       if (syncTag) {
         foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
       }
@@ -1878,7 +1970,8 @@ export class MusicPipeline implements SyncExecutor {
       (operation.type === 'upgrade-direct-copy' || operation.type === 'upgrade-optimized-copy') &&
       this.syncTagConfig
     ) {
-      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast');
+      const sourceCodec = fileTypeToAudioCodec(operation.source.fileType, operation.source.codec);
+      const copySyncTag = buildCopySyncTag(this.transferMode ?? 'fast', undefined, sourceCodec);
       foundTrack = this.device.writeSyncTag(foundTrack, copySyncTag);
     }
 
@@ -1918,7 +2011,7 @@ export class MusicPipeline implements SyncExecutor {
    *
    * Returns undefined if no sync tag config is set (sync tags disabled).
    */
-  private buildSyncTagForPreset(presetName: string): SyncTagData | undefined {
+  private buildSyncTagForPreset(presetName: string, targetCodec?: string): SyncTagData | undefined {
     if (!this.syncTagConfig) {
       return undefined;
     }
@@ -1927,7 +2020,8 @@ export class MusicPipeline implements SyncExecutor {
       presetName,
       this.syncTagConfig.encodingMode,
       this.syncTagConfig.customBitrate,
-      this.transferMode
+      this.transferMode,
+      targetCodec
     );
   }
 

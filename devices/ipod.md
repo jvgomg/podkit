@@ -156,6 +156,13 @@ audio_formats:
         Generation-specific. Supported on: Video (5G/5.5G), Classic (all),
         Nano (3G-5G). Not supported on: 1G-4G, Photo, Mini, Nano 1G-2G,
         Shuffle, Touch.
+    - codec: "AIFF"
+      extensions: [".aiff", ".aif"]
+      max_sample_rate: ""
+      max_bit_depth: ""
+      notes: >
+        Supported on ALAC-capable generations (Video, Classic, Nano 3G-5G).
+        podkit prefers WAV for lossless on incompatible generations.
     - codec: "WAV"
       extensions: [".wav"]
       max_sample_rate: ""

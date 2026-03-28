@@ -93,7 +93,7 @@ describe('device command', () => {
       const minimalConfig = { music: {}, video: {}, devices: {} } as any;
       setContext({
         config: minimalConfig,
-        globalOpts: { json: false, quiet: false, verbose: 0, color: false, tips: true },
+        globalOpts: { json: false, quiet: false, verbose: 0, color: false, tips: true, tty: false },
         configResult: {
           config: minimalConfig,
           configPath: '/tmp/test.toml',

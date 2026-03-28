@@ -11,12 +11,15 @@
 
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { QualityPreset, EncodingMode, TransferMode } from '../../transcode/types.js';
-import { getPresetBitrate } from '../../transcode/types.js';
+import { getPresetBitrate, getCodecPresetBitrate } from '../../transcode/types.js';
 import type { DeviceCapabilities, AudioCodec } from '../../device/capabilities.js';
 import type { CollectionAdapter } from '../../adapters/interface.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { hasEnabledTransforms } from '../../transforms/pipeline.js';
 import type { RetryConfig } from './pipeline.js';
+import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
+import type { EncoderAvailability, CodecResolutionError } from '../../transcode/codec-resolver.js';
+import { resolveCodecPreferences, isCodecResolutionError } from '../../transcode/codec-resolver.js';
 
 // =============================================================================
 // Public Config
@@ -41,7 +44,7 @@ export interface MusicSyncConfig {
   capabilities?: DeviceCapabilities;
 
   /**
-   * Encoding mode for AAC transcoding
+   * Encoding mode for audio transcoding
    * @default 'vbr'
    */
   encoding?: EncodingMode;
@@ -90,6 +93,12 @@ export interface MusicSyncConfig {
 
   /** Retry configuration for failed operations */
   retryConfig?: RetryConfig;
+
+  /** Codec preference config (lossy and lossless stacks) */
+  codecPreference?: { lossy?: string[]; lossless?: string[] };
+
+  /** Encoder availability for codec resolution (required when codecPreference is used) */
+  encoderAvailability?: EncoderAvailability;
 }
 
 // =============================================================================
@@ -147,6 +156,15 @@ export interface ResolvedMusicConfig {
 
   /** Whether any metadata transforms are enabled */
   readonly transformsEnabled: boolean;
+
+  /** Resolved codec for lossy transcoding (from codec preference resolution) */
+  readonly resolvedLossyCodec?: TranscodeTargetCodec;
+
+  /** Resolved lossless stack (from codec preference resolution) */
+  readonly resolvedLosslessStack?: (TranscodeTargetCodec | 'source')[];
+
+  /** Codec resolution error, if resolution failed */
+  readonly codecResolutionError?: CodecResolutionError;
 }
 
 // =============================================================================
@@ -162,20 +180,6 @@ export interface ResolvedMusicConfig {
 export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig {
   const supportedAudioCodecs = config.capabilities?.supportedAudioCodecs;
   const deviceSupportsAlac = supportedAudioCodecs?.includes('alac') ?? false;
-  const isAlacPreset = config.quality === 'max' && deviceSupportsAlac;
-
-  // 'max' resolves to 'lossless' when device supports ALAC, otherwise to 'high'
-  let resolvedQuality: string;
-  if (config.quality === 'max') {
-    resolvedQuality = isAlacPreset ? 'lossless' : 'high';
-  } else {
-    resolvedQuality = config.quality;
-  }
-
-  const presetBitrate = getPresetBitrate(
-    isAlacPreset ? 'lossless' : config.quality === 'max' ? 'high' : config.quality,
-    config.customBitrate
-  );
 
   const transferMode: TransferMode = config.transferMode ?? 'fast';
 
@@ -188,6 +192,71 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
 
   const transformsEnabled = config.transforms ? hasEnabledTransforms(config.transforms) : false;
 
+  // --- Codec preference resolution ---
+  // When codecPreference + supportedAudioCodecs + encoderAvailability are all available,
+  // resolve codec preferences to determine the target lossy and lossless codecs.
+  let resolvedLossyCodec: TranscodeTargetCodec | undefined;
+  let resolvedLosslessStack: (TranscodeTargetCodec | 'source')[] | undefined;
+  let codecResolutionError: CodecResolutionError | undefined;
+
+  if (supportedAudioCodecs && config.encoderAvailability) {
+    const result = resolveCodecPreferences(
+      config.codecPreference,
+      supportedAudioCodecs,
+      config.encoderAvailability
+    );
+
+    if (isCodecResolutionError(result)) {
+      codecResolutionError = result;
+    } else {
+      resolvedLossyCodec = result.lossy.codec;
+      resolvedLosslessStack = result.lossless.map((entry) =>
+        entry === 'source' ? 'source' : entry.codec
+      );
+    }
+  }
+
+  // --- isAlacPreset ---
+  // Repurposed: "is lossless preset" — true when quality=max and a lossless codec
+  // is available (via resolved lossless stack or legacy ALAC detection).
+  let isAlacPreset: boolean;
+  if (resolvedLosslessStack !== undefined) {
+    // Codec resolution path: lossless is available if the stack has at least one resolved codec
+    const hasLosslessCodec = resolvedLosslessStack.some((entry) => entry !== 'source');
+    isAlacPreset =
+      config.quality === 'max' && (hasLosslessCodec || resolvedLosslessStack.includes('source'));
+  } else {
+    // Legacy path: ALAC only
+    isAlacPreset = config.quality === 'max' && deviceSupportsAlac;
+  }
+
+  // --- resolvedQuality ---
+  let resolvedQuality: string;
+  if (config.quality === 'max') {
+    resolvedQuality = isAlacPreset ? 'lossless' : 'high';
+  } else {
+    resolvedQuality = config.quality;
+  }
+
+  // --- presetBitrate ---
+  // When a lossy codec is resolved, use its codec-specific bitrate table.
+  // Otherwise fall back to legacy AAC-based getPresetBitrate().
+  let presetBitrate: number;
+  if (resolvedLossyCodec && resolvedQuality !== 'lossless') {
+    const effectivePreset = (config.quality === 'max' ? 'high' : config.quality) as Exclude<
+      QualityPreset,
+      'max'
+    >;
+    presetBitrate =
+      getCodecPresetBitrate(resolvedLossyCodec, effectivePreset, config.customBitrate) ??
+      getPresetBitrate(effectivePreset, config.customBitrate);
+  } else {
+    presetBitrate = getPresetBitrate(
+      isAlacPreset ? 'lossless' : config.quality === 'max' ? 'high' : config.quality,
+      config.customBitrate
+    );
+  }
+
   return {
     raw: config,
     isAlacPreset,
@@ -199,5 +268,8 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     primaryArtworkSource,
     supportedAudioCodecs,
     transformsEnabled,
+    resolvedLossyCodec,
+    resolvedLosslessStack,
+    codecResolutionError,
   };
 }

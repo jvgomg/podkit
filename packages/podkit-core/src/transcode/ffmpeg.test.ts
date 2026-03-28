@@ -13,10 +13,13 @@ import {
   buildAlacArgs,
   buildVbrArgs,
   buildOptimizedCopyArgs,
+  buildOpusArgs,
+  buildMp3Args,
+  buildFlacArgs,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
-import type { AacTranscodeConfig, OptimizedCopyFormat } from './ffmpeg.js';
+import type { EncoderConfig, OptimizedCopyFormat } from './ffmpeg.js';
 import { AAC_PRESETS } from './types.js';
 import { parseFFmpegProgressLine } from './progress.js';
 
@@ -130,9 +133,9 @@ describe('buildTranscodeArgs', () => {
     });
   });
 
-  describe('CBR via AacTranscodeConfig', () => {
+  describe('CBR via EncoderConfig', () => {
     it('uses CBR arguments for high CBR config', () => {
-      const config: AacTranscodeConfig = { bitrateKbps: 256, encoding: 'cbr' };
+      const config: EncoderConfig = { bitrateKbps: 256, encoding: 'cbr' };
       const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
@@ -141,7 +144,7 @@ describe('buildTranscodeArgs', () => {
     });
 
     it('uses CBR arguments for 320 kbps config', () => {
-      const config: AacTranscodeConfig = { bitrateKbps: 320, encoding: 'cbr' };
+      const config: EncoderConfig = { bitrateKbps: 320, encoding: 'cbr' };
       const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
@@ -149,7 +152,7 @@ describe('buildTranscodeArgs', () => {
     });
 
     it('uses CBR arguments for 128 kbps config', () => {
-      const config: AacTranscodeConfig = { bitrateKbps: 128, encoding: 'cbr' };
+      const config: EncoderConfig = { bitrateKbps: 128, encoding: 'cbr' };
       const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
@@ -157,9 +160,9 @@ describe('buildTranscodeArgs', () => {
     });
   });
 
-  describe('VBR via AacTranscodeConfig', () => {
+  describe('VBR via EncoderConfig', () => {
     it('uses VBR arguments with quality and bitrate', () => {
-      const config: AacTranscodeConfig = {
+      const config: EncoderConfig = {
         bitrateKbps: 256,
         encoding: 'vbr',
         quality: 5,
@@ -172,7 +175,7 @@ describe('buildTranscodeArgs', () => {
     });
 
     it('passes targetKbps to VBR args for aac_at encoder', () => {
-      const config: AacTranscodeConfig = {
+      const config: EncoderConfig = {
         bitrateKbps: 192,
         encoding: 'vbr',
         quality: 4,
@@ -185,9 +188,9 @@ describe('buildTranscodeArgs', () => {
     });
   });
 
-  describe('custom bitrate via AacTranscodeConfig', () => {
+  describe('custom bitrate via EncoderConfig', () => {
     it('uses custom bitrate for CBR', () => {
-      const config: AacTranscodeConfig = { bitrateKbps: 200, encoding: 'cbr' };
+      const config: EncoderConfig = { bitrateKbps: 200, encoding: 'cbr' };
       const args = buildTranscodeArgs(input, output, 'aac', config);
 
       expect(args).toContain('-b:a');
@@ -195,7 +198,7 @@ describe('buildTranscodeArgs', () => {
     });
 
     it('uses custom bitrate for VBR with aac_at', () => {
-      const config: AacTranscodeConfig = {
+      const config: EncoderConfig = {
         bitrateKbps: 200,
         encoding: 'vbr',
         quality: 4,
@@ -414,10 +417,11 @@ describe('buildOptimizedCopyArgs', () => {
   });
 
   describe('MP3 format', () => {
-    it('does not use ipod container format', () => {
+    it('uses mp3 container format (not ipod)', () => {
       const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3');
 
-      expect(args).not.toContain('-f');
+      expect(args).toContain('-f');
+      expect(args).toContain('mp3');
       expect(args).not.toContain('ipod');
     });
   });
@@ -485,13 +489,15 @@ describe('transfer mode × transcode path matrix', () => {
       expect(args).toContain('ipod');
     });
 
-    it('MP3 → MP3 uses stream copy without ipod container', () => {
+    it('MP3 → MP3 uses stream copy with mp3 container (not ipod)', () => {
       const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3');
 
       expect(args).toContain('-c:a');
       expect(args).toContain('copy');
       expect(args).toContain('-vn');
-      expect(args).not.toContain('-f');
+      expect(args).toContain('-f');
+      expect(args).toContain('mp3');
+      expect(args).not.toContain('ipod');
     });
 
     it('M4A → M4A uses stream copy with ipod container', () => {
@@ -684,6 +690,315 @@ describe('artwork resize (embedded artwork devices)', () => {
       expect(args).toContain('-filter:v');
       expect(args).not.toContain('-vn');
     });
+  });
+});
+
+// =============================================================================
+// Opus argument builder
+// =============================================================================
+
+describe('buildOpusArgs', () => {
+  const input = '/path/to/input.flac';
+  const output = '/path/to/output.opus';
+
+  it('generates VBR args with correct codec, sample rate, bitrate, and format', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
+    const args = buildOpusArgs(input, output, config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('libopus');
+    expect(args).toContain('-ar');
+    expect(args).toContain('48000');
+    expect(args).toContain('-b:a');
+    expect(args).toContain('160k');
+    expect(args).toContain('-vbr');
+    expect(args).toContain('on');
+    expect(args).toContain('-f');
+    expect(args).toContain('ogg');
+  });
+
+  it('generates CBR args with -vbr off', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 128, encoding: 'cbr' };
+    const args = buildOpusArgs(input, output, config);
+
+    expect(args).toContain('-b:a');
+    expect(args).toContain('128k');
+    expect(args).toContain('-vbr');
+    expect(args).toContain('off');
+  });
+
+  it('strips artwork by default (fast mode)', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
+    const args = buildOpusArgs(input, output, config);
+
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+  });
+
+  it('resizes artwork when artworkResize is set', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
+    const args = buildOpusArgs(input, output, config, { artworkResize: 600 });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('mjpeg');
+    expect(args).toContain('-filter:v');
+    expect(args).not.toContain('-vn');
+  });
+
+  it('preserves artwork in portable mode', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
+    const args = buildOpusArgs(input, output, config, { transferMode: 'portable' });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('copy');
+    expect(args).not.toContain('-vn');
+  });
+});
+
+// =============================================================================
+// MP3 argument builder
+// =============================================================================
+
+describe('buildMp3Args', () => {
+  const input = '/path/to/input.flac';
+  const output = '/path/to/output.mp3';
+
+  it('generates VBR args with -q:a quality for high preset', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 256, encoding: 'vbr', quality: 0 };
+    const args = buildMp3Args(input, output, config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('libmp3lame');
+    expect(args).toContain('-q:a');
+    expect(args).toContain('0');
+    expect(args).toContain('-ar');
+    expect(args).toContain('44100');
+    expect(args).toContain('-f');
+    expect(args).toContain('mp3');
+    expect(args).not.toContain('-b:a');
+  });
+
+  it('generates CBR args with -b:a bitrate', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 256, encoding: 'cbr' };
+    const args = buildMp3Args(input, output, config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('libmp3lame');
+    expect(args).toContain('-b:a');
+    expect(args).toContain('256k');
+    expect(args).toContain('-f');
+    expect(args).toContain('mp3');
+    expect(args).not.toContain('-q:a');
+  });
+
+  it('uses 44100 Hz sample rate', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 192, encoding: 'cbr' };
+    const args = buildMp3Args(input, output, config);
+
+    expect(args).toContain('-ar');
+    expect(args).toContain('44100');
+  });
+
+  it('strips artwork by default', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 192, encoding: 'vbr', quality: 2 };
+    const args = buildMp3Args(input, output, config);
+
+    expect(args).toContain('-vn');
+  });
+});
+
+// =============================================================================
+// FLAC argument builder
+// =============================================================================
+
+describe('buildFlacArgs', () => {
+  const input = '/path/to/input.wav';
+  const output = '/path/to/output.flac';
+
+  it('generates correct FLAC args with codec and format', () => {
+    const args = buildFlacArgs(input, output);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('flac');
+    expect(args).toContain('-f');
+    expect(args).toContain('flac');
+  });
+
+  it('does not include bitrate or quality parameters', () => {
+    const args = buildFlacArgs(input, output);
+
+    expect(args).not.toContain('-b:a');
+    expect(args).not.toContain('-q:a');
+  });
+
+  it('does not include -ar flag (preserves source sample rate)', () => {
+    const args = buildFlacArgs(input, output);
+
+    expect(args).not.toContain('-ar');
+  });
+
+  it('preserves metadata', () => {
+    const args = buildFlacArgs(input, output);
+
+    expect(args).toContain('-map_metadata');
+    expect(args).toContain('0');
+  });
+
+  it('strips artwork by default', () => {
+    const args = buildFlacArgs(input, output);
+
+    expect(args).toContain('-vn');
+  });
+
+  it('resizes artwork when artworkResize is set', () => {
+    const args = buildFlacArgs(input, output, { artworkResize: 320 });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('mjpeg');
+    expect(args).toContain('-filter:v');
+    expect(args).not.toContain('-vn');
+  });
+});
+
+// =============================================================================
+// buildTranscodeArgs codec dispatch
+// =============================================================================
+
+describe('buildTranscodeArgs codec dispatch', () => {
+  const input = '/path/to/input.flac';
+  const output = '/path/to/output.file';
+
+  it('dispatches to Opus builder when codec is opus', () => {
+    const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
+    const args = buildTranscodeArgs(input, output, 'libopus', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('libopus');
+    expect(args).toContain('-ar');
+    expect(args).toContain('48000');
+    expect(args).toContain('-f');
+    expect(args).toContain('ogg');
+  });
+
+  it('dispatches to MP3 builder when codec is mp3', () => {
+    const config: EncoderConfig = { codec: 'mp3', bitrateKbps: 256, encoding: 'cbr' };
+    const args = buildTranscodeArgs(input, output, 'libmp3lame', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('libmp3lame');
+    expect(args).toContain('-f');
+    expect(args).toContain('mp3');
+  });
+
+  it('dispatches to FLAC builder when codec is flac', () => {
+    const config: EncoderConfig = { codec: 'flac', bitrateKbps: 0, encoding: 'vbr' };
+    const args = buildTranscodeArgs(input, output, 'flac', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('flac');
+    expect(args).toContain('-f');
+    expect(args).toContain('flac');
+    expect(args).not.toContain('-ar');
+  });
+
+  it('dispatches to ALAC builder when codec is alac', () => {
+    const config: EncoderConfig = { codec: 'alac', bitrateKbps: 0, encoding: 'vbr' };
+    const args = buildTranscodeArgs(input, output, 'alac', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('alac');
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+    expect(args).toContain('-ar');
+    expect(args).toContain('44100');
+  });
+
+  it('uses AAC path when codec is aac', () => {
+    const config: EncoderConfig = { codec: 'aac', bitrateKbps: 256, encoding: 'cbr' };
+    const args = buildTranscodeArgs(input, output, 'aac', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('aac');
+    expect(args).toContain('-b:a');
+    expect(args).toContain('256k');
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+  });
+
+  it('uses AAC path when EncoderConfig has no codec field (backward compat)', () => {
+    const config: EncoderConfig = { bitrateKbps: 256, encoding: 'cbr' };
+    const args = buildTranscodeArgs(input, output, 'aac', config);
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('aac');
+    expect(args).toContain('-b:a');
+    expect(args).toContain('256k');
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+  });
+
+  it('uses ALAC path when preset is lossless (unchanged)', () => {
+    const args = buildTranscodeArgs(input, output, 'aac', 'lossless');
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('alac');
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+  });
+
+  it('uses AAC path when preset is a QualityPreset string (unchanged)', () => {
+    const args = buildTranscodeArgs(input, output, 'aac', 'high');
+
+    expect(args).toContain('-c:a');
+    expect(args).toContain('aac');
+    expect(args).toContain('-q:a');
+    expect(args).toContain('5');
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+  });
+});
+
+// =============================================================================
+// buildOptimizedCopyArgs — new formats
+// =============================================================================
+
+describe('buildOptimizedCopyArgs — new formats', () => {
+  it('uses -f ogg for opus format', () => {
+    const args = buildOptimizedCopyArgs('/in.opus', '/out.opus', 'opus');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('ogg');
+    expect(args).not.toContain('ipod');
+  });
+
+  it('uses -f flac for flac format', () => {
+    const args = buildOptimizedCopyArgs('/in.flac', '/out.flac', 'flac');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('flac');
+    expect(args).not.toContain('ipod');
+  });
+
+  it('uses -f mp3 for mp3 format', () => {
+    const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('mp3');
+    expect(args).not.toContain('ipod');
+  });
+
+  it('still uses -f ipod for alac format', () => {
+    const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'alac');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
+  });
+
+  it('still uses -f ipod for m4a format', () => {
+    const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('ipod');
   });
 });
 

@@ -22,6 +22,7 @@ Read these documents based on what you're working on:
 | libgpod integration | [docs/developers/libgpod.md](../docs/developers/libgpod.md) |
 | Device management | [docs/user-guide/devices/](../docs/user-guide/devices/) |
 | Transcoding (audio) | [docs/user-guide/transcoding/audio.md](../docs/user-guide/transcoding/audio.md) |
+| Codec preferences | [docs/user-guide/transcoding/codec-preferences.md](../docs/user-guide/transcoding/codec-preferences.md) |
 | Transcoding (video) | [docs/user-guide/transcoding/video.md](../docs/user-guide/transcoding/video.md) |
 | Directory source | [docs/user-guide/directory-source.md](../docs/user-guide/directory-source.md) |
 | Subsonic source | [docs/user-guide/subsonic-source.md](../docs/user-guide/subsonic-source.md) |

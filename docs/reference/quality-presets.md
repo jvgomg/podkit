@@ -28,7 +28,7 @@ This lets you use a single `quality` setting for simplicity, or fine-tune audio 
 | `medium` | ~192 kbps | Excellent quality |
 | `low` | ~128 kbps | Good quality, space-efficient |
 
-All presets use VBR encoding by default. Set `encoding = "cbr"` globally or per device for constant bitrate encoding. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
+All presets use VBR encoding by default. Set `encoding = "cbr"` globally or per device for constant bitrate encoding. Bitrate targets are codec-aware -- the same preset delivers perceptually equivalent quality regardless of which codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. See [Audio Transcoding](/user-guide/transcoding/audio) for full details.
 
 ### The `max` Preset
 
@@ -147,5 +147,6 @@ See [Track Upgrades](/user-guide/syncing/upgrades#preset-changes) for details.
 ## See Also
 
 - [Audio Transcoding](/user-guide/transcoding/audio) - Full audio transcoding documentation
+- [Codec Preferences](/user-guide/transcoding/codec-preferences) - How codec selection works and per-codec bitrate mapping
 - [Video Transcoding](/user-guide/transcoding/video) - Video transcoding and configuration
 - [Configuration](/user-guide/configuration) - Setting presets in config

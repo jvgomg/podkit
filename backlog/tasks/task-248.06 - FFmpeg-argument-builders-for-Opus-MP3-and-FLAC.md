@@ -1,9 +1,10 @@
 ---
 id: TASK-248.06
 title: 'FFmpeg argument builders for Opus, MP3, and FLAC'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:42'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -39,13 +40,13 @@ See PRD: doc-024, sections "FFmpeg argument builder generalization" and "Codec-a
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Opus argument builder produces correct VBR (`-vbr on -b:a`) and CBR (`-vbr off -b:a`) args with 48kHz sample rate and `-f ogg`
-- [ ] #2 MP3 argument builder produces correct VBR (`-q:a` 0-9 scale) and CBR (`-b:a`) args with `-f mp3`
-- [ ] #3 FLAC argument builder produces `-c:a flac -f flac` with no quality parameter
-- [ ] #4 `buildTranscodeArgs` dispatches to correct codec-specific builder based on target codec
-- [ ] #5 `buildOptimizedCopyArgs` uses correct `-f` flag per codec (ogg/flac/ipod/mp3)
-- [ ] #6 `OptimizedCopyFormat` type includes `'opus'` and `'flac'`
-- [ ] #7 Sample rate comes from codec metadata table, not hardcoded
-- [ ] #8 Existing AAC/ALAC argument construction unchanged
-- [ ] #9 Unit tests verify correct argument construction for each codec × VBR/CBR combination
+- [x] #1 Opus argument builder produces correct VBR (`-vbr on -b:a`) and CBR (`-vbr off -b:a`) args with 48kHz sample rate and `-f ogg`
+- [x] #2 MP3 argument builder produces correct VBR (`-q:a` 0-9 scale) and CBR (`-b:a`) args with `-f mp3`
+- [x] #3 FLAC argument builder produces `-c:a flac -f flac` with no quality parameter
+- [x] #4 `buildTranscodeArgs` dispatches to correct codec-specific builder based on target codec
+- [x] #5 `buildOptimizedCopyArgs` uses correct `-f` flag per codec (ogg/flac/ipod/mp3)
+- [x] #6 `OptimizedCopyFormat` type includes `'opus'` and `'flac'`
+- [x] #7 Sample rate comes from codec metadata table, not hardcoded
+- [x] #8 Existing AAC/ALAC argument construction unchanged
+- [x] #9 Unit tests verify correct argument construction for each codec × VBR/CBR combination
 <!-- AC:END -->

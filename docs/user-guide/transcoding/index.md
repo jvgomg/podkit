@@ -93,5 +93,6 @@ podkit sync --video-quality low
 
 Audio and video have separate quality presets suited to their formats. See the detailed guides:
 
-- **[Audio Transcoding](/user-guide/transcoding/audio)** — AAC presets, VBR vs CBR, encoder selection, file size estimates
+- **[Audio Transcoding](/user-guide/transcoding/audio)** — Quality presets, VBR vs CBR, encoder selection, file size estimates
+- **[Codec Preferences](/user-guide/transcoding/codec-preferences)** — How podkit selects the best audio codec for your device
 - **[Video Transcoding](/user-guide/transcoding/video)** — Device profiles, resolution handling, H.264 settings, hardware acceleration

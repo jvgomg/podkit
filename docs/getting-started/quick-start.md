@@ -75,7 +75,7 @@ When you're happy with the plan:
 podkit sync
 ```
 
-podkit scans your collection, transcodes lossless files to AAC if needed, copies everything to your iPod, and updates the iPod database. Lossy files that are already iPod-compatible (MP3, AAC) are copied directly without re-encoding.
+podkit scans your collection, transcodes lossless files if needed (selecting the [best codec your device supports](/user-guide/transcoding/codec-preferences)), copies everything to your iPod, and updates the iPod database. Lossy files that are already device-compatible (MP3, AAC) are copied directly without re-encoding.
 
 ## 6. Eject and Enjoy
 

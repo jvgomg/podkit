@@ -23,6 +23,7 @@ podkit recognizes several types of improvements:
 | **Quality upgrade** | 128 kbps re-ripped at 320 kbps | New file transcoded and copied to iPod |
 | **Preset upgrade** | Quality preset changed from low to high | Re-transcoded at new (higher) bitrate |
 | **Preset downgrade** | Quality preset changed from high to low | Re-transcoded at new (lower) bitrate |
+| **Codec changed** | [Codec preference](/user-guide/transcoding/codec-preferences) changed (e.g., AAC to Opus) | Re-transcoded with new codec |
 | **Artwork added** | Artwork embedded into previously bare files | New file copied with artwork |
 | **Artwork updated** | Album artwork changed in source (requires `--check-artwork`) | Metadata updated (no file transfer) |
 | **Artwork removed** | Artwork removed from source files | Artwork removed from iPod |
@@ -185,6 +186,7 @@ Sync plan:
   Upgrade:  12 tracks
     Format upgrade:     8  (MP3 → FLAC)
     Preset upgrade:     2  (quality preset changed)
+    Codec change:       1  (aac → opus)
     Artwork added:      1
     Artwork updated:    1
     Sound Check update: 1
@@ -215,6 +217,7 @@ When upgrades are skipped, dry-run still reports available upgrades so you can s
 
 ## See Also
 
+- [Codec Preferences](/user-guide/transcoding/codec-preferences) — How codec changes are detected and re-synced
 - [Artwork](/user-guide/syncing/artwork) — Artwork syncing, change detection, and configuration
 - [Music Syncing](/user-guide/syncing/music) — How music syncing works
 - [Sound Check](/user-guide/syncing/sound-check) — Volume normalization

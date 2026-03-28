@@ -97,7 +97,14 @@ export type {
   TranscodeConfig,
   AacPreset,
   FFmpegTranscoderConfig,
-  AacTranscodeConfig,
+  EncoderConfig,
+  TranscodeTargetCodec,
+  CodecMetadata,
+  CodecPreset,
+  EncoderAvailability,
+  ResolvedCodec,
+  CodecResolutionResult,
+  CodecResolutionError,
 } from '@podkit/core';
 
 // Artwork types
@@ -1599,6 +1606,91 @@ export function detectBitratePresetMismatch(_source: any, _device: any, _options
 export const DEFAULT_VBR_TOLERANCE = 0.15;
 export const DEFAULT_CBR_TOLERANCE = 0.05;
 export const DEFAULT_MIN_PRESET_BITRATE = 64;
+
+export const DEFAULT_LOSSY_STACK = ['opus', 'aac', 'mp3'];
+export const DEFAULT_LOSSLESS_STACK = ['source', 'flac', 'alac'];
+
+// Codec metadata and presets (inlined to avoid cyclic imports)
+export const CODEC_METADATA = {
+  aac: {
+    codec: 'aac',
+    container: 'M4A',
+    extension: '.m4a',
+    ffmpegFormat: 'ipod',
+    filetypeLabel: 'AAC audio file',
+    sampleRate: 44100,
+    type: 'lossy',
+  },
+  alac: {
+    codec: 'alac',
+    container: 'M4A',
+    extension: '.m4a',
+    ffmpegFormat: 'ipod',
+    filetypeLabel: 'ALAC audio file',
+    sampleRate: 44100,
+    type: 'lossless',
+  },
+  opus: {
+    codec: 'opus',
+    container: 'OGG',
+    extension: '.opus',
+    ffmpegFormat: 'ogg',
+    filetypeLabel: 'Opus audio file',
+    sampleRate: 48000,
+    type: 'lossy',
+  },
+  mp3: {
+    codec: 'mp3',
+    container: 'MP3',
+    extension: '.mp3',
+    ffmpegFormat: 'mp3',
+    filetypeLabel: 'MPEG audio file',
+    sampleRate: 44100,
+    type: 'lossy',
+  },
+  flac: {
+    codec: 'flac',
+    container: 'FLAC',
+    extension: '.flac',
+    ffmpegFormat: 'flac',
+    filetypeLabel: 'FLAC audio file',
+    sampleRate: 44100,
+    type: 'lossless',
+  },
+} as const;
+export function getCodecMetadata(codec: string) {
+  return (CODEC_METADATA as any)[codec];
+}
+export const OPUS_PRESETS = {
+  high: { targetKbps: 160 },
+  medium: { targetKbps: 128 },
+  low: { targetKbps: 96 },
+} as const;
+export const MP3_PRESETS = {
+  high: { targetKbps: 256, vbrQuality: 0 },
+  medium: { targetKbps: 192, vbrQuality: 2 },
+  low: { targetKbps: 128, vbrQuality: 4 },
+} as const;
+export const FLAC_ESTIMATED_KBPS = 700;
+export const ALAC_ESTIMATED_KBPS = 900;
+export function getCodecPresetBitrate(_codec: string, _preset: string, customBitrate?: number) {
+  return customBitrate ?? 256;
+}
+export function getCodecVbrQuality(_codec: string, _preset: string) {
+  return undefined;
+}
+export function getLosslessEstimatedKbps(_codec: string) {
+  return 900;
+}
+export function resolveCodecPreferences(_config: any, _deviceCodecs: any, _encoders: any) {
+  return { lossy: { codec: 'aac', metadata: CODEC_METADATA.aac }, lossless: ['source'] };
+}
+export function isCodecResolutionError(_result: any): boolean {
+  return false;
+}
+export function encoderAvailabilityFrom(_caps: any) {
+  return { hasEncoder: () => true };
+}
 
 // =============================================================================
 // Album Artwork Cache (mock)

@@ -1,9 +1,10 @@
 ---
 id: TASK-248.05
 title: Generalize TranscoderCapabilities and Transcoder interface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:42'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -30,10 +31,10 @@ See PRD: doc-024, sections "TranscoderCapabilities generalization" and "Transcod
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `TranscoderCapabilities` tracks encoder availability per codec (AAC, Opus, MP3, FLAC)
-- [ ] #2 `FFmpegTranscoder.detect()` scans for libopus, libmp3lame, and flac encoders
-- [ ] #3 `AacTranscodeConfig` renamed to codec-generic type (not `TranscodeConfig` — that name is taken)
-- [ ] #4 `Transcoder` interface updated to accept the generic config type
-- [ ] #5 Existing AAC encoder detection and priority logic preserved
-- [ ] #6 Unit tests verify detection of each encoder type
+- [x] #1 `TranscoderCapabilities` tracks encoder availability per codec (AAC, Opus, MP3, FLAC)
+- [x] #2 `FFmpegTranscoder.detect()` scans for libopus, libmp3lame, and flac encoders
+- [x] #3 `AacTranscodeConfig` renamed to codec-generic type (not `TranscodeConfig` — that name is taken)
+- [x] #4 `Transcoder` interface updated to accept the generic config type
+- [x] #5 Existing AAC encoder detection and priority logic preserved
+- [x] #6 Unit tests verify detection of each encoder type
 <!-- AC:END -->

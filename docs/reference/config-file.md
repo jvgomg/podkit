@@ -27,6 +27,11 @@ checkArtwork = false         # Detect changed artwork between syncs
 tips = true                  # Show contextual tips
 skipUpgrades = false         # Skip file-replacement upgrades for changed source files
 
+# Codec preferences (defaults shown — omit to use these)
+[codec]
+lossy = ["opus", "aac", "mp3"]
+lossless = ["source", "flac", "alac"]
+
 # Clean up featured artist credits (simple form)
 cleanArtists = true
 
@@ -55,6 +60,10 @@ videoQuality = "high"        # Video override for this device
 encoding = "vbr"             # Encoding mode override for this device
 transferMode = "fast"        # Transfer mode override for this device
 artwork = true
+
+# Per-device codec preferences
+[devices.<name>.codec]
+lossy = "aac"
 
 # Per-device clean artists
 [devices.<name>.cleanArtists]
@@ -89,7 +98,7 @@ These apply to all devices unless overridden at the device level.
 | `quality` | string | `"high"` | Unified quality preset for both audio and video: `max`, `high`, `medium`, `low`. The `max` preset is device-aware — it uses ALAC (lossless) on devices that support it when the source is lossless, otherwise falls back to `high`-quality AAC. |
 | `audioQuality` | string | - | Audio-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for audio. |
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
-| `encoding` | string | `"vbr"` | Encoding mode for lossy AAC: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. |
+| `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
 | `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled during sync. `fast` skips extra data for fastest sync. `optimized` strips data your device won't use, saving storage. `portable` preserves extra track data for extracting files later. |
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
 | `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
@@ -97,6 +106,34 @@ These apply to all devices unless overridden at the device level.
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
+
+## Codec Preferences
+
+The `[codec]` section controls which audio codec podkit uses for transcoding. podkit walks the preference list top-to-bottom and selects the first codec the target device supports and whose encoder is available in FFmpeg. See [Codec Preferences](/user-guide/transcoding/codec-preferences) for the full guide.
+
+```toml
+[codec]
+lossy = ["opus", "aac", "mp3"]        # Default lossy stack
+lossless = ["source", "flac", "alac"] # Default lossless stack
+```
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `lossy` | string or string[] | `["opus", "aac", "mp3"]` | Ordered preference list for lossy transcoding. First supported codec with an available encoder wins. |
+| `lossless` | string or string[] | `["source", "flac", "alac"]` | Ordered preference list for lossless transcoding (used when quality is `max` and source is lossless). The `source` keyword means "keep original format if the device supports it." |
+
+Per-device codec overrides are set under `[devices.<name>.codec]`:
+
+```toml
+[devices.classic.codec]
+lossy = "aac"           # Single value is fine (treated as one-element list)
+
+[devices.rockbox.codec]
+lossy = ["opus", "aac"]
+lossless = "flac"
+```
+
+Valid codec identifiers: `opus`, `aac`, `mp3`, `flac`, `alac`, `source` (lossless stack only).
 
 ## Music Collections
 
@@ -270,6 +307,11 @@ encoding = "vbr"              # VBR encoding (default)
 transferMode = "fast"         # Direct-copy compatible files, strip artwork from transcodes
 artwork = true
 
+# Codec preferences (defaults — omit to use these)
+[codec]
+lossy = ["opus", "aac", "mp3"]
+lossless = ["source", "flac", "alac"]
+
 # Clean up featured artist credits
 [cleanArtists]
 format = "feat. {}"
@@ -320,6 +362,7 @@ video = "movies"
 ## See Also
 
 - [Configuration Guide](/user-guide/configuration) - Conceptual overview
+- [Codec Preferences](/user-guide/transcoding/codec-preferences) - How codec selection works
 - [Environment Variables](/reference/environment-variables) - Env var overrides and config priority
 - [CLI Commands](/reference/cli-commands) - Command-line options
 - [Quality Presets](/reference/quality-presets) - Audio and video quality details
