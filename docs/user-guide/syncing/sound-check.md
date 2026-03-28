@@ -9,6 +9,16 @@ Sound Check is the iPod's built-in volume normalization feature. It adjusts play
 
 podkit reads existing normalization data from your source files and writes the appropriate Sound Check value to the iPod database during sync. No analysis or scanning step is required — if your files already have normalization tags, podkit will use them automatically.
 
+:::note[Device-aware normalization]
+podkit adapts its normalization behavior based on the `audioNormalization` device capability:
+
+- **`soundcheck`** (iPod) — podkit writes Sound Check values to the iPod database. This is what the rest of this page describes.
+- **`replaygain`** (Rockbox) — Rockbox reads ReplayGain tags from audio files natively. If your source files already have ReplayGain tags and you sync them without transcoding, the existing tags are preserved and Rockbox will use them. podkit does not yet write new ReplayGain tags during sync.
+- **`none`** (Echo Mini, generic DAPs) — normalization is skipped entirely. podkit hides the Sound Check line from dry-run output and skips soundcheck upgrade detection.
+
+You can override this per device in your config — see [Config File Reference](/reference/config-file#device-capability-overrides).
+:::
+
 This works with both [directory](/user-guide/collections/directory/) and [Subsonic](/user-guide/collections/subsonic/) collections. Navidrome and other [OpenSubsonic](https://opensubsonic.netlify.app/)-compatible servers expose ReplayGain data via the API, so podkit can extract Sound Check values without needing direct file access.
 
 ## How It Works

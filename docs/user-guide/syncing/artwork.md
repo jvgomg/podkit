@@ -5,11 +5,16 @@ sidebar:
   order: 5
 ---
 
-Album artwork is synced to your iPod automatically. If your source files have embedded artwork, it transfers during sync with no extra configuration needed.
+Album artwork is synced to your device automatically. If your source files have embedded artwork, it transfers during sync with no extra configuration needed.
 
 ## How Artwork Sync Works
 
-During a normal sync, podkit extracts embedded artwork from your audio files (FLAC, MP3, M4A, etc.) and writes it to the iPod database. Each track's artwork appears in the Now Playing screen and album browser on the iPod.
+During a normal sync, podkit extracts embedded artwork from your audio files (FLAC, MP3, M4A, etc.) and delivers it to your device. How artwork is stored depends on the device type:
+
+- **iPod** — artwork is written to the iPod's artwork database (`iPod_Control/Artwork/`), separate from the audio files
+- **Mass-storage devices** — artwork is embedded directly in the audio file's metadata tags on the device
+
+In both cases, artwork appears in the Now Playing screen and album browser.
 
 For **directory sources**, artwork is read from the image data embedded in each audio file's metadata tags (e.g., the `PICTURE` block in FLAC, `APIC` frame in MP3, `covr` atom in M4A).
 
@@ -175,7 +180,9 @@ Both settings can be configured globally or per device in the config file. See [
 
 ## Troubleshooting
 
-If your iPod is showing wrong artwork (artwork from a different album, glitched images), the artwork database may be corrupted. Run `podkit doctor` to check your iPod's health. You can clear corrupted artwork quickly with `podkit doctor --repair artwork-reset`, or rebuild from your source collection with `podkit doctor --repair artwork-rebuild -c <collection>`. See [iPod Health Checks](/user-guide/devices/doctor#repairing-artwork-corruption) for the full walkthrough.
+**iPod:** If your iPod is showing wrong artwork (artwork from a different album, glitched images), the artwork database may be corrupted. Run `podkit doctor` to check your iPod's health. You can clear corrupted artwork quickly with `podkit doctor --repair artwork-reset`, or rebuild from your source collection with `podkit doctor --repair artwork-rebuild -c <collection>`. See [iPod Health Checks](/user-guide/devices/doctor#repairing-artwork-corruption) for the full walkthrough.
+
+**Mass-storage devices:** Artwork is embedded in audio file tags, so there's no separate artwork database to corrupt. If artwork isn't displaying, check that your device supports embedded artwork (most do) and that artwork isn't exceeding the device's maximum resolution — podkit resizes automatically based on your [device profile](/devices/supported-devices).
 
 ## See Also
 

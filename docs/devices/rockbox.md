@@ -1,26 +1,34 @@
 ---
 title: Rockbox Compatibility
-description: How to use podkit-synced music with Rockbox firmware, including setup steps, caveats, and limitations.
+description: How to use podkit with Rockbox firmware — native folder-based sync and iTunesDB compatibility.
 sidebar:
   order: 3
 ---
 
-podkit syncs music using Apple's iTunesDB format, which Rockbox does not read. Your music is still fully accessible on Rockbox — it just requires a one-time setup step.
+podkit supports Rockbox as a first-class device type with native folder-based sync — no iTunesDB required. Set `type = "rockbox"` in your device config and podkit syncs directly to the filesystem with clean metadata tags that Rockbox's Database feature can index.
 
-:::note[Want first-class Rockbox support?]
-Native Rockbox support (folder-based sync without iTunesDB) is on the [roadmap](/project/roadmap/). Vote and comment on the [discussion](https://github.com/jvgomg/podkit/discussions/34) to help us prioritise.
-:::
+```toml
+[devices.myrockbox]
+type = "rockbox"
+volumeUuid = "ABCD-1234"
+```
 
-## Why Rockbox Can't Read iTunesDB-Synced Music Directly
+Rockbox supports a wide range of codecs including Opus, FLAC, and OGG — see [Supported Devices](/devices/supported-devices) for the full capability profile.
 
-When podkit (or iTunes, or any iTunesDB-based tool) syncs music to an iPod, it:
+## Using Rockbox with iTunesDB-Synced Music
+
+If your iPod was previously synced using podkit's iPod mode (or iTunes), your music is stored in the iTunesDB format with scrambled filenames. Rockbox can still play this music — it just requires enabling the Database feature rather than browsing by filename.
+
+### Why Rockbox Can't Browse iTunesDB Files Directly
+
+When podkit (or iTunes) syncs music to an iPod in `ipod` mode, it:
 
 1. Stores files with **scrambled filenames** in `iPod_Control/Music/F00/ABCD.m4a`, `F01/KCDI.m4a`, etc.
 2. Records all metadata (artist, album, title) in the **iTunesDB database**, not in the filenames
 
 Apple's stock firmware reads the iTunesDB to display your library. Rockbox does not read iTunesDB — it has its own browsing system. This means:
 
-| Browsing method | Result with podkit-synced music |
+| Browsing method | Result with iTunesDB-synced music |
 |-----------------|-------------------------------|
 | **Rockbox File Browser** | Files appear with meaningless names like `KCDI.m4a` in numbered folders — unusable for browsing |
 | **Rockbox Database** | Works — reads embedded metadata tags from the audio files and builds a browsable library |
@@ -28,18 +36,18 @@ Apple's stock firmware reads the iTunesDB to display your library. Rockbox does 
 
 The key insight: your audio files still contain full embedded metadata (ID3 tags, Vorbis comments). Rockbox's Database feature reads these tags directly from the files, bypassing the scrambled filenames entirely.
 
-## Setup: Enable Rockbox Database
+### Setup: Enable Rockbox Database
 
 Rockbox's Database feature scans your audio files, reads their embedded metadata tags, and builds a searchable library you can browse by artist, album, genre, and more.
 
-### Initial setup (one time)
+#### Initial setup (one time)
 
 1. On your iPod, go to **Settings > General Settings > Database**
 2. Select **Initialize Now**
 3. Rockbox scans all audio files and reads their tags — this runs in the background, and you can use the iPod while it works
 4. Once complete, use the **Database** entry on the main menu to browse your library
 
-### After each sync
+#### After each sync
 
 After syncing new music with podkit, Rockbox needs to pick up the new tracks:
 
@@ -48,7 +56,7 @@ After syncing new music with podkit, Rockbox needs to pick up the new tracks:
 
 ## Caveats
 
-### Playlists don't carry over
+### Playlists don't carry over from iTunesDB
 
 Playlists created in the iTunesDB are not visible to Rockbox. If you need playlists on Rockbox, you'll need to create them using Rockbox's own playlist system (M3U files) or recreate them manually within Rockbox.
 
@@ -58,9 +66,7 @@ On a large library (10,000+ tracks), the first database initialization can take 
 
 ### Album artwork
 
-Rockbox reads embedded album art from audio file tags. podkit embeds artwork in audio files during sync, so artwork should display correctly in Rockbox.
-
-If artwork is missing, it may be because the art was only written to the iTunesDB artwork database (`iPod_Control/Artwork/*.ithmb`) and not embedded in the file. This is unusual with podkit but can happen with music synced by other tools.
+Rockbox supports both sidecar artwork files and embedded artwork in audio tags. podkit's Rockbox profile lists sidecar as the preferred source, with embedded as a fallback.
 
 ### Play counts and ratings
 
@@ -68,12 +74,20 @@ Play count and rating data stored in the iTunesDB is not visible to Rockbox. Roc
 
 ### Dual-boot considerations
 
-If you dual-boot between Apple firmware and Rockbox, podkit-synced music works on both:
+If you dual-boot between Apple firmware and Rockbox, you can register the same device twice with different types:
 
-- **Apple firmware** reads the iTunesDB — full library browsing, playlists, play counts
-- **Rockbox** reads embedded tags via Database — full library browsing, but playlists and play counts are separate
+```toml
+# For syncing via iTunesDB (Apple firmware)
+[devices.ipod-stock]
+volumeUuid = "ABCD-1234"
 
-The audio files themselves are shared. You don't need two copies of your music.
+# For syncing via filesystem (Rockbox)
+[devices.ipod-rockbox]
+type = "rockbox"
+volumeUuid = "ABCD-1234"
+```
+
+Use `--device` to choose which sync mode to use for a given session.
 
 ## Rockbox Documentation
 
@@ -85,6 +99,5 @@ The audio files themselves are shared. You don't need two copies of your music.
 
 ## See Also
 
-- [Supported Devices](/devices/supported-devices) — Stock firmware iPod compatibility
-- [Other Devices](/devices/other-devices) — Standalone DAPs and future device support plans
+- [Supported Devices](/devices/supported-devices) — Device profiles and compatibility
 - [iPod Internals](/devices/ipod-internals) — How the iTunesDB format works

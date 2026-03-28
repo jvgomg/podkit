@@ -29,7 +29,7 @@ You can override the config file location with `--config <path>` or the `PODKIT_
 A podkit config has three main parts:
 
 1. **Collections** — where your music (and video) lives
-2. **Devices** — the iPods you sync to
+2. **Devices** — the players you sync to
 3. **Defaults** — what happens when you just run `podkit sync`
 
 ### Collections
@@ -62,21 +62,24 @@ For details on each source type, see:
 
 ### Devices
 
-Devices are named iPods registered in your config. The easiest way to add one is with a connected iPod:
+Devices are named players registered in your config — iPods, mass-storage DAPs, or any portable player podkit supports. The easiest way to add one is with a connected device:
 
 ```bash
-podkit device add -d myipod
+podkit device add -d mydevice
+
+# For mass-storage DAPs, specify the device type
+podkit device add -d echomini --type echo-mini
 ```
 
 This auto-detects the device and writes the config entry:
 
 ```toml
-[devices.myipod]
+[devices.mydevice]
 volumeUuid = "ABC-123-DEF-456"
 volumeName = "IPOD"
 ```
 
-Each device can have its own quality and artwork settings, so a high-capacity Classic can use lossless audio while a Nano uses compressed:
+Each device can have its own quality and artwork settings, so a high-capacity Classic can use lossless audio while a DAP uses compressed:
 
 ```toml
 [devices.classic]
@@ -84,11 +87,10 @@ volumeUuid = "ABCD-1234"
 volumeName = "CLASSIC"
 audioQuality = "max"       # ALAC on Classic (it supports lossless)
 
-[devices.nano]
-volumeUuid = "EFGH-5678"
-volumeName = "NANO"
-quality = "medium"
-artwork = false
+[devices.echomini]
+type = "echo-mini"
+volumeUuid = "WXYZ-9012"
+quality = "high"
 ```
 
 See [Managing Devices](/user-guide/devices) for the full device setup guide.
@@ -140,7 +142,7 @@ See [Quality Settings](/user-guide/devices/quality) for a practical guide to cho
 
 ## Clean Artists
 
-The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync — useful for cleaner artist browsing on iPods:
+The `cleanArtists` feature moves featured artist credits from the Artist field into the Title field during sync — useful for cleaner artist browsing on your device:
 
 ```toml
 cleanArtists = true
@@ -156,12 +158,12 @@ Here's a complete working config with one collection, one device, and sensible d
 [music.main]
 path = "/path/to/your/music"
 
-[devices.myipod]
+[devices.mydevice]
 volumeUuid = "ABC-123"
 volumeName = "IPOD"
 
 [defaults]
-device = "myipod"
+device = "mydevice"
 music = "main"
 ```
 

@@ -36,13 +36,13 @@ Set it permanently in your config or per device — see [Audio Transcoding](/use
 
 ## Listing Media
 
-See what's on your iPod or in your collections:
+See what's on your device or in your collections:
 
 ```bash
-# Music on your iPod
+# Music on your device
 podkit device music
 
-# Video on your iPod
+# Video on your device
 podkit device video
 
 # Music in a collection

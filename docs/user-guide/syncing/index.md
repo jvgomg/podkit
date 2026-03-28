@@ -1,23 +1,23 @@
 ---
 title: Syncing
-description: How podkit syncs your music and video collections to iPod devices.
+description: How podkit syncs your music and video collections to your device.
 sidebar:
   order: 1
 ---
 
-Syncing is the core of podkit — it gets your media from your collections onto your iPod. This section covers how syncing works and the types of media you can sync.
+Syncing is the core of podkit — it gets your media from your collections onto your device. This section covers how syncing works and the types of media you can sync.
 
 ## How Sync Works
 
 When you run `podkit sync`, podkit:
 
 1. **Scans your collections** — Reads metadata from all audio and video files
-2. **Reads your iPod** — Checks what's already on the device
+2. **Reads your device** — Checks what's already on the device
 3. **Compares** — Identifies new, changed, and removed tracks
 4. **Plans** — Determines what needs transcoding vs direct copy
-5. **Executes** — Transcodes, copies, and updates the iPod database
+5. **Executes** — Transcodes, copies, and updates the device
 
-The database is saved periodically during sync, so you can safely cancel with Ctrl+C at any time — completed tracks are preserved and the iPod stays consistent.
+Progress is saved periodically during sync, so you can safely cancel with Ctrl+C at any time — completed tracks are preserved and your device stays consistent.
 
 ## Basic Usage
 
@@ -47,7 +47,7 @@ Always preview before syncing to see what podkit will do:
 podkit sync --dry-run
 ```
 
-This shows track counts, what needs transcoding, estimated size, and available space — without writing anything to your iPod.
+This shows track counts, what needs transcoding, estimated size, and available space — without writing anything to your device.
 
 ## Incremental Syncs
 
@@ -55,7 +55,7 @@ After your first sync, future syncs are fast. podkit matches tracks by artist, a
 
 ## Removing Deleted Tracks
 
-By default, podkit only adds tracks. To also remove tracks from your iPod that are no longer in your collections:
+By default, podkit only adds tracks. To also remove tracks from your device that are no longer in your collections:
 
 ```bash
 podkit sync --delete --dry-run   # Preview first
@@ -81,7 +81,7 @@ podkit supports two categories of media, each with their own supported content t
 
 See the detailed guides for each:
 
-- **[Music Syncing](/user-guide/syncing/music)** — Supported audio formats, metadata, and how music lands on your iPod
+- **[Music Syncing](/user-guide/syncing/music)** — Supported audio formats, metadata, and how music lands on your device
 - **[Video Syncing](/user-guide/syncing/video)** — Supported video formats, content type detection, and folder organization
 
 ## See Also

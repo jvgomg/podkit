@@ -1,6 +1,6 @@
 ---
 title: Supported Devices
-description: iPod model compatibility, verification status, and feature support for podkit.
+description: Device compatibility for podkit — iPods, mass-storage DAPs, and custom device configuration.
 sidebar:
   order: 1
 ---
@@ -8,17 +8,107 @@ sidebar:
 import DeviceCompatibilityTable from '@components/DeviceCompatibilityTable.astro';
 import TestingDetails from '@components/TestingDetails.astro';
 
-podkit targets Apple's **stock iPod firmware** — the original operating system that ships on every iPod. By solving the hard problem of syncing with the iTunesDB database format, podkit builds a foundation that can extend to easier targets in the future (see [Other Devices](/devices/other-devices)).
+podkit syncs music to two categories of portable player:
 
-## Overview
+- **iPods** — synced via Apple's iTunesDB database format using [libgpod](https://github.com/fadingred/libgpod)
+- **Mass-storage DAPs** — synced directly to the filesystem with metadata written to file tags and a folder structure the device can browse
 
-podkit uses [libgpod](https://github.com/fadingred/libgpod) for iPod database management. Our device support directly reflects libgpod's capabilities. libgpod works with iPods that use **USB Mass Storage mode** with the **iTunesDB** database format.
+Both device types use the same CLI commands, quality presets, codec preferences, and transcoding pipeline. podkit automatically adapts its sync strategy based on the device type.
 
-Devices that use iOS sync protocols (iPod Touch, iPhone, iPad) or require iTunes-specific authentication (buttonless Shuffles) are **not supported** by libgpod and therefore not supported by podkit.
+:::note[Don't see your device?]
+podkit ships with predefined profiles for tested devices, but any mass-storage player can work using the `generic` type with [capability overrides](#custom-device-configuration). If you'd like your device to have first-class support, [request it on GitHub](https://github.com/jvgomg/podkit/discussions/34).
+:::
 
-## How We Test
+## Device Profiles
 
-podkit tests device compatibility using **simulated iPod databases** — real iTunesDB structures created in temporary directories. Each supported iPod generation has automated E2E tests that verify:
+podkit includes predefined capability profiles for the following mass-storage devices. These profiles tell podkit which audio codecs the device supports, how it handles artwork, and what its limitations are — so you don't need to configure any of this manually.
+
+| Device | Type | Audio Codecs | Artwork (source, max size) | Video | Normalization |
+|--------|------|-------------|---------|-------|---------------|
+| [Snowsky Echo Mini](#snowsky-echo-mini) | `echo-mini` | AAC, ALAC, MP3, FLAC, OGG, WAV | Embedded, 127px | No | None |
+| [Rockbox](/devices/rockbox) | `rockbox` | AAC, ALAC, MP3, FLAC, OGG, Opus, WAV, AIFF | Sidecar, Embedded, 320px | No | ReplayGain (device-native; not yet written by podkit) |
+| Generic (any mass-storage DAP) | `generic` | AAC, MP3, FLAC | Embedded, 500px | No | None |
+
+To use a predefined profile, set the `type` field in your device config:
+
+```toml
+[devices.myplayer]
+type = "echo-mini"
+volumeUuid = "ABCD-1234"
+```
+
+### Snowsky Echo Mini
+
+The [Snowsky Echo Mini](https://www.fiio.com/echomini) is the first mass-storage DAP with firsthand-tested podkit support. It's a compact, affordable player with a microSD card slot and broad codec support.
+
+**Key details:**
+
+- Dual volumes — internal storage (~7.5 GB) and SD card mount simultaneously. Most users will want to sync to the SD card. podkit prompts you to choose during `podkit device add`.
+- Artwork is read from embedded tags. podkit automatically resizes artwork to the device's 127px display.
+- The device library shows metadata tags, not filenames — podkit writes clean tags during sync so browsing works as expected.
+- Progressive JPEG artwork won't display — podkit converts artwork to baseline JPEG automatically.
+- No gapless playback (hardware limitation).
+
+**Caveats compared to iPod:**
+
+- No database — the device rescans tags on each boot, which can be slow with large libraries.
+- Folder structure determines navigation — podkit organises files as `Artist/Album/Track` automatically.
+- Opus files are invisible to the device firmware — podkit transcodes to a supported codec automatically based on your [codec preferences](/user-guide/transcoding/codec-preferences).
+- Volume normalization is set to `none` (`audioNormalization: 'none'`) — the device does not support Sound Check or ReplayGain, so podkit skips normalization-related work.
+- No video support (`supportsVideo: false`).
+- No playlist support.
+- No smart playlists.
+
+## Custom Device Configuration
+
+If your DAP isn't listed above, you can configure podkit with its specific capabilities using the `generic` type and capability overrides:
+
+```toml
+[devices.mydap]
+type = "generic"
+volumeUuid = "WXYZ-9012"
+
+# Override capabilities for your specific device
+supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
+artworkSources = ["embedded"]
+artworkMaxResolution = 320
+supportsVideo = false
+```
+
+### Available capability overrides
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `type` | string | Device type: `ipod`, `echo-mini`, `rockbox`, or `generic` |
+| `supportedAudioCodecs` | string[] | Audio codecs the device can play: `aac`, `alac`, `mp3`, `flac`, `ogg`, `opus`, `wav`, `aiff` |
+| `artworkSources` | string[] | How the device reads artwork, in priority order (first = preferred): `embedded`, `sidecar`, `database` |
+| `artworkMaxResolution` | integer | Maximum artwork dimension in pixels (square) |
+| `supportsVideo` | boolean | Whether the device supports video playback |
+| `audioNormalization` | string | How the device handles volume normalization: `soundcheck` (iPod database), `replaygain` (file tags), or `none` |
+| `musicDir` | string | Custom music directory path on the device (default: `Music`) |
+
+podkit uses these capabilities to make automatic decisions — selecting the right codec, resizing artwork, and skipping unsupported content. See the [Config File Reference](/reference/config-file#devices) for the complete device schema.
+
+### How mass-storage sync differs from iPod
+
+Mass-storage sync writes files directly to the device filesystem instead of going through a database. This means:
+
+- **No proprietary database** — files are organised in an `Artist/Album/Track` folder structure that the device browses directly.
+- **Metadata in file tags** — podkit writes clean ID3/Vorbis tags so the device's library scanner picks up correct metadata.
+- **Artwork is embedded** — album art is written into the audio file's tags (unlike iPod, which stores artwork in a separate database).
+- **State tracking via manifest** — podkit maintains a `.podkit/state.json` file on the device to track what it has synced, enabling incremental syncs and self-healing upgrades.
+
+---
+
+## iPods
+
+podkit uses [libgpod](https://github.com/fadingred/libgpod) for iPod database management. libgpod works with iPods that use **USB Mass Storage mode** with the **iTunesDB** database format.
+
+Devices that use iOS sync protocols (iPod Touch, iPhone, iPad) or require iTunes-specific authentication (buttonless Shuffles) are not supported by libgpod and therefore not supported by podkit.
+
+### How We Test iPods
+
+podkit tests iPod compatibility using **simulated iPod databases** — real iTunesDB structures created in temporary directories. Each supported iPod generation has automated E2E tests that verify:
 
 1. **Database initialization** — creating a valid iTunesDB for the model
 2. **Feature detection** — confirming artwork, video, and playlist support matches expectations
@@ -30,7 +120,7 @@ For models requiring authentication checksums (iPod Classic, Nano 3rd-5th gen), 
 
 These simulated databases exercise the same libgpod code paths as real hardware — the only difference is the authentication data comes from deterministic test values instead of being read from physical device firmware.
 
-## Confidence Levels
+### Confidence Levels
 
 | Level | Meaning |
 |-------|---------|
@@ -38,11 +128,11 @@ These simulated databases exercise the same libgpod code paths as real hardware 
 | 🧪 **Simulated** | Has automated E2E test coverage with simulated database |
 | ❔ **Expected** | Should work based on libgpod support, but not yet tested |
 
-## Device Compatibility
+### iPod Compatibility
 
 <DeviceCompatibilityTable />
 
-## Unsupported Devices
+### Unsupported iPods
 
 The following devices **cannot** be supported by podkit:
 
@@ -56,7 +146,7 @@ The following devices **cannot** be supported by podkit:
 | iPhone (all) | Uses iOS sync protocol |
 | iPad (all) | Uses iOS sync protocol |
 
-### Why Can't iOS Devices Be Supported?
+#### Why Can't iOS Devices Be Supported?
 
 Starting with iPod Touch, Apple changed the sync architecture:
 
@@ -66,11 +156,11 @@ Starting with iPod Touch, Apple changed the sync architecture:
 
 libgpod cannot implement iTunes' signing mechanism, making iOS device support technically impossible without reverse-engineering Apple's authentication.
 
-## Testing Details
+### iPod Testing Details
 
 <TestingDetails />
 
-## Feature Support by Generation
+### Feature Support by Generation
 
 | Generation | Music | ALAC | Artwork | Video | Playlists | Smart Playlists |
 |------------|-------|------|---------|-------|-----------|-----------------|
@@ -85,13 +175,13 @@ libgpod cannot implement iTunes' signing mechanism, making iOS device support te
 
 The ALAC column indicates Apple Lossless support. The `max` quality preset uses this to automatically choose between ALAC (lossless) and high-quality AAC based on device capability.
 
-## iFlash / SD Card Adapters
+### iFlash / SD Card Adapters
 
 iPods with [iFlash](https://www.iflash.xyz/) or similar SD card adapters are fully supported. These adapters replace the original hard drive but don't change the iPod's firmware or database format.
 
 **Note**: Large capacity iFlash builds (>128GB) may have mounting issues on macOS. See [macOS Mounting Issues](/troubleshooting/macos-mounting) for troubleshooting.
 
-## Confirming Your Device Works
+### Confirming Your iPod Works
 
 If you have an iPod model marked as ❔ and successfully use it with podkit, please help us verify support:
 
@@ -103,9 +193,9 @@ If you have an iPod model marked as ❔ and successfully use it with podkit, ple
    - Playlist creation
    - Video sync (if applicable)
 
-## Troubleshooting
+### iPod Troubleshooting
 
-### "Unknown" Model Detection
+#### "Unknown" Model Detection
 
 If podkit shows your iPod as "Unknown Generation":
 
@@ -116,14 +206,14 @@ If podkit shows your iPod as "Unknown Generation":
    ```
 3. See [iPod Internals](/devices/ipod-internals) for model number reference
 
-### Device Not Mounting
+#### Device Not Mounting
 
 - **macOS**: See [macOS Mounting Issues](/troubleshooting/macos-mounting)
 - **Linux**: Ensure you have appropriate udev rules; see libgpod documentation
 
 ## See Also
 
-- [Rockbox Compatibility](/devices/rockbox) - Using podkit-synced music with Rockbox firmware
-- [Other Devices](/devices/other-devices) - Standalone DAPs and future device support
+- [Rockbox Compatibility](/devices/rockbox) - Using podkit with Rockbox firmware
 - [iPod Internals](/devices/ipod-internals) - iTunesDB format and device quirks
+- [Adding a Device](/user-guide/devices/adding-devices) - Registering devices with podkit
 - [macOS Mounting Issues](/troubleshooting/macos-mounting) - Large iFlash troubleshooting

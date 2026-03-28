@@ -110,7 +110,7 @@ If the config is already at the latest version, the command reports success with
 
 ## `podkit sync`
 
-Sync music and/or video collections to an iPod.
+Sync music and/or video collections to a device.
 
 ```bash
 podkit sync [options]
