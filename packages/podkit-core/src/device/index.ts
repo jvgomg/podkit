@@ -90,6 +90,31 @@ export type {
 export { detectIFlash } from './assessment.js';
 export { lookupIpodModel } from './ipod-models.js';
 
+// Readiness pipeline
+export type {
+  ReadinessStage,
+  ReadinessStageResult,
+  ReadinessLevel,
+  ReadinessResult,
+  ReadinessInput,
+} from './readiness.js';
+export {
+  checkReadiness,
+  checkIpodStructure,
+  checkSysInfo,
+  checkDatabase,
+  createUsbOnlyReadinessResult,
+  STAGE_DISPLAY_NAMES,
+} from './readiness.js';
+
+// USB discovery
+export type { UsbDiscoveredDevice } from './usb-discovery.js';
+export { discoverUsbIpods } from './usb-discovery.js';
+
+// OS error code interpreter
+export type { InterpretedError } from './error-codes.js';
+export { interpretError } from './error-codes.js';
+
 // Eject with retry
 export { ejectWithRetry, isRetryableError } from './eject.js';
 

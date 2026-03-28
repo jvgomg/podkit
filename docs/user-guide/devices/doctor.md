@@ -15,18 +15,32 @@ Connect and mount your iPod, then run:
 podkit doctor
 ```
 
-podkit scans the iPod and reports what it finds:
+podkit first runs a device readiness check, then runs database health checks:
 
 ```
 podkit doctor — checking iPod at /Volumes/TERAPOD
 
+Device Readiness
+  ✓ USB Connection
+  ✓ Partition Table
+  ✓ Filesystem
+  ✓ Mounted
+    /Volumes/TERAPOD
+  ✓ SysInfo
+    iPod Classic (6th gen) — MA147
+  ✓ Database
+    2,450 tracks
+
+  Ready — 2,450 tracks, 8.2 GB free
+
+Database Health
   ✓ Artwork Integrity    2,532 entries, 2 formats (1028, 1029), all offsets valid
   ✓ Orphan Files         No orphaned files found
 
 All checks passed.
 ```
 
-If problems are detected, doctor tells you what's wrong and how to fix it. You don't need a podkit config file or music collection to run diagnostics — some repairs work standalone too.
+If problems are detected, doctor tells you what's wrong and how to fix it. Devices that aren't ready (e.g., not yet initialized) are handled gracefully — doctor skips the database checks and tells you what to do instead. You don't need a podkit config file or music collection to run diagnostics — some repairs work standalone too.
 
 ## Available Health Checks
 
@@ -121,3 +135,4 @@ Use `--verbose` for detailed diagnostic output (e.g., orphan file breakdowns by 
 - [Artwork Corruption Background](/devices/artwork-corruption) — Technical details on what causes artwork corruption
 - [Common Issues](/troubleshooting/common-issues) — Solutions for other frequently encountered problems
 - [CLI Commands — `podkit doctor`](/reference/cli-commands#podkit-doctor) — Full option reference
+- [Device Readiness Levels](/reference/cli-commands#device-readiness-levels) — What each readiness level means and how to resolve it

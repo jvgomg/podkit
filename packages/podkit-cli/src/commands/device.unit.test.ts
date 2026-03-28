@@ -8,6 +8,10 @@ import {
   formatGeneration,
   getStorageInfo,
   formatSyncTagSummary,
+  redactPaths,
+  formatReadinessLevel,
+  findConfiguredDeviceName,
+  stageMarker,
 } from './device.js';
 
 describe('device utility functions', () => {
@@ -250,6 +254,144 @@ describe('device utility functions', () => {
 
     it('does not include missing transfer mode when undefined', () => {
       expect(formatSyncTagSummary(500, 500, 0, 0)).toBe('500 tracks \u2713 all consistent');
+    });
+  });
+
+  describe('redactPaths', () => {
+    it('redacts macOS user home paths', () => {
+      expect(redactPaths('/Users/james/Documents/config.toml')).toBe(
+        '/Users/****/Documents/config.toml'
+      );
+    });
+
+    it('redacts Linux user home paths', () => {
+      expect(redactPaths('/home/james/.config/podkit/config.toml')).toBe(
+        '/home/****/.config/podkit/config.toml'
+      );
+    });
+
+    it('preserves volume names under /Volumes/', () => {
+      expect(redactPaths('/Volumes/TERAPOD')).toBe('/Volumes/TERAPOD');
+    });
+
+    it('handles multiple paths in one string', () => {
+      const input =
+        'Config: /Users/james/.config/podkit, Mount: /Volumes/TERAPOD, Home: /home/alice/music';
+      const expected =
+        'Config: /Users/****/.config/podkit, Mount: /Volumes/TERAPOD, Home: /home/****/music';
+      expect(redactPaths(input)).toBe(expected);
+    });
+
+    it('does not modify paths without usernames', () => {
+      expect(redactPaths('/tmp/something')).toBe('/tmp/something');
+      expect(redactPaths('/var/log/podkit.log')).toBe('/var/log/podkit.log');
+    });
+  });
+
+  describe('formatReadinessLevel', () => {
+    it('returns "Ready" for ready level', () => {
+      expect(formatReadinessLevel('ready', 'myipod')).toBe('Ready');
+    });
+
+    it('includes device name in needs-repair message', () => {
+      const msg = formatReadinessLevel('needs-repair', 'myipod');
+      expect(msg).toContain('repair');
+      expect(msg).toContain('myipod');
+    });
+
+    it('includes device name in needs-init message', () => {
+      const msg = formatReadinessLevel('needs-init', 'myipod');
+      expect(msg).toContain('init');
+      expect(msg).toContain('myipod');
+    });
+
+    it('returns formatting message for needs-format', () => {
+      const msg = formatReadinessLevel('needs-format', 'myipod');
+      expect(msg).toContain('format');
+    });
+
+    it('returns partitioning message for needs-partition', () => {
+      const msg = formatReadinessLevel('needs-partition', 'myipod');
+      expect(msg).toContain('partition');
+    });
+
+    it('returns hardware error message for hardware-error', () => {
+      const msg = formatReadinessLevel('hardware-error', 'myipod');
+      expect(msg.toLowerCase()).toContain('hardware');
+    });
+
+    it('returns unknown state for unrecognized level', () => {
+      const msg = formatReadinessLevel('something-new' as any, 'myipod');
+      expect(msg).toBe('Unknown state');
+    });
+  });
+
+  describe('findConfiguredDeviceName', () => {
+    it('matches device by volume UUID', () => {
+      const device = { volumeUuid: 'ABC-123' };
+      const config = { myipod: { volumeUuid: 'ABC-123' } };
+      expect(findConfiguredDeviceName(device, config)).toBe('myipod');
+    });
+
+    it('matches case-insensitively', () => {
+      const device = { volumeUuid: 'abc-123' };
+      const config = { myipod: { volumeUuid: 'ABC-123' } };
+      expect(findConfiguredDeviceName(device, config)).toBe('myipod');
+    });
+
+    it('returns undefined when no match', () => {
+      const device = { volumeUuid: 'XYZ-999' };
+      const config = { myipod: { volumeUuid: 'ABC-123' } };
+      expect(findConfiguredDeviceName(device, config)).toBeUndefined();
+    });
+
+    it('returns undefined when device has no UUID', () => {
+      const device = { volumeUuid: '' };
+      const config = { myipod: { volumeUuid: 'ABC-123' } };
+      expect(findConfiguredDeviceName(device, config)).toBeUndefined();
+    });
+
+    it('returns undefined when config device has no UUID', () => {
+      const device = { volumeUuid: 'ABC-123' };
+      const config = { myipod: {} as any };
+      expect(findConfiguredDeviceName(device, config)).toBeUndefined();
+    });
+
+    it('handles empty config', () => {
+      const device = { volumeUuid: 'ABC-123' };
+      expect(findConfiguredDeviceName(device, {})).toBeUndefined();
+    });
+
+    it('returns first matching device when multiple configured', () => {
+      const device = { volumeUuid: 'ABC-123' };
+      const config = {
+        first: { volumeUuid: 'OTHER-UUID' },
+        second: { volumeUuid: 'ABC-123' },
+        third: { volumeUuid: 'ABC-123' },
+      };
+      expect(findConfiguredDeviceName(device, config)).toBe('second');
+    });
+  });
+
+  describe('stageMarker', () => {
+    it('returns check mark for pass', () => {
+      expect(stageMarker('pass')).toBe('\u2713');
+    });
+
+    it('returns cross for fail', () => {
+      expect(stageMarker('fail')).toBe('\u2717');
+    });
+
+    it('returns ! for warn', () => {
+      expect(stageMarker('warn')).toBe('!');
+    });
+
+    it('returns - for skip', () => {
+      expect(stageMarker('skip')).toBe('-');
+    });
+
+    it('returns ? for unknown status', () => {
+      expect(stageMarker('other')).toBe('?');
     });
   });
 });

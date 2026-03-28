@@ -211,12 +211,33 @@ podkit device list
 
 ### `podkit device scan`
 
-Scan for connected iPod devices. Shows volume name, UUID, size, and mount status for each detected iPod. Useful for finding the volume UUID needed to configure devices.
+Scan for connected devices. Runs a 6-stage readiness pipeline on each detected iPod and shows the result with ✓/✗ for each stage. Useful for diagnosing device state and finding the volume UUID needed for configuration.
 
 ```bash
+podkit device scan [options]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--mount` | Automatically mount unmounted devices |
+| `--report` | Output a diagnostic report for troubleshooting |
+| `--format <fmt>` | Output format: `table`, `json` |
+
+```bash
+# Scan for connected devices
 podkit device scan
+
+# Auto-mount any unmounted devices found
+podkit device scan --mount
+
+# Generate a diagnostic report (share with support)
+podkit device scan --report
+
+# Machine-readable output
 podkit device scan --format json
 ```
+
+The readiness pipeline checks six stages in sequence: USB Connection → Partition Table → Filesystem → Mounted → SysInfo → Database. Each stage shows ✓ (pass), ✗ (fail), or — (skipped). The overall readiness level is shown at the end. See [Device Readiness Levels](#device-readiness-levels) for what each level means.
 
 ### `podkit device add`
 
@@ -321,7 +342,7 @@ podkit device default --clear
 
 ### `podkit device info`
 
-Display device configuration and live status (storage, track count, model).
+Display device configuration and live status (storage, track count, model). For iPod devices, also shows a readiness summary line indicating whether the device is fully operational.
 
 ```bash
 podkit device info [-d <name>]
@@ -480,7 +501,7 @@ podkit device mount --dry-run
 
 ### `podkit device init`
 
-Initialize an iPod database on a device. Use this for blank or corrupted iPods.
+Initialize an iPod database on a device. Use this for blank or corrupted iPods. Runs a readiness check first and provides guidance based on the device's current state — for example, directing you to Disk Utility if the device needs formatting or partitioning before it can be initialized.
 
 ```bash
 podkit device init [-d <name>] [options]
@@ -490,6 +511,30 @@ podkit device init [-d <name>] [options]
 |--------|-------------|
 | `-f, --force` | Overwrite existing database |
 | `-y, --yes` | Skip confirmation prompt |
+
+## Device Readiness Levels
+
+When running `podkit device scan`, `podkit device info`, or `podkit doctor`, iPod devices are checked against a 6-stage readiness pipeline. The overall result is a readiness level:
+
+| Level | Meaning | Suggested Action |
+|-------|---------|-----------------|
+| **Ready** | All checks pass, device fully operational | None needed |
+| **Needs repair** | Database or SysInfo corrupt | `podkit device reset` |
+| **Needs init** | Mounted but no iPod database | `podkit device init` |
+| **Needs format** | Partitioned but no filesystem | Use Disk Utility (macOS) or `mkfs.vfat` (Linux) to format |
+| **Needs partition** | USB visible but no partitions | Use Disk Utility (macOS) or `fdisk` (Linux) to partition |
+| **Hardware error** | Communication failure | Check cable/connection, try a different USB port |
+
+The pipeline runs six stages in sequence. A failure at any stage skips remaining stages:
+
+| Stage | What it checks |
+|-------|---------------|
+| USB Connection | Device is visible via USB |
+| Partition Table | Device has a recognizable partition table |
+| Filesystem | Partition contains a FAT32 filesystem |
+| Mounted | Filesystem is mounted and accessible |
+| SysInfo | `iPod_Control/Device/SysInfo` exists and is readable |
+| Database | `iPod_Control/iTunes/iTunesDB` exists and can be opened |
 
 ## `podkit collection`
 
@@ -626,7 +671,7 @@ podkit collection video [-c <name>] [options]
 
 ## `podkit doctor`
 
-Run health checks on an iPod and optionally repair detected issues.
+Run health checks on an iPod and optionally repair detected issues. Uses a two-phase approach: readiness checks first (USB, partition, filesystem, mount, SysInfo, database), then database health checks. Gracefully handles devices that don't yet have a database, directing you to `podkit device init` if needed.
 
 ```bash
 podkit doctor [options]

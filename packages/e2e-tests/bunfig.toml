@@ -1,3 +1,6 @@
 [test]
 # Load signal handlers before any test files
 preload = ["./src/setup/preload.ts"]
+# E2E tests spawn CLI processes and run system commands (diskutil, etc.)
+# which can take several seconds per test
+timeout = 15000
