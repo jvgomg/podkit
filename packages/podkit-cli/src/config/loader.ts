@@ -941,6 +941,17 @@ function parseDevices(
       device.audioNormalization = rawDevice.audioNormalization as AudioNormalizationMode;
     }
 
+    // Parse optional supportsAlbumArtistBrowsing
+    if (rawDevice.supportsAlbumArtistBrowsing !== undefined) {
+      if (typeof rawDevice.supportsAlbumArtistBrowsing !== 'boolean') {
+        throw new Error(
+          `Invalid type for "supportsAlbumArtistBrowsing" in [devices.${name}]. ` +
+            `Expected boolean, got ${typeof rawDevice.supportsAlbumArtistBrowsing}.`
+        );
+      }
+      device.supportsAlbumArtistBrowsing = rawDevice.supportsAlbumArtistBrowsing;
+    }
+
     // Parse optional musicDir
     if (rawDevice.musicDir !== undefined) {
       if (typeof rawDevice.musicDir !== 'string' || rawDevice.musicDir.trim().length === 0) {
@@ -960,6 +971,7 @@ function parseDevices(
         'supportedAudioCodecs',
         'supportsVideo',
         'audioNormalization',
+        'supportsAlbumArtistBrowsing',
         'musicDir',
       ] as const;
       const presentFields = massStorageFields.filter((f) => device[f] !== undefined);
@@ -1261,6 +1273,12 @@ export function loadEnvConfig(): PartialConfig {
   const envSupportsVideo = process.env[ENV_KEYS.supportsVideo];
   if (envSupportsVideo !== undefined) {
     deviceDefaults.supportsVideo = parseBoolEnv(envSupportsVideo);
+    hasDeviceDefaults = true;
+  }
+
+  const envSupportsAlbumArtistBrowsing = process.env[ENV_KEYS.supportsAlbumArtistBrowsing];
+  if (envSupportsAlbumArtistBrowsing !== undefined) {
+    deviceDefaults.supportsAlbumArtistBrowsing = parseBoolEnv(envSupportsAlbumArtistBrowsing);
     hasDeviceDefaults = true;
   }
 

@@ -25,6 +25,7 @@ function makeCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCa
     supportedAudioCodecs: [],
     supportsVideo: false,
     audioNormalization: 'soundcheck',
+    supportsAlbumArtistBrowsing: false,
     ...overrides,
   };
 }

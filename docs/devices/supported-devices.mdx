@@ -23,11 +23,11 @@ podkit ships with predefined profiles for tested devices, but any mass-storage p
 
 podkit includes predefined capability profiles for the following mass-storage devices. These profiles tell podkit which audio codecs the device supports, how it handles artwork, and what its limitations are — so you don't need to configure any of this manually.
 
-| Device | Type | Audio Codecs | Artwork (source, max size) | Video | Normalization |
-|--------|------|-------------|---------|-------|---------------|
-| [Snowsky Echo Mini](#snowsky-echo-mini) | `echo-mini` | AAC, ALAC, MP3, FLAC, OGG, WAV | Embedded, 127px | No | None |
-| [Rockbox](/devices/rockbox) | `rockbox` | AAC, ALAC, MP3, FLAC, OGG, Opus, WAV, AIFF | Sidecar, Embedded, 320px | No | ReplayGain (device-native; not yet written by podkit) |
-| Generic (any mass-storage DAP) | `generic` | AAC, MP3, FLAC | Embedded, 500px | No | None |
+| Device | Type | Audio Codecs | Artwork (source, max size) | Video | Normalization | Album Artist |
+|--------|------|-------------|---------|-------|---------------|--------------|
+| [Snowsky Echo Mini](#snowsky-echo-mini) | `echo-mini` | AAC, ALAC, MP3, FLAC, OGG, WAV | Embedded, 127px | No | None | Yes |
+| [Rockbox](/devices/rockbox) | `rockbox` | AAC, ALAC, MP3, FLAC, OGG, Opus, WAV, AIFF | Sidecar, Embedded, 320px | No | ReplayGain (device-native; not yet written by podkit) | Yes |
+| Generic (any mass-storage DAP) | `generic` | AAC, MP3, FLAC | Embedded, 500px | No | None | Yes |
 
 To use a predefined profile, set the `type` field in your device config:
 
@@ -73,6 +73,7 @@ supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
 artworkSources = ["embedded"]
 artworkMaxResolution = 320
 supportsVideo = false
+supportsAlbumArtistBrowsing = false  # Set to false if your device doesn't use Album Artist for browsing
 ```
 
 ### Available capability overrides
@@ -85,6 +86,7 @@ supportsVideo = false
 | `artworkMaxResolution` | integer | Maximum artwork dimension in pixels (square) |
 | `supportsVideo` | boolean | Whether the device supports video playback |
 | `audioNormalization` | string | How the device handles volume normalization: `soundcheck` (iPod database), `replaygain` (file tags), or `none` |
+| `supportsAlbumArtistBrowsing` | boolean | Whether the device uses Album Artist for browse navigation (`true` for all mass-storage presets; `false` for iPod) |
 | `musicDir` | string | Custom music directory path on the device (default: `Music`) |
 
 podkit uses these capabilities to make automatic decisions — selecting the right codec, resizing artwork, and skipping unsupported content. See the [Config File Reference](/reference/config-file#devices) for the complete device schema.

@@ -34,6 +34,7 @@ const TEST_CAPABILITIES: DeviceCapabilities = {
   supportedAudioCodecs: ['flac', 'mp3', 'aac', 'ogg'],
   supportsVideo: false,
   audioNormalization: 'none',
+  supportsAlbumArtistBrowsing: true,
 };
 
 /** Create a temporary directory for use as a mock device mount point */

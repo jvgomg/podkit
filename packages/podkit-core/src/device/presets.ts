@@ -26,6 +26,7 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
     supportsVideo: false,
     audioNormalization: 'none',
+    supportsAlbumArtistBrowsing: true,
   },
   rockbox: {
     artworkSources: ['sidecar', 'embedded'],
@@ -33,6 +34,7 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
     supportsVideo: false,
     audioNormalization: 'replaygain',
+    supportsAlbumArtistBrowsing: true,
   },
   generic: {
     artworkSources: ['embedded'],
@@ -40,6 +42,7 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportedAudioCodecs: ['aac', 'mp3', 'flac'],
     supportsVideo: false,
     audioNormalization: 'none',
+    supportsAlbumArtistBrowsing: true,
   },
 };
 
@@ -80,5 +83,7 @@ export function resolveDeviceCapabilities(
     supportedAudioCodecs: overrides.supportedAudioCodecs ?? preset.supportedAudioCodecs,
     supportsVideo: overrides.supportsVideo ?? preset.supportsVideo,
     audioNormalization: overrides.audioNormalization ?? preset.audioNormalization,
+    supportsAlbumArtistBrowsing:
+      overrides.supportsAlbumArtistBrowsing ?? preset.supportsAlbumArtistBrowsing,
   };
 }

@@ -156,6 +156,7 @@ describe('resolveVideoConfig', () => {
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: false,
         audioNormalization: 'soundcheck',
+        supportsAlbumArtistBrowsing: false,
       };
 
       const resolved = resolveVideoConfig({ capabilities });
@@ -169,6 +170,7 @@ describe('resolveVideoConfig', () => {
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: true,
         audioNormalization: 'soundcheck',
+        supportsAlbumArtistBrowsing: false,
       };
 
       const resolved = resolveVideoConfig({ capabilities });
