@@ -33,6 +33,7 @@ const TEST_CAPABILITIES: DeviceCapabilities = {
   artworkMaxResolution: 600,
   supportedAudioCodecs: ['flac', 'mp3', 'aac', 'ogg'],
   supportsVideo: false,
+  audioNormalization: 'none',
 };
 
 /** Create a temporary directory for use as a mock device mount point */

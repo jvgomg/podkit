@@ -150,7 +150,12 @@ export {
 } from './sync/music/pipeline.js';
 
 // Device capabilities
-export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './device/capabilities.js';
+export type {
+  DeviceCapabilities,
+  DeviceArtworkSource,
+  AudioCodec,
+  AudioNormalizationMode,
+} from './device/capabilities.js';
 export { getDeviceCapabilities } from './ipod/capabilities.js';
 
 // Device presets

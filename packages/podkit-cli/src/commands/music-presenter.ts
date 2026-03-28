@@ -331,6 +331,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     }
     out.print(`  Already synced: ${formatNumber(diff.existing.length)}`);
 
+    const normalization = config.capabilities?.audioNormalization ?? 'soundcheck';
+
     if (diff.toUpdate.length > 0) {
       const updatesByReason = new Map<string, number>();
       for (const update of diff.toUpdate) {
@@ -340,7 +342,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       }
       const reasonParts: string[] = [];
       for (const [reason, count] of updatesByReason) {
-        reasonParts.push(`${formatUpdateReason(reason)}: ${count}`);
+        let label = formatUpdateReason(reason);
+        if (reason === 'soundcheck-update' && normalization === 'replaygain') {
+          label = 'ReplayGain update';
+        }
+        reasonParts.push(`${label}: ${count}`);
       }
       out.print(
         `  Tracks to update: ${formatNumber(diff.toUpdate.length)} (${reasonParts.join(', ')})`
@@ -358,10 +364,13 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       }
     }
     if (diff.toAdd.length > 0) {
-      const withSoundcheck = diff.toAdd.filter((t) => t.soundcheck !== undefined).length;
-      out.print(
-        `  Sound Check: ${formatNumber(withSoundcheck)}/${formatNumber(diff.toAdd.length)} tracks have normalization data`
-      );
+      if (normalization !== 'none') {
+        const withSoundcheck = diff.toAdd.filter((t) => t.soundcheck !== undefined).length;
+        const label = normalization === 'replaygain' ? 'ReplayGain' : 'Sound Check';
+        out.print(
+          `  ${label}: ${formatNumber(withSoundcheck)}/${formatNumber(diff.toAdd.length)} tracks have normalization data`
+        );
+      }
     }
     out.newline();
 
@@ -551,7 +560,8 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         estimatedSize: plan.estimatedSize,
         estimatedTime: plan.estimatedTime,
         soundCheckTracks:
-          diff.toAdd.length > 0
+          diff.toAdd.length > 0 &&
+          (config.capabilities?.audioNormalization ?? 'soundcheck') !== 'none'
             ? diff.toAdd.filter((t) => t.soundcheck !== undefined).length
             : undefined,
         albumCount,
