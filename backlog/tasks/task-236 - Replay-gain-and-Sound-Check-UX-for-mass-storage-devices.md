@@ -1,9 +1,10 @@
 ---
 id: TASK-236
 title: Replay gain and Sound Check UX for mass-storage devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-24 19:18'
+updated_date: '2026-03-28 13:37'
 labels:
   - feature
   - ux
@@ -39,10 +40,55 @@ Review and fix replay gain / Sound Check handling for mass-storage devices. The 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Sound Check / normalization data is not computed for devices that don't support it
-- [ ] #2 Dry-run output hides or relabels Sound Check for non-iPod devices
-- [ ] #3 JSON output omits soundCheckTracks for devices without normalization support
-- [ ] #4 Echo Mini preset correctly indicates no replay gain / Sound Check support
-- [ ] #5 Rockbox preset correctly indicates ReplayGain support (if applicable)
-- [ ] #6 Device capability type extended with normalization support indicator if needed
+- [x] #1 Sound Check / normalization data is not computed for devices that don't support it
+- [x] #2 Dry-run output hides or relabels Sound Check for non-iPod devices
+- [x] #3 JSON output omits soundCheckTracks for devices without normalization support
+- [x] #4 Echo Mini preset correctly indicates no replay gain / Sound Check support
+- [x] #5 Rockbox preset correctly indicates ReplayGain support (if applicable)
+- [x] #6 Device capability type extended with normalization support indicator if needed
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Summary
+
+Added `audioNormalization` capability to `DeviceCapabilities` with three modes: `'soundcheck'` (iPod), `'replaygain'` (Rockbox), and `'none'` (Echo Mini, generic). This controls whether Sound Check/ReplayGain upgrade detection and UX is shown during sync.
+
+### Changes
+
+**Core type (`DeviceCapabilities`)**
+- Added `audioNormalization: AudioNormalizationMode` field
+- New type: `AudioNormalizationMode = 'soundcheck' | 'replaygain' | 'none'`
+
+**Device presets**
+- Echo Mini: `'none'` — no normalization support
+- Rockbox: `'replaygain'` — reads ReplayGain tags from files
+- Generic: `'none'`
+- iPod (all generations): `'soundcheck'`
+
+**Sync engine**
+- `ResolvedMusicConfig` derives `audioNormalization` from capabilities (defaults to `'soundcheck'` for backward compat)
+- `MusicHandler.detectUpdates()` filters out `soundcheck-update` when `audioNormalization === 'none'`
+
+**CLI UX**
+- Text dry-run: hides normalization line for `'none'` devices; shows "ReplayGain" label for `'replaygain'`, "Sound Check" for `'soundcheck'`
+- JSON dry-run: omits `soundCheckTracks` field for `'none'` devices
+
+**Config**
+- `DeviceConfig` and `deviceDefaults` support `audioNormalization` override
+- `open-device.ts` resolves the override and passes it through capability merging
+
+### Files changed
+- `packages/podkit-core/src/device/capabilities.ts` — new type + field
+- `packages/podkit-core/src/device/presets.ts` — preset values + merge
+- `packages/podkit-core/src/ipod/capabilities.ts` — iPod gets `'soundcheck'`
+- `packages/podkit-core/src/sync/music/config.ts` — derive field
+- `packages/podkit-core/src/sync/music/handler.ts` — filter soundcheck-update
+- `packages/podkit-core/src/index.ts` — export new type
+- `packages/podkit-cli/src/commands/music-presenter.ts` — conditional display
+- `packages/podkit-cli/src/commands/open-device.ts` — override resolution + fallback
+- `packages/podkit-cli/src/config/types.ts` — config type + import
+- `packages/demo/src/mock-core.ts` — mirror preset changes
+- Test files updated with new field (6 files)
+<!-- SECTION:FINAL_SUMMARY:END -->

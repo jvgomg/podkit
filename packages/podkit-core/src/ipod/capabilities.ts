@@ -128,5 +128,6 @@ export function getDeviceCapabilities(generation: string): DeviceCapabilities {
     artworkMaxResolution,
     supportedAudioCodecs,
     supportsVideo,
+    audioNormalization: 'soundcheck',
   };
 }

@@ -21,6 +21,7 @@ function alacCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCa
     artworkMaxResolution: 320,
     supportedAudioCodecs: ['aac', 'alac', 'mp3'],
     supportsVideo: true,
+    audioNormalization: 'soundcheck',
     ...overrides,
   };
 }
@@ -31,6 +32,7 @@ function aacOnlyCapabilities(overrides: Partial<DeviceCapabilities> = {}): Devic
     artworkMaxResolution: 320,
     supportedAudioCodecs: ['aac', 'mp3'],
     supportsVideo: false,
+    audioNormalization: 'soundcheck',
     ...overrides,
   };
 }
@@ -143,6 +145,7 @@ describe('resolveMusicConfig', () => {
         artworkMaxResolution: 240,
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: false,
+        audioNormalization: 'soundcheck',
       };
       const resolved = resolveMusicConfig(makeConfig({ capabilities }));
 
@@ -204,6 +207,27 @@ describe('resolveMusicConfig', () => {
     });
   });
 
+  describe('audioNormalization', () => {
+    it('defaults to soundcheck when no capabilities', () => {
+      const resolved = resolveMusicConfig(makeConfig());
+      expect(resolved.audioNormalization).toBe('soundcheck');
+    });
+
+    it('reads from capabilities when provided', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({ capabilities: alacCapabilities({ audioNormalization: 'replaygain' }) })
+      );
+      expect(resolved.audioNormalization).toBe('replaygain');
+    });
+
+    it('reads none from capabilities', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({ capabilities: aacOnlyCapabilities({ audioNormalization: 'none' }) })
+      );
+      expect(resolved.audioNormalization).toBe('none');
+    });
+  });
+
   describe('transfer mode', () => {
     it('uses provided transferMode', () => {
       const resolved = resolveMusicConfig(makeConfig({ transferMode: 'portable' }));
@@ -227,6 +251,7 @@ describe('resolveMusicConfig', () => {
         artworkMaxResolution: 240,
         supportedAudioCodecs: ['opus', 'flac', 'mp3', 'aac'],
         supportsVideo: false,
+        audioNormalization: 'replaygain',
         ...overrides,
       };
     }

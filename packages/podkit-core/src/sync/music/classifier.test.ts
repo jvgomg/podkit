@@ -239,6 +239,7 @@ describe('MusicTrackClassifier', () => {
         primaryArtworkSource: 'database' as const,
         supportedAudioCodecs: ['aac' as const, 'mp3' as const],
         transformsEnabled: false,
+        audioNormalization: 'soundcheck' as const,
       };
 
       const ctx = classifierFromConfig(config);
@@ -263,6 +264,7 @@ describe('MusicTrackClassifier', () => {
         primaryArtworkSource: undefined,
         supportedAudioCodecs: ['opus' as const, 'flac' as const, 'mp3' as const],
         transformsEnabled: false,
+        audioNormalization: 'soundcheck' as const,
         resolvedLossyCodec: 'opus' as const,
         resolvedLosslessStack: ['source' as const, 'flac' as const],
       };

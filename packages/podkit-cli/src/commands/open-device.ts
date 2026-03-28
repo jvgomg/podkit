@@ -113,6 +113,12 @@ function buildCapabilityOverrides(
     hasOverrides = true;
   }
 
+  const audioNormalization = deviceConfig.audioNormalization ?? deviceDefaults?.audioNormalization;
+  if (audioNormalization !== undefined) {
+    overrides.audioNormalization = audioNormalization;
+    hasOverrides = true;
+  }
+
   return hasOverrides ? overrides : undefined;
 }
 
@@ -163,6 +169,7 @@ export async function openDevice(
       artworkMaxResolution: 320,
       supportedAudioCodecs: ['aac', 'mp3'] as const,
       supportsVideo: false,
+      audioNormalization: 'soundcheck' as const,
     };
 
     const adapter = new core.IpodDeviceAdapter(ipod, capabilities);

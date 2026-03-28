@@ -33,6 +33,7 @@ const TEST_CAPABILITIES: DeviceCapabilities = {
   artworkMaxResolution: 600,
   supportedAudioCodecs: ['flac', 'mp3', 'aac', 'ogg'],
   supportsVideo: false,
+  audioNormalization: 'none',
 };
 
 function createTempDevice(): string {

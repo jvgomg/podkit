@@ -12,7 +12,11 @@
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { QualityPreset, EncodingMode, TransferMode } from '../../transcode/types.js';
 import { getPresetBitrate, getCodecPresetBitrate } from '../../transcode/types.js';
-import type { DeviceCapabilities, AudioCodec } from '../../device/capabilities.js';
+import type {
+  DeviceCapabilities,
+  AudioCodec,
+  AudioNormalizationMode,
+} from '../../device/capabilities.js';
 import type { CollectionAdapter } from '../../adapters/interface.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { hasEnabledTransforms } from '../../transforms/pipeline.js';
@@ -157,6 +161,9 @@ export interface ResolvedMusicConfig {
   /** Whether any metadata transforms are enabled */
   readonly transformsEnabled: boolean;
 
+  /** Audio normalization mode for the device (defaults to 'soundcheck' when unknown) */
+  readonly audioNormalization: AudioNormalizationMode;
+
   /** Resolved codec for lossy transcoding (from codec preference resolution) */
   readonly resolvedLossyCodec?: TranscodeTargetCodec;
 
@@ -191,6 +198,11 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     primaryArtworkSource === 'embedded' ? config.capabilities?.artworkMaxResolution : undefined;
 
   const transformsEnabled = config.transforms ? hasEnabledTransforms(config.transforms) : false;
+
+  // Audio normalization: default to 'soundcheck' for backward compatibility
+  // (iPod is the original target and doesn't always provide capabilities)
+  const audioNormalization: AudioNormalizationMode =
+    config.capabilities?.audioNormalization ?? 'soundcheck';
 
   // --- Codec preference resolution ---
   // When codecPreference + supportedAudioCodecs + encoderAvailability are all available,
@@ -268,6 +280,7 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     primaryArtworkSource,
     supportedAudioCodecs,
     transformsEnabled,
+    audioNormalization,
     resolvedLossyCodec,
     resolvedLosslessStack,
     codecResolutionError,
