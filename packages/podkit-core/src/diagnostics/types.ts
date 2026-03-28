@@ -84,6 +84,12 @@ export interface DiagnosticCheck {
    * Defaults to `['ipod']` if omitted (backward-compatible).
    */
   applicableTo?: ReadonlyArray<DiagnosticDeviceType>;
+  /**
+   * Output section this check belongs to.
+   * 'system' = host environment (e.g. FFmpeg encoders).
+   * 'device' = device-specific health (default).
+   */
+  scope?: 'system' | 'device';
   /** Run the check */
   check(ctx: DiagnosticContext): Promise<CheckResult>;
   /** If this check can auto-repair, how */
@@ -103,7 +109,13 @@ export interface DiagnosticReport {
   deviceType: DiagnosticDeviceType;
   /** Individual check results */
   checks: Array<
-    { id: string; name: string; hasRepair: boolean; repairOnly: boolean } & CheckResult
+    {
+      id: string;
+      name: string;
+      hasRepair: boolean;
+      repairOnly: boolean;
+      scope: 'system' | 'device';
+    } & CheckResult
   >;
   /** Overall health: true if all checks passed */
   healthy: boolean;

@@ -139,6 +139,7 @@ export const codecEncodersCheck: DiagnosticCheck = {
   id: 'codec-encoders',
   name: 'Codec Encoders',
   applicableTo: ['ipod', 'mass-storage'],
+  scope: 'system',
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
     // Detect FFmpeg capabilities

@@ -311,7 +311,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     }
     if (config.resolvedLossyCodec && config.lossyPreferenceStack) {
       const chain = config.lossyPreferenceStack.join(' \u2192 ');
-      out.print(`Codec: ${config.resolvedLossyCodec} (first supported from preference: ${chain})`);
+      out.print(`Codec: ${config.resolvedLossyCodec} (preference: ${chain})`);
     }
 
     // Codec change count
