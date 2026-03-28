@@ -1,9 +1,10 @@
 ---
 id: TASK-247.13
 title: Changesets for device readiness diagnostics
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:56'
+updated_date: '2026-03-28 15:55'
 labels:
   - release
   - device
@@ -49,8 +50,8 @@ Create changesets for all packages affected by the device readiness diagnostics 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Changeset created for @podkit/core (minor)
-- [ ] #2 Changeset created for podkit CLI (minor)
-- [ ] #3 Changeset descriptions cover all user-facing changes
-- [ ] #4 bunx changeset validates successfully
+- [x] #1 Changeset created for @podkit/core (minor)
+- [x] #2 Changeset created for podkit CLI (minor)
+- [x] #3 Changeset descriptions cover all user-facing changes
+- [x] #4 bunx changeset validates successfully
 <!-- AC:END -->

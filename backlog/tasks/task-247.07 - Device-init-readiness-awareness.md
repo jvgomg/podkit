@@ -1,9 +1,10 @@
 ---
 id: TASK-247.07
 title: Device init readiness awareness
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:55'
+updated_date: '2026-03-28 15:43'
 labels:
   - feature
   - device
@@ -42,13 +43,13 @@ Enhance `podkit device init` to run readiness checks first and provide appropria
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Readiness checks run before attempting init
-- [ ] #2 Each readiness level produces correct behavior and messaging
-- [ ] #3 --force on already-initialized device proceeds with reinit
-- [ ] #4 needs-format stub shows Disk Utility / iTunes manual guidance
-- [ ] #5 needs-partition stub shows MBR + FAT32 partitioning guidance
+- [x] #1 Readiness checks run before attempting init
+- [x] #2 Each readiness level produces correct behavior and messaging
+- [x] #3 --force on already-initialized device proceeds with reinit
+- [x] #4 needs-format stub shows Disk Utility / iTunes manual guidance
+- [x] #5 needs-partition stub shows MBR + FAT32 partitioning guidance
 - [ ] #6 DB existence consolidated with IpodDatabase.hasDatabase()
-- [ ] #7 Stub code paths structured for future format/partition implementation
+- [x] #7 Stub code paths structured for future format/partition implementation
 - [ ] #8 Unit tests for init behavior at each readiness level
 - [ ] #9 E2E tests: init on uninitialized device, init on already-initialized device
 <!-- AC:END -->

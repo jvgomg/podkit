@@ -1,9 +1,10 @@
 ---
 id: TASK-247.11
 title: Documentation updates for device readiness
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:55'
+updated_date: '2026-03-28 15:55'
 labels:
   - docs
   - device
@@ -59,11 +60,11 @@ Update user-facing documentation and CLI help text to cover all device readiness
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 User docs updated for all enhanced commands
-- [ ] #2 New flags (--mount, --report) documented
-- [ ] #3 Readiness levels reference page or section added
-- [ ] #4 Troubleshooting guide covers common error codes
-- [ ] #5 CLI help text updated for affected commands
-- [ ] #6 Shell completions updated for new flags
-- [ ] #7 Demo tape checked and updated if needed
+- [x] #1 User docs updated for all enhanced commands
+- [x] #2 New flags (--mount, --report) documented
+- [x] #3 Readiness levels reference page or section added
+- [x] #4 Troubleshooting guide covers common error codes
+- [x] #5 CLI help text updated for affected commands
+- [x] #6 Shell completions updated for new flags
+- [x] #7 Demo tape checked and updated if needed
 <!-- AC:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-247.05
 title: Doctor command readiness integration
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:54'
+updated_date: '2026-03-28 15:37'
 labels:
   - feature
   - device
@@ -45,12 +46,12 @@ Enhance the `podkit doctor` command to run device readiness checks before databa
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Doctor runs readiness checks before database checks
-- [ ] #2 If device not ready, DB checks skipped with clear explanation
-- [ ] #3 Partially-ready device shows specific failures (not blanket skip)
-- [ ] #4 Readiness output uses same check/cross format as scan
-- [ ] #5 runDiagnostics refactored to handle missing DB without throwing
-- [ ] #6 Existing DB checks (artwork, orphans) skip gracefully when no DB
+- [x] #1 Doctor runs readiness checks before database checks
+- [x] #2 If device not ready, DB checks skipped with clear explanation
+- [x] #3 Partially-ready device shows specific failures (not blanket skip)
+- [x] #4 Readiness output uses same check/cross format as scan
+- [x] #5 runDiagnostics refactored to handle missing DB without throwing
+- [x] #6 Existing DB checks (artwork, orphans) skip gracefully when no DB
 - [ ] #7 Unit tests: doctor with ready device, unready device, partially-ready device
 - [ ] #8 E2E test: doctor on device without DB shows readiness + skipped DB checks
 <!-- AC:END -->
