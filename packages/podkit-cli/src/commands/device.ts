@@ -82,6 +82,8 @@ import {
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceValidationResult } from '@podkit/core';
 import type { DeviceTrack, IpodTrack } from '@podkit/core';
+import { STAGE_DISPLAY_NAMES } from '@podkit/core';
+import type { ReadinessResult, ReadinessStageResult, ReadinessLevel } from '@podkit/core';
 
 // =============================================================================
 // Shared utilities
@@ -364,6 +366,16 @@ export interface DeviceInfoOutput {
     };
     databaseError?: string;
   };
+  readiness?: {
+    level: string;
+    stages: Array<{
+      stage: string;
+      status: string;
+      summary: string;
+      details?: Record<string, unknown>;
+    }>;
+    summary?: { trackCount: number; modelName?: string; freeBytes?: number; totalBytes?: number };
+  };
   error?: string;
 }
 
@@ -423,6 +435,7 @@ export interface DeviceInitOutput {
   device?: string;
   mountPoint?: string;
   modelName?: string;
+  readinessLevel?: string;
   error?: string;
 }
 
@@ -449,6 +462,22 @@ export interface DeviceScanOutput {
     size: number;
     isMounted: boolean;
     mountPoint?: string;
+    configuredAs?: string;
+    readiness?: {
+      level: string;
+      stages: Array<{
+        stage: string;
+        status: string;
+        summary: string;
+        details?: Record<string, unknown>;
+      }>;
+      summary?: {
+        trackCount: number;
+        modelName?: string;
+        freeBytes?: number;
+        totalBytes?: number;
+      };
+    };
   }>;
   configuredDevices?: Array<{
     name: string;
@@ -578,17 +607,268 @@ function parseFormat(filetype: string | undefined): string {
 // Scan subcommand
 // =============================================================================
 
+// ── Readiness display helpers ────────────────────────────────────────────────
+
+export function stageMarker(status: string): string {
+  switch (status) {
+    case 'pass':
+      return '\u2713';
+    case 'fail':
+      return '\u2717';
+    case 'warn':
+      return '!';
+    case 'skip':
+      return '-';
+    default:
+      return '?';
+  }
+}
+
+export function formatReadinessLevel(level: ReadinessLevel, deviceName: string): string {
+  switch (level) {
+    case 'ready':
+      return 'Ready';
+    case 'needs-repair':
+      return 'Needs repair \u2014 run: podkit doctor -d ' + deviceName;
+    case 'needs-init':
+      return 'Needs initialization \u2014 run: podkit device init -d ' + deviceName;
+    case 'needs-format':
+      return 'Needs formatting \u2014 device has no recognized filesystem';
+    case 'needs-partition':
+      return 'Needs partitioning \u2014 see: podkit device init';
+    case 'hardware-error':
+      return 'Hardware error \u2014 device may be disconnected or failing';
+    default:
+      return 'Unknown state';
+  }
+}
+
+function printReadinessStages(
+  out: OutputContext,
+  stages: ReadinessStageResult[],
+  readiness: ReadinessResult,
+  deviceName: string
+): void {
+  for (const stage of stages) {
+    const marker = stageMarker(stage.status);
+    const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
+    out.print(`  ${marker} ${name}`);
+
+    // Show detail line for certain stages
+    if (stage.stage === 'mount' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.stage === 'mount' && stage.status === 'warn') {
+      out.print(`    ${stage.details?.mountPoint} (read-only)`);
+    } else if (stage.stage === 'sysinfo' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.stage === 'database' && stage.status === 'pass') {
+      out.print(`    ${stage.summary}`);
+    } else if (
+      stage.status === 'fail' &&
+      stage.stage !== 'usb' &&
+      stage.stage !== 'partition' &&
+      stage.stage !== 'filesystem'
+    ) {
+      out.print(`    ${stage.summary}`);
+    } else if (stage.status === 'skip') {
+      out.print(`    ${stage.summary}`);
+    }
+  }
+
+  out.newline();
+
+  // Summary line
+  if (readiness.level === 'ready' && readiness.summary) {
+    const trackStr = formatNumber(readiness.summary.trackCount);
+    const parts = [`${trackStr} track${readiness.summary.trackCount === 1 ? '' : 's'}`];
+    if (readiness.summary.freeBytes !== undefined) {
+      parts.push(`${formatBytes(readiness.summary.freeBytes)} free`);
+    }
+    out.print(`  Ready \u2014 ${parts.join(', ')}`);
+  } else {
+    out.print(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
+  }
+}
+
+// ── Scan helpers ─────────────────────────────────────────────────────────────
+
+/**
+ * Find the configured device name for a discovered device by matching UUID.
+ */
+export function findConfiguredDeviceName(
+  device: { volumeUuid: string },
+  devices: Record<string, DeviceConfig>
+): string | undefined {
+  for (const [name, deviceConfig] of Object.entries(devices)) {
+    if (
+      deviceConfig.volumeUuid &&
+      device.volumeUuid &&
+      deviceConfig.volumeUuid.toUpperCase() === device.volumeUuid.toUpperCase()
+    ) {
+      return name;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Redact user home directory paths from text.
+ * Volume names and mount points under /Volumes/ are preserved.
+ */
+export function redactPaths(text: string): string {
+  return text
+    .replace(/\/Users\/[^/]+\//g, '/Users/****/')
+    .replace(/\/home\/[^/]+\//g, '/home/****/');
+}
+
+/**
+ * Generate a diagnostic report for troubleshooting.
+ */
+async function generateDiagnosticReport(
+  ipods: Array<{
+    volumeName: string;
+    volumeUuid: string;
+    identifier: string;
+    size: number;
+    isMounted: boolean;
+    mountPoint?: string;
+  }>,
+  readinessResults: ReadinessResult[],
+  usbOnlyDevices: Array<{ modelName?: string; supported?: boolean; notSupportedReason?: string }>,
+  configuredDevices: Array<{ name: string; type: string; path: string; connected: boolean }>,
+  config: { devices?: Record<string, DeviceConfig> },
+  version: string
+): Promise<string> {
+  const { release } = await import('node:os');
+  const lines: string[] = [];
+
+  lines.push('podkit diagnostic report');
+  lines.push('========================');
+  lines.push('');
+
+  // System info
+  lines.push('System:');
+  lines.push(`  podkit version: ${version}`);
+  const platformName =
+    process.platform === 'darwin'
+      ? `darwin (macOS ${release()})`
+      : `${process.platform} (${release()})`;
+  lines.push(`  Platform: ${platformName}`);
+  lines.push(`  Node.js: ${process.version}`);
+  lines.push('');
+
+  const hasAnyDevices =
+    ipods.length > 0 || usbOnlyDevices.length > 0 || configuredDevices.length > 0;
+
+  if (!hasAnyDevices) {
+    lines.push('No devices found.');
+    lines.push('');
+    lines.push('---');
+    lines.push('Generated by podkit device scan --report');
+    return lines.join('\n');
+  }
+
+  lines.push('Devices:');
+
+  // iPods with readiness
+  for (let i = 0; i < ipods.length; i++) {
+    if (i > 0) lines.push('---');
+    const device = ipods[i]!;
+    const readiness = readinessResults[i];
+    const label = device.volumeName || '(unnamed)';
+    const identifier = device.identifier ? ` (${device.identifier})` : '';
+
+    lines.push(`  iPod: ${label}${identifier}`);
+
+    // Config relationship
+    const configName = findConfiguredDeviceName(device, config.devices ?? {});
+    if (configName) {
+      lines.push(`  Configured as: ${configName}`);
+    } else {
+      lines.push('  Not configured');
+    }
+
+    if (readiness) {
+      lines.push('');
+      lines.push('  Readiness:');
+      for (const stage of readiness.stages) {
+        const marker = stageMarker(stage.status);
+        const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
+        let line = `    ${marker} ${name}`;
+        if (stage.summary) {
+          line += ` \u2014 ${stage.summary}`;
+        }
+        lines.push(line);
+
+        // Include error interpretation for failed stages
+        if (stage.status === 'fail' && stage.details?.interpretation) {
+          lines.push(`      ${stage.details.interpretation}`);
+        }
+      }
+
+      lines.push('');
+
+      // Summary line
+      if (readiness.level === 'ready' && readiness.summary) {
+        const trackStr = formatNumber(readiness.summary.trackCount);
+        const parts = [`${trackStr} track${readiness.summary.trackCount === 1 ? '' : 's'}`];
+        if (readiness.summary.freeBytes !== undefined) {
+          parts.push(`${formatBytes(readiness.summary.freeBytes)} free`);
+        }
+        lines.push(`  Level: Ready \u2014 ${parts.join(', ')}`);
+      } else {
+        lines.push(`  Level: ${formatReadinessLevel(readiness.level, label)}`);
+      }
+    }
+
+    lines.push('');
+  }
+
+  // USB-only devices
+  for (const usbDevice of usbOnlyDevices) {
+    lines.push('---');
+    const label = usbDevice.modelName ?? 'Unknown iPod';
+    lines.push(`  iPod: ${label} (USB only)`);
+    if (!usbDevice.supported && usbDevice.notSupportedReason) {
+      lines.push(`  ${usbDevice.notSupportedReason}`);
+    }
+    lines.push('');
+  }
+
+  // Configured mass-storage devices
+  for (const cd of configuredDevices) {
+    lines.push('---');
+    const status = cd.connected ? 'connected' : 'disconnected';
+    lines.push(`  ${cd.name} (${cd.type}) \u2014 ${cd.path} [${status}]`);
+    lines.push('');
+  }
+
+  lines.push('---');
+  lines.push('Generated by podkit device scan --report');
+  return lines.join('\n');
+}
+
+// ── Scan subcommand ──────────────────────────────────────────────────────────
+
 const scanSubcommand = new Command('scan')
   .description('scan for connected devices')
-  .action(async () => {
+  .option('--mount', 'automatically mount unmounted devices')
+  .option('--report', 'output diagnostic report for troubleshooting')
+  .action(async (scanOptions: { mount?: boolean; report?: boolean }) => {
     const { globalOpts, config } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
     // Load core dependencies
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+    let checkReadiness: typeof import('@podkit/core').checkReadiness;
+    let discoverUsbIpods: typeof import('@podkit/core').discoverUsbIpods;
+    let createUsbOnlyReadinessResult: typeof import('@podkit/core').createUsbOnlyReadinessResult;
     try {
       const core = await import('@podkit/core');
       getDeviceManager = core.getDeviceManager;
+      checkReadiness = core.checkReadiness;
+      discoverUsbIpods = core.discoverUsbIpods;
+      createUsbOnlyReadinessResult = core.createUsbOnlyReadinessResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
       out.result<DeviceScanOutput>({ success: false, error: message }, () => {
@@ -605,6 +885,18 @@ const scanSubcommand = new Command('scan')
     let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
     if (manager.isSupported) {
       ipods = await manager.findIpodDevices();
+    }
+
+    // Fast path: only query USB subsystem when no disk-based iPods found.
+    // This avoids the 2-3s system_profiler query when devices are already visible.
+    type UsbDiscoveredDevice = Awaited<ReturnType<typeof discoverUsbIpods>>[number];
+    let usbOnlyDevices: UsbDiscoveredDevice[] = [];
+    if (ipods.length === 0 && manager.isSupported) {
+      const usbDevices = await discoverUsbIpods();
+      // All USB devices are "USB-only" since no disk iPods were found.
+      // If a USB device has a diskIdentifier, it means the disk exists but
+      // wasn't recognized as an iPod — still treat as USB-only for display.
+      usbOnlyDevices = usbDevices;
     }
 
     // Gather configured mass-storage devices
@@ -627,16 +919,117 @@ const scanSubcommand = new Command('scan')
       }
     }
 
-    const devices = ipods.map((d) => ({
-      volumeName: d.volumeName,
-      volumeUuid: d.volumeUuid,
-      identifier: d.identifier,
-      size: d.size,
-      isMounted: d.isMounted,
-      ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
-    }));
+    // Run readiness pipeline on each iPod (only on supported platforms)
+    const readinessResults: ReadinessResult[] = [];
+    if (manager.isSupported) {
+      for (const ipod of ipods) {
+        readinessResults.push(await checkReadiness({ device: ipod }));
+      }
+    }
 
-    const hasAnyDevices = ipods.length > 0 || configuredDevices.length > 0;
+    // Handle unmounted devices: prompt or auto-mount
+    if (manager.isSupported) {
+      const { interpretError } = await import('@podkit/core');
+      for (let i = 0; i < ipods.length; i++) {
+        const ipod = ipods[i]!;
+        if (ipod.isMounted) continue;
+
+        const readiness = readinessResults[i];
+        const mountStage = readiness?.stages.find((s) => s.stage === 'mount');
+        if (!mountStage || mountStage.status !== 'fail') continue;
+        if (mountStage.details?.isMounted !== false) continue;
+
+        const label = ipod.volumeName || '(unnamed)';
+        let shouldMount = false;
+
+        if (scanOptions.mount) {
+          // --mount flag: auto-mount
+          shouldMount = true;
+        } else if (process.stdout.isTTY && !globalOpts.json) {
+          // Interactive TTY: prompt user
+          shouldMount = await confirm(`${label} is unmounted. Mount now?`);
+        }
+
+        if (shouldMount) {
+          try {
+            const result = await manager.mount(ipod.identifier);
+            if (result.success && result.mountPoint) {
+              // Update the ipod entry with new mount info
+              ipod.isMounted = true;
+              (ipod as { mountPoint?: string }).mountPoint = result.mountPoint;
+              // Re-run readiness to get full picture
+              readinessResults[i] = await checkReadiness({ device: ipod });
+              out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
+            } else if (result.requiresSudo) {
+              const assessment = result.assessment;
+              if (assessment?.iFlash.confirmed) {
+                const lines = formatIFlashMountExplanation(assessment);
+                for (const line of lines) {
+                  out.error(line);
+                }
+              } else {
+                out.error(`Failed to mount ${label}: elevated privileges required.`);
+              }
+              out.newline();
+              out.error(`Run:  ${bold('sudo')} podkit device scan --mount`);
+            } else {
+              const errMsg = result.error ?? 'Unknown mount error';
+              const interpreted = interpretError(errMsg);
+              out.error(`Failed to mount ${label}: ${interpreted.explanation}`);
+            }
+          } catch (err) {
+            const interpreted = interpretError(err instanceof Error ? err : String(err));
+            out.error(`Failed to mount ${label}: ${interpreted.explanation}`);
+          }
+        }
+      }
+    }
+
+    const devices = ipods.map((d, i) => {
+      const readiness = readinessResults[i];
+      const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
+      return {
+        volumeName: d.volumeName,
+        volumeUuid: d.volumeUuid,
+        identifier: d.identifier,
+        size: d.size,
+        isMounted: d.isMounted,
+        ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
+        ...(configuredAs ? { configuredAs } : {}),
+        ...(readiness
+          ? {
+              readiness: {
+                level: readiness.level,
+                stages: readiness.stages.map((s) => ({
+                  stage: s.stage,
+                  status: s.status,
+                  summary: s.summary,
+                  ...(s.details ? { details: s.details } : {}),
+                })),
+                ...(readiness.summary ? { summary: readiness.summary } : {}),
+              },
+            }
+          : {}),
+      };
+    });
+
+    const hasAnyDevices =
+      ipods.length > 0 || usbOnlyDevices.length > 0 || configuredDevices.length > 0;
+
+    // Handle --report flag: generate diagnostic report instead of normal output
+    if (scanOptions.report) {
+      const cliVersion = scanSubcommand.parent?.parent?.version() ?? 'unknown';
+      const report = await generateDiagnosticReport(
+        ipods,
+        readinessResults,
+        usbOnlyDevices,
+        configuredDevices,
+        config,
+        cliVersion
+      );
+      out.stdout(redactPaths(report));
+      return;
+    }
 
     if (!hasAnyDevices) {
       out.result<DeviceScanOutput>({ success: true, devices: [], configuredDevices: [] }, () => {
@@ -650,23 +1043,63 @@ const scanSubcommand = new Command('scan')
     }
 
     out.result<DeviceScanOutput>({ success: true, devices, configuredDevices }, () => {
-      // Show iPods
+      // Show iPods with readiness
       if (ipods.length > 0) {
-        out.print(`Found ${ipods.length} iPod${ipods.length === 1 ? '' : 's'}:`);
-        out.newline();
+        for (let i = 0; i < ipods.length; i++) {
+          const device = ipods[i]!;
+          const readiness = readinessResults[i];
+          const label = device.volumeName || '(unnamed)';
+          const identifier = device.identifier ? ` (${device.identifier})` : '';
 
-        for (const device of ipods) {
-          out.print(`  ${bold(device.volumeName || '(unnamed)')}`);
-          out.print(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
-          out.print(`    Size:         ${formatBytes(device.size)}`);
-          if (device.isMounted && device.mountPoint) {
-            out.print(`    Mounted:      ${device.mountPoint}`);
+          out.print(`  ${bold(label)}${identifier}`);
+
+          // Show config relationship
+          const configName = findConfiguredDeviceName(device, config.devices ?? {});
+          if (configName) {
+            out.print(`  Configured as: ${configName}`);
           } else {
-            out.print(`    Mounted:      no`);
+            out.print(`  Not configured \u2014 run: podkit device add`);
+          }
+
+          out.newline();
+
+          if (readiness) {
+            printReadinessStages(out, readiness.stages, readiness, label);
+          } else {
+            // Unsupported platform — fall back to basic display
+            out.print(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
+            out.print(`    Size:         ${formatBytes(device.size)}`);
+            if (device.isMounted && device.mountPoint) {
+              out.print(`    Mounted:      ${device.mountPoint}`);
+            } else {
+              out.print(`    Mounted:      no`);
+            }
           }
           out.newline();
         }
-      } else if (manager.isSupported) {
+      }
+
+      // Show USB-only devices (no disk representation)
+      if (usbOnlyDevices.length > 0) {
+        for (const usbDevice of usbOnlyDevices) {
+          const label = usbDevice.modelName ?? 'Unknown iPod';
+          out.print(`  ${bold(label)} (USB only)`);
+          out.newline();
+
+          if (!usbDevice.supported) {
+            // Unsupported device — show reason and move on
+            out.print('  This device is not supported by podkit.');
+            if (usbDevice.notSupportedReason) {
+              out.print(`  ${usbDevice.notSupportedReason}`);
+            }
+          } else {
+            // Supported but needs partitioning — show readiness stages
+            const readiness = createUsbOnlyReadinessResult(usbDevice);
+            printReadinessStages(out, readiness.stages, readiness, label);
+          }
+          out.newline();
+        }
+      } else if (ipods.length === 0 && manager.isSupported) {
         out.print('No iPod devices found.');
         out.newline();
       }
@@ -1750,6 +2183,7 @@ const infoSubcommand = new Command('info')
     let liveStatus: DeviceInfoOutput['status'] | undefined;
     let databaseErrorIsUnexpected = false;
     let resolvedDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
+    let readinessData: DeviceInfoOutput['readiness'] | undefined;
 
     try {
       const core = await import('@podkit/core');
@@ -1872,6 +2306,31 @@ const infoSubcommand = new Command('info')
             // Gracefully skip UUID display when extraction fails
           }
         }
+
+        // Run readiness check for iPod devices (skip mass-storage)
+        if (!isMassStorageDevice(device?.type) && manager.isSupported) {
+          try {
+            const ipods = await manager.findIpodDevices();
+            const matchingIpod = resolveResult.path
+              ? ipods.find((d) => d.mountPoint === resolveResult.path)
+              : undefined;
+            if (matchingIpod) {
+              const readiness = await core.checkReadiness({ device: matchingIpod });
+              readinessData = {
+                level: readiness.level,
+                stages: readiness.stages.map((s) => ({
+                  stage: s.stage,
+                  status: s.status,
+                  summary: s.summary,
+                  ...(s.details ? { details: s.details } : {}),
+                })),
+                ...(readiness.summary ? { summary: readiness.summary } : {}),
+              };
+            }
+          } catch {
+            // Gracefully skip readiness if it fails
+          }
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -1932,6 +2391,7 @@ const infoSubcommand = new Command('info')
             }
           : undefined,
         status: liveStatus,
+        readiness: readinessData,
       },
       () => {
         // Human-readable output
@@ -1967,6 +2427,15 @@ const infoSubcommand = new Command('info')
               liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
             const genStr = formatGeneration(liveStatus.model.generation);
             out.print(`  Model:         ${liveStatus.model.name}${capacityStr} - ${genStr}`);
+          }
+
+          // Show readiness summary (iPod only)
+          if (!isMassStorage && readinessData) {
+            const readinessLabel = formatReadinessLevel(
+              readinessData.level as ReadinessLevel,
+              deviceName || cliPath || 'device'
+            );
+            out.print(`  Readiness:     ${readinessLabel}`);
           }
 
           // Show validation issues/warnings (iPod only)
@@ -3391,11 +3860,13 @@ const initSubcommand = new Command('init')
 
     let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+    let checkReadiness: typeof import('@podkit/core').checkReadiness;
 
     try {
       const core = await import('@podkit/core');
       IpodDatabase = core.IpodDatabase;
       getDeviceManager = core.getDeviceManager;
+      checkReadiness = core.checkReadiness;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
       out.result<DeviceInitOutput>({ success: false, error: message }, () => {
@@ -3445,23 +3916,130 @@ const initSubcommand = new Command('init')
       return;
     }
 
-    // Check if database already exists
-    const hasDb = await IpodDatabase.hasDatabase(devicePath);
-
-    if (hasDb && !options.force) {
-      out.result<DeviceInitOutput>(
-        { success: false, error: 'Database already exists. Use --force to overwrite.' },
-        () => {
-          out.error('iPod already has a database. Use --force to reinitialize.');
-          out.newline();
-          out.error('Warning: This will delete all tracks and playlists!');
+    // Run readiness check to determine device state
+    let readinessLevel: ReadinessLevel | undefined;
+    if (manager.isSupported) {
+      try {
+        const ipods = await manager.findIpodDevices();
+        const matchingIpod = ipods.find((d) => d.mountPoint === devicePath);
+        if (matchingIpod) {
+          const readiness = await checkReadiness({ device: matchingIpod });
+          readinessLevel = readiness.level;
         }
-      );
-      process.exitCode = 1;
-      return;
+      } catch {
+        // Fall through to legacy hasDatabase check if readiness fails
+      }
     }
 
-    if (hasDb && options.force && !autoConfirm && out.isText) {
+    // Branch on readiness level (when available)
+    if (readinessLevel) {
+      switch (readinessLevel) {
+        case 'ready': {
+          if (!options.force) {
+            out.result<DeviceInitOutput>(
+              {
+                success: false,
+                readinessLevel,
+                error: 'Device is already initialized. Use --force to reinitialize.',
+              },
+              () => {
+                out.print('Device is already initialized.');
+                out.newline();
+                out.print(
+                  'Use --force to reinitialize (this will delete all tracks and playlists).'
+                );
+              }
+            );
+            process.exitCode = 1;
+            return;
+          }
+          // --force on ready device: proceed with reinit (handled below)
+          break;
+        }
+        case 'needs-init':
+          // Proceed with init (handled below)
+          break;
+        case 'needs-format': {
+          const error = 'Device has a partition table but no recognized filesystem.';
+          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
+            out.print('This device has a partition table but no recognized filesystem.');
+            out.newline();
+            out.print('Automatic formatting is not yet supported by podkit.');
+            out.print('To format manually:');
+            out.print(
+              '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Format: MS-DOS (FAT32)'
+            );
+            out.print('  Or: Use iTunes/Finder to restore the iPod');
+            out.newline();
+            out.print('After formatting, run: podkit device init');
+          });
+          process.exitCode = 1;
+          return;
+        }
+        case 'needs-partition': {
+          const error = 'Device has no partition table. It appears to be completely uninitialized.';
+          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
+            out.print(
+              'This device has no partition table. It appears to be completely uninitialized.'
+            );
+            out.newline();
+            out.print('Automatic partitioning is not yet supported by podkit.');
+            out.print('To set up manually:');
+            out.print(
+              '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Scheme: Master Boot Record, Format: MS-DOS (FAT32)'
+            );
+            out.print('  Or: Use iTunes/Finder to restore the iPod');
+            out.newline();
+            out.print('After partitioning and formatting, run: podkit device init');
+          });
+          process.exitCode = 1;
+          return;
+        }
+        case 'needs-repair': {
+          const error =
+            'Device database or SysInfo appears corrupt. Run `podkit device reset` to recreate.';
+          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
+            out.error(error);
+          });
+          process.exitCode = 1;
+          return;
+        }
+        case 'hardware-error': {
+          const error =
+            'Hardware error detected. Check that the device is properly connected and the cable is working.';
+          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
+            out.error(error);
+          });
+          process.exitCode = 1;
+          return;
+        }
+        default:
+          // Unknown level — fall through to legacy check
+          break;
+      }
+    }
+
+    // Legacy path: readiness not available (unsupported platform) or --force on ready device
+    if (!readinessLevel) {
+      // Fall back to hasDatabase check
+      const hasDb = await IpodDatabase.hasDatabase(devicePath);
+
+      if (hasDb && !options.force) {
+        out.result<DeviceInitOutput>(
+          { success: false, error: 'Database already exists. Use --force to overwrite.' },
+          () => {
+            out.error('iPod already has a database. Use --force to reinitialize.');
+            out.newline();
+            out.error('Warning: This will delete all tracks and playlists!');
+          }
+        );
+        process.exitCode = 1;
+        return;
+      }
+    }
+
+    // Confirm reinit when --force is used
+    if (options.force && !autoConfirm && out.isText) {
       out.newline();
       out.print('WARNING: This will delete all existing tracks and playlists!');
       out.newline();
@@ -3480,7 +4058,13 @@ const initSubcommand = new Command('init')
       ipod.close();
 
       out.result<DeviceInitOutput>(
-        { success: true, device: resolvedDevice?.name, mountPoint: devicePath, modelName },
+        {
+          success: true,
+          device: resolvedDevice?.name,
+          mountPoint: devicePath,
+          modelName,
+          readinessLevel: readinessLevel ?? undefined,
+        },
         () => {
           out.newline();
           out.print(`iPod database initialized successfully.`);
@@ -3494,7 +4078,13 @@ const initSubcommand = new Command('init')
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       out.result<DeviceInitOutput>(
-        { success: false, device: resolvedDevice?.name, mountPoint: devicePath, error: message },
+        {
+          success: false,
+          device: resolvedDevice?.name,
+          mountPoint: devicePath,
+          readinessLevel: readinessLevel ?? undefined,
+          error: message,
+        },
         () => out.error(`Failed to initialize iPod database: ${message}`)
       );
       process.exitCode = 1;

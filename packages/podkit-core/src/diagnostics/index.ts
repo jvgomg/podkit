@@ -94,8 +94,12 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
   let db = input.db;
   let ownedDb = false;
   if (deviceType === 'ipod' && !db) {
-    db = await IpodDatabase.open(mountPoint);
-    ownedDb = true;
+    try {
+      db = await IpodDatabase.open(mountPoint);
+      ownedDb = true;
+    } catch {
+      // DB unavailable — checks will receive undefined db and should skip gracefully
+    }
   }
 
   try {
