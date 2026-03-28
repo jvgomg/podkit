@@ -98,6 +98,11 @@ export class MacOSDeviceManager implements DeviceManager {
   readonly platform = 'darwin';
   readonly isSupported = true;
 
+  // Cache listDevices() results for 1s so multiple calls within a single
+  // command invocation (e.g. device info: UUID lookup + readiness check)
+  // don't each pay the full diskutil cost.
+  private _listDevicesCache: { result: PlatformDeviceInfo[]; expiresAt: number } | null = null;
+
   async eject(mountPoint: string, options?: EjectOptions): Promise<EjectResult> {
     const force = options?.force ?? false;
 
@@ -307,6 +312,11 @@ export class MacOSDeviceManager implements DeviceManager {
   }
 
   async listDevices(): Promise<PlatformDeviceInfo[]> {
+    const now = Date.now();
+    if (this._listDevicesCache && this._listDevicesCache.expiresAt > now) {
+      return this._listDevicesCache.result;
+    }
+
     const { stdout, code } = await execCommand('diskutil', ['list', '-plist']);
 
     if (code !== 0) {
@@ -326,6 +336,7 @@ export class MacOSDeviceManager implements DeviceManager {
       }
     }
 
+    this._listDevicesCache = { result: devices, expiresAt: now + 1000 };
     return devices;
   }
 
