@@ -1,9 +1,10 @@
 ---
 id: TASK-249.01
 title: 'Add supportsAlbumArtistBrowsing capability — schema, config, display'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 12:46'
+updated_date: '2026-03-28 14:44'
 labels:
   - feature
   - transforms
@@ -43,15 +44,31 @@ Add the `supportsAlbumArtistBrowsing` boolean to `DeviceCapabilities` and wire i
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 supportsAlbumArtistBrowsing field exists on DeviceCapabilities interface
-- [ ] #2 iPod capability derivation returns false for all supported generations
-- [ ] #3 All three mass-storage presets (rockbox, echo-mini, generic) include the field with correct defaults
-- [ ] #4 resolveDeviceCapabilities merges the new field from overrides correctly
-- [ ] #5 Per-device config override parses from TOML (e.g. devices.mydevice.supportsAlbumArtistBrowsing = false)
-- [ ] #6 PODKIT_SUPPORTS_ALBUM_ARTIST_BROWSING env var populates deviceDefaults
-- [ ] #7 Config validation rejects the field on iPod-type devices
-- [ ] #8 buildCapabilityOverrides in open-device.ts passes the field through the override chain
-- [ ] #9 podkit device info text output shows Album Artist browsing status for mass-storage devices
-- [ ] #10 podkit device info JSON output includes supportsAlbumArtistBrowsing in capabilities
-- [ ] #11 Unit tests cover: preset defaults, resolveDeviceCapabilities merging, config loader parsing, env var handling, iPod rejection validation, device info output (text + JSON)
+- [x] #1 supportsAlbumArtistBrowsing field exists on DeviceCapabilities interface
+- [x] #2 iPod capability derivation returns false for all supported generations
+- [x] #3 All three mass-storage presets (rockbox, echo-mini, generic) include the field with correct defaults
+- [x] #4 resolveDeviceCapabilities merges the new field from overrides correctly
+- [x] #5 Per-device config override parses from TOML (e.g. devices.mydevice.supportsAlbumArtistBrowsing = false)
+- [x] #6 PODKIT_SUPPORTS_ALBUM_ARTIST_BROWSING env var populates deviceDefaults
+- [x] #7 Config validation rejects the field on iPod-type devices
+- [x] #8 buildCapabilityOverrides in open-device.ts passes the field through the override chain
+- [x] #9 podkit device info text output shows Album Artist browsing status for mass-storage devices
+- [x] #10 podkit device info JSON output includes supportsAlbumArtistBrowsing in capabilities
+- [x] #11 Unit tests cover: preset defaults, resolveDeviceCapabilities merging, config loader parsing, env var handling, iPod rejection validation, device info output (text + JSON)
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Implemented in commit c370046.
+
+Added `supportsAlbumArtistBrowsing: boolean` to `DeviceCapabilities` and wired through the full chain:
+
+- **Core:** Interface field, iPod derivation (`false`), all mass-storage presets (`true`), `resolveDeviceCapabilities` merge
+- **Config:** `DeviceConfig`, `ConfigFileDevice`, `deviceDefaults` types; TOML parsing with boolean type validation; `massStorageFields` iPod rejection guard; `PODKIT_SUPPORTS_ALBUM_ARTIST_BROWSING` env var
+- **Commands:** `buildCapabilityOverrides` passthrough; `device info` text output (capabilities + overrides sections); JSON output via new `massStorageCapabilities` field on `DeviceInfoOutput`
+- **Tests:** New `presets.test.ts` (preset defaults, resolve merging, getDevicePreset); iPod capability test for all generations; loader tests (TOML parse, invalid type, iPod rejection, env var true/false); all existing test fixtures updated
+- **Docs:** Config file reference, supported devices table + capability overrides table + config example
+
+Also fixed pre-existing gaps: added `audioNormalization` to mass-storage text display (capabilities + overrides), normalized "Audio codecs" → "Audio Codecs" casing.
+<!-- SECTION:FINAL_SUMMARY:END -->

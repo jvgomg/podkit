@@ -63,6 +63,12 @@ import {
   type VideoContentConfig,
   type GenericSyncResult,
 } from './sync-presenter.js';
+import {
+  resolveCleanArtistsTransform,
+  computeTransformWarnings,
+  type CleanArtistsResolutionReason,
+  type TransformWarning,
+} from './transform-warnings.js';
 
 // =============================================================================
 // Types
@@ -144,6 +150,10 @@ export interface TransformInfo {
   enabled: boolean;
   mode?: string;
   format?: string;
+  /** Why the transform is in its current state (capability gating) */
+  reason?: string;
+  /** Warnings about this transform's configuration */
+  warnings?: string[];
 }
 
 /**
@@ -672,6 +682,8 @@ export const syncCommand = new Command('sync')
     let effectiveTransferMode = derived.transferMode;
     let effectiveCustomBitrate = derived.customBitrate;
     let effectiveBitrateTolerance = derived.bitrateTolerance;
+    let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
+    let transformWarnings: TransformWarning[] = [];
 
     // ----- Resolve collections -----
     const allCollections = resolveCollections(config, options.collection, syncType);
@@ -924,6 +936,25 @@ export const syncCommand = new Command('sync')
       deviceSupportsAlac = deviceResult.deviceSupportsAlac;
       deviceCapabilities = deviceResult.capabilities;
 
+      // Apply capability-gated transform resolution
+      if (deviceCapabilities) {
+        const hasPerDeviceCleanArtists = deviceConfig?.transforms?.cleanArtists !== undefined;
+        const resolution = resolveCleanArtistsTransform(
+          effectiveTransforms,
+          deviceCapabilities.supportsAlbumArtistBrowsing,
+          hasPerDeviceCleanArtists
+        );
+        effectiveTransforms = resolution.transforms;
+        cleanArtistsResolutionReason = resolution.reason;
+
+        const hasCapabilityOverride = deviceConfig?.supportsAlbumArtistBrowsing !== undefined;
+        transformWarnings = computeTransformWarnings(
+          resolution,
+          deviceCapabilities.supportsAlbumArtistBrowsing,
+          hasCapabilityOverride
+        );
+      }
+
       // Pre-flight device validation (iPod only)
       if (ipod) {
         const ipodDeviceInfo = ipod.getInfo().device;
@@ -1006,6 +1037,8 @@ export const syncCommand = new Command('sync')
           const musicConfig: MusicContentConfig = {
             type: 'music',
             effectiveTransforms,
+            cleanArtistsResolutionReason,
+            transformWarnings,
             effectiveQuality,
             effectiveEncoding,
             effectiveTransferMode,
