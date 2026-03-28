@@ -24,6 +24,9 @@ import { glob } from 'node:fs';
 
 const args = process.argv.slice(2);
 let concurrency = parseInt(process.env.E2E_CONCURRENCY ?? '4', 10);
+// E2E tests spawn CLI processes and run system commands that can take several
+// seconds — use a longer per-test timeout than bun's 5 s default.
+let timeout = parseInt(process.env.E2E_TIMEOUT ?? '15000', 10);
 let bail = false;
 const pathFilters: string[] = [];
 
@@ -31,6 +34,9 @@ for (let i = 0; i < args.length; i++) {
   const arg = args[i]!;
   if (arg === '--concurrency' && args[i + 1]) {
     concurrency = parseInt(args[i + 1]!, 10);
+    i++;
+  } else if (arg === '--timeout' && args[i + 1]) {
+    timeout = parseInt(args[i + 1]!, 10);
     i++;
   } else if (arg === '--bail') {
     bail = true;
@@ -73,7 +79,7 @@ function runTestFile(file: string): Promise<TestResult> {
     const start = Date.now();
     let output = '';
 
-    const proc = spawn('bun', ['test', file], {
+    const proc = spawn('bun', ['test', '--timeout', String(timeout), file], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env },
       cwd: process.cwd(),
