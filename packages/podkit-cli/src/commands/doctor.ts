@@ -450,16 +450,30 @@ async function runDoctorDiagnostics(
   out.result<DoctorOutput>(output, () => {
     out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
 
-    // ── Phase 1 output: Device Readiness ──
-    if (readinessResult) {
-      out.newline();
-      out.print('Device Readiness');
-      printReadinessStages(out, readinessResult.stages);
+    // ── System section ──
+    if (report) {
+      const systemChecks = report.checks.filter((c) => c.scope === 'system' && !c.repairOnly);
+      if (systemChecks.length > 0) {
+        out.newline();
+        out.print('System');
+        for (const check of systemChecks) {
+          const sym = statusSymbol(check.status);
+          out.print(`  ${sym} ${check.name}    ${check.summary}`);
+          if (check.docsUrl) {
+            out.print(`    More info: ${check.docsUrl}`);
+          }
+        }
+      }
     }
 
-    // ── Phase 2 output: Database Health ──
+    // ── Device section ──
     out.newline();
-    out.print('Database Health');
+    out.print('Device');
+
+    // Device Readiness
+    if (readinessResult) {
+      printReadinessStages(out, readinessResult.stages);
+    }
 
     if (!report) {
       // DB not available — show skip message
@@ -467,15 +481,14 @@ async function runDoctorDiagnostics(
         out.print('  Skipped \u2014 device database is not available.');
         out.print('  Run `podkit device init` to initialize the iPod database.');
       } else if (!readinessResult) {
-        // No readiness results and no report — something went wrong
         out.print('  Skipped \u2014 could not run database health checks.');
       } else {
         out.print('  Skipped \u2014 could not open the device database.');
       }
     } else {
       for (const check of report.checks) {
-        // Skip repair-only checks in diagnostic output (they have no detection logic)
-        if (check.repairOnly) continue;
+        // Skip repair-only and system checks here
+        if (check.repairOnly || check.scope === 'system') continue;
 
         const sym = statusSymbol(check.status);
         out.print(`  ${sym} ${check.name}    ${check.summary}`);
