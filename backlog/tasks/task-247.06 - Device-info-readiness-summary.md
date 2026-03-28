@@ -1,9 +1,10 @@
 ---
 id: TASK-247.06
 title: Device info readiness summary
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:54'
+updated_date: '2026-03-28 15:43'
 labels:
   - feature
   - device
@@ -32,8 +33,8 @@ Add a readiness summary to the `podkit device info` command output.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 device info text output includes readiness summary line
-- [ ] #2 device info JSON output includes full structured readiness data
-- [ ] #3 Each readiness level has a human-readable label and suggested action
+- [x] #1 device info text output includes readiness summary line
+- [x] #2 device info JSON output includes full structured readiness data
+- [x] #3 Each readiness level has a human-readable label and suggested action
 - [ ] #4 Unit tests for formatting with various readiness levels
 <!-- AC:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-247.02
 title: OS error code interpreter
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:54'
+updated_date: '2026-03-28 15:29'
 labels:
   - feature
   - device
@@ -41,10 +42,10 @@ Create an error code interpretation module that translates OS error codes into h
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Known error codes (71, 13, 19, 5) produce correct human-readable explanations
-- [ ] #2 Unknown error codes produce generic message with raw error preserved
-- [ ] #3 Raw error message always included alongside interpretation
-- [ ] #4 Error patterns parsed from string messages (not just numeric codes)
-- [ ] #5 Integrated into readiness pipeline failure details
-- [ ] #6 Unit tests for all known codes, unknown codes, and pattern parsing
+- [x] #1 Known error codes (71, 13, 19, 5) produce correct human-readable explanations
+- [x] #2 Unknown error codes produce generic message with raw error preserved
+- [x] #3 Raw error message always included alongside interpretation
+- [x] #4 Error patterns parsed from string messages (not just numeric codes)
+- [x] #5 Integrated into readiness pipeline failure details
+- [x] #6 Unit tests for all known codes, unknown codes, and pattern parsing
 <!-- AC:END -->

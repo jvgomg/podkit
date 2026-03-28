@@ -1,9 +1,10 @@
 ---
 id: TASK-247.03
 title: USB discovery for unpartitioned devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:54'
+updated_date: '2026-03-28 15:37'
 labels:
   - feature
   - device
@@ -55,14 +56,14 @@ Enhance device discovery to find iPods over USB even when they have no disk repr
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 macOS: system_profiler queried independently of diskutil for USB-only devices
-- [ ] #2 Linux: /sys/bus/usb/devices/ scanned for Apple vendor IDs
-- [ ] #3 Only known iPod product IDs included (iPhones, AirPods filtered out)
-- [ ] #4 Unsupported iPod models (Shuffle 3G/4G) get specific not-supported message
-- [ ] #5 USB-discovered and disk-discovered devices merged via union + dedup
-- [ ] #6 Fast path: USB subsystem only queried when needed
-- [ ] #7 Graceful degradation in Docker/containers (no crash if tools unavailable)
-- [ ] #8 Fixture-based tests with varied macOS versions and Apple Silicon topology
-- [ ] #9 Fixture-based tests with varied Linux kernel /sys layouts
-- [ ] #10 Permission-denied on /sys/ handled gracefully
+- [x] #1 macOS: system_profiler queried independently of diskutil for USB-only devices
+- [x] #2 Linux: /sys/bus/usb/devices/ scanned for Apple vendor IDs
+- [x] #3 Only known iPod product IDs included (iPhones, AirPods filtered out)
+- [x] #4 Unsupported iPod models (Shuffle 3G/4G) get specific not-supported message
+- [x] #5 USB-discovered and disk-discovered devices merged via union + dedup
+- [x] #6 Fast path: USB subsystem only queried when needed
+- [x] #7 Graceful degradation in Docker/containers (no crash if tools unavailable)
+- [x] #8 Fixture-based tests with varied macOS versions and Apple Silicon topology
+- [x] #9 Fixture-based tests with varied Linux kernel /sys layouts
+- [x] #10 Permission-denied on /sys/ handled gracefully
 <!-- AC:END -->
