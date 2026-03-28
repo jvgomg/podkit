@@ -43,4 +43,12 @@ export interface DeviceCapabilities {
   supportsVideo: boolean;
   /** Audio normalization mode the device supports */
   audioNormalization: AudioNormalizationMode;
+  /**
+   * Whether the device uses Album Artist for browse navigation.
+   *
+   * When true, the device groups tracks by Album Artist in its artist list,
+   * so the `cleanArtists` transform is unnecessary. When false (e.g. iPod
+   * stock firmware), the device only uses the Artist field for browsing.
+   */
+  supportsAlbumArtistBrowsing: boolean;
 }

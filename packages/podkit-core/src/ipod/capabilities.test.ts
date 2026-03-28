@@ -159,6 +159,26 @@ describe('getDeviceCapabilities', () => {
     expect(caps.artworkMaxResolution).toBe(0);
     expect(caps.artworkSources).toEqual([]);
   });
+
+  it('returns supportsAlbumArtistBrowsing = false for all iPod generations', () => {
+    const generations = [
+      'classic_1',
+      'classic_2',
+      'classic_3',
+      'video_1',
+      'video_2',
+      'nano_1',
+      'nano_2',
+      'nano_3',
+      'shuffle_1',
+      'shuffle_2',
+      'unknown',
+    ];
+    for (const gen of generations) {
+      const caps = getDeviceCapabilities(gen);
+      expect(caps.supportsAlbumArtistBrowsing).toBe(false);
+    }
+  });
 });
 
 describe('isValidTransferMode', () => {

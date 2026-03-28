@@ -22,6 +22,7 @@ function alacCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCa
     supportedAudioCodecs: ['aac', 'alac', 'mp3'],
     supportsVideo: true,
     audioNormalization: 'soundcheck',
+    supportsAlbumArtistBrowsing: false,
     ...overrides,
   };
 }
@@ -33,6 +34,7 @@ function aacOnlyCapabilities(overrides: Partial<DeviceCapabilities> = {}): Devic
     supportedAudioCodecs: ['aac', 'mp3'],
     supportsVideo: false,
     audioNormalization: 'soundcheck',
+    supportsAlbumArtistBrowsing: false,
     ...overrides,
   };
 }
@@ -146,6 +148,7 @@ describe('resolveMusicConfig', () => {
         supportedAudioCodecs: ['aac', 'mp3'],
         supportsVideo: false,
         audioNormalization: 'soundcheck',
+        supportsAlbumArtistBrowsing: false,
       };
       const resolved = resolveMusicConfig(makeConfig({ capabilities }));
 
@@ -252,6 +255,7 @@ describe('resolveMusicConfig', () => {
         supportedAudioCodecs: ['opus', 'flac', 'mp3', 'aac'],
         supportsVideo: false,
         audioNormalization: 'replaygain',
+        supportsAlbumArtistBrowsing: true,
         ...overrides,
       };
     }
