@@ -389,6 +389,7 @@ export function isFileReplacementUpgrade(reason: UpdateReason): boolean {
     reason === 'artwork-added' ||
     reason === 'preset-upgrade' ||
     reason === 'preset-downgrade' ||
+    reason === 'codec-changed' ||
     reason === 'force-transcode' ||
     reason === 'transfer-mode-changed'
   );

@@ -1169,6 +1169,243 @@ describe('filetype detection', () => {
     const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
     expect(trackInput.filetype).toBe('AAC audio file');
   });
+
+  it('sets Opus audio file for .opus', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('A', 'S', 'Album', 'opus', {
+            filePath: '/music/song.opus',
+          }),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
+    expect(trackInput.filetype).toBe('Opus audio file');
+  });
+
+  it('sets FLAC audio file for .flac', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-direct-copy',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac', {
+            filePath: '/music/song.flac',
+          }),
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
+    expect(trackInput.filetype).toBe('FLAC audio file');
+  });
+});
+
+// =============================================================================
+// Transcode with targetCodec
+// =============================================================================
+
+describe('transcode with targetCodec', () => {
+  let mockAdapter: MockDeviceAdapter;
+  let mockTranscoder: MockTranscoder;
+  let deps: ExecutorDependencies;
+
+  beforeEach(() => {
+    mockAdapter = createMockDeviceAdapter();
+    mockTranscoder = createMockTranscoder();
+    deps = createDependencies(mockAdapter, mockTranscoder);
+  });
+
+  it('uses .m4a extension and AAC filetype when targetCodec is not set', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    // Check the output path passed to transcode has .m4a extension
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    const outputPath = transcodeCall[1] as string;
+    expect(outputPath).toMatch(/\.m4a$/);
+
+    // Check preset is passed as string (legacy AAC path)
+    const preset = transcodeCall[2];
+    expect(preset).toBe('high');
+
+    // Check filetype on the added track
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
+    expect(trackInput.filetype).toBe('AAC audio file');
+  });
+
+  it('uses .opus extension and Opus filetype when targetCodec is opus', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac'),
+          preset: { name: 'high', targetCodec: 'opus' },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    // Check the output path has .opus extension
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    const outputPath = transcodeCall[1] as string;
+    expect(outputPath).toMatch(/\.opus$/);
+
+    // Check preset is an EncoderConfig with codec: 'opus'
+    const preset = transcodeCall[2] as { codec: string; bitrateKbps: number };
+    expect(preset.codec).toBe('opus');
+    expect(preset.bitrateKbps).toBe(160); // Opus high = 160 kbps
+
+    // Check filetype on the added track
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
+    expect(trackInput.filetype).toBe('Opus audio file');
+  });
+
+  it('uses .mp3 extension when targetCodec is mp3', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac'),
+          preset: { name: 'medium', targetCodec: 'mp3' },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    const outputPath = transcodeCall[1] as string;
+    expect(outputPath).toMatch(/\.mp3$/);
+
+    const preset = transcodeCall[2] as { codec: string; bitrateKbps: number };
+    expect(preset.codec).toBe('mp3');
+    expect(preset.bitrateKbps).toBe(192); // MP3 medium = 192 kbps
+
+    const trackInput = mockAdapter.addTrack.mock.calls[0]![0] as { filetype: string };
+    expect(trackInput.filetype).toBe('MPEG audio file');
+  });
+
+  it('uses bitrateOverride when set on preset', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac'),
+          preset: { name: 'high', targetCodec: 'opus', bitrateOverride: 96 },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    const preset = transcodeCall[2] as { codec: string; bitrateKbps: number };
+    expect(preset.bitrateKbps).toBe(96);
+  });
+
+  it('passes preset name for lossless even with targetCodec', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'flac'),
+          preset: { name: 'lossless', targetCodec: 'alac' },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    // Lossless preset with ALAC should pass 'lossless' string, not EncoderConfig
+    expect(transcodeCall[2]).toBe('lossless');
+  });
+
+  it('passes EncoderConfig for lossless preset with FLAC targetCodec', async () => {
+    const executor = new MusicPipeline(deps);
+    const plan: SyncPlan = {
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'S', 'Album', 'wav'),
+          preset: { name: 'lossless', targetCodec: 'flac' },
+        },
+      ],
+      estimatedTime: 1,
+      estimatedSize: 5000000,
+      warnings: [],
+    };
+
+    for await (const _p of executor.execute(plan)) {
+      // iterate
+    }
+
+    const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
+    // FLAC lossless should use EncoderConfig with codec: 'flac', not the 'lossless' string
+    const preset = transcodeCall[2] as { codec: string };
+    expect(preset.codec).toBe('flac');
+    // Output path should have .flac extension
+    expect(transcodeCall[1]).toMatch(/\.flac$/);
+  });
 });
 
 // =============================================================================

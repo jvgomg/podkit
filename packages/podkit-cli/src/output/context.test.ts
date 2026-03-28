@@ -187,7 +187,6 @@ describe('OutputContext TTY detection', () => {
     });
 
     it('sets tty=false when --no-tty flag is passed (even if stdout is TTY)', () => {
-      // @ts-expect-error — simulate interactive terminal
       process.stdout.isTTY = true;
       const out = OutputContext.fromGlobalOpts({
         json: false,
@@ -201,7 +200,6 @@ describe('OutputContext TTY detection', () => {
     });
 
     it('enables interactive output when stdout is TTY and --no-tty not set', () => {
-      // @ts-expect-error — simulate interactive terminal
       process.stdout.isTTY = true;
       const out = OutputContext.fromGlobalOpts({
         json: false,

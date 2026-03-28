@@ -45,6 +45,13 @@ version = ${CURRENT_CONFIG_VERSION}
 # format = "feat. {}"   # format string ({} = featured artist)
 # ignore = []           # artist names to skip, e.g. ["Simon & Garfunkel"]
 
+# Codec preference (ordered by priority, first supported wins)
+# Default lossy: opus → aac → mp3
+# Default lossless (quality=max): source → flac → alac
+# [codec]
+# lossy = ["opus", "aac", "mp3"]
+# lossless = ["source", "flac", "alac"]
+
 # Devices
 # Run 'podkit device add -d <name>' to auto-detect and add your iPod
 # Or manually configure:
@@ -53,6 +60,10 @@ version = ${CURRENT_CONFIG_VERSION}
 # volumeName = "IPOD"
 # quality = "${DEFAULT_CONFIG.quality}"
 # artwork = ${DEFAULT_CONFIG.artwork}
+
+# Per-device codec override:
+# [devices.ipod.codec]
+# lossy = "aac"
 
 # Defaults
 # [defaults]

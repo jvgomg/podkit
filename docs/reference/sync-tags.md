@@ -12,7 +12,7 @@ Sync tags are small metadata markers that podkit writes into the iPod track's co
 Sync tags use a versioned key-value format:
 
 ```
-[podkit:v1 quality=high encoding=vbr]
+[podkit:v1 quality=high encoding=vbr codec=aac]
 ```
 
 The tag is embedded in the track's comment field alongside any existing comment text. podkit reads and updates only the `[podkit:...]` block, leaving the rest of the comment untouched.
@@ -23,6 +23,7 @@ The tag is embedded in the track's comment field alongside any existing comment 
 |-------|----------|--------|-------------|
 | `quality` | Yes | `lossless`, `high`, `medium`, `low`, `max`, `copy` | The quality preset (or `copy` for direct-copy tracks) |
 | `encoding` | No | `vbr`, `cbr` | Encoding mode. Omitted for lossless audio and video |
+| `codec` | No | `aac`, `opus`, `mp3`, `flac`, `alac` | The resolved audio codec. Used for [codec change detection](/user-guide/transcoding/codec-preferences#codec-change-re-sync). Legacy tags without this field assume AAC (lossy) or ALAC (lossless). |
 | `bitrate` | No | `64`–`320` | Only present when a custom bitrate override was used |
 | `art` | No | 8-character hex string | Artwork fingerprint (xxHash truncated to 32 bits) |
 | `transfer` | No | `fast`, `optimized`, `portable` | Transfer mode used when processing the file. Informational — not used for change detection. |
@@ -30,13 +31,15 @@ The tag is embedded in the track's comment field alongside any existing comment 
 ### Examples
 
 ```
-[podkit:v1 quality=high encoding=vbr]                  # VBR transcode at high preset
-[podkit:v1 quality=medium encoding=cbr]                # CBR transcode at medium preset
-[podkit:v1 quality=high encoding=cbr bitrate=256]      # CBR with custom bitrate override
-[podkit:v1 quality=lossless art=a1b2c3d4]              # ALAC transcode with artwork fingerprint
+[podkit:v1 quality=high encoding=vbr codec=aac]        # VBR AAC transcode at high preset
+[podkit:v1 quality=medium encoding=cbr codec=aac]      # CBR AAC transcode at medium preset
+[podkit:v1 quality=high encoding=vbr codec=opus]       # VBR Opus transcode at high preset
+[podkit:v1 quality=high encoding=cbr bitrate=256 codec=aac]  # CBR with custom bitrate override
+[podkit:v1 quality=lossless codec=alac art=a1b2c3d4]   # ALAC transcode with artwork fingerprint
+[podkit:v1 quality=lossless codec=flac]                # FLAC transcode (lossless)
 [podkit:v1 quality=copy art=deadbeef]                  # Direct-copy track with artwork fingerprint
 [podkit:v1 quality=max]                                # Video transcode
-[podkit:v1 quality=high encoding=vbr transfer=fast]    # VBR transcode with fast transfer mode
+[podkit:v1 quality=high encoding=vbr codec=aac transfer=fast]  # VBR transcode with fast transfer mode
 [podkit:v1 quality=copy transfer=optimized]            # Optimized copy (artwork stripped via passthrough)
 ```
 

@@ -66,7 +66,13 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import { formatGeneration, validateDevice, formatValidationMessages } from '@podkit/core';
+import {
+  formatGeneration,
+  validateDevice,
+  formatValidationMessages,
+  DEFAULT_LOSSY_STACK,
+  DEFAULT_LOSSLESS_STACK,
+} from '@podkit/core';
 import {
   openDevice,
   isMassStorageDevice,
@@ -1948,6 +1954,35 @@ const infoSubcommand = new Command('info')
             out.print(
               `    Video:        ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
             );
+          }
+
+          // Codec preference display
+          if (resolvedDeviceCapabilities) {
+            const deviceCodecs = new Set<string>(resolvedDeviceCapabilities.supportedAudioCodecs);
+            const codecConfig = device?.codec ?? podkitConfig.codec;
+            const lossyStack = codecConfig?.lossy ?? DEFAULT_LOSSY_STACK;
+            const losslessStack = codecConfig?.lossless ?? DEFAULT_LOSSLESS_STACK;
+
+            const lossyParts = lossyStack.map((c) => {
+              const supported = deviceCodecs.has(c);
+              return `${supported ? '\u2713' : '\u2717'} ${c}`;
+            });
+            const hasCompatibleLossy = lossyStack.some((c) => deviceCodecs.has(c));
+
+            if (hasCompatibleLossy) {
+              out.print(`  Codec (lossy):    ${lossyParts.join('  \u00B7 ')}`);
+            } else {
+              out.print(
+                `  Codec (lossy):    ${lossyParts.join('  \u00B7 ')}  (no compatible lossy codec \u2014 device supports: ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')})`
+              );
+            }
+
+            const losslessParts = losslessStack.map((c) => {
+              if (c === 'source') return '\u2713 source';
+              const supported = deviceCodecs.has(c);
+              return `${supported ? '\u2713' : '\u2717'} ${c}`;
+            });
+            out.print(`  Codec (lossless): ${losslessParts.join('  \u00B7 ')}`);
           }
 
           if (liveStatus.storage) {

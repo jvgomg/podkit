@@ -215,4 +215,135 @@ describe('resolveMusicConfig', () => {
       expect(resolved.transferMode).toBe('optimized');
     });
   });
+
+  describe('codec preference resolution', () => {
+    const allEncoders = {
+      hasEncoder: () => true,
+    };
+
+    function rockboxCapabilities(overrides: Partial<DeviceCapabilities> = {}): DeviceCapabilities {
+      return {
+        artworkSources: ['embedded'],
+        artworkMaxResolution: 240,
+        supportedAudioCodecs: ['opus', 'flac', 'mp3', 'aac'],
+        supportsVideo: false,
+        ...overrides,
+      };
+    }
+
+    it('resolves lossy codec to opus for Rockbox-like device with default stack', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'high',
+          capabilities: rockboxCapabilities(),
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      expect(resolved.resolvedLossyCodec).toBe('opus');
+    });
+
+    it('resolves lossy codec to aac for iPod (default stack, aac first match)', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'high',
+          capabilities: alacCapabilities(),
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      // Default lossy stack is ['opus', 'aac', 'mp3'] — iPod doesn't support opus
+      expect(resolved.resolvedLossyCodec).toBe('aac');
+    });
+
+    it('resolves lossless stack for FLAC-capable device', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'max',
+          capabilities: rockboxCapabilities(),
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      expect(resolved.resolvedLosslessStack).toBeDefined();
+      // Default lossless stack ['source', 'flac', 'alac'] — device supports flac
+      expect(resolved.resolvedLosslessStack).toContain('source');
+      expect(resolved.resolvedLosslessStack).toContain('flac');
+    });
+
+    it('isAlacPreset true when quality=max and lossless stack has codec entries', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'max',
+          capabilities: rockboxCapabilities(),
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      expect(resolved.isAlacPreset).toBe(true);
+      expect(resolved.resolvedQuality).toBe('lossless');
+    });
+
+    it('isAlacPreset true when quality=max and lossless stack has only source entry', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'max',
+          capabilities: rockboxCapabilities({ supportedAudioCodecs: ['opus', 'mp3'] }),
+          codecPreference: { lossless: ['source'] },
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      // 'source' alone is enough for lossless mode
+      expect(resolved.isAlacPreset).toBe(true);
+      expect(resolved.resolvedQuality).toBe('lossless');
+    });
+
+    it('uses codec-specific bitrate for resolved lossy codec', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'high',
+          capabilities: rockboxCapabilities(),
+          encoderAvailability: allEncoders,
+        })
+      );
+
+      // Opus high preset is 160 kbps
+      expect(resolved.resolvedLossyCodec).toBe('opus');
+      expect(resolved.presetBitrate).toBe(160);
+    });
+
+    it('falls back to legacy when no encoderAvailability is provided', () => {
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'max',
+          capabilities: alacCapabilities(),
+          // no encoderAvailability
+        })
+      );
+
+      // Legacy path: ALAC detection
+      expect(resolved.resolvedLossyCodec).toBeUndefined();
+      expect(resolved.resolvedLosslessStack).toBeUndefined();
+      expect(resolved.isAlacPreset).toBe(true);
+      expect(resolved.resolvedQuality).toBe('lossless');
+    });
+
+    it('stores codec resolution error when no compatible lossy codec found', () => {
+      const noEncoders = {
+        hasEncoder: () => false,
+      };
+      const resolved = resolveMusicConfig(
+        makeConfig({
+          quality: 'high',
+          capabilities: rockboxCapabilities(),
+          encoderAvailability: noEncoders,
+        })
+      );
+
+      expect(resolved.codecResolutionError).toBeDefined();
+      expect(resolved.codecResolutionError?.type).toBe('no-compatible-codec');
+      expect(resolved.resolvedLossyCodec).toBeUndefined();
+    });
+  });
 });

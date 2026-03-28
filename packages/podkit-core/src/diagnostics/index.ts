@@ -15,6 +15,7 @@
 import { IpodDatabase } from '../ipod/database.js';
 import { artworkRebuildCheck } from './checks/artwork.js';
 import { artworkResetCheck } from './checks/artwork-reset.js';
+import { codecEncodersCheck } from './checks/codec-encoders.js';
 import { orphanFilesCheck } from './checks/orphans.js';
 import type {
   DiagnosticCheck,
@@ -40,7 +41,12 @@ export type {
 // ── Registry ────────────────────────────────────────────────────────────────
 
 /** All registered diagnostic checks */
-const CHECKS: DiagnosticCheck[] = [artworkRebuildCheck, artworkResetCheck, orphanFilesCheck];
+const CHECKS: DiagnosticCheck[] = [
+  artworkRebuildCheck,
+  artworkResetCheck,
+  codecEncodersCheck,
+  orphanFilesCheck,
+];
 
 /**
  * Get a diagnostic check by ID.

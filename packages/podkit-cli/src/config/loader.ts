@@ -20,6 +20,7 @@ import type {
   ConfigFileContent,
   ConfigFileCleanArtists,
   ConfigFileShowLanguage,
+  ConfigFileCodecPreference,
   ConfigFileMusicCollection,
   ConfigFileVideoCollection,
   ConfigFileDevice,
@@ -27,6 +28,7 @@ import type {
   GlobalOptions,
   CleanArtistsConfig,
   ShowLanguageConfig,
+  CodecPreferenceConfig,
   MusicCollectionConfig,
   VideoCollectionConfig,
   DeviceConfig,
@@ -34,6 +36,7 @@ import type {
   DeviceType,
   AudioCodec,
   DeviceArtworkSource,
+  TranscodeTargetCodec,
 } from './types.js';
 import {
   QUALITY_PRESETS,
@@ -45,6 +48,7 @@ import {
   DEVICE_TYPES,
   AUDIO_CODECS,
   ARTWORK_SOURCES,
+  CODEC_METADATA,
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
@@ -219,6 +223,14 @@ export function loadConfigFile(configPath: string): PartialConfig | undefined {
     config.videoTransforms = {
       showLanguage: parseShowLanguageConfig(parsed.showLanguage),
     };
+  }
+
+  // Parse codec preferences [codec]
+  if (parsed.codec !== undefined) {
+    const codecConfig = parseCodecPreference(parsed.codec, 'codec');
+    if (codecConfig) {
+      config.codec = codecConfig;
+    }
   }
 
   // ==========================================================================
@@ -408,6 +420,90 @@ function parseShowLanguageConfig(
   }
 
   return config;
+}
+
+// =============================================================================
+// Codec Preference Parsing
+// =============================================================================
+
+/** All valid TranscodeTargetCodec identifiers */
+const TRANSCODE_TARGET_CODECS = Object.keys(CODEC_METADATA) as TranscodeTargetCodec[];
+
+/**
+ * Parse and validate codec preference config from TOML
+ *
+ * Normalizes single string values to arrays and validates all codec names.
+ *
+ * @param raw - The raw TOML value for codec preference
+ * @param context - Config path context for error messages (e.g., "codec" or "devices.nano.codec")
+ */
+function parseCodecPreference(
+  raw: ConfigFileCodecPreference,
+  context: string
+): CodecPreferenceConfig | undefined {
+  if (typeof raw !== 'object' || raw === null) {
+    throw new Error(`Invalid type for [${context}]. Expected table, got ${typeof raw}.`);
+  }
+
+  const config: CodecPreferenceConfig = {};
+  let hasAny = false;
+
+  // Parse lossy preference
+  if (raw.lossy !== undefined) {
+    const lossy = normalizeCodecList(raw.lossy, `${context}.lossy`, TRANSCODE_TARGET_CODECS);
+    config.lossy = lossy as TranscodeTargetCodec[];
+    hasAny = true;
+  }
+
+  // Parse lossless preference (allows 'source' as a special value)
+  if (raw.lossless !== undefined) {
+    const validValues = [...TRANSCODE_TARGET_CODECS, 'source'] as string[];
+    const lossless = normalizeCodecList(raw.lossless, `${context}.lossless`, validValues);
+    config.lossless = lossless as (TranscodeTargetCodec | 'source')[];
+    hasAny = true;
+  }
+
+  return hasAny ? config : undefined;
+}
+
+/**
+ * Normalize a codec list value: single string → array, then validate all entries.
+ *
+ * @param value - The raw value (string or string[])
+ * @param context - Config path for error messages
+ * @param validValues - Set of valid codec identifiers
+ * @returns Normalized array of validated codec names
+ */
+function normalizeCodecList(
+  value: string | string[],
+  context: string,
+  validValues: string[]
+): string[] {
+  // Normalize single string to array
+  const list = typeof value === 'string' ? [value] : value;
+
+  if (!Array.isArray(list)) {
+    throw new Error(
+      `Invalid type for "${context}". Expected string or array of strings, got ${typeof value}.`
+    );
+  }
+
+  if (list.length === 0) {
+    throw new Error(`Empty codec list for "${context}". Must contain at least one value.`);
+  }
+
+  for (const item of list) {
+    if (typeof item !== 'string') {
+      throw new Error(`Invalid item in "${context}". Expected string, got ${typeof item}.`);
+    }
+    if (!validValues.includes(item)) {
+      throw new Error(
+        `Invalid codec "${item}" in ${context}. Valid values: ${validValues.join(', ')}`
+      );
+    }
+  }
+
+  return list;
 }
 
 // =============================================================================
@@ -723,6 +819,14 @@ function parseDevices(
         );
       }
       device.skipUpgrades = rawDevice.skipUpgrades;
+    }
+
+    // Parse optional codec preferences
+    if (rawDevice.codec !== undefined) {
+      const codecConfig = parseCodecPreference(rawDevice.codec, `devices.${name}.codec`);
+      if (codecConfig) {
+        device.codec = codecConfig;
+      }
     }
 
     // Parse optional cleanArtists (boolean or table)
@@ -1472,6 +1576,9 @@ export function mergeConfigs(...configs: PartialConfig[]): PodkitConfig {
     }
     if (config.skipUpgrades !== undefined) {
       merged.skipUpgrades = config.skipUpgrades;
+    }
+    if (config.codec !== undefined) {
+      merged.codec = config.codec;
     }
     if (config.transforms !== undefined) {
       // Deep merge transforms config

@@ -5,7 +5,7 @@ sidebar:
   order: 2
 ---
 
-This guide covers audio quality presets, encoder options, and file size estimates. For an overview of how podkit decides what to transcode, see [Transcoding Methodology](/user-guide/transcoding).
+This guide covers audio quality presets, encoder options, and file size estimates. For an overview of how podkit decides what to transcode, see [Transcoding Methodology](/user-guide/transcoding). For how podkit selects which codec to use, see [Codec Preferences](/user-guide/transcoding/codec-preferences).
 
 ## Quality Presets
 
@@ -175,6 +175,7 @@ podkit sync -vvv --dry-run
 
 ## See Also
 
+- [Codec Preferences](/user-guide/transcoding/codec-preferences) - How podkit selects the audio codec
 - [Transcoding Methodology](/user-guide/transcoding) - How podkit decides what to transcode
 - [Video Transcoding](/user-guide/transcoding/video) - Video transcoding settings and device profiles
 - [Quality Presets Reference](/reference/quality-presets) - Detailed preset specifications

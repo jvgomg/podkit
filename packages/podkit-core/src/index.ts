@@ -170,6 +170,7 @@ export type {
   TransferMode,
   TranscodeConfig,
   AacPreset,
+  CodecPreset,
 } from './transcode/types.js';
 export {
   QUALITY_PRESETS,
@@ -177,11 +178,19 @@ export {
   TRANSFER_MODES,
   AAC_PRESETS,
   ALAC_PRESET,
+  OPUS_PRESETS,
+  MP3_PRESETS,
+  FLAC_ESTIMATED_KBPS,
+  ALAC_ESTIMATED_KBPS,
   isValidQualityPreset,
   isValidTransferMode,
   getPresetBitrate,
+  getCodecPresetBitrate,
+  getCodecVbrQuality,
+  getLosslessEstimatedKbps,
   isMaxPreset,
   isVbrEncoding,
+  encoderAvailabilityFrom,
 } from './transcode/types.js';
 
 export {
@@ -196,10 +205,29 @@ export {
   buildOptimizedCopyArgs,
 } from './transcode/ffmpeg.js';
 export type {
+  EncoderConfig,
   AacTranscodeConfig,
   FFmpegTranscoderConfig,
   OptimizedCopyFormat,
 } from './transcode/ffmpeg.js';
+
+// Codec metadata
+export type { TranscodeTargetCodec, CodecMetadata } from './transcode/codecs.js';
+export {
+  CODEC_METADATA,
+  getCodecMetadata,
+  DEFAULT_LOSSY_STACK,
+  DEFAULT_LOSSLESS_STACK,
+} from './transcode/codecs.js';
+
+// Codec preference resolver
+export type {
+  EncoderAvailability,
+  ResolvedCodec,
+  CodecResolutionResult,
+  CodecResolutionError,
+} from './transcode/codec-resolver.js';
+export { resolveCodecPreferences, isCodecResolutionError } from './transcode/codec-resolver.js';
 
 // Transcode progress parsing (shared utilities)
 export {

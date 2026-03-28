@@ -11,16 +11,16 @@ podkit syncs music tracks from your [collections](/user-guide/collections) to yo
 
 | Format | Extensions | What Happens |
 |--------|------------|--------------|
-| FLAC | `.flac` | Transcoded to AAC (or ALAC) |
-| WAV | `.wav` | Transcoded to AAC (or ALAC) |
-| AIFF | `.aiff`, `.aif` | Transcoded to AAC (or ALAC) |
-| ALAC | `.m4a` | Copied directly (Apple Lossless) |
-| MP3 | `.mp3` | Copied directly |
-| AAC | `.m4a` | Copied directly |
-| OGG Vorbis | `.ogg` | Transcoded to AAC (lossy-to-lossy warning) |
-| Opus | `.opus` | Transcoded to AAC (lossy-to-lossy warning) |
+| FLAC | `.flac` | Transcoded to your preferred codec |
+| WAV | `.wav` | Transcoded to your preferred codec |
+| AIFF | `.aiff`, `.aif` | Transcoded to your preferred codec |
+| ALAC | `.m4a` | Copied directly if device supports it, otherwise transcoded |
+| MP3 | `.mp3` | Copied directly if device supports it |
+| AAC | `.m4a` | Copied directly if device supports it |
+| OGG Vorbis | `.ogg` | Transcoded if device doesn't support it (lossy-to-lossy warning) |
+| Opus | `.opus` | Copied directly on supported devices, otherwise transcoded (lossy-to-lossy warning) |
 
-See [Audio Transcoding](/user-guide/transcoding/audio) for quality presets and encoder details.
+The target codec is chosen automatically based on your [codec preference stack](/user-guide/transcoding/codec-preferences). See [Audio Transcoding](/user-guide/transcoding/audio) for quality presets and encoder details.
 
 ## Metadata
 

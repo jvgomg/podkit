@@ -1,9 +1,10 @@
 ---
 id: TASK-248.08
 title: SourceCategory rework and planner update
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-27 10:43'
+updated_date: '2026-03-28 12:49'
 labels:
   - feature
   - transcoding
@@ -41,18 +42,18 @@ See PRD: doc-024, sections "SourceCategory rework," "Planner hardcoded format se
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `categorizeSource()` takes `supportedAudioCodecs` parameter and classifies Opus as `compatible-lossy` on devices that support it
-- [ ] #2 Hardcoded format sets used as fallback only when device capabilities unavailable
-- [ ] #3 Codec preferences wired through MusicSyncConfig → ResolvedMusicConfig → ClassifierContext
-- [ ] #4 Plans with default stack + iPod capabilities resolves to AAC
-- [ ] #5 Plans with default stack + Rockbox capabilities resolves to Opus
-- [ ] #6 Plans with Opus preference but no libopus falls through to AAC
-- [ ] #7 Codec change detected via sync tag codec field triggers re-transcode with `UpgradeReason: 'codec-changed'`
-- [ ] #8 `max` preset + FLAC-capable device copies FLAC source files via lossless stack
-- [ ] #9 `max` preset + ALAC-only lossless support transcodes to ALAC
-- [ ] #10 `max` preset + no lossless support falls through to lossy at high quality
-- [ ] #11 WAV source with `source` in lossless stack: `source` skipped, falls through to FLAC/ALAC
-- [ ] #12 Opus source on Rockbox classified as compatible (no lossy-to-lossy warning)
-- [ ] #13 Size estimation accounts for 48kHz Opus and ~700 kbps FLAC
-- [ ] #14 Integration tests cover all resolution paths
+- [x] #1 `categorizeSource()` takes `supportedAudioCodecs` parameter and classifies Opus as `compatible-lossy` on devices that support it
+- [x] #2 Hardcoded format sets used as fallback only when device capabilities unavailable
+- [x] #3 Codec preferences wired through MusicSyncConfig → ResolvedMusicConfig → ClassifierContext
+- [x] #4 Plans with default stack + iPod capabilities resolves to AAC
+- [x] #5 Plans with default stack + Rockbox capabilities resolves to Opus
+- [x] #6 Plans with Opus preference but no libopus falls through to AAC
+- [x] #7 Codec change detected via sync tag codec field triggers re-transcode with `UpgradeReason: 'codec-changed'`
+- [x] #8 `max` preset + FLAC-capable device copies FLAC source files via lossless stack
+- [x] #9 `max` preset + ALAC-only lossless support transcodes to ALAC
+- [x] #10 `max` preset + no lossless support falls through to lossy at high quality
+- [x] #11 WAV source with `source` in lossless stack: `source` skipped, falls through to FLAC/ALAC
+- [x] #12 Opus source on Rockbox classified as compatible (no lossy-to-lossy warning)
+- [x] #13 Size estimation accounts for 48kHz Opus and ~700 kbps FLAC
+- [x] #14 Integration tests cover all resolution paths
 <!-- AC:END -->

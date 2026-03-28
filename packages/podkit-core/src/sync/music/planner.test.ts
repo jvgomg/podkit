@@ -231,6 +231,64 @@ describe('categorizeSource', () => {
       expect(categorizeSource(track)).toBe('incompatible-lossy');
     });
   });
+
+  describe('device-aware categorization (supportedCodecs)', () => {
+    it('Opus source + device supports opus → compatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'opus');
+      expect(categorizeSource(track, ['opus', 'mp3', 'aac'])).toBe('compatible-lossy');
+    });
+
+    it('Opus source + device does not support opus → incompatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'opus');
+      expect(categorizeSource(track, ['mp3', 'aac'])).toBe('incompatible-lossy');
+    });
+
+    it('OGG source + device supports ogg → compatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'ogg');
+      expect(categorizeSource(track, ['ogg', 'mp3'])).toBe('compatible-lossy');
+    });
+
+    it('MP3 on device supporting mp3 → compatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'mp3');
+      expect(categorizeSource(track, ['mp3', 'aac'])).toBe('compatible-lossy');
+    });
+
+    it('AAC on device supporting aac → compatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'm4a');
+      expect(categorizeSource(track, ['aac', 'mp3'])).toBe('compatible-lossy');
+    });
+
+    it('MP3 on device NOT supporting mp3 → incompatible-lossy', () => {
+      const track = createCollectionTrack('Artist', 'Song', 'Album', 'mp3');
+      expect(categorizeSource(track, ['opus'])).toBe('incompatible-lossy');
+    });
+
+    it('lossless sources always categorized as lossless regardless of device support', () => {
+      const flac = createCollectionTrack('Artist', 'Song', 'Album', 'flac');
+      expect(categorizeSource(flac, ['flac', 'mp3'])).toBe('lossless');
+
+      const wav = createCollectionTrack('Artist', 'Song', 'Album', 'wav');
+      expect(categorizeSource(wav, ['wav'])).toBe('lossless');
+
+      const alac = createCollectionTrack('Artist', 'Song', 'Album', 'alac');
+      expect(categorizeSource(alac, ['alac'])).toBe('lossless');
+    });
+
+    it('lossless sources are lossless even when device does not support them', () => {
+      const flac = createCollectionTrack('Artist', 'Song', 'Album', 'flac');
+      expect(categorizeSource(flac, ['mp3', 'aac'])).toBe('lossless');
+    });
+
+    it('no device codecs provided → falls back to hardcoded sets (backward compat)', () => {
+      const mp3 = createCollectionTrack('Artist', 'Song', 'Album', 'mp3');
+      expect(categorizeSource(mp3)).toBe('compatible-lossy');
+      expect(categorizeSource(mp3, undefined)).toBe('compatible-lossy');
+
+      const opus = createCollectionTrack('Artist', 'Song', 'Album', 'opus');
+      expect(categorizeSource(opus)).toBe('incompatible-lossy');
+      expect(categorizeSource(opus, undefined)).toBe('incompatible-lossy');
+    });
+  });
 });
 
 describe('isLosslessSource', () => {

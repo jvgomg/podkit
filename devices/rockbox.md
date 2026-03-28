@@ -101,93 +101,78 @@ artwork:
 # Audio Format Support
 # ============================================================================
 audio_formats:
-  lossy:
-    - codec: "MP3"
-      extensions: [".mp3"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: "16-bit"
-      notes: "MAD decoder"
-    - codec: "OGG Vorbis"
-      extensions: [".ogg", ".oga"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: ""
-      notes: "Tremor integer decoder"
-    - codec: "AAC / HE-AAC"
-      extensions: [".m4a", ".mp4"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: ""
-      notes: "libfaad decoder"
-    - codec: "Opus"
-      extensions: [".opus"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: ""
-      notes: ""
-    - codec: "WMA"
-      extensions: [".wma"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "WMA and WMA Pro supported"
-    - codec: "Musepack"
-      extensions: [".mpc"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "SV7 and SV8"
-    - codec: "AC3"
-      extensions: [".ac3"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "5.1 downmixed to stereo"
-    - codec: "Speex"
-      extensions: [".spx"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-  lossless:
-    - codec: "FLAC"
-      extensions: [".flac"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: "24-bit"
-      notes: >
-        Realtime on all targets. Supports up to 8K block sizes and 7 channels.
-        Higher sample rates are decoded but downsampled to the DAC's native
-        rate (typically 48kHz).
-    - codec: "ALAC"
-      extensions: [".m4a"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "Realtime. Limited performance on PP5002 targets."
-    - codec: "WAV"
-      extensions: [".wav"]
-      max_sample_rate: "48kHz"
-      max_bit_depth: "24-bit"
-      notes: "PCM, ADPCM, ALAW, MULAW, DVI-ADPCM"
-    - codec: "AIFF"
-      extensions: [".aif", ".aiff"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-    - codec: "WavPack"
-      extensions: [".wv"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-    - codec: "APE"
-      extensions: [".ape"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "Realtime varies by compression level (-c1000 to -c4000 on faster targets)"
-    - codec: "TTA"
-      extensions: [".tta"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "Limited realtime on slower targets"
-    - codec: "Shorten"
-      extensions: [".shn"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "Play only, no seeking"
-  chiptune:
-    - "SID, MOD, NSF/NSFE, SPC, GBS, HES, SAP, MIDI"
+  podkit_supported:
+    lossy:
+      - codec: "MP3"
+        extensions: [".mp3"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: "16-bit"
+        notes: "MAD decoder"
+      - codec: "OGG Vorbis"
+        extensions: [".ogg", ".oga"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: ""
+        notes: "Tremor integer decoder"
+      - codec: "AAC / HE-AAC"
+        extensions: [".m4a", ".mp4"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: ""
+        notes: "libfaad decoder"
+      - codec: "Opus"
+        extensions: [".opus"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: ""
+        notes: ""
+    lossless:
+      - codec: "FLAC"
+        extensions: [".flac"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: "24-bit"
+        notes: >
+          Realtime on all targets. Supports up to 8K block sizes and 7 channels.
+          Higher sample rates are decoded but downsampled to the DAC's native
+          rate (typically 48kHz).
+      - codec: "ALAC"
+        extensions: [".m4a"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: "Realtime. Limited performance on PP5002 targets."
+      - codec: "WAV"
+        extensions: [".wav"]
+        max_sample_rate: "48kHz"
+        max_bit_depth: "24-bit"
+        notes: "PCM, ADPCM, ALAW, MULAW, DVI-ADPCM"
+      - codec: "AIFF"
+        extensions: [".aif", ".aiff"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: ""
+    notes: >
+      podkit declares support for: AAC, ALAC, MP3, FLAC, OGG, Opus, WAV, AIFF.
+      These are the codecs podkit will actively use for sync operations.
+  device_also_supports:
+    lossy:
+      - codec: "WMA"
+        notes: "WMA and WMA Pro supported"
+      - codec: "Musepack"
+        notes: "SV7 and SV8"
+      - codec: "AC3"
+        notes: "5.1 downmixed to stereo"
+      - codec: "Speex"
+    lossless:
+      - codec: "WavPack"
+      - codec: "APE"
+        notes: "Realtime varies by compression level (-c1000 to -c4000 on faster targets)"
+      - codec: "TTA"
+        notes: "Limited realtime on slower targets"
+      - codec: "Shorten"
+        notes: "Play only, no seeking"
+    chiptune:
+      - "SID, MOD, NSF/NSFE, SPC, GBS, HES, SAP, MIDI"
+    notes: >
+      Rockbox supports many additional codecs beyond podkit's default preference stack.
+      Users can configure custom codec preferences to enable WMA, APE, and other formats
+      if desired.
 
 # ============================================================================
 # Metadata

@@ -186,6 +186,8 @@ export interface SyncOutput {
   source?: string;
   device?: string;
   quality?: string;
+  codec?: string;
+  codecPreference?: string[];
   transferMode?: string;
   transforms?: TransformInfo[];
   skipUpgrades?: boolean;
@@ -841,8 +843,9 @@ export const syncCommand = new Command('sync')
 
     // ----- Check FFmpeg availability -----
     const transcoder = core.createFFmpegTranscoder();
+    let transcoderCapabilities: import('@podkit/core').TranscoderCapabilities | undefined;
     try {
-      await transcoder.detect();
+      transcoderCapabilities = await transcoder.detect();
     } catch (err) {
       const message = err instanceof Error ? err.message : 'FFmpeg not found';
       out.result(
@@ -950,6 +953,31 @@ export const syncCommand = new Command('sync')
       }
     }
 
+    // ----- Resolve codec preferences -----
+    const effectiveCodecPreference = deviceConfig?.codec ?? config.codec ?? undefined;
+    const lossyStack = effectiveCodecPreference?.lossy ?? core.DEFAULT_LOSSY_STACK;
+    let resolvedLossyCodec: string | undefined;
+
+    if (hasMusicToSync && deviceCapabilities) {
+      const deviceCodecSet = new Set<string>(deviceCapabilities.supportedAudioCodecs);
+      // Simple resolution: find first lossy codec supported by device
+      // (full resolution with encoder availability happens in the handler)
+      for (const codec of lossyStack) {
+        if (deviceCodecSet.has(codec)) {
+          resolvedLossyCodec = codec;
+          break;
+        }
+      }
+
+      if (!resolvedLossyCodec) {
+        const errorMsg = `No compatible lossy codec found. Preference: ${lossyStack.join(', ')}. Device supports: ${deviceCapabilities.supportedAudioCodecs.join(', ')}`;
+        out.result(errorOutput(errorMsg), () => out.error(errorMsg));
+        adapter.close();
+        process.exitCode = 1;
+        return;
+      }
+    }
+
     // Track overall results
     let totalCompleted = 0;
     let totalFailed = 0;
@@ -994,6 +1022,10 @@ export const syncCommand = new Command('sync')
               options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
             transcoder,
             capabilities: deviceCapabilities,
+            effectiveCodecPreference,
+            resolvedLossyCodec,
+            lossyPreferenceStack: [...lossyStack],
+            transcoderCapabilities,
           };
           const result = await genericSyncCollection(
             new MusicPresenter(),

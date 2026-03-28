@@ -33,6 +33,7 @@ If problems are detected, doctor tells you what's wrong and how to fix it. You d
 | Check | What it detects | Severity |
 |-------|----------------|----------|
 | **Artwork Integrity** | Corrupted artwork database — wrong album art, glitched images, artwork from other albums | Failure |
+| **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
 | **Orphan Files** | Unreferenced audio/video files wasting storage space | Warning |
 
 ## Repairing Artwork Corruption

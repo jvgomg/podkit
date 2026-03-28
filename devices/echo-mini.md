@@ -120,53 +120,59 @@ artwork:
 # Audio Format Support
 # ============================================================================
 audio_formats:
-  lossy:
-    - codec: "MP3"
-      extensions: [".mp3"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-    - codec: "OGG Vorbis"
-      extensions: [".ogg"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-    - codec: "AAC"
-      extensions: [".m4a"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-    - codec: "WMA"
-      extensions: [".wma"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: ""
-  lossless:
-    - codec: "FLAC"
-      extensions: [".flac"]
-      max_sample_rate: "192kHz"
-      max_bit_depth: "24-bit"
-      notes: ""
-    - codec: "ALAC"
-      extensions: [".m4a"]
-      max_sample_rate: ""
-      max_bit_depth: ""
-      notes: "Confirmed playable via folder browser and library [firsthand]. Not officially listed [2]."
-    - codec: "WAV"
-      extensions: [".wav"]
-      max_sample_rate: "192kHz"
-      max_bit_depth: "24-bit"
-      notes: "Playable via folder browser but NOT indexed by library scanner [firsthand]"
-    - codec: "APE"
-      extensions: [".ape"]
-      max_sample_rate: "192kHz"
-      max_bit_depth: "24-bit"
-      notes: ""
-    - codec: "DSD"
-      extensions: [".dsf", ".dff"]
-      max_sample_rate: "DSD256"
-      max_bit_depth: ""
-      notes: "DSD64, DSD128, DSD256 supported"
+  podkit_supported:
+    lossy:
+      - codec: "MP3"
+        extensions: [".mp3"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: ""
+      - codec: "AAC"
+        extensions: [".m4a"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: ""
+      - codec: "OGG Vorbis"
+        extensions: [".ogg"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: ""
+    lossless:
+      - codec: "FLAC"
+        extensions: [".flac"]
+        max_sample_rate: "192kHz"
+        max_bit_depth: "24-bit"
+        notes: ""
+      - codec: "ALAC"
+        extensions: [".m4a"]
+        max_sample_rate: ""
+        max_bit_depth: ""
+        notes: "Confirmed playable via folder browser and library [firsthand]. Not officially listed [2]."
+      - codec: "WAV"
+        extensions: [".wav"]
+        max_sample_rate: "192kHz"
+        max_bit_depth: "24-bit"
+        notes: "Playable via folder browser but NOT indexed by library scanner [firsthand]"
+    notes: >
+      podkit declares support for: AAC, ALAC, MP3, FLAC, OGG, WAV.
+      These are the codecs podkit will actively use for sync operations.
+  device_supports:
+    lossy:
+      - codec: "MP3"
+      - codec: "OGG Vorbis"
+      - codec: "AAC"
+      - codec: "WMA"
+    lossless:
+      - codec: "FLAC"
+      - codec: "ALAC"
+      - codec: "WAV"
+      - codec: "APE"
+      - codec: "DSD (DSD64, DSD128, DSD256)"
+    notes: >
+      The device supports additional codecs beyond what podkit actively uses.
+      WMA, APE, and DSD can be played on the device but are not in podkit's
+      default codec preference stack. Users can configure custom codec
+      preferences to enable these if desired.
   unsupported_common_formats:
     - "Opus — files with .opus extension are hidden from both library and folder browser [firsthand]"
     - "SACD"

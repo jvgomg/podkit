@@ -51,6 +51,8 @@ export interface SyncTagData {
   encoding?: string;
   /** Custom bitrate override in kbps (audio only, only when explicitly set) */
   bitrate?: number;
+  /** Output codec: 'aac' | 'alac' | 'opus' | etc. (optional, absent in legacy tags) */
+  codec?: string;
   /** Artwork hash: 8-char lowercase hex string (xxHash truncated to 32 bits) */
   artworkHash?: string;
   /** Transfer mode used for this sync: 'fast' | 'optimized' | 'portable' */
@@ -141,6 +143,10 @@ export function parseSyncTag(comment: string | null | undefined): SyncTagData | 
     }
   }
 
+  if (data.codec) {
+    result.codec = data.codec;
+  }
+
   if (data.art && /^[0-9a-f]{8}$/.test(data.art)) {
     result.artworkHash = data.art;
   }
@@ -171,6 +177,10 @@ export function formatSyncTag(data: SyncTagData): string {
 
   if (data.bitrate !== undefined) {
     parts.push(`bitrate=${data.bitrate}`);
+  }
+
+  if (data.codec) {
+    parts.push(`codec=${data.codec}`);
   }
 
   if (data.artworkHash) {
@@ -238,6 +248,7 @@ export function syncTagsEqual(a: SyncTagData, b: SyncTagData): boolean {
     a.quality === b.quality &&
     a.encoding === b.encoding &&
     a.bitrate === b.bitrate &&
+    a.codec === b.codec &&
     a.artworkHash === b.artworkHash &&
     a.transferMode === b.transferMode
   );
@@ -246,8 +257,12 @@ export function syncTagsEqual(a: SyncTagData, b: SyncTagData): boolean {
 /**
  * Compare a parsed sync tag against expected config.
  *
- * Returns true if the tag matches the config exactly (quality, encoding,
- * and bitrate all match). A missing optional field matches undefined.
+ * Returns true if the tag matches the config for quality, encoding, and bitrate.
+ * A missing optional field matches undefined.
+ *
+ * Note: This intentionally does NOT compare the `codec` field. Codec changes are
+ * detected separately by the handler's `postProcessCodecChanges()` pass, keeping
+ * preset-change detection orthogonal to codec-change detection.
  *
  * @param tag - Parsed sync tag from iPod track
  * @param config - Expected sync tag data from current config
@@ -292,7 +307,8 @@ export function buildAudioSyncTag(
   resolvedPreset: string,
   encodingMode?: string,
   customBitrate?: number,
-  transferMode?: string
+  transferMode?: string,
+  codec?: string
 ): SyncTagData {
   const data: SyncTagData = {
     quality: resolvedPreset,
@@ -304,6 +320,10 @@ export function buildAudioSyncTag(
     if (customBitrate !== undefined) {
       data.bitrate = customBitrate;
     }
+  }
+
+  if (codec) {
+    data.codec = codec;
   }
 
   if (transferMode) {
@@ -323,11 +343,19 @@ export function buildAudioSyncTag(
  * @param artworkHash - Artwork content hash (8-char hex), if available
  * @returns SyncTagData for the copy operation
  */
-export function buildCopySyncTag(transferMode: string, artworkHash?: string): SyncTagData {
+export function buildCopySyncTag(
+  transferMode: string,
+  artworkHash?: string,
+  codec?: string
+): SyncTagData {
   const data: SyncTagData = {
     quality: 'copy',
     transferMode,
   };
+
+  if (codec) {
+    data.codec = codec;
+  }
 
   if (artworkHash) {
     data.artworkHash = artworkHash;

@@ -126,7 +126,7 @@ audioQuality = "max"          # ALAC on Classic (it supports lossless)
 videoQuality = "high"
 ```
 
-By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`.
+By default, lossy transcoding uses VBR encoding. You can switch to CBR globally or per device with `encoding = "cbr"`. podkit automatically selects the best codec your device supports (Opus, AAC, or MP3) -- see [Codec Preferences](/user-guide/transcoding/codec-preferences) for details.
 
 ### Transfer Mode
 
@@ -168,6 +168,7 @@ music = "main"
 ## See Also
 
 - [Config File Reference](/reference/config-file) — Complete schema with all options
+- [Codec Preferences](/user-guide/transcoding/codec-preferences) — How podkit selects the audio codec
 - [Environment Variables](/reference/environment-variables) — Override settings via environment
 - [Quality Presets](/reference/quality-presets) — Audio and video quality specifications
 - [CLI Commands](/reference/cli-commands) — Command-line options
