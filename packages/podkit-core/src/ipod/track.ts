@@ -183,7 +183,7 @@ export class IpodTrackImpl implements IpodTrack {
     this.sampleRate = data.sampleRate ?? 0;
     this.size = data.size ?? 0;
     this.bpm = data.bpm || undefined;
-    this.soundcheck = data.soundcheck || undefined;
+    this.soundcheck = data.soundcheck ?? undefined;
     this.filetype = data.filetype ?? undefined;
     this.mediaType = data.mediaType ?? 0;
 
