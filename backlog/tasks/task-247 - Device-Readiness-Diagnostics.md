@@ -1,9 +1,10 @@
 ---
 id: TASK-247
 title: Device Readiness Diagnostics
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:53'
+updated_date: '2026-03-28 20:11'
 labels:
   - feature
   - device
@@ -40,8 +41,8 @@ Readiness levels: `ready`, `needs-repair`, `needs-init`, `needs-format`, `needs-
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All 12 subtasks completed
-- [ ] #2 All 22 user stories from PRD doc-023 addressed
+- [x] #1 All 12 subtasks completed
+- [x] #2 All 22 user stories from PRD doc-023 addressed
 - [ ] #3 HITL testing session completed with real hardware
-- [ ] #4 Changesets created for affected packages
+- [x] #4 Changesets created for affected packages
 <!-- AC:END -->

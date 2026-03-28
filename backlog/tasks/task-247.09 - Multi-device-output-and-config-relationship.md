@@ -1,9 +1,10 @@
 ---
 id: TASK-247.09
 title: Multi-device output and config relationship
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:55'
+updated_date: '2026-03-28 15:50'
 labels:
   - feature
   - device
@@ -48,10 +49,10 @@ iPod Nano 5G (disk6s1)
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Each device gets a header with model name and disk identifier
-- [ ] #2 Config relationship shown: configured name or not-configured guidance
-- [ ] #3 Independent readiness pipeline per device
-- [ ] #4 One device's failure doesn't affect another's output
+- [x] #1 Each device gets a header with model name and disk identifier
+- [x] #2 Config relationship shown: configured name or not-configured guidance
+- [x] #3 Independent readiness pipeline per device
+- [x] #4 One device's failure doesn't affect another's output
 - [ ] #5 Unit tests for multi-device output formatting
 - [ ] #6 Unit test for config matching logic
 <!-- AC:END -->

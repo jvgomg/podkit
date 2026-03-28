@@ -1,9 +1,10 @@
 ---
 id: TASK-247.01
 title: Core readiness pipeline + basic scan output
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:53'
+updated_date: '2026-03-28 15:23'
 labels:
   - feature
   - device
@@ -60,15 +61,15 @@ Create the core readiness pipeline engine and wire it into `device scan` with ve
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Readiness pipeline runs 6 stages with fail→skip cascading
-- [ ] #2 ReadinessResult is a discriminated union on level
-- [ ] #3 iPod structure, SysInfo, and database checks callable independently
-- [ ] #4 device scan shows verbose check/cross output for each stage
-- [ ] #5 Healthy devices show track count and free space summary
-- [ ] #6 Mass-storage devices shown with note that readiness checks are not applicable
-- [ ] #7 Device disconnect mid-pipeline produces hardware-error (no crash)
-- [ ] #8 Read-only mount detected and reported as warning
-- [ ] #9 Stale mount points detected (statfs check)
-- [ ] #10 Unit tests for pipeline cascading, level determination, all stage results
+- [x] #1 Readiness pipeline runs 6 stages with fail→skip cascading
+- [x] #2 ReadinessResult is a discriminated union on level
+- [x] #3 iPod structure, SysInfo, and database checks callable independently
+- [x] #4 device scan shows verbose check/cross output for each stage
+- [x] #5 Healthy devices show track count and free space summary
+- [x] #6 Mass-storage devices shown with note that readiness checks are not applicable
+- [x] #7 Device disconnect mid-pipeline produces hardware-error (no crash)
+- [x] #8 Read-only mount detected and reported as warning
+- [x] #9 Stale mount points detected (statfs check)
+- [x] #10 Unit tests for pipeline cascading, level determination, all stage results
 - [ ] #11 E2E tests for scan on healthy device and device without DB
 <!-- AC:END -->

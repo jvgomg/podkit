@@ -1,9 +1,10 @@
 ---
 id: TASK-247.08
 title: Interactive mount prompt and --mount flag
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:55'
+updated_date: '2026-03-28 15:43'
 labels:
   - feature
   - device
@@ -42,11 +43,11 @@ Add mount capability to `device scan` — a `--mount` flag for scripts and an in
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 --mount flag triggers automatic mount of unmounted devices
-- [ ] #2 After mount, readiness checks continue automatically
-- [ ] #3 Interactive prompt shown only when: TTY + no --mount + no JSON output
-- [ ] #4 No prompt in non-interactive contexts (non-TTY, JSON, piped)
-- [ ] #5 Mount failures reported with interpreted error message
+- [x] #1 --mount flag triggers automatic mount of unmounted devices
+- [x] #2 After mount, readiness checks continue automatically
+- [x] #3 Interactive prompt shown only when: TTY + no --mount + no JSON output
+- [x] #4 No prompt in non-interactive contexts (non-TTY, JSON, piped)
+- [x] #5 Mount failures reported with interpreted error message
 - [ ] #6 Unit tests for prompt logic and flag behavior
 - [ ] #7 E2E test: --mount flag triggers mount and continues checks
 <!-- AC:END -->

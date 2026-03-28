@@ -1,9 +1,10 @@
 ---
 id: TASK-247.04
 title: SysInfo validation check
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:54'
+updated_date: '2026-03-28 15:29'
 labels:
   - feature
   - device
@@ -47,12 +48,12 @@ Implement SysInfo validation as an independently callable check and integrate it
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Pass state: SysInfo exists with known ModelNumStr
-- [ ] #2 Warn state: SysInfo exists with unrecognized model (not a failure)
-- [ ] #3 Fail state: SysInfo missing
-- [ ] #4 Fail state: SysInfo corrupt — binary file, missing key, invalid UTF-8, truncated
-- [ ] #5 Suggested actions included in check result for each fail state
-- [ ] #6 Check callable independently (not just via pipeline)
-- [ ] #7 Integrated as readiness pipeline stage 5
-- [ ] #8 Unit tests for all states including each corrupt variant
+- [x] #1 Pass state: SysInfo exists with known ModelNumStr
+- [x] #2 Warn state: SysInfo exists with unrecognized model (not a failure)
+- [x] #3 Fail state: SysInfo missing
+- [x] #4 Fail state: SysInfo corrupt — binary file, missing key, invalid UTF-8, truncated
+- [x] #5 Suggested actions included in check result for each fail state
+- [x] #6 Check callable independently (not just via pipeline)
+- [x] #7 Integrated as readiness pipeline stage 5
+- [x] #8 Unit tests for all states including each corrupt variant
 <!-- AC:END -->
