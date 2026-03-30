@@ -39,6 +39,22 @@ export function replayGainToSoundcheck(gainDb: number): number {
 }
 
 /**
+ * Convert an iPod soundcheck value back to ReplayGain dB.
+ *
+ * Inverse of replayGainToSoundcheck():
+ *   soundcheck = 1000 * 10^(gain / -10)
+ *   gain = -10 * log10(soundcheck / 1000)
+ *
+ * Note: slight rounding differences since soundcheck is an integer.
+ *
+ * @param soundcheck - Soundcheck value (guint32)
+ * @returns ReplayGain value in decibels
+ */
+export function soundcheckToReplayGainDb(soundcheck: number): number {
+  return -10 * Math.log10(soundcheck / 1000);
+}
+
+/**
  * Parse an iTunNORM string to extract the soundcheck value.
  *
  * iTunNORM is a string of 10 space-separated hex values stored in

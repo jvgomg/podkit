@@ -582,6 +582,10 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
         const sc = this.extractReplayGainSoundcheck(song.replayGain);
         return sc ? { soundcheck: sc.value, soundcheckSource: sc.source } : {};
       })(),
+
+      // Raw ReplayGain values for writing tags to mass-storage devices
+      replayGainTrackGain: song.replayGain?.trackGain,
+      replayGainTrackPeak: song.replayGain?.trackPeak,
     };
   }
 

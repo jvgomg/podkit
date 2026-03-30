@@ -296,6 +296,10 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
       soundcheck: scResult?.value,
       soundcheckSource: scResult?.source,
 
+      // Raw ReplayGain values for writing tags to mass-storage devices
+      replayGainTrackGain: common.replaygain_track_gain?.dB,
+      replayGainTrackPeak: common.replaygain_track_peak?.ratio,
+
       // External identifiers
       musicBrainzRecordingId: common.musicbrainz_recordingid,
       musicBrainzReleaseId: common.musicbrainz_albumid,

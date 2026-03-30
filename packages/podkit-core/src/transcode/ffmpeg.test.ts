@@ -365,6 +365,99 @@ describe('buildAlacArgs', () => {
   });
 });
 
+describe('ReplayGain metadata injection', () => {
+  const input = '/path/to/input.flac';
+  const output = '/path/to/output.m4a';
+
+  it('injects ReplayGain tags into AAC transcode args', () => {
+    const args = buildTranscodeArgs(input, output, 'aac_at', 'high', {
+      replayGain: { trackGain: -7.5, trackPeak: 0.988 },
+    });
+    expect(args).toContain('-metadata');
+    const gainIdx = args.indexOf('REPLAYGAIN_TRACK_GAIN=-7.50 dB');
+    const peakIdx = args.indexOf('REPLAYGAIN_TRACK_PEAK=0.988000');
+    expect(gainIdx).toBeGreaterThan(-1);
+    expect(peakIdx).toBeGreaterThan(-1);
+    // Should come after -map_metadata 0
+    const mapIdx = args.indexOf('-map_metadata');
+    expect(gainIdx).toBeGreaterThan(mapIdx);
+  });
+
+  it('omits peak when not provided', () => {
+    const args = buildTranscodeArgs(input, output, 'aac_at', 'high', {
+      replayGain: { trackGain: -3.2 },
+    });
+    const gainIdx = args.indexOf('REPLAYGAIN_TRACK_GAIN=-3.20 dB');
+    expect(gainIdx).toBeGreaterThan(-1);
+    expect(args).not.toContain('REPLAYGAIN_TRACK_PEAK');
+    // Verify no stray -metadata for peak
+    const peakEntries = args.filter((a) => a.includes('REPLAYGAIN_TRACK_PEAK'));
+    expect(peakEntries).toHaveLength(0);
+  });
+
+  it('does not inject ReplayGain when option is undefined', () => {
+    const args = buildTranscodeArgs(input, output, 'aac_at', 'high');
+    const rgEntries = args.filter((a) => a.includes('REPLAYGAIN'));
+    expect(rgEntries).toHaveLength(0);
+  });
+
+  it('injects ReplayGain into Opus args', () => {
+    const args = buildOpusArgs(
+      input,
+      output.replace('.m4a', '.ogg'),
+      {
+        codec: 'opus',
+        bitrateKbps: 160,
+        encoding: 'vbr',
+      },
+      {
+        replayGain: { trackGain: -5.0 },
+      }
+    );
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-5.00 dB');
+  });
+
+  it('injects ReplayGain into MP3 args', () => {
+    const args = buildMp3Args(
+      input,
+      output.replace('.m4a', '.mp3'),
+      {
+        codec: 'mp3',
+        bitrateKbps: 256,
+        encoding: 'vbr',
+        quality: 0,
+      },
+      {
+        replayGain: { trackGain: -8.3, trackPeak: 1.05 },
+      }
+    );
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-8.30 dB');
+    expect(args).toContain('REPLAYGAIN_TRACK_PEAK=1.050000');
+  });
+
+  it('injects ReplayGain into FLAC args', () => {
+    const args = buildFlacArgs(input, output.replace('.m4a', '.flac'), {
+      replayGain: { trackGain: -4.0 },
+    });
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-4.00 dB');
+  });
+
+  it('injects ReplayGain into ALAC args', () => {
+    const args = buildAlacArgs(input, output, {
+      replayGain: { trackGain: -6.0, trackPeak: 0.95 },
+    });
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-6.00 dB');
+    expect(args).toContain('REPLAYGAIN_TRACK_PEAK=0.950000');
+  });
+
+  it('injects ReplayGain into optimized copy args', () => {
+    const args = buildOptimizedCopyArgs(input, output, 'm4a', {
+      replayGain: { trackGain: -10.0 },
+    });
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-10.00 dB');
+  });
+});
+
 describe('buildOptimizedCopyArgs', () => {
   const input = '/path/to/input.mp3';
   const output = '/path/to/output.mp3';
