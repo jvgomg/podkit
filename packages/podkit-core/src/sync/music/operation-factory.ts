@@ -67,11 +67,16 @@ export class MusicOperationFactory {
   }
 
   /** Create a metadata-only update */
-  createMetadataUpdate(device: DeviceTrack, changes: MetadataChange[]): MusicOperation {
+  createMetadataUpdate(
+    device: DeviceTrack,
+    changes: MetadataChange[],
+    source?: CollectionTrack
+  ): MusicOperation {
     return {
       type: 'update-metadata',
       track: device,
       metadata: changesToMetadata(changes),
+      source,
     };
   }
 

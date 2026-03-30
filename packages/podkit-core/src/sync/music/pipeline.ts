@@ -36,6 +36,7 @@ import { spawn } from 'node:child_process';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
 import { buildAudioSyncTag, buildCopySyncTag } from '../../metadata/sync-tags.js';
+import { soundcheckToReplayGainDb } from '../../metadata/soundcheck.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import {
   categorizeError as sharedCategorizeError,
@@ -194,6 +195,17 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * modes including portable (the device cannot use full-res artwork).
    */
   artworkResize?: number;
+  /**
+   * Audio normalization mode for the target device.
+   *
+   * When `'replaygain'`, ReplayGain metadata tags are injected into transcoded
+   * files via FFmpeg `-metadata` flags so mass-storage devices (e.g., Rockbox)
+   * can read volume normalization data from file tags.
+   *
+   * When `'soundcheck'` or `'none'`, no ReplayGain tags are written — iPod uses
+   * the iTunesDB soundcheck field, and `'none'` devices don't support normalization.
+   */
+  audioNormalization?: string;
 }
 
 /** @see types.ts for canonical definition */
@@ -472,6 +484,8 @@ function toDeviceTrackInput(track: CollectionTrack): DeviceTrackInput {
     duration: track.duration,
     bitrate: track.bitrate,
     soundcheck: track.soundcheck,
+    replayGainTrackGain: track.replayGainTrackGain,
+    replayGainTrackPeak: track.replayGainTrackPeak,
   };
 }
 
@@ -593,6 +607,8 @@ export class MusicPipeline implements SyncExecutor {
   private transferMode?: string;
   /** Artwork resize dimension for embedded artwork devices (set during execute()) */
   private artworkResize?: number;
+  /** Audio normalization mode for the target device (set during execute()) */
+  private audioNormalization?: string;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
 
@@ -620,6 +636,33 @@ export class MusicPipeline implements SyncExecutor {
    */
   private addWarning(warning: ExecutionWarning): void {
     this.warnings.push(warning);
+  }
+
+  /**
+   * Build ReplayGain options for transcode if the device supports it.
+   *
+   * Returns the ReplayGain data to inject via FFmpeg `-metadata` flags,
+   * or undefined if the device doesn't read ReplayGain from file tags.
+   * Prefers raw dB values from the source; falls back to back-converting
+   * from the soundcheck integer (sub-0.01 dB rounding difference).
+   */
+  private buildReplayGainOption(
+    source: CollectionTrack
+  ): { trackGain: number; trackPeak?: number } | undefined {
+    if (this.audioNormalization !== 'replaygain') return undefined;
+
+    if (source.replayGainTrackGain !== undefined) {
+      return {
+        trackGain: source.replayGainTrackGain,
+        trackPeak: source.replayGainTrackPeak,
+      };
+    }
+
+    if (source.soundcheck !== undefined) {
+      return { trackGain: soundcheckToReplayGainDb(source.soundcheck) };
+    }
+
+    return undefined;
   }
 
   /**
@@ -657,6 +700,7 @@ export class MusicPipeline implements SyncExecutor {
       syncTagConfig,
       transferMode,
       artworkResize,
+      audioNormalization,
       saveInterval = 50,
     } = options;
 
@@ -664,6 +708,7 @@ export class MusicPipeline implements SyncExecutor {
     this.syncTagConfig = syncTagConfig;
     this.transferMode = transferMode;
     this.artworkResize = artworkResize;
+    this.audioNormalization = audioNormalization;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -1311,6 +1356,7 @@ export class MusicPipeline implements SyncExecutor {
         | import('../../transcode/types.js').TransferMode
         | undefined,
       artworkResize: this.artworkResize,
+      replayGain: this.buildReplayGainOption(source),
     });
 
     // Add track to device database
@@ -1324,6 +1370,15 @@ export class MusicPipeline implements SyncExecutor {
 
     // Copy transcoded file to device
     this.device.copyTrackFile(track, outputPath);
+
+    // Request ReplayGain tag writes for transcoded files (M4A needs tag writer)
+    if (this.audioNormalization === 'replaygain' && source.soundcheck !== undefined) {
+      this.device.updateTrack(track, {
+        writeReplayGainTags: true,
+        replayGainTrackGain: source.replayGainTrackGain,
+        replayGainTrackPeak: source.replayGainTrackPeak,
+      });
+    }
 
     // Extract and transfer artwork if enabled.
     // Skip when the source explicitly has no artwork — see transferToIpod for full explanation.
@@ -1463,6 +1518,10 @@ export class MusicPipeline implements SyncExecutor {
     }
     if (metadata.soundcheck !== undefined) {
       updateFields.soundcheck = metadata.soundcheck;
+      // Pass raw ReplayGain values from the source track for mass-storage tag writing.
+      // The source has the original dB/peak values — avoids back-converting from soundcheck.
+      updateFields.replayGainTrackGain = operation.source?.replayGainTrackGain;
+      updateFields.replayGainTrackPeak = operation.source?.replayGainTrackPeak;
     }
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
@@ -1550,6 +1609,7 @@ export class MusicPipeline implements SyncExecutor {
         | import('../../transcode/types.js').TransferMode
         | undefined,
       artworkResize: this.artworkResize,
+      replayGain: this.buildReplayGainOption(operation.source),
     });
 
     return {
@@ -1645,6 +1705,7 @@ export class MusicPipeline implements SyncExecutor {
     // Build FFmpeg args and run
     const args = buildOptimizedCopyArgs(inputPath, outputPath, format, {
       artworkResize: this.artworkResize,
+      replayGain: this.buildReplayGainOption(source),
     });
     await this.runFFmpeg(args, signal);
 
@@ -1828,6 +1889,21 @@ export class MusicPipeline implements SyncExecutor {
     // Copy file to device
     this.device.copyTrackFile(track, sourcePath);
 
+    // Request ReplayGain tag writes for transcoded/optimized-copy files.
+    // Direct-copy files already have correct tags from the source — no write needed.
+    // FFmpeg handles MP3/FLAC/OGG during transcode, but M4A needs the tag writer.
+    if (
+      operation.type !== 'add-direct-copy' &&
+      this.audioNormalization === 'replaygain' &&
+      source.soundcheck !== undefined
+    ) {
+      this.device.updateTrack(track, {
+        writeReplayGainTags: true,
+        replayGainTrackGain: source.replayGainTrackGain,
+        replayGainTrackPeak: source.replayGainTrackPeak,
+      });
+    }
+
     // Extract and transfer artwork if enabled.
     // Use artworkSourcePath which is the original source file (or downloaded temp for remote).
     // Skip when the source explicitly has no artwork (hasArtwork === false) — the album-level
@@ -1951,6 +2027,18 @@ export class MusicPipeline implements SyncExecutor {
     if (source.discNumber !== undefined) updateFields.discNumber = source.discNumber;
     if (source.albumArtist !== undefined) updateFields.albumArtist = source.albumArtist;
     if (source.compilation !== undefined) updateFields.compilation = source.compilation;
+
+    // Request ReplayGain tag writes for transcoded/optimized-copy upgrades.
+    // Direct-copy upgrades preserve source file tags — no write needed.
+    if (
+      operation.type !== 'upgrade-direct-copy' &&
+      this.audioNormalization === 'replaygain' &&
+      source.soundcheck !== undefined
+    ) {
+      updateFields.writeReplayGainTags = true;
+      updateFields.replayGainTrackGain = source.replayGainTrackGain;
+      updateFields.replayGainTrackPeak = source.replayGainTrackPeak;
+    }
 
     foundTrack = this.device.updateTrack(foundTrack, updateFields);
 

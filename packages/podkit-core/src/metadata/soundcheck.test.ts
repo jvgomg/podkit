@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { replayGainToSoundcheck, iTunNORMToSoundcheck, extractSoundcheck } from './soundcheck.js';
+import {
+  replayGainToSoundcheck,
+  soundcheckToReplayGainDb,
+  iTunNORMToSoundcheck,
+  extractSoundcheck,
+} from './soundcheck.js';
 import type { IAudioMetadata } from 'music-metadata';
 
 describe('replayGainToSoundcheck', () => {
@@ -26,6 +31,34 @@ describe('replayGainToSoundcheck', () => {
     expect(replayGainToSoundcheck(-7.5)).toBe(Math.round(1000 * Math.pow(10, 7.5 / 10)));
     // +3.2 dB (quiet track)
     expect(replayGainToSoundcheck(3.2)).toBe(Math.round(1000 * Math.pow(10, -3.2 / 10)));
+  });
+});
+
+describe('soundcheckToReplayGainDb', () => {
+  it('converts 1000 to 0 dB (unity gain)', () => {
+    expect(soundcheckToReplayGainDb(1000)).toBeCloseTo(0, 10);
+  });
+
+  it('converts value > 1000 to negative dB (loud track)', () => {
+    const result = soundcheckToReplayGainDb(3981);
+    expect(result).toBeLessThan(0);
+    expect(result).toBeCloseTo(-6, 1);
+  });
+
+  it('converts value < 1000 to positive dB (quiet track)', () => {
+    const result = soundcheckToReplayGainDb(251);
+    expect(result).toBeGreaterThan(0);
+    expect(result).toBeCloseTo(6, 1);
+  });
+
+  it('round-trips with replayGainToSoundcheck', () => {
+    const gains = [-12.5, -7.5, -3.0, 0, 3.2, 6.0];
+    for (const gain of gains) {
+      const soundcheck = replayGainToSoundcheck(gain);
+      const roundTripped = soundcheckToReplayGainDb(soundcheck);
+      // Integer rounding in soundcheck introduces sub-0.01 dB error
+      expect(roundTripped).toBeCloseTo(gain, 1);
+    }
   });
 });
 

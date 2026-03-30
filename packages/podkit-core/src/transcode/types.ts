@@ -452,6 +452,19 @@ export interface TranscodeOptions {
    * handling — the device cannot use full-res artwork, so it is always resized.
    */
   artworkResize?: number;
+  /**
+   * ReplayGain metadata to inject into the output file via FFmpeg `-metadata` flags.
+   *
+   * Used for mass-storage devices with `audioNormalization: 'replaygain'` (e.g., Rockbox).
+   * These devices read volume normalization from file tags rather than a database.
+   *
+   * When set, ReplayGain tags are written regardless of transfer mode — they are
+   * lightweight metadata (a few bytes) and always beneficial when the device supports them.
+   */
+  replayGain?: {
+    trackGain: number;
+    trackPeak?: number;
+  };
 }
 
 // =============================================================================

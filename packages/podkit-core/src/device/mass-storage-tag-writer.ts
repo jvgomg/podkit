@@ -16,6 +16,7 @@ import { File as TagFile } from 'node-taglib-sharp';
  */
 export interface TagWriter {
   writeComment(filePath: string, comment: string): Promise<void>;
+  writeReplayGain(filePath: string, trackGain: number, trackPeak?: number): Promise<void>;
 }
 
 /**
@@ -33,6 +34,19 @@ export class TagLibTagWriter implements TagWriter {
     const file = TagFile.createFromPath(filePath);
     try {
       file.tag.comment = comment;
+      file.save();
+    } finally {
+      file.dispose();
+    }
+  }
+
+  async writeReplayGain(filePath: string, trackGain: number, trackPeak?: number): Promise<void> {
+    const file = TagFile.createFromPath(filePath);
+    try {
+      file.tag.replayGainTrackGain = trackGain;
+      if (trackPeak !== undefined) {
+        file.tag.replayGainTrackPeak = trackPeak;
+      }
       file.save();
     } finally {
       file.dispose();

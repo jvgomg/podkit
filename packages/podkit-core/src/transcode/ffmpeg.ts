@@ -196,7 +196,7 @@ export function buildTranscodeArgs(
   output: string,
   encoder: string,
   preset: QualityPreset | 'lossless' | EncoderConfig,
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: CodecBuilderOptions
 ): string[] {
   // Handle ALAC encoding
   if (preset === 'lossless') {
@@ -267,6 +267,9 @@ export function buildTranscodeArgs(
   // Preserve metadata from source
   args.push('-map_metadata', '0');
 
+  // ReplayGain metadata (for mass-storage devices, overrides source tags after copy)
+  pushReplayGainMetadata(args, options?.replayGain);
+
   // Artwork handling
   pushArtworkArgs(args, options);
 
@@ -317,6 +320,38 @@ function pushArtworkArgs(
 }
 
 /**
+ * Shared options for all codec builders.
+ */
+export interface CodecBuilderOptions {
+  transferMode?: TransferMode;
+  artworkResize?: number;
+  replayGain?: { trackGain: number; trackPeak?: number };
+}
+
+/**
+ * Push ReplayGain metadata args onto an args array.
+ *
+ * Writes ReplayGain tags via FFmpeg `-metadata` flags so mass-storage devices
+ * (e.g., Rockbox) can read volume normalization data from file tags.
+ *
+ * These flags go after `-map_metadata 0` and override any matching keys
+ * copied from the source — this is intentional since the source tags may
+ * not survive container format changes (e.g., FLAC Vorbis comments → M4A).
+ */
+function pushReplayGainMetadata(
+  args: string[],
+  replayGain?: { trackGain: number; trackPeak?: number }
+): void {
+  if (!replayGain) return;
+
+  args.push('-metadata', `REPLAYGAIN_TRACK_GAIN=${replayGain.trackGain.toFixed(2)} dB`);
+
+  if (replayGain.trackPeak !== undefined) {
+    args.push('-metadata', `REPLAYGAIN_TRACK_PEAK=${replayGain.trackPeak.toFixed(6)}`);
+  }
+}
+
+/**
  * Build FFmpeg command arguments for Opus encoding.
  *
  * Opus uses libopus with target bitrate for both VBR and CBR modes.
@@ -332,7 +367,7 @@ export function buildOpusArgs(
   input: string,
   output: string,
   config: EncoderConfig,
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: CodecBuilderOptions
 ): string[] {
   const codecMeta = getCodecMetadata('opus');
 
@@ -349,6 +384,9 @@ export function buildOpusArgs(
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
+
+  // ReplayGain metadata (for mass-storage devices)
+  pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
   pushArtworkArgs(args, options);
@@ -379,7 +417,7 @@ export function buildMp3Args(
   input: string,
   output: string,
   config: EncoderConfig,
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: CodecBuilderOptions
 ): string[] {
   const codecMeta = getCodecMetadata('mp3');
 
@@ -399,6 +437,9 @@ export function buildMp3Args(
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
+
+  // ReplayGain metadata (for mass-storage devices)
+  pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
   pushArtworkArgs(args, options);
@@ -427,7 +468,7 @@ export function buildMp3Args(
 export function buildFlacArgs(
   input: string,
   output: string,
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: CodecBuilderOptions
 ): string[] {
   const codecMeta = getCodecMetadata('flac');
 
@@ -437,6 +478,9 @@ export function buildFlacArgs(
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
+
+  // ReplayGain metadata (for mass-storage devices)
+  pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
   pushArtworkArgs(args, options);
@@ -461,7 +505,7 @@ export function buildFlacArgs(
 export function buildAlacArgs(
   input: string,
   output: string,
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: CodecBuilderOptions
 ): string[] {
   const codecMeta = getCodecMetadata('alac');
 
@@ -472,6 +516,9 @@ export function buildAlacArgs(
 
   // Preserve metadata from source
   args.push('-map_metadata', '0');
+
+  // ReplayGain metadata (for mass-storage devices)
+  pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
   pushArtworkArgs(args, options);
@@ -508,11 +555,14 @@ export function buildOptimizedCopyArgs(
   input: string,
   output: string,
   format: OptimizedCopyFormat,
-  options?: { artworkResize?: number }
+  options?: { artworkResize?: number; replayGain?: { trackGain: number; trackPeak?: number } }
 ): string[] {
   const artworkResize = options?.artworkResize;
 
   const args: string[] = ['-i', input, '-c:a', 'copy', '-map_metadata', '0'];
+
+  // ReplayGain metadata (for mass-storage devices)
+  pushReplayGainMetadata(args, options?.replayGain);
 
   if (artworkResize && artworkResize > 0) {
     // Resize embedded artwork for devices that read from embedded tags.
@@ -712,6 +762,7 @@ export class FFmpegTranscoder implements Transcoder {
     const args = buildTranscodeArgs(input, output, caps.preferredEncoder, preset, {
       transferMode: options.transferMode,
       artworkResize: options.artworkResize,
+      replayGain: options.replayGain,
     });
 
     // Track timing

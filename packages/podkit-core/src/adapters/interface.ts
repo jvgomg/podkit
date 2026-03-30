@@ -105,6 +105,19 @@ export interface CollectionTrack {
    */
   soundcheckSource?: SoundCheckSource;
 
+  /**
+   * Raw ReplayGain track gain in dB (e.g., -7.5).
+   * Preserved from the source for writing ReplayGain tags to mass-storage devices.
+   * When not available, can be back-converted from soundcheck.
+   */
+  replayGainTrackGain?: number;
+
+  /**
+   * Raw ReplayGain track peak (linear scale, e.g., 0.988).
+   * Preserved from the source for writing ReplayGain tags to mass-storage devices.
+   */
+  replayGainTrackPeak?: number;
+
   // Identifiers (optional, for advanced matching)
   musicBrainzRecordingId?: string;
   musicBrainzReleaseId?: string;
