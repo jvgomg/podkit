@@ -932,6 +932,7 @@ describe('MassStorageAdapter', () => {
           calls.push({ filePath, comment });
         },
         async writeReplayGain(_filePath: string, _trackGain: number, _trackPeak?: number) {},
+        async writePicture(_filePath: string, _imageData: Buffer) {},
       };
     }
 
@@ -1068,6 +1069,9 @@ describe('MassStorageAdapter', () => {
           throw new Error('FFmpeg exploded');
         },
         async writeReplayGain() {
+          throw new Error('FFmpeg exploded');
+        },
+        async writePicture() {
           throw new Error('FFmpeg exploded');
         },
       };
@@ -1349,6 +1353,101 @@ describe('MassStorageAdapter', () => {
       expect(copied.hasFile).toBe(true);
       expect(adapter.getTracks()[0]!.hasFile).toBe(true);
       expect(adapter.getTracks()[0]!.size).toBe(copied.size);
+
+      fs.rmSync(sourceDir, { recursive: true, force: true });
+    });
+  });
+
+  describe('embedded picture writes', () => {
+    function createMockTagWriterWithPicture(): TagWriter & {
+      commentCalls: Array<{ filePath: string; comment: string }>;
+      pictureCalls: Array<{ filePath: string; imageData: Buffer }>;
+    } {
+      const commentCalls: Array<{ filePath: string; comment: string }> = [];
+      const pictureCalls: Array<{ filePath: string; imageData: Buffer }> = [];
+      return {
+        commentCalls,
+        pictureCalls,
+        async writeComment(filePath: string, comment: string) {
+          commentCalls.push({ filePath, comment });
+        },
+        async writeReplayGain() {},
+        async writePicture(filePath: string, imageData: Buffer) {
+          pictureCalls.push({ filePath, imageData });
+        },
+      };
+    }
+
+    test('updateTrack with embeddedPictureData queues a pending write', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.opus');
+
+      const tagWriter = createMockTagWriterWithPicture();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.opus': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      const imageData = Buffer.from('fake-jpeg-data');
+      adapter.updateTrack(track, { embeddedPictureData: imageData });
+
+      // No writes yet — pending until save()
+      expect(tagWriter.pictureCalls).toHaveLength(0);
+
+      await adapter.save();
+
+      expect(tagWriter.pictureCalls).toHaveLength(1);
+      expect(tagWriter.pictureCalls[0]!.filePath).toBe(
+        path.join(mountPoint, 'Music/Artist/Album/01 - Song.opus')
+      );
+      expect(tagWriter.pictureCalls[0]!.imageData).toBe(imageData);
+    });
+
+    test('save() with no pending picture writes does not call writePicture', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.opus');
+
+      const tagWriter = createMockTagWriterWithPicture();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.opus': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      await adapter.save();
+
+      expect(tagWriter.pictureCalls).toHaveLength(0);
+    });
+
+    test('replaceTrackFile updates pending picture write path', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.m4a');
+
+      const tagWriter = createMockTagWriterWithPicture();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.m4a': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      const imageData = Buffer.from('fake-jpeg-data');
+      adapter.updateTrack(track, { embeddedPictureData: imageData });
+
+      // Replace with a new file that has a different extension
+      const sourceDir = fs.mkdtempSync(path.join(require('os').tmpdir(), 'podkit-test-'));
+      const sourcePath = path.join(sourceDir, 'transcoded.opus');
+      fs.writeFileSync(sourcePath, 'opus audio data');
+
+      adapter.replaceTrackFile(track, sourcePath);
+
+      await adapter.save();
+
+      // Should write to the new path (.opus), not the old path (.m4a)
+      expect(tagWriter.pictureCalls).toHaveLength(1);
+      expect(tagWriter.pictureCalls[0]!.filePath).toContain('.opus');
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });

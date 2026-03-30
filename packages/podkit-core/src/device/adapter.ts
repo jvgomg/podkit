@@ -87,6 +87,18 @@ export type DeviceTrackMetadata = Partial<DeviceTrackInput> & {
    * Ignored by iPod adapter (which uses the iTunesDB soundcheck field).
    */
   writeReplayGainTags?: boolean;
+
+  /**
+   * Artwork image data to embed in the audio file via the tag writer.
+   *
+   * Used for OGG/Opus files where FFmpeg cannot embed artwork (upstream limitation).
+   * The pipeline extracts and optionally resizes artwork, then passes the buffer here
+   * for post-processing via node-taglib-sharp.
+   *
+   * Only meaningful for mass-storage devices with artworkSources: ['embedded'].
+   * Ignored by iPod adapter (which uses ithmb artwork).
+   */
+  embeddedPictureData?: Buffer;
 };
 
 /**

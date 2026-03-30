@@ -8,7 +8,7 @@
  * @module
  */
 
-import { File as TagFile } from 'node-taglib-sharp';
+import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-sharp';
 
 /**
  * Interface for writing metadata tags to audio files.
@@ -17,6 +17,7 @@ import { File as TagFile } from 'node-taglib-sharp';
 export interface TagWriter {
   writeComment(filePath: string, comment: string): Promise<void>;
   writeReplayGain(filePath: string, trackGain: number, trackPeak?: number): Promise<void>;
+  writePicture(filePath: string, imageData: Buffer): Promise<void>;
 }
 
 /**
@@ -47,6 +48,18 @@ export class TagLibTagWriter implements TagWriter {
       if (trackPeak !== undefined) {
         file.tag.replayGainTrackPeak = trackPeak;
       }
+      file.save();
+    } finally {
+      file.dispose();
+    }
+  }
+
+  async writePicture(filePath: string, imageData: Buffer): Promise<void> {
+    const file = TagFile.createFromPath(filePath);
+    try {
+      const picture = Picture.fromData(ByteVector.fromByteArray(imageData));
+      picture.type = PictureType.FrontCover;
+      file.tag.pictures = [picture];
       file.save();
     } finally {
       file.dispose();

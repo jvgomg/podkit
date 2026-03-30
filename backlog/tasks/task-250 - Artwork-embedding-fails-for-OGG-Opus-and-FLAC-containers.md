@@ -1,9 +1,10 @@
 ---
 id: TASK-250
 title: Artwork embedding fails for OGG/Opus and FLAC containers
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-28 13:09'
+updated_date: '2026-03-30 14:21'
 labels:
   - bug
   - transcoding
@@ -37,10 +38,32 @@ Option 1 is recommended as the immediate fix. Option 2 can be a follow-up if a d
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Transcoding to Opus (OGG container) with artwork enabled does not cause FFmpeg errors
-- [ ] #2 Transcoding to FLAC with artwork enabled does not cause FFmpeg errors
-- [ ] #3 Artwork is still delivered via sidecar for OGG/FLAC output when device supports sidecar artwork
-- [ ] #4 Existing M4A and MP3 artwork embedding behavior unchanged
-- [ ] #5 Unit test: buildOpusArgs with artworkResize > 0 produces -vn (strip) not -c:v mjpeg
-- [ ] #6 Unit test: buildFlacArgs with artworkResize > 0 produces -vn (strip) not -c:v mjpeg
+- [x] #1 Transcoding to Opus (OGG container) with artwork enabled does not cause FFmpeg errors
+- [x] #2 Transcoding to FLAC with artwork enabled does not cause FFmpeg errors
+- [x] #3 Artwork is still delivered via sidecar for OGG/FLAC output when device supports sidecar artwork
+- [x] #4 Existing M4A and MP3 artwork embedding behavior unchanged
+- [x] #5 Unit test: buildOpusArgs with artworkResize > 0 produces -vn (strip) not -c:v mjpeg
+- [x] #6 Unit test: buildFlacArgs with artworkResize > 0 produces -vn (strip) not -c:v mjpeg
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Fix: Strip artwork for OGG/FLAC containers instead of attempting MJPEG embedding
+
+**Problem:** `pushArtworkArgs()` unconditionally used `-c:v mjpeg -disposition:v attached_pic` for artwork embedding, which fails for OGG and FLAC containers that don't support MJPEG video streams.
+
+**Solution (Option 1 from task):** Added container-format awareness to artwork handling. OGG and FLAC containers now always get `-vn` (strip artwork), relying on sidecar artwork delivery. M4A and MP3 containers continue to use MJPEG embedding as before.
+
+**Changes:**
+- `packages/podkit-core/src/transcode/ffmpeg.ts`:
+  - Added `MJPEG_ARTWORK_FORMATS` set (`ipod`, `mp3`) to identify containers that support MJPEG artwork
+  - Added `ffmpegFormat` option to `pushArtworkArgs()` and `CodecBuilderOptions`
+  - Updated all 5 codec builders (AAC, Opus, MP3, FLAC, ALAC) to pass `ffmpegFormat` through
+  - Updated `buildOptimizedCopyArgs()` to check format before attempting MJPEG embedding
+- `packages/podkit-core/src/transcode/ffmpeg.test.ts`:
+  - Updated Opus artwork tests to expect `-vn` instead of MJPEG
+  - Updated FLAC artwork test to expect `-vn` instead of MJPEG
+
+All 2203 podkit-core tests pass.
+<!-- SECTION:FINAL_SUMMARY:END -->
