@@ -281,4 +281,104 @@ describe('TagLibTagWriter', () => {
       ).rejects.toThrow();
     });
   });
+
+  describe('writePicture', () => {
+    /** Generate a minimal OGG/Opus file */
+    function generateOpus(dir: string, filename: string): string {
+      const outPath = path.join(dir, filename);
+      execFileSync(
+        'ffmpeg',
+        [
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'sine=frequency=440:duration=1:sample_rate=48000',
+          '-c:a',
+          'libopus',
+          '-b:a',
+          '64k',
+          '-metadata',
+          'title=Test Song',
+          '-metadata',
+          'artist=Test Artist',
+          '-vn',
+          outPath,
+        ],
+        { stdio: 'pipe' }
+      );
+      return outPath;
+    }
+
+    /** Generate a minimal JPEG image using FFmpeg */
+    function generateTestImage(width = 100, height = 100): Buffer {
+      const result = execFileSync(
+        'ffmpeg',
+        [
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          `color=c=red:size=${width}x${height}:duration=1:rate=1`,
+          '-frames:v',
+          '1',
+          '-f',
+          'image2',
+          '-c:v',
+          'mjpeg',
+          'pipe:1',
+        ],
+        { stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      return Buffer.from(result);
+    }
+
+    test('embeds artwork in OGG/Opus file', async () => {
+      const filePath = generateOpus(tempDir, 'test.opus');
+      const imageData = generateTestImage();
+
+      await writer.writePicture(filePath, imageData);
+
+      // Verify artwork was embedded by reading back with music-metadata
+      const metadata = await mm.parseFile(filePath, { skipCovers: false });
+      expect(metadata.common.picture).toBeDefined();
+      expect(metadata.common.picture!.length).toBeGreaterThanOrEqual(1);
+      expect(metadata.common.picture![0]!.format).toBe('image/jpeg');
+      expect(metadata.common.picture![0]!.data.length).toBeGreaterThan(0);
+    });
+
+    test('preserves other metadata after picture write', async () => {
+      const filePath = generateOpus(tempDir, 'preserve.opus');
+      const imageData = generateTestImage();
+
+      await writer.writePicture(filePath, imageData);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      expect(metadata.common.title).toBe('Test Song');
+      expect(metadata.common.artist).toBe('Test Artist');
+    });
+
+    test('embeds artwork in FLAC file', async () => {
+      const filePath = generateFlac(tempDir, 'test-pic.flac');
+      const imageData = generateTestImage();
+
+      await writer.writePicture(filePath, imageData);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: false });
+      expect(metadata.common.picture).toBeDefined();
+      expect(metadata.common.picture!.length).toBeGreaterThanOrEqual(1);
+      expect(metadata.common.picture![0]!.format).toBe('image/jpeg');
+    });
+
+    test('preserves audio data (file is still valid)', async () => {
+      const filePath = generateOpus(tempDir, 'valid.opus');
+      const imageData = generateTestImage();
+
+      await writer.writePicture(filePath, imageData);
+
+      // Should still parse without error
+      const metadata = await mm.parseFile(filePath, { duration: true });
+      expect(metadata.format.duration).toBeGreaterThan(0);
+    });
+  });
 });
