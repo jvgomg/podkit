@@ -1,25 +1,31 @@
 /**
  * Device capability presets
  *
- * Maps device type identifiers to their known DeviceCapabilities.
- * Used by the CLI to resolve capabilities when a device type is
- * specified in config without explicit capability overrides.
+ * Maps device type identifiers to their known DeviceCapabilities and
+ * default content paths. Used by the CLI to resolve capabilities and
+ * path defaults when a device type is specified in config.
  *
  * @module
  */
 
 import type { DeviceCapabilities } from './capabilities.js';
+import { DEFAULT_CONTENT_PATHS, type ContentPaths } from './mass-storage-utils.js';
 
 /** Supported device type identifiers */
 export type DeviceTypeId = 'echo-mini' | 'rockbox' | 'generic';
 
+/** A device preset combining capabilities with default content paths */
+export interface DevicePreset extends DeviceCapabilities {
+  contentPaths: ContentPaths;
+}
+
 /**
- * Capability presets for known device types.
+ * Presets for known device types.
  *
  * iPod is not included here — its capabilities are derived from
  * generation metadata via getDeviceCapabilities() in ipod/capabilities.ts.
  */
-export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
+export const DEVICE_PRESETS: Record<DeviceTypeId, DevicePreset> = {
   'echo-mini': {
     artworkSources: ['embedded'],
     artworkMaxResolution: 127,
@@ -27,6 +33,11 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportsVideo: false,
     audioNormalization: 'none',
     supportsAlbumArtistBrowsing: true,
+    contentPaths: {
+      musicDir: '',
+      moviesDir: 'Video/Movies',
+      tvShowsDir: 'Video/Shows',
+    },
   },
   rockbox: {
     artworkSources: ['sidecar', 'embedded'],
@@ -35,6 +46,7 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportsVideo: false,
     audioNormalization: 'replaygain',
     supportsAlbumArtistBrowsing: true,
+    contentPaths: DEFAULT_CONTENT_PATHS,
   },
   generic: {
     artworkSources: ['embedded'],
@@ -43,16 +55,17 @@ export const DEVICE_PRESETS: Record<DeviceTypeId, DeviceCapabilities> = {
     supportsVideo: false,
     audioNormalization: 'none',
     supportsAlbumArtistBrowsing: true,
+    contentPaths: DEFAULT_CONTENT_PATHS,
   },
 };
 
 /**
- * Get the capability preset for a device type.
+ * Get the preset for a device type.
  *
  * @param deviceType - Device type identifier
- * @returns DeviceCapabilities for the device type, or undefined if not a preset type
+ * @returns DevicePreset for the device type, or undefined if not a preset type
  */
-export function getDevicePreset(deviceType: string): DeviceCapabilities | undefined {
+export function getDevicePreset(deviceType: string): DevicePreset | undefined {
   return DEVICE_PRESETS[deviceType as DeviceTypeId];
 }
 

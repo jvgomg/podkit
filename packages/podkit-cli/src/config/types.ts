@@ -19,6 +19,7 @@ export type {
   AudioNormalizationMode,
   DeviceArtworkSource,
   TranscodeTargetCodec,
+  ContentPaths,
 } from '@podkit/core';
 export {
   QUALITY_PRESETS,
@@ -226,6 +227,10 @@ export interface DeviceConfig {
   supportsAlbumArtistBrowsing?: boolean;
   /** Override the music directory name on the device (default: "Music") */
   musicDir?: string;
+  /** Override the movies directory name on the device (default: "Video/Movies") */
+  moviesDir?: string;
+  /** Override the TV shows directory name on the device (default: "Video/Shows") */
+  tvShowsDir?: string;
 }
 
 /**
@@ -339,6 +344,8 @@ export interface PodkitConfig {
     audioNormalization?: AudioNormalizationMode;
     supportsAlbumArtistBrowsing?: boolean;
     musicDir?: string;
+    moviesDir?: string;
+    tvShowsDir?: string;
   };
 }
 
@@ -459,6 +466,8 @@ export interface ConfigFileDevice {
   audioNormalization?: string;
   supportsAlbumArtistBrowsing?: boolean;
   musicDir?: string;
+  moviesDir?: string;
+  tvShowsDir?: string;
 }
 
 /**

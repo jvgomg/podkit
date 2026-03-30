@@ -479,6 +479,30 @@ artwork = true
     expect(content).toContain('musicDir = "MUSIC"');
   });
 
+  it('writes moviesDir to device config', () => {
+    const result = addDevice(
+      'player',
+      { type: 'generic', path: '/mnt/player', moviesDir: 'Films' },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('moviesDir = "Films"');
+  });
+
+  it('writes tvShowsDir to device config', () => {
+    const result = addDevice(
+      'player',
+      { type: 'generic', path: '/mnt/player', tvShowsDir: 'TV' },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('tvShowsDir = "TV"');
+  });
+
   it('writes capability overrides to device config', () => {
     const result = addDevice(
       'player',
@@ -589,6 +613,76 @@ musicDir = "MUSIC"
     expect(result.success).toBe(true);
     const content = fs.readFileSync(configPath, 'utf-8');
     expect(content).not.toContain('musicDir');
+  });
+
+  it('updates moviesDir on existing device', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+moviesDir = "Video/Movies"
+`
+    );
+
+    const result = updateDevice('player', { moviesDir: 'Films' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('moviesDir = "Films"');
+    expect(content).not.toContain('moviesDir = "Video/Movies"');
+  });
+
+  it('clears moviesDir when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+moviesDir = "Films"
+`
+    );
+
+    const result = updateDevice('player', { moviesDir: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('moviesDir');
+  });
+
+  it('updates tvShowsDir on existing device', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+tvShowsDir = "Video/Shows"
+`
+    );
+
+    const result = updateDevice('player', { tvShowsDir: 'TV' }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain('tvShowsDir = "TV"');
+    expect(content).not.toContain('tvShowsDir = "Video/Shows"');
+  });
+
+  it('clears tvShowsDir when value is null', () => {
+    fs.writeFileSync(
+      configPath,
+      `[devices.player]
+type = "generic"
+path = "/mnt/player"
+tvShowsDir = "TV"
+`
+    );
+
+    const result = updateDevice('player', { tvShowsDir: null }, { configPath });
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).not.toContain('tvShowsDir');
   });
 
   it('does not affect other devices', () => {

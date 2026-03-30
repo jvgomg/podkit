@@ -1238,6 +1238,8 @@ interface AddOptions {
   supportedAudioCodecs?: string[];
   supportsVideo?: boolean;
   musicDir?: string;
+  moviesDir?: string;
+  tvShowsDir?: string;
 }
 
 const addSubcommand = new Command('add')
@@ -1278,6 +1280,14 @@ const addSubcommand = new Command('add')
   .option(
     '--music-dir <name>',
     'music directory name on device (default: Music, mass-storage only)'
+  )
+  .option(
+    '--movies-dir <name>',
+    'movies directory name on device (default: Video/Movies, mass-storage only)'
+  )
+  .option(
+    '--tv-shows-dir <name>',
+    'TV shows directory name on device (default: Video/Shows, mass-storage only)'
   )
   .action(async (options: AddOptions & { path?: string }) => {
     const { globalOpts, configResult } = getContext();
@@ -1419,6 +1429,8 @@ const addSubcommand = new Command('add')
         deviceConfig.supportedAudioCodecs = options.supportedAudioCodecs as any;
       if (options.supportsVideo !== undefined) deviceConfig.supportsVideo = options.supportsVideo;
       if (options.musicDir !== undefined) deviceConfig.musicDir = options.musicDir;
+      if (options.moviesDir !== undefined) deviceConfig.moviesDir = options.moviesDir;
+      if (options.tvShowsDir !== undefined) deviceConfig.tvShowsDir = options.tvShowsDir;
 
       const volumeName = explicitPath.split('/').pop() || name;
       const deviceCount = Object.keys(existingDevices).length;
@@ -1509,6 +1521,8 @@ const addSubcommand = new Command('add')
       options.supportedAudioCodecs !== undefined && '--supported-audio-codecs',
       options.supportsVideo !== undefined && '--supports-video',
       options.musicDir !== undefined && '--music-dir',
+      options.moviesDir !== undefined && '--movies-dir',
+      options.tvShowsDir !== undefined && '--tv-shows-dir',
     ].filter(Boolean) as string[];
 
     if (massStorageOnlyOptions.length > 0) {
@@ -2609,6 +2623,12 @@ const infoSubcommand = new Command('info')
             }
             if (device.musicDir !== undefined) {
               overrides.push(`  Music Directory:    ${device.musicDir}`);
+            }
+            if (device.moviesDir !== undefined) {
+              overrides.push(`  Movies Directory:   ${device.moviesDir}`);
+            }
+            if (device.tvShowsDir !== undefined) {
+              overrides.push(`  TV Shows Directory: ${device.tvShowsDir}`);
             }
             if (overrides.length > 0) {
               for (const line of overrides) {
@@ -4100,11 +4120,15 @@ interface SetOptions {
   supportedAudioCodecs?: string[];
   supportsVideo?: boolean;
   musicDir?: string;
+  moviesDir?: string;
+  tvShowsDir?: string;
   clearArtworkMaxResolution?: boolean;
   clearArtworkSources?: boolean;
   clearSupportedAudioCodecs?: boolean;
   clearSupportsVideo?: boolean;
   clearMusicDir?: boolean;
+  clearMoviesDir?: boolean;
+  clearTvShowsDir?: boolean;
 }
 
 const setSubcommand = new Command('set')
@@ -4142,6 +4166,8 @@ const setSubcommand = new Command('set')
   .option('--supports-video', 'device supports video playback (mass-storage only)')
   .option('--no-supports-video', 'device does not support video playback (mass-storage only)')
   .option('--music-dir <name>', 'music directory name on device (mass-storage only)')
+  .option('--movies-dir <name>', 'movies directory name on device (mass-storage only)')
+  .option('--tv-shows-dir <name>', 'TV shows directory name on device (mass-storage only)')
   .option(
     '--clear-artwork-max-resolution',
     'remove artwork resolution override (use preset default)'
@@ -4150,6 +4176,8 @@ const setSubcommand = new Command('set')
   .option('--clear-supported-audio-codecs', 'remove audio codecs override (use preset default)')
   .option('--clear-supports-video', 'remove video support override (use preset default)')
   .option('--clear-music-dir', 'remove music directory override (use default "Music")')
+  .option('--clear-movies-dir', 'remove movies directory override (use default "Video/Movies")')
+  .option('--clear-tv-shows-dir', 'remove TV shows directory override (use default "Video/Shows")')
   .action(async (options: SetOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -4253,15 +4281,19 @@ const setSubcommand = new Command('set')
       options.supportedAudioCodecs,
       options.supportsVideo,
       options.musicDir,
+      options.moviesDir,
+      options.tvShowsDir,
       options.clearArtworkMaxResolution,
       options.clearArtworkSources,
       options.clearSupportedAudioCodecs,
       options.clearSupportsVideo,
       options.clearMusicDir,
+      options.clearMoviesDir,
+      options.clearTvShowsDir,
     ];
     if (!isMassStorage && massStorageOptions.some((o) => o !== undefined)) {
       const error =
-        'Capability overrides and musicDir are only valid for mass-storage devices (echo-mini, rockbox, generic).';
+        'Capability overrides and content path options are only valid for mass-storage devices (echo-mini, rockbox, generic).';
       out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;
@@ -4330,9 +4362,21 @@ const setSubcommand = new Command('set')
       updates.musicDir = options.musicDir;
     }
 
+    if (options.clearMoviesDir) {
+      updates.moviesDir = null;
+    } else if (options.moviesDir !== undefined) {
+      updates.moviesDir = options.moviesDir;
+    }
+
+    if (options.clearTvShowsDir) {
+      updates.tvShowsDir = null;
+    } else if (options.tvShowsDir !== undefined) {
+      updates.tvShowsDir = options.tvShowsDir;
+    }
+
     if (Object.keys(updates).length === 0) {
       const error =
-        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, capability overrides, --music-dir, or --clear-* variants).';
+        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).';
       out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;

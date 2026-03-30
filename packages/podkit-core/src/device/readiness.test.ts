@@ -3,7 +3,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import type { PlatformDeviceInfo } from './types.js';
-import { checkReadiness, checkIpodStructure, checkSysInfo, checkDatabase } from './readiness.js';
+import {
+  checkReadiness,
+  checkIpodStructure,
+  checkSysInfo,
+  checkDatabase,
+  type ReadinessStage,
+} from './readiness.js';
 
 // ── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -229,7 +235,14 @@ describe('checkReadiness', () => {
     // Use a filesystem-fail scenario to produce all 6 stages (4 real + 2 skipped)
     const device = createDevice({ volumeName: '', mountPoint: tmpDir });
     const result = await checkReadiness({ device });
-    const expectedOrder = ['usb', 'partition', 'filesystem', 'mount', 'sysinfo', 'database'];
+    const expectedOrder: ReadinessStage[] = [
+      'usb',
+      'partition',
+      'filesystem',
+      'mount',
+      'sysinfo',
+      'database',
+    ];
     expect(result.stages.map((s) => s.stage)).toEqual(expectedOrder);
   });
 

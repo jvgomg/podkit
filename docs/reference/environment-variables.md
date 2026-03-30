@@ -30,6 +30,9 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_CLEAN_ARTISTS_DROP` | Drop featuring info instead of moving to title (`true`/`false`) |
 | `PODKIT_CLEAN_ARTISTS_FORMAT` | Format string for featuring text (e.g., `feat. {}`) |
 | `PODKIT_CLEAN_ARTISTS_IGNORE` | Comma-separated artist names to skip (e.g., `Simon & Garfunkel,Hall & Oates`) |
+| `PODKIT_MUSIC_DIR` | Music directory path on mass-storage devices (overrides config `musicDir`) |
+| `PODKIT_MOVIES_DIR` | Movies directory path on mass-storage devices (overrides config `moviesDir`) |
+| `PODKIT_TV_SHOWS_DIR` | TV shows directory path on mass-storage devices (overrides config `tvShowsDir`) |
 | `PODKIT_SHOW_LANGUAGE` | Enable/disable language markers in video series titles (`true`/`false`) |
 | `PODKIT_SHOW_LANGUAGE_FORMAT` | Format string for language marker (e.g., `({})`, `[{}]`) |
 | `PODKIT_SHOW_LANGUAGE_EXPAND` | Expand language abbreviations to full names (`true`/`false`) |

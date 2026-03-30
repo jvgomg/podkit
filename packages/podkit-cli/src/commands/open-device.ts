@@ -203,8 +203,29 @@ export async function openDevice(
     throw new Error(`Unknown device type: ${deviceType}`);
   }
 
-  const musicDir = deviceConfig?.musicDir ?? deviceDefaults?.musicDir;
-  const adapterOptions = musicDir ? { musicDir } : undefined;
+  // Resolve content paths: preset defaults < global deviceDefaults < per-device config
+  const preset = core.getDevicePreset(deviceType!);
+  const presetDefaults = preset?.contentPaths;
+  const contentPathOverrides: Partial<import('@podkit/core').ContentPaths> = {};
+  // Apply global deviceDefaults as fallback
+  if (deviceDefaults?.musicDir !== undefined)
+    contentPathOverrides.musicDir = deviceDefaults.musicDir;
+  if (deviceDefaults?.moviesDir !== undefined)
+    contentPathOverrides.moviesDir = deviceDefaults.moviesDir;
+  if (deviceDefaults?.tvShowsDir !== undefined)
+    contentPathOverrides.tvShowsDir = deviceDefaults.tvShowsDir;
+  // Apply per-device config (highest priority)
+  if (deviceConfig?.musicDir !== undefined) contentPathOverrides.musicDir = deviceConfig.musicDir;
+  if (deviceConfig?.moviesDir !== undefined)
+    contentPathOverrides.moviesDir = deviceConfig.moviesDir;
+  if (deviceConfig?.tvShowsDir !== undefined)
+    contentPathOverrides.tvShowsDir = deviceConfig.tvShowsDir;
+
+  const hasOverrides = Object.keys(contentPathOverrides).length > 0;
+  const contentPaths = hasOverrides
+    ? core.normalizeContentPaths(contentPathOverrides, presetDefaults)
+    : undefined;
+  const adapterOptions = contentPaths ? { contentPaths } : undefined;
   const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 
   return {
