@@ -213,6 +213,9 @@ type = "generic"
 volumeUuid = "HIJK-3456"
 supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
 artworkMaxResolution = 320
+musicDir = "Music"                    # Content paths (use "/" or "" for device root)
+moviesDir = "Video/Movies"
+tvShowsDir = "Video/Shows"
 ```
 
 A minimal device entry only needs the settings you want to override — `volumeUuid` is only required for auto-detection:
@@ -250,7 +253,9 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 | `supportsVideo` | boolean | from profile | Whether the device supports video playback |
 | `audioNormalization` | string | from profile | Volume normalization mode: `soundcheck` (writes to iPod database), `replaygain` (Rockbox reads tags natively), or `none` (skip normalization). podkit adapts its behavior — hiding normalization UI, skipping soundcheck upgrade detection — based on this value. |
 | `supportsAlbumArtistBrowsing` | boolean | from profile | Whether the device uses Album Artist for browse navigation. When `true`, the device groups tracks by Album Artist in its artist list. When `false` (e.g. iPod stock firmware), the device only uses the Artist field for browsing. |
-| `musicDir` | string | `"Music"` | Custom music directory path on the device |
+| `musicDir` | string | `"Music"` | Music directory path on the device. Use `/`, `.`, or `""` for device root. Defaults vary by device type (e.g., Echo Mini defaults to root). |
+| `moviesDir` | string | `"Video/Movies"` | Movies directory path on the device. Use `/`, `.`, or `""` for device root. |
+| `tvShowsDir` | string | `"Video/Shows"` | TV shows directory path on the device. Use `/`, `.`, or `""` for device root. |
 
 These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation.
 
@@ -380,6 +385,9 @@ artwork = true
 type = "echo-mini"
 volumeUuid = "WXYZ-9012"
 quality = "high"
+musicDir = "Music"              # Custom content paths (mass-storage devices only)
+moviesDir = "Videos/Movies"
+tvShowsDir = "Videos/Shows"
 
 [devices.nano]
 volumeUuid = "EFGH-5678"

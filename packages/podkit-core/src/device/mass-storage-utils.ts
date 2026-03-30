@@ -21,14 +21,61 @@ const EMOJI_PATTERN =
 /** Maximum filename length in bytes (UTF-8) for FAT32/exFAT */
 const MAX_FILENAME_BYTES = 255;
 
-/** The managed music directory on the device */
-export const MUSIC_DIR = 'Music';
-
-/** The managed video directory on the device */
-export const VIDEO_DIR = 'Video';
-
 /** Podkit state directory on the device */
 export const PODKIT_DIR = '.podkit';
+
+// =============================================================================
+// Content Paths
+// =============================================================================
+
+export interface ContentPaths {
+  musicDir: string;
+  moviesDir: string;
+  tvShowsDir: string;
+}
+
+export const DEFAULT_CONTENT_PATHS: ContentPaths = {
+  musicDir: 'Music',
+  moviesDir: 'Video/Movies',
+  tvShowsDir: 'Video/Shows',
+};
+
+export function normalizeContentDir(dir: string): string {
+  // Strip leading and trailing slashes
+  let result = dir.replace(/^\/+|\/+$/g, '');
+  // Treat "." as root
+  if (result === '.') result = '';
+  return result;
+}
+
+export function normalizeContentPaths(
+  partial: Partial<ContentPaths>,
+  defaults: ContentPaths = DEFAULT_CONTENT_PATHS
+): ContentPaths {
+  return {
+    musicDir: normalizeContentDir(partial.musicDir ?? defaults.musicDir),
+    moviesDir: normalizeContentDir(partial.moviesDir ?? defaults.moviesDir),
+    tvShowsDir: normalizeContentDir(partial.tvShowsDir ?? defaults.tvShowsDir),
+  };
+}
+
+export function validateContentPaths(paths: ContentPaths): void {
+  const entries: Array<[string, string]> = [
+    ['musicDir', paths.musicDir],
+    ['moviesDir', paths.moviesDir],
+    ['tvShowsDir', paths.tvShowsDir],
+  ];
+
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      if (entries[i]![1] === entries[j]![1]) {
+        throw new Error(
+          `Content path conflict: ${entries[i]![0]} and ${entries[j]![0]} both resolve to "${entries[i]![1] || '(root)'}"`
+        );
+      }
+    }
+  }
+}
 
 /** State manifest filename */
 export const MANIFEST_FILE = 'state.json';
@@ -134,10 +181,14 @@ export function padTrackNumber(num: number | undefined): string {
   return String(num).padStart(2, '0');
 }
 
+function joinContentPath(dir: string, ...parts: string[]): string {
+  return dir ? `${dir}/${parts.join('/')}` : parts.join('/');
+}
+
 /**
  * Generate the device-relative file path for a track.
  *
- * Format: Music/{artist}/{album}/{trackNumber} - {title}.{ext}
+ * Format: {musicDir}/{artist}/{album}/{trackNumber} - {title}.{ext}
  *
  * When totalDiscs > 1, appends " (disc N)" to the album name to work
  * around the Echo Mini's broken disc-first sorting.
@@ -150,6 +201,7 @@ export function generateTrackPath(opts: {
   discNumber?: number;
   totalDiscs?: number;
   extension: string;
+  musicDir?: string;
 }): string {
   const artist = sanitizeFilename(opts.artist || 'Unknown Artist');
   let album = opts.album || 'Unknown Album';
@@ -167,14 +219,15 @@ export function generateTrackPath(opts: {
   const ext = opts.extension.startsWith('.') ? opts.extension : `.${opts.extension}`;
   const filename = trackNum ? `${trackNum} - ${titleSafe}${ext}` : `${titleSafe}${ext}`;
 
-  return `${MUSIC_DIR}/${artist}/${albumSafe}/${filename}`;
+  const dir = opts.musicDir ?? DEFAULT_CONTENT_PATHS.musicDir;
+  return joinContentPath(dir, artist, albumSafe, filename);
 }
 
 /**
  * Generate the device-relative file path for a video.
  *
- * Movies:   Video/Movies/{title} ({year}).{ext}
- * TV Shows: Video/{show}/Season {N}/{episode}.{ext}
+ * Movies:   {moviesDir}/{title} ({year}).{ext}
+ * TV Shows: {tvShowsDir}/{show}/Season {N}/{episode}.{ext}
  */
 export function generateVideoPath(opts: {
   title: string;
@@ -184,6 +237,8 @@ export function generateVideoPath(opts: {
   seasonNumber?: number;
   episodeNumber?: number;
   extension: string;
+  moviesDir?: string;
+  tvShowsDir?: string;
 }): string {
   const ext = opts.extension.startsWith('.') ? opts.extension : `.${opts.extension}`;
   const titleSafe = sanitizeFilename(opts.title);
@@ -196,12 +251,14 @@ export function generateVideoPath(opts: {
       episode !== undefined
         ? `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} - `
         : '';
-    return `${VIDEO_DIR}/${showSafe}/Season ${season}/${epPrefix}${titleSafe}${ext}`;
+    const dir = opts.tvShowsDir ?? DEFAULT_CONTENT_PATHS.tvShowsDir;
+    return joinContentPath(dir, showSafe, `Season ${season}`, `${epPrefix}${titleSafe}${ext}`);
   }
 
   // Movie
   const yearSuffix = opts.year ? ` (${opts.year})` : '';
-  return `${VIDEO_DIR}/Movies/${titleSafe}${yearSuffix}${ext}`;
+  const dir = opts.moviesDir ?? DEFAULT_CONTENT_PATHS.moviesDir;
+  return joinContentPath(dir, `${titleSafe}${yearSuffix}${ext}`);
 }
 
 /**

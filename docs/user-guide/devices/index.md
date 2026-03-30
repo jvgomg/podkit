@@ -87,7 +87,7 @@ Each device section supports the following options:
 | `videoQuality` | Video-specific quality override | Global setting |
 | `artwork` | Whether to sync album artwork | `true` |
 
-For mass-storage devices, you can also override device capabilities like `supportedAudioCodecs`, `artworkSources`, and `artworkMaxResolution`. See [Supported Devices](/devices/supported-devices#custom-device-configuration) for the full list.
+For mass-storage devices, you can also override device capabilities like `supportedAudioCodecs`, `artworkSources`, `artworkMaxResolution`, and content directory paths (`musicDir`, `moviesDir`, `tvShowsDir`). See [Supported Devices](/devices/supported-devices#custom-device-configuration) for the full list.
 
 Per-device settings override global settings. This lets you use lossless audio on a high-capacity Classic while using compressed audio on a space-constrained Nano. See [Quality Settings](/user-guide/devices/quality) for a detailed guide.
 

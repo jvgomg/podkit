@@ -53,6 +53,7 @@ import {
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
+import { normalizeContentPaths, validateContentPaths, getDevicePreset } from '@podkit/core';
 
 /**
  * Build a quality validation error message.
@@ -954,12 +955,26 @@ function parseDevices(
 
     // Parse optional musicDir
     if (rawDevice.musicDir !== undefined) {
-      if (typeof rawDevice.musicDir !== 'string' || rawDevice.musicDir.trim().length === 0) {
-        throw new Error(
-          `Invalid musicDir value in [devices.${name}]. ` + `Must be a non-empty string.`
-        );
+      if (typeof rawDevice.musicDir !== 'string') {
+        throw new Error(`Invalid musicDir value in [devices.${name}]. ` + `Must be a string.`);
       }
       device.musicDir = rawDevice.musicDir;
+    }
+
+    // Parse optional moviesDir
+    if (rawDevice.moviesDir !== undefined) {
+      if (typeof rawDevice.moviesDir !== 'string') {
+        throw new Error(`Invalid moviesDir value in [devices.${name}]. ` + `Must be a string.`);
+      }
+      device.moviesDir = rawDevice.moviesDir;
+    }
+
+    // Parse optional tvShowsDir
+    if (rawDevice.tvShowsDir !== undefined) {
+      if (typeof rawDevice.tvShowsDir !== 'string') {
+        throw new Error(`Invalid tvShowsDir value in [devices.${name}]. ` + `Must be a string.`);
+      }
+      device.tvShowsDir = rawDevice.tvShowsDir;
     }
 
     // Validate: capability overrides and musicDir are only valid for mass-storage devices
@@ -973,6 +988,8 @@ function parseDevices(
         'audioNormalization',
         'supportsAlbumArtistBrowsing',
         'musicDir',
+        'moviesDir',
+        'tvShowsDir',
       ] as const;
       const presentFields = massStorageFields.filter((f) => device[f] !== undefined);
       if (presentFields.length > 0) {
@@ -981,6 +998,45 @@ function parseDevices(
             `are only valid for mass-storage devices (type must be set to a non-iPod device type). ` +
             `iPod capabilities are determined automatically from the device generation.`
         );
+      }
+    }
+
+    // Validate content paths for mass-storage devices (check for duplicates)
+    if (!isIpodDevice) {
+      const hasAnyContentPath =
+        device.musicDir !== undefined ||
+        device.moviesDir !== undefined ||
+        device.tvShowsDir !== undefined;
+      if (hasAnyContentPath) {
+        const preset = getDevicePreset(device.type!);
+        const presetDefaults = preset?.contentPaths;
+        const resolved = normalizeContentPaths(
+          {
+            musicDir: device.musicDir,
+            moviesDir: device.moviesDir,
+            tvShowsDir: device.tvShowsDir,
+          },
+          presetDefaults
+        );
+        try {
+          validateContentPaths(resolved);
+        } catch (err) {
+          throw new Error(`Invalid content paths in [devices.${name}]: ${(err as Error).message}`);
+        }
+      }
+
+      // Warn if video dirs are set on a device with supportsVideo: false
+      if (device.supportsVideo === false) {
+        if (device.moviesDir !== undefined) {
+          console.warn(
+            `Warning: moviesDir is set in [devices.${name}] but supportsVideo is false.`
+          );
+        }
+        if (device.tvShowsDir !== undefined) {
+          console.warn(
+            `Warning: tvShowsDir is set in [devices.${name}] but supportsVideo is false.`
+          );
+        }
       }
     }
 
@@ -1283,8 +1339,20 @@ export function loadEnvConfig(): PartialConfig {
   }
 
   const envMusicDir = process.env[ENV_KEYS.musicDir];
-  if (envMusicDir !== undefined && envMusicDir.trim().length > 0) {
+  if (envMusicDir !== undefined) {
     deviceDefaults.musicDir = envMusicDir;
+    hasDeviceDefaults = true;
+  }
+
+  const envMoviesDir = process.env[ENV_KEYS.moviesDir];
+  if (envMoviesDir !== undefined) {
+    deviceDefaults.moviesDir = envMoviesDir;
+    hasDeviceDefaults = true;
+  }
+
+  const envTvShowsDir = process.env[ENV_KEYS.tvShowsDir];
+  if (envTvShowsDir !== undefined) {
+    deviceDefaults.tvShowsDir = envTvShowsDir;
     hasDeviceDefaults = true;
   }
 

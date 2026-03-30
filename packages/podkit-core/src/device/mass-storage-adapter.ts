@@ -27,8 +27,7 @@ import type { DeviceCapabilities } from './capabilities.js';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import {
-  MUSIC_DIR,
-  VIDEO_DIR,
+  DEFAULT_CONTENT_PATHS,
   PODKIT_DIR,
   MANIFEST_FILE,
   generateTrackPath,
@@ -199,7 +198,7 @@ export class MassStorageTrack implements DeviceTrack {
     managed: boolean;
   }) {
     this.mountPoint = opts.mountPoint;
-    this.contentRoots = opts.contentRoots ?? [MUSIC_DIR, VIDEO_DIR];
+    this.contentRoots = opts.contentRoots ?? [DEFAULT_CONTENT_PATHS.musicDir];
     this.filePath = opts.filePath;
     this.title = opts.title;
     this.artist = opts.artist;

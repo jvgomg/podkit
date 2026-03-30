@@ -466,14 +466,17 @@ async function runDoctorDiagnostics(
       }
     }
 
-    // ── Device section ──
+    // ── Device Readiness section ──
     out.newline();
-    out.print('Device');
+    out.print('Device Readiness');
 
-    // Device Readiness
     if (readinessResult) {
       printReadinessStages(out, readinessResult.stages);
     }
+
+    // ── Database Health section ──
+    out.newline();
+    out.print('Database Health');
 
     if (!report) {
       // DB not available — show skip message

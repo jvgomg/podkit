@@ -256,6 +256,9 @@ podkit device add -d <name> [options]
 | `--video-quality <preset>` | Set video quality: `max`, `high`, `medium`, `low` |
 | `--encoding <mode>` | Set encoding mode: `vbr` or `cbr` |
 | `--artwork` / `--no-artwork` | Enable or disable artwork sync for this device |
+| `--music-dir <path>` | Music directory path on the device (mass-storage only) |
+| `--movies-dir <path>` | Movies directory path on the device (mass-storage only) |
+| `--tv-shows-dir <path>` | TV shows directory path on the device (mass-storage only) |
 
 ```bash
 # Auto-detect connected iPod
@@ -302,6 +305,9 @@ podkit device set -d <name> [options]
 | `--clear-audio-quality` | Remove audio quality setting |
 | `--clear-video-quality` | Remove video quality setting |
 | `--clear-artwork` | Remove artwork setting (use global default) |
+| `--music-dir <path>` | Music directory path on the device (mass-storage only) |
+| `--movies-dir <path>` | Movies directory path on the device (mass-storage only) |
+| `--tv-shows-dir <path>` | TV shows directory path on the device (mass-storage only) |
 
 ```bash
 # Set quality on a device

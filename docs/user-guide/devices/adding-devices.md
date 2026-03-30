@@ -37,6 +37,9 @@ podkit device add -d echomini --type echo-mini
 
 # Register any mass-storage DAP with the generic profile
 podkit device add -d mydap --type generic
+
+# Register with custom content directory paths
+podkit device add -d mydap --type generic --music-dir Music --movies-dir Videos/Movies --tv-shows-dir Videos/Shows
 ```
 
 See [Supported Devices](/devices/supported-devices) for predefined profiles and their capabilities. If your device isn't listed, `generic` works with any mass-storage player — you can [override capabilities](/devices/supported-devices#custom-device-configuration) in your config file for more precise codec and artwork handling.
@@ -87,6 +90,9 @@ type = "generic"
 volumeUuid = "HIJK-3456"
 supportedAudioCodecs = ["aac", "alac", "mp3", "flac", "ogg"]
 artworkMaxResolution = 320
+musicDir = "Music"          # Content paths (use "/" or "" for device root)
+moviesDir = "Video/Movies"
+tvShowsDir = "Video/Shows"
 ```
 
 ### Finding the Volume UUID

@@ -1,9 +1,10 @@
 ---
 id: TASK-247.12
 title: HITL testing session for device readiness
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-26 01:56'
+updated_date: '2026-03-28 20:33'
 labels:
   - testing
   - device
