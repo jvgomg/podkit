@@ -75,7 +75,8 @@ import type {
   DeviceTrackInput,
   DeviceTrackMetadata,
 } from '../../device/adapter.js';
-import { AlbumArtworkCache } from '../../artwork/album-cache.js';
+import { AlbumArtworkCache, getAlbumKey } from '../../artwork/album-cache.js';
+import { resizeArtwork } from '../../artwork/resize.js';
 
 // =============================================================================
 // Extended Types — re-exported from types.ts (canonical definitions)
@@ -372,6 +373,17 @@ async function getTrackFilePath(
 }
 
 /**
+ * Check if a file path has an OGG container extension (.opus, .ogg).
+ *
+ * Used to detect files that need post-processed artwork embedding,
+ * since FFmpeg's OGG muxer cannot write image streams.
+ */
+function isOggExtension(filePath: string): boolean {
+  const ext = extname(filePath).toLowerCase();
+  return ext === '.opus' || ext === '.ogg';
+}
+
+/**
  * Get a human-readable filetype label based on file extension.
  *
  * Used for the iPod database `filetype` field which displays the format
@@ -611,6 +623,8 @@ export class MusicPipeline implements SyncExecutor {
   private audioNormalization?: string;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
+  /** Album-level cache for resized artwork — avoids redundant FFmpeg spawns for tracks on the same album */
+  private resizedArtworkCache = new Map<string, Buffer>();
 
   constructor(deps: ExecutorDependencies) {
     this.device = deps.device;
@@ -713,6 +727,7 @@ export class MusicPipeline implements SyncExecutor {
     // Clear state from previous execution
     this.clearWarnings();
     this.artworkCache.clear();
+    this.resizedArtworkCache.clear();
 
     // Merge retry config with defaults
     const mergedRetryConfig: Required<RetryConfig> = {
@@ -1307,6 +1322,17 @@ export class MusicPipeline implements SyncExecutor {
       );
       if (cached) {
         track.setArtworkFromData(cached.data);
+
+        // Queue embedded artwork write for OGG files — FFmpeg can't embed
+        // in OGG containers (upstream tickets #4448, #9044, open since 2015).
+        // Post-process via node-taglib-sharp METADATA_BLOCK_PICTURE instead.
+        // artworkResize is only set for embedded-artwork devices, so this
+        // naturally skips database-artwork devices (iPod).
+        if (this.artworkResize !== undefined && isOggExtension(track.filePath)) {
+          const imageData = await this.getResizedArtwork(track, cached.data);
+          this.device.updateTrack(track, { embeddedPictureData: imageData });
+        }
+
         return cached.hash;
       }
       return undefined;
@@ -1325,6 +1351,28 @@ export class MusicPipeline implements SyncExecutor {
       });
       return undefined;
     }
+  }
+
+  /**
+   * Get resized artwork for OGG embedding, using album-level cache.
+   *
+   * Avoids redundant FFmpeg resize spawns for tracks on the same album.
+   * Falls back to original data when artworkResize is 0 or unset.
+   */
+  private async getResizedArtwork(track: DeviceTrack, originalData: Buffer): Promise<Buffer> {
+    if (!this.artworkResize || this.artworkResize <= 0) {
+      return originalData;
+    }
+
+    const key = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
+    const cached = this.resizedArtworkCache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const resized = await resizeArtwork(originalData, this.artworkResize);
+    this.resizedArtworkCache.set(key, resized);
+    return resized;
   }
 
   /**

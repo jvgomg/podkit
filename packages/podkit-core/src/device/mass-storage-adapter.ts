@@ -349,10 +349,11 @@ export class MassStorageTrack implements DeviceTrack {
   /**
    * Set artwork on the track.
    *
-   * No-op for mass-storage devices — artwork is already embedded in the
-   * file by the FFmpeg pipeline (resize/transcode). Unlike iPod, which
-   * stores artwork in a separate database, mass-storage devices read
-   * artwork directly from embedded tags.
+   * No-op for mass-storage devices — artwork embedding is handled by the
+   * FFmpeg pipeline for most formats, and by the tag writer (via
+   * embeddedPictureData in updateTrack) for OGG containers where FFmpeg
+   * can't embed. Unlike iPod, which stores artwork in a separate database,
+   * mass-storage devices read artwork directly from embedded tags.
    */
   setArtwork(_imagePath: string): MassStorageTrack {
     return this;
@@ -415,6 +416,13 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Flushed by save().
    */
   private pendingReplayGainWrites = new Map<string, { trackGain: number; trackPeak?: number }>();
+
+  /**
+   * Pending picture writes, keyed by relative file path.
+   * Accumulated by updateTrack() for OGG/Opus files where FFmpeg can't embed artwork.
+   * Flushed by save() via tagWriter.writePicture().
+   */
+  private pendingPictureWrites = new Map<string, Buffer>();
 
   private constructor(
     mountPoint: string,
@@ -580,6 +588,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.pendingCommentWrites.set(track.filePath, fields.comment);
     }
 
+    // Queue picture write for OGG/Opus files where FFmpeg can't embed artwork
+    if (fields.embeddedPictureData) {
+      this.pendingPictureWrites.set(updated.filePath, fields.embeddedPictureData);
+    }
+
     // Queue ReplayGain tag write when:
     // 1. Soundcheck changed on a replaygain device (collection updated normalization data)
     // 2. writeReplayGainTags is explicitly set (e.g., after transcoding M4A files)
@@ -704,6 +717,13 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         this.pendingReplayGainWrites.delete(track.filePath);
         this.pendingReplayGainWrites.set(targetRelativePath, rg);
       }
+
+      // Update pendingPictureWrites if keyed on old path
+      if (this.pendingPictureWrites.has(track.filePath)) {
+        const pic = this.pendingPictureWrites.get(track.filePath)!;
+        this.pendingPictureWrites.delete(track.filePath);
+        this.pendingPictureWrites.set(targetRelativePath, pic);
+      }
     }
 
     // Update file stats
@@ -805,6 +825,15 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       );
       await Promise.all(writes);
       this.pendingReplayGainWrites.clear();
+    }
+
+    // Flush pending picture writes (OGG/Opus artwork embedding)
+    if (this.pendingPictureWrites.size > 0) {
+      const writes = [...this.pendingPictureWrites.entries()].map(([filePath, imageData]) =>
+        this.tagWriter.writePicture(path.join(this.mountPoint, filePath), imageData)
+      );
+      await Promise.all(writes);
+      this.pendingPictureWrites.clear();
     }
 
     // Write manifest

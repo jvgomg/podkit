@@ -271,7 +271,7 @@ export function buildTranscodeArgs(
   pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
-  pushArtworkArgs(args, options);
+  pushArtworkArgs(args, { ...options, ffmpegFormat: codecMeta.ffmpegFormat });
 
   // Output format from codec metadata
   args.push('-f', codecMeta.ffmpegFormat);
@@ -289,16 +289,40 @@ export function buildTranscodeArgs(
 }
 
 /**
+ * Containers that support artwork embedding via `-c:v mjpeg -disposition:v attached_pic`.
+ *
+ * - ipod (M4A): standard attached_pic video stream
+ * - mp3: ID3v2 APIC frame
+ * - flac: FFmpeg's FLAC muxer converts the attached_pic stream into a native
+ *   METADATA_BLOCK_PICTURE block automatically
+ *
+ * OGG is excluded — FFmpeg's OGG muxer does not support writing image streams
+ * (upstream tickets #4448, #9044 remain open). OGG/Opus artwork must use sidecar files.
+ */
+const ARTWORK_EMBEDDABLE_FORMATS = new Set(['ipod', 'mp3', 'flac']);
+
+/**
  * Push artwork handling args onto an args array based on transfer mode and artwork resize.
  *
  * Shared logic for all codec builders.
+ *
+ * OGG and FLAC containers cannot embed artwork via MJPEG video streams,
+ * so artwork is always stripped for those formats. Devices using OGG/FLAC
+ * should rely on sidecar artwork instead.
  */
 function pushArtworkArgs(
   args: string[],
-  options?: { transferMode?: TransferMode; artworkResize?: number }
+  options?: { transferMode?: TransferMode; artworkResize?: number; ffmpegFormat?: string }
 ): void {
   const transferMode = options?.transferMode ?? 'fast';
   const artworkResize = options?.artworkResize;
+  const ffmpegFormat = options?.ffmpegFormat;
+
+  // OGG and FLAC containers don't support MJPEG video stream artwork — always strip
+  if (ffmpegFormat && !ARTWORK_EMBEDDABLE_FORMATS.has(ffmpegFormat)) {
+    args.push('-vn');
+    return;
+  }
 
   if (artworkResize && artworkResize > 0) {
     // Resize — device needs optimized embedded artwork regardless of mode.
@@ -326,6 +350,8 @@ export interface CodecBuilderOptions {
   transferMode?: TransferMode;
   artworkResize?: number;
   replayGain?: { trackGain: number; trackPeak?: number };
+  /** FFmpeg format string — passed to pushArtworkArgs to determine artwork strategy */
+  ffmpegFormat?: string;
 }
 
 /**
@@ -389,7 +415,7 @@ export function buildOpusArgs(
   pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
-  pushArtworkArgs(args, options);
+  pushArtworkArgs(args, { ...options, ffmpegFormat: codecMeta.ffmpegFormat });
 
   // Output format from codec metadata
   args.push('-f', codecMeta.ffmpegFormat);
@@ -442,7 +468,7 @@ export function buildMp3Args(
   pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
-  pushArtworkArgs(args, options);
+  pushArtworkArgs(args, { ...options, ffmpegFormat: codecMeta.ffmpegFormat });
 
   // Output format from codec metadata
   args.push('-f', codecMeta.ffmpegFormat);
@@ -483,7 +509,7 @@ export function buildFlacArgs(
   pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
-  pushArtworkArgs(args, options);
+  pushArtworkArgs(args, { ...options, ffmpegFormat: codecMeta.ffmpegFormat });
 
   // Output format from codec metadata
   args.push('-f', codecMeta.ffmpegFormat);
@@ -521,7 +547,7 @@ export function buildAlacArgs(
   pushReplayGainMetadata(args, options?.replayGain);
 
   // Artwork handling
-  pushArtworkArgs(args, options);
+  pushArtworkArgs(args, { ...options, ffmpegFormat: codecMeta.ffmpegFormat });
 
   // Output format from codec metadata
   args.push('-f', codecMeta.ffmpegFormat);
@@ -564,7 +590,28 @@ export function buildOptimizedCopyArgs(
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
 
-  if (artworkResize && artworkResize > 0) {
+  // Resolve the FFmpeg format string for the target container
+  let ffmpegFormat: string;
+  switch (format) {
+    case 'opus':
+      ffmpegFormat = 'ogg';
+      break;
+    case 'flac':
+      ffmpegFormat = 'flac';
+      break;
+    case 'mp3':
+      ffmpegFormat = 'mp3';
+      break;
+    case 'alac':
+    case 'm4a':
+      ffmpegFormat = 'ipod';
+      break;
+  }
+
+  // OGG and FLAC containers don't support MJPEG artwork — always strip
+  if (!ARTWORK_EMBEDDABLE_FORMATS.has(ffmpegFormat)) {
+    args.push('-vn');
+  } else if (artworkResize && artworkResize > 0) {
     // Resize embedded artwork for devices that read from embedded tags.
     // With audio stream copy, we can still filter the video (artwork) stream.
     args.push(
@@ -580,22 +627,8 @@ export function buildOptimizedCopyArgs(
     args.push('-vn');
   }
 
-  // Container format dispatch
-  switch (format) {
-    case 'opus':
-      args.push('-f', 'ogg');
-      break;
-    case 'flac':
-      args.push('-f', 'flac');
-      break;
-    case 'mp3':
-      args.push('-f', 'mp3');
-      break;
-    case 'alac':
-    case 'm4a':
-      args.push('-f', 'ipod');
-      break;
-  }
+  // Container format
+  args.push('-f', ffmpegFormat);
 
   args.push('-y');
   args.push('-progress', 'pipe:1');

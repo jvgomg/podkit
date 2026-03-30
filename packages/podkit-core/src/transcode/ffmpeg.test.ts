@@ -828,23 +828,22 @@ describe('buildOpusArgs', () => {
     expect(args).not.toContain('-c:v');
   });
 
-  it('resizes artwork when artworkResize is set', () => {
+  it('strips artwork when artworkResize is set (OGG cannot embed MJPEG)', () => {
     const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
     const args = buildOpusArgs(input, output, config, { artworkResize: 600 });
 
-    expect(args).toContain('-c:v');
-    expect(args).toContain('mjpeg');
-    expect(args).toContain('-filter:v');
-    expect(args).not.toContain('-vn');
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('mjpeg');
   });
 
-  it('preserves artwork in portable mode', () => {
+  it('strips artwork in portable mode (OGG cannot embed MJPEG)', () => {
     const config: EncoderConfig = { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' };
     const args = buildOpusArgs(input, output, config, { transferMode: 'portable' });
 
-    expect(args).toContain('-c:v');
-    expect(args).toContain('copy');
-    expect(args).not.toContain('-vn');
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('copy');
   });
 });
 
@@ -943,7 +942,7 @@ describe('buildFlacArgs', () => {
     expect(args).toContain('-vn');
   });
 
-  it('resizes artwork when artworkResize is set', () => {
+  it('resizes artwork when artworkResize is set (FLAC muxer converts to METADATA_BLOCK_PICTURE)', () => {
     const args = buildFlacArgs(input, output, { artworkResize: 320 });
 
     expect(args).toContain('-c:v');
@@ -1092,6 +1091,38 @@ describe('buildOptimizedCopyArgs — new formats', () => {
 
     expect(args).toContain('-f');
     expect(args).toContain('ipod');
+  });
+
+  it('strips artwork for opus even with artworkResize (OGG cannot embed MJPEG)', () => {
+    const args = buildOptimizedCopyArgs('/in.opus', '/out.opus', 'opus', { artworkResize: 600 });
+
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('mjpeg');
+  });
+
+  it('resizes artwork for flac with artworkResize (FLAC muxer converts to METADATA_BLOCK_PICTURE)', () => {
+    const args = buildOptimizedCopyArgs('/in.flac', '/out.flac', 'flac', { artworkResize: 320 });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('mjpeg');
+    expect(args).not.toContain('-vn');
+  });
+
+  it('still resizes artwork for m4a with artworkResize', () => {
+    const args = buildOptimizedCopyArgs('/in.m4a', '/out.m4a', 'm4a', { artworkResize: 600 });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('mjpeg');
+    expect(args).not.toContain('-vn');
+  });
+
+  it('still resizes artwork for mp3 with artworkResize', () => {
+    const args = buildOptimizedCopyArgs('/in.mp3', '/out.mp3', 'mp3', { artworkResize: 600 });
+
+    expect(args).toContain('-c:v');
+    expect(args).toContain('mjpeg');
+    expect(args).not.toContain('-vn');
   });
 });
 
