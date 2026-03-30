@@ -87,7 +87,9 @@ supportsAlbumArtistBrowsing = false  # Set to false if your device doesn't use A
 | `supportsVideo` | boolean | Whether the device supports video playback |
 | `audioNormalization` | string | How the device handles volume normalization: `soundcheck` (iPod database), `replaygain` (file tags), or `none` |
 | `supportsAlbumArtistBrowsing` | boolean | Whether the device uses Album Artist for browse navigation (`true` for all mass-storage presets; `false` for iPod) |
-| `musicDir` | string | Custom music directory path on the device (default: `Music`) |
+| `musicDir` | string | Music directory path on the device (default: `Music`). Use `/`, `.`, or `""` for device root. Defaults vary by device type (e.g., Echo Mini defaults to root). |
+| `moviesDir` | string | Movies directory path on the device (default: `Video/Movies`). Use `/`, `.`, or `""` for device root. |
+| `tvShowsDir` | string | TV shows directory path on the device (default: `Video/Shows`). Use `/`, `.`, or `""` for device root. |
 
 podkit uses these capabilities to make automatic decisions — selecting the right codec, resizing artwork, and skipping unsupported content. See the [Config File Reference](/reference/config-file#devices) for the complete device schema.
 

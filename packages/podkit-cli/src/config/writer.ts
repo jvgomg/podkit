@@ -146,6 +146,12 @@ export function addDevice(
   if (device.musicDir !== undefined) {
     lines.push(`musicDir = "${device.musicDir}"`);
   }
+  if (device.moviesDir !== undefined) {
+    lines.push(`moviesDir = "${device.moviesDir}"`);
+  }
+  if (device.tvShowsDir !== undefined) {
+    lines.push(`tvShowsDir = "${device.tvShowsDir}"`);
+  }
 
   // Handle cleanArtists config
   if (device.transforms?.cleanArtists) {
@@ -225,6 +231,8 @@ export function updateDevice(
     supportedAudioCodecs?: string[] | null;
     supportsVideo?: boolean | null;
     musicDir?: string | null;
+    moviesDir?: string | null;
+    tvShowsDir?: string | null;
   },
   options?: UpdateConfigOptions
 ): UpdateConfigResult {

@@ -22,7 +22,7 @@ import {
   buildAudioSyncTag,
   buildCopySyncTag,
 } from '../metadata/sync-tags.js';
-import { MUSIC_DIR } from './mass-storage-utils.js';
+const MUSIC_DIR = 'Music';
 
 // =============================================================================
 // Helpers

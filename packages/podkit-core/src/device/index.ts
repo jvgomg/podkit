@@ -56,16 +56,18 @@ export {
   isAudioExtension,
   isVideoExtension,
   isMediaExtension,
-  MUSIC_DIR,
-  VIDEO_DIR,
+  normalizeContentDir,
+  normalizeContentPaths,
+  validateContentPaths,
   PODKIT_DIR,
   MANIFEST_FILE,
+  DEFAULT_CONTENT_PATHS,
 } from './mass-storage-utils.js';
-export type { MassStorageManifest } from './mass-storage-utils.js';
+export type { MassStorageManifest, ContentPaths } from './mass-storage-utils.js';
 
 // Device presets
 export { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './presets.js';
-export type { DeviceTypeId } from './presets.js';
+export type { DeviceTypeId, DevicePreset } from './presets.js';
 
 // Types
 export type {

@@ -160,7 +160,7 @@ export { getDeviceCapabilities } from './ipod/capabilities.js';
 
 // Device presets
 export { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './device/index.js';
-export type { DeviceTypeId } from './device/index.js';
+export type { DeviceTypeId, DevicePreset } from './device/index.js';
 
 // Transcoding
 export type {
@@ -530,10 +530,14 @@ export {
   deduplicatePath,
   padTrackNumber,
   isAudioExtension,
-  MUSIC_DIR,
+  normalizeContentDir,
+  normalizeContentPaths,
+  validateContentPaths,
   PODKIT_DIR,
   MANIFEST_FILE,
+  DEFAULT_CONTENT_PATHS,
 } from './device/index.js';
+export type { ContentPaths } from './device/index.js';
 
 // Device management
 export type {

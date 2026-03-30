@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './presets.js';
+import { DEFAULT_CONTENT_PATHS } from './mass-storage-utils.js';
 
 describe('DEVICE_PRESETS', () => {
   it('echo-mini supports Album Artist browsing', () => {
@@ -12,6 +13,27 @@ describe('DEVICE_PRESETS', () => {
 
   it('generic supports Album Artist browsing', () => {
     expect(DEVICE_PRESETS.generic.supportsAlbumArtistBrowsing).toBe(true);
+  });
+
+  it('echo-mini has root musicDir', () => {
+    expect(DEVICE_PRESETS['echo-mini'].contentPaths.musicDir).toBe('');
+  });
+
+  it('rockbox uses default content paths', () => {
+    expect(DEVICE_PRESETS.rockbox.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
+  });
+
+  it('generic uses default content paths', () => {
+    expect(DEVICE_PRESETS.generic.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
+  });
+
+  it('all presets have contentPaths', () => {
+    for (const [, preset] of Object.entries(DEVICE_PRESETS)) {
+      expect(preset.contentPaths).toBeDefined();
+      expect(typeof preset.contentPaths.musicDir).toBe('string');
+      expect(typeof preset.contentPaths.moviesDir).toBe('string');
+      expect(typeof preset.contentPaths.tvShowsDir).toBe('string');
+    }
   });
 });
 
@@ -49,5 +71,12 @@ describe('getDevicePreset', () => {
   it('returns undefined for unknown types', () => {
     expect(getDevicePreset('ipod')).toBeUndefined();
     expect(getDevicePreset('foobar')).toBeUndefined();
+  });
+
+  it('includes contentPaths in returned preset', () => {
+    const preset = getDevicePreset('echo-mini');
+    expect(preset!.contentPaths.musicDir).toBe('');
+    expect(preset!.contentPaths.moviesDir).toBe('Video/Movies');
+    expect(preset!.contentPaths.tvShowsDir).toBe('Video/Shows');
   });
 });

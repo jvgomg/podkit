@@ -1019,7 +1019,7 @@ musicDir = "MUSIC"
         );
       });
 
-      it('rejects empty musicDir', () => {
+      it('accepts empty musicDir as root', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
           configPath,
@@ -1031,7 +1031,88 @@ musicDir = ""
 `)
         );
 
-        expect(() => loadConfigFile(configPath)).toThrow(/Invalid musicDir.*non-empty string/);
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.musicDir).toBe('');
+      });
+
+      it('parses moviesDir on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+moviesDir = "Films"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.moviesDir).toBe('Films');
+      });
+
+      it('parses tvShowsDir on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+tvShowsDir = "TV"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.tvShowsDir).toBe('TV');
+      });
+
+      it('rejects moviesDir on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+moviesDir = "Films"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*moviesDir.*only valid for mass-storage/
+        );
+      });
+
+      it('rejects tvShowsDir on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+tvShowsDir = "TV"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*tvShowsDir.*only valid for mass-storage/
+        );
+      });
+
+      it('rejects duplicate content paths', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+musicDir = "Media"
+moviesDir = "Media"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Content path conflict/);
       });
 
       it('parses audioNormalization on mass-storage devices', () => {
@@ -1658,11 +1739,25 @@ device = "terapod"
         delete process.env[ENV_KEYS.musicDir];
       });
 
-      it('ignores empty PODKIT_MUSIC_DIR', () => {
+      it('accepts empty PODKIT_MUSIC_DIR as root', () => {
         process.env[ENV_KEYS.musicDir] = '';
         const result = loadEnvConfig();
-        expect(result.deviceDefaults?.musicDir).toBeUndefined();
+        expect(result.deviceDefaults?.musicDir).toBe('');
         delete process.env[ENV_KEYS.musicDir];
+      });
+
+      it('parses PODKIT_MOVIES_DIR', () => {
+        process.env[ENV_KEYS.moviesDir] = 'Films';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.moviesDir).toBe('Films');
+        delete process.env[ENV_KEYS.moviesDir];
+      });
+
+      it('parses PODKIT_TV_SHOWS_DIR', () => {
+        process.env[ENV_KEYS.tvShowsDir] = 'TV';
+        const result = loadEnvConfig();
+        expect(result.deviceDefaults?.tvShowsDir).toBe('TV');
+        delete process.env[ENV_KEYS.tvShowsDir];
       });
 
       it('returns no deviceDefaults when no device env vars set', () => {

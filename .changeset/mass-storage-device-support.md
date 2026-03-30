@@ -26,7 +26,11 @@ Add mass-storage device support for non-iPod portable music players.
 - Device capability presets for Echo Mini, Rockbox, and generic devices
 - `resolveDeviceCapabilities()` merges preset defaults with user config overrides
 - `DeviceTrack` type used throughout sync engine (replaces `IPodTrack` casts in execution paths)
-- Video file placement on mass-storage: `Video/Movies/` and `Video/{Show}/Season {N}/`
+- Configurable content path prefixes (`musicDir`, `moviesDir`, `tvShowsDir`) with device-type defaults
+- Device presets include default content paths (Echo Mini: root for music; generic/Rockbox: `Music/`, `Video/Movies/`, `Video/Shows/`)
+- Manifest v2 stores active content paths; files automatically moved when prefixes change
+- Root path support (`/`, `.`, or empty string all normalize to device root)
+- Content path duplicate validation (no two content types can share the same prefix)
 - Video scanning support for mass-storage devices (.m4v, .mp4, .mov, .avi, .mkv)
 
 **New in daemon (`@podkit/daemon`):**
@@ -44,4 +48,14 @@ path = "/Volumes/ECHO"
 # Optional capability overrides (mass-storage only)
 artworkMaxResolution = 800
 supportedAudioCodecs = ["aac", "mp3", "flac"]
+
+# Optional content path overrides (mass-storage only)
+musicDir = "/"           # Place music at device root
+moviesDir = "Films"      # Custom movies directory
+tvShowsDir = "TV Shows"  # Custom TV shows directory
 ```
+
+**Environment variables for content paths:**
+- `PODKIT_MUSIC_DIR` — global default music directory
+- `PODKIT_MOVIES_DIR` — global default movies directory
+- `PODKIT_TV_SHOWS_DIR` — global default TV shows directory

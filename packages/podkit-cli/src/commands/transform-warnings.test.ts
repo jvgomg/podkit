@@ -98,7 +98,7 @@ describe('computeTransformWarnings', () => {
     const resolution = resolveCleanArtistsTransform(makeTransforms(true), true, true);
     const warnings = computeTransformWarnings(resolution, true, false);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0].type).toBe('clean-artists-unnecessary');
+    expect(warnings[0]!.type).toBe('clean-artists-unnecessary');
   });
 
   it('no warning when user overrode supportsAlbumArtistBrowsing', () => {

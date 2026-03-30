@@ -17,10 +17,15 @@ import type { DeviceCapabilities } from './capabilities.js';
 import {
   sanitizeFilename,
   generateTrackPath,
+  generateVideoPath,
   deduplicatePath,
   padTrackNumber,
+  normalizeContentDir,
+  normalizeContentPaths,
+  validateContentPaths,
   PODKIT_DIR,
   MANIFEST_FILE,
+  DEFAULT_CONTENT_PATHS,
 } from './mass-storage-utils.js';
 
 // =============================================================================
@@ -926,6 +931,7 @@ describe('MassStorageAdapter', () => {
         async writeComment(filePath: string, comment: string) {
           calls.push({ filePath, comment });
         },
+        async writeReplayGain(_filePath: string, _trackGain: number, _trackPeak?: number) {},
       };
     }
 
@@ -1059,6 +1065,9 @@ describe('MassStorageAdapter', () => {
 
       const failingWriter: TagWriter = {
         async writeComment() {
+          throw new Error('FFmpeg exploded');
+        },
+        async writeReplayGain() {
           throw new Error('FFmpeg exploded');
         },
       };
@@ -1343,5 +1352,336 @@ describe('MassStorageAdapter', () => {
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });
+  });
+
+  describe('v1 manifest', () => {
+    test('v1 manifest recognizes managed files', async () => {
+      // Write a v1 manifest with managed files
+      const relPath = 'Music/Artist/Album/Song.flac';
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({
+          version: 1,
+          managedFiles: [relPath],
+          lastSync: new Date().toISOString(),
+        })
+      );
+
+      // Create the audio file on disk
+      createFakeAudioFile(mountPoint, relPath);
+
+      const reader = createMockMetadataReader({
+        'Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      // Track should be recognized as managed
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(1);
+      expect((tracks[0] as MassStorageTrack).managed).toBe(true);
+
+      // Save should remain v1
+      await adapter.save();
+
+      const manifestPath = path.join(stateDir, MANIFEST_FILE);
+      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+      expect(manifest.version).toBe(1);
+      expect(manifest.managedFiles).toContain(relPath);
+    });
+  });
+
+  describe('content path validation', () => {
+    test('conflicting content paths rejected at open', async () => {
+      await expect(
+        MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+          metadataReader: createMockMetadataReader({}),
+          contentPaths: { musicDir: 'Music', moviesDir: 'Music' },
+        })
+      ).rejects.toThrow(/conflict/);
+    });
+  });
+
+  describe('content paths', () => {
+    test('custom musicDir generates paths under custom prefix', async () => {
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        contentPaths: { musicDir: 'MyMusic' },
+      });
+
+      const track = adapter.addTrack({
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        trackNumber: 1,
+        filetype: 'flac',
+      });
+
+      expect(track.filePath).toBe('MyMusic/Artist/Album/01 - Song.flac');
+    });
+
+    test('empty musicDir (root) generates paths without prefix', async () => {
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        contentPaths: { musicDir: '' },
+      });
+
+      const track = adapter.addTrack({
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        trackNumber: 1,
+        filetype: 'flac',
+      });
+
+      expect(track.filePath).toBe('Artist/Album/01 - Song.flac');
+    });
+
+    test('custom video dirs generate correct paths', async () => {
+      const caps = { ...TEST_CAPABILITIES, supportsVideo: true };
+      const adapter = await MassStorageAdapter.open(mountPoint, caps, {
+        metadataReader: createMockMetadataReader({}),
+        contentPaths: { moviesDir: 'Films', tvShowsDir: 'TV' },
+      });
+
+      const movie = adapter.addTrack({
+        title: 'The Matrix',
+        year: 1999,
+        filetype: 'm4v',
+        mediaType: 0x0002, // Movie
+      });
+
+      const tvShow = adapter.addTrack({
+        title: 'Pilot',
+        tvShow: 'Breaking Bad',
+        seasonNumber: 1,
+        episodeNumber: 1,
+        filetype: 'm4v',
+        mediaType: 0x0040, // TVShow
+      });
+
+      expect(movie.filePath).toBe('Films/The Matrix (1999).m4v');
+      expect(tvShow.filePath).toBe('TV/Breaking Bad/Season 1/S01E01 - Pilot.m4v');
+    });
+
+    test('legacy musicDir option still works', async () => {
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+        musicDir: 'LegacyMusic',
+      });
+
+      const track = adapter.addTrack({
+        title: 'Song',
+        artist: 'Artist',
+        filetype: 'flac',
+      });
+
+      expect(track.filePath).toStartWith('LegacyMusic/');
+    });
+
+    test('scans music from root when musicDir is empty', async () => {
+      // Create audio file at root
+      createFakeAudioFile(mountPoint, 'Artist/Album/Song.flac');
+
+      const reader = createMockMetadataReader({
+        'Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+        contentPaths: { musicDir: '' },
+      });
+
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(1);
+      expect(tracks[0]!.filePath).toBe('Artist/Album/Song.flac');
+    });
+  });
+});
+
+// =============================================================================
+// Content Path Utility Tests
+// =============================================================================
+
+describe('normalizeContentDir', () => {
+  test('strips leading slashes', () => {
+    expect(normalizeContentDir('/Music')).toBe('Music');
+    expect(normalizeContentDir('//Music')).toBe('Music');
+  });
+
+  test('strips trailing slashes', () => {
+    expect(normalizeContentDir('Music/')).toBe('Music');
+    expect(normalizeContentDir('Music//')).toBe('Music');
+  });
+
+  test('strips both leading and trailing slashes', () => {
+    expect(normalizeContentDir('/Music/')).toBe('Music');
+  });
+
+  test('treats "." as root (empty string)', () => {
+    expect(normalizeContentDir('.')).toBe('');
+  });
+
+  test('treats "/" as root (empty string)', () => {
+    expect(normalizeContentDir('/')).toBe('');
+  });
+
+  test('treats empty string as root', () => {
+    expect(normalizeContentDir('')).toBe('');
+  });
+
+  test('preserves nested paths', () => {
+    expect(normalizeContentDir('Video/Movies')).toBe('Video/Movies');
+  });
+});
+
+describe('normalizeContentPaths', () => {
+  test('applies defaults for missing fields', () => {
+    const result = normalizeContentPaths({});
+    expect(result).toEqual(DEFAULT_CONTENT_PATHS);
+  });
+
+  test('overrides specific fields', () => {
+    const result = normalizeContentPaths({ musicDir: 'MyMusic' });
+    expect(result.musicDir).toBe('MyMusic');
+    expect(result.moviesDir).toBe('Video/Movies');
+    expect(result.tvShowsDir).toBe('Video/Shows');
+  });
+
+  test('normalizes provided values', () => {
+    const result = normalizeContentPaths({ musicDir: '/Music/' });
+    expect(result.musicDir).toBe('Music');
+  });
+});
+
+describe('validateContentPaths', () => {
+  test('accepts valid paths', () => {
+    expect(() =>
+      validateContentPaths({
+        musicDir: 'Music',
+        moviesDir: 'Video/Movies',
+        tvShowsDir: 'Video/Shows',
+      })
+    ).not.toThrow();
+  });
+
+  test('rejects duplicate paths', () => {
+    expect(() =>
+      validateContentPaths({ musicDir: 'Music', moviesDir: 'Music', tvShowsDir: 'Video/Shows' })
+    ).toThrow(/conflict/);
+  });
+
+  test('rejects when all resolve to root', () => {
+    expect(() =>
+      validateContentPaths({ musicDir: '', moviesDir: '', tvShowsDir: 'Shows' })
+    ).toThrow(/conflict/);
+  });
+});
+
+describe('generateTrackPath with custom musicDir', () => {
+  test('uses custom musicDir prefix', () => {
+    const result = generateTrackPath({
+      artist: 'Artist',
+      album: 'Album',
+      title: 'Song',
+      trackNumber: 1,
+      extension: '.flac',
+      musicDir: 'MyMusic',
+    });
+    expect(result).toBe('MyMusic/Artist/Album/01 - Song.flac');
+  });
+
+  test('uses empty musicDir for root', () => {
+    const result = generateTrackPath({
+      artist: 'Artist',
+      album: 'Album',
+      title: 'Song',
+      trackNumber: 1,
+      extension: '.flac',
+      musicDir: '',
+    });
+    expect(result).toBe('Artist/Album/01 - Song.flac');
+  });
+
+  test('defaults to Music/ when musicDir not provided', () => {
+    const result = generateTrackPath({
+      artist: 'Artist',
+      album: 'Album',
+      title: 'Song',
+      extension: '.flac',
+    });
+    expect(result).toBe('Music/Artist/Album/Song.flac');
+  });
+});
+
+describe('generateVideoPath with custom dirs', () => {
+  test('uses custom moviesDir for movies', () => {
+    const result = generateVideoPath({
+      title: 'The Matrix',
+      contentType: 'movie',
+      year: 1999,
+      extension: '.m4v',
+      moviesDir: 'Films',
+    });
+    expect(result).toBe('Films/The Matrix (1999).m4v');
+  });
+
+  test('uses custom tvShowsDir for TV shows', () => {
+    const result = generateVideoPath({
+      title: 'Pilot',
+      contentType: 'tvshow',
+      seriesTitle: 'Breaking Bad',
+      seasonNumber: 1,
+      episodeNumber: 1,
+      extension: '.m4v',
+      tvShowsDir: 'TV',
+    });
+    expect(result).toBe('TV/Breaking Bad/Season 1/S01E01 - Pilot.m4v');
+  });
+
+  test('empty moviesDir puts movies at root', () => {
+    const result = generateVideoPath({
+      title: 'Movie',
+      contentType: 'movie',
+      extension: '.m4v',
+      moviesDir: '',
+    });
+    expect(result).toBe('Movie.m4v');
+  });
+
+  test('empty tvShowsDir puts shows at root', () => {
+    const result = generateVideoPath({
+      title: 'Pilot',
+      contentType: 'tvshow',
+      seriesTitle: 'Show',
+      seasonNumber: 1,
+      episodeNumber: 1,
+      extension: '.m4v',
+      tvShowsDir: '',
+    });
+    expect(result).toBe('Show/Season 1/S01E01 - Pilot.m4v');
+  });
+
+  test('defaults to Video/Movies and Video/Shows', () => {
+    const movie = generateVideoPath({
+      title: 'Movie',
+      contentType: 'movie',
+      extension: '.m4v',
+    });
+    expect(movie).toBe('Video/Movies/Movie.m4v');
+
+    const tv = generateVideoPath({
+      title: 'Pilot',
+      contentType: 'tvshow',
+      seriesTitle: 'Show',
+      seasonNumber: 1,
+      episodeNumber: 1,
+      extension: '.m4v',
+    });
+    expect(tv).toBe('Video/Shows/Show/Season 1/S01E01 - Pilot.m4v');
   });
 });
