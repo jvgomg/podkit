@@ -47,6 +47,10 @@ export interface DeviceTrackInput {
   size?: number;
   bpm?: number;
   soundcheck?: number;
+  /** Raw ReplayGain track gain in dB — passed through to mass-storage tag writer */
+  replayGainTrackGain?: number;
+  /** Raw ReplayGain track peak (linear) — passed through to mass-storage tag writer */
+  replayGainTrackPeak?: number;
   filetype?: string;
   mediaType?: number;
   compilation?: boolean;
@@ -68,8 +72,22 @@ export interface DeviceTrackInput {
 
 /**
  * Subset of metadata fields that can be updated on an existing track.
+ *
+ * Extends DeviceTrackInput with write-control flags for device-specific behavior.
  */
-export type DeviceTrackMetadata = Partial<DeviceTrackInput>;
+export type DeviceTrackMetadata = Partial<DeviceTrackInput> & {
+  /**
+   * Force writing ReplayGain tags to the file, even if soundcheck hasn't changed.
+   *
+   * Used after transcoding to ensure M4A files (where FFmpeg can't write ReplayGain
+   * metadata) get tags via the tag writer. Not needed for direct-copy operations
+   * where the source file already has correct tags.
+   *
+   * Only meaningful for mass-storage devices with audioNormalization: 'replaygain'.
+   * Ignored by iPod adapter (which uses the iTunesDB soundcheck field).
+   */
+  writeReplayGainTags?: boolean;
+};
 
 /**
  * A track on the device, as seen by the sync engine.

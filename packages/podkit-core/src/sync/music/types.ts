@@ -43,5 +43,10 @@ export type MusicOperation =
       reason: UpgradeReason;
     }
   | { type: 'remove'; track: DeviceTrack }
-  | { type: 'update-metadata'; track: DeviceTrack; metadata: Partial<TrackMetadata> }
+  | {
+      type: 'update-metadata';
+      track: DeviceTrack;
+      metadata: Partial<TrackMetadata>;
+      source?: CollectionTrack;
+    }
   | { type: 'update-sync-tag'; track: DeviceTrack; syncTag: SyncTagData };

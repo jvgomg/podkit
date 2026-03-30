@@ -729,7 +729,8 @@ export class MusicHandler implements ContentTypeHandler<
     }
 
     // Metadata-only updates — populate metadata from changes
-    ops.push(this.factory.createMetadataUpdate(device, changes ?? []));
+    // Include source reference so the pipeline can access raw ReplayGain values
+    ops.push(this.factory.createMetadataUpdate(device, changes ?? [], source));
     return ops;
   }
 
@@ -853,6 +854,7 @@ export class MusicHandler implements ContentTypeHandler<
       retryConfig: this.config.raw.retryConfig,
       transferMode: this.config.transferMode,
       artworkResize: this.config.artworkResize,
+      audioNormalization: this.config.audioNormalization,
     })) {
       // Filter out batch-level events that don't map to per-operation progress
       if (progress.phase === 'updating-db' || progress.phase === 'complete') {

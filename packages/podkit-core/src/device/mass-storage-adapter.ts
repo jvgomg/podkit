@@ -37,11 +37,15 @@ import {
   isAudioExtension,
   isVideoExtension,
   createEmptyManifest,
+  normalizeContentPaths,
+  validateContentPaths,
   type MassStorageManifest,
+  type ContentPaths,
 } from './mass-storage-utils.js';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';
+import { soundcheckToReplayGainDb, replayGainToSoundcheck } from '../metadata/soundcheck.js';
 
 // =============================================================================
 // Types
@@ -72,6 +76,8 @@ export interface MetadataReaderResult {
     year?: number;
     compilation?: boolean;
     picture?: Array<{ data: Buffer }>;
+    replaygain_track_gain?: { dB: number; ratio?: number };
+    replaygain_track_peak?: { ratio: number };
   };
   format: {
     duration?: number;
@@ -96,7 +102,9 @@ export interface MassStorageAdapterOptions {
   metadataReader?: MetadataReader;
   /** Override the tag writer (for testing) */
   tagWriter?: TagWriter;
-  /** Override the music directory name (default: "Music") */
+  /** Override content directory paths */
+  contentPaths?: Partial<ContentPaths>;
+  /** @deprecated Use contentPaths.musicDir instead */
   musicDir?: string;
 }
 
@@ -160,9 +168,13 @@ export class MassStorageTrack implements DeviceTrack {
   /** Absolute path to the device mount point */
   private readonly mountPoint: string;
 
+  /** Content path roots for empty directory cleanup */
+  private readonly contentRoots: string[];
+
   constructor(opts: {
     mountPoint: string;
     filePath: string;
+    contentRoots?: string[];
     title: string;
     artist: string;
     album: string;
@@ -187,6 +199,7 @@ export class MassStorageTrack implements DeviceTrack {
     managed: boolean;
   }) {
     this.mountPoint = opts.mountPoint;
+    this.contentRoots = opts.contentRoots ?? [MUSIC_DIR, VIDEO_DIR];
     this.filePath = opts.filePath;
     this.title = opts.title;
     this.artist = opts.artist;
@@ -223,6 +236,7 @@ export class MassStorageTrack implements DeviceTrack {
   update(fields: DeviceTrackMetadata): MassStorageTrack {
     return new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.contentRoots,
       filePath: this.filePath,
       title: fields.title ?? this.title,
       artist: fields.artist ?? this.artist,
@@ -264,12 +278,15 @@ export class MassStorageTrack implements DeviceTrack {
       fs.unlinkSync(absolutePath);
     }
 
-    // Clean up empty parent directories up to the content root (Music/ or Video/)
-    const musicRoot = path.join(this.mountPoint, MUSIC_DIR);
-    const videoRoot = path.join(this.mountPoint, VIDEO_DIR);
-    const contentRoot = absolutePath.startsWith(videoRoot) ? videoRoot : musicRoot;
+    // Clean up empty parent directories up to the content root
+    const matchedRoot = this.contentRoots
+      .map((r) => (r ? path.join(this.mountPoint, r) : this.mountPoint))
+      .filter((r) => absolutePath.startsWith(r + '/') || absolutePath.startsWith(r + path.sep))
+      .sort((a, b) => b.length - a.length)[0];
+    if (!matchedRoot) return;
+    const contentRoot = matchedRoot;
     let dir = path.dirname(absolutePath);
-    while (dir !== contentRoot && dir.startsWith(contentRoot)) {
+    while (dir !== contentRoot && dir.startsWith(contentRoot) && dir !== this.mountPoint) {
       try {
         const entries = fs.readdirSync(dir);
         if (entries.length === 0) {
@@ -303,6 +320,7 @@ export class MassStorageTrack implements DeviceTrack {
 
     return new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.contentRoots,
       filePath: this.filePath,
       title: this.title,
       artist: this.artist,
@@ -382,7 +400,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private manifest: MassStorageManifest;
   private managedFiles: Set<string>;
   private allocatedPaths: Set<string>;
-  private readonly musicDir: string;
+  private readonly contentPaths: ContentPaths;
   private readonly metadataReader: MetadataReader;
   private readonly tagWriter: TagWriter;
 
@@ -392,6 +410,13 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    */
   private pendingCommentWrites = new Map<string, string>();
 
+  /**
+   * Pending ReplayGain tag writes, keyed by relative file path.
+   * Accumulated by updateTrack() when soundcheck changes on a replaygain device.
+   * Flushed by save().
+   */
+  private pendingReplayGainWrites = new Map<string, { trackGain: number; trackPeak?: number }>();
+
   private constructor(
     mountPoint: string,
     capabilities: DeviceCapabilities,
@@ -399,12 +424,30 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   ) {
     this.mountPoint = mountPoint;
     this.capabilities = capabilities;
-    this.musicDir = options?.musicDir ?? MUSIC_DIR;
+
+    // Resolve content paths: explicit contentPaths > legacy musicDir > defaults
+    const pathOverrides: Partial<ContentPaths> = { ...options?.contentPaths };
+    if (options?.musicDir !== undefined && pathOverrides.musicDir === undefined) {
+      pathOverrides.musicDir = options.musicDir;
+    }
+    this.contentPaths = normalizeContentPaths(pathOverrides);
+    validateContentPaths(this.contentPaths);
+
     this.metadataReader = options?.metadataReader ?? defaultMetadataReader;
     this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
     this.manifest = createEmptyManifest();
     this.managedFiles = new Set();
     this.allocatedPaths = new Set();
+  }
+
+  private getContentRoots(): string[] {
+    return [
+      ...new Set([
+        this.contentPaths.musicDir,
+        this.contentPaths.moviesDir,
+        this.contentPaths.tvShowsDir,
+      ]),
+    ];
   }
 
   /**
@@ -413,6 +456,24 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Scans the device filesystem for audio files and reads the manifest.
    * The track list is cached so getTracks() is synchronous.
    */
+  /**
+   * Build ReplayGain data from raw values or back-convert from soundcheck.
+   * Prefers raw dB/peak values when available.
+   */
+  private buildReplayGainData(
+    trackGain?: number,
+    trackPeak?: number,
+    soundcheck?: number
+  ): { trackGain: number; trackPeak?: number } | undefined {
+    if (trackGain !== undefined) {
+      return { trackGain, trackPeak };
+    }
+    if (soundcheck !== undefined) {
+      return { trackGain: soundcheckToReplayGainDb(soundcheck) };
+    }
+    return undefined;
+  }
+
   static async open(
     mountPoint: string,
     capabilities: DeviceCapabilities,
@@ -435,7 +496,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   addTrack(input: DeviceTrackInput): MassStorageTrack {
     const ext = input.filetype ? resolveFileExtension(input.filetype) : '.mp3';
 
-    // Route video tracks to Video/ directory, music to Music/
+    // Route video tracks to video directories, music to music directory
     const isVideo = input.mediaType !== undefined && isVideoMediaType(input.mediaType);
     const desiredPath = isVideo
       ? generateVideoPath({
@@ -446,6 +507,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           seasonNumber: input.seasonNumber,
           episodeNumber: input.episodeNumber,
           extension: ext,
+          moviesDir: this.contentPaths.moviesDir,
+          tvShowsDir: this.contentPaths.tvShowsDir,
         })
       : generateTrackPath({
           artist: input.artist,
@@ -455,6 +518,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           discNumber: input.discNumber,
           totalDiscs: input.totalDiscs,
           extension: ext,
+          musicDir: this.contentPaths.musicDir,
         });
 
     const uniquePath = deduplicatePath(desiredPath, this.allocatedPaths);
@@ -465,6 +529,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
     const track = new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.getContentRoots(),
       filePath: uniquePath,
       title: input.title,
       artist: input.artist ?? 'Unknown Artist',
@@ -514,6 +579,26 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Queue comment tag write if the comment changed
     if (fields.comment !== undefined && fields.comment !== track.comment) {
       this.pendingCommentWrites.set(track.filePath, fields.comment);
+    }
+
+    // Queue ReplayGain tag write when:
+    // 1. Soundcheck changed on a replaygain device (collection updated normalization data)
+    // 2. writeReplayGainTags is explicitly set (e.g., after transcoding M4A files)
+    const soundcheckChanged =
+      fields.soundcheck !== undefined && fields.soundcheck !== track.soundcheck;
+    if (
+      this.capabilities.audioNormalization === 'replaygain' &&
+      (soundcheckChanged || fields.writeReplayGainTags)
+    ) {
+      const sc = fields.soundcheck ?? track.soundcheck;
+      const rg = this.buildReplayGainData(
+        fields.replayGainTrackGain,
+        fields.replayGainTrackPeak,
+        sc
+      );
+      if (rg) {
+        this.pendingReplayGainWrites.set(updated.filePath, rg);
+      }
     }
 
     return updated;
@@ -613,6 +698,13 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         this.pendingCommentWrites.delete(track.filePath);
         this.pendingCommentWrites.set(targetRelativePath, comment);
       }
+
+      // Update pendingReplayGainWrites if keyed on old path
+      if (this.pendingReplayGainWrites.has(track.filePath)) {
+        const rg = this.pendingReplayGainWrites.get(track.filePath)!;
+        this.pendingReplayGainWrites.delete(track.filePath);
+        this.pendingReplayGainWrites.set(targetRelativePath, rg);
+      }
     }
 
     // Update file stats
@@ -621,6 +713,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
     const updated = new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.getContentRoots(),
       filePath: targetRelativePath,
       title: track.title,
       artist: track.artist,
@@ -702,6 +795,19 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.pendingCommentWrites.clear();
     }
 
+    // Flush pending ReplayGain tag writes to audio files
+    if (this.pendingReplayGainWrites.size > 0) {
+      const writes = [...this.pendingReplayGainWrites.entries()].map(([filePath, rg]) =>
+        this.tagWriter.writeReplayGain(
+          path.join(this.mountPoint, filePath),
+          rg.trackGain,
+          rg.trackPeak
+        )
+      );
+      await Promise.all(writes);
+      this.pendingReplayGainWrites.clear();
+    }
+
     // Write manifest
     this.manifest.managedFiles = [...this.managedFiles].sort();
     this.manifest.lastSync = new Date().toISOString();
@@ -742,15 +848,25 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   /**
-   * Scan the Music/ directory for audio files and read their metadata.
+   * Scan content directories for audio and video files.
    */
   private async scanTracks(): Promise<void> {
     const tracks: MassStorageTrack[] = [];
 
     // Scan music directory
-    const musicRoot = path.join(this.mountPoint, this.musicDir);
+    const musicDir = this.contentPaths.musicDir;
+    const musicRoot = musicDir ? path.join(this.mountPoint, musicDir) : this.mountPoint;
     if (fs.existsSync(musicRoot)) {
-      const audioFiles = this.walkDirectory(musicRoot, isAudioExtension);
+      const skipDirs = new Set<string>();
+      if (!musicDir) {
+        // Scanning from root — skip .podkit and other content directories
+        skipDirs.add(path.join(this.mountPoint, PODKIT_DIR));
+        if (this.contentPaths.moviesDir)
+          skipDirs.add(path.join(this.mountPoint, this.contentPaths.moviesDir));
+        if (this.contentPaths.tvShowsDir)
+          skipDirs.add(path.join(this.mountPoint, this.contentPaths.tvShowsDir));
+      }
+      const audioFiles = this.walkDirectory(musicRoot, isAudioExtension, skipDirs);
       for (const absolutePath of audioFiles) {
         try {
           const track = await this.readTrackMetadata(absolutePath);
@@ -762,18 +878,34 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       }
     }
 
-    // Scan video directory (if device supports video)
+    // Scan video directories (if device supports video)
     if (this.capabilities.supportsVideo) {
-      const videoRoot = path.join(this.mountPoint, VIDEO_DIR);
-      if (fs.existsSync(videoRoot)) {
-        const videoFiles = this.walkDirectory(videoRoot, isVideoExtension);
-        for (const absolutePath of videoFiles) {
-          try {
-            const track = await this.readVideoMetadata(absolutePath);
-            tracks.push(track);
-            this.allocatedPaths.add(track.filePath);
-          } catch {
-            continue;
+      const scannedDirs = new Set<string>();
+      for (const dir of [this.contentPaths.moviesDir, this.contentPaths.tvShowsDir]) {
+        const videoRoot = dir ? path.join(this.mountPoint, dir) : this.mountPoint;
+        // Avoid scanning the same directory twice
+        if (scannedDirs.has(videoRoot)) continue;
+        scannedDirs.add(videoRoot);
+
+        if (fs.existsSync(videoRoot)) {
+          const skipDirs = new Set<string>();
+          if (!dir) {
+            skipDirs.add(path.join(this.mountPoint, PODKIT_DIR));
+            if (this.contentPaths.musicDir)
+              skipDirs.add(path.join(this.mountPoint, this.contentPaths.musicDir));
+          }
+          const videoFiles = this.walkDirectory(videoRoot, isVideoExtension, skipDirs);
+          for (const absolutePath of videoFiles) {
+            const relativePath = path.relative(this.mountPoint, absolutePath);
+            // Skip if already scanned (e.g., from overlapping directory)
+            if (this.allocatedPaths.has(relativePath)) continue;
+            try {
+              const track = await this.readVideoMetadata(absolutePath);
+              tracks.push(track);
+              this.allocatedPaths.add(track.filePath);
+            } catch {
+              continue;
+            }
           }
         }
       }
@@ -785,7 +917,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   /**
    * Recursively walk a directory and return all matching file paths.
    */
-  private walkDirectory(dir: string, extensionFilter: (ext: string) => boolean): string[] {
+  private walkDirectory(
+    dir: string,
+    extensionFilter: (ext: string) => boolean,
+    skipDirs?: Set<string>
+  ): string[] {
     const results: string[] = [];
 
     let entries: fs.Dirent[];
@@ -798,7 +934,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        results.push(...this.walkDirectory(fullPath, extensionFilter));
+        if (skipDirs?.has(fullPath)) continue;
+        results.push(...this.walkDirectory(fullPath, extensionFilter, skipDirs));
       } else if (entry.isFile()) {
         const ext = path.extname(entry.name).toLowerCase();
         if (extensionFilter(ext)) {
@@ -836,8 +973,15 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Detect artwork presence
     const hasArtwork = (common.picture?.length ?? 0) > 0;
 
+    // Extract soundcheck from ReplayGain tags (for diff detection against collection)
+    const soundcheck =
+      common.replaygain_track_gain?.dB !== undefined
+        ? replayGainToSoundcheck(common.replaygain_track_gain.dB)
+        : undefined;
+
     return new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.getContentRoots(),
       filePath: relativePath,
       title: common.title || path.basename(absolutePath, path.extname(absolutePath)),
       artist: common.artist || 'Unknown Artist',
@@ -854,6 +998,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       sampleRate: format.sampleRate ?? 0,
       size: stats.size,
       filetype: ext,
+      soundcheck,
       hasArtwork,
       hasFile: true,
       compilation: common.compilation ?? false,
@@ -876,12 +1021,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
 
     // Video media type (movie by default)
     const MediaType = { Movie: 0x0002, TVShow: 0x0040 };
+    const tvPrefix = this.contentPaths.tvShowsDir;
+    const moviesPrefix = this.contentPaths.moviesDir;
     const isTvShow =
-      relativePath.startsWith(`${VIDEO_DIR}/`) && !relativePath.startsWith(`${VIDEO_DIR}/Movies/`);
+      tvPrefix === ''
+        ? !(moviesPrefix !== '' && relativePath.startsWith(`${moviesPrefix}/`))
+        : relativePath.startsWith(`${tvPrefix}/`);
     const mediaType = isTvShow ? MediaType.TVShow : MediaType.Movie;
 
     return new MassStorageTrack({
       mountPoint: this.mountPoint,
+      contentRoots: this.getContentRoots(),
       filePath: relativePath,
       title: basename,
       artist: 'Unknown Artist',
