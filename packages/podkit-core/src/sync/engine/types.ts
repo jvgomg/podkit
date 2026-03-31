@@ -43,7 +43,8 @@ export type UpgradeReason =
   | 'artwork-removed'
   | 'artwork-updated'
   | 'normalization-update'
-  | 'metadata-correction';
+  | 'metadata-correction'
+  | 'path-mismatch';
 
 /**
  * Reason why a track needs metadata update
@@ -60,6 +61,7 @@ export type UpgradeReason =
  * - artwork-updated: Source artwork hash differs from iPod sync tag hash (metadata-only)
  * - normalization-update: Source has normalization data, device lacks or differs (metadata-only)
  * - metadata-correction: Non-matching metadata fields differ (metadata-only)
+ * - path-mismatch: Track's device path differs from expected path (file move)
  */
 export type UpdateReason =
   | 'transform-apply'
@@ -88,7 +90,8 @@ export interface MetadataChange {
     | 'bitrate'
     | 'fileType'
     | 'lossless'
-    | 'transferMode';
+    | 'transferMode'
+    | 'filePath';
   from: string;
   to: string;
 }

@@ -18,6 +18,8 @@ import {
   sanitizeFilename,
   generateTrackPath,
   generateVideoPath,
+  resolvePathTemplate,
+  DEFAULT_MUSIC_PATH_TEMPLATE,
   deduplicatePath,
   padTrackNumber,
   normalizeContentDir,
@@ -255,6 +257,150 @@ describe('generateTrackPath', () => {
     const withDot = generateTrackPath({ title: 'Song', extension: '.flac' });
     const withoutDot = generateTrackPath({ title: 'Song', extension: 'flac' });
     expect(withDot).toBe(withoutDot);
+  });
+
+  test('uses albumArtist for directory when provided', () => {
+    const result = generateTrackPath({
+      artist: 'Dua Lipa',
+      albumArtist: 'Various Artists',
+      album: 'Now 100',
+      title: 'Levitating',
+      trackNumber: 3,
+      extension: '.flac',
+    });
+    expect(result).toBe('Music/Various Artists/Now 100/03 - Levitating.flac');
+  });
+
+  test('falls back to artist when albumArtist is absent', () => {
+    const result = generateTrackPath({
+      artist: 'Pink Floyd',
+      album: 'The Wall',
+      title: 'Comfortably Numb',
+      trackNumber: 6,
+      extension: '.flac',
+    });
+    expect(result).toBe('Music/Pink Floyd/The Wall/06 - Comfortably Numb.flac');
+  });
+
+  test('groups compilation tracks under album artist', () => {
+    const trackA = generateTrackPath({
+      artist: 'Artist A',
+      albumArtist: 'Various Artists',
+      album: 'Compilation Album',
+      title: 'Song A',
+      trackNumber: 1,
+      extension: '.mp3',
+    });
+    const trackB = generateTrackPath({
+      artist: 'Artist B',
+      albumArtist: 'Various Artists',
+      album: 'Compilation Album',
+      title: 'Song B',
+      trackNumber: 2,
+      extension: '.mp3',
+    });
+    // Both tracks should be in the same directory
+    expect(path.dirname(trackA)).toBe(path.dirname(trackB));
+    expect(path.dirname(trackA)).toBe('Music/Various Artists/Compilation Album');
+  });
+});
+
+describe('resolvePathTemplate', () => {
+  test('default template matches generateTrackPath output', () => {
+    const fromTemplate = resolvePathTemplate(
+      DEFAULT_MUSIC_PATH_TEMPLATE,
+      {
+        artist: 'Pink Floyd',
+        albumArtist: 'Pink Floyd',
+        album: 'The Wall',
+        title: 'Comfortably Numb',
+        trackNumber: 6,
+        ext: '.flac',
+      },
+      'Music'
+    );
+    expect(fromTemplate).toBe('Music/Pink Floyd/The Wall/06 - Comfortably Numb.flac');
+  });
+
+  test('custom template with artist instead of albumArtist', () => {
+    const result = resolvePathTemplate(
+      '{artist}/{album}/{trackNumber} - {title}{ext}',
+      {
+        artist: 'Dua Lipa',
+        albumArtist: 'Various Artists',
+        album: 'Now 100',
+        title: 'Levitating',
+        trackNumber: 3,
+        ext: '.flac',
+      },
+      'Music'
+    );
+    expect(result).toBe('Music/Dua Lipa/Now 100/03 - Levitating.flac');
+  });
+
+  test('custom flat template', () => {
+    const result = resolvePathTemplate(
+      '{albumArtist} - {title}{ext}',
+      {
+        artist: 'Pink Floyd',
+        albumArtist: 'Pink Floyd',
+        album: 'The Wall',
+        title: 'Comfortably Numb',
+        trackNumber: 6,
+        ext: '.flac',
+      },
+      'Music'
+    );
+    expect(result).toBe('Music/Pink Floyd - Comfortably Numb.flac');
+  });
+
+  test('handles empty musicDir (root level)', () => {
+    const result = resolvePathTemplate(
+      '{albumArtist}/{album}/{title}{ext}',
+      {
+        artist: 'Artist',
+        album: 'Album',
+        title: 'Song',
+        ext: '.mp3',
+      },
+      ''
+    );
+    expect(result).toBe('Artist/Album/Song.mp3');
+  });
+
+  test('template with genre and year variables', () => {
+    const result = resolvePathTemplate(
+      '{genre}/{albumArtist}/{album} ({year})/{trackNumber} - {title}{ext}',
+      {
+        artist: 'Pink Floyd',
+        albumArtist: 'Pink Floyd',
+        album: 'The Wall',
+        title: 'Comfortably Numb',
+        trackNumber: 6,
+        genre: 'Rock',
+        year: 1979,
+        ext: '.flac',
+      },
+      'Music'
+    );
+    expect(result).toBe('Music/Rock/Pink Floyd/The Wall (1979)/06 - Comfortably Numb.flac');
+  });
+
+  test('drops empty optional directory segments instead of using "Unknown"', () => {
+    const result = resolvePathTemplate(
+      '{genre}/{albumArtist}/{album}/{trackNumber} - {title}{ext}',
+      {
+        artist: 'Pink Floyd',
+        album: 'The Wall',
+        title: 'Comfortably Numb',
+        trackNumber: 6,
+        // genre intentionally omitted
+        ext: '.flac',
+      },
+      'Music'
+    );
+    // {genre} is empty, so that directory segment should be dropped entirely
+    expect(result).toBe('Music/Pink Floyd/The Wall/06 - Comfortably Numb.flac');
   });
 });
 
@@ -863,6 +1009,153 @@ describe('MassStorageAdapter', () => {
 
       // The track list should be updated
       expect(adapter.getTracks()[0]!.title).toBe('New Title');
+    });
+  });
+
+  describe('relocateTrack()', () => {
+    test('moves file to new path and updates bookkeeping', async () => {
+      const relPath = 'Music/Old Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      // Create manifest with managed file
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({ version: 1, managedFiles: [relPath], lastSync: new Date().toISOString() })
+      );
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Song',
+          artist: 'Old Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      expect(track.filePath).toBe(relPath);
+      expect(track.managed).toBe(true);
+
+      const newPath = 'Music/New Artist/Album/01 - Song.flac';
+      const relocated = adapter.relocateTrack(track, newPath);
+
+      // Track instance should have new path
+      expect(relocated.filePath).toBe(newPath);
+
+      // Track list should be updated
+      expect(adapter.getTracks()[0]!.filePath).toBe(newPath);
+
+      // Save should rename the file on disk
+      await adapter.save();
+
+      expect(fs.existsSync(path.join(mountPoint, newPath))).toBe(true);
+      expect(fs.existsSync(path.join(mountPoint, relPath))).toBe(false);
+
+      // Old empty directories should be cleaned up
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Old Artist'))).toBe(false);
+    });
+
+    test('deduplicates when target path is already taken', async () => {
+      const path1 = 'Music/Artist/Album/01 - Song A.flac';
+      const path2 = 'Music/Other/Album/01 - Song B.flac';
+      createFakeAudioFile(mountPoint, path1);
+      createFakeAudioFile(mountPoint, path2);
+
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({
+          version: 1,
+          managedFiles: [path1, path2],
+          lastSync: new Date().toISOString(),
+        })
+      );
+
+      const reader = createMockMetadataReader({
+        '01 - Song A.flac': {
+          title: 'Song A',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+        '01 - Song B.flac': {
+          title: 'Song B',
+          artist: 'Other',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const tracks = adapter.getTracks();
+      const trackA = tracks.find((t) => t.title === 'Song A')!;
+      const trackB = tracks.find((t) => t.title === 'Song B')!;
+
+      // Relocate both to the same target path
+      const targetPath = 'Music/Same/Album/01 - Song.flac';
+      const relocatedA = adapter.relocateTrack(trackA, targetPath);
+      const relocatedB = adapter.relocateTrack(trackB, targetPath);
+
+      // Second should be deduplicated
+      expect(relocatedA.filePath).toBe(targetPath);
+      expect(relocatedB.filePath).not.toBe(targetPath);
+      expect(relocatedB.filePath).toContain('Song (2)');
+    });
+
+    test('skips move gracefully when source file is missing', async () => {
+      const relPath = 'Music/Artist/Album/01 - Song.flac';
+      createFakeAudioFile(mountPoint, relPath);
+
+      const stateDir = path.join(mountPoint, PODKIT_DIR);
+      fs.mkdirSync(stateDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(stateDir, MANIFEST_FILE),
+        JSON.stringify({ version: 1, managedFiles: [relPath], lastSync: new Date().toISOString() })
+      );
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+          duration: 180000,
+          bitrate: 320,
+          sampleRate: 44100,
+        },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.relocateTrack(track, 'Music/New/Album/01 - Song.flac');
+
+      // Delete the source file before save
+      fs.unlinkSync(path.join(mountPoint, relPath));
+
+      // save() should not throw
+      await adapter.save();
     });
   });
 

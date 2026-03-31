@@ -515,6 +515,8 @@ export function getMusicOperationDisplayName(operation: SyncOperation): string {
     case 'update-metadata':
     case 'update-sync-tag':
       return `${operation.track.artist} - ${operation.track.title}`;
+    case 'relocate':
+      return `${operation.source.artist} - ${operation.source.title}`;
     case 'upgrade-transcode':
     case 'upgrade-direct-copy':
     case 'upgrade-optimized-copy':
@@ -910,6 +912,10 @@ export class MusicPipeline implements SyncExecutor {
             await this.executeUpdateSyncTag(operation);
             inlineCompletions.push(operation);
             inlineCompleted++;
+          } else if (operation.type === 'relocate') {
+            await this.executeRelocate(operation);
+            inlineCompletions.push(operation);
+            inlineCompleted++;
           }
         } catch (error) {
           const err = error instanceof Error ? error : new Error(String(error));
@@ -1289,6 +1295,8 @@ export class MusicPipeline implements SyncExecutor {
         return this.executeUpdateMetadata(operation);
       case 'update-sync-tag':
         return this.executeUpdateSyncTag(operation);
+      case 'relocate':
+        return this.executeRelocate(operation);
       case 'upgrade-transcode':
       case 'upgrade-direct-copy':
       case 'upgrade-optimized-copy':
@@ -1608,6 +1616,51 @@ export class MusicPipeline implements SyncExecutor {
     }
 
     foundTrack = this.device.writeSyncTag(foundTrack, syncTag);
+
+    return { bytesTransferred: 0 };
+  }
+
+  /**
+   * Execute a relocate operation
+   *
+   * Moves a track file to its expected path on a mass-storage device.
+   * Uses fs.rename (same-filesystem, no data copy). Also applies any
+   * metadata updates if the operation carries them.
+   */
+  private async executeRelocate(
+    operation: Extract<SyncOperation, { type: 'relocate' }>
+  ): Promise<{ bytesTransferred: number }> {
+    const { track: targetTrack, newPath, metadata } = operation;
+
+    // Find the matching track in the database
+    const tracks = this.device.getTracks();
+    let foundTrack = tracks.find((t) => t.filePath === targetTrack.filePath);
+
+    if (!foundTrack) {
+      foundTrack = tracks.find(
+        (t) =>
+          t.title === targetTrack.title &&
+          t.artist === targetTrack.artist &&
+          t.album === targetTrack.album
+      );
+    }
+
+    if (!foundTrack) {
+      throw new Error(
+        `Track not found for relocation: ${targetTrack.artist} - ${targetTrack.title}`
+      );
+    }
+
+    // Relocate the file (adapter handles fs.rename and tracking updates)
+    let trackAfterRelocate = foundTrack;
+    if (typeof (this.device as any).relocateTrack === 'function') {
+      trackAfterRelocate = (this.device as any).relocateTrack(foundTrack, newPath);
+    }
+
+    // Apply metadata updates if any
+    if (metadata && Object.keys(metadata).length > 0) {
+      this.device.updateTrack(trackAfterRelocate, metadata);
+    }
 
     return { bytesTransferred: 0 };
   }
@@ -2194,6 +2247,7 @@ function getPhaseForOperation(operation: SyncOperation): SyncProgress['phase'] {
       return 'removing';
     case 'update-metadata':
     case 'update-sync-tag':
+    case 'relocate':
       return 'updating-metadata';
     case 'upgrade-transcode':
     case 'upgrade-direct-copy':

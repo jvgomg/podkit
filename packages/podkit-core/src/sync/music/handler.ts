@@ -144,6 +144,7 @@ function toCollisionInput(source: CollectionTrack): Omit<CollisionCheckInput, 'f
   return {
     title: source.title,
     artist: source.artist,
+    albumArtist: source.albumArtist,
     album: source.album,
     trackNumber: source.trackNumber,
     discNumber: source.discNumber,
@@ -756,11 +757,31 @@ export class MusicHandler implements ContentTypeHandler<
       return ops;
     }
 
-    // File-replacement upgrades
+    // File-replacement upgrades take priority over path-mismatch. If both are
+    // present, the upgrade runs now and the file stays at its current path.
+    // The path-mismatch will be detected again on the next sync and resolved
+    // with a relocate — self-healing in two passes.
     if (isFileReplacementUpgrade(primaryReason as UpgradeReason)) {
       const { action } = this.classifier.classify(source);
       ops.push(this.factory.createUpgrade(source, device, primaryReason as UpgradeReason, action));
       return ops;
+    }
+
+    // Path-mismatch: relocate the file on device to its expected path
+    if (nonSyncTagReasons.includes('path-mismatch')) {
+      const pathChange = changes?.find((c) => c.field === 'filePath');
+      if (pathChange) {
+        const otherChanges = changes?.filter((c) => c.field !== 'filePath');
+        ops.push(
+          this.factory.createRelocate(
+            device,
+            source,
+            pathChange.to,
+            otherChanges?.length ? otherChanges : undefined
+          )
+        );
+        return ops;
+      }
     }
 
     // Metadata-only updates — populate metadata from changes
@@ -776,7 +797,8 @@ export class MusicHandler implements ContentTypeHandler<
   estimateTime(op: MusicOperation): number {
     const size = calculateMusicOperationSize(op);
     if (op.type === 'remove') return 0.1;
-    if (op.type === 'update-metadata' || op.type === 'update-sync-tag') return 0.01;
+    if (op.type === 'update-metadata' || op.type === 'update-sync-tag' || op.type === 'relocate')
+      return 0.01;
     return estimateTransferTime(size);
   }
 
@@ -830,6 +852,7 @@ export class MusicHandler implements ContentTypeHandler<
         return 0;
       case 'update-metadata':
       case 'update-sync-tag':
+      case 'relocate':
         return 1;
       case 'add-direct-copy':
       case 'add-optimized-copy':

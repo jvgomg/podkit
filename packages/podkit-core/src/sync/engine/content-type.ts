@@ -26,6 +26,7 @@ import type {
 export interface CollisionCheckInput {
   title: string;
   artist?: string;
+  albumArtist?: string;
   album?: string;
   trackNumber?: number;
   discNumber?: number;

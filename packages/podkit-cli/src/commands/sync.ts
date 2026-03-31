@@ -206,6 +206,7 @@ export interface SyncOutput {
     tracksToRemove: number;
     tracksToUpdate: number;
     tracksToUpgrade: number;
+    tracksToRelocate?: number;
     updateBreakdown?: UpdateBreakdown;
     tracksToTranscode: number;
     tracksToCopy: number;
@@ -229,6 +230,7 @@ export interface SyncOutput {
       | 'remove'
       | 'update-metadata'
       | 'update-sync-tag'
+      | 'relocate'
       | 'video-transcode'
       | 'video-copy'
       | 'video-remove'
