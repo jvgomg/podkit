@@ -42,7 +42,7 @@ export type UpgradeReason =
   | 'artwork-added'
   | 'artwork-removed'
   | 'artwork-updated'
-  | 'soundcheck-update'
+  | 'normalization-update'
   | 'metadata-correction';
 
 /**
@@ -58,7 +58,7 @@ export type UpgradeReason =
  * - artwork-added: Source has artwork, iPod does not (file replacement)
  * - artwork-removed: Source no longer has artwork but iPod does (metadata-only)
  * - artwork-updated: Source artwork hash differs from iPod sync tag hash (metadata-only)
- * - soundcheck-update: Source has soundcheck value, iPod lacks or differs (metadata-only)
+ * - normalization-update: Source has normalization data, device lacks or differs (metadata-only)
  * - metadata-correction: Non-matching metadata fields differ (metadata-only)
  */
 export type UpdateReason =
@@ -84,7 +84,7 @@ export interface MetadataChange {
     | 'trackNumber'
     | 'discNumber'
     | 'compilation'
-    | 'soundcheck'
+    | 'normalization'
     | 'bitrate'
     | 'fileType'
     | 'lossless'
@@ -255,7 +255,7 @@ export interface DiffOptions {
 
   /**
    * When true, suppress file-replacement upgrades (format-upgrade, quality-upgrade,
-   * artwork-added) but still allow metadata-only updates (soundcheck-update,
+   * artwork-added) but still allow metadata-only updates (normalization-update,
    * metadata-correction).
    *
    * This is useful for space-constrained devices where file replacements

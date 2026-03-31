@@ -13,7 +13,7 @@ podkit reads existing normalization data from your source files and writes the a
 podkit adapts its normalization behavior based on the `audioNormalization` device capability:
 
 - **`soundcheck`** (iPod) — podkit writes Sound Check values to the iPod database. This is what the rest of this page describes.
-- **`replaygain`** (Rockbox) — Rockbox reads ReplayGain tags from audio files natively. If your source files already have ReplayGain tags and you sync them without transcoding, the existing tags are preserved and Rockbox will use them. podkit does not yet write new ReplayGain tags during sync.
+- **`replaygain`** (Rockbox) — podkit writes ReplayGain tags (track gain/peak and album gain/peak) to transcoded and optimized-copy files during sync, so Rockbox and other DAPs can read volume normalization data from file tags. Direct-copy files already have correct tags from the source.
 - **`none`** (Echo Mini, generic DAPs) — normalization is skipped entirely. podkit hides the Sound Check line from dry-run output and skips soundcheck upgrade detection.
 
 You can override this per device in your config — see [Config File Reference](/reference/config-file#device-capability-overrides).
@@ -122,11 +122,11 @@ The available sources depend on the adapter:
 
 ### Per-track values
 
-Use `--tracks --fields` to see individual Sound Check values:
+Use `--tracks --fields` to see individual normalization values:
 
 ```bash
-podkit device music --tracks --fields title,artist,soundcheck
-podkit collection music --tracks --fields title,artist,soundcheck
+podkit device music --tracks --fields title,artist,normalization
+podkit collection music --tracks --fields title,artist,normalization
 ```
 
 Or in JSON format:
@@ -135,7 +135,7 @@ Or in JSON format:
 podkit device music --tracks --format json
 ```
 
-Tracks without ReplayGain or iTunNORM tags will show an empty soundcheck field.
+Tracks without ReplayGain or iTunNORM tags will show an empty normalization field. The value displayed depends on the device type — dB gain for ReplayGain devices, the raw Sound Check integer for iPods.
 
 ## Adding Normalization Data to Your Files
 

@@ -456,6 +456,44 @@ describe('ReplayGain metadata injection', () => {
     });
     expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-10.00 dB');
   });
+
+  it('injects album gain and peak into AAC transcode args', () => {
+    const args = buildTranscodeArgs(input, output, 'aac_at', 'high', {
+      replayGain: { trackGain: -7.5, trackPeak: 0.988, albumGain: -8.2, albumPeak: 0.995 },
+    });
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-7.50 dB');
+    expect(args).toContain('REPLAYGAIN_TRACK_PEAK=0.988000');
+    expect(args).toContain('REPLAYGAIN_ALBUM_GAIN=-8.20 dB');
+    expect(args).toContain('REPLAYGAIN_ALBUM_PEAK=0.995000');
+  });
+
+  it('omits album gain/peak when not provided', () => {
+    const args = buildTranscodeArgs(input, output, 'aac_at', 'high', {
+      replayGain: { trackGain: -3.2, trackPeak: 0.9 },
+    });
+    expect(args).toContain('REPLAYGAIN_TRACK_GAIN=-3.20 dB');
+    const albumEntries = args.filter((a) => a.includes('REPLAYGAIN_ALBUM'));
+    expect(albumEntries).toHaveLength(0);
+  });
+
+  it('injects album gain into Opus args', () => {
+    const args = buildOpusArgs(
+      input,
+      output.replace('.m4a', '.ogg'),
+      { codec: 'opus', bitrateKbps: 160, encoding: 'vbr' },
+      { replayGain: { trackGain: -5.0, albumGain: -6.0, albumPeak: 0.99 } }
+    );
+    expect(args).toContain('REPLAYGAIN_ALBUM_GAIN=-6.00 dB');
+    expect(args).toContain('REPLAYGAIN_ALBUM_PEAK=0.990000');
+  });
+
+  it('injects album gain into optimized copy args', () => {
+    const args = buildOptimizedCopyArgs(input, output, 'm4a', {
+      replayGain: { trackGain: -10.0, albumGain: -9.5, albumPeak: 1.0 },
+    });
+    expect(args).toContain('REPLAYGAIN_ALBUM_GAIN=-9.50 dB');
+    expect(args).toContain('REPLAYGAIN_ALBUM_PEAK=1.000000');
+  });
 });
 
 describe('buildOptimizedCopyArgs', () => {

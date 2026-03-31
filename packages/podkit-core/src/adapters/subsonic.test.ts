@@ -8,7 +8,7 @@ import { describe, it, expect, afterEach } from 'bun:test';
 import { SubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
-import { replayGainToSoundcheck } from '../metadata/soundcheck.js';
+import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
 
 // We need to mock the subsonic-api module before importing SubsonicAdapter
@@ -217,7 +217,14 @@ describe('SubsonicAdapter Sound Check (ReplayGain)', () => {
     });
 
     // Track gain of -6.0 dB should be used, not album gain
-    expect(track.soundcheck).toBe(replayGainToSoundcheck(-6.0));
+    expect(track.normalization).toEqual({
+      source: 'replaygain-track',
+      trackGain: -6.0,
+      trackPeak: 1.0,
+      albumGain: -3.0,
+      albumPeak: 1.0,
+      soundcheckValue: replayGainToSoundcheck(-6.0),
+    });
   });
 
   it('falls back to album gain when track gain is missing', async () => {
@@ -230,16 +237,23 @@ describe('SubsonicAdapter Sound Check (ReplayGain)', () => {
       } as any, // trackGain missing (OpenSubsonic spec says optional)
     });
 
-    expect(track.soundcheck).toBe(replayGainToSoundcheck(-3.0));
+    expect(track.normalization).toEqual({
+      source: 'replaygain-album',
+      trackGain: -3.0,
+      trackPeak: 1.0,
+      albumGain: -3.0,
+      albumPeak: 1.0,
+      soundcheckValue: replayGainToSoundcheck(-3.0),
+    });
   });
 
-  it('soundcheck is undefined when no ReplayGain data present', async () => {
+  it('normalization is undefined when no ReplayGain data present', async () => {
     const track = await mapSong({});
 
-    expect(track.soundcheck).toBeUndefined();
+    expect(track.normalization).toBeUndefined();
   });
 
-  it('soundcheck is undefined when replayGain object exists but has no gain values', async () => {
+  it('normalization is undefined when replayGain object exists but has no gain values', async () => {
     const track = await mapSong({
       replayGain: {
         trackPeak: 1.0,
@@ -248,7 +262,7 @@ describe('SubsonicAdapter Sound Check (ReplayGain)', () => {
       } as any, // No trackGain or albumGain
     });
 
-    expect(track.soundcheck).toBeUndefined();
+    expect(track.normalization).toBeUndefined();
   });
 
   it('a gain of 0 dB correctly produces soundcheck of 1000', async () => {
@@ -263,7 +277,7 @@ describe('SubsonicAdapter Sound Check (ReplayGain)', () => {
       },
     });
 
-    expect(track.soundcheck).toBe(1000);
+    expect(track.normalization?.soundcheckValue).toBe(1000);
   });
 });
 

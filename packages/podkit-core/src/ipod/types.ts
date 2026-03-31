@@ -260,7 +260,7 @@ export interface IpodTrack extends DeviceTrack {
   readonly size: number;
   /** Beats per minute */
   readonly bpm?: number;
-  /** Sound Check volume normalization value */
+  /** Sound Check volume normalization value (iPod-internal, maps to iTunesDB field) */
   readonly soundcheck?: number;
   /** File type description (e.g., "MPEG audio file", "AAC audio file") */
   readonly filetype?: string;

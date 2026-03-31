@@ -700,8 +700,7 @@ const musicSubcommand = new Command('music')
         compilation: t.compilation,
         format: t.fileType || undefined,
         bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
-        soundcheck: t.soundcheck || undefined,
-        soundcheckSource: t.soundcheckSource,
+        normalization: t.normalization,
       }));
 
       if (mode === 'stats') {

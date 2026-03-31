@@ -16,7 +16,13 @@ import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-s
  */
 export interface TagWriter {
   writeComment(filePath: string, comment: string): Promise<void>;
-  writeReplayGain(filePath: string, trackGain: number, trackPeak?: number): Promise<void>;
+  writeReplayGain(
+    filePath: string,
+    trackGain: number,
+    trackPeak?: number,
+    albumGain?: number,
+    albumPeak?: number
+  ): Promise<void>;
   writePicture(filePath: string, imageData: Buffer): Promise<void>;
 }
 
@@ -41,12 +47,24 @@ export class TagLibTagWriter implements TagWriter {
     }
   }
 
-  async writeReplayGain(filePath: string, trackGain: number, trackPeak?: number): Promise<void> {
+  async writeReplayGain(
+    filePath: string,
+    trackGain: number,
+    trackPeak?: number,
+    albumGain?: number,
+    albumPeak?: number
+  ): Promise<void> {
     const file = TagFile.createFromPath(filePath);
     try {
       file.tag.replayGainTrackGain = trackGain;
       if (trackPeak !== undefined) {
         file.tag.replayGainTrackPeak = trackPeak;
+      }
+      if (albumGain !== undefined) {
+        file.tag.replayGainAlbumGain = albumGain;
+      }
+      if (albumPeak !== undefined) {
+        file.tag.replayGainAlbumPeak = albumPeak;
       }
       file.save();
     } finally {

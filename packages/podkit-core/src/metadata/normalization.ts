@@ -1,24 +1,35 @@
 /**
- * Sound Check (volume normalization) conversion utilities
+ * Audio normalization conversion utilities
  *
- * Converts ReplayGain and iTunNORM values to iPod soundcheck format.
- * The iPod firmware reads the soundcheck value from the iTunesDB and
- * applies gain during playback for volume normalization.
+ * Provides the AudioNormalization type and extraction/conversion functions
+ * for volume normalization data (ReplayGain, iTunNORM/Sound Check).
+ *
+ * Design principle: normalization data is stored in its native source format.
+ * Conversions to device-specific formats (iPod soundcheck integers, ReplayGain
+ * dB tags) happen at device boundaries, not in the core data model.
  *
  * @module
  */
 
 import type { IAudioMetadata } from 'music-metadata';
-import type { SoundCheckSource } from '../adapters/interface.js';
 
-/**
- * Result of extracting a soundcheck value, including the source tag format.
- */
-export interface SoundCheckResult {
-  /** Soundcheck value (guint32) */
-  value: number;
-  /** Which tag format the value was extracted from */
-  source: SoundCheckSource;
+/** Source of audio normalization data */
+export type NormalizationSource = 'itunes-soundcheck' | 'replaygain-track' | 'replaygain-album';
+
+/** Audio normalization data in its native source format */
+export interface AudioNormalization {
+  /** Which tag format was the primary source */
+  source: NormalizationSource;
+  /** ReplayGain track gain in dB (e.g., -7.5) */
+  trackGain?: number;
+  /** ReplayGain track peak, linear scale (e.g., 0.988) */
+  trackPeak?: number;
+  /** ReplayGain album gain in dB — reserved for TASK-253 */
+  albumGain?: number;
+  /** ReplayGain album peak, linear scale — reserved for TASK-253 */
+  albumPeak?: number;
+  /** iPod Sound Check integer (from iTunNORM or computed from ReplayGain) */
+  soundcheckValue?: number;
 }
 
 /**
@@ -88,39 +99,86 @@ export function iTunNORMToSoundcheck(normString: string): number | null {
 }
 
 /**
- * Extract a soundcheck value from audio file metadata.
+ * Extract audio normalization data from parsed file metadata.
  *
- * Priority order:
- * 1. iTunNORM tag (native iTunes normalization, most accurate for iPod)
- * 2. ReplayGain track gain (from common metadata)
- * 3. ReplayGain album gain (fallback)
+ * Priority: iTunNORM > ReplayGain track gain > ReplayGain album gain
+ *
+ * Unlike the old extractSoundcheck(), this preserves the native format:
+ * - iTunNORM source: sets soundcheckValue (native format) + trackGain (back-converted for display)
+ * - ReplayGain source: sets trackGain + trackPeak (native format) + soundcheckValue (computed for iPod compat)
  *
  * @param metadata - Parsed audio metadata from music-metadata
- * @returns soundcheck result with value and source, or null if no normalization data found
+ * @returns normalization data with source info, or null if no normalization data found
  */
-export function extractSoundcheck(metadata: IAudioMetadata): SoundCheckResult | null {
+export function extractNormalization(metadata: IAudioMetadata): AudioNormalization | null {
   // 1. Try iTunNORM from native tags
   const iTunNORM = findITunNORM(metadata);
   if (iTunNORM !== null) {
     const sc = iTunNORMToSoundcheck(iTunNORM);
     if (sc !== null) {
-      return { value: sc, source: 'iTunNORM' };
+      return {
+        source: 'itunes-soundcheck',
+        soundcheckValue: sc,
+        trackGain: soundcheckToReplayGainDb(sc),
+      };
     }
   }
 
   // 2. Try ReplayGain track gain
   const trackGain = metadata.common.replaygain_track_gain;
   if (trackGain?.dB !== undefined) {
-    return { value: replayGainToSoundcheck(trackGain.dB), source: 'replayGain_track' };
+    return {
+      source: 'replaygain-track',
+      trackGain: trackGain.dB,
+      trackPeak: metadata.common.replaygain_track_peak?.ratio,
+      albumGain: metadata.common.replaygain_album_gain?.dB,
+      albumPeak: metadata.common.replaygain_album_peak?.ratio,
+      soundcheckValue: replayGainToSoundcheck(trackGain.dB),
+    };
   }
 
   // 3. Try ReplayGain album gain as fallback
   const albumGain = metadata.common.replaygain_album_gain;
   if (albumGain?.dB !== undefined) {
-    return { value: replayGainToSoundcheck(albumGain.dB), source: 'replayGain_album' };
+    return {
+      source: 'replaygain-album',
+      trackGain: albumGain.dB,
+      trackPeak: metadata.common.replaygain_album_peak?.ratio,
+      albumGain: albumGain.dB,
+      albumPeak: metadata.common.replaygain_album_peak?.ratio,
+      soundcheckValue: replayGainToSoundcheck(albumGain.dB),
+    };
   }
 
   return null;
+}
+
+/**
+ * Get the normalization value in dB (for comparison and display).
+ * Prefers trackGain if available, otherwise back-converts from soundcheckValue.
+ */
+export function normalizationToDb(norm: AudioNormalization): number | undefined {
+  if (norm.trackGain !== undefined) {
+    return norm.trackGain;
+  }
+  if (norm.soundcheckValue !== undefined) {
+    return soundcheckToReplayGainDb(norm.soundcheckValue);
+  }
+  return undefined;
+}
+
+/**
+ * Get the iPod soundcheck integer from normalization data.
+ * Returns soundcheckValue if present, otherwise converts from trackGain.
+ */
+export function normalizationToSoundcheck(norm: AudioNormalization): number | undefined {
+  if (norm.soundcheckValue !== undefined) {
+    return norm.soundcheckValue;
+  }
+  if (norm.trackGain !== undefined) {
+    return replayGainToSoundcheck(norm.trackGain);
+  }
+  return undefined;
 }
 
 /**

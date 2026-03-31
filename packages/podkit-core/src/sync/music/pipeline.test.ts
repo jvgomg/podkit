@@ -2351,7 +2351,7 @@ describe('upgrade operations - execution', () => {
             duration: 200000,
             genre: 'Progressive Rock',
             year: 1979,
-            soundcheck: 5432,
+            normalization: { source: 'replaygain-track', trackGain: -7.35, soundcheckValue: 5432 },
           }),
           target: existingTrack,
           reason: 'format-upgrade',
@@ -2372,7 +2372,11 @@ describe('upgrade operations - execution', () => {
     expect(capturedUpdateFields!.filetype).toBe('AAC audio file');
     expect(capturedUpdateFields!.genre).toBe('Progressive Rock');
     expect(capturedUpdateFields!.year).toBe(1979);
-    expect(capturedUpdateFields!.soundcheck).toBe(5432);
+    expect(capturedUpdateFields!.normalization).toEqual({
+      source: 'replaygain-track',
+      trackGain: -7.35,
+      soundcheckValue: 5432,
+    });
     expect(capturedUpdateFields!.duration).toBe(200000);
   });
 

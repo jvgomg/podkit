@@ -527,7 +527,7 @@ describe('MusicHandler', () => {
   });
 
   describe('detectUpdates with audioNormalization', () => {
-    test('filters out soundcheck-update when audioNormalization is none', () => {
+    test('filters out normalization-update when audioNormalization is none', () => {
       const h = createMusicHandler(
         makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'none' }) })
       );
@@ -535,14 +535,14 @@ describe('MusicHandler', () => {
         fileType: 'mp3',
         lossless: false,
         bitrate: 256,
-        soundcheck: 5000,
+        normalization: { source: 'replaygain-track', trackGain: -7, soundcheckValue: 5000 },
       });
       const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
       const reasons = h.detectUpdates(source, device);
-      expect(reasons).not.toContain('soundcheck-update');
+      expect(reasons).not.toContain('normalization-update');
     });
 
-    test('keeps soundcheck-update when audioNormalization is soundcheck', () => {
+    test('keeps normalization-update when audioNormalization is soundcheck', () => {
       const h = createMusicHandler(
         makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'soundcheck' }) })
       );
@@ -550,14 +550,14 @@ describe('MusicHandler', () => {
         fileType: 'mp3',
         lossless: false,
         bitrate: 256,
-        soundcheck: 5000,
+        normalization: { source: 'replaygain-track', trackGain: -7, soundcheckValue: 5000 },
       });
       const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
       const reasons = h.detectUpdates(source, device);
-      expect(reasons).toContain('soundcheck-update');
+      expect(reasons).toContain('normalization-update');
     });
 
-    test('keeps soundcheck-update when audioNormalization is replaygain', () => {
+    test('keeps normalization-update when audioNormalization is replaygain', () => {
       const h = createMusicHandler(
         makeConfig({ capabilities: makeCapabilities({ audioNormalization: 'replaygain' }) })
       );
@@ -565,11 +565,74 @@ describe('MusicHandler', () => {
         fileType: 'mp3',
         lossless: false,
         bitrate: 256,
-        soundcheck: 5000,
+        normalization: { source: 'replaygain-track', trackGain: -7, soundcheckValue: 5000 },
       });
       const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
       const reasons = h.detectUpdates(source, device);
-      expect(reasons).toContain('soundcheck-update');
+      expect(reasons).toContain('normalization-update');
+    });
+
+    test('ignores normalization difference within 0.1 dB epsilon', () => {
+      const h = createMusicHandler(makeConfig());
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        normalization: { source: 'replaygain-track', trackGain: -7.05 },
+      });
+      const device = makeDeviceTrack({
+        bitrate: 256,
+        filetype: 'MPEG audio file',
+        normalization: { source: 'replaygain-track', trackGain: -7.0 },
+      });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).not.toContain('normalization-update');
+    });
+
+    test('detects normalization difference beyond 0.1 dB epsilon', () => {
+      const h = createMusicHandler(makeConfig());
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        normalization: { source: 'replaygain-track', trackGain: -7.2 },
+      });
+      const device = makeDeviceTrack({
+        bitrate: 256,
+        filetype: 'MPEG audio file',
+        normalization: { source: 'replaygain-track', trackGain: -7.0 },
+      });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).toContain('normalization-update');
+    });
+
+    test('detects normalization-update when device has no normalization', () => {
+      const h = createMusicHandler(makeConfig());
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+        normalization: { source: 'replaygain-track', trackGain: -7.0 },
+      });
+      const device = makeDeviceTrack({ bitrate: 256, filetype: 'MPEG audio file' });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).toContain('normalization-update');
+    });
+
+    test('no normalization-update when source has no normalization', () => {
+      const h = createMusicHandler(makeConfig());
+      const source = makeCollectionTrack({
+        fileType: 'mp3',
+        lossless: false,
+        bitrate: 256,
+      });
+      const device = makeDeviceTrack({
+        bitrate: 256,
+        filetype: 'MPEG audio file',
+        normalization: { source: 'replaygain-track', trackGain: -7.0 },
+      });
+      const reasons = h.detectUpdates(source, device);
+      expect(reasons).not.toContain('normalization-update');
     });
   });
 

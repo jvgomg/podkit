@@ -44,7 +44,12 @@ import {
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';
-import { soundcheckToReplayGainDb, replayGainToSoundcheck } from '../metadata/soundcheck.js';
+import type { AudioNormalization } from '../metadata/normalization.js';
+import {
+  soundcheckToReplayGainDb,
+  replayGainToSoundcheck,
+  normalizationToSoundcheck,
+} from '../metadata/normalization.js';
 
 // =============================================================================
 // Types
@@ -77,6 +82,8 @@ export interface MetadataReaderResult {
     picture?: Array<{ data: Buffer }>;
     replaygain_track_gain?: { dB: number; ratio?: number };
     replaygain_track_peak?: { ratio: number };
+    replaygain_album_gain?: { dB: number; ratio?: number };
+    replaygain_album_peak?: { ratio: number };
   };
   format: {
     duration?: number;
@@ -142,7 +149,12 @@ export class MassStorageTrack implements DeviceTrack {
   readonly sampleRate: number;
   readonly size: number;
   readonly filetype?: string;
-  readonly soundcheck?: number;
+  readonly normalization?: AudioNormalization;
+
+  /** Soundcheck value derived from normalization data (for DeviceTrack interface compat) */
+  get soundcheck(): number | undefined {
+    return this.normalization ? normalizationToSoundcheck(this.normalization) : undefined;
+  }
 
   // Flags
   readonly hasArtwork: boolean;
@@ -190,7 +202,7 @@ export class MassStorageTrack implements DeviceTrack {
     sampleRate: number;
     size: number;
     filetype?: string;
-    soundcheck?: number;
+    normalization?: AudioNormalization;
     hasArtwork: boolean;
     hasFile: boolean;
     compilation: boolean;
@@ -216,7 +228,7 @@ export class MassStorageTrack implements DeviceTrack {
     this.sampleRate = opts.sampleRate;
     this.size = opts.size;
     this.filetype = opts.filetype;
-    this.soundcheck = opts.soundcheck;
+    this.normalization = opts.normalization;
     this.hasArtwork = opts.hasArtwork;
     this.hasFile = opts.hasFile;
     this.compilation = opts.compilation ?? false;
@@ -253,7 +265,7 @@ export class MassStorageTrack implements DeviceTrack {
       sampleRate: fields.sampleRate ?? this.sampleRate,
       size: fields.size ?? this.size,
       filetype: fields.filetype ?? this.filetype,
-      soundcheck: fields.soundcheck ?? this.soundcheck,
+      normalization: fields.normalization ?? this.normalization,
       hasArtwork: this.hasArtwork,
       hasFile: this.hasFile,
       compilation: fields.compilation ?? this.compilation,
@@ -337,7 +349,7 @@ export class MassStorageTrack implements DeviceTrack {
       sampleRate: this.sampleRate,
       size: stats.size,
       filetype: this.filetype,
-      soundcheck: this.soundcheck,
+      normalization: this.normalization,
       hasArtwork: this.hasArtwork,
       hasFile: true,
       compilation: this.compilation,
@@ -415,7 +427,10 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Accumulated by updateTrack() when soundcheck changes on a replaygain device.
    * Flushed by save().
    */
-  private pendingReplayGainWrites = new Map<string, { trackGain: number; trackPeak?: number }>();
+  private pendingReplayGainWrites = new Map<
+    string,
+    { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number }
+  >();
 
   /**
    * Pending picture writes, keyed by relative file path.
@@ -464,19 +479,23 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * The track list is cached so getTracks() is synchronous.
    */
   /**
-   * Build ReplayGain data from raw values or back-convert from soundcheck.
-   * Prefers raw dB/peak values when available.
+   * Build ReplayGain data from AudioNormalization.
+   * Prefers trackGain (dB) when available, otherwise back-converts from soundcheckValue.
    */
   private buildReplayGainData(
-    trackGain?: number,
-    trackPeak?: number,
-    soundcheck?: number
-  ): { trackGain: number; trackPeak?: number } | undefined {
-    if (trackGain !== undefined) {
-      return { trackGain, trackPeak };
+    normalization?: AudioNormalization
+  ): { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number } | undefined {
+    if (!normalization) return undefined;
+    if (normalization.trackGain !== undefined) {
+      return {
+        trackGain: normalization.trackGain,
+        trackPeak: normalization.trackPeak,
+        albumGain: normalization.albumGain,
+        albumPeak: normalization.albumPeak,
+      };
     }
-    if (soundcheck !== undefined) {
-      return { trackGain: soundcheckToReplayGainDb(soundcheck) };
+    if (normalization.soundcheckValue !== undefined) {
+      return { trackGain: soundcheckToReplayGainDb(normalization.soundcheckValue) };
     }
     return undefined;
   }
@@ -554,7 +573,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       sampleRate: input.sampleRate ?? 0,
       size: input.size ?? 0,
       filetype: input.filetype,
-      soundcheck: input.soundcheck,
+      normalization: input.normalization,
       hasArtwork: false,
       hasFile: false, // File doesn't exist yet — copyFile() will create it
       compilation: input.compilation ?? false,
@@ -594,20 +613,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     // Queue ReplayGain tag write when:
-    // 1. Soundcheck changed on a replaygain device (collection updated normalization data)
+    // 1. Normalization changed on a replaygain device (collection updated normalization data)
     // 2. writeReplayGainTags is explicitly set (e.g., after transcoding M4A files)
-    const soundcheckChanged =
-      fields.soundcheck !== undefined && fields.soundcheck !== track.soundcheck;
+    const normalizationChanged =
+      fields.normalization !== undefined &&
+      normalizationToSoundcheck(fields.normalization) !==
+        (track.normalization ? normalizationToSoundcheck(track.normalization) : undefined);
     if (
       this.capabilities.audioNormalization === 'replaygain' &&
-      (soundcheckChanged || fields.writeReplayGainTags)
+      (normalizationChanged || fields.writeReplayGainTags)
     ) {
-      const sc = fields.soundcheck ?? track.soundcheck;
-      const rg = this.buildReplayGainData(
-        fields.replayGainTrackGain,
-        fields.replayGainTrackPeak,
-        sc
-      );
+      const rg = this.buildReplayGainData(fields.normalization ?? track.normalization);
       if (rg) {
         this.pendingReplayGainWrites.set(updated.filePath, rg);
       }
@@ -750,7 +766,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       sampleRate: track.sampleRate,
       size: stats.size,
       filetype: derivedExt || track.filetype,
-      soundcheck: track.soundcheck,
+      normalization: track.normalization,
       hasArtwork: track.hasArtwork,
       hasFile: true,
       compilation: track.compilation,
@@ -820,7 +836,9 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         this.tagWriter.writeReplayGain(
           path.join(this.mountPoint, filePath),
           rg.trackGain,
-          rg.trackPeak
+          rg.trackPeak,
+          rg.albumGain,
+          rg.albumPeak
         )
       );
       await Promise.all(writes);
@@ -1001,10 +1019,17 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Detect artwork presence
     const hasArtwork = (common.picture?.length ?? 0) > 0;
 
-    // Extract soundcheck from ReplayGain tags (for diff detection against collection)
-    const soundcheck =
+    // Extract normalization data from ReplayGain tags (for diff detection against collection)
+    const normalization: AudioNormalization | undefined =
       common.replaygain_track_gain?.dB !== undefined
-        ? replayGainToSoundcheck(common.replaygain_track_gain.dB)
+        ? {
+            source: 'replaygain-track',
+            trackGain: common.replaygain_track_gain.dB,
+            trackPeak: common.replaygain_track_peak?.ratio,
+            albumGain: common.replaygain_album_gain?.dB,
+            albumPeak: common.replaygain_album_peak?.ratio,
+            soundcheckValue: replayGainToSoundcheck(common.replaygain_track_gain.dB),
+          }
         : undefined;
 
     return new MassStorageTrack({
@@ -1026,7 +1051,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       sampleRate: format.sampleRate ?? 0,
       size: stats.size,
       filetype: ext,
-      soundcheck,
+      normalization,
       hasArtwork,
       hasFile: true,
       compilation: common.compilation ?? false,

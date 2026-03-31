@@ -251,7 +251,7 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 | `artworkSources` | string[] | from profile | How the device reads artwork, in priority order (first = preferred): `embedded`, `sidecar`, `database` |
 | `artworkMaxResolution` | integer | from profile | Maximum artwork dimension in pixels (square). podkit resizes artwork to fit. |
 | `supportsVideo` | boolean | from profile | Whether the device supports video playback |
-| `audioNormalization` | string | from profile | Volume normalization mode: `soundcheck` (writes to iPod database), `replaygain` (Rockbox reads tags natively), or `none` (skip normalization). podkit adapts its behavior — hiding normalization UI, skipping soundcheck upgrade detection — based on this value. |
+| `audioNormalization` | string | from profile | Volume normalization mode: `soundcheck` (writes to iPod database), `replaygain` (writes ReplayGain track + album tags to files for Rockbox and other DAPs), or `none` (skip normalization). podkit adapts its behavior — hiding normalization UI, skipping normalization upgrade detection — based on this value. |
 | `supportsAlbumArtistBrowsing` | boolean | from profile | Whether the device uses Album Artist for browse navigation. When `true`, the device groups tracks by Album Artist in its artist list. When `false` (e.g. iPod stock firmware), the device only uses the Artist field for browsing. |
 | `musicDir` | string | `"Music"` | Music directory path on the device. Use `/`, `.`, or `""` for device root. Defaults vary by device type (e.g., Echo Mini defaults to root). |
 | `moviesDir` | string | `"Video/Movies"` | Movies directory path on the device. Use `/`, `.`, or `""` for device root. |

@@ -5,7 +5,7 @@
  * of track tables, JSON, and CSV exports.
  */
 
-import type { SoundCheckSource, SyncTagData } from '@podkit/core';
+import type { AudioNormalization, NormalizationSource, SyncTagData } from '@podkit/core';
 
 // =============================================================================
 // Types and Constants
@@ -30,8 +30,7 @@ export interface DisplayTrack {
   compilation?: boolean;
   format?: string;
   bitrate?: number;
-  soundcheck?: number;
-  soundcheckSource?: SoundCheckSource;
+  normalization?: AudioNormalization;
   syncTag?: SyncTagData | null;
   hasArtwork?: boolean;
 }
@@ -54,7 +53,7 @@ export const AVAILABLE_FIELDS = [
   'compilation',
   'format',
   'bitrate',
-  'soundcheck',
+  'normalization',
   'syncTag',
   'syncTagQuality',
   'syncTagEncoding',
@@ -87,7 +86,7 @@ export const FIELD_HEADERS: Record<FieldName, string> = {
   compilation: 'Comp',
   format: 'Format',
   bitrate: 'Bitrate',
-  soundcheck: 'SndChk',
+  normalization: 'Norm',
   syncTag: 'Sync',
   syncTagQuality: 'SyncQ',
   syncTagEncoding: 'SyncEnc',
@@ -113,7 +112,7 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
   compilation: 4,
   format: 8,
   bitrate: 7,
-  soundcheck: 10,
+  normalization: 10,
   syncTag: 7,
   syncTagQuality: 10,
   syncTagEncoding: 7,
@@ -206,8 +205,13 @@ export function getFieldValue(track: DisplayTrack, field: FieldName): string {
       return track.format || '';
     case 'bitrate':
       return track.bitrate ? `${track.bitrate}` : '';
-    case 'soundcheck':
-      return track.soundcheck ? `${track.soundcheck}` : '';
+    case 'normalization':
+      if (!track.normalization) return '';
+      return track.normalization.trackGain !== undefined
+        ? `${track.normalization.trackGain.toFixed(1)} dB`
+        : track.normalization.soundcheckValue !== undefined
+          ? `${track.normalization.soundcheckValue}`
+          : '';
     case 'syncTag':
       if (track.syncTag === undefined) return '-';
       if (track.syncTag === null) return '\u2717';
@@ -344,11 +348,13 @@ export function formatTable(tracks: DisplayTrack[], fields: FieldName[]): string
  */
 export function formatJson(tracks: DisplayTrack[], fields: FieldName[]): string {
   const output = tracks.map((track) => {
-    const obj: Record<string, string | number | boolean | SyncTagData | null | undefined> = {};
+    const obj: Record<string, unknown> = {};
     for (const field of fields) {
       if (field === 'duration') {
         obj['duration'] = track.duration;
         obj['durationFormatted'] = formatDuration(track.duration);
+      } else if (field === 'normalization') {
+        obj['normalization'] = track.normalization ?? null;
       } else if (field === 'syncTag') {
         obj['syncTag'] = track.syncTag ?? null;
       } else if (field === 'syncTagQuality') {
@@ -410,11 +416,11 @@ export interface ContentStats {
   artists: number;
   compilationAlbums: number;
   compilationTracks: number;
-  soundCheckTracks: number;
+  normalizedTracks: number;
   syncTagTracks: number;
   syncTagComplete: number;
   syncTagMissingArt: number;
-  soundCheckSources?: Partial<Record<SoundCheckSource, number>>;
+  normalizationSources?: Partial<Record<NormalizationSource, number>>;
   transferModeCounts?: Record<string, number>;
   syncTagMissingTransfer: number;
   fileTypes: Record<string, number>;
@@ -427,10 +433,10 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
   const albums = new Set<string>();
   const artists = new Set<string>();
   const fileTypes: Record<string, number> = {};
-  const soundCheckSources: Record<string, number> = {};
+  const normalizationSources: Record<string, number> = {};
   const compilationAlbumSet = new Set<string>();
   let compilationTracks = 0;
-  let soundCheckTracks = 0;
+  let normalizedTracks = 0;
   let syncTagTracks = 0;
   let syncTagComplete = 0;
   let syncTagMissingArt = 0;
@@ -465,11 +471,11 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
       }
     }
 
-    if (track.soundcheck !== undefined && track.soundcheck > 0) {
-      soundCheckTracks++;
-      if (track.soundcheckSource) {
-        soundCheckSources[track.soundcheckSource] =
-          (soundCheckSources[track.soundcheckSource] || 0) + 1;
+    if (track.normalization !== undefined) {
+      normalizedTracks++;
+      if (track.normalization.source) {
+        normalizationSources[track.normalization.source] =
+          (normalizationSources[track.normalization.source] || 0) + 1;
       }
     }
 
@@ -487,10 +493,10 @@ export function computeStats(tracks: DisplayTrack[]): ContentStats {
     syncTagTracks,
     syncTagComplete,
     syncTagMissingArt,
-    soundCheckTracks,
-    soundCheckSources:
-      Object.keys(soundCheckSources).length > 0
-        ? (soundCheckSources as Partial<Record<SoundCheckSource, number>>)
+    normalizedTracks,
+    normalizationSources:
+      Object.keys(normalizationSources).length > 0
+        ? (normalizationSources as Partial<Record<NormalizationSource, number>>)
         : undefined,
     transferModeCounts: Object.keys(transferModeCounts).length > 0 ? transferModeCounts : undefined,
     syncTagMissingTransfer,
@@ -516,10 +522,10 @@ export interface StatsFormatOptions {
   };
 }
 
-const SOUND_CHECK_SOURCE_LABELS: Record<SoundCheckSource, string> = {
-  iTunNORM: 'iTunNORM',
-  replayGain_track: 'ReplayGain (track)',
-  replayGain_album: 'ReplayGain (album)',
+const NORMALIZATION_SOURCE_LABELS: Record<NormalizationSource, string> = {
+  'itunes-soundcheck': 'iTunNORM',
+  'replaygain-track': 'ReplayGain (track)',
+  'replaygain-album': 'ReplayGain (album)',
 };
 
 /**
@@ -611,18 +617,18 @@ export function formatStatsText(
     }
   }
 
-  if (stats.soundCheckTracks > 0) {
-    const scTracks = formatNumber(stats.soundCheckTracks);
-    const pct = Math.floor((stats.soundCheckTracks / stats.tracks) * 100);
+  if (stats.normalizedTracks > 0) {
+    const scTracks = formatNumber(stats.normalizedTracks);
+    const pct = Math.floor((stats.normalizedTracks / stats.tracks) * 100);
     lines.push(`  Sound Check: ${scTracks} (${pct}%)`);
 
-    if (options?.verbose && stats.soundCheckSources) {
-      const entries = Object.entries(stats.soundCheckSources).sort((a, b) => b[1] - a[1]);
+    if (options?.verbose && stats.normalizationSources) {
+      const entries = Object.entries(stats.normalizationSources).sort((a, b) => b[1] - a[1]);
       const maxLabelLen = Math.max(
-        ...entries.map(([k]) => SOUND_CHECK_SOURCE_LABELS[k as SoundCheckSource].length)
+        ...entries.map(([k]) => NORMALIZATION_SOURCE_LABELS[k as NormalizationSource].length)
       );
       for (const [source, count] of entries) {
-        const label = SOUND_CHECK_SOURCE_LABELS[source as SoundCheckSource];
+        const label = NORMALIZATION_SOURCE_LABELS[source as NormalizationSource];
         lines.push(`    ${label.padEnd(maxLabelLen)}  ${formatNumber(count)}`);
       }
     }

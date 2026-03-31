@@ -10,7 +10,7 @@ describe('collectTips', () => {
   describe('sound check tip', () => {
     it('returns tip for partial sound check coverage', () => {
       const tips = collectTips({
-        stats: { tracks: 100, soundCheckTracks: 50 },
+        stats: { tracks: 100, normalizedTracks: 50 },
       });
       expect(tips).toHaveLength(1);
       expect(tips[0]!.message).toContain('Sound Check');
@@ -19,14 +19,14 @@ describe('collectTips', () => {
 
     it('returns no tip when all tracks have sound check', () => {
       const tips = collectTips({
-        stats: { tracks: 100, soundCheckTracks: 100 },
+        stats: { tracks: 100, normalizedTracks: 100 },
       });
       expect(tips).toHaveLength(0);
     });
 
     it('returns no tip when no tracks have sound check', () => {
       const tips = collectTips({
-        stats: { tracks: 100, soundCheckTracks: 0 },
+        stats: { tracks: 100, normalizedTracks: 0 },
       });
       expect(tips).toHaveLength(0);
     });
@@ -148,7 +148,7 @@ describe('collectTips', () => {
   describe('multiple tips', () => {
     it('returns multiple tips when multiple conditions match', () => {
       const tips = collectTips({
-        stats: { tracks: 100, soundCheckTracks: 50 },
+        stats: { tracks: 100, normalizedTracks: 50 },
         mountRequiresSudo: true,
       });
       expect(tips).toHaveLength(2);
