@@ -47,10 +47,13 @@ export type {
   MetadataReaderResult,
   MassStorageAdapterOptions,
 } from './mass-storage-adapter.js';
+export type { TrackPathVars } from './mass-storage-utils.js';
 export {
   sanitizeFilename,
   generateTrackPath,
   generateVideoPath,
+  resolvePathTemplate,
+  DEFAULT_MUSIC_PATH_TEMPLATE,
   deduplicatePath,
   padTrackNumber,
   isAudioExtension,

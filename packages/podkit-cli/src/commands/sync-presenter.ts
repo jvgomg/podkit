@@ -221,6 +221,9 @@ export interface ContentTypePresenter<TSource, TDevice> {
     core: typeof import('@podkit/core')
   ): { toAdd: TSource[]; toRemove: TDevice[]; toUpdate: any[]; existing: any[] };
 
+  /** Reconcile file paths on mass-storage devices (move entries to toUpdate when paths mismatch) */
+  reconcilePaths?(diff: any, ipod: any): void;
+
   /** Collect post-diff data (e.g., artworkMissingBaseline for music) */
   collectPostDiffData?(
     diff: any,
@@ -419,6 +422,11 @@ export async function genericSyncCollection<TSource, TDevice>(
   const deviceItems = presenter.getDeviceItems(ipod, core);
   const diff = presenter.computeDiff(sourceItems, deviceItems, contentConfig, ipod, core);
   diffSpinner.stop(presenter.type === 'music' ? 'Diff computed' : 'Video diff computed');
+
+  // 4b. Path reconciliation (mass-storage: detect path mismatches from template/metadata changes)
+  if (presenter.reconcilePaths) {
+    presenter.reconcilePaths(diff, ipod);
+  }
 
   // 5. Post-diff analysis
   let postDiffData: Record<string, unknown> = {};

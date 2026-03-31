@@ -28,6 +28,7 @@ import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import {
   DEFAULT_CONTENT_PATHS,
+  DEFAULT_MUSIC_PATH_TEMPLATE,
   PODKIT_DIR,
   MANIFEST_FILE,
   generateTrackPath,
@@ -112,6 +113,12 @@ export interface MassStorageAdapterOptions {
   contentPaths?: Partial<ContentPaths>;
   /** @deprecated Use contentPaths.musicDir instead */
   musicDir?: string;
+  /**
+   * Path template for music track file paths.
+   * Uses `{variable}` placeholders (e.g. `{albumArtist}/{album}/{trackNumber} - {title}{ext}`).
+   * @see DEFAULT_MUSIC_PATH_TEMPLATE for available variables and the default value.
+   */
+  pathTemplate?: string;
 }
 
 // =============================================================================
@@ -275,6 +282,40 @@ export class MassStorageTrack implements DeviceTrack {
   }
 
   /**
+   * Create a new track instance with a different file path.
+   * Used by relocateTrack() for path changes without metadata changes.
+   */
+  withPath(newPath: string): MassStorageTrack {
+    return new MassStorageTrack({
+      mountPoint: this.mountPoint,
+      contentRoots: this.contentRoots,
+      filePath: newPath,
+      title: this.title,
+      artist: this.artist,
+      album: this.album,
+      albumArtist: this.albumArtist,
+      genre: this.genre,
+      composer: this.composer,
+      comment: this.comment,
+      trackNumber: this.trackNumber,
+      discNumber: this.discNumber,
+      totalDiscs: this.totalDiscs,
+      year: this.year,
+      duration: this.duration,
+      bitrate: this.bitrate,
+      sampleRate: this.sampleRate,
+      size: this.size,
+      filetype: this.filetype,
+      normalization: this.normalization,
+      hasArtwork: this.hasArtwork,
+      hasFile: this.hasFile,
+      compilation: this.compilation,
+      mediaType: this.mediaType,
+      managed: this.managed,
+    });
+  }
+
+  /**
    * Remove the track's file from disk.
    * Also removes empty parent directories up to the Music/ or Video/ boundary.
    */
@@ -413,6 +454,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private managedFiles: Set<string>;
   private allocatedPaths: Set<string>;
   private readonly contentPaths: ContentPaths;
+  private readonly pathTemplate: string;
   private readonly metadataReader: MetadataReader;
   private readonly tagWriter: TagWriter;
 
@@ -439,6 +481,12 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    */
   private pendingPictureWrites = new Map<string, Buffer>();
 
+  /**
+   * Pending file moves, keyed by current relative path → new relative path.
+   * Accumulated by relocateTrack() and flushed by save() via fs.rename().
+   */
+  private pendingMoves = new Map<string, string>();
+
   private constructor(
     mountPoint: string,
     capabilities: DeviceCapabilities,
@@ -454,6 +502,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
     this.contentPaths = normalizeContentPaths(pathOverrides);
     validateContentPaths(this.contentPaths);
+    this.pathTemplate = options?.pathTemplate ?? DEFAULT_MUSIC_PATH_TEMPLATE;
 
     this.metadataReader = options?.metadataReader ?? defaultMetadataReader;
     this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
@@ -512,6 +561,45 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   // ---------------------------------------------------------------------------
+  // Path computation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Compute the expected device-relative path for a track given current
+   * metadata and path template. Used for path-mismatch detection during
+   * sync diff reconciliation.
+   */
+  computeExpectedPath(input: DeviceTrackInput): string {
+    const ext = input.filetype ? resolveFileExtension(input.filetype) : '.mp3';
+    const isVideo = input.mediaType !== undefined && isVideoMediaType(input.mediaType);
+
+    return isVideo
+      ? generateVideoPath({
+          title: input.title,
+          contentType: input.tvShow || input.tvEpisode ? 'tvshow' : 'movie',
+          year: input.year,
+          seriesTitle: input.tvShow,
+          seasonNumber: input.seasonNumber,
+          episodeNumber: input.episodeNumber,
+          extension: ext,
+          moviesDir: this.contentPaths.moviesDir,
+          tvShowsDir: this.contentPaths.tvShowsDir,
+        })
+      : generateTrackPath({
+          artist: input.artist,
+          albumArtist: input.albumArtist,
+          album: input.album,
+          title: input.title,
+          trackNumber: input.trackNumber,
+          discNumber: input.discNumber,
+          totalDiscs: input.totalDiscs,
+          extension: ext,
+          musicDir: this.contentPaths.musicDir,
+          pathTemplate: this.pathTemplate,
+        });
+  }
+
+  // ---------------------------------------------------------------------------
   // Track lifecycle
   // ---------------------------------------------------------------------------
 
@@ -538,6 +626,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         })
       : generateTrackPath({
           artist: input.artist,
+          albumArtist: input.albumArtist,
           album: input.album,
           title: input.title,
           trackNumber: input.trackNumber,
@@ -545,6 +634,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           totalDiscs: input.totalDiscs,
           extension: ext,
           musicDir: this.contentPaths.musicDir,
+          pathTemplate: this.pathTemplate,
         });
 
     // Check if desired path collides with an unmanaged file on device
@@ -614,6 +704,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   checkAddCollisions(
     inputs: Array<{
       artist?: string;
+      albumArtist?: string;
       album?: string;
       title: string;
       trackNumber?: number;
@@ -648,6 +739,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           })
         : generateTrackPath({
             artist: input.artist,
+            albumArtist: input.albumArtist,
             album: input.album,
             title: input.title,
             trackNumber: input.trackNumber,
@@ -655,6 +747,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
             totalDiscs: input.totalDiscs,
             extension: ext,
             musicDir: this.contentPaths.musicDir,
+            pathTemplate: this.pathTemplate,
           });
 
       // Collision = path exists on device but is NOT managed by podkit
@@ -704,6 +797,62 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     return updated;
+  }
+
+  /**
+   * Relocate a track to a new device-relative path.
+   *
+   * Queues a file move (executed during save() via fs.rename()) and updates
+   * all internal tracking. This is used for path-mismatch self-healing when
+   * metadata changes affect the directory structure or the path template changes.
+   *
+   * The move is a same-filesystem rename — no data copying required.
+   */
+  relocateTrack(track: MassStorageTrack, newPath: string): MassStorageTrack {
+    const oldPath = track.filePath;
+
+    // Deduplicate: if the target path is already taken (by another track),
+    // append a suffix to avoid overwriting
+    const finalPath = deduplicatePath(newPath, this.allocatedPaths);
+
+    // Update path tracking
+    this.allocatedPaths.delete(oldPath);
+    this.allocatedPaths.add(finalPath);
+    if (this.managedFiles.has(oldPath)) {
+      this.managedFiles.delete(oldPath);
+      this.managedFiles.add(finalPath);
+    }
+
+    // Re-key any pending writes from old path to new path
+    if (this.pendingCommentWrites.has(oldPath)) {
+      const val = this.pendingCommentWrites.get(oldPath)!;
+      this.pendingCommentWrites.delete(oldPath);
+      this.pendingCommentWrites.set(finalPath, val);
+    }
+    if (this.pendingReplayGainWrites.has(oldPath)) {
+      const val = this.pendingReplayGainWrites.get(oldPath)!;
+      this.pendingReplayGainWrites.delete(oldPath);
+      this.pendingReplayGainWrites.set(finalPath, val);
+    }
+    if (this.pendingPictureWrites.has(oldPath)) {
+      const val = this.pendingPictureWrites.get(oldPath)!;
+      this.pendingPictureWrites.delete(oldPath);
+      this.pendingPictureWrites.set(finalPath, val);
+    }
+
+    // Queue the filesystem move
+    this.pendingMoves.set(oldPath, finalPath);
+
+    // Create a new track instance with updated path
+    const relocated = track.withPath(finalPath);
+
+    // Replace in track list
+    const index = this.tracks.findIndex((t) => t.filePath === oldPath);
+    if (index >= 0) {
+      this.tracks[index] = relocated;
+    }
+
+    return relocated;
   }
 
   copyTrackFile(track: MassStorageTrack, sourcePath: string): MassStorageTrack {
@@ -895,6 +1044,53 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   // ---------------------------------------------------------------------------
 
   async save(): Promise<void> {
+    // Flush pending file moves (relocations) — must happen before tag writes
+    // so that tag writes target the new file paths
+    if (this.pendingMoves.size > 0) {
+      for (const [oldPath, newPath] of this.pendingMoves) {
+        const absOld = path.join(this.mountPoint, oldPath);
+        const absNew = path.join(this.mountPoint, newPath);
+
+        // Ensure target directory exists
+        fs.mkdirSync(path.dirname(absNew), { recursive: true });
+
+        // Same-filesystem rename (atomic, no data copy).
+        // If the source file was removed externally, skip this move
+        // rather than aborting all remaining moves in the batch.
+        try {
+          fs.renameSync(absOld, absNew);
+        } catch (err: any) {
+          if (err?.code === 'ENOENT') continue;
+          throw err;
+        }
+
+        // Clean up empty parent directories of the old path
+        let dir = path.dirname(absOld);
+        const contentRoots = this.getContentRoots().map((r) =>
+          r ? path.join(this.mountPoint, r) : this.mountPoint
+        );
+        const matchedRoot = contentRoots
+          .filter((r) => dir.startsWith(r + '/') || dir.startsWith(r + path.sep) || dir === r)
+          .sort((a, b) => b.length - a.length)[0];
+        if (matchedRoot) {
+          while (dir !== matchedRoot && dir.startsWith(matchedRoot) && dir !== this.mountPoint) {
+            try {
+              const entries = fs.readdirSync(dir);
+              if (entries.length === 0) {
+                fs.rmdirSync(dir);
+                dir = path.dirname(dir);
+              } else {
+                break;
+              }
+            } catch {
+              break;
+            }
+          }
+        }
+      }
+      this.pendingMoves.clear();
+    }
+
     // Flush pending comment tag writes to audio files
     if (this.pendingCommentWrites.size > 0) {
       const writes = [...this.pendingCommentWrites.entries()].map(([filePath, comment]) =>

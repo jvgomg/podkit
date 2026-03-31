@@ -49,4 +49,11 @@ export type MusicOperation =
       metadata: Partial<TrackMetadata>;
       source?: CollectionTrack;
     }
-  | { type: 'update-sync-tag'; track: DeviceTrack; syncTag: SyncTagData };
+  | { type: 'update-sync-tag'; track: DeviceTrack; syncTag: SyncTagData }
+  | {
+      type: 'relocate';
+      track: DeviceTrack;
+      source: CollectionTrack;
+      newPath: string;
+      metadata?: Partial<TrackMetadata>;
+    };
