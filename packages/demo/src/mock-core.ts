@@ -40,7 +40,6 @@ export type {
   AdapterConfig,
   DirectoryAdapterConfig as AdapterDirectoryConfig,
   SubsonicAdapterConfig as AdapterSubsonicConfig,
-  SoundCheckSource,
 } from '@podkit/core';
 
 export type { DirectoryAdapterConfig, ScanProgress, ScanWarning } from '@podkit/core';
@@ -189,9 +188,6 @@ export type {
 
 // Sync tag types
 export type { SyncTagData, SyncTagUpdate } from '@podkit/core';
-
-// Sound Check types
-export type { SoundCheckResult } from '@podkit/core';
 
 // Upgrade detection types
 export type { PresetChangeOptions } from '@podkit/core';
@@ -2236,6 +2232,33 @@ export const DEVICE_PRESETS: Record<string, any> = {
   },
 };
 
+export function fileTypeToAudioCodec(fileType: string, _codec?: string): string | undefined {
+  return fileType;
+}
+
+export function normalizeContentPaths(
+  partial: Partial<{ musicDir: string; moviesDir: string; tvShowsDir: string }>,
+  defaults: { musicDir: string; moviesDir: string; tvShowsDir: string } = {
+    musicDir: 'Music',
+    moviesDir: 'Movies',
+    tvShowsDir: 'TV Shows',
+  }
+): { musicDir: string; moviesDir: string; tvShowsDir: string } {
+  return {
+    musicDir: (partial.musicDir ?? defaults.musicDir).replace(/^\/+|\/+$/g, ''),
+    moviesDir: (partial.moviesDir ?? defaults.moviesDir).replace(/^\/+|\/+$/g, ''),
+    tvShowsDir: (partial.tvShowsDir ?? defaults.tvShowsDir).replace(/^\/+|\/+$/g, ''),
+  };
+}
+
+export function validateContentPaths(_paths: {
+  musicDir: string;
+  moviesDir: string;
+  tvShowsDir: string;
+}): void {
+  // No-op for demo
+}
+
 export function getDevicePreset(deviceType: string): any {
   return DEVICE_PRESETS[deviceType];
 }
@@ -2309,4 +2332,96 @@ export function createUsbOnlyReadinessResult(_device: any): any {
 export function interpretError(error: Error | string): any {
   const msg = typeof error === 'string' ? error : error.message;
   return { explanation: msg, rawMessage: msg };
+}
+
+// =============================================================================
+// Stubs for exports used internally by @podkit/core but re-exported from index
+// =============================================================================
+
+export const DEFAULT_CONTENT_PATHS = {
+  musicDir: 'Music',
+  moviesDir: 'Video/Movies',
+  tvShowsDir: 'Video/Shows',
+};
+export const MANIFEST_FILE = '.podkit-manifest.json';
+export const PODKIT_DIR = '.podkit';
+export const TRANSFER_MODES = ['fast', 'optimized', 'portable'] as const;
+
+export class MusicOperationFactory {
+  constructor(_config?: any) {}
+}
+export class MusicTrackClassifier {
+  constructor(_config?: any) {}
+}
+export class VideoTrackClassifier {
+  constructor(_config?: any) {}
+}
+
+export function buildOptimizedCopyArgs(_src: string, _dst: string): string[] {
+  return [];
+}
+export function calculateVideoOperationSize(_op: any): number {
+  return 0;
+}
+export function calculateVideoOperationTime(_op: any): number {
+  return 0;
+}
+export function changesToMetadata(_changes: any): any {
+  return {};
+}
+export function checkDatabase(_ctx: any): any {
+  return { status: 'pass' };
+}
+export function checkIpodStructure(_ctx: any): any {
+  return { status: 'pass' };
+}
+export function checkSysInfo(_ctx: any): any {
+  return { status: 'pass' };
+}
+export function classifierFromConfig(_config: any): any {
+  return new MusicTrackClassifier();
+}
+export function deduplicatePath(path: string): string {
+  return path;
+}
+export function extractNormalization(_metadata: any): any {
+  return undefined;
+}
+export function generateTrackPath(_track: any, _opts?: any): string {
+  return '';
+}
+export function getDeviceCapabilities(_device: any): any {
+  return {};
+}
+export function isAudioExtension(ext: string): boolean {
+  return ['.mp3', '.m4a', '.flac', '.ogg', '.opus', '.wav', '.aiff', '.aac', '.alac'].includes(
+    ext.toLowerCase()
+  );
+}
+export function isDeviceCompatible(_track: any, _device: any): boolean {
+  return true;
+}
+export function isValidTransferMode(mode: string): boolean {
+  return (TRANSFER_MODES as readonly string[]).includes(mode);
+}
+export function normalizationToDb(_norm: any): number {
+  return 0;
+}
+export function normalizationToSoundcheck(_norm: any): number {
+  return 1000;
+}
+export function normalizeContentDir(dir: string): string {
+  let result = dir.replace(/^\/+|\/+$/g, '');
+  if (result === '.') result = '';
+  return result;
+}
+export function padTrackNumber(num: number, total?: number): string {
+  const width = total ? String(total).length : 2;
+  return String(num).padStart(width, '0');
+}
+export function sanitizeFilename(name: string): string {
+  return name.replace(/[<>:"/\\|?*]/g, '_');
+}
+export function soundcheckToReplayGainDb(_sc: number): number {
+  return 0;
 }

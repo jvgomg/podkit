@@ -5,6 +5,7 @@
   "scripts": {
     "build": "bun run build.ts",
     "record": "bash run.sh",
+    "typecheck": "tsc --noEmit",
     "clean": "rm -rf bin demo.gif"
   },
   "dependencies": {
