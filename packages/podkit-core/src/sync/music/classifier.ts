@@ -115,7 +115,10 @@ export class MusicTrackClassifier {
     const warnLossyToLossy = sourceCategory === 'incompatible-lossy';
 
     // 1. Device natively supports the codec -> copy
-    if (deviceNative) {
+    //    Exception: lossless sources with a non-lossless quality preset should
+    //    be transcoded (e.g., FLAC on a FLAC-capable device with quality=high
+    //    should produce AAC, not copy FLAC).
+    if (deviceNative && !(isLossless && this.resolvePresetName() !== 'lossless')) {
       return {
         sourceCategory,
         deviceNative,

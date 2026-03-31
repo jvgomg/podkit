@@ -66,10 +66,11 @@ describe('MusicTrackClassifier', () => {
       });
     });
 
-    test('FLAC + device supports FLAC natively → direct-copy', () => {
+    test('FLAC + device supports FLAC natively + lossless preset → direct-copy', () => {
       const classifier = new MusicTrackClassifier(
         makeContext({
           supportedAudioCodecs: ['flac', 'mp3', 'aac'],
+          resolvedQuality: 'lossless',
         })
       );
       const result = classifier.classify(makeTrack());
@@ -78,17 +79,32 @@ describe('MusicTrackClassifier', () => {
       expect(result.action).toEqual({ type: 'direct-copy' });
     });
 
-    test('FLAC + device supports FLAC + embedded artwork → optimized-copy', () => {
+    test('FLAC + device supports FLAC + embedded artwork + lossless preset → optimized-copy', () => {
       const classifier = new MusicTrackClassifier(
         makeContext({
           supportedAudioCodecs: ['flac', 'mp3', 'aac'],
           primaryArtworkSource: 'embedded',
+          resolvedQuality: 'lossless',
         })
       );
       const result = classifier.classify(makeTrack());
 
       expect(result.deviceNative).toBe(true);
       expect(result.action).toEqual({ type: 'optimized-copy' });
+    });
+
+    test('FLAC + device supports FLAC natively + high preset → transcode', () => {
+      const classifier = new MusicTrackClassifier(
+        makeContext({
+          supportedAudioCodecs: ['flac', 'mp3', 'aac'],
+          resolvedQuality: 'high',
+        })
+      );
+      const result = classifier.classify(makeTrack());
+
+      expect(result.deviceNative).toBe(true);
+      expect(result.isLossless).toBe(true);
+      expect(result.action.type).toBe('transcode');
     });
   });
 

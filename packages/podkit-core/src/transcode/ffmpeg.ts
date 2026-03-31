@@ -69,7 +69,9 @@ const DEFAULT_FFPROBE = 'ffprobe';
  * Forces even pixel dimensions for codec compatibility.
  */
 function buildArtworkScaleFilter(maxDim: number): string {
-  return `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2`;
+  // Force yuvj420p (4:2:0) pixel format — some devices (e.g., Echo Mini) cannot
+  // decode JPEG with 4:4:4 chroma subsampling (yuvj444p).
+  return `scale='min(${maxDim},iw)':'min(${maxDim},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuvj420p`;
 }
 
 /**

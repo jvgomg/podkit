@@ -90,7 +90,7 @@ artwork:
   embedded: true                  # Reads embedded JPG artwork from audio file tags [firsthand-confirmed]
   sidecar: false                  # Confirmed: cover.jpg, folder.jpg, albumart.jpg all ignored [firsthand]
   sidecar_filenames: []
-  formats: ["JPEG (baseline only)"]  # Progressive JPEG does NOT display [firsthand]
+  formats: ["JPEG (baseline only, 4:2:0 chroma)"]  # Progressive JPEG does NOT display [firsthand]; 4:4:4 chroma subsampling does NOT display [firsthand]
   max_resolution: "no hard limit" # 3000x3000 works but slow; 1000x1000 recommended [firsthand]
   notes: >
     Album art display was added in firmware 1.4.0 [1]. Must be enabled in
@@ -98,7 +98,9 @@ artwork:
     **Progressive JPEG does not display at all** — confirmed with test files
     and with real music library (albums with progressive JPEGs showed no
     artwork while baseline JPEGs in the same library displayed fine)
-    [firsthand]. No sidecar file support — tested cover.jpg, folder.jpg,
+    [firsthand]. **JPEG with 4:4:4 chroma subsampling (yuvj444p) also does
+    not display** — only 4:2:0 (yuvj420p) is supported. Source images with
+    4:4:4 chroma must be converted during sync [firsthand]. No sidecar file support — tested cover.jpg, folder.jpg,
     and albumart.jpg, all ignored [firsthand]. OGG Vorbis files have
     reported issues with cover art not displaying [6]. FW 3.1.0 introduced
     a regression where MP3 album art stopped displaying while FLAC artwork
