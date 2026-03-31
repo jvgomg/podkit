@@ -6,7 +6,12 @@
  */
 
 import { execSync } from 'node:child_process';
-import type { DeviceManager, EjectResult, EjectWithRetryOptions } from './types.js';
+import type {
+  DeviceManager,
+  EjectProgressEvent,
+  EjectResult,
+  EjectWithRetryOptions,
+} from './types.js';
 
 const DEFAULT_MAX_ATTEMPTS = 3;
 const DEFAULT_RETRY_DELAY_MS = 2000;
@@ -71,6 +76,7 @@ export async function ejectWithRetry(
   const retryDelayMs = options?.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
   const deviceLabel = options?.deviceLabel ?? 'iPod';
   const onProgress = options?.onProgress;
+  const additionalMountPoints = options?.additionalMountPoints ?? [];
 
   // Flush filesystem buffers
   onProgress?.({ phase: 'sync', message: 'Syncing filesystem...' });
@@ -86,6 +92,7 @@ export async function ejectWithRetry(
     });
     const result = await manager.eject(mountPoint, { force: true });
     if (result.success) {
+      await ejectSiblings(manager, additionalMountPoints, onProgress);
       onProgress?.({
         phase: 'success',
         message: `${deviceLabel} ejected. Safe to disconnect.`,
@@ -112,6 +119,7 @@ export async function ejectWithRetry(
     const result = await manager.eject(mountPoint, { force: false });
 
     if (result.success) {
+      await ejectSiblings(manager, additionalMountPoints, onProgress);
       onProgress?.({
         phase: 'success',
         message: `${deviceLabel} ejected. Safe to disconnect.`,
@@ -144,4 +152,32 @@ export async function ejectWithRetry(
     error: 'Eject failed after retries',
     attempts: maxAttempts,
   };
+}
+
+/**
+ * Eject sibling volumes after the primary volume has been ejected.
+ *
+ * For dual-LUN devices, the primary eject may have already detached the whole
+ * USB device (e.g., macOS `diskutil eject` on a whole disk). Sibling eject
+ * failures are logged but not treated as fatal — the important volume was
+ * already ejected successfully.
+ */
+async function ejectSiblings(
+  manager: DeviceManager,
+  mountPoints: string[],
+  onProgress?: (event: EjectProgressEvent) => void
+): Promise<void> {
+  for (const sibling of mountPoints) {
+    onProgress?.({
+      phase: 'eject-sibling',
+      mountPoint: sibling,
+      message: `Ejecting sibling volume ${sibling}...`,
+    });
+    try {
+      await manager.eject(sibling, { force: false });
+    } catch {
+      // Best-effort — sibling may already be gone if the whole USB device
+      // was detached when the primary disk was ejected.
+    }
+  }
 }

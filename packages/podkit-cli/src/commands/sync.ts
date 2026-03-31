@@ -1203,11 +1203,23 @@ export const syncCommand = new Command('sync')
           out.print(`Duration: ${formatDuration(duration)}`);
         }
 
+        // Discover sibling volumes for dual-LUN devices before ejecting
+        let siblingMountPoints: string[] = [];
+        if (options.eject && syncSucceeded) {
+          try {
+            siblingMountPoints = await manager.getSiblingVolumes(devicePath);
+          } catch {
+            // Best-effort
+          }
+        }
+
         // JSON output for actual sync completion
         if (!dryRun && out.isJson) {
           let ejectInfo: SyncOutput['eject'];
           if (options.eject && syncSucceeded) {
-            const ejectResult = await core.ejectWithRetry(manager, devicePath);
+            const ejectResult = await core.ejectWithRetry(manager, devicePath, {
+              additionalMountPoints: siblingMountPoints,
+            });
             ejectInfo = {
               requested: true,
               success: ejectResult.success,
@@ -1247,6 +1259,7 @@ export const syncCommand = new Command('sync')
           if (options.eject) {
             out.newline();
             const ejectResult = await core.ejectWithRetry(manager, devicePath, {
+              additionalMountPoints: siblingMountPoints,
               onProgress: (event) => {
                 switch (event.phase) {
                   case 'sync':
@@ -1255,6 +1268,9 @@ export const syncCommand = new Command('sync')
                   case 'eject':
                   case 'waiting':
                     out.print(event.message);
+                    break;
+                  case 'eject-sibling':
+                    out.verbose1(event.message);
                     break;
                 }
               },

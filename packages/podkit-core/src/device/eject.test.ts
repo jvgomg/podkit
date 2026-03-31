@@ -7,14 +7,16 @@ import type { DeviceManager, EjectResult, EjectProgressEvent } from './types.js'
  */
 function createMockManager(
   ejectResponses: EjectResult[]
-): DeviceManager & { ejectCallCount: number } {
+): DeviceManager & { ejectCallCount: number; ejectCalls: string[] } {
   let callIndex = 0;
   return {
     platform: 'test',
     isSupported: true,
     ejectCallCount: 0,
-    async eject(_mountPoint: string, _options?) {
+    ejectCalls: [],
+    async eject(mountPoint: string, _options?) {
       this.ejectCallCount++;
+      this.ejectCalls.push(mountPoint);
       const response = ejectResponses[callIndex] ?? ejectResponses[ejectResponses.length - 1]!;
       callIndex++;
       return response;
@@ -42,6 +44,9 @@ function createMockManager(
     },
     async assessDevice() {
       return null;
+    },
+    async getSiblingVolumes() {
+      return [];
     },
   };
 }
@@ -330,5 +335,124 @@ describe('ejectWithRetry', () => {
 
     expect(result.attempts).toBe(3);
     expect(manager.ejectCallCount).toBe(3);
+  });
+
+  it('ejects additional mount points after primary succeeds', async () => {
+    const manager = createMockManager([
+      { success: true, device: '/Volumes/Echo SD', forced: false },
+      { success: true, device: '/Volumes/ECHO MINI', forced: false },
+    ]);
+
+    const events: EjectProgressEvent[] = [];
+    const result = await ejectWithRetry(manager, '/Volumes/Echo SD', {
+      retryDelayMs: 10,
+      deviceLabel: 'Echo Mini',
+      additionalMountPoints: ['/Volumes/ECHO MINI'],
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.attempts).toBe(1);
+    // Primary + 1 sibling = 2 eject calls
+    expect(manager.ejectCallCount).toBe(2);
+    expect(manager.ejectCalls).toEqual(['/Volumes/Echo SD', '/Volumes/ECHO MINI']);
+
+    // Should have an eject-sibling event before success
+    const siblingEvent = events.find((e) => e.phase === 'eject-sibling');
+    expect(siblingEvent).toBeDefined();
+    expect(siblingEvent).toEqual({
+      phase: 'eject-sibling',
+      mountPoint: '/Volumes/ECHO MINI',
+      message: 'Ejecting sibling volume /Volumes/ECHO MINI...',
+    });
+
+    // Success should come after sibling eject
+    const successIdx = events.findIndex((e) => e.phase === 'success');
+    const siblingIdx = events.findIndex((e) => e.phase === 'eject-sibling');
+    expect(siblingIdx).toBeLessThan(successIdx);
+  });
+
+  it('ejects multiple siblings in order', async () => {
+    const manager = createMockManager([
+      { success: true, device: '/Volumes/Main', forced: false },
+      { success: true, device: '/Volumes/Sibling1', forced: false },
+      { success: true, device: '/Volumes/Sibling2', forced: false },
+    ]);
+
+    await ejectWithRetry(manager, '/Volumes/Main', {
+      retryDelayMs: 10,
+      additionalMountPoints: ['/Volumes/Sibling1', '/Volumes/Sibling2'],
+    });
+
+    expect(manager.ejectCallCount).toBe(3);
+    expect(manager.ejectCalls).toEqual(['/Volumes/Main', '/Volumes/Sibling1', '/Volumes/Sibling2']);
+  });
+
+  it('does not eject siblings when primary eject fails', async () => {
+    const manager = createMockManager([
+      { success: false, device: '/Volumes/Echo SD', error: 'Device not found at /Volumes/Echo SD' },
+    ]);
+
+    const result = await ejectWithRetry(manager, '/Volumes/Echo SD', {
+      retryDelayMs: 10,
+      additionalMountPoints: ['/Volumes/ECHO MINI'],
+    });
+
+    expect(result.success).toBe(false);
+    // Only the primary eject should have been attempted
+    expect(manager.ejectCallCount).toBe(1);
+    expect(manager.ejectCalls).toEqual(['/Volumes/Echo SD']);
+  });
+
+  it('tolerates sibling eject failure gracefully', async () => {
+    const manager = createMockManager([
+      { success: true, device: '/Volumes/Echo SD', forced: false },
+      // Sibling might already be gone (whole USB device detached)
+      { success: false, device: '/Volumes/ECHO MINI', error: 'Device not found' },
+    ]);
+
+    const result = await ejectWithRetry(manager, '/Volumes/Echo SD', {
+      retryDelayMs: 10,
+      additionalMountPoints: ['/Volumes/ECHO MINI'],
+    });
+
+    // Primary still succeeds even though sibling failed
+    expect(result.success).toBe(true);
+    expect(manager.ejectCallCount).toBe(2);
+  });
+
+  it('ejects siblings in force mode after primary succeeds', async () => {
+    const manager = createMockManager([
+      { success: true, device: '/Volumes/Echo SD', forced: true },
+      { success: true, device: '/Volumes/ECHO MINI', forced: false },
+    ]);
+
+    const events: EjectProgressEvent[] = [];
+    const result = await ejectWithRetry(manager, '/Volumes/Echo SD', {
+      force: true,
+      retryDelayMs: 10,
+      additionalMountPoints: ['/Volumes/ECHO MINI'],
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.forced).toBe(true);
+    expect(manager.ejectCallCount).toBe(2);
+
+    // Sibling event should appear
+    const siblingEvent = events.find((e) => e.phase === 'eject-sibling');
+    expect(siblingEvent).toBeDefined();
+  });
+
+  it('works identically with empty additionalMountPoints', async () => {
+    const manager = createMockManager([{ success: true, device: '/Volumes/iPod', forced: false }]);
+
+    const result = await ejectWithRetry(manager, '/Volumes/iPod', {
+      retryDelayMs: 10,
+      additionalMountPoints: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(manager.ejectCallCount).toBe(1);
   });
 });

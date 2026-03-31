@@ -601,6 +601,9 @@ function createMockDeviceManager(): any {
     requiresPrivileges(_op: string) {
       return false;
     },
+    async getSiblingVolumes(_mountPoint: string) {
+      return [];
+    },
   };
 }
 
