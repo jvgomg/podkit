@@ -66,8 +66,8 @@ describe('doctor --repair argument validation', () => {
     const result = runCli('doctor --repair nonexistent-check -d /tmp/fake-ipod');
 
     expect(result.exitCode).toBe(1);
-    expect(result.stderr).toContain('Unknown check ID');
     expect(result.stderr).toContain('nonexistent-check');
+    expect(result.stderr).toContain('is invalid');
   });
 
   it('does not require -d or -c for diagnostic-only mode', () => {
