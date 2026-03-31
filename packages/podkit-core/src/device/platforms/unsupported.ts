@@ -70,6 +70,10 @@ export class UnsupportedDeviceManager implements DeviceManager {
     return null;
   }
 
+  async getSiblingVolumes(_mountPoint: string): Promise<string[]> {
+    return [];
+  }
+
   getManualInstructions(operation: 'mount' | 'eject'): string {
     const platformName = this.getPlatformDisplayName();
 

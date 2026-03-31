@@ -132,9 +132,19 @@ export const ejectCommand = new Command('eject')
       return;
     }
 
+    // Discover sibling volumes for dual-LUN devices (e.g., Echo Mini with
+    // internal storage + SD card). These will be ejected after the primary.
+    let additionalMountPoints: string[] = [];
+    try {
+      additionalMountPoints = await manager.getSiblingVolumes(devicePath);
+    } catch {
+      // Best-effort — if discovery fails, just eject the primary volume
+    }
+
     const result = await ejectWithRetry(manager, devicePath, {
       force,
       deviceLabel,
+      additionalMountPoints,
       onProgress: (event) => {
         if (!out.isText) return;
         switch (event.phase) {
@@ -144,6 +154,9 @@ export const ejectCommand = new Command('eject')
           case 'eject':
           case 'waiting':
             out.print(event.message);
+            break;
+          case 'eject-sibling':
+            out.verbose1(event.message);
             break;
         }
       },

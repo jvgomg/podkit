@@ -605,6 +605,12 @@ export class LinuxDeviceManager implements DeviceManager {
   // Device assessment
   // ------------------------------------------------------------------
 
+  async getSiblingVolumes(_mountPoint: string): Promise<string[]> {
+    // TODO: implement for Linux (e.g., using lsblk to find sibling partitions
+    // on the same USB device via the /sys/block hierarchy)
+    return [];
+  }
+
   async assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null> {
     const baseName = diskIdentifier.replace('/dev/', '');
 

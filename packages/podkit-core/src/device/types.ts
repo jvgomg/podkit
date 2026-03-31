@@ -187,6 +187,18 @@ export interface DeviceManager {
    * @returns Structured assessment, or null if the device cannot be found
    */
   assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null>;
+
+  /**
+   * Find other mounted volumes belonging to the same physical USB device.
+   *
+   * Dual-LUN devices (e.g., Echo Mini) present multiple volumes from a single
+   * USB connection. When ejecting, all sibling volumes should be ejected so the
+   * user can safely disconnect.
+   *
+   * @param mountPoint - Mount point of the primary volume
+   * @returns Mount points of sibling volumes (excluding the primary), or empty array
+   */
+  getSiblingVolumes(mountPoint: string): Promise<string[]>;
 }
 
 /**
@@ -209,6 +221,7 @@ export type EjectProgressEvent =
   | { phase: 'sync'; message: string }
   | { phase: 'eject'; attempt: number; maxAttempts: number; message: string }
   | { phase: 'waiting'; attempt: number; delayMs: number; message: string }
+  | { phase: 'eject-sibling'; mountPoint: string; message: string }
   | { phase: 'success'; message: string; forced: boolean }
   | { phase: 'failed'; message: string };
 
@@ -226,4 +239,12 @@ export interface EjectWithRetryOptions {
   deviceLabel?: string;
   /** Progress callback for CLI output */
   onProgress?: (event: EjectProgressEvent) => void;
+  /**
+   * Additional mount points to eject after the primary volume.
+   *
+   * For dual-LUN devices (e.g., Echo Mini) that present multiple volumes from
+   * a single USB connection. These are ejected after the primary succeeds,
+   * with failures logged but not treated as fatal.
+   */
+  additionalMountPoints?: string[];
 }
