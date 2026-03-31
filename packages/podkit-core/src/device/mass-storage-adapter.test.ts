@@ -712,6 +712,137 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  describe('checkAddCollisions()', () => {
+    test('returns empty array when no collisions', async () => {
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({}),
+      });
+
+      const collisions = adapter.checkAddCollisions([
+        { title: 'New Song', artist: 'New Artist', album: 'New Album', filetype: 'flac' },
+      ]);
+
+      expect(collisions).toEqual([]);
+    });
+
+    test('detects collision with unmanaged file', async () => {
+      // Create an unmanaged file on device (no manifest entry)
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album', trackNumber: 1 },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      // Verify the file is unmanaged (no manifest)
+      const tracks = adapter.getTracks();
+      expect(tracks).toHaveLength(1);
+      expect(tracks[0]!.managed).toBe(false);
+
+      // Check for collision with the same path
+      const collisions = adapter.checkAddCollisions([
+        {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+          filetype: 'flac',
+        },
+      ]);
+
+      expect(collisions).toHaveLength(1);
+      expect(collisions[0]!.path).toBe('Music/Artist/Album/01 - Song.flac');
+      expect(collisions[0]!.description).toBe('Artist - Song');
+    });
+
+    test('does not flag managed files as collisions', async () => {
+      // Create file AND manifest so it's managed
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const manifestDir = path.join(mountPoint, '.podkit');
+      fs.mkdirSync(manifestDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(manifestDir, 'state.json'),
+        JSON.stringify({
+          version: 1,
+          managedFiles: ['Music/Artist/Album/01 - Song.flac'],
+          lastSync: new Date().toISOString(),
+        })
+      );
+
+      const reader = createMockMetadataReader({
+        '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album', trackNumber: 1 },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const collisions = adapter.checkAddCollisions([
+        {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+          filetype: 'flac',
+        },
+      ]);
+
+      expect(collisions).toEqual([]);
+    });
+
+    test('detects multiple collisions', async () => {
+      createFakeAudioFile(mountPoint, 'Music/A1/Album/01 - S1.mp3');
+      createFakeAudioFile(mountPoint, 'Music/A2/Album/02 - S2.mp3');
+
+      const reader = createMockMetadataReader({
+        '01 - S1.mp3': { title: 'S1', artist: 'A1', album: 'Album', trackNumber: 1 },
+        '02 - S2.mp3': { title: 'S2', artist: 'A2', album: 'Album', trackNumber: 2 },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      const collisions = adapter.checkAddCollisions([
+        { title: 'S1', artist: 'A1', album: 'Album', trackNumber: 1, filetype: '.mp3' },
+        { title: 'S2', artist: 'A2', album: 'Album', trackNumber: 2, filetype: '.mp3' },
+        { title: 'S3', artist: 'A3', album: 'Other', trackNumber: 3, filetype: '.mp3' },
+      ]);
+
+      expect(collisions).toHaveLength(2);
+    });
+
+    test('resolves filetype label to extension', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.m4a');
+
+      const reader = createMockMetadataReader({
+        '01 - Song.m4a': { title: 'Song', artist: 'Artist', album: 'Album', trackNumber: 1 },
+      });
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: reader,
+      });
+
+      // Use filetype label (what the transcode pipeline passes)
+      const collisions = adapter.checkAddCollisions([
+        {
+          title: 'Song',
+          artist: 'Artist',
+          album: 'Album',
+          trackNumber: 1,
+          filetype: 'AAC audio file',
+        },
+      ]);
+
+      expect(collisions).toHaveLength(1);
+      expect(collisions[0]!.path).toBe('Music/Artist/Album/01 - Song.m4a');
+    });
+  });
+
   describe('updateTrack()', () => {
     test('updates track metadata in place', async () => {
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');

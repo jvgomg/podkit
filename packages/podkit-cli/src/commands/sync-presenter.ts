@@ -299,6 +299,9 @@ export interface ContentTypePresenter<TSource, TDevice> {
 
   /** Render completion (errors, etc.) */
   renderCompletion(out: OutputContext, errors: CollectedError[]): void;
+
+  /** Extract collision check inputs from add operations in a plan */
+  getCollisionCheckInputs?(plan: any): import('@podkit/core').CollisionCheckInput[];
 }
 
 // =============================================================================
@@ -427,6 +430,39 @@ export async function genericSyncCollection<TSource, TDevice>(
   const { plan, summary } = presenter.createPlan(diff, removeOrphans, contentConfig, ipod, core);
   const storage = getStorageInfo(devicePath, statfsSync);
   const hasEnoughSpace = storage ? presenter.willFit(plan, storage.free, core) : true;
+
+  // 6b. Check for unmanaged file collisions (mass-storage only)
+  if (typeof ipod.checkAddCollisions === 'function' && presenter.getCollisionCheckInputs) {
+    const collisionInputs = presenter.getCollisionCheckInputs(plan);
+    if (collisionInputs.length > 0) {
+      const collisions = ipod.checkAddCollisions(collisionInputs);
+      if (collisions.length > 0) {
+        const lines = collisions.map(
+          (c: { path: string; description: string }) => `  ${c.description} → ${c.path}`
+        );
+        const message = `${collisions.length} file(s) would collide with unmanaged files on device:\n${lines.join('\n')}\nRemove the conflicting files or run \`podkit doctor\` to resolve.`;
+
+        await adapter.disconnect();
+
+        if (out.isJson) {
+          return {
+            success: false,
+            completed: 0,
+            failed: 0,
+            jsonOutput: {
+              success: false,
+              dryRun,
+              source: sourcePath,
+              device: devicePath,
+              error: message,
+            },
+          };
+        }
+        out.error(message);
+        return { success: false, completed: 0, failed: 0 };
+      }
+    }
+  }
 
   // 7. Handle dry-run
   if (dryRun) {

@@ -18,6 +18,27 @@ import type {
   UpdateReason,
 } from './types.js';
 
+// =============================================================================
+// Collision Check Types
+// =============================================================================
+
+/** Input for collision checking — describes a track that would be added to the device */
+export interface CollisionCheckInput {
+  title: string;
+  artist?: string;
+  album?: string;
+  trackNumber?: number;
+  discNumber?: number;
+  totalDiscs?: number;
+  filetype?: string;
+  mediaType?: number;
+  tvShow?: string;
+  tvEpisode?: string;
+  seasonNumber?: number;
+  episodeNumber?: number;
+  year?: number;
+}
+
 /**
  * Context for executing sync operations
  */
@@ -197,6 +218,9 @@ export interface ContentTypeHandler<TSource, TDevice, TOp extends BaseOperation 
 
   /** Format a sync plan into a dry-run summary */
   formatDryRun(plan: SyncPlan<TOp>): DryRunSummary;
+
+  /** Extract collision check inputs from add operations in a plan */
+  getCollisionCheckInputs?(plan: SyncPlan<TOp>): CollisionCheckInput[];
 
   // ---- Priority ----
 

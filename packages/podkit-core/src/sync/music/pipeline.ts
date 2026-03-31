@@ -389,7 +389,7 @@ function isOggExtension(filePath: string): boolean {
  * Used for the iPod database `filetype` field which displays the format
  * in iTunes and on the device.
  */
-function getFileTypeLabel(filePath: string): string {
+export function getFileTypeLabel(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   switch (ext) {
     case '.mp3':
@@ -472,7 +472,7 @@ function getTranscodeOutputExtension(preset: TranscodePresetRef): string {
  * Get the filetype label for a transcode preset.
  * When the preset has a targetCodec, uses codec metadata; otherwise defaults to `'AAC audio file'`.
  */
-function getTranscodeFiletypeLabel(preset: TranscodePresetRef): string {
+export function getTranscodeFiletypeLabel(preset: TranscodePresetRef): string {
   if (preset.targetCodec) {
     return getCodecMetadata(preset.targetCodec).filetypeLabel;
   }

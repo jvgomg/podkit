@@ -15,6 +15,7 @@ import { mkdir, stat, rm } from './executor-fs.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/adapter.js';
 import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
+import { MediaType } from '../../ipod/constants.js';
 import { transcodeVideo } from '../../video/transcode.js';
 import { probeVideo } from '../../video/probe.js';
 import { generateVideoMatchKey, type DeviceVideo, type VideoOperation } from './types.js';
@@ -30,6 +31,7 @@ import {
 } from '../../transforms/video-pipeline.js';
 import type {
   ContentTypeHandler,
+  CollisionCheckInput,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
@@ -676,13 +678,43 @@ export class VideoHandler implements ContentTypeHandler<
     }
   }
 
+  // ---- Collision checking ----
+
+  getCollisionCheckInputs(plan: SyncPlan<VideoOperation>): CollisionCheckInput[] {
+    const inputs: CollisionCheckInput[] = [];
+    for (const op of plan.operations) {
+      if (op.type === 'video-transcode') {
+        inputs.push({
+          title: op.source.title,
+          filetype: 'M4V video file',
+          mediaType: op.source.contentType === 'tvshow' ? MediaType.TVShow : MediaType.Movie,
+          tvShow: op.source.seriesTitle,
+          tvEpisode: op.source.episodeId,
+          seasonNumber: op.source.seasonNumber,
+          episodeNumber: op.source.episodeNumber,
+          year: op.source.year,
+        });
+      } else if (op.type === 'video-copy') {
+        const ext = op.source.filePath?.split('.').pop();
+        inputs.push({
+          title: op.source.title,
+          filetype: ext ? `.${ext}` : undefined,
+          mediaType: op.source.contentType === 'tvshow' ? MediaType.TVShow : MediaType.Movie,
+          tvShow: op.source.seriesTitle,
+          tvEpisode: op.source.episodeId,
+          seasonNumber: op.source.seasonNumber,
+          episodeNumber: op.source.episodeNumber,
+          year: op.source.year,
+        });
+      }
+    }
+    return inputs;
+  }
+
   // ---- Device ----
 
   getDeviceItems(device: DeviceAdapter): DeviceVideo[] {
-    const tracks = device.getTracks().filter((track) => isVideoMediaType(track.mediaType));
-
-    // Map DeviceTrack to DeviceVideo for video-specific operations
-    return tracks.map((track) => deviceTrackToVideo(track));
+    return getVideoDeviceItems(device);
   }
 
   // ---- Display ----
@@ -755,6 +787,22 @@ function deviceTrackToVideo(track: DeviceTrack): DeviceVideo {
 // =============================================================================
 // Factory
 // =============================================================================
+
+/**
+ * Get video tracks from a device, excluding unmanaged mass-storage files.
+ *
+ * Filters by video media type and excludes unmanaged files on mass-storage devices.
+ * Mirrors iPod behavior where only database tracks are surfaced. Duck-typed
+ * because `managed` is a MassStorageTrack property, not on the DeviceTrack interface.
+ */
+export function getVideoDeviceItems(device: DeviceAdapter): DeviceVideo[] {
+  const tracks = device
+    .getTracks()
+    .filter((track) => isVideoMediaType(track.mediaType))
+    .filter((track) => !('managed' in track && !track.managed));
+
+  return tracks.map((track) => deviceTrackToVideo(track));
+}
 
 /**
  * Create a VideoHandler instance

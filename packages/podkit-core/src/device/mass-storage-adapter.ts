@@ -547,6 +547,14 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           musicDir: this.contentPaths.musicDir,
         });
 
+    // Check if desired path collides with an unmanaged file on device
+    if (this.allocatedPaths.has(desiredPath) && !this.managedFiles.has(desiredPath)) {
+      const trackDesc = input.artist ? `${input.artist} - ${input.title}` : input.title;
+      throw new Error(
+        `Cannot sync "${trackDesc}": target path "${desiredPath}" is occupied by an unmanaged file. Remove the file or run \`podkit doctor\` to resolve.`
+      );
+    }
+
     const uniquePath = deduplicatePath(desiredPath, this.allocatedPaths);
     this.allocatedPaths.add(uniquePath);
 
@@ -591,6 +599,72 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     return track;
+  }
+
+  /**
+   * Check if planned add operations would collide with unmanaged files on device.
+   *
+   * Predicts the device path for each input using the same path generation logic
+   * as addTrack(), then checks if that path is already occupied by an unmanaged file.
+   * Returns an array of collisions found (empty if none).
+   *
+   * This runs before execution (and during dry-run) so collisions are caught early
+   * rather than throwing mid-sync from addTrack().
+   */
+  checkAddCollisions(
+    inputs: Array<{
+      artist?: string;
+      album?: string;
+      title: string;
+      trackNumber?: number;
+      discNumber?: number;
+      totalDiscs?: number;
+      filetype?: string;
+      mediaType?: number;
+      // Video fields
+      tvShow?: string;
+      tvEpisode?: string;
+      seasonNumber?: number;
+      episodeNumber?: number;
+      year?: number;
+    }>
+  ): Array<{ path: string; description: string }> {
+    const collisions: Array<{ path: string; description: string }> = [];
+
+    for (const input of inputs) {
+      const ext = input.filetype ? resolveFileExtension(input.filetype) : '.mp3';
+      const isVideo = input.mediaType !== undefined && isVideoMediaType(input.mediaType);
+      const desiredPath = isVideo
+        ? generateVideoPath({
+            title: input.title,
+            contentType: input.tvShow || input.tvEpisode ? 'tvshow' : 'movie',
+            year: input.year,
+            seriesTitle: input.tvShow,
+            seasonNumber: input.seasonNumber,
+            episodeNumber: input.episodeNumber,
+            extension: ext,
+            moviesDir: this.contentPaths.moviesDir,
+            tvShowsDir: this.contentPaths.tvShowsDir,
+          })
+        : generateTrackPath({
+            artist: input.artist,
+            album: input.album,
+            title: input.title,
+            trackNumber: input.trackNumber,
+            discNumber: input.discNumber,
+            totalDiscs: input.totalDiscs,
+            extension: ext,
+            musicDir: this.contentPaths.musicDir,
+          });
+
+      // Collision = path exists on device but is NOT managed by podkit
+      if (this.allocatedPaths.has(desiredPath) && !this.managedFiles.has(desiredPath)) {
+        const description = input.artist ? `${input.artist} - ${input.title}` : input.title;
+        collisions.push({ path: desiredPath, description });
+      }
+    }
+
+    return collisions;
   }
 
   updateTrack(track: MassStorageTrack, fields: DeviceTrackMetadata): MassStorageTrack {
@@ -862,7 +936,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     fs.mkdirSync(stateDir, { recursive: true });
 
     const manifestPath = path.join(stateDir, MANIFEST_FILE);
-    fs.writeFileSync(manifestPath, JSON.stringify(this.manifest, null, 2) + '\n', 'utf-8');
+    fs.writeFileSync(manifestPath, JSON.stringify(this.manifest) + '\n', 'utf-8');
   }
 
   close(): void {

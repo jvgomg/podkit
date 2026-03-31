@@ -1,10 +1,10 @@
 ---
 id: TASK-254
 title: Orphan detection and cleanup for mass-storage devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-30 14:08'
-updated_date: '2026-03-31 14:24'
+updated_date: '2026-03-31 15:40'
 labels:
   - mass-storage
   - diagnostics
@@ -36,10 +36,32 @@ Should support:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Orphan check scans configured content directories (musicDir, videoDir) on mass-storage devices
-- [ ] #2 Files in content directories not tracked in state.json managedFiles are reported as orphans
-- [ ] #3 Files outside content directories are ignored entirely
-- [ ] #4 Repair mode deletes orphaned files and cleans up empty directories
-- [ ] #5 Content directory paths are resolved from full config chain (device preset → config file → args → env)
-- [ ] #6 E2E test covers orphan detection and cleanup on mass-storage device
+- [x] #1 Orphan check scans configured content directories (musicDir, videoDir) on mass-storage devices
+- [x] #2 Files in content directories not tracked in state.json managedFiles are reported as orphans
+- [x] #3 Files outside content directories are ignored entirely
+- [x] #4 Repair mode deletes orphaned files and cleans up empty directories
+- [x] #5 Content directory paths are resolved from full config chain (device preset → config file → args → env)
+- [x] #6 E2E test covers orphan detection and cleanup on mass-storage device
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation summary
+
+### New files
+- `packages/podkit-core/src/diagnostics/checks/orphans-mass-storage.ts` — Mass-storage orphan detection check with repair support
+- `packages/podkit-core/src/diagnostics/checks/orphans-mass-storage.test.ts` — 19 unit tests
+
+### Modified files
+- `packages/podkit-core/src/diagnostics/types.ts` — Added `contentPaths` to DiagnosticContext
+- `packages/podkit-core/src/diagnostics/index.ts` — Registered new check, added contentPaths to RunDiagnosticsInput
+- `packages/podkit-cli/src/commands/doctor.ts` — Mass-storage devices now run diagnostics (was "no checks available"), extracted `resolveMassStorageContentPaths` helper, added `runMassStorageRepair`
+- `packages/e2e-tests/src/features/mass-storage-sync.e2e.test.ts` — E2E test: orphan detection, repair, and verification
+
+### Design decisions
+- Check is self-contained: reads `.podkit/state.json` directly rather than requiring the adapter
+- Content path resolution extracted into shared helper to avoid duplication between diagnostics and repair
+- Scan deduplicates overlapping content directories (e.g., musicDir="" covers everything)
+- Empty directory cleanup walks up to content root but never deletes the root itself
+<!-- SECTION:NOTES:END -->
