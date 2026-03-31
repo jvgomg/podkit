@@ -738,12 +738,16 @@ export class MusicPipeline implements SyncExecutor {
 
     const totalBytes = calculateTotalBytes(plan);
 
-    // Create temp directory for transcoded files if needed
+    // Create temp directory for transcoded/optimized-copy files if needed
     const transcodeDir = join(tempDir, `podkit-transcode-${randomUUID()}`);
-    const hasTranscodes = plan.operations.some(
-      (op) => op.type === 'add-transcode' || op.type === 'upgrade-transcode'
+    const needsTempDir = plan.operations.some(
+      (op) =>
+        op.type === 'add-transcode' ||
+        op.type === 'upgrade-transcode' ||
+        op.type === 'add-optimized-copy' ||
+        op.type === 'upgrade-optimized-copy'
     );
-    if (hasTranscodes && !dryRun) {
+    if (needsTempDir && !dryRun) {
       await mkdir(transcodeDir, { recursive: true });
     }
 
@@ -768,7 +772,7 @@ export class MusicPipeline implements SyncExecutor {
       );
     } finally {
       // Cleanup temp directory
-      if (hasTranscodes && !dryRun) {
+      if (needsTempDir && !dryRun) {
         try {
           await rm(transcodeDir, { recursive: true, force: true });
         } catch {
@@ -1801,7 +1805,7 @@ export class MusicPipeline implements SyncExecutor {
       proc.on('close', (code) => {
         if (code !== 0) {
           reject(
-            new Error(`FFmpeg optimized-copy failed with code ${code}: ${stderr.slice(0, 500)}`)
+            new Error(`FFmpeg optimized-copy failed with code ${code}: ${stderr.slice(-1000)}`)
           );
           return;
         }

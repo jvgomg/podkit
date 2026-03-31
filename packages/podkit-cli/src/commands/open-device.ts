@@ -222,9 +222,10 @@ export async function openDevice(
     contentPathOverrides.tvShowsDir = deviceConfig.tvShowsDir;
 
   const hasOverrides = Object.keys(contentPathOverrides).length > 0;
-  const contentPaths = hasOverrides
-    ? core.normalizeContentPaths(contentPathOverrides, presetDefaults)
-    : undefined;
+  const contentPaths =
+    hasOverrides || presetDefaults
+      ? core.normalizeContentPaths(contentPathOverrides, presetDefaults)
+      : undefined;
   const adapterOptions = contentPaths ? { contentPaths } : undefined;
   const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 

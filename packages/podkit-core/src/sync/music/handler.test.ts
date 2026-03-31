@@ -1097,6 +1097,37 @@ describe('MusicHandler', () => {
       });
     });
 
+    test('keeps copy-tagged track as existing when device natively supports the codec', () => {
+      // Echo Mini scenario: device supports FLAC natively, source is FLAC,
+      // device track has quality=copy sync tag. Should NOT trigger preset-upgrade
+      // even though the resolved quality is 'lossless' (not 'copy').
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          codecPreference: { lossless: ['source', 'flac'], lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'],
+            artworkSources: ['embedded'],
+            audioNormalization: 'none',
+            supportsAlbumArtistBrowsing: true,
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true, codec: 'flac' });
+      const device = makeDeviceTrack({
+        filetype: 'flac',
+        bitrate: 1100,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy codec=flac transfer=fast]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
     test('keeps ALAC track as existing when isAlacPreset is true', () => {
       const h = createMusicHandler(
         makeConfig({
