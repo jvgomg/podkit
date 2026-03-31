@@ -93,8 +93,7 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
   }
 
   getDeviceItems(device: any, core: typeof import('@podkit/core')): DeviceVideo[] {
-    const handler = core.createVideoHandler();
-    return handler.getDeviceItems(device);
+    return core.getVideoDeviceItems(device);
   }
 
   /** Stored during computeDiff for use in createPlan and executeSync */
@@ -425,6 +424,11 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     out.print('Video sync complete.');
 
     return { completed: videoCompleted, failed: 0, collectedErrors: [] as CollectedError[] };
+  }
+
+  getCollisionCheckInputs(plan: SyncPlan<VideoOperation>) {
+    if (!this.handler) return [];
+    return this.handler.getCollisionCheckInputs!(plan);
   }
 
   renderCompletion(): void {

@@ -17,6 +17,7 @@ import { artworkRebuildCheck } from './checks/artwork.js';
 import { artworkResetCheck } from './checks/artwork-reset.js';
 import { codecEncodersCheck } from './checks/codec-encoders.js';
 import { orphanFilesCheck } from './checks/orphans.js';
+import { orphanFilesMassStorageCheck } from './checks/orphans-mass-storage.js';
 import type {
   DiagnosticCheck,
   DiagnosticReport,
@@ -46,6 +47,7 @@ const CHECKS: DiagnosticCheck[] = [
   artworkResetCheck,
   codecEncodersCheck,
   orphanFilesCheck,
+  orphanFilesMassStorageCheck,
 ];
 
 /**
@@ -75,6 +77,8 @@ export interface RunDiagnosticsInput {
   db?: IpodDatabase;
   /** Device model name for the report */
   deviceModel?: string;
+  /** Content paths for mass-storage devices */
+  contentPaths?: import('../device/mass-storage-utils.js').ContentPaths;
 }
 
 /**
@@ -82,7 +86,7 @@ export interface RunDiagnosticsInput {
  *
  * Filters the check registry by device type before running. For iPod devices,
  * uses the provided `db` or opens one internally. For mass-storage devices,
- * no checks currently apply — returns an empty healthy report.
+ * runs applicable checks (e.g. orphan file detection) using contentPaths.
  *
  * @param input - Device info and optional pre-opened database
  * @returns Diagnostic report with results from applicable checks
@@ -103,7 +107,7 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
   }
 
   try {
-    const ctx: DiagnosticContext = { mountPoint, deviceType, db };
+    const ctx: DiagnosticContext = { mountPoint, deviceType, db, contentPaths: input.contentPaths };
 
     // Resolve device model
     const deviceModel =

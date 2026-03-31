@@ -23,7 +23,12 @@ import {
 } from '../engine/upgrades.js';
 import { normalizationToDb } from '../../metadata/normalization.js';
 import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
-import { MusicPipeline, getMusicOperationDisplayName } from './pipeline.js';
+import {
+  MusicPipeline,
+  getMusicOperationDisplayName,
+  getFileTypeLabel,
+  getTranscodeFiletypeLabel,
+} from './pipeline.js';
 import { estimateTransferTime } from '../engine/estimation.js';
 import {
   buildAudioSyncTag,
@@ -42,6 +47,7 @@ import type {
 import type { MusicOperation } from './types.js';
 import type {
   ContentTypeHandler,
+  CollisionCheckInput,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
@@ -129,6 +135,20 @@ function buildMusicMetadataChanges(
   }
 
   return changes;
+}
+
+/**
+ * Convert a CollectionTrack to a CollisionCheckInput (shared fields only).
+ */
+function toCollisionInput(source: CollectionTrack): Omit<CollisionCheckInput, 'filetype'> {
+  return {
+    title: source.title,
+    artist: source.artist,
+    album: source.album,
+    trackNumber: source.trackNumber,
+    discNumber: source.discNumber,
+    year: source.year,
+  };
 }
 
 // =============================================================================
@@ -917,7 +937,7 @@ export class MusicHandler implements ContentTypeHandler<
   // ---- Device ----
 
   getDeviceItems(device: DeviceAdapter): DeviceTrack[] {
-    return device.getTracks().filter((track) => isMusicMediaType(track.mediaType));
+    return getMusicDeviceItems(device);
   }
 
   // ---- Display ----
@@ -948,11 +968,46 @@ export class MusicHandler implements ContentTypeHandler<
       (op) => this.estimateSize(op)
     );
   }
+
+  // ---- Collision checking ----
+
+  getCollisionCheckInputs(plan: SyncPlan<MusicOperation>): CollisionCheckInput[] {
+    const inputs: CollisionCheckInput[] = [];
+    for (const op of plan.operations) {
+      if (op.type === 'add-transcode') {
+        inputs.push({
+          ...toCollisionInput(op.source),
+          filetype: getTranscodeFiletypeLabel(op.preset),
+        });
+      } else if (op.type === 'add-direct-copy' || op.type === 'add-optimized-copy') {
+        inputs.push({
+          ...toCollisionInput(op.source),
+          filetype: getFileTypeLabel(op.source.filePath),
+        });
+      }
+      // upgrade-* operations target existing managed files, not unmanaged ones — skip
+    }
+    return inputs;
+  }
 }
 
 // =============================================================================
 // Factory
 // =============================================================================
+
+/**
+ * Get music tracks from a device, excluding unmanaged mass-storage files.
+ *
+ * Filters by music media type and excludes unmanaged files on mass-storage devices.
+ * This mirrors iPod behavior where only database tracks are surfaced. Duck-typed
+ * because `managed` is a MassStorageTrack property, not on the DeviceTrack interface.
+ */
+export function getMusicDeviceItems(device: DeviceAdapter): DeviceTrack[] {
+  return device
+    .getTracks()
+    .filter((track) => isMusicMediaType(track.mediaType))
+    .filter((track) => !('managed' in track && !track.managed));
+}
 
 /**
  * Create a MusicHandler instance

@@ -1,10 +1,10 @@
 ---
 id: TASK-261
 title: Fix --delete to only remove managed files on mass-storage devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 14:23'
-updated_date: '2026-03-31 14:30'
+updated_date: '2026-03-31 15:16'
 labels:
   - mass-storage
   - bug
@@ -33,13 +33,13 @@ Also: drop pretty-printing from state.json writes (`JSON.stringify` without inde
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 --delete only removes tracks where managed === true
-- [ ] #2 Unmanaged files in content directories are preserved when --delete is used
-- [ ] #3 E2E test: sync with --delete preserves user-placed files in content directories
-- [ ] #4 E2E test: sync with --delete removes managed tracks not in source collection
-- [ ] #5 state.json written without pretty-printing (no indent/whitespace)
-- [ ] #6 Collision detection: sync errors (before writing) if a planned file path conflicts with an existing unmanaged file
-- [ ] #7 Collision detection works in both normal sync and --dry-run mode
+- [x] #1 --delete only removes tracks where managed === true
+- [x] #2 Unmanaged files in content directories are preserved when --delete is used
+- [x] #3 E2E test: sync with --delete preserves user-placed files in content directories
+- [x] #4 E2E test: sync with --delete removes managed tracks not in source collection
+- [x] #5 state.json written without pretty-printing (no indent/whitespace)
+- [x] #6 Collision detection: sync errors (before writing) if a planned file path conflicts with an existing unmanaged file
+- [x] #7 Collision detection works in both normal sync and --dry-run mode
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -50,4 +50,20 @@ Also: drop pretty-printing from state.json writes (`JSON.stringify` without inde
 **Unmanaged files are invisible to the sync engine.** They do not participate in source-device matching. This mirrors iPod behavior where only DB tracks are visible. If an unmanaged file coincidentally matches a source track's metadata, podkit will attempt to create its own managed copy — which leads to the collision check.
 
 **Collision detection before writes.** Since path allocation is deterministic (artist/album/title → file path), an unmanaged file could occupy the exact path podkit wants to write to. Rather than silently overwriting, sync should error with a clear message. This check runs pre-sync (and during --dry-run) so the user can resolve it (move/delete the file, or let `podkit doctor` handle it after TASK-254).
+
+## Implementation summary
+
+**Bug found during implementation:** The CLI's `MusicPresenter.getDeviceItems()` had its own copy of the device item filtering that bypassed the core handler. Fixed in music-presenter.ts alongside the handler fixes.
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `packages/podkit-core/src/sync/music/handler.ts` | Filter unmanaged tracks from `getDeviceItems()` |
+| `packages/podkit-core/src/sync/video/handler.ts` | Same filter for video |
+| `packages/podkit-cli/src/commands/music-presenter.ts` | Same filter in CLI presenter (was bypassing handler) |
+| `packages/podkit-core/src/device/mass-storage-adapter.ts` | `checkAddCollisions()` method + collision check in `addTrack()` + drop JSON pretty-printing |
+| `packages/podkit-cli/src/commands/sync-presenter.ts` | Pre-sync collision check step (6b) in `genericSyncCollection` |
+| `packages/podkit-core/src/device/mass-storage-adapter.test.ts` | 5 unit tests for `checkAddCollisions()` |
+| `packages/e2e-tests/src/features/mass-storage-sync.e2e.test.ts` | 2 E2E tests: --delete preserves unmanaged files, collision detection in dry-run |
 <!-- SECTION:NOTES:END -->

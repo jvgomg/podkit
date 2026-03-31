@@ -1,11 +1,11 @@
 ---
-title: iPod Health Checks
-description: Use podkit doctor to diagnose and repair common iPod problems — even if you don't use podkit for syncing.
+title: Device Health Checks
+description: Use podkit doctor to diagnose and repair common device problems — orphan files, artwork corruption, and more.
 sidebar:
   order: 6
 ---
 
-`podkit doctor` is a diagnostic tool that checks your iPod for common problems and can repair them automatically. You don't need to use podkit as your sync tool to benefit from it — it works on any iPod with a standard database.
+`podkit doctor` is a diagnostic tool that checks your device for common problems and can repair them automatically. It works on both iPod and mass-storage devices (Echo Mini, Rockbox, generic DAPs). For iPods, you don't need to use podkit as your sync tool — it works on any iPod with a standard database.
 
 ## Quick Start
 
@@ -44,11 +44,20 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 
 ## Available Health Checks
 
+### iPod
+
 | Check | What it detects | Severity |
 |-------|----------------|----------|
 | **Artwork Integrity** | Corrupted artwork database — wrong album art, glitched images, artwork from other albums | Failure |
 | **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
 | **Orphan Files** | Unreferenced audio/video files wasting storage space | Warning |
+
+### Mass-Storage Devices
+
+| Check | What it detects | Severity |
+|-------|----------------|----------|
+| **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
+| **Orphan Files** | Files in content directories not tracked in `.podkit/state.json` | Warning |
 
 ## Repairing Artwork Corruption
 
@@ -106,6 +115,8 @@ podkit eject
 
 ## Repairing Orphan Files
 
+### iPod
+
 Orphan files are audio or video files on the iPod that aren't referenced by the database. They waste storage but don't cause other problems. This typically happens after an interrupted sync (force-quit, crash, or disconnection during transfer).
 
 ```bash
@@ -115,6 +126,20 @@ podkit doctor --repair orphan-files --dry-run
 # Remove orphaned files
 podkit doctor --repair orphan-files
 ```
+
+### Mass-Storage Devices
+
+On mass-storage devices, orphan files are media files in the configured content directories (e.g., `Music/`, `Video/`) that aren't tracked in the `.podkit/state.json` manifest. These can accumulate from interrupted syncs, manual file manipulation, or changing content directory paths in your config.
+
+```bash
+# Preview what would be deleted
+podkit doctor -d mydevice --repair orphan-files-mass-storage --dry-run
+
+# Remove orphaned files
+podkit doctor -d mydevice --repair orphan-files-mass-storage
+```
+
+Files outside the content directories are always ignored — doctor only considers directories that podkit manages. The `--delete` flag during sync also respects this boundary: it only removes files that podkit placed on the device.
 
 ## Previewing Repairs
 
