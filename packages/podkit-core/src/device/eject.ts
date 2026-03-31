@@ -69,6 +69,7 @@ export async function ejectWithRetry(
   const force = options?.force ?? false;
   const maxAttempts = options?.maxAttempts ?? DEFAULT_MAX_ATTEMPTS;
   const retryDelayMs = options?.retryDelayMs ?? DEFAULT_RETRY_DELAY_MS;
+  const deviceLabel = options?.deviceLabel ?? 'iPod';
   const onProgress = options?.onProgress;
 
   // Flush filesystem buffers
@@ -81,13 +82,13 @@ export async function ejectWithRetry(
       phase: 'eject',
       attempt: 1,
       maxAttempts: 1,
-      message: 'Force ejecting iPod...',
+      message: `Force ejecting ${deviceLabel}...`,
     });
     const result = await manager.eject(mountPoint, { force: true });
     if (result.success) {
       onProgress?.({
         phase: 'success',
-        message: 'iPod ejected. Safe to disconnect.',
+        message: `${deviceLabel} ejected. Safe to disconnect.`,
         forced: true,
       });
     } else {
@@ -104,7 +105,7 @@ export async function ejectWithRetry(
       maxAttempts,
       message:
         attempt === 1
-          ? 'Ejecting iPod...'
+          ? `Ejecting ${deviceLabel}...`
           : `Retrying eject (attempt ${attempt}/${maxAttempts})...`,
     });
 
@@ -113,7 +114,7 @@ export async function ejectWithRetry(
     if (result.success) {
       onProgress?.({
         phase: 'success',
-        message: 'iPod ejected. Safe to disconnect.',
+        message: `${deviceLabel} ejected. Safe to disconnect.`,
         forced: false,
       });
       return { ...result, attempts: attempt };

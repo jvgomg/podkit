@@ -222,6 +222,8 @@ export interface EjectWithRetryOptions {
   maxAttempts?: number;
   /** Delay between retries in milliseconds (default: 2000) */
   retryDelayMs?: number;
+  /** Device label for progress messages (default: 'iPod') */
+  deviceLabel?: string;
   /** Progress callback for CLI output */
   onProgress?: (event: EjectProgressEvent) => void;
 }

@@ -259,6 +259,63 @@ describe('ejectWithRetry', () => {
     ]);
   });
 
+  it('uses custom deviceLabel in progress messages', async () => {
+    const manager = createMockManager([{ success: true, device: '/mnt/player', forced: false }]);
+
+    const events: EjectProgressEvent[] = [];
+    await ejectWithRetry(manager, '/mnt/player', {
+      retryDelayMs: 10,
+      deviceLabel: 'Echo Mini',
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      { phase: 'sync', message: 'Syncing filesystem...' },
+      { phase: 'eject', attempt: 1, maxAttempts: 3, message: 'Ejecting Echo Mini...' },
+      { phase: 'success', message: 'Echo Mini ejected. Safe to disconnect.', forced: false },
+    ]);
+  });
+
+  it('uses custom deviceLabel in force eject messages', async () => {
+    const manager = createMockManager([{ success: true, device: '/mnt/player', forced: true }]);
+
+    const events: EjectProgressEvent[] = [];
+    await ejectWithRetry(manager, '/mnt/player', {
+      force: true,
+      retryDelayMs: 10,
+      deviceLabel: 'Echo Mini',
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      { phase: 'sync', message: 'Syncing filesystem...' },
+      { phase: 'eject', attempt: 1, maxAttempts: 1, message: 'Force ejecting Echo Mini...' },
+      { phase: 'success', message: 'Echo Mini ejected. Safe to disconnect.', forced: true },
+    ]);
+  });
+
+  it('defaults deviceLabel to iPod when not specified', async () => {
+    const manager = createMockManager([{ success: true, device: '/Volumes/iPod', forced: false }]);
+
+    const events: EjectProgressEvent[] = [];
+    await ejectWithRetry(manager, '/Volumes/iPod', {
+      retryDelayMs: 10,
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(events[1]).toEqual({
+      phase: 'eject',
+      attempt: 1,
+      maxAttempts: 3,
+      message: 'Ejecting iPod...',
+    });
+    expect(events[2]).toEqual({
+      phase: 'success',
+      message: 'iPod ejected. Safe to disconnect.',
+      forced: false,
+    });
+  });
+
   it('uses default maxAttempts of 3', async () => {
     const busyError: EjectResult = {
       success: false,
