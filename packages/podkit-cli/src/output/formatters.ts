@@ -137,8 +137,8 @@ export function formatUpdateReason(reason: string): string {
       return 'Artwork removed';
     case 'artwork-updated':
       return 'Artwork updated';
-    case 'soundcheck-update':
-      return 'Sound Check update';
+    case 'normalization-update':
+      return 'Normalization update';
     case 'metadata-correction':
       return 'Metadata correction';
     case 'force-metadata':

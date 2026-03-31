@@ -36,7 +36,7 @@ import { spawn } from 'node:child_process';
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
 import { buildAudioSyncTag, buildCopySyncTag } from '../../metadata/sync-tags.js';
-import { soundcheckToReplayGainDb } from '../../metadata/soundcheck.js';
+import { soundcheckToReplayGainDb } from '../../metadata/normalization.js';
 import type { SyncTagData } from '../../metadata/sync-tags.js';
 import {
   categorizeError as sharedCategorizeError,
@@ -495,9 +495,7 @@ function toDeviceTrackInput(track: CollectionTrack): DeviceTrackInput {
     compilation: track.compilation,
     duration: track.duration,
     bitrate: track.bitrate,
-    soundcheck: track.soundcheck,
-    replayGainTrackGain: track.replayGainTrackGain,
-    replayGainTrackPeak: track.replayGainTrackPeak,
+    normalization: track.normalization,
   };
 }
 
@@ -662,18 +660,21 @@ export class MusicPipeline implements SyncExecutor {
    */
   private buildReplayGainOption(
     source: CollectionTrack
-  ): { trackGain: number; trackPeak?: number } | undefined {
+  ): { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number } | undefined {
     if (this.audioNormalization !== 'replaygain') return undefined;
+    if (!source.normalization) return undefined;
 
-    if (source.replayGainTrackGain !== undefined) {
+    if (source.normalization.trackGain !== undefined) {
       return {
-        trackGain: source.replayGainTrackGain,
-        trackPeak: source.replayGainTrackPeak,
+        trackGain: source.normalization.trackGain,
+        trackPeak: source.normalization.trackPeak,
+        albumGain: source.normalization.albumGain,
+        albumPeak: source.normalization.albumPeak,
       };
     }
 
-    if (source.soundcheck !== undefined) {
-      return { trackGain: soundcheckToReplayGainDb(source.soundcheck) };
+    if (source.normalization.soundcheckValue !== undefined) {
+      return { trackGain: soundcheckToReplayGainDb(source.normalization.soundcheckValue) };
     }
 
     return undefined;
@@ -1420,11 +1421,10 @@ export class MusicPipeline implements SyncExecutor {
     this.device.copyTrackFile(track, outputPath);
 
     // Request ReplayGain tag writes for transcoded files (M4A needs tag writer)
-    if (this.audioNormalization === 'replaygain' && source.soundcheck !== undefined) {
+    if (this.audioNormalization === 'replaygain' && source.normalization !== undefined) {
       this.device.updateTrack(track, {
         writeReplayGainTags: true,
-        replayGainTrackGain: source.replayGainTrackGain,
-        replayGainTrackPeak: source.replayGainTrackPeak,
+        normalization: source.normalization,
       });
     }
 
@@ -1564,12 +1564,8 @@ export class MusicPipeline implements SyncExecutor {
     if (metadata.compilation !== undefined) {
       updateFields.compilation = metadata.compilation;
     }
-    if (metadata.soundcheck !== undefined) {
-      updateFields.soundcheck = metadata.soundcheck;
-      // Pass raw ReplayGain values from the source track for mass-storage tag writing.
-      // The source has the original dB/peak values — avoids back-converting from soundcheck.
-      updateFields.replayGainTrackGain = operation.source?.replayGainTrackGain;
-      updateFields.replayGainTrackPeak = operation.source?.replayGainTrackPeak;
+    if (metadata.normalization !== undefined) {
+      updateFields.normalization = metadata.normalization;
     }
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
@@ -1943,12 +1939,11 @@ export class MusicPipeline implements SyncExecutor {
     if (
       operation.type !== 'add-direct-copy' &&
       this.audioNormalization === 'replaygain' &&
-      source.soundcheck !== undefined
+      source.normalization !== undefined
     ) {
       this.device.updateTrack(track, {
         writeReplayGainTags: true,
-        replayGainTrackGain: source.replayGainTrackGain,
-        replayGainTrackPeak: source.replayGainTrackPeak,
+        normalization: source.normalization,
       });
     }
 
@@ -2065,7 +2060,7 @@ export class MusicPipeline implements SyncExecutor {
       filetype,
       ...(bitrate !== undefined && { bitrate }),
       ...(source.duration !== undefined && { duration: source.duration }),
-      ...(source.soundcheck !== undefined && { soundcheck: source.soundcheck }),
+      ...(source.normalization !== undefined && { normalization: source.normalization }),
     };
 
     // Update metadata fields from source that may have changed
@@ -2081,11 +2076,10 @@ export class MusicPipeline implements SyncExecutor {
     if (
       operation.type !== 'upgrade-direct-copy' &&
       this.audioNormalization === 'replaygain' &&
-      source.soundcheck !== undefined
+      source.normalization !== undefined
     ) {
       updateFields.writeReplayGainTags = true;
-      updateFields.replayGainTrackGain = source.replayGainTrackGain;
-      updateFields.replayGainTrackPeak = source.replayGainTrackPeak;
+      updateFields.normalization = source.normalization;
     }
 
     foundTrack = this.device.updateTrack(foundTrack, updateFields);

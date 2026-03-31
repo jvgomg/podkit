@@ -2,6 +2,8 @@
  * Shared types for podkit-core
  */
 
+import type { AudioNormalization } from './metadata/normalization.js';
+
 /**
  * Supported audio file types for collection sources
  *
@@ -38,8 +40,8 @@ export interface TrackMetadata {
   discNumber?: number;
   compilation?: boolean;
   duration?: number; // milliseconds
-  /** Sound Check volume normalization value */
-  soundcheck?: number;
+  /** Audio normalization data (ReplayGain, Sound Check) */
+  normalization?: AudioNormalization;
   /** Comment field */
   comment?: string;
 }

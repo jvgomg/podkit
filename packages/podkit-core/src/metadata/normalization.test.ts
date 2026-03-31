@@ -3,8 +3,11 @@ import {
   replayGainToSoundcheck,
   soundcheckToReplayGainDb,
   iTunNORMToSoundcheck,
-  extractSoundcheck,
-} from './soundcheck.js';
+  extractNormalization,
+  normalizationToDb,
+  normalizationToSoundcheck,
+} from './normalization.js';
+import type { AudioNormalization } from './normalization.js';
 import type { IAudioMetadata } from 'music-metadata';
 
 describe('replayGainToSoundcheck', () => {
@@ -97,7 +100,7 @@ describe('iTunNORMToSoundcheck', () => {
   });
 });
 
-describe('extractSoundcheck', () => {
+describe('extractNormalization', () => {
   function makeMetadata(
     overrides: { common?: Record<string, unknown>; native?: IAudioMetadata['native'] } = {}
   ): IAudioMetadata {
@@ -118,31 +121,49 @@ describe('extractSoundcheck', () => {
 
   it('returns null when no normalization data present', () => {
     const metadata = makeMetadata();
-    expect(extractSoundcheck(metadata)).toBeNull();
+    expect(extractNormalization(metadata)).toBeNull();
   });
 
-  it('extracts from ReplayGain track gain with source', () => {
+  it('extracts from ReplayGain track gain with rich type', () => {
     const metadata = makeMetadata({
       common: {
         track: { no: null, of: null },
         disk: { no: null, of: null },
         replaygain_track_gain: { dB: -6, ratio: 0.251 },
+        replaygain_track_peak: { ratio: 0.251 },
+        replaygain_album_gain: { dB: -8, ratio: 0.158 },
+        replaygain_album_peak: { ratio: 0.95 },
       },
     });
-    const result = extractSoundcheck(metadata);
-    expect(result).toEqual({ value: replayGainToSoundcheck(-6), source: 'replayGain_track' });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'replaygain-track',
+      trackGain: -6,
+      trackPeak: 0.251,
+      albumGain: -8,
+      albumPeak: 0.95,
+      soundcheckValue: replayGainToSoundcheck(-6),
+    });
   });
 
-  it('falls back to ReplayGain album gain with source', () => {
+  it('falls back to ReplayGain album gain', () => {
     const metadata = makeMetadata({
       common: {
         track: { no: null, of: null },
         disk: { no: null, of: null },
         replaygain_album_gain: { dB: -4, ratio: 0.398 },
+        replaygain_album_peak: { ratio: 0.398 },
       },
     });
-    const result = extractSoundcheck(metadata);
-    expect(result).toEqual({ value: replayGainToSoundcheck(-4), source: 'replayGain_album' });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'replaygain-album',
+      trackGain: -4,
+      trackPeak: 0.398,
+      albumGain: -4,
+      albumPeak: 0.398,
+      soundcheckValue: replayGainToSoundcheck(-4),
+    });
   });
 
   it('prefers iTunNORM over ReplayGain', () => {
@@ -162,8 +183,12 @@ describe('extractSoundcheck', () => {
         ],
       },
     });
-    const result = extractSoundcheck(metadata);
-    expect(result).toEqual({ value: 0x0a2b, source: 'iTunNORM' });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'itunes-soundcheck',
+      soundcheckValue: 0x0a2b,
+      trackGain: soundcheckToReplayGainDb(0x0a2b),
+    });
   });
 
   it('extracts iTunNORM from MP4 tags', () => {
@@ -178,8 +203,12 @@ describe('extractSoundcheck', () => {
         ],
       },
     });
-    const result = extractSoundcheck(metadata);
-    expect(result).toEqual({ value: 0x600, source: 'iTunNORM' });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'itunes-soundcheck',
+      soundcheckValue: 0x600,
+      trackGain: soundcheckToReplayGainDb(0x600),
+    });
   });
 
   it('prefers track gain over album gain', () => {
@@ -188,10 +217,111 @@ describe('extractSoundcheck', () => {
         track: { no: null, of: null },
         disk: { no: null, of: null },
         replaygain_track_gain: { dB: -3, ratio: 0.5 },
+        replaygain_track_peak: { ratio: 0.5 },
         replaygain_album_gain: { dB: -8, ratio: 0.158 },
+        replaygain_album_peak: { ratio: 0.9 },
       },
     });
-    const result = extractSoundcheck(metadata);
-    expect(result).toEqual({ value: replayGainToSoundcheck(-3), source: 'replayGain_track' });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'replaygain-track',
+      trackGain: -3,
+      trackPeak: 0.5,
+      albumGain: -8,
+      albumPeak: 0.9,
+      soundcheckValue: replayGainToSoundcheck(-3),
+    });
+  });
+
+  it('extracts album gain alongside track gain', () => {
+    const metadata = makeMetadata({
+      common: {
+        track: { no: null, of: null },
+        disk: { no: null, of: null },
+        replaygain_track_gain: { dB: -5, ratio: 0.316 },
+        replaygain_track_peak: { ratio: 0.92 },
+        replaygain_album_gain: { dB: -7, ratio: 0.2 },
+        replaygain_album_peak: { ratio: 0.98 },
+      },
+    });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'replaygain-track',
+      trackGain: -5,
+      trackPeak: 0.92,
+      albumGain: -7,
+      albumPeak: 0.98,
+      soundcheckValue: replayGainToSoundcheck(-5),
+    });
+  });
+
+  it('omits trackPeak when not available', () => {
+    const metadata = makeMetadata({
+      common: {
+        track: { no: null, of: null },
+        disk: { no: null, of: null },
+        replaygain_track_gain: { dB: -6, ratio: 0.251 },
+      },
+    });
+    const result = extractNormalization(metadata);
+    expect(result).toEqual({
+      source: 'replaygain-track',
+      trackGain: -6,
+      trackPeak: undefined,
+      albumGain: undefined,
+      albumPeak: undefined,
+      soundcheckValue: replayGainToSoundcheck(-6),
+    });
+  });
+});
+
+describe('normalizationToDb', () => {
+  it('returns trackGain when available', () => {
+    const norm: AudioNormalization = {
+      source: 'replaygain-track',
+      trackGain: -7.5,
+      soundcheckValue: replayGainToSoundcheck(-7.5),
+    };
+    expect(normalizationToDb(norm)).toBe(-7.5);
+  });
+
+  it('back-converts from soundcheckValue when trackGain is missing', () => {
+    const norm: AudioNormalization = {
+      source: 'itunes-soundcheck',
+      soundcheckValue: 1000,
+    };
+    expect(normalizationToDb(norm)).toBeCloseTo(0, 10);
+  });
+
+  it('returns undefined when neither field is present', () => {
+    const norm: AudioNormalization = {
+      source: 'replaygain-track',
+    };
+    expect(normalizationToDb(norm)).toBeUndefined();
+  });
+});
+
+describe('normalizationToSoundcheck', () => {
+  it('returns soundcheckValue when available', () => {
+    const norm: AudioNormalization = {
+      source: 'itunes-soundcheck',
+      soundcheckValue: 2603,
+    };
+    expect(normalizationToSoundcheck(norm)).toBe(2603);
+  });
+
+  it('converts from trackGain when soundcheckValue is missing', () => {
+    const norm: AudioNormalization = {
+      source: 'replaygain-track',
+      trackGain: -6,
+    };
+    expect(normalizationToSoundcheck(norm)).toBe(replayGainToSoundcheck(-6));
+  });
+
+  it('returns undefined when neither field is present', () => {
+    const norm: AudioNormalization = {
+      source: 'replaygain-track',
+    };
+    expect(normalizationToSoundcheck(norm)).toBeUndefined();
   });
 });

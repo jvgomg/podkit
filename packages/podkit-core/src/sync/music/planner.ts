@@ -23,6 +23,7 @@ import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioFileType, TrackMetadata } from '../../types.js';
 import type { AudioCodec } from '../../device/capabilities.js';
 import { getPresetBitrate } from '../../transcode/types.js';
+import { replayGainToSoundcheck } from '../../metadata/normalization.js';
 import type { MetadataChange, SourceCategory } from '../engine/types.js';
 import type { MusicOperation } from './types.js';
 
@@ -351,9 +352,22 @@ export function changesToMetadata(changes: MetadataChange[]): Partial<TrackMetad
       case 'compilation':
         metadata.compilation = change.to === 'true';
         break;
-      case 'soundcheck':
-        metadata.soundcheck = change.to ? Number(change.to) : undefined;
+      case 'normalization': {
+        // Reconstruct AudioNormalization from the dB string display value.
+        // The 'to' field contains a string like "-7.0 dB" or "absent".
+        const dbStr = change.to;
+        if (dbStr && dbStr !== 'absent') {
+          const db = parseFloat(dbStr);
+          if (!isNaN(db)) {
+            metadata.normalization = {
+              source: 'replaygain-track',
+              trackGain: db,
+              soundcheckValue: replayGainToSoundcheck(db),
+            };
+          }
+        }
         break;
+      }
     }
   }
 

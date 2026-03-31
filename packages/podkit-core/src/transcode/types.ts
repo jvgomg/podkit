@@ -464,6 +464,8 @@ export interface TranscodeOptions {
   replayGain?: {
     trackGain: number;
     trackPeak?: number;
+    albumGain?: number;
+    albumPeak?: number;
   };
 }
 

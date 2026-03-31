@@ -12,6 +12,7 @@
 
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { EncodingMode } from '../../transcode/types.js';
+import { normalizationToDb } from '../../metadata/normalization.js';
 import type { DeviceTrack } from './types.js';
 import type { UpdateReason, UpgradeReason } from './types.js';
 
@@ -214,11 +215,11 @@ export function isQualityUpgrade(source: CollectionTrack, ipod: DeviceTrack): bo
  * - `quality-upgrade`: same format family, significantly higher bitrate
  * - `artwork-added`: source has artwork (`hasArtwork === true`) and iPod track does not
  * - `artwork-removed`: source has no artwork (`hasArtwork === false`) but iPod does
- * - `soundcheck-update`: source has soundcheck value, iPod value absent or differs
+ * - `normalization-update`: source has normalization data, device value absent or differs
  * - `metadata-correction`: non-matching metadata fields differ
  *
  * **Reason ordering:** Reasons are pushed in priority order (most significant first):
- * format-upgrade > quality-upgrade > artwork-added > artwork-removed > artwork-updated > soundcheck-update > metadata-correction.
+ * format-upgrade > quality-upgrade > artwork-added > artwork-removed > artwork-updated > normalization-update > metadata-correction.
  * The first reason (`reasons[0]`) is used as the primary/headline reason by the caller,
  * while all detected reasons are returned in the array for full context.
  *
@@ -297,12 +298,14 @@ export function detectUpgrades(source: CollectionTrack, ipod: DeviceTrack): Upgr
     }
   }
 
-  // Sound Check update: source has soundcheck, iPod value is absent or differs
-  if (source.soundcheck !== undefined && source.soundcheck !== null) {
-    if (ipod.soundcheck === undefined || ipod.soundcheck === null) {
-      reasons.push('soundcheck-update');
-    } else if (source.soundcheck !== ipod.soundcheck) {
-      reasons.push('soundcheck-update');
+  // Normalization update: source has normalization, device value is absent or differs
+  if (source.normalization !== undefined) {
+    const sourceDb = normalizationToDb(source.normalization);
+    const deviceDb = ipod.normalization ? normalizationToDb(ipod.normalization) : undefined;
+    if (sourceDb !== undefined) {
+      if (deviceDb === undefined || Math.abs(sourceDb - deviceDb) > 0.1) {
+        reasons.push('normalization-update');
+      }
     }
   }
 
@@ -374,7 +377,7 @@ export function isEmpty(value: unknown): boolean {
  *
  * Metadata-only reasons update the iPod database without file transfer:
  * - artwork-updated: artwork bytes changed but track audio is the same (re-extract artwork only)
- * - soundcheck-update: volume normalization value
+ * - normalization-update: volume normalization data
  * - metadata-correction: genre, year, track number, etc.
  * - transform-apply / transform-remove / metadata-changed: metadata-only changes
  *

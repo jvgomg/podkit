@@ -350,7 +350,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       const reasonParts: string[] = [];
       for (const [reason, count] of updatesByReason) {
         let label = formatUpdateReason(reason);
-        if (reason === 'soundcheck-update' && normalization === 'replaygain') {
+        if (reason === 'normalization-update' && normalization === 'replaygain') {
           label = 'ReplayGain update';
         }
         reasonParts.push(`${label}: ${count}`);
@@ -372,7 +372,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     }
     if (diff.toAdd.length > 0) {
       if (normalization !== 'none') {
-        const withSoundcheck = diff.toAdd.filter((t) => t.soundcheck !== undefined).length;
+        const withSoundcheck = diff.toAdd.filter((t) => t.normalization !== undefined).length;
         const label = normalization === 'replaygain' ? 'ReplayGain' : 'Sound Check';
         out.print(
           `  ${label}: ${formatNumber(withSoundcheck)}/${formatNumber(diff.toAdd.length)} tracks have normalization data`
@@ -577,10 +577,10 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         tracksExisting: diff.existing.length,
         estimatedSize: plan.estimatedSize,
         estimatedTime: plan.estimatedTime,
-        soundCheckTracks:
+        normalizedTracks:
           diff.toAdd.length > 0 &&
           (config.capabilities?.audioNormalization ?? 'soundcheck') !== 'none'
-            ? diff.toAdd.filter((t) => t.soundcheck !== undefined).length
+            ? diff.toAdd.filter((t) => t.normalization !== undefined).length
             : undefined,
         albumCount,
         artistCount,
