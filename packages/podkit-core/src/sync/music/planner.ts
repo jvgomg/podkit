@@ -408,7 +408,8 @@ export function calculateMusicOperationSize(operation: MusicOperation): number {
     case 'remove':
     case 'update-metadata':
     case 'update-sync-tag':
-      // These operations free space rather than consume it
+    case 'relocate':
+      // These operations free space or just move files — no new space consumed
       return 0;
   }
 }

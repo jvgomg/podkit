@@ -141,6 +141,8 @@ export function formatUpdateReason(reason: string): string {
       return 'Normalization update';
     case 'metadata-correction':
       return 'Metadata correction';
+    case 'path-mismatch':
+      return 'Path relocate';
     case 'force-metadata':
       return 'Metadata refresh';
     default:

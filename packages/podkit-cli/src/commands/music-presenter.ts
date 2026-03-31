@@ -188,6 +188,52 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     return differ.diff(sourceItems, deviceItems);
   }
 
+  reconcilePaths(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>, ipod: any) {
+    // Only applies to mass-storage devices with computeExpectedPath
+    if (typeof ipod?.computeExpectedPath !== 'function') return;
+
+    const getExpectedPath = (source: CollectionTrack, device: DeviceTrack): string =>
+      ipod.computeExpectedPath({
+        title: source.title,
+        artist: source.artist,
+        albumArtist: source.albumArtist,
+        album: source.album,
+        trackNumber: source.trackNumber,
+        discNumber: source.discNumber,
+        totalDiscs: (device as any).totalDiscs,
+        filetype: device.filetype,
+        mediaType: device.mediaType,
+      });
+
+    // Check existing (matched, no updates) for path mismatches — iterate
+    // in reverse so splice indices remain valid
+    for (let i = diff.existing.length - 1; i >= 0; i--) {
+      const match = diff.existing[i]!;
+      const expectedPath = getExpectedPath(match.source, match.device);
+      if (expectedPath !== match.device.filePath) {
+        diff.existing.splice(i, 1);
+        diff.toUpdate.push({
+          source: match.source,
+          device: match.device,
+          reasons: ['path-mismatch'],
+          changes: [{ field: 'filePath', from: match.device.filePath, to: expectedPath }],
+        });
+      }
+    }
+
+    // Check existing toUpdate entries for additional path mismatches
+    for (const update of diff.toUpdate) {
+      if (update.reasons.includes('path-mismatch')) continue;
+
+      const expectedPath = getExpectedPath(update.source, update.device);
+      if (expectedPath !== update.device.filePath) {
+        update.reasons.push('path-mismatch');
+        if (!update.changes) update.changes = [];
+        update.changes.push({ field: 'filePath', from: update.device.filePath, to: expectedPath });
+      }
+    }
+  }
+
   collectPostDiffData(
     diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>,
     contentConfig: MusicContentConfig | VideoContentConfig
@@ -247,6 +293,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     let upgradeDirectCopyCount = 0;
     let upgradeOptimizedCopyCount = 0;
     let upgradeArtworkCount = 0;
+    let relocateCount = 0;
 
     for (const op of plan.operations) {
       switch (op.type) {
@@ -271,6 +318,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
         case 'upgrade-artwork':
           upgradeArtworkCount++;
           break;
+        case 'relocate':
+          relocateCount++;
+          break;
       }
     }
 
@@ -282,6 +332,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       upgradeDirectCopyCount,
       upgradeOptimizedCopyCount,
       upgradeArtworkCount,
+      relocateCount,
     };
   }
 
@@ -446,6 +497,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
               break;
             case 'update-metadata':
             case 'update-sync-tag':
+            case 'relocate':
               symbol = '~';
               break;
             default:
@@ -601,6 +653,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
           summary.upgradeDirectCopyCount +
           summary.upgradeOptimizedCopyCount +
           summary.upgradeArtworkCount,
+        tracksToRelocate: summary.relocateCount > 0 ? summary.relocateCount : undefined,
         updateBreakdown: diff.toUpdate.length > 0 ? updateBreakdown : undefined,
         tracksToTranscode: summary.addTranscodeCount,
         tracksToCopy: summary.addDirectCopyCount + summary.addOptimizedCopyCount,

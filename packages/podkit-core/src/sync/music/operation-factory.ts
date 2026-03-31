@@ -84,4 +84,20 @@ export class MusicOperationFactory {
   createSyncTagUpdate(device: DeviceTrack, syncTag: SyncTagData): MusicOperation {
     return { type: 'update-sync-tag', track: device, syncTag };
   }
+
+  /** Create a relocate (file move) operation */
+  createRelocate(
+    device: DeviceTrack,
+    source: CollectionTrack,
+    newPath: string,
+    changes?: MetadataChange[]
+  ): MusicOperation {
+    return {
+      type: 'relocate',
+      track: device,
+      source,
+      newPath,
+      metadata: changes ? changesToMetadata(changes) : undefined,
+    };
+  }
 }
