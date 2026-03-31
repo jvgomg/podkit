@@ -44,6 +44,29 @@ import { formatDuration, formatTransformsConfig } from './sync-presenter.js';
 import type { MusicCollectionConfig } from '../config/index.js';
 
 /**
+ * Group copy operations by source file type for display.
+ * Returns formatted strings like `["Copy (FLAC): 3", "Copy (MP3): 2"]`.
+ */
+function formatCopyByFileType(operations: MusicOperation[]): string[] {
+  const countsByType = new Map<string, number>();
+
+  for (const op of operations) {
+    if (op.type === 'add-direct-copy' || op.type === 'add-optimized-copy') {
+      const fileType = (op.source as any).fileType?.toUpperCase() ?? 'UNKNOWN';
+      countsByType.set(fileType, (countsByType.get(fileType) ?? 0) + 1);
+    }
+  }
+
+  if (countsByType.size === 0) return [];
+
+  const parts: string[] = [];
+  for (const [fileType, count] of countsByType) {
+    parts.push(`Copy (${fileType}): ${formatNumber(count)}`);
+  }
+  return parts;
+}
+
+/**
  * Resolved collection information (matches the type in sync.ts)
  */
 interface ResolvedCollection {
@@ -309,7 +332,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     if (config.skipUpgrades) {
       out.print(`Skip upgrades: enabled`);
     }
-    if (config.resolvedLossyCodec && config.lossyPreferenceStack) {
+    // Only show Codec line when there are actual transcode operations
+    const hasTranscodes = summary.addTranscodeCount > 0 || summary.upgradeTranscodeCount > 0;
+    if (config.resolvedLossyCodec && config.lossyPreferenceStack && hasTranscodes) {
       const chain = config.lossyPreferenceStack.join(' \u2192 ');
       out.print(`Codec: ${config.resolvedLossyCodec} (preference: ${chain})`);
     }
@@ -329,9 +354,14 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       out.print(`    - Transcode: ${formatNumber(summary.addTranscodeCount)}`);
     }
     if (summary.addDirectCopyCount + summary.addOptimizedCopyCount > 0) {
-      out.print(
-        `    - Copy: ${formatNumber(summary.addDirectCopyCount + summary.addOptimizedCopyCount)}`
-      );
+      const copyFormatParts = formatCopyByFileType(plan.operations);
+      if (copyFormatParts.length > 0) {
+        out.print(`    - ${copyFormatParts.join(', ')}`);
+      } else {
+        out.print(
+          `    - Copy: ${formatNumber(summary.addDirectCopyCount + summary.addOptimizedCopyCount)}`
+        );
+      }
     }
     if (removeOrphans && diff.toRemove.length > 0) {
       out.print(`  Tracks to remove: ${formatNumber(diff.toRemove.length)}`);

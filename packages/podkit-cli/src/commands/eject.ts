@@ -134,6 +134,7 @@ export const ejectCommand = new Command('eject')
 
     const result = await ejectWithRetry(manager, devicePath, {
       force,
+      deviceLabel,
       onProgress: (event) => {
         if (!out.isText) return;
         switch (event.phase) {
