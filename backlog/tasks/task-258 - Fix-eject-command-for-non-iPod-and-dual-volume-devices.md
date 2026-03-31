@@ -1,9 +1,10 @@
 ---
 id: TASK-258
 title: Fix eject command for non-iPod and dual-volume devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-31 12:56'
+updated_date: '2026-03-31 14:29'
 labels:
   - bug
   - cli
@@ -29,7 +30,22 @@ The eject command has hardcoded "iPod" strings and only unmounts one volume. Dis
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Eject messages use device type display name instead of hardcoded 'iPod'
-- [ ] #2 For dual-LUN devices, eject unmounts all volumes belonging to the same physical USB device
-- [ ] #3 Single-volume devices continue to work as before
+- [x] #1 Eject messages use device type display name instead of hardcoded 'iPod'
+- [x] #2 For dual-LUN devices, eject unmounts all volumes belonging to the same physical USB device
+- [x] #3 Single-volume devices continue to work as before
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Hardcoded 'iPod' strings fixed in eject.ts and eject CLI (commit `2ce14ac`). Dual-volume ejection (AC #2) still to do.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All acceptance criteria complete:
+- AC #1: Device label in eject messages (commit `2ce14ac`)
+- AC #2: Dual-LUN eject via `getSiblingVolumes()` + `system_profiler` USB tree traversal (commit `bfce2dc`)
+- AC #3: Single-volume backward compatibility maintained (empty additionalMountPoints default)
+<!-- SECTION:FINAL_SUMMARY:END -->
