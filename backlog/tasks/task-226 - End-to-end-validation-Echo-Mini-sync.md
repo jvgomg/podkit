@@ -1,10 +1,10 @@
 ---
 id: TASK-226
 title: 'End-to-end validation: Echo Mini sync'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:31'
-updated_date: '2026-03-24 16:11'
+updated_date: '2026-03-31 13:55'
 labels:
   - testing
   - e2e
@@ -58,13 +58,13 @@ Validate the full sync pipeline works end-to-end for the Echo Mini. This is the 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Dry run against mass-storage device shows correct sync plan
-- [ ] #2 Full sync transfers files with correct structure, metadata, and artwork
-- [ ] #3 Incremental sync correctly adds, removes, and updates tracks
-- [ ] #4 Pre-existing unmanaged music on device is preserved
-- [ ] #5 Formats unsupported by device are transcoded correctly
-- [ ] #6 Automated E2E test profile for mass-storage devices added to e2e-tests
-- [ ] #7 Manual validation on real Echo Mini hardware passes
+- [x] #1 Dry run against mass-storage device shows correct sync plan
+- [x] #2 Full sync transfers files with correct structure, metadata, and artwork
+- [x] #3 Incremental sync correctly adds, removes, and updates tracks
+- [x] #4 Pre-existing unmanaged music on device is preserved
+- [x] #5 Formats unsupported by device are transcoded correctly
+- [x] #6 Automated E2E test profile for mass-storage devices added to e2e-tests
+- [x] #7 Manual validation on real Echo Mini hardware passes
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -83,3 +83,38 @@ Validate the full sync pipeline works end-to-end for the Echo Mini. This is the 
 
 **Test device available:** Firmware 3.2.0, Hardware 1.2.0, 128GB SD card
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Summary
+
+Full end-to-end validation of Echo Mini sync completed via manual hardware testing and automated E2E tests.
+
+### Bugs found and fixed
+
+7 bugs discovered and fixed during hands-on testing (commit `7846828`):
+
+1. **Temp directory not created for optimized-copy** — FFmpeg failed with "No such file or directory"
+2. **Preset content paths ignored** — Echo Mini's `musicDir: ''` wasn't passed to adapter
+3. **`skipCovers: true` broke artwork detection** — caused infinite re-sync loop
+4. **`quality=copy` sync tag mismatch** — false preset-upgrade on every sync
+5. **JPEG 4:4:4 chroma not converted** — artwork didn't display on Echo Mini
+6. **Classifier ignored quality preset for native codecs** — FLAC with quality=high should transcode to AAC
+7. **FFmpeg error truncation** — real errors swallowed by version banner
+
+### Automated E2E tests
+
+8 test scenarios added (commit `a69bd2e`):
+- Basic sync, incremental add/remove, pre-existing unmanaged music, quality preset change, transfer mode change, artwork chroma handling, codec preference fallback
+
+### Additional improvements
+
+- Eject command uses device label instead of hardcoded "iPod" (commit `2ce14ac`)
+- Dry-run hides Codec line for copy-only syncs, shows format in copy count (commit `2ce14ac`)
+- Device profile updated with 4:4:4 chroma finding
+
+### UX feedback captured as backlog tasks
+
+TASK-255 through TASK-260 created on the Echo Mini milestone for future work.
+<!-- SECTION:FINAL_SUMMARY:END -->
