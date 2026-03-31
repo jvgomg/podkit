@@ -603,6 +603,7 @@ export {
 // ContentTypeHandler interface and registry
 export type {
   ContentTypeHandler,
+  CollisionCheckInput,
   ExecutionContext,
   OperationProgress,
   DryRunSummary,
@@ -611,7 +612,7 @@ export type {
 } from './sync/engine/content-type.js';
 
 // Content type handlers
-export { MusicHandler, createMusicHandler } from './sync/music/handler.js';
+export { MusicHandler, createMusicHandler, getMusicDeviceItems } from './sync/music/handler.js';
 export type { MusicSyncConfig, ResolvedMusicConfig } from './sync/music/config.js';
 export { MusicTrackClassifier, classifierFromConfig } from './sync/music/classifier.js';
 export type {
@@ -620,7 +621,7 @@ export type {
   ClassifierContext,
 } from './sync/music/classifier.js';
 export { MusicOperationFactory } from './sync/music/operation-factory.js';
-export { VideoHandler, createVideoHandler } from './sync/video/handler.js';
+export { VideoHandler, createVideoHandler, getVideoDeviceItems } from './sync/video/handler.js';
 export type { VideoSyncConfig, ResolvedVideoConfig } from './sync/video/config.js';
 export { VideoTrackClassifier } from './sync/video/classifier.js';
 export type { VideoAction, VideoClassification } from './sync/video/classifier.js';

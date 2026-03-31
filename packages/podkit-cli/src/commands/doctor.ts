@@ -5,8 +5,8 @@
  * When a check fails and is repairable, the CLI maps domain-level
  * repair requirements to flags and UX.
  *
- * For mass-storage devices, reports that no checks are currently available
- * and suggests using `podkit sync --dry-run` to verify configuration.
+ * For mass-storage devices, runs applicable checks (e.g. orphan file detection)
+ * using content paths resolved from the device preset/config chain.
  *
  * @example
  * ```bash
@@ -18,7 +18,7 @@
  */
 
 import { basename, dirname } from 'node:path';
-import { Command } from 'commander';
+import { Command, Option } from 'commander';
 import { getContext } from '../context.js';
 import {
   resolveDevicePath,
@@ -155,7 +155,14 @@ async function resolveDevice(
 
 export const doctorCommand = new Command('doctor')
   .description('run health checks on a device')
-  .option('--repair <check-id>', 'repair a specific check by ID (e.g. artwork-rebuild)')
+  .addOption(
+    new Option('--repair <check-id>', 'repair a specific check by ID').choices([
+      'artwork-rebuild',
+      'artwork-reset',
+      'orphan-files',
+      'orphan-files-mass-storage',
+    ])
+  )
   .option('-c, --collection <name>', 'music collection to use as artwork source')
   .option('--dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
@@ -222,12 +229,24 @@ export const doctorCommand = new Command('doctor')
         return;
       }
 
-      // Mass-storage devices don't support repair
       const isMassStorage =
         resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
       if (isMassStorage) {
-        out.error('Repair is not available for mass-storage devices.');
-        process.exitCode = 1;
+        // Check if this repair check applies to mass-storage
+        const applicableTypes = check.applicableTo ?? ['ipod'];
+        if (!applicableTypes.includes('mass-storage')) {
+          out.error(`Repair "${options.repair}" is not available for mass-storage devices.`);
+          process.exitCode = 1;
+          return;
+        }
+        await runMassStorageRepair(
+          resolved.path,
+          resolved.deviceConfig!,
+          check,
+          options,
+          out,
+          config
+        );
         return;
       }
 
@@ -299,22 +318,83 @@ async function runDoctorDiagnostics(
   const { config } = getContext();
   const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
 
-  // Mass-storage devices: no checks available yet
+  // Mass-storage devices: resolve content paths and run applicable checks
   if (isMassStorage) {
     const label = getDeviceTypeDisplayName(deviceConfig?.type);
+
+    const contentPaths = resolveMassStorageContentPaths(deviceConfig!, config.deviceDefaults, core);
+
+    const report = await core.runDiagnostics({
+      mountPoint: devicePath,
+      deviceType: 'mass-storage',
+      deviceModel: label,
+      contentPaths,
+    });
+
+    const checksOutput: DoctorCheckOutput[] = report.checks.map((c) => ({
+      id: c.id,
+      name: c.name,
+      status: c.status,
+      summary: c.summary,
+      repairable: c.repairable,
+      details: c.details,
+      docsUrl: c.docsUrl,
+    }));
+
     const output: DoctorOutput = {
-      healthy: true,
+      healthy: report.healthy,
       mountPoint: devicePath,
       deviceModel: label,
       deviceType: 'mass-storage',
-      checks: [],
+      checks: checksOutput,
     };
+
+    const getDiagnosticCheck = core.getDiagnosticCheck;
+
     out.result<DoctorOutput>(output, () => {
       out.print(`podkit doctor \u2014 ${label} at ${devicePath}`);
+
+      if (report.checks.length === 0) {
+        out.newline();
+        out.print('  No health checks are currently available for this device.');
+        out.print('  Run `podkit sync --dry-run` to verify your collection configuration.');
+      } else {
+        // Device Health section
+        out.newline();
+        out.print('Device Health');
+
+        for (const check of report.checks) {
+          if (check.repairOnly) continue;
+
+          const sym = statusSymbol(check.status);
+          out.print(`  ${sym} ${check.name}    ${check.summary}`);
+
+          // Show repair instructions if repairable
+          if (check.repairable) {
+            const diagCheck = getDiagnosticCheck(check.id);
+            if (diagCheck?.repair) {
+              out.newline();
+              out.print(`    To repair: podkit doctor --repair ${check.id}`);
+            }
+          }
+        }
+      }
+
+      // Summary line
       out.newline();
-      out.print('  No health checks are currently available for mass-storage devices.');
-      out.print('  Run `podkit sync --dry-run` to verify your collection configuration.');
+      if (report.healthy) {
+        out.success('All checks passed.');
+      } else {
+        const issueCount = report.checks.filter(
+          (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
+        ).length;
+        out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
+      }
     });
+
+    if (!report.healthy) {
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -729,6 +809,121 @@ async function runRepair(
       }
     }
     db.close();
+  }
+}
+
+// ── Mass-storage helpers ─────────────────────────────────────────────────
+
+/**
+ * Resolve content paths for a mass-storage device from the config chain:
+ * preset defaults < global deviceDefaults < per-device config.
+ */
+function resolveMassStorageContentPaths(
+  deviceConfig: DeviceConfig,
+  globalDefaults: ReturnType<typeof getContext>['config']['deviceDefaults'],
+  core: typeof import('@podkit/core')
+): import('@podkit/core').ContentPaths {
+  const preset = core.getDevicePreset(deviceConfig.type ?? 'generic');
+  const presetDefaults = preset?.contentPaths;
+  const overrides: Partial<import('@podkit/core').ContentPaths> = {};
+  if (globalDefaults?.musicDir !== undefined) overrides.musicDir = globalDefaults.musicDir;
+  if (globalDefaults?.moviesDir !== undefined) overrides.moviesDir = globalDefaults.moviesDir;
+  if (globalDefaults?.tvShowsDir !== undefined) overrides.tvShowsDir = globalDefaults.tvShowsDir;
+  if (deviceConfig.musicDir !== undefined) overrides.musicDir = deviceConfig.musicDir;
+  if (deviceConfig.moviesDir !== undefined) overrides.moviesDir = deviceConfig.moviesDir;
+  if (deviceConfig.tvShowsDir !== undefined) overrides.tvShowsDir = deviceConfig.tvShowsDir;
+
+  const hasOverrides = Object.keys(overrides).length > 0;
+  return hasOverrides || presetDefaults
+    ? core.normalizeContentPaths(overrides, presetDefaults)
+    : core.normalizeContentPaths({});
+}
+
+async function runMassStorageRepair(
+  devicePath: string,
+  deviceConfig: DeviceConfig,
+  check: NonNullable<ReturnType<typeof import('@podkit/core').getDiagnosticCheck>>,
+  options: DoctorOptions,
+  out: OutputContext,
+  config: ReturnType<typeof getContext>['config']
+): Promise<void> {
+  const repair = check.repair!;
+  const dryRun = options.dryRun ?? false;
+
+  let core: typeof import('@podkit/core');
+  try {
+    core = await import('@podkit/core');
+  } catch (err) {
+    out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
+    process.exitCode = 1;
+    return;
+  }
+
+  const contentPaths = resolveMassStorageContentPaths(deviceConfig, config.deviceDefaults, core);
+
+  if (!dryRun) {
+    out.print(`Repairing ${check.id} on ${getDeviceTypeDisplayName(deviceConfig.type)}...`);
+    out.newline();
+  } else {
+    out.print(`Dry run: checking ${check.id} repair...`);
+    out.newline();
+  }
+
+  const shutdown = createShutdownController();
+  shutdown.install();
+
+  try {
+    const result = await repair.run(
+      {
+        mountPoint: devicePath,
+        deviceType: 'mass-storage',
+        contentPaths,
+        adapters: [],
+      },
+      {
+        dryRun,
+        signal: shutdown.signal,
+        onProgress: (progress) => {
+          if (!out.isText) return;
+          const p = progress as Record<string, number>;
+          if (p.current !== undefined && p.total !== undefined) {
+            const pct = Math.round((p.current / p.total) * 100);
+            process.stderr.write(`\r  ${p.current} / ${p.total}  (${pct}%)`);
+          }
+        },
+      }
+    );
+
+    // Clear progress line
+    if (out.isText) {
+      process.stderr.write('\r' + ' '.repeat(80) + '\r');
+    }
+
+    const output: RepairOutput = {
+      success: result.success,
+      summary: result.summary,
+      checkId: check.id,
+      dryRun,
+      details: result.details,
+    };
+
+    out.result<RepairOutput>(output, () => {
+      out.print(result.summary);
+
+      if (!dryRun && result.success) {
+        out.newline();
+        out.success('Repair complete. Run `podkit doctor` to verify.');
+      }
+    });
+
+    if (!result.success) {
+      process.exitCode = 1;
+    }
+  } catch (err) {
+    out.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+  } finally {
+    shutdown.uninstall();
   }
 }
 

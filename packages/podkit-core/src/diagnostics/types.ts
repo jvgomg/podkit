@@ -23,6 +23,8 @@ export interface DiagnosticContext {
   deviceType: DiagnosticDeviceType;
   /** Open iPod database — only present for iPod devices */
   db?: IpodDatabase;
+  /** Content directory paths for mass-storage devices */
+  contentPaths?: import('../device/mass-storage-utils.js').ContentPaths;
 }
 
 export interface CheckResult {

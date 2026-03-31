@@ -144,7 +144,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
   }
 
   getDeviceItems(ipod: any, core: typeof import('@podkit/core')): DeviceTrack[] {
-    return ipod.getTracks().filter((t: any) => core.isMusicMediaType(t.mediaType));
+    return core.getMusicDeviceItems(ipod);
   }
 
   computeDiff(
@@ -715,6 +715,11 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     out.print('Music sync complete!');
 
     return { completed, failed, collectedErrors };
+  }
+
+  getCollisionCheckInputs(plan: SyncPlan<MusicOperation>) {
+    if (!this.handler) return [];
+    return this.handler.getCollisionCheckInputs!(plan);
   }
 
   renderCompletion(out: OutputContext, errors: CollectedError[]): void {

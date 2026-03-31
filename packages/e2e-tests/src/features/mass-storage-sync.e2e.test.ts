@@ -484,6 +484,157 @@ describe('mass-storage sync: echo-mini device', () => {
   }, 180000);
 
   // ---------------------------------------------------------------------------
+  // --delete scoping: managed vs unmanaged files (TASK-261)
+  // ---------------------------------------------------------------------------
+
+  it('--delete removes managed tracks no longer in source but preserves unmanaged files', async () => {
+    if (skipIfUnavailable()) return;
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      // Place an unmanaged file on the device BEFORE syncing.
+      // This file was NOT placed by podkit — it simulates a user-added file.
+      const unmanagedDir = join(devicePath, 'Some Artist', 'Some Album');
+      await mkdir(unmanagedDir, { recursive: true });
+      const unmanagedFile = join(unmanagedDir, '01 - Existing Track.m4a');
+      await writeFile(unmanagedFile, Buffer.alloc(1024, 0xff));
+
+      // Set up two albums in the collection via symlinks
+      const album1Tracks = await getAlbumTracks(Albums.GOLDBERG_SELECTIONS);
+      const album1Dir = join(collectionDir, 'album1');
+      await mkdir(album1Dir);
+      for (const track of album1Tracks) {
+        await symlink(track.path, join(album1Dir, track.filename));
+      }
+
+      const album2Tracks = await getAlbumTracks(Albums.SYNTHETIC_TESTS);
+      const album2Dir = join(collectionDir, 'album2');
+      await mkdir(album2Dir);
+      for (const track of album2Tracks) {
+        await symlink(track.path, join(album2Dir, track.filename));
+      }
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      // Sync both albums: 6 tracks
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(6);
+
+      let audioFiles = await findDeviceAudioFiles(devicePath, '');
+      // 6 managed + 1 unmanaged = 7
+      expect(audioFiles.length).toBe(7);
+
+      // Remove album2 from source
+      await rm(album2Dir, { recursive: true, force: true });
+
+      // Sync with --delete: removes album2 tracks (no longer in source).
+      // Unmanaged files are invisible to the sync engine and not removed.
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--delete',
+        '--json',
+      ]);
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+
+      // Only 3 removals: album2's managed tracks. Unmanaged file is untouched.
+      expect(j2?.result?.completed).toBe(3);
+
+      audioFiles = await findDeviceAudioFiles(devicePath, '');
+
+      // album1's 3 managed tracks + 1 unmanaged file = 4
+      expect(audioFiles.length).toBe(4);
+
+      // Verify album1 tracks still exist (Synthetic Classics)
+      const album1Files = audioFiles.filter((f) => f.includes('Synthetic Classics'));
+      expect(album1Files.length).toBe(3);
+
+      // Verify album2 tracks are GONE (Test Tones)
+      const album2Files = audioFiles.filter((f) => f.includes('Test Tones'));
+      expect(album2Files.length).toBe(0);
+
+      // Unmanaged file is preserved — --delete only targets managed files
+      expect(existsSync(unmanagedFile)).toBe(true);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // Collision detection with unmanaged file (dry-run)
+  // ---------------------------------------------------------------------------
+
+  it('detects collision with unmanaged file at target path during dry-run', async () => {
+    if (skipIfUnavailable()) return;
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+
+    try {
+      // Place an unmanaged file at the EXACT path podkit would generate for
+      // the first Goldberg Selections track.
+      //
+      // Track metadata: artist="Podkit Test Generator", album="Synthetic Classics",
+      // title="Harmony", trackNumber=1. With quality=low (AAC), extension=.m4a.
+      // echo-mini musicDir="" so path is: Podkit Test Generator/Synthetic Classics/01 - Harmony.m4a
+      const collisionDir = join(devicePath, 'Podkit Test Generator', 'Synthetic Classics');
+      await mkdir(collisionDir, { recursive: true });
+      const collisionFile = join(collisionDir, '01 - Harmony.m4a');
+      await writeFile(collisionFile, Buffer.alloc(1024, 0xff));
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: goldbergPath,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      // Run sync --dry-run --json — should detect the collision
+      const { json } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--dry-run',
+        '--json',
+      ]);
+
+      // The CLI should report failure due to collision
+      expect(json?.success).toBe(false);
+      expect(json?.error).toBeDefined();
+      expect(json!.error).toContain('unmanaged');
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  // ---------------------------------------------------------------------------
   // Pre-existing unmanaged music
   // ---------------------------------------------------------------------------
 
@@ -830,6 +981,148 @@ device = "echomini"
       // The resolved codec should be aac, not opus
       // The codec field may not be present in JSON output — verify via file format instead
       // All files should be .m4a (AAC), already asserted above
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  // ---------------------------------------------------------------------------
+  // Doctor: orphan detection and cleanup for mass-storage devices
+  // ---------------------------------------------------------------------------
+
+  it('detects and repairs orphan files on mass-storage device via doctor', async () => {
+    if (skipIfUnavailable()) return;
+
+    interface DoctorCheckOutput {
+      id: string;
+      name: string;
+      status: 'pass' | 'fail' | 'warn' | 'skip';
+      summary: string;
+      repairable: boolean;
+      details?: Record<string, unknown>;
+    }
+
+    interface DoctorOutput {
+      healthy: boolean;
+      mountPoint: string;
+      deviceModel: string;
+      checks: DoctorCheckOutput[];
+    }
+
+    interface RepairOutput {
+      success: boolean;
+      summary: string;
+      checkId: string;
+      dryRun: boolean;
+      details?: Record<string, unknown>;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+
+    try {
+      // Step 1: Sync 3 tracks to the device
+      await writeEchoMiniConfig(configPath, {
+        musicPath: goldbergPath,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(syncResult.exitCode).toBe(0);
+      expect(syncJson?.result?.completed).toBe(3);
+
+      // Record managed files for later verification
+      const managedFiles = await findDeviceAudioFiles(devicePath, '');
+      expect(managedFiles.length).toBe(3);
+
+      // Step 2: Place an unmanaged (orphan) file on the device
+      const orphanDir = join(devicePath, 'Orphan Artist', 'Orphan Album');
+      await mkdir(orphanDir, { recursive: true });
+      const orphanFile = join(orphanDir, '01 - Orphan.m4a');
+      await writeFile(orphanFile, Buffer.alloc(2048, 0xaa));
+      expect(existsSync(orphanFile)).toBe(true);
+
+      // Step 3: Run podkit doctor — should detect the orphan
+      const { result: doctorResult1, json: doctorJson1 } = await runCliJson<DoctorOutput>([
+        '--config',
+        configPath,
+        'doctor',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+
+      if (doctorResult1.exitCode !== 0) {
+        console.log('Doctor STDERR:', doctorResult1.stderr.slice(0, 2000));
+      }
+
+      expect(doctorJson1).not.toBeNull();
+
+      const orphanCheck1 = doctorJson1!.checks.find((c) => c.id === 'orphan-files-mass-storage');
+      expect(orphanCheck1).toBeDefined();
+      expect(orphanCheck1!.status).toBe('warn');
+      expect(orphanCheck1!.repairable).toBe(true);
+
+      // Verify details contain orphan count and wasted bytes
+      const details1 = orphanCheck1!.details as Record<string, unknown>;
+      expect(details1.orphanCount).toBe(1);
+      expect(details1.wastedBytes as number).toBeGreaterThan(0);
+
+      // Step 4: Run podkit doctor --repair to clean up the orphan
+      const { result: repairResult, json: repairJson } = await runCliJson<RepairOutput>([
+        '--config',
+        configPath,
+        'doctor',
+        '--repair',
+        'orphan-files-mass-storage',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+
+      if (repairResult.exitCode !== 0) {
+        console.log('Repair STDERR:', repairResult.stderr.slice(0, 2000));
+        console.log('Repair JSON:', JSON.stringify(repairJson, null, 2));
+      }
+      expect(repairResult.exitCode).toBe(0);
+      expect(repairJson).not.toBeNull();
+      expect(repairJson!.success).toBe(true);
+
+      // Step 5: Verify the orphan file was deleted
+      expect(existsSync(orphanFile)).toBe(false);
+
+      // Step 6: Verify managed tracks still exist
+      for (const file of managedFiles) {
+        expect(existsSync(file)).toBe(true);
+      }
+
+      // Step 7: Run doctor again — should pass now
+      const { result: doctorResult2, json: doctorJson2 } = await runCliJson<DoctorOutput>([
+        '--config',
+        configPath,
+        'doctor',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+
+      expect(doctorResult2.exitCode).toBe(0);
+      expect(doctorJson2).not.toBeNull();
+
+      const orphanCheck2 = doctorJson2!.checks.find((c) => c.id === 'orphan-files-mass-storage');
+      expect(orphanCheck2).toBeDefined();
+      expect(orphanCheck2!.status).toBe('pass');
     } finally {
       await rm(devicePath, { recursive: true, force: true });
       await rm(configDir, { recursive: true, force: true });

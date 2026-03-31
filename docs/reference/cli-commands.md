@@ -32,7 +32,7 @@ These options work with all commands:
 | [`podkit sync`](#podkit-sync) | Sync music and/or video collections to iPod |
 | [`podkit device`](#podkit-device) | Device management commands |
 | [`podkit collection`](#podkit-collection) | Collection management commands |
-| [`podkit doctor`](#podkit-doctor) | Run health checks on iPod, repair artwork |
+| [`podkit doctor`](#podkit-doctor) | Run health checks on device, repair issues |
 | [`podkit eject`](#podkit-eject) | Safely eject iPod (shortcut for `device eject`) |
 | [`podkit mount`](#podkit-mount) | Mount an iPod (shortcut for `device mount`) |
 | [`podkit completions`](#podkit-completions) | Generate shell completion scripts |
@@ -136,7 +136,7 @@ podkit sync [options]
 | `--force-transcode` | Re-transcode all lossless-source tracks regardless of bitrate match |
 | `--force-sync-tags` | Write sync tags to all matched transcoded tracks without re-transcoding |
 | `--force-metadata` | Rewrite metadata on all matched tracks without re-transcoding or re-transferring files |
-| `--delete` | Remove tracks from iPod that are not in the source |
+| `--delete` | Remove managed tracks from device that are not in the source |
 | `--eject` | Eject iPod after successful sync |
 
 ### Examples
@@ -189,7 +189,7 @@ Pressing Ctrl+C during sync triggers a graceful shutdown:
 
 Press Ctrl+C a second time to force-quit immediately. The database is saved periodically during sync (every 50 music tracks or 10 video transfers), so even a force-quit or crash loses at most a small batch of recent work.
 
-If a sync is interrupted, run `podkit doctor` to check for orphaned files that may be wasting space on the iPod.
+If a sync is interrupted, run `podkit doctor` to check for orphaned files that may be wasting space on the device.
 
 ## `podkit device`
 
@@ -677,7 +677,7 @@ podkit collection video [-c <name>] [options]
 
 ## `podkit doctor`
 
-Run health checks on an iPod and optionally repair detected issues. Uses a two-phase approach: readiness checks first (USB, partition, filesystem, mount, SysInfo, database), then database health checks. Gracefully handles devices that don't yet have a database, directing you to `podkit device init` if needed.
+Run health checks on a device and optionally repair detected issues. For iPod devices, uses a two-phase approach: readiness checks first (USB, partition, filesystem, mount, SysInfo, database), then database health checks. For mass-storage devices, checks content directories for orphan files. Gracefully handles devices that don't yet have a database, directing you to `podkit device init` if needed.
 
 ```bash
 podkit doctor [options]
@@ -722,13 +722,21 @@ Pressing Ctrl+C during a repair triggers a graceful shutdown — partial repair 
 
 ### Health Checks
 
+#### iPod Checks
+
 | Check | Description | Repair |
 |-------|-------------|--------|
 | Artwork Integrity | Verifies ArtworkDB offsets are within .ithmb file bounds | `--repair artwork-rebuild -c <collection>` |
 | Artwork Reset | Clears all artwork without needing a source collection | `--repair artwork-reset` |
 | Orphan Files | Detects unreferenced files in iPod_Control/Music that waste storage | `--repair orphan-files` |
 
-See [iPod Health Checks](/user-guide/devices/doctor) for a full guide to using doctor, including when to use each repair option.
+#### Mass-Storage Checks
+
+| Check | Description | Repair |
+|-------|-------------|--------|
+| Orphan Files | Detects files in content directories not tracked in `.podkit/state.json` | `--repair orphan-files-mass-storage` |
+
+See [Device Health Checks](/user-guide/devices/doctor) for a full guide to using doctor, including when to use each repair option.
 
 ## `podkit eject`
 
