@@ -398,6 +398,16 @@ export class MusicHandler implements ContentTypeHandler<
       const syncTag = match.device.syncTag;
       let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
 
+      // When the device sync tag says 'copy' and the classifier would also route
+      // this source as a copy (device natively supports the codec), it's in sync
+      // regardless of the configured quality preset.
+      if (syncTag?.quality === 'copy') {
+        const classification = this.classifier.classify(match.source);
+        if (classification.action.type !== 'transcode') {
+          return null; // copy -> copy, in sync
+        }
+      }
+
       if (syncTag && expectedSyncTag) {
         // Sync tag exists — use exact comparison
         if (!syncTagMatchesConfig(syncTag, expectedSyncTag)) {

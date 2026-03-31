@@ -998,7 +998,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    */
   private async readTrackMetadata(absolutePath: string): Promise<MassStorageTrack> {
     const metadata = await this.metadataReader(absolutePath, {
-      skipCovers: true,
+      skipCovers: false,
       duration: true,
     });
 
