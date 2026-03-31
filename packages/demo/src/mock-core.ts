@@ -1960,6 +1960,10 @@ export function createMusicHandler(config?: any): MusicHandler {
   return new MusicHandler(config);
 }
 
+export function getMusicDeviceItems(device: any): any[] {
+  return device.getTracks?.()?.filter?.((t: any) => t.mediaType === 1) ?? [];
+}
+
 // =============================================================================
 // VideoHandler (mock)
 // =============================================================================
@@ -2050,6 +2054,10 @@ export class VideoHandler {
 
 export function createVideoHandler(config?: any): VideoHandler {
   return new VideoHandler(config);
+}
+
+export function getVideoDeviceItems(device: any): any[] {
+  return device.getTracks?.()?.filter?.((t: any) => t.mediaType === 2 || t.mediaType === 6) ?? [];
 }
 
 // =============================================================================
