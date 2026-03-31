@@ -240,6 +240,7 @@ function mockManager(devices: PlatformDeviceInfo[] = []): DeviceManager {
     getManualInstructions: () => 'mock',
     requiresPrivileges: () => false,
     assessDevice: async () => null,
+    getSiblingVolumes: async () => [],
   };
 }
 

@@ -487,6 +487,125 @@ Replace diskXsY with your actual device identifier`;
     return null;
   }
 
+  async getSiblingVolumes(mountPoint: string): Promise<string[]> {
+    // Resolve the mount point to a whole-disk identifier
+    const wholeDisk = await this.resolveWholeDisk(mountPoint);
+    if (!wholeDisk) return [];
+
+    // Query the USB tree for all BSD names belonging to the same USB device
+    const siblingDisks = await this.findSiblingDisks(wholeDisk);
+    if (siblingDisks.length === 0) return [];
+
+    // For each sibling disk, find its mounted partitions
+    const siblings: string[] = [];
+    for (const disk of siblingDisks) {
+      // List partitions of this whole disk (diskN → diskNs1, diskNs2, etc.)
+      const { stdout, code } = await execCommand('diskutil', ['list', '-plist', disk]);
+      if (code !== 0) continue;
+
+      const partitionIds = this.parseDiskIdentifiers(stdout);
+      // Also check the whole disk itself (some devices have no partition table)
+      const allIds = partitionIds.length > 0 ? partitionIds : [disk];
+
+      for (const partId of allIds) {
+        const info = await this.getPlatformDeviceInfo(partId);
+        if (info?.isMounted && info.mountPoint && info.mountPoint !== mountPoint) {
+          siblings.push(info.mountPoint);
+        }
+      }
+    }
+
+    return siblings;
+  }
+
+  /**
+   * Find other whole-disk identifiers that share the same physical USB device.
+   *
+   * For dual-LUN devices like the Echo Mini, a single USB connection presents
+   * multiple disks (e.g., disk7 for internal, disk8 for SD card). This method
+   * queries system_profiler to find all BSD names under the same USB device node,
+   * then returns those that differ from the given whole disk.
+   */
+  private async findSiblingDisks(wholeDisk: string): Promise<string[]> {
+    const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
+    if (code !== 0 || !stdout) return [];
+
+    let profilerData: unknown;
+    try {
+      profilerData = JSON.parse(stdout);
+    } catch {
+      return [];
+    }
+
+    const allBsdNames = this.findAllBsdNamesForDevice(profilerData, wholeDisk);
+    // Return sibling disks (exclude the primary)
+    return allBsdNames.filter((name) => name !== wholeDisk);
+  }
+
+  /**
+   * Find the USB device node that owns the given whole-disk BSD name,
+   * then collect ALL BSD names from that node's subtree.
+   *
+   * This handles dual-LUN devices where a single USB device has multiple
+   * disks (e.g., internal storage + SD card).
+   */
+  private findAllBsdNamesForDevice(node: unknown, targetDisk: string): string[] {
+    if (!node || typeof node !== 'object') return [];
+
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        const result = this.findAllBsdNamesForDevice(item, targetDisk);
+        if (result.length > 0) return result;
+      }
+      return [];
+    }
+
+    const record = node as Record<string, unknown>;
+
+    // A USB device node has a product_id. If it contains our target BSD name,
+    // collect ALL BSD names from its entire subtree.
+    if (
+      typeof record['product_id'] === 'string' &&
+      this.subtreeContainsBsdName(record, targetDisk)
+    ) {
+      return this.collectAllBsdNames(record);
+    }
+
+    // Recurse into child values
+    for (const value of Object.values(record)) {
+      const result = this.findAllBsdNamesForDevice(value, targetDisk);
+      if (result.length > 0) return result;
+    }
+
+    return [];
+  }
+
+  /**
+   * Collect all bsd_name values from a subtree.
+   */
+  private collectAllBsdNames(node: unknown): string[] {
+    if (!node || typeof node !== 'object') return [];
+
+    if (Array.isArray(node)) {
+      return node.flatMap((item) => this.collectAllBsdNames(item));
+    }
+
+    const record = node as Record<string, unknown>;
+    const names: string[] = [];
+
+    if (typeof record['bsd_name'] === 'string') {
+      names.push(record['bsd_name']);
+    }
+
+    for (const value of Object.values(record)) {
+      if (value && typeof value === 'object') {
+        names.push(...this.collectAllBsdNames(value));
+      }
+    }
+
+    return names;
+  }
+
   async assessDevice(diskIdentifier: string): Promise<DeviceAssessment | null> {
     const diskId = diskIdentifier.replace('/dev/', '');
     const device = await this.getPlatformDeviceInfo(diskId);
