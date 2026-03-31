@@ -20,7 +20,6 @@ export type {
   AdapterConfig,
   DirectoryAdapterConfig as AdapterDirectoryConfig,
   SubsonicAdapterConfig as AdapterSubsonicConfig,
-  SoundCheckSource,
 } from './adapters/interface.js';
 
 export { DirectoryAdapter, createDirectoryAdapter } from './adapters/directory.js';
@@ -590,13 +589,16 @@ export { discoverUsbIpods } from './device/index.js';
 export type { InterpretedError } from './device/index.js';
 export { interpretError } from './device/index.js';
 
-// Sound Check (volume normalization)
-export type { SoundCheckResult } from './metadata/soundcheck.js';
+// Audio normalization (volume normalization)
+export type { AudioNormalization, NormalizationSource } from './metadata/normalization.js';
 export {
+  extractNormalization,
+  normalizationToDb,
+  normalizationToSoundcheck,
   replayGainToSoundcheck,
+  soundcheckToReplayGainDb,
   iTunNORMToSoundcheck,
-  extractSoundcheck,
-} from './metadata/soundcheck.js';
+} from './metadata/normalization.js';
 
 // ContentTypeHandler interface and registry
 export type {

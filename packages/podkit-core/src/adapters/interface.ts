@@ -7,11 +7,7 @@
 
 import type { AudioFileType, TrackFilter } from '../types.js';
 import type { Readable } from 'node:stream';
-
-/**
- * Source of a Sound Check value, indicating which tag format it was extracted from.
- */
-export type SoundCheckSource = 'iTunNORM' | 'replayGain_track' | 'replayGain_album';
+import type { AudioNormalization } from '../metadata/normalization.js';
 
 /**
  * Unified file access - supports both local and remote sources
@@ -93,30 +89,8 @@ export interface CollectionTrack {
   artworkHash?: string;
 
   // Volume normalization
-  /**
-   * Sound Check value for volume normalization.
-   * Extracted from ReplayGain or iTunNORM tags.
-   */
-  soundcheck?: number;
-
-  /**
-   * Source of the Sound Check value (which tag format it was extracted from).
-   * Only populated by collection adapters, not available from the iPod database.
-   */
-  soundcheckSource?: SoundCheckSource;
-
-  /**
-   * Raw ReplayGain track gain in dB (e.g., -7.5).
-   * Preserved from the source for writing ReplayGain tags to mass-storage devices.
-   * When not available, can be back-converted from soundcheck.
-   */
-  replayGainTrackGain?: number;
-
-  /**
-   * Raw ReplayGain track peak (linear scale, e.g., 0.988).
-   * Preserved from the source for writing ReplayGain tags to mass-storage devices.
-   */
-  replayGainTrackPeak?: number;
+  /** Audio normalization data (ReplayGain, Sound Check) in native source format */
+  normalization?: AudioNormalization;
 
   // Identifiers (optional, for advanced matching)
   musicBrainzRecordingId?: string;

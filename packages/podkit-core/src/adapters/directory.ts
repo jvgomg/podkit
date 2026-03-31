@@ -10,7 +10,7 @@ import * as mm from 'music-metadata';
 import { extname, basename, resolve } from 'node:path';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { AudioFileType, TrackFilter } from '../types.js';
-import { extractSoundcheck } from '../metadata/soundcheck.js';
+import { extractNormalization } from '../metadata/normalization.js';
 import { selectBestPicture } from '../artwork/extractor.js';
 import { hashArtwork } from '../artwork/hash.js';
 
@@ -257,9 +257,6 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
       artworkHash = hashArtwork(bestPicture.data);
     }
 
-    // Volume normalization
-    const scResult = extractSoundcheck(metadata);
-
     // Build track object
     const track: CollectionTrack = {
       // Use file path as unique ID
@@ -293,12 +290,7 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
       artworkHash,
 
       // Volume normalization
-      soundcheck: scResult?.value,
-      soundcheckSource: scResult?.source,
-
-      // Raw ReplayGain values for writing tags to mass-storage devices
-      replayGainTrackGain: common.replaygain_track_gain?.dB,
-      replayGainTrackPeak: common.replaygain_track_peak?.ratio,
+      normalization: extractNormalization(metadata) ?? undefined,
 
       // External identifiers
       musicBrainzRecordingId: common.musicbrainz_recordingid,

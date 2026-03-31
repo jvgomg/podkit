@@ -173,7 +173,7 @@ export interface UpdateBreakdown {
   'artwork-added'?: number;
   'artwork-removed'?: number;
   'artwork-updated'?: number;
-  'soundcheck-update'?: number;
+  'normalization-update'?: number;
   'metadata-correction'?: number;
   'force-metadata'?: number;
 }
@@ -212,7 +212,7 @@ export interface SyncOutput {
     tracksExisting: number;
     estimatedSize: number;
     estimatedTime: number;
-    soundCheckTracks?: number;
+    normalizedTracks?: number;
     albumCount?: number;
     artistCount?: number;
     videoSummary?: VideoSummary;

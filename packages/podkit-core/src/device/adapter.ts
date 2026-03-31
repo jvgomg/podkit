@@ -15,6 +15,7 @@
 
 import type { DeviceCapabilities } from './capabilities.js';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
+import type { AudioNormalization } from '../metadata/normalization.js';
 
 // =============================================================================
 // DeviceTrack
@@ -46,11 +47,8 @@ export interface DeviceTrackInput {
   sampleRate?: number;
   size?: number;
   bpm?: number;
-  soundcheck?: number;
-  /** Raw ReplayGain track gain in dB — passed through to mass-storage tag writer */
-  replayGainTrackGain?: number;
-  /** Raw ReplayGain track peak (linear) — passed through to mass-storage tag writer */
-  replayGainTrackPeak?: number;
+  /** Audio normalization data */
+  normalization?: AudioNormalization;
   filetype?: string;
   mediaType?: number;
   compilation?: boolean;
@@ -140,6 +138,7 @@ export interface DeviceTrack {
   readonly size: number;
   readonly filetype?: string;
   readonly soundcheck?: number;
+  readonly normalization?: AudioNormalization;
 
   // Flags
   readonly hasArtwork: boolean;

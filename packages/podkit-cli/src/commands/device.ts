@@ -131,7 +131,7 @@ function deviceTrackToDisplayTrack(t: DeviceTrack): DisplayTrack {
     compilation: t.compilation,
     format: parseFormat(t.filetype),
     bitrate: t.bitrate > 0 ? t.bitrate : undefined,
-    soundcheck: t.soundcheck || undefined,
+    normalization: t.normalization,
     syncTag: t.syncTag,
     hasArtwork: t.hasArtwork,
   };
@@ -165,7 +165,13 @@ function deviceTrackToFullJson(t: DeviceTrack): Record<string, unknown> {
     filePath: t.filePath,
     hasArtwork: t.hasArtwork,
     hasFile: t.hasFile,
-    soundcheck: t.soundcheck || null,
+    normalization: t.normalization
+      ? {
+          gainDb: t.normalization.trackGain ?? null,
+          soundcheck: t.normalization.soundcheckValue ?? null,
+          source: t.normalization.source,
+        }
+      : null,
   };
 }
 

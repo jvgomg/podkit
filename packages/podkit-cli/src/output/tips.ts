@@ -19,7 +19,7 @@ export interface TipContext {
   /** Content stats from a sync or device listing */
   stats?: {
     tracks: number;
-    soundCheckTracks: number;
+    normalizedTracks: number;
   };
   /** Mount result requiring sudo */
   mountRequiresSudo?: boolean;
@@ -39,12 +39,12 @@ export interface TipDefinition {
   evaluate: (context: TipContext) => Tip | null;
 }
 
-const SOUND_CHECK_TIP: TipDefinition = {
+const NORMALIZATION_TIP: TipDefinition = {
   evaluate: ({ stats }) => {
-    if (stats && stats.soundCheckTracks > 0 && stats.soundCheckTracks < stats.tracks) {
+    if (stats && stats.normalizedTracks > 0 && stats.normalizedTracks < stats.tracks) {
       return {
         message:
-          'Some tracks are missing Sound Check data. Add normalization tags for consistent volume.',
+          'Some tracks are missing audio normalization data. Add ReplayGain or Sound Check tags for consistent volume.',
         url: 'https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/',
       };
     }
@@ -114,7 +114,7 @@ const MISSING_ARTWORK_HASH_TIP: TipDefinition = {
 };
 
 const ALL_TIPS: TipDefinition[] = [
-  SOUND_CHECK_TIP,
+  NORMALIZATION_TIP,
   MACOS_MOUNTING_TIP,
   ARTWORK_BASELINE_TIP,
   TRANSFER_MODE_MISMATCH_TIP,

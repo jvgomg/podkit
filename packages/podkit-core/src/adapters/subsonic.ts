@@ -7,14 +7,10 @@
 
 import SubsonicAPI from 'subsonic-api';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
-import type {
-  CollectionAdapter,
-  CollectionTrack,
-  FileAccess,
-  SoundCheckSource,
-} from './interface.js';
+import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
-import { replayGainToSoundcheck } from '../metadata/soundcheck.js';
+import type { AudioNormalization } from '../metadata/normalization.js';
+import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
 
 /**
@@ -576,37 +572,41 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       // MusicBrainz IDs if available
       musicBrainzRecordingId: song.musicBrainzId,
 
-      // Sound Check (volume normalization) from ReplayGain data
-      // Prefer track gain over album gain
-      ...(() => {
-        const sc = this.extractReplayGainSoundcheck(song.replayGain);
-        return sc ? { soundcheck: sc.value, soundcheckSource: sc.source } : {};
-      })(),
-
-      // Raw ReplayGain values for writing tags to mass-storage devices
-      replayGainTrackGain: song.replayGain?.trackGain,
-      replayGainTrackPeak: song.replayGain?.trackPeak,
+      // Volume normalization from ReplayGain data
+      normalization: this.extractNormalization(song.replayGain),
     };
   }
 
   /**
-   * Extract soundcheck value from Subsonic ReplayGain data.
+   * Extract normalization data from Subsonic ReplayGain data.
    *
    * Prefers track gain over album gain. The ReplayGain type from subsonic-api
    * marks fields as required numbers, but the OpenSubsonic spec treats them
    * as optional — so we null-check carefully. A gain of 0 is valid (unity gain).
    */
-  private extractReplayGainSoundcheck(
-    replayGain: Child['replayGain']
-  ): { value: number; source: SoundCheckSource } | undefined {
+  private extractNormalization(replayGain: Child['replayGain']): AudioNormalization | undefined {
     if (!replayGain) return undefined;
 
     if (replayGain.trackGain !== undefined) {
-      return { value: replayGainToSoundcheck(replayGain.trackGain), source: 'replayGain_track' };
+      return {
+        source: 'replaygain-track',
+        trackGain: replayGain.trackGain,
+        trackPeak: replayGain.trackPeak,
+        albumGain: replayGain.albumGain,
+        albumPeak: replayGain.albumPeak,
+        soundcheckValue: replayGainToSoundcheck(replayGain.trackGain),
+      };
     }
 
     if (replayGain.albumGain !== undefined) {
-      return { value: replayGainToSoundcheck(replayGain.albumGain), source: 'replayGain_album' };
+      return {
+        source: 'replaygain-album',
+        trackGain: replayGain.albumGain,
+        trackPeak: replayGain.albumPeak,
+        albumGain: replayGain.albumGain,
+        albumPeak: replayGain.albumPeak,
+        soundcheckValue: replayGainToSoundcheck(replayGain.albumGain),
+      };
     }
 
     return undefined;

@@ -349,7 +349,7 @@ function pushArtworkArgs(
 export interface CodecBuilderOptions {
   transferMode?: TransferMode;
   artworkResize?: number;
-  replayGain?: { trackGain: number; trackPeak?: number };
+  replayGain?: { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number };
   /** FFmpeg format string — passed to pushArtworkArgs to determine artwork strategy */
   ffmpegFormat?: string;
 }
@@ -366,7 +366,7 @@ export interface CodecBuilderOptions {
  */
 function pushReplayGainMetadata(
   args: string[],
-  replayGain?: { trackGain: number; trackPeak?: number }
+  replayGain?: { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number }
 ): void {
   if (!replayGain) return;
 
@@ -374,6 +374,14 @@ function pushReplayGainMetadata(
 
   if (replayGain.trackPeak !== undefined) {
     args.push('-metadata', `REPLAYGAIN_TRACK_PEAK=${replayGain.trackPeak.toFixed(6)}`);
+  }
+
+  if (replayGain.albumGain !== undefined) {
+    args.push('-metadata', `REPLAYGAIN_ALBUM_GAIN=${replayGain.albumGain.toFixed(2)} dB`);
+  }
+
+  if (replayGain.albumPeak !== undefined) {
+    args.push('-metadata', `REPLAYGAIN_ALBUM_PEAK=${replayGain.albumPeak.toFixed(6)}`);
   }
 }
 
@@ -581,7 +589,10 @@ export function buildOptimizedCopyArgs(
   input: string,
   output: string,
   format: OptimizedCopyFormat,
-  options?: { artworkResize?: number; replayGain?: { trackGain: number; trackPeak?: number } }
+  options?: {
+    artworkResize?: number;
+    replayGain?: { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number };
+  }
 ): string[] {
   const artworkResize = options?.artworkResize;
 

@@ -8,6 +8,8 @@
 import type { TrackHandle, Track } from '@podkit/libgpod-node';
 import type { IpodTrack, TrackFields, RemoveTrackResult } from './types.js';
 import type { SyncTagData } from '../metadata/sync-tags.js';
+import type { AudioNormalization } from '../metadata/normalization.js';
+import { soundcheckToReplayGainDb } from '../metadata/normalization.js';
 import { parseSyncTag } from '../metadata/sync-tags.js';
 import { IpodError } from './errors.js';
 
@@ -125,6 +127,15 @@ export class IpodTrackImpl implements IpodTrack {
   readonly bpm?: number;
   readonly soundcheck?: number;
   readonly filetype?: string;
+
+  get normalization(): AudioNormalization | undefined {
+    if (this.soundcheck === undefined || this.soundcheck === 0) return undefined;
+    return {
+      source: 'itunes-soundcheck',
+      soundcheckValue: this.soundcheck,
+      trackGain: soundcheckToReplayGainDb(this.soundcheck),
+    };
+  }
   readonly mediaType: number;
   readonly filePath: string;
   readonly timeAdded: number;

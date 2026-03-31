@@ -934,44 +934,44 @@ describe('computeStats', () => {
     expect(stats.compilationAlbums).toBe(0);
   });
 
-  it('counts tracks with soundcheck data', () => {
+  it('counts tracks with normalization data', () => {
     const tracks = [
-      createTrack({ soundcheck: 1024 }),
-      createTrack({ soundcheck: 2048 }),
-      createTrack({ soundcheck: undefined }),
-      createTrack({ soundcheck: 0 }),
+      createTrack({ normalization: { source: 'itunes-soundcheck', soundcheckValue: 1024 } }),
+      createTrack({
+        normalization: { source: 'replaygain-track', trackGain: -6.5, soundcheckValue: 2048 },
+      }),
+      createTrack({ normalization: undefined }),
     ];
     const stats = computeStats(tracks);
-    expect(stats.soundCheckTracks).toBe(2);
+    expect(stats.normalizedTracks).toBe(2);
   });
 
-  it('returns zero soundCheckTracks when no tracks have soundcheck', () => {
-    const tracks = [createTrack({ soundcheck: undefined }), createTrack({ soundcheck: 0 })];
+  it('returns zero normalizedTracks when no tracks have normalization', () => {
+    const tracks = [createTrack({ normalization: undefined }), createTrack({})];
     const stats = computeStats(tracks);
-    expect(stats.soundCheckTracks).toBe(0);
+    expect(stats.normalizedTracks).toBe(0);
   });
 
-  it('aggregates soundcheck sources', () => {
+  it('aggregates normalization sources', () => {
     const tracks = [
-      createTrack({ soundcheck: 1024, soundcheckSource: 'iTunNORM' }),
-      createTrack({ soundcheck: 2048, soundcheckSource: 'iTunNORM' }),
-      createTrack({ soundcheck: 512, soundcheckSource: 'replayGain_track' }),
-      createTrack({ soundcheck: undefined }),
+      createTrack({ normalization: { source: 'itunes-soundcheck', soundcheckValue: 1024 } }),
+      createTrack({ normalization: { source: 'itunes-soundcheck', soundcheckValue: 2048 } }),
+      createTrack({
+        normalization: { source: 'replaygain-track', trackGain: -5.0, soundcheckValue: 512 },
+      }),
+      createTrack({ normalization: undefined }),
     ];
     const stats = computeStats(tracks);
-    expect(stats.soundCheckSources).toEqual({
-      iTunNORM: 2,
-      replayGain_track: 1,
+    expect(stats.normalizationSources).toEqual({
+      'itunes-soundcheck': 2,
+      'replaygain-track': 1,
     });
   });
 
-  it('returns undefined soundCheckSources when no sources present', () => {
-    const tracks = [
-      createTrack({ soundcheck: 1024 }), // no source info
-      createTrack({ soundcheck: undefined }),
-    ];
+  it('returns undefined normalizationSources when no tracks have normalization', () => {
+    const tracks = [createTrack({ normalization: undefined }), createTrack({})];
     const stats = computeStats(tracks);
-    expect(stats.soundCheckSources).toBeUndefined();
+    expect(stats.normalizationSources).toBeUndefined();
   });
 
   it('counts sync tag breakdown: complete, missing art, and total', () => {
@@ -1060,7 +1060,7 @@ describe('formatStatsText', () => {
       artists: 45,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1086,7 +1086,7 @@ describe('formatStatsText', () => {
       artists: 1,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1105,7 +1105,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 3,
       compilationTracks: 25,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1124,7 +1124,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1143,7 +1143,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 75,
+      normalizedTracks: 75,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1162,7 +1162,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 997,
+      normalizedTracks: 997,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1183,7 +1183,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 100,
+      normalizedTracks: 100,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1202,7 +1202,7 @@ describe('formatStatsText', () => {
       artists: 8,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1221,7 +1221,7 @@ describe('formatStatsText', () => {
       artists: 1,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1243,7 +1243,7 @@ describe('formatStatsText', () => {
       artists: 1,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1265,15 +1265,15 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 80,
+      normalizedTracks: 80,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
       syncTagMissingTransfer: 0,
-      soundCheckSources: {
-        iTunNORM: 50,
-        replayGain_track: 25,
-        replayGain_album: 5,
+      normalizationSources: {
+        'itunes-soundcheck': 50,
+        'replaygain-track': 25,
+        'replaygain-album': 5,
       },
       fileTypes: {},
     };
@@ -1291,15 +1291,15 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 80,
+      normalizedTracks: 80,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
       syncTagMissingTransfer: 0,
-      soundCheckSources: {
-        iTunNORM: 50,
-        replayGain_track: 25,
-        replayGain_album: 5,
+      normalizationSources: {
+        'itunes-soundcheck': 50,
+        'replaygain-track': 25,
+        'replaygain-album': 5,
       },
       fileTypes: {},
     };
@@ -1316,7 +1316,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 80,
+      normalizedTracks: 80,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1326,7 +1326,7 @@ describe('formatStatsText', () => {
     const result = formatStatsText(stats, 'Music:');
 
     expect(result).toContain('Tip:');
-    expect(result).toContain('Some tracks are missing Sound Check data');
+    expect(result).toContain('Some tracks are missing audio normalization data');
     expect(result).toContain('https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/');
   });
 
@@ -1337,7 +1337,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 100,
+      normalizedTracks: 100,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1356,7 +1356,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1375,7 +1375,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 80,
+      normalizedTracks: 80,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1397,7 +1397,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 80,
+      normalizedTracks: 80,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1416,7 +1416,7 @@ describe('formatStatsText', () => {
       artists: 45,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 345,
       syncTagComplete: 120,
       syncTagMissingArt: 225,
@@ -1438,7 +1438,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 100,
       syncTagComplete: 100,
       syncTagMissingArt: 0,
@@ -1460,7 +1460,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,
@@ -1479,7 +1479,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 100,
       syncTagComplete: 100,
       syncTagMissingArt: 0,
@@ -1500,7 +1500,7 @@ describe('formatStatsText', () => {
       artists: 10,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 200,
       syncTagComplete: 200,
       syncTagMissingArt: 0,
@@ -1521,7 +1521,7 @@ describe('formatStatsText', () => {
       artists: 10,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 200,
       syncTagComplete: 200,
       syncTagMissingArt: 0,
@@ -1542,7 +1542,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 100,
       syncTagComplete: 100,
       syncTagMissingArt: 0,
@@ -1565,7 +1565,7 @@ describe('formatStatsText', () => {
       artists: 10,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 200,
       syncTagComplete: 200,
       syncTagMissingArt: 0,
@@ -1588,7 +1588,7 @@ describe('formatStatsText', () => {
       artists: 5,
       compilationAlbums: 0,
       compilationTracks: 0,
-      soundCheckTracks: 0,
+      normalizedTracks: 0,
       syncTagTracks: 0,
       syncTagComplete: 0,
       syncTagMissingArt: 0,

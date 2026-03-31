@@ -21,6 +21,7 @@ import {
   metadataValuesDiffer,
   detectPresetChange,
 } from '../engine/upgrades.js';
+import { normalizationToDb } from '../../metadata/normalization.js';
 import { calculateMusicOperationSize, categorizeSource, isLosslessSource } from './planner.js';
 import { MusicPipeline, getMusicOperationDisplayName } from './pipeline.js';
 import { estimateTransferTime } from '../engine/estimation.js';
@@ -218,9 +219,9 @@ export class MusicHandler implements ContentTypeHandler<
 
     let reasons = detectUpgrades(source, device) as UpdateReason[];
 
-    // When the device doesn't support audio normalization, soundcheck updates are meaningless
+    // When the device doesn't support audio normalization, normalization updates are meaningless
     if (this.config.audioNormalization === 'none') {
-      reasons = reasons.filter((r) => r !== 'soundcheck-update');
+      reasons = reasons.filter((r) => r !== 'normalization-update');
     }
 
     // When transcoding is active, lossless source → lossy iPod is expected
@@ -338,12 +339,16 @@ export class MusicHandler implements ContentTypeHandler<
           }
         }
         update.changes = changes;
-      } else if (reason === 'soundcheck-update') {
+      } else if (reason === 'normalization-update') {
         update.changes = [
           {
-            field: 'soundcheck',
-            from: String(update.device.soundcheck ?? 'absent'),
-            to: String(update.source.soundcheck ?? 'absent'),
+            field: 'normalization',
+            from: update.device.normalization
+              ? `${normalizationToDb(update.device.normalization)?.toFixed(1)} dB`
+              : 'absent',
+            to: update.source.normalization
+              ? `${normalizationToDb(update.source.normalization)?.toFixed(1)} dB`
+              : 'absent',
           },
         ];
       }
