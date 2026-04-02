@@ -1154,7 +1154,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       const parsed = JSON.parse(raw) as MassStorageManifest;
       if (parsed.version === 1 && Array.isArray(parsed.managedFiles)) {
         this.manifest = parsed;
-        this.managedFiles = new Set(parsed.managedFiles);
+        // Normalize stored paths to NFC for consistent Set lookups
+        this.managedFiles = new Set(parsed.managedFiles.map((p: string) => p.normalize('NFC')));
       }
     } catch {
       // No manifest yet — all existing files are unmanaged
@@ -1212,7 +1213,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
           }
           const videoFiles = this.walkDirectory(videoRoot, isVideoExtension, skipDirs);
           for (const absolutePath of videoFiles) {
-            const relativePath = path.relative(this.mountPoint, absolutePath);
+            const relativePath = path.relative(this.mountPoint, absolutePath).normalize('NFC');
             // Skip if already scanned (e.g., from overlapping directory)
             if (this.allocatedPaths.has(relativePath)) continue;
             try {
@@ -1273,7 +1274,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     });
 
     const { common, format } = metadata;
-    const relativePath = path.relative(this.mountPoint, absolutePath);
+    // Normalize to NFC — macOS filesystems may return NFD from readdir
+    const relativePath = path.relative(this.mountPoint, absolutePath).normalize('NFC');
     const stats = fs.statSync(absolutePath);
     const ext = path.extname(absolutePath).toLowerCase().slice(1); // Remove leading dot
 
@@ -1336,7 +1338,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * can from the file path and any embedded tags.
    */
   private async readVideoMetadata(absolutePath: string): Promise<MassStorageTrack> {
-    const relativePath = path.relative(this.mountPoint, absolutePath);
+    // Normalize to NFC — macOS filesystems may return NFD from readdir
+    const relativePath = path.relative(this.mountPoint, absolutePath).normalize('NFC');
     const stats = fs.statSync(absolutePath);
     const ext = path.extname(absolutePath).toLowerCase().slice(1);
     const managed = this.managedFiles.has(relativePath);
