@@ -135,6 +135,12 @@ export function sanitizeFilename(name: string): string {
   // Truncate to max byte length
   result = truncateToBytes(result, MAX_FILENAME_BYTES);
 
+  // Normalize to NFC so generated paths are consistent regardless of whether
+  // the source metadata arrives in NFC or NFD form.  macOS filesystems may
+  // return NFD from readdir, so we normalize on both generation and read to
+  // ensure managedFiles Set lookups succeed.
+  result = result.normalize('NFC');
+
   // If the name is empty after sanitization, use a fallback
   if (result.length === 0) {
     result = 'Unknown';

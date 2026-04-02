@@ -45,7 +45,8 @@ async function loadManagedFiles(mountPoint: string): Promise<Set<string> | undef
     const raw = await readFile(manifestPath, 'utf-8');
     const parsed = JSON.parse(raw) as MassStorageManifest;
     if (parsed.version === 1 && Array.isArray(parsed.managedFiles)) {
-      return new Set(parsed.managedFiles);
+      // Normalize to NFC for consistent comparison with filesystem paths
+      return new Set(parsed.managedFiles.map((p: string) => p.normalize('NFC')));
     }
     return undefined;
   } catch {
@@ -184,7 +185,8 @@ async function findOrphans(
   const uniqueFiles = [...new Set(allFiles)];
 
   const orphanPaths = uniqueFiles.filter((f) => {
-    const relativePath = relative(mountPoint, f);
+    // Normalize to NFC — macOS filesystems may return NFD from readdir
+    const relativePath = relative(mountPoint, f).normalize('NFC');
     return !managedFiles.has(relativePath);
   });
 
