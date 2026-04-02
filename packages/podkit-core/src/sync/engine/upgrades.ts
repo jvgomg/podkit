@@ -353,7 +353,20 @@ export function metadataValuesDiffer(
 
   // For strings, case-insensitive comparison
   if (typeof sourceValue === 'string' && typeof ipodValue === 'string') {
-    return sourceValue.toLowerCase().trim() !== ipodValue.toLowerCase().trim();
+    const sv = sourceValue.toLowerCase().trim();
+    const iv = ipodValue.toLowerCase().trim();
+
+    // Genre: embedded tags may contain multiple delimited values
+    // (e.g. "Pop;Rock;Indie", "Metal,Death Metal", "Indie/Rock") while the
+    // collection source only provides the primary genre ("Pop").  Consider
+    // them matching when the source value equals the first value in the
+    // device's multi-genre string.
+    if (field === 'genre' && sv !== iv) {
+      const firstDeviceGenre = iv.split(/[;,/]/)[0]!.trim();
+      return sv !== firstDeviceGenre;
+    }
+
+    return sv !== iv;
   }
 
   // For other types, strict equality
@@ -361,10 +374,14 @@ export function metadataValuesDiffer(
 }
 
 /**
- * Check if a value represents "no value" (null, undefined, or empty string)
+ * Check if a value represents "no value" (null, undefined, 0, or empty string).
+ *
+ * Zero is treated as empty because metadata readers (e.g., music-metadata)
+ * return 0 for missing numeric fields like year — semantically equivalent
+ * to "not set".
  */
 export function isEmpty(value: unknown): boolean {
-  return value === null || value === undefined || value === '';
+  return value === null || value === undefined || value === '' || value === 0;
 }
 
 /**
