@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import './ClickWheel.css';
+import { type ButtonZone, useButtonPress } from '../hooks/useButtonPress.js';
 
 export interface ClickWheelProps {
   onScroll: (direction: 1 | -1) => void;
@@ -10,8 +11,6 @@ export interface ClickWheelProps {
   onNext: () => void;
   className?: string;
 }
-
-type ActiveZone = 'center' | 'top' | 'right' | 'bottom' | 'left' | null;
 
 /** Threshold in radians (~18 degrees) before emitting a scroll tick. */
 const SCROLL_THRESHOLD = Math.PI / 10;
@@ -34,8 +33,6 @@ export function ClickWheel({
     accumulated: number;
     hasDragged: boolean;
   } | null>(null);
-  const [activeZone, setActiveZone] = useState<ActiveZone>(null);
-  const activeZoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Auto-focus on mount
   useEffect(() => {
@@ -64,14 +61,8 @@ export function ClickWheel({
     []
   );
 
-  const flashZone = useCallback((zone: ActiveZone) => {
-    if (activeZoneTimer.current) clearTimeout(activeZoneTimer.current);
-    setActiveZone(zone);
-    activeZoneTimer.current = setTimeout(() => setActiveZone(null), 150);
-  }, []);
-
   const classifyZone = useCallback(
-    (angle: number, distance: number, radius: number): ActiveZone => {
+    (angle: number, distance: number, radius: number): ButtonZone => {
       if (distance < radius * CENTER_ZONE) return 'center';
       // Convert angle to degrees for easier zone classification
       const deg = (angle * 180) / Math.PI;
@@ -84,6 +75,33 @@ export function ClickWheel({
     []
   );
 
+  const dispatchZone = useCallback(
+    (zone: ButtonZone) => {
+      switch (zone) {
+        case 'center':
+          onSelect();
+          break;
+        case 'top':
+          onMenu();
+          break;
+        case 'right':
+          onNext();
+          break;
+        case 'bottom':
+          onPlayPause();
+          break;
+        case 'left':
+          onPrevious();
+          break;
+      }
+    },
+    [onSelect, onMenu, onNext, onPlayPause, onPrevious]
+  );
+
+  const { pressedZone, startPress, commitPress, cancelPress } = useButtonPress({
+    onPress: dispatchZone,
+  });
+
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
       const info = getAngleAndDistance(e.clientX, e.clientY);
@@ -91,8 +109,11 @@ export function ClickWheel({
 
       e.currentTarget.setPointerCapture(e.pointerId);
 
+      const zone = classifyZone(info.angle, info.distance, info.radius);
+      startPress(zone); // immediate visual feedback
+
       // Don't track rotation if pointer is in the center button area
-      if (info.distance < info.radius * CENTER_ZONE) {
+      if (zone === 'center') {
         trackingRef.current = { lastAngle: info.angle, accumulated: 0, hasDragged: false };
         return;
       }
@@ -103,7 +124,7 @@ export function ClickWheel({
         hasDragged: false,
       };
     },
-    [getAngleAndDistance]
+    [getAngleAndDistance, classifyZone, startPress]
   );
 
   const handlePointerMove = useCallback(
@@ -130,56 +151,29 @@ export function ClickWheel({
         const direction = tracking.accumulated > 0 ? 1 : -1;
         onScroll(direction);
         tracking.accumulated = 0;
-        tracking.hasDragged = true;
+        if (!tracking.hasDragged) {
+          tracking.hasDragged = true;
+          cancelPress(); // clear pressed visual state once scrolling begins
+        }
       }
     },
-    [getAngleAndDistance, onScroll]
+    [getAngleAndDistance, onScroll, cancelPress]
   );
 
   const handlePointerUp = useCallback(
-    (e: React.PointerEvent) => {
+    (_e: React.PointerEvent) => {
       const tracking = trackingRef.current;
       trackingRef.current = null;
 
-      if (!tracking) return;
-
-      // If the user dragged, this was a scroll, not a click
-      if (tracking.hasDragged) return;
-
-      const info = getAngleAndDistance(e.clientX, e.clientY);
-      if (!info) return;
-
-      const zone = classifyZone(info.angle, info.distance, info.radius);
-      flashZone(zone);
-
-      switch (zone) {
-        case 'center':
-          onSelect();
-          break;
-        case 'top':
-          onMenu();
-          break;
-        case 'right':
-          onNext();
-          break;
-        case 'bottom':
-          onPlayPause();
-          break;
-        case 'left':
-          onPrevious();
-          break;
+      if (!tracking || tracking.hasDragged) {
+        cancelPress();
+        return;
       }
+
+      // Commit the press: fires action and clears the pressed visual state
+      commitPress();
     },
-    [
-      getAngleAndDistance,
-      classifyZone,
-      flashZone,
-      onSelect,
-      onMenu,
-      onNext,
-      onPlayPause,
-      onPrevious,
-    ]
+    [commitPress, cancelPress]
   );
 
   const handleKeyDown = useCallback(
@@ -218,12 +212,12 @@ export function ClickWheel({
     [onScroll, onSelect, onMenu, onPlayPause]
   );
 
-  const zoneClass = activeZone ? ` click-wheel--zone-active-${activeZone}` : '';
+  const pressedClass = pressedZone ? ` click-wheel--zone-active-${pressedZone}` : '';
 
   return (
     <div
       ref={wheelRef}
-      className={`click-wheel${zoneClass}${className ? ` ${className}` : ''}`}
+      className={`click-wheel${pressedClass}${className ? ` ${className}` : ''}`}
       tabIndex={0}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

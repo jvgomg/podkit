@@ -61,27 +61,33 @@
   transform: translateY(-50%);
 }
 
+/* Zone highlight — applied immediately on pointer-down, cleared on pointer-up.
+   Each uses a semi-transparent radial overlay anchored at the button edge,
+   so only that zone darkens and the base gradient is preserved everywhere else. */
 .click-wheel--zone-active-center .click-wheel__center {
-  background: linear-gradient(145deg, #e0e0e4, #d8d8dc);
-  transition: background 0.15s ease;
+  background: linear-gradient(145deg, #e8e8ec, #e0e0e4);
 }
 
 .click-wheel--zone-active-top {
-  background: linear-gradient(to bottom, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
-  transition: background 0.15s ease;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 0%, rgba(0, 0, 0, 0.1) 0%, transparent 100%),
+    linear-gradient(145deg, #d8d8dc, #cfcfd3);
 }
 
 .click-wheel--zone-active-right {
-  background: linear-gradient(to left, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
-  transition: background 0.15s ease;
+  background:
+    radial-gradient(ellipse 55% 80% at 100% 50%, rgba(0, 0, 0, 0.1) 0%, transparent 100%),
+    linear-gradient(145deg, #d8d8dc, #cfcfd3);
 }
 
 .click-wheel--zone-active-bottom {
-  background: linear-gradient(to top, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
-  transition: background 0.15s ease;
+  background:
+    radial-gradient(ellipse 80% 55% at 50% 100%, rgba(0, 0, 0, 0.1) 0%, transparent 100%),
+    linear-gradient(145deg, #d8d8dc, #cfcfd3);
 }
 
 .click-wheel--zone-active-left {
-  background: linear-gradient(to right, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
-  transition: background 0.15s ease;
+  background:
+    radial-gradient(ellipse 55% 80% at 0% 50%, rgba(0, 0, 0, 0.1) 0%, transparent 100%),
+    linear-gradient(145deg, #d8d8dc, #cfcfd3);
 }
