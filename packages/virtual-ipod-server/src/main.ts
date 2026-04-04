@@ -69,6 +69,7 @@ function stopWatcherForStorage(id: string): void {
 const usbBus = createUsbBus(registry, gadget, config.storageRoot, config.gadgetMountPoint, {
   onBeforeUnmount: stopWatcherForStorage,
   onAfterMount: startWatcherForStorage,
+  onExternalUnplug: () => broadcastEvent({ type: 'unplugged' }),
 });
 await usbBus.recoverStaleState();
 
