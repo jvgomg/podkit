@@ -37,17 +37,19 @@ describe('RemoteStorage', () => {
     globalThis.fetch = originalFetch;
   });
 
-  test('getAudioUrl returns correct URL', async () => {
-    const storage = new RemoteStorage('http://localhost:3456');
+  test('getAudioUrl returns correct URL with ipod ID', async () => {
+    const storage = new RemoteStorage('http://localhost:3456', 'default');
     const url = await storage.getAudioUrl(':iPod_Control:Music:F00:ABCD.m4a');
-    expect(url).toBe('http://localhost:3456/audio/%3AiPod_Control%3AMusic%3AF00%3AABCD.m4a');
+    expect(url).toBe(
+      'http://localhost:3456/ipods/default/audio/%3AiPod_Control%3AMusic%3AF00%3AABCD.m4a'
+    );
     storage.destroy();
   });
 
   test('strips trailing slash from baseUrl', async () => {
     const storage = new RemoteStorage('http://localhost:3456/');
     const url = await storage.getAudioUrl('test');
-    expect(url).toStartWith('http://localhost:3456/audio/');
+    expect(url).toStartWith('http://localhost:3456/ipods/');
     storage.destroy();
   });
 
@@ -65,7 +67,7 @@ describe('RemoteStorage', () => {
     storage.destroy();
   });
 
-  test('status becomes no-device when /database and /sysinfo both return 404', async () => {
+  test('status becomes no-storage when /database and /sysinfo both return 404', async () => {
     globalThis.fetch = mock(() => Promise.resolve(new Response(null, { status: 404 }))) as any;
 
     const storage = new RemoteStorage('http://localhost:3456');
@@ -73,7 +75,7 @@ describe('RemoteStorage', () => {
     ws.onopen?.();
     await flushPromises();
 
-    expect(storage.status.state).toBe('no-device');
+    expect(storage.status.state).toBe('no-storage');
     storage.destroy();
   });
 
@@ -94,15 +96,15 @@ describe('RemoteStorage', () => {
     storage.destroy();
   });
 
-  test('status becomes no-device when /database fetch fails', async () => {
-    globalThis.fetch = mock(() => Promise.reject(new Error('network error'))) as any;
+  test('status becomes no-storage when /database fetch throws', async () => {
+    globalThis.fetch = mock(() => Promise.resolve(new Response(null, { status: 500 }))) as any;
 
     const storage = new RemoteStorage('http://localhost:3456');
     const ws = MockWebSocket.instances[0]!;
     ws.onopen?.();
     await flushPromises();
 
-    expect(storage.status.state).toBe('no-device');
+    expect(storage.status.state).toBe('no-storage');
     storage.destroy();
   });
 
@@ -182,29 +184,33 @@ describe('RemoteStorage', () => {
     storage.destroy();
   });
 
-  test('handles unplugged event by setting no-device', () => {
+  test('handles plugged event by setting connected-to-host', () => {
     const storage = new RemoteStorage('http://localhost:3456');
     const ws = MockWebSocket.instances[0]!;
     ws.onopen?.();
 
-    ws.onmessage?.({ data: JSON.stringify({ type: 'unplugged' }) });
-    expect(storage.status.state).toBe('no-device');
+    ws.onmessage?.({ data: JSON.stringify({ type: 'plugged' }) });
+    expect(storage.status.state).toBe('connected-to-host');
     storage.destroy();
   });
 
-  test('handles plugged event by attempting database load', async () => {
+  test('handles unplugged event by attempting database load', async () => {
     globalThis.fetch = mock(() => Promise.resolve(new Response(null, { status: 404 }))) as any;
 
     const storage = new RemoteStorage('http://localhost:3456');
     const ws = MockWebSocket.instances[0]!;
     ws.onopen?.();
     await flushPromises();
-    expect(storage.status.state).toBe('no-device');
 
+    // Set to connected-to-host first
     ws.onmessage?.({ data: JSON.stringify({ type: 'plugged' }) });
+    expect(storage.status.state).toBe('connected-to-host');
+
+    // Unplug triggers database load attempt
+    ws.onmessage?.({ data: JSON.stringify({ type: 'unplugged' }) });
     await flushPromises();
-    // Still no-device since fetch still returns 404, but the load was attempted
-    expect(storage.status.state).toBe('no-device');
+    // no-storage since fetch returns 404 (no database available)
+    expect(storage.status.state).toBe('no-storage');
     storage.destroy();
   });
 
@@ -221,8 +227,35 @@ describe('RemoteStorage', () => {
 
     ws.onmessage?.({ data: JSON.stringify({ type: 'database-changed' }) });
     await flushPromises();
-    // A reload was attempted; status updated (still no-device with our mock)
+    // A reload was attempted; status updated (still no-storage with our mock)
     expect(cb).toHaveBeenCalled();
+    storage.destroy();
+  });
+
+  test('handles storage-created event by loading database', async () => {
+    globalThis.fetch = mock(() => Promise.resolve(new Response(null, { status: 404 }))) as any;
+
+    const storage = new RemoteStorage('http://localhost:3456');
+    const ws = MockWebSocket.instances[0]!;
+    ws.onopen?.();
+    await flushPromises();
+
+    const cb = mock(() => {});
+    storage.onStatusChange(cb);
+
+    ws.onmessage?.({ data: JSON.stringify({ type: 'storage-created' }) });
+    await flushPromises();
+    expect(cb).toHaveBeenCalled();
+    storage.destroy();
+  });
+
+  test('handles storage-wiped event by setting no-storage', () => {
+    const storage = new RemoteStorage('http://localhost:3456');
+    const ws = MockWebSocket.instances[0]!;
+    ws.onopen?.();
+
+    ws.onmessage?.({ data: JSON.stringify({ type: 'storage-wiped' }) });
+    expect(storage.status.state).toBe('no-storage');
     storage.destroy();
   });
 
@@ -289,6 +322,22 @@ describe('RemoteStorage', () => {
     await storage.reload();
 
     expect(cb).toHaveBeenCalled();
+    storage.destroy();
+  });
+
+  test('fetches use ipod-scoped URLs', async () => {
+    const fetchMock = mock(() => Promise.resolve(new Response(null, { status: 404 }))) as any;
+    globalThis.fetch = fetchMock;
+
+    const storage = new RemoteStorage('http://localhost:3456', 'my-ipod');
+    const ws = MockWebSocket.instances[0]!;
+    ws.onopen?.();
+    await flushPromises();
+
+    const urls = fetchMock.mock.calls.map((c: any) => c[0]);
+    expect(urls).toContain('http://localhost:3456/ipods/my-ipod/database');
+    expect(urls).toContain('http://localhost:3456/ipods/my-ipod/artwork-db');
+    expect(urls).toContain('http://localhost:3456/ipods/my-ipod/sysinfo');
     storage.destroy();
   });
 });

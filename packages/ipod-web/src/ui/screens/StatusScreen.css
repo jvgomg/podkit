@@ -8,15 +8,32 @@
   padding: 16px;
 }
 
-.status-screen__logo {
+.status-screen__icon {
+  padding-block: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-screen__apple-logo {
   width: 52px;
   height: auto;
   fill: #1a1a1a;
-  padding-block: 18px;
+}
+
+.status-screen__sickpod {
+  width: 64px;
+  height: auto;
+  mix-blend-mode: multiply;
+}
+
+.status-screen__connected-icon {
+  width: 52px;
+  height: auto;
 }
 
 .status-screen__primary {
-  font-size: 12px;
+  font-size: 18px;
   font-weight: 600;
   color: #1a1a1a;
   text-align: center;
@@ -24,8 +41,9 @@
 }
 
 .status-screen__secondary {
-  font-size: 11px;
+  font-size: 13px;
   color: #999;
   text-align: center;
   margin: 0;
+  line-height: 1.4;
 }

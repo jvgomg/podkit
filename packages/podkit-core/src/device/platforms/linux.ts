@@ -81,6 +81,11 @@ interface LsblkOutput {
 /**
  * Recursively collect all block devices of type "part" from lsblk output.
  * lsblk nests partitions under their parent disk as children.
+ *
+ * Skips children of loop devices — their partitions (e.g. loop0p1) are
+ * loop-mounted images, not real hardware. The virtual iPod server uses
+ * private loop mounts for serving iPod filesystems; these must not appear
+ * in device scans.
  */
 export function collectPartitions(devices: LsblkDevice[]): LsblkDevice[] {
   const partitions: LsblkDevice[] = [];
@@ -89,7 +94,7 @@ export function collectPartitions(devices: LsblkDevice[]): LsblkDevice[] {
     if (device.type === 'part') {
       partitions.push(device);
     }
-    if (device.children) {
+    if (device.children && device.type !== 'loop') {
       partitions.push(...collectPartitions(device.children));
     }
   }
