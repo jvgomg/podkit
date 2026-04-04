@@ -8,11 +8,12 @@ import { Header } from './shared/Header.js';
 import { ClickWheel } from './ClickWheel.js';
 import { ScreenRouter } from './ScreenRouter.js';
 import {
-  currentTitleAtom,
+  headerTitleAtom,
   screenAtom,
   scrollAtom,
   selectAtom,
   menuBackAtom,
+  goToMenuAtom,
   menuStackAtom,
 } from '../store/navigation.js';
 import {
@@ -20,12 +21,20 @@ import {
   playPauseAtom,
   nextTrackAtom,
   previousTrackAtom,
-  adjustVolumeAtom,
   storageProviderAtom,
+  audioPlayerAtom,
+  positionAtom,
+  durationAtom,
 } from '../store/playback.js';
 import { connectionStatusAtom } from '../store/connection.js';
 import { databaseAtom } from '../store/database.js';
+import {
+  nowPlayingSelectAtom,
+  nowPlayingScrollAtom,
+  resetNowPlayingModeAtom,
+} from '../store/now-playing-mode.js';
 import { createMainMenu } from '../firmware/menu.js';
+import { AudioPlayer } from '../audio/player.js';
 
 export interface VirtualIpodProps {
   storage?: StorageProvider;
@@ -42,17 +51,20 @@ export function VirtualIpod({ storage, variant = 'white' }: VirtualIpodProps) {
 
 function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
   const store = useStore();
-  const title = useAtomValue(currentTitleAtom);
+  const title = useAtomValue(headerTitleAtom);
   const playbackState = useAtomValue(playbackStateAtom);
   const screen = useAtomValue(screenAtom);
   const connectionStatus = useAtomValue(connectionStatusAtom);
   const scroll = useSetAtom(scrollAtom);
   const select = useSetAtom(selectAtom);
   const menuBack = useSetAtom(menuBackAtom);
+  const goToMenu = useSetAtom(goToMenuAtom);
   const playPause = useSetAtom(playPauseAtom);
   const next = useSetAtom(nextTrackAtom);
   const prev = useSetAtom(previousTrackAtom);
-  const adjustVolume = useSetAtom(adjustVolumeAtom);
+  const npSelect = useSetAtom(nowPlayingSelectAtom);
+  const npScroll = useSetAtom(nowPlayingScrollAtom);
+  const resetNpMode = useSetAtom(resetNowPlayingModeAtom);
 
   // Initialize menu stack with the main menu on mount
   useEffect(() => {
@@ -61,6 +73,26 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
       (atom, ...args) => store.set(atom, ...args)
     );
     store.set(menuStackAtom, [mainMenu]);
+  }, [store]);
+
+  // Initialize audio player on mount
+  useEffect(() => {
+    const player = new AudioPlayer();
+    store.set(audioPlayerAtom, player);
+
+    player.onTimeUpdate(() => {
+      store.set(positionAtom, player.currentTime);
+      store.set(durationAtom, player.duration);
+    });
+
+    player.onEnded(() => {
+      store.set(nextTrackAtom);
+    });
+
+    return () => {
+      player.destroy();
+      store.set(audioPlayerAtom, null);
+    };
   }, [store]);
 
   // Wire storage provider to connection status and database atoms
@@ -92,9 +124,26 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
 
   const handleScroll = (dir: 1 | -1) => {
     if (screen === 'nowPlaying') {
-      adjustVolume(dir * 5);
+      npScroll(dir);
     } else {
       scroll(dir);
+    }
+  };
+
+  const handleSelect = () => {
+    if (screen === 'nowPlaying') {
+      npSelect();
+    } else {
+      select();
+    }
+  };
+
+  const handleMenu = () => {
+    if (screen === 'nowPlaying') {
+      resetNpMode();
+      goToMenu();
+    } else {
+      menuBack();
     }
   };
 
@@ -111,8 +160,8 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
       <div className="ipod-shell__wheel-area">
         <ClickWheel
           onScroll={handleScroll}
-          onSelect={() => select()}
-          onMenu={() => menuBack()}
+          onSelect={handleSelect}
+          onMenu={handleMenu}
           onPlayPause={() => playPause()}
           onNext={() => next()}
           onPrevious={() => prev()}

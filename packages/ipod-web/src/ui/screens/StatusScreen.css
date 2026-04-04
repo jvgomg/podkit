@@ -33,15 +33,13 @@
 }
 
 .status-screen__primary {
-  font-size: 18px;
-  font-weight: 600;
   color: #1a1a1a;
   text-align: center;
   margin: 0;
 }
 
 .status-screen__secondary {
-  font-size: 13px;
+  font-size: var(--ipod-font-size-sm);
   color: #999;
   text-align: center;
   margin: 0;

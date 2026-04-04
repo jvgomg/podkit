@@ -4,6 +4,7 @@ import { databaseAtom } from '../store/database.js';
 import { shuffleModeAtom, repeatModeAtom } from '../store/settings.js';
 import type { ShuffleMode, RepeatMode } from '../store/settings.js';
 import { pushMenuAtom, goToNowPlayingAtom, menuVersionAtom } from '../store/navigation.js';
+import { currentTrackAtom, playTrackInContextAtom } from '../store/playback.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,12 +40,15 @@ const repeatLabels: Record<RepeatMode, string> = {
 // Menu builders
 // ---------------------------------------------------------------------------
 
-function trackListMenu(title: string, getTracks: () => Track[]): MenuLevel {
+function trackListMenu(title: string, getTracks: () => Track[], set: Setter): MenuLevel {
   return {
     title,
     getItems: () => getTracks().map(trackToItem),
-    onSelect: () => {
-      // Playback will be wired in a future task
+    onSelect: (index) => {
+      const tracks = getTracks();
+      if (tracks.length === 0) return;
+      set(playTrackInContextAtom, { tracks, startIndex: index });
+      set(goToNowPlayingAtom);
     },
   };
 }
@@ -68,7 +72,7 @@ function createPlaylistsMenu(get: Getter, set: Setter): MenuLevel {
       if (!pl) return;
       set(
         pushMenuAtom,
-        trackListMenu(pl.name, () => db.getPlaylistTracks(pl.id))
+        trackListMenu(pl.name, () => db.getPlaylistTracks(pl.id), set)
       );
     },
   };
@@ -117,7 +121,7 @@ function createArtistAlbumsMenu(get: Getter, set: Setter, artist: string): MenuL
       if (!album) return;
       set(
         pushMenuAtom,
-        trackListMenu(album.name, () => db.getTracksByAlbum(artist, album.name))
+        trackListMenu(album.name, () => db.getTracksByAlbum(artist, album.name), set)
       );
     },
   };
@@ -142,18 +146,22 @@ function createAlbumsMenu(get: Getter, set: Setter): MenuLevel {
       if (!album) return;
       set(
         pushMenuAtom,
-        trackListMenu(album.name, () => db.getTracksByAlbum(album.artist, album.name))
+        trackListMenu(album.name, () => db.getTracksByAlbum(album.artist, album.name), set)
       );
     },
   };
 }
 
-function createSongsMenu(get: Getter): MenuLevel {
+function createSongsMenu(get: Getter, set: Setter): MenuLevel {
   const db = get(databaseAtom);
-  return trackListMenu('Songs', () => {
-    if (!db) return [];
-    return [...db.getTracks()].sort((a, b) => a.title.localeCompare(b.title));
-  });
+  return trackListMenu(
+    'Songs',
+    () => {
+      if (!db) return [];
+      return [...db.getTracks()].sort((a, b) => a.title.localeCompare(b.title));
+    },
+    set
+  );
 }
 
 function createGenresMenu(get: Getter, set: Setter): MenuLevel {
@@ -174,7 +182,7 @@ function createGenresMenu(get: Getter, set: Setter): MenuLevel {
       if (genre === undefined) return;
       set(
         pushMenuAtom,
-        trackListMenu(genre, () => db.getTracksByGenre(genre))
+        trackListMenu(genre, () => db.getTracksByGenre(genre), set)
       );
     },
   };
@@ -183,34 +191,32 @@ function createGenresMenu(get: Getter, set: Setter): MenuLevel {
 function createMusicMenu(get: Getter, set: Setter): MenuLevel {
   return {
     title: 'Music',
-    getItems: () => [
-      { label: 'Playlists', hasSubmenu: true },
-      { label: 'Artists', hasSubmenu: true },
-      { label: 'Albums', hasSubmenu: true },
-      { label: 'Songs', hasSubmenu: true },
-      { label: 'Genres', hasSubmenu: true },
-      { label: 'Now Playing' },
-    ],
+    getItems: () => {
+      const items: MenuItem[] = [
+        { label: 'Playlists', hasSubmenu: true },
+        { label: 'Artists', hasSubmenu: true },
+        { label: 'Albums', hasSubmenu: true },
+        { label: 'Songs', hasSubmenu: true },
+        { label: 'Genres', hasSubmenu: true },
+      ];
+      if (get(currentTrackAtom)) {
+        items.push({ label: 'Now Playing' });
+      }
+      return items;
+    },
     onSelect: (index) => {
-      switch (index) {
-        case 0:
-          set(pushMenuAtom, createPlaylistsMenu(get, set));
-          break;
-        case 1:
-          set(pushMenuAtom, createArtistsMenu(get, set));
-          break;
-        case 2:
-          set(pushMenuAtom, createAlbumsMenu(get, set));
-          break;
-        case 3:
-          set(pushMenuAtom, createSongsMenu(get));
-          break;
-        case 4:
-          set(pushMenuAtom, createGenresMenu(get, set));
-          break;
-        case 5:
-          set(goToNowPlayingAtom);
-          break;
+      const submenus = [
+        () => set(pushMenuAtom, createPlaylistsMenu(get, set)),
+        () => set(pushMenuAtom, createArtistsMenu(get, set)),
+        () => set(pushMenuAtom, createAlbumsMenu(get, set)),
+        () => set(pushMenuAtom, createSongsMenu(get, set)),
+        () => set(pushMenuAtom, createGenresMenu(get, set)),
+      ];
+      if (index < submenus.length) {
+        submenus[index]!();
+      } else {
+        // "Now Playing" (only present when a track is loaded)
+        set(goToNowPlayingAtom);
       }
     },
   };
@@ -267,9 +273,9 @@ export function createMainMenu(get: Getter, set: Setter): MenuLevel {
         { label: 'Shuffle Songs' },
         { label: 'Settings', hasSubmenu: true },
       ];
-      // "Now Playing" is only shown when a track is loaded.
-      // Playback state atoms don't exist yet, so this is always hidden
-      // until a future task adds them.
+      if (get(currentTrackAtom)) {
+        items.push({ label: 'Now Playing' });
+      }
       return items;
     },
     onSelect: (index) => {
@@ -282,6 +288,10 @@ export function createMainMenu(get: Getter, set: Setter): MenuLevel {
           break;
         case 2:
           set(pushMenuAtom, createSettingsMenu(get, set));
+          break;
+        case 3:
+          // "Now Playing" (only present when a track is loaded)
+          set(goToNowPlayingAtom);
           break;
       }
     },

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
+import { BsSkipForwardFill, BsSkipBackwardFill, BsPlayFill, BsPauseFill } from 'react-icons/bs';
 import './ClickWheel.css';
 import { type ButtonZone, useButtonPress } from '../hooks/useButtonPress.js';
 
@@ -225,9 +226,16 @@ export function ClickWheel({
       onKeyDown={handleKeyDown}
     >
       <span className="click-wheel__label click-wheel__label--top">MENU</span>
-      <span className="click-wheel__label click-wheel__label--right">{'\u25B6\u25B6|'}</span>
-      <span className="click-wheel__label click-wheel__label--bottom">{'\u25B6||'}</span>
-      <span className="click-wheel__label click-wheel__label--left">{'|\u25C0\u25C0'}</span>
+      <span className="click-wheel__label click-wheel__label--right">
+        <BsSkipForwardFill />
+      </span>
+      <span className="click-wheel__label click-wheel__label--bottom">
+        <BsPlayFill />
+        <BsPauseFill />
+      </span>
+      <span className="click-wheel__label click-wheel__label--left">
+        <BsSkipBackwardFill />
+      </span>
       <div className="click-wheel__center" />
     </div>
   );

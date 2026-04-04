@@ -38,10 +38,24 @@ export const currentItemsAtom = atom((get) => {
   return menu?.getItems() ?? [];
 });
 
-/** Title of the current menu. */
-export const currentTitleAtom = atom((get) => {
+/** Title of the current menu level. */
+export const currentMenuTitleAtom = atom((get) => {
   const menu = get(currentMenuAtom);
   return menu?.title ?? 'iPod';
+});
+
+/**
+ * Override for the header title. Screen components set this on mount
+ * and clear it (to null) on unmount. When null, the header falls back
+ * to the menu-derived title.
+ */
+export const headerTitleOverrideAtom = atom<string | null>(null);
+
+/** The title shown in the header bar. */
+export const headerTitleAtom = atom((get) => {
+  const override = get(headerTitleOverrideAtom);
+  if (override !== null) return override;
+  return get(currentMenuTitleAtom);
 });
 
 // ---------------------------------------------------------------------------

@@ -1,4 +1,8 @@
 .ipod-shell {
+  --ipod-font-size: 16px;
+  --ipod-font-size-sm: 13px;
+  --ipod-font-size-hw: 28px;
+
   position: relative;
   width: 380px;
   height: 637px; /* 380 * 1.675 */
@@ -8,6 +12,7 @@
   align-items: center;
   overflow: hidden;
   font-family: 'Source Sans 3 Variable', sans-serif;
+  font-weight: 500;
   -webkit-user-select: none;
   user-select: none;
 }
@@ -53,5 +58,5 @@
 .ipod-shell__wheel-area .click-wheel {
   width: 220px;
   height: 220px;
-  font-size: 20px;
+  font-size: var(--ipod-font-size-hw);
 }

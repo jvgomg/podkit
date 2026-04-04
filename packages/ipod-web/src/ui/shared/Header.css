@@ -11,14 +11,11 @@
 
 .ipod-header__play-indicator {
   width: 24px;
-  font-size: 10px;
   line-height: 1;
   color: #333;
 }
 
 .ipod-header__title {
-  font-size: 11px;
-  font-weight: 700;
   color: #1a1a1a;
   text-align: center;
   flex: 1;
