@@ -24,6 +24,9 @@ images:
 mounts:
   - location: '~'
     writable: true
+  - location: '~/Workstation/media'
+    mountPoint: '/media'
+    writable: false
 
 cpus: 2
 memory: '2GiB'
