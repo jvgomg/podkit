@@ -1,7 +1,15 @@
+import type { IpodDatabase } from '../firmware/types.js';
+
+export type StorageStatus =
+  | { state: 'connecting' }
+  | { state: 'server-unreachable' }
+  | { state: 'no-device' }
+  | { state: 'database-error'; message: string }
+  | { state: 'ready'; database?: IpodDatabase };
+
 export interface StorageProvider {
-  loadDatabase(): Promise<any>; // Will be IpodReader when ipod-db is ready
+  readonly status: StorageStatus;
+  onStatusChange(cb: (status: StorageStatus) => void): () => void;
   getAudioUrl(ipodPath: string): Promise<string>;
-  connected: boolean;
-  onConnectionChange(cb: (connected: boolean) => void): () => void;
-  reload(): Promise<any>;
+  reload(): Promise<void>;
 }

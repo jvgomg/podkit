@@ -20,7 +20,28 @@ export function createGadget(config: ServerConfig): GadgetController {
   const { gadgetPath, imagePath, mountPoint } = config;
 
   async function plug(): Promise<void> {
-    // 1. Load kernel modules
+    // Already fully set up — nothing to do.
+    if (isPluggedIn() && isMounted()) return;
+
+    // Plugged but not mounted (e.g. server restarted without VM reboot).
+    // The block device must already exist — no need to wait for it.
+    if (isPluggedIn()) {
+      const blockDev = existsSync('/dev/sda1')
+        ? '/dev/sda1'
+        : existsSync('/dev/sda')
+          ? '/dev/sda'
+          : null;
+      if (!blockDev) {
+        throw new Error('Block device not found — gadget state is stale, unplug and replug');
+      }
+      mkdirSync(mountPoint, { recursive: true });
+      execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${mountPoint}`);
+      return;
+    }
+
+    // Not plugged: full setup.
+
+    // 1. Load kernel modules (idempotent)
     execSync('modprobe dummy_hcd');
     execSync('modprobe libcomposite');
 
@@ -43,9 +64,7 @@ export function createGadget(config: ServerConfig): GadgetController {
     writeFileSync(`${gadgetPath}/configs/c.1/MaxPower`, '500');
 
     // Mass storage function
-    mkdirSync(`${gadgetPath}/functions/mass_storage.0/lun.0`, {
-      recursive: true,
-    });
+    mkdirSync(`${gadgetPath}/functions/mass_storage.0/lun.0`, { recursive: true });
     writeFileSync(`${gadgetPath}/functions/mass_storage.0/lun.0/file`, imagePath);
     writeFileSync(`${gadgetPath}/functions/mass_storage.0/lun.0/removable`, '0');
 
@@ -60,10 +79,9 @@ export function createGadget(config: ServerConfig): GadgetController {
     if (udcList.length === 0) throw new Error('No UDC available');
     writeFileSync(`${gadgetPath}/UDC`, udcList[0]!);
 
-    // Wait for block device to appear, then mount
+    // Wait for block device to appear after UDC bind, then mount
     const blockDev = await waitForBlockDevice();
     mkdirSync(mountPoint, { recursive: true });
-    // Mount with permissive access so non-root users can read/write
     execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${mountPoint}`);
   }
 

@@ -1,6 +1,6 @@
 import type { ServerWebSocket } from 'bun';
 import { execSync } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createApi } from './api.js';
 import { createGadget } from './gadget.js';
 import { createImage, initializeIpodStructure } from './image.js';
@@ -69,24 +69,47 @@ async function ensureImage(): Promise<void> {
  * When unplugged: delete and recreate the disk image from scratch.
  */
 async function resetIpod(): Promise<void> {
-  if (gadget.isMounted()) {
-    // Unmount, reformat in-place, remount — no gadget teardown needed
-    execSync(`umount ${config.mountPoint}`);
+  if (gadget.isPluggedIn()) {
+    // Gadget has the image open as a block device — reformat in-place.
+    // Deleting the image file while the gadget is bound would leave it
+    // with a stale file handle, so we always use the block device path.
+    if (gadget.isMounted()) {
+      execSync(`umount ${config.mountPoint}`);
+    }
 
-    // Find the block device backing the mount (sda1 or sda)
+    // Find the block device backing the gadget (sda1 or sda)
     const blockDev = existsSync('/dev/sda1') ? '/dev/sda1' : '/dev/sda';
     execSync(`mkfs.vfat -F 32 -n IPOD ${blockDev}`);
 
+    mkdirSync(config.mountPoint, { recursive: true });
     execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${config.mountPoint}`);
     initializeIpodStructure(config.mountPoint);
   } else {
-    // Not mounted — safe to delete and recreate the image file
+    // Not plugged — safe to delete and recreate the image file
     rmSync(config.imagePath, { force: true });
     await ensureImage();
   }
 }
 
 await ensureImage();
+
+// If the gadget was plugged in a previous session but the filesystem mount was
+// lost (e.g. after a server restart), remount so the database is accessible.
+if (gadget.isPluggedIn() && !gadget.isMounted()) {
+  try {
+    await gadget.plug();
+    console.log('Remounted iPod filesystem on startup');
+  } catch (e) {
+    // Block device is gone — gadget state is stale from a previous session.
+    // Unplug to clean up so the user can start fresh with POST /plug.
+    console.warn('Stale gadget state on startup, cleaning up:', e instanceof Error ? e.message : e);
+    try {
+      await gadget.unplug();
+    } catch {
+      /* best effort */
+    }
+  }
+}
 
 const app = createApi(gadget, config, broadcastEvent, resetIpod);
 

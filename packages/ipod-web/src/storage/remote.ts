@@ -1,72 +1,94 @@
-import type { StorageProvider } from './types.js';
+import type { StorageProvider, StorageStatus } from './types.js';
 import { IpodReader } from '@podkit/ipod-db';
 
 export class RemoteStorage implements StorageProvider {
   private baseUrl: string;
   private ws: WebSocket | null = null;
-  private _connected = false;
-  private listeners = new Set<(connected: boolean) => void>();
+  private _wsConnected = false;
+  private _status: StorageStatus = { state: 'connecting' };
+  private listeners = new Set<(status: StorageStatus) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectDelay = 1000; // exponential backoff starting point
-  private onDatabaseChanged: (() => void) | null = null;
 
   constructor(baseUrl: string = 'http://localhost:3456') {
-    this.baseUrl = baseUrl.replace(/\/$/, ''); // strip trailing slash
+    this.baseUrl = baseUrl.replace(/\/$/, '');
     this.connectWebSocket();
   }
 
   // --- StorageProvider interface ---
 
-  get connected(): boolean {
-    return this._connected;
+  get status(): StorageStatus {
+    return this._status;
   }
 
-  async loadDatabase(): Promise<IpodReader> {
-    // Fetch iTunesDB, ArtworkDB, SysInfo in parallel
-    const [itunesDbRes, artworkDbRes, sysInfoRes] = await Promise.allSettled([
-      fetch(`${this.baseUrl}/database`),
-      fetch(`${this.baseUrl}/artwork-db`),
-      fetch(`${this.baseUrl}/sysinfo`),
-    ]);
-
-    const itunesDb =
-      itunesDbRes.status === 'fulfilled'
-        ? new Uint8Array(await itunesDbRes.value.arrayBuffer())
-        : null;
-
-    if (!itunesDb) {
-      throw new Error('Failed to fetch iTunesDB from server');
-    }
-
-    const artworkDb =
-      artworkDbRes.status === 'fulfilled' && artworkDbRes.value.ok
-        ? new Uint8Array(await artworkDbRes.value.arrayBuffer())
-        : undefined;
-
-    const sysInfo =
-      sysInfoRes.status === 'fulfilled' && sysInfoRes.value.ok
-        ? await sysInfoRes.value.text()
-        : undefined;
-
-    // TODO: fetch ithmb files if artwork is present
-    // For now, skip ithmbs — artwork display will show fallback
-
-    return IpodReader.fromFiles({ itunesDb, artworkDb, sysInfo });
-  }
-
-  async getAudioUrl(ipodPath: string): Promise<string> {
-    // The server streams audio at this URL
-    // The browser's <audio> element will fetch it directly with range requests
-    return `${this.baseUrl}/audio/${encodeURIComponent(ipodPath)}`;
-  }
-
-  onConnectionChange(cb: (connected: boolean) => void): () => void {
+  onStatusChange(cb: (status: StorageStatus) => void): () => void {
     this.listeners.add(cb);
     return () => this.listeners.delete(cb);
   }
 
-  async reload(): Promise<IpodReader> {
-    return this.loadDatabase();
+  async getAudioUrl(ipodPath: string): Promise<string> {
+    return `${this.baseUrl}/audio/${encodeURIComponent(ipodPath)}`;
+  }
+
+  async reload(): Promise<void> {
+    await this.tryLoadDatabase();
+  }
+
+  // --- Internal ---
+
+  private setStatus(status: StorageStatus): void {
+    this._status = status;
+    for (const cb of this.listeners) {
+      cb(status);
+    }
+  }
+
+  private async tryLoadDatabase(): Promise<void> {
+    try {
+      const [itunesDbRes, artworkDbRes, sysInfoRes] = await Promise.allSettled([
+        fetch(`${this.baseUrl}/database`),
+        fetch(`${this.baseUrl}/artwork-db`),
+        fetch(`${this.baseUrl}/sysinfo`),
+      ]);
+
+      if (!this._wsConnected) return;
+
+      // A missing iTunesDB could mean no device, or a connected but unsynced iPod.
+      // SysInfo is written during iPod initialisation and serves as a presence
+      // indicator: if it exists the filesystem is mounted but has no database yet.
+      if (itunesDbRes.status !== 'fulfilled' || !itunesDbRes.value.ok) {
+        const sysInfoPresent = sysInfoRes.status === 'fulfilled' && sysInfoRes.value.ok;
+        if (sysInfoPresent) {
+          this.setStatus({ state: 'database-error', message: 'No iTunes database found' });
+        } else {
+          this.setStatus({ state: 'no-device' });
+        }
+        return;
+      }
+
+      const itunesDb = new Uint8Array(await itunesDbRes.value.arrayBuffer());
+
+      if (!this._wsConnected) return;
+
+      const artworkDb =
+        artworkDbRes.status === 'fulfilled' && artworkDbRes.value.ok
+          ? new Uint8Array(await artworkDbRes.value.arrayBuffer())
+          : undefined;
+
+      const sysInfo =
+        sysInfoRes.status === 'fulfilled' && sysInfoRes.value.ok
+          ? await sysInfoRes.value.text()
+          : undefined;
+
+      // IpodReader.fromFiles throws if the database bytes are corrupt or unreadable
+      const database = IpodReader.fromFiles({ itunesDb, artworkDb, sysInfo });
+      this.setStatus({ state: 'ready', database });
+    } catch (e) {
+      if (!this._wsConnected) return;
+      this.setStatus({
+        state: 'database-error',
+        message: e instanceof Error ? e.message : 'Failed to read iPod database',
+      });
+    }
   }
 
   // --- WebSocket management ---
@@ -77,14 +99,14 @@ export class RemoteStorage implements StorageProvider {
     try {
       this.ws = new WebSocket(wsUrl);
     } catch {
+      this.setStatus({ state: 'server-unreachable' });
       this.scheduleReconnect();
       return;
     }
 
     this.ws.onopen = () => {
-      this._connected = true;
-      this.reconnectDelay = 1000; // reset backoff
-      this.notifyListeners();
+      this._wsConnected = true;
+      this.tryLoadDatabase();
     };
 
     this.ws.onmessage = (event) => {
@@ -97,67 +119,51 @@ export class RemoteStorage implements StorageProvider {
     };
 
     this.ws.onclose = () => {
-      this._connected = false;
-      this.notifyListeners();
+      this._wsConnected = false;
+      this.setStatus({ state: 'server-unreachable' });
       this.scheduleReconnect();
     };
 
     this.ws.onerror = () => {
-      // onclose will fire after onerror, so reconnect happens there
+      // onclose will fire after onerror
     };
   }
 
   private handleEvent(event: { type: string; [key: string]: unknown }): void {
     switch (event.type) {
       case 'plugged':
-        this._connected = true;
-        this.notifyListeners();
+        this.tryLoadDatabase();
         break;
       case 'unplugged':
-        this._connected = false;
-        this.notifyListeners();
+        this.setStatus({ state: 'no-device' });
         break;
       case 'database-changed':
-        this.onDatabaseChanged?.();
+        this.tryLoadDatabase();
         break;
     }
   }
 
   private scheduleReconnect(): void {
     if (this.reconnectTimer) return;
-
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
-      this.reconnectDelay = Math.min(this.reconnectDelay * 2, 30000); // cap at 30s
       this.connectWebSocket();
-    }, this.reconnectDelay);
-  }
-
-  private notifyListeners(): void {
-    for (const cb of this.listeners) {
-      cb(this._connected);
-    }
+    }, 1000);
   }
 
   // --- Lifecycle ---
 
-  /** Register a callback for database changes (used by the app to trigger reload) */
-  onDatabaseChange(cb: () => void): void {
-    this.onDatabaseChanged = cb;
-  }
-
-  /** Clean up WebSocket connection */
   destroy(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
     if (this.ws) {
-      this.ws.onclose = null; // prevent reconnect
+      this.ws.onclose = null; // prevent reconnect on explicit destroy
       this.ws.close();
       this.ws = null;
     }
-    this._connected = false;
+    this._wsConnected = false;
     this.listeners.clear();
   }
 }
