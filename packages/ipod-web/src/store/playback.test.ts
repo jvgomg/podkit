@@ -58,11 +58,10 @@ class MockAudioPlayer {
 
 function mockStorage(): StorageProvider {
   return {
-    loadDatabase: async () => null,
+    status: { state: 'ready', database: null as any },
+    onStatusChange: () => () => {},
     getAudioUrl: async (path: string) => `blob://${path}`,
-    connected: true,
-    onConnectionChange: () => () => {},
-    reload: async () => null,
+    reload: async () => {},
   };
 }
 

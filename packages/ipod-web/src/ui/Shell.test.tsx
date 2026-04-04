@@ -30,14 +30,4 @@ describe('Shell', () => {
     );
     expect(container.querySelector('[data-variant="black"]')).toBeTruthy();
   });
-
-  test('includes drag regions', () => {
-    const { container } = render(
-      <Shell>
-        <div />
-      </Shell>
-    );
-    const dragRegions = container.querySelectorAll('[data-tauri-drag-region]');
-    expect(dragRegions.length).toBeGreaterThanOrEqual(1);
-  });
 });

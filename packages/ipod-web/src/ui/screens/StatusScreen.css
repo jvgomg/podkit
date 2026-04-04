@@ -1,0 +1,31 @@
+.status-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 16px;
+}
+
+.status-screen__logo {
+  width: 52px;
+  height: auto;
+  fill: #1a1a1a;
+  padding-block: 18px;
+}
+
+.status-screen__primary {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
+  text-align: center;
+  margin: 0;
+}
+
+.status-screen__secondary {
+  font-size: 11px;
+  color: #999;
+  text-align: center;
+  margin: 0;
+}

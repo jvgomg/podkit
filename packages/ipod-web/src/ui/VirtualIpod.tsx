@@ -21,7 +21,10 @@ import {
   nextTrackAtom,
   previousTrackAtom,
   adjustVolumeAtom,
+  storageProviderAtom,
 } from '../store/playback.js';
+import { connectionStatusAtom } from '../store/connection.js';
+import { databaseAtom } from '../store/database.js';
 import { createMainMenu } from '../firmware/menu.js';
 
 export interface VirtualIpodProps {
@@ -37,11 +40,12 @@ export function VirtualIpod({ storage, variant = 'white' }: VirtualIpodProps) {
   );
 }
 
-function VirtualIpodInner({ storage: _storage, variant = 'white' }: VirtualIpodProps) {
+function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
   const store = useStore();
   const title = useAtomValue(currentTitleAtom);
   const playbackState = useAtomValue(playbackStateAtom);
   const screen = useAtomValue(screenAtom);
+  const connectionStatus = useAtomValue(connectionStatusAtom);
   const scroll = useSetAtom(scrollAtom);
   const select = useSetAtom(selectAtom);
   const menuBack = useSetAtom(menuBackAtom);
@@ -59,6 +63,33 @@ function VirtualIpodInner({ storage: _storage, variant = 'white' }: VirtualIpodP
     store.set(menuStackAtom, [mainMenu]);
   }, [store]);
 
+  // Wire storage provider to connection status and database atoms
+  useEffect(() => {
+    if (!storage) {
+      store.set(storageProviderAtom, null);
+      store.set(connectionStatusAtom, { state: 'ready' });
+      return;
+    }
+
+    store.set(storageProviderAtom, storage);
+    store.set(connectionStatusAtom, storage.status);
+
+    if (storage.status.state === 'ready') {
+      store.set(databaseAtom, storage.status.database ?? null);
+    }
+
+    const unsubscribe = storage.onStatusChange((status) => {
+      store.set(connectionStatusAtom, status);
+      if (status.state === 'ready') {
+        store.set(databaseAtom, status.database ?? null);
+      } else {
+        store.set(databaseAtom, null);
+      }
+    });
+
+    return unsubscribe;
+  }, [storage, store]);
+
   const handleScroll = (dir: 1 | -1) => {
     if (screen === 'nowPlaying') {
       adjustVolume(dir * 5);
@@ -71,7 +102,9 @@ function VirtualIpodInner({ storage: _storage, variant = 'white' }: VirtualIpodP
     <Shell variant={variant}>
       <div className="ipod-shell__screen-area">
         <Screen>
-          <Header title={title} showPlayIndicator={playbackState === 'playing'} />
+          {connectionStatus.state === 'ready' && (
+            <Header title={title} showPlayIndicator={playbackState === 'playing'} />
+          )}
           <ScreenRouter />
         </Screen>
       </div>

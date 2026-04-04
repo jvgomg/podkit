@@ -18,7 +18,7 @@ export interface Track {
   genre: string;
   duration: number; // milliseconds
   trackNumber: number;
-  ipodPath?: string;
+  ipodPath?: string | null;
 }
 
 export interface Album {
