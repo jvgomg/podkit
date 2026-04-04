@@ -1,6 +1,6 @@
 /** Event sent to WebSocket clients */
 export interface ServerEvent {
-  type: 'plugged' | 'unplugged' | 'database-changed';
+  type: 'plugged' | 'unplugged' | 'database-changed' | 'reset';
   [key: string]: unknown;
 }
 
