@@ -1,9 +1,10 @@
 ---
 id: TASK-116
 title: Implement iTunesDB record parsers (mhbd through mhia)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-12 10:53'
+updated_date: '2026-04-03 20:42'
 labels:
   - phase-1
   - parser
@@ -60,14 +61,20 @@ Implement parse functions for all iTunesDB record types using BufferReader. Each
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All 11 record types have parse functions
-- [ ] #2 MHOD parser handles all 32+ known string types correctly
-- [ ] #3 Unknown MHOD types preserved as opaque UnknownMhodRecord
-- [ ] #4 MHIT parser reads all known fields up to 0x184 header size
-- [ ] #5 unknownHeaderBytes preserved for every record type
-- [ ] #6 Endianness auto-detected from MHBD header
-- [ ] #7 Podcast URL MHODs (types 15-16) parsed as UTF-8 without length prefix
-- [ ] #8 SPL and chapter MHODs preserved as opaque buffers
-- [ ] #9 Each golden fixture (TASK-113) parses without errors
-- [ ] #10 Parsed structure matches expected.json snapshot for each fixture
+- [x] #1 All 11 record types have parse functions
+- [x] #2 MHOD parser handles all 32+ known string types correctly
+- [x] #3 Unknown MHOD types preserved as opaque UnknownMhodRecord
+- [x] #4 MHIT parser reads all known fields up to 0x184 header size
+- [x] #5 unknownHeaderBytes preserved for every record type
+- [x] #6 Endianness auto-detected from MHBD header
+- [x] #7 Podcast URL MHODs (types 15-16) parsed as UTF-8 without length prefix
+- [x] #8 SPL and chapter MHODs preserved as opaque buffers
+- [x] #9 Each golden fixture (TASK-113) parses without errors
+- [x] #10 Parsed structure matches expected.json snapshot for each fixture
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+All 11 record types implemented. 35+ MHOD types handled (string, UTF-8 podcast URLs, position, opaque). MHIT reads 40+ fields across three header size tiers. Discovered libgpod uses "mhia" tags for album entries in iTunesDB (not "mhba") — parser accepts both. Prefers mhsd type 3 over type 2 for playlists (matches libgpod). Unknown header bytes preserved. All 7 golden fixtures parse correctly with full metadata validation. 32 tests.
+<!-- SECTION:NOTES:END -->

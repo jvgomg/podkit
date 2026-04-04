@@ -1,0 +1,87 @@
+.click-wheel {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #d8d8dc, #cfcfd3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  user-select: none;
+  outline: none;
+  cursor: pointer;
+}
+
+.click-wheel:focus-visible {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5);
+}
+
+.click-wheel__center {
+  width: 40%;
+  height: 40%;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #ececf0, #e4e4e8);
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.click-wheel__label {
+  position: absolute;
+  font-size: 0.55em;
+  font-weight: 600;
+  color: #8a8a8e;
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.click-wheel__label--top {
+  top: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.click-wheel__label--right {
+  right: 10%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.click-wheel__label--bottom {
+  bottom: 12%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.click-wheel__label--left {
+  left: 10%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.click-wheel--zone-active-center .click-wheel__center {
+  background: linear-gradient(145deg, #e0e0e4, #d8d8dc);
+  transition: background 0.15s ease;
+}
+
+.click-wheel--zone-active-top {
+  background: linear-gradient(to bottom, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
+  transition: background 0.15s ease;
+}
+
+.click-wheel--zone-active-right {
+  background: linear-gradient(to left, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
+  transition: background 0.15s ease;
+}
+
+.click-wheel--zone-active-bottom {
+  background: linear-gradient(to top, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
+  transition: background 0.15s ease;
+}
+
+.click-wheel--zone-active-left {
+  background: linear-gradient(to right, #c8c8cc 0%, #d8d8dc 40%, #cfcfd3 100%);
+  transition: background 0.15s ease;
+}

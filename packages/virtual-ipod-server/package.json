@@ -1,0 +1,23 @@
+{
+  "name": "@podkit/virtual-ipod-server",
+  "version": "0.0.1",
+  "description": "REST/WebSocket server for virtual iPod USB gadget lifecycle",
+  "type": "module",
+  "main": "src/main.ts",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun --watch run src/main.ts",
+    "build": "bun build src/main.ts --outdir dist --target node",
+    "test": "bun test",
+    "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No unit tests found'",
+    "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No integration tests found'",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "hono": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

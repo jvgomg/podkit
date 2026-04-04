@@ -28,13 +28,13 @@ The macOS filesystem is mounted inside the VM, so you're working on the same fil
 
 ## VM Specs
 
-| | Debian | Alpine |
-|---|--------|--------|
-| Base | Debian 12 (Bookworm) | Alpine 3.21 |
-| Matches | Homebrew Linux users | Docker image |
-| CPUs | 4 | 4 |
-| Memory | 4 GiB | 4 GiB |
-| Disk | 20 GiB | 20 GiB |
+| | Debian | Alpine | Virtual iPod |
+|---|--------|--------|--------------|
+| Base | Debian 12 (Bookworm) | Alpine 3.21 | Debian 12 (Bookworm) |
+| Purpose | Cross-platform testing | Docker image testing | Virtual iPod server |
+| CPUs | 4 | 4 | 2 |
+| Memory | 4 GiB | 4 GiB | 2 GiB |
+| Disk | 20 GiB | 20 GiB | 20 GiB |
 
 ### Pre-installed
 
@@ -46,6 +46,39 @@ Both VMs include:
 - Build tools (gcc, g++, make, python3, pkg-config)
 - util-linux (`lsblk` for Linux device manager)
 - git, curl
+
+## Virtual iPod VM
+
+The `virtual-ipod` VM provides a Linux environment with USB gadget support for the virtual iPod demo system.
+
+### Quick Start
+
+```bash
+# Create the VM
+limactl create --name=virtual-ipod tools/lima/virtual-ipod.yaml
+
+# Start the VM
+limactl start virtual-ipod
+
+# Shell into the VM
+limactl shell virtual-ipod
+
+# Inside the VM: start the virtual iPod server
+cd /path/to/podkit/packages/virtual-ipod-server
+bun run start
+
+# From macOS: the server is accessible at http://localhost:3456
+```
+
+### What's included
+
+- Debian 12 Bookworm
+- `dummy_hcd` and `libcomposite` kernel modules for USB gadget emulation
+- configfs mounted at `/sys/kernel/config` (persisted in `/etc/fstab`)
+- Node.js 22, Bun runtime
+- libgpod-dev, FFmpeg, and all podkit build dependencies
+- Port 3456 forwarded to host for virtual-ipod-server API
+- 20 GiB disk for FAT32 iPod image and audio files
 
 ## Common Commands
 
