@@ -4,9 +4,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 6px 10px 10px;
+  padding: 4px 10px 8px;
   box-sizing: border-box;
-  gap: 4px;
 }
 
 .now-playing-empty {
@@ -15,28 +14,42 @@
   justify-content: center;
   height: 100%;
   color: #888;
-  font-size: 13px;
 }
 
-/* Queue position header */
-.np-queue-info {
+/* Layout: body takes remaining space, bottom is fixed height */
+.np-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 10px;
-  color: #555;
-  padding: 0 2px;
+  flex-direction: column;
 }
 
-/* Artwork */
-.np-artwork {
-  display: flex;
-  justify-content: center;
+.np-bottom {
   flex-shrink: 0;
+  height: 36px;
+  padding-top: 4px;
+  box-sizing: content-box;
 }
 
-.np-artwork-container {
-  width: 55%;
+/* Queue position — top left */
+.np-queue-info {
+  color: #333;
+  padding-top: 6px;
+}
+
+/* Artwork + track info row */
+.np-main {
+  display: flex;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+}
+
+/* Artwork (inline with track info) */
+.np-artwork {
+  flex-shrink: 0;
+  width: 40%;
   aspect-ratio: 1;
 }
 
@@ -49,6 +62,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   box-shadow:
     0 1px 3px rgba(0, 0, 0, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.4);
@@ -59,22 +73,22 @@
   color: #a09888;
 }
 
-/* Track info */
+/* Track info — right of artwork */
 .np-track-info {
-  padding: 0 2px;
+  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .np-title {
-  font-weight: 600;
-  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .np-artist {
-  font-size: 12px;
   color: #444;
   white-space: nowrap;
   overflow: hidden;
@@ -82,15 +96,45 @@
 }
 
 .np-album {
-  font-size: 12px;
   color: #666;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* Scrubber — minor overrides on top of ProgressBar */
-.np-scrubber {
-  margin-top: auto;
-  padding: 0 2px;
+/* Scrubber — always 12px tall track */
+.np-scrubber .progress-bar__track {
+  height: 12px;
+  border-radius: 6px;
+  background: #d0d0d0;
+}
+
+.np-scrubber .progress-bar__fill {
+  height: 100%;
+  border-radius: 6px 0 0 6px;
+}
+
+/* Scrubbing mode — larger diamond indicator */
+.np-scrubber--scrubbing .progress-bar__indicator {
+  font-size: 1.4em;
+}
+
+/* Artwork fullscreen mode */
+.now-playing--artwork {
+  padding: 16px;
+}
+
+.np-artwork-fullscreen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.np-artwork-fullscreen .np-artwork-placeholder {
+  width: auto;
+  height: 100%;
+  aspect-ratio: 1;
 }

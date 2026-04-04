@@ -63,10 +63,15 @@ export const playTrackInContextAtom = atom(null, async (get, set, context: Queue
 
   const track = tracks[startIndex]!;
   set(currentTrackAtom, track);
-  set(playbackStateAtom, 'playing');
 
-  const url = await storage.getAudioUrl(track.ipodPath ?? '');
-  await player.play(url);
+  try {
+    const url = await storage.getAudioUrl(track.ipodPath ?? '');
+    await player.play(url);
+    set(playbackStateAtom, 'playing');
+  } catch (e) {
+    console.error('[playback] failed to play track', track.title, e);
+    set(playbackStateAtom, 'stopped');
+  }
 });
 
 /** Toggle between playing and paused. No-op when stopped. */
@@ -79,8 +84,13 @@ export const playPauseAtom = atom(null, async (get, set) => {
     player.pause();
     set(playbackStateAtom, 'paused');
   } else if (state === 'paused') {
-    player.resume();
-    set(playbackStateAtom, 'playing');
+    try {
+      player.resume();
+      set(playbackStateAtom, 'playing');
+    } catch (e) {
+      console.error('[playback] failed to resume', e);
+      set(playbackStateAtom, 'stopped');
+    }
   }
 });
 
@@ -114,9 +124,14 @@ export const nextTrackAtom = atom(null, async (get, set) => {
   const storage = get(storageProviderAtom);
   const player = get(audioPlayerAtom);
   if (storage && player) {
-    const url = await storage.getAudioUrl(track.ipodPath ?? '');
-    await player.play(url);
-    set(playbackStateAtom, 'playing');
+    try {
+      const url = await storage.getAudioUrl(track.ipodPath ?? '');
+      await player.play(url);
+      set(playbackStateAtom, 'playing');
+    } catch (e) {
+      console.error('[playback] failed to play next track', track.title, e);
+      set(playbackStateAtom, 'stopped');
+    }
   }
 });
 
@@ -145,9 +160,14 @@ export const previousTrackAtom = atom(null, async (get, set) => {
 
   const storage = get(storageProviderAtom);
   if (storage) {
-    const url = await storage.getAudioUrl(track.ipodPath ?? '');
-    await player.play(url);
-    set(playbackStateAtom, 'playing');
+    try {
+      const url = await storage.getAudioUrl(track.ipodPath ?? '');
+      await player.play(url);
+      set(playbackStateAtom, 'playing');
+    } catch (e) {
+      console.error('[playback] failed to play previous track', track.title, e);
+      set(playbackStateAtom, 'stopped');
+    }
   }
 });
 

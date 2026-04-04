@@ -3,6 +3,7 @@ import { createStore } from 'jotai';
 import type { IpodDatabase, Track } from './types.js';
 import { createMainMenu } from './menu.js';
 import { databaseAtom } from '../store/database.js';
+import { currentTrackAtom } from '../store/playback.js';
 import {
   menuStackAtom,
   currentMenuAtom,
@@ -133,8 +134,17 @@ describe('menu tree', () => {
 });
 
 describe('music menu', () => {
-  test('has Playlists, Artists, Albums, Songs, Genres, Now Playing', () => {
+  test('has Playlists, Artists, Albums, Songs, Genres (no Now Playing without track)', () => {
     const store = createTestStore();
+    selectItemByLabel(store, 'Music');
+    const items = store.get(currentItemsAtom);
+    const labels = items.map((i) => i.label);
+    expect(labels).toEqual(['Playlists', 'Artists', 'Albums', 'Songs', 'Genres']);
+  });
+
+  test('shows Now Playing when a track is loaded', () => {
+    const store = createTestStore();
+    store.set(currentTrackAtom, mockTracks[0]!);
     selectItemByLabel(store, 'Music');
     const items = store.get(currentItemsAtom);
     const labels = items.map((i) => i.label);

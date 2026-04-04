@@ -30,33 +30,43 @@
 .click-wheel__label {
   position: absolute;
   font-size: 0.55em;
-  font-weight: 600;
-  color: #8a8a8e;
+  color: #f0f0f0;
   letter-spacing: 0.05em;
   pointer-events: none;
   z-index: 0;
 }
 
+.click-wheel__label svg {
+  font-size: 1.2em;
+  vertical-align: middle;
+}
+
+.click-wheel__label--bottom svg + svg {
+  margin-left: -0.25em;
+}
+
 .click-wheel__label--top {
-  top: 12%;
+  top: 8%;
   left: 50%;
   transform: translateX(-50%);
 }
 
 .click-wheel__label--right {
-  right: 10%;
+  right: 6%;
   top: 50%;
   transform: translateY(-50%);
 }
 
 .click-wheel__label--bottom {
-  bottom: 12%;
+  bottom: 8%;
   left: 50%;
   transform: translateX(-50%);
+  display: flex;
+  align-items: center;
 }
 
 .click-wheel__label--left {
-  left: 10%;
+  left: 6%;
   top: 50%;
   transform: translateY(-50%);
 }

@@ -2,16 +2,52 @@
  * Thin wrapper around an HTML <audio> element.
  *
  * Works in both browser and Tauri WebView environments.
+ * Audio is fetched as a blob to avoid cross-origin media restrictions
+ * in WebViews (Tauri dev server runs on a different port from the API).
  */
 export class AudioPlayer {
   private audio: HTMLAudioElement;
+  private currentObjectUrl: string | null = null;
 
   constructor() {
     this.audio = new Audio();
   }
 
   async play(url: string): Promise<void> {
-    this.audio.src = url;
+    this.revokeObjectUrl();
+
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(
+        `Audio fetch failed: ${response.status} ${response.statusText} (src: ${url})`
+      );
+    }
+
+    const blob = await response.blob();
+    this.currentObjectUrl = URL.createObjectURL(blob);
+    this.audio.src = this.currentObjectUrl;
+
+    // Wait for enough data to start playback, or an error
+    await new Promise<void>((resolve, reject) => {
+      const onCanPlay = () => {
+        cleanup();
+        resolve();
+      };
+      const onError = () => {
+        cleanup();
+        const e = this.audio.error;
+        const detail = e ? `code=${e.code} message=${e.message}` : 'unknown';
+        reject(new Error(`Audio decode failed: ${detail}`));
+      };
+      const cleanup = () => {
+        this.audio.removeEventListener('canplay', onCanPlay);
+        this.audio.removeEventListener('error', onError);
+      };
+      this.audio.addEventListener('canplay', onCanPlay, { once: true });
+      this.audio.addEventListener('error', onError, { once: true });
+      this.audio.load();
+    });
+
     await this.audio.play();
   }
 
@@ -60,5 +96,13 @@ export class AudioPlayer {
     this.audio.pause();
     this.audio.src = '';
     this.audio.removeAttribute('src');
+    this.revokeObjectUrl();
+  }
+
+  private revokeObjectUrl(): void {
+    if (this.currentObjectUrl) {
+      URL.revokeObjectURL(this.currentObjectUrl);
+      this.currentObjectUrl = null;
+    }
   }
 }

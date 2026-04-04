@@ -7,7 +7,7 @@ import {
   selectedIndexAtom,
   currentMenuAtom,
   currentItemsAtom,
-  currentTitleAtom,
+  currentMenuTitleAtom,
   scrollAtom,
   selectAtom,
   menuBackAtom,
@@ -75,14 +75,14 @@ describe('navigation atoms', () => {
     expect(store.get(currentMenuAtom)).toBe(menu);
   });
 
-  test('currentTitleAtom defaults to iPod when stack is empty', () => {
+  test('currentMenuTitleAtom defaults to iPod when stack is empty', () => {
     const store = createStore();
-    expect(store.get(currentTitleAtom)).toBe('iPod');
+    expect(store.get(currentMenuTitleAtom)).toBe('iPod');
   });
 
-  test('currentTitleAtom reflects current menu title', () => {
+  test('currentMenuTitleAtom reflects current menu title', () => {
     const store = storeWithMenu(makeMenu('Music', 3));
-    expect(store.get(currentTitleAtom)).toBe('Music');
+    expect(store.get(currentMenuTitleAtom)).toBe('Music');
   });
 
   test('currentItemsAtom returns empty array when stack is empty', () => {
