@@ -1,9 +1,10 @@
 ---
 id: TASK-114
 title: Create @podkit/ipod-db package skeleton
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-12 10:52'
+updated_date: '2026-04-03 20:26'
 labels:
   - phase-0
 milestone: ipod-db Core (libgpod replacement)
@@ -42,8 +43,14 @@ __tests__/
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Package builds successfully in monorepo
-- [ ] #2 bun test runs (even if no tests yet)
-- [ ] #3 Directory structure matches design document
-- [ ] #4 Package is importable from other workspace packages
+- [x] #1 Package builds successfully in monorepo
+- [x] #2 bun test runs (even if no tests yet)
+- [x] #3 Directory structure matches design document
+- [x] #4 Package is importable from other workspace packages
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Shared with Virtual iPod milestone (m-17).** This package skeleton also serves the read-only parser needed for the virtual iPod web UI. Ensure `src/binary/reader.ts` works with both Node.js `Buffer` and browser `Uint8Array` — the virtual iPod runs in a web worker.
+<!-- SECTION:NOTES:END -->

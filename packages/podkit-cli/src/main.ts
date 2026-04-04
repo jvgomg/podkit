@@ -75,7 +75,14 @@ program.hook('preAction', (thisCommand, actionCommand) => {
   };
 
   // Load and merge config from all sources
-  const configResult = loadConfig(globalOpts, commandOpts);
+  let configResult: ReturnType<typeof loadConfig>;
+  try {
+    configResult = loadConfig(globalOpts, commandOpts);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Error: ${message}`);
+    process.exit(1);
+  }
 
   // Set up context for commands to access
   setContext({

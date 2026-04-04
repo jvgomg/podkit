@@ -1,0 +1,63 @@
+.ipod-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 20px;
+  padding: 2px 8px;
+  background: linear-gradient(180deg, #e8e6e0 0%, #dddbd5 100%);
+  border-bottom: 1px solid #c8c6c0;
+  flex-shrink: 0;
+}
+
+.ipod-header__play-indicator {
+  width: 24px;
+  font-size: 10px;
+  line-height: 1;
+  color: #333;
+}
+
+.ipod-header__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1a1a1a;
+  text-align: center;
+  flex: 1;
+}
+
+.ipod-header__battery {
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.ipod-header__battery-icon {
+  width: 18px;
+  height: 9px;
+  border: 1px solid #555;
+  border-radius: 1px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  padding: 1px;
+  box-sizing: border-box;
+}
+
+.ipod-header__battery-icon::after {
+  content: '';
+  position: absolute;
+  right: -3px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2px;
+  height: 5px;
+  background: #555;
+  border-radius: 0 1px 1px 0;
+}
+
+.ipod-header__battery-fill {
+  width: 100%;
+  height: 100%;
+  background: #4caf50;
+  border-radius: 0.5px;
+}

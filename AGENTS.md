@@ -14,16 +14,21 @@ packages/
 ├── demo/            # Animated GIF demo (VHS + mocked CLI build)
 ├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
 ├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
+├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
+├── ipod-web/        # Virtual iPod UI — React + Jotai web component
 ├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
 ├── podkit-cli/      # Command-line interface
 ├── podkit-docker/   # Docker image (Dockerfile, entrypoint, compose files)
-└── test-fixtures/   # Test fixture generator (FLAC files with controllable metadata/artwork)
+├── test-fixtures/   # Test fixture generator (FLAC files with controllable metadata/artwork)
+├── virtual-ipod-app/    # Tauri macOS app — frameless iPod-shaped window
+└── virtual-ipod-server/ # Lima VM backend — USB gadget + REST/WebSocket API
 
 tools/
+├── demo/            # Live demo documentation for the virtual iPod system
 ├── gpod-tool/       # C CLI for iPod database operations
 ├── libgpod-macos/   # macOS build scripts for libgpod
-└── lima/            # Lima VM configs for cross-platform testing (Debian + Alpine)
+└── lima/            # Lima VM configs (Debian, Alpine, virtual-ipod)
 
 devices/             # Device documentation profiles (specs, capabilities, research)
 ```
@@ -176,6 +181,23 @@ Read [agents/shell-completions.md](agents/shell-completions.md) when modifying C
 
 Read [agents/docker.md](agents/docker.md) when working on Docker distribution, the entrypoint, or daemon mode.
 
+## Virtual iPod
+
+The virtual iPod system creates a synthetic iPod for demonstrating podkit. It consists of four packages and a Lima VM. See [backlog/docs/doc-028](backlog/docs/doc-028%20-%20Virtual-iPod-Architecture-and-Package-Design.md) for the full architecture document and [tools/demo/README.md](tools/demo/README.md) for the live demo guide.
+
+**Packages:**
+- `@podkit/ipod-db` — Pure TypeScript iTunesDB/ArtworkDB parser. Browser-compatible (DataView-based, no Node.js Buffer). Used by ipod-web to read real iPod databases. Shares foundational work with the libgpod-node replacement (m-8).
+- `@podkit/ipod-web` — React + Jotai iPod 5th gen UI component. Reusable — works in browser, Tauri, or any web context. Click wheel with rotational drag + keyboard. Menu state machine, playback engine, Now Playing screen. StorageProvider interface with RemoteStorage (HTTP/WS) and BrowserStorage (stub).
+- `@podkit/virtual-ipod-server` — Runs inside a Lima VM. Manages USB gadget via configfs + dummy_hcd (Apple vendor/product IDs). Serves iPod filesystem over REST + WebSocket. podkit sees the virtual device as a real iPod with zero code changes.
+- `@podkit/virtual-ipod-app` — Tauri v2 macOS app. Frameless transparent window shaped like an iPod. Manages Lima VM lifecycle.
+
+**Lima VM (`tools/lima/virtual-ipod.yaml`):**
+- Debian 12 with dummy_hcd + configfs USB gadget support
+- `mise run vipod:install` rsyncs source to `/opt/podkit/` (VM-local, won't touch macOS node_modules), builds, and installs podkit binary to `/usr/local/bin`
+- `mise run vipod:shell` drops into an isolated `james@lima-virtual-ipod:~$` with podkit in PATH and tab completion
+
+**Milestone:** m-17 (Virtual iPod). Tasks tracked in backlog.
+
 ## Code Conventions
 
 - TypeScript strict mode
@@ -223,3 +245,13 @@ Key files to understand:
 | Lima VM configs | `tools/lima/` |
 | Diagnostics framework | `packages/podkit-core/src/diagnostics/` |
 | Lima test runner | `tools/lima/run-tests.sh` |
+| iPod DB parser | `packages/ipod-db/src/index.ts` |
+| iPod DB reader facade | `packages/ipod-db/src/reader.ts` |
+| iPod DB fixture generator | `packages/ipod-db/fixtures/generate.ts` |
+| iPod web component | `packages/ipod-web/src/index.ts` |
+| iPod web firmware | `packages/ipod-web/src/firmware/menu.ts` |
+| Virtual iPod server | `packages/virtual-ipod-server/src/main.ts` |
+| Virtual iPod USB gadget | `packages/virtual-ipod-server/src/gadget.ts` |
+| Virtual iPod Tauri app | `packages/virtual-ipod-app/src/App.tsx` |
+| Virtual iPod Lima config | `tools/lima/virtual-ipod.yaml` |
+| Live demo guide | `tools/demo/README.md` |

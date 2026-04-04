@@ -53,6 +53,18 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": ["**/virtual-ipod-server/src/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/ipod-db/fixtures/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
     }
   ],
   "ignorePatterns": ["node_modules", "dist", "*.d.ts", "backlog", "docs"]

@@ -9,6 +9,9 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { MusicCollectionConfig, VideoCollectionConfig, DeviceConfig } from './types.js';
 import { DEFAULT_CONFIG_PATH } from './defaults.js';
+import { CURRENT_CONFIG_VERSION } from './version.js';
+
+const INITIAL_CONFIG_CONTENT = `version = ${CURRENT_CONFIG_VERSION}\n`;
 
 /**
  * Collection type for config operations
@@ -72,6 +75,7 @@ export function addDevice(
     content = fs.readFileSync(configPath, 'utf-8');
   } else if (createIfMissing) {
     created = true;
+    content = INITIAL_CONFIG_CONTENT;
     // Create parent directory if needed
     const dir = path.dirname(configPath);
     if (!fs.existsSync(dir)) {
@@ -421,6 +425,7 @@ export function setDefaultDevice(name: string, options?: UpdateConfigOptions): U
     content = fs.readFileSync(configPath, 'utf-8');
   } else if (createIfMissing) {
     created = true;
+    content = INITIAL_CONFIG_CONTENT;
     // Create parent directory if needed
     const dir = path.dirname(configPath);
     if (!fs.existsSync(dir)) {
@@ -532,7 +537,7 @@ function ensureConfigFile(
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
-    return { content: '', created: true };
+    return { content: INITIAL_CONFIG_CONTENT, created: true };
   }
 
   return { error: `Config file not found: ${configPath}` };

@@ -3,11 +3,39 @@ id: doc-003
 title: 'ipod-db Design Document: Pure TypeScript iPod Database Implementation'
 type: other
 created_date: '2026-03-12 10:45'
-updated_date: '2026-03-12 11:14'
+updated_date: '2026-04-03 19:47'
 ---
 # @podkit/ipod-db — Design Document
 
 This document is the **canonical reference** for replacing `@podkit/libgpod-node` (C/N-API bindings to libgpod) with a pure TypeScript implementation. It supersedes ADR-009 (PR #18) and incorporates findings from deep analysis of the libgpod 0.8.3 source code, the existing podkit codebase, and research into TypeScript binary parsing patterns.
+
+---
+
+## 0. Virtual iPod: Read-Only Phase (m-17)
+
+> **Added 2026-04-03.** The Virtual iPod project (m-17) needs a read-only iTunesDB parser that runs in the browser. This accelerates the early phases of m-8 and adds a few new tasks.
+
+The read-only parser shares foundational work with m-8:
+
+| m-8 Task | Shared with m-17? | Notes |
+|----------|-------------------|-------|
+| TASK-113 (golden fixtures) | Yes | Validates both read-only and read/write parsers |
+| TASK-114 (package skeleton) | Yes | BufferReader must use `DataView`/`Uint8Array` for browser compat |
+| TASK-115 (BufferReader/Writer) | Reader only | BufferWriter deferred to m-8 Phase 2 |
+| TASK-116 (record parsers) | Yes | Already read-only by design |
+| TASK-120 (SysInfo + models) | Subset | m-17 gets read-only subset (TASK-265); m-8 adds write capabilities later |
+
+New tasks specific to the Virtual iPod (m-17):
+
+| Task | Description |
+|------|-------------|
+| TASK-264 | Read-only ArtworkDB parser + .ithmb thumbnail extractor (browser-compatible) |
+| TASK-265 | Read-only SysInfo parser + model table (subset of TASK-120) |
+| TASK-266 | Read-only `IpodReader` facade — high-level query API for ipod-web firmware |
+
+**Key browser compatibility requirement:** `BufferReader` must use `DataView` for integer reads (not `Buffer.readUInt32LE()`) so it works with `Uint8Array` in Web Workers. `Buffer` extends `Uint8Array`, so this is backwards-compatible with Node.js.
+
+**WASM was evaluated and rejected** — see doc-027 for the full spike findings. GLib has no official WASM support; the maintenance burden of community forks is disproportionate. A pure TypeScript parser is smaller, simpler, and runs everywhere.
 
 ---
 
@@ -53,10 +81,11 @@ Full libgpod parity across all milestones:
 packages/ipod-db/
 ├── src/
 │   ├── index.ts                    # Public API exports
-│   ├── database.ts                 # High-level Database class
+│   ├── database.ts                 # High-level Database class (m-8, TASK-121)
+│   ├── reader.ts                   # Read-only IpodReader facade (m-17, TASK-266)
 │   │
 │   ├── binary/                     # Binary I/O primitives
-│   │   ├── reader.ts               # BufferReader cursor
+│   │   ├── reader.ts               # BufferReader cursor (DataView-based for browser compat)
 │   │   ├── writer.ts               # BufferWriter cursor
 │   │   └── errors.ts               # ParseError with offset context
 │   │
@@ -121,6 +150,8 @@ SysInfoExtended is an XML/plist file used by Touch/iPhone/iPad — devices outsi
 | D13 | Compressed DBs | Implement (Node.js zlib) | Needed for Nano 5G+ |
 | D14 | Photo database | M3 milestone | Future feature |
 | D15 | SysInfoExtended | Not implemented | Only Touch/iPhone/iPad use it |
+| D16 | WASM compilation | **Rejected** (doc-027) | GLib has no official WASM support; maintenance burden too high |
+| D17 | Browser compat | DataView-based BufferReader | Works with Uint8Array in Web Workers; Buffer extends Uint8Array for Node.js compat |
 
 ### Open Research Items
 
@@ -194,15 +225,23 @@ Validation function run after every write in tests: playlist references, artwork
 
 ## 6. Sequence of Work
 
-### M1: ipod-db Core (13 tasks, TASK-112 through TASK-124, plus TASK-129/130/131/132)
+### Virtual iPod Read-Only Phase (m-17, subset of m-8 Phase 0-1 + new tasks)
 
 | Phase | Tasks | Scope |
 |-------|-------|-------|
-| **0: Prep** | TASK-112 (close PR#18), TASK-113 (fixtures), TASK-114 (skeleton), TASK-129 (sharp research), TASK-130 (SQLite research), TASK-132 (hardware matrix) | Setup and research |
-| **1: Parser** | TASK-115 (BufferReader/Writer), TASK-116 (record parsers) | Read any iTunesDB |
-| **2: Writer** | TASK-117 (record writers + round-trip), TASK-118 (hash58/72/AB) | Write valid iTunesDB |
-| **3: Artwork** | TASK-119 (ArtworkDB + .ithmb + pixel formats) | Full artwork pipeline |
-| **4: API** | TASK-120 (SysInfo + models), TASK-121 (Database class, 24 methods) | Public API |
+| **0: Prep** | TASK-113 (fixtures), TASK-114 (skeleton) | Shared with m-8 |
+| **1: Parser** | TASK-115 (BufferReader only), TASK-116 (record parsers) | Shared with m-8 |
+| **1b: Device** | TASK-265 (SysInfo + model table, read-only subset) | m-17 only |
+| **1c: Artwork** | TASK-264 (ArtworkDB parser + .ithmb extractor, read-only) | m-17 only |
+| **1d: API** | TASK-266 (IpodReader facade) | m-17 only |
+
+### M1: ipod-db Core — remaining work after m-17
+
+| Phase | Tasks | Scope |
+|-------|-------|-------|
+| **2: Writer** | TASK-115 (BufferWriter), TASK-117 (record writers + round-trip), TASK-118 (hash58/72/AB) | Write valid iTunesDB |
+| **3: Artwork write** | TASK-119 (ArtworkDB + .ithmb + pixel formats — write path) | Full artwork pipeline |
+| **4: API** | TASK-120 (full SysInfo + write capabilities, extends TASK-265), TASK-121 (Database class, 24 methods) | Public API |
 | **5: Validate** | TASK-122 (port tests + parity), TASK-123 (swap + E2E), TASK-131 (iPod 5th gen hardware) | Prove correctness |
 | **6: Cleanup** | TASK-124 (remove ~17k lines native infra) | Zero C/C++ |
 
@@ -248,10 +287,20 @@ Validation function run after every write in tests: playlist references, artwork
 | **Type-safe enums** | TS string literals (libgpod: integer constants) |
 | **Streaming track copy** | Node.js streams (libgpod: sync copy) |
 | **Deterministic write order** | Documented and tested |
+| **Browser-compatible** | DataView-based reader runs in Web Workers (m-17) |
 
 ---
 
 ## 9. Task Index
+
+### Virtual iPod Read-Only (m-17) — shared + new tasks
+- TASK-113: Generate golden test fixtures (shared with m-8)
+- TASK-114: Create package skeleton (shared with m-8)
+- TASK-115: BufferReader primitives (shared with m-8; BufferWriter deferred)
+- TASK-116: iTunesDB record parsers (shared with m-8)
+- TASK-264: Read-only ArtworkDB parser + .ithmb extractor
+- TASK-265: Read-only SysInfo parser + model table
+- TASK-266: Read-only IpodReader facade for ipod-web
 
 ### M1 — ipod-db Core (libgpod replacement)
 - TASK-112: Close PR #18 — doc-003 is canonical

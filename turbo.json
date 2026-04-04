@@ -27,6 +27,24 @@
       ],
       "outputs": ["dist/**", "build/**"]
     },
+    "@podkit/ipod-web#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.test.ts",
+        "!src/__tests__/**",
+        "index.html",
+        "vite.config.ts",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "@podkit/virtual-ipod-app#build": {
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "index.html", "vite.config.ts", "package.json", "tsconfig.json"],
+      "outputs": ["dist/**"]
+    },
     "@podkit/docs-site#test": { "dependsOn": [] },
     "@podkit/docs-site#test:unit": { "dependsOn": [] },
     "@podkit/docs-site#test:integration": { "dependsOn": [] },
@@ -73,6 +91,22 @@
       "dependsOn": ["build"],
       "inputs": ["src/**", "build.ts", "demo.tape", "run.sh", "package.json"],
       "outputs": ["demo.gif"]
+    },
+    "@podkit/ipod-db#generate-fixtures": {
+      "dependsOn": ["^build"],
+      "inputs": ["fixtures/generate.ts"],
+      "outputs": ["fixtures/databases/**"],
+      "cache": true
+    },
+    "@podkit/ipod-db#test:unit": {
+      "dependsOn": ["build", "generate-fixtures"],
+      "inputs": ["src/**", "__tests__/**", "!src/**/*.integration.test.ts"],
+      "outputs": []
+    },
+    "@podkit/ipod-db#test:integration": {
+      "dependsOn": ["build", "generate-fixtures"],
+      "inputs": ["src/**", "__tests__/**"],
+      "outputs": []
     },
     "@podkit/test-fixtures#generate-fixtures": {
       "inputs": ["src/**"],

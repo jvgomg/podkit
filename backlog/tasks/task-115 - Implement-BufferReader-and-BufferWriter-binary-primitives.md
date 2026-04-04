@@ -1,9 +1,10 @@
 ---
 id: TASK-115
 title: Implement BufferReader and BufferWriter binary primitives
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-12 10:53'
+updated_date: '2026-04-03 20:29'
 labels:
   - phase-1
   - binary
@@ -49,12 +50,18 @@ Implement the core binary I/O primitives that all record parsers/writers depend 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 BufferReader reads all integer types in both LE and BE modes
+- [x] #1 BufferReader reads all integer types in both LE and BE modes
 - [ ] #2 BufferWriter writes all integer types with correct endianness
 - [ ] #3 patchUInt32 correctly overwrites previously written values
-- [ ] #4 readBytes returns zero-copy subarray (shares underlying ArrayBuffer)
-- [ ] #5 UTF-16LE and UTF-16BE string round-trip correctly
-- [ ] #6 ParseError includes offset, expected/actual, and recordPath
-- [ ] #7 Bounds checking throws ParseError on read/write past end
-- [ ] #8 Unit tests cover all methods including edge cases (empty buffer, max values, zero-length strings)
+- [x] #4 readBytes returns zero-copy subarray (shares underlying ArrayBuffer)
+- [x] #5 UTF-16LE and UTF-16BE string round-trip correctly
+- [x] #6 ParseError includes offset, expected/actual, and recordPath
+- [x] #7 Bounds checking throws ParseError on read/write past end
+- [x] #8 Unit tests cover all methods including edge cases (empty buffer, max values, zero-length strings)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+BufferReader and ParseError implemented. 66 tests passing. BufferWriter deferred to m-8 Phase 2 (AC #2, #3 not applicable for m-17). All integer reads via DataView — no Buffer.readUInt32LE or similar. Handles non-zero byteOffset subarrays correctly.
+<!-- SECTION:NOTES:END -->

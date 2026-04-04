@@ -1,0 +1,80 @@
+.ipod-shell {
+  position: relative;
+  width: 380px;
+  height: 637px; /* 380 * 1.675 */
+  border-radius: 28px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  font-family: 'Source Sans 3 Variable', sans-serif;
+}
+
+/* White variant */
+.ipod-shell[data-variant='white'] {
+  background: linear-gradient(180deg, #f5f5f5 0%, #e8e8e8 100%);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Black variant */
+.ipod-shell[data-variant='black'] {
+  background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Screen area */
+.ipod-shell__screen-area {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  padding: 36px 24px 12px;
+  box-sizing: border-box;
+}
+
+/* Click wheel area */
+.ipod-shell__wheel-area {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 4px 24px 20px;
+  box-sizing: border-box;
+}
+
+.ipod-shell__wheel-area .click-wheel {
+  width: 220px;
+  height: 220px;
+  font-size: 20px;
+}
+
+/* Drag region for Tauri window dragging */
+.ipod-shell__drag-top {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+}
+
+.ipod-shell__drag-left {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 24px;
+}
+
+.ipod-shell__drag-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 24px;
+}
