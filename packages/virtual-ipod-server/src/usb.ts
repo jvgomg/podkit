@@ -2,10 +2,12 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { GadgetController, UsbStatus } from './types.js';
 import type { StorageRegistry } from './storage.js';
+import { isMountPoint } from './mount.js';
 
 export interface UsbBusCallbacks {
   onBeforeUnmount?: (ipodId: string) => void;
   onAfterMount?: (ipodId: string) => void;
+  onExternalUnplug?: () => void;
 }
 
 /**
@@ -22,6 +24,7 @@ export function createUsbBus(
 ) {
   let currentIpodId: string | null = null;
   const stateFile = join(storageRoot, '.usb-state');
+  let mountMonitor: ReturnType<typeof setInterval> | undefined;
 
   // Restore state from disk
   try {
@@ -37,6 +40,36 @@ export function createUsbBus(
       writeFileSync(stateFile, currentIpodId ?? '');
     } catch {
       // best effort
+    }
+  }
+
+  /**
+   * Start polling the gadget mount point. If it is externally unmounted
+   * (e.g. by `podkit device eject`), complete the full unplug sequence so
+   * the USB gadget is torn down and the image is re-loop-mounted for serving.
+   */
+  function startMountMonitor(): void {
+    if (mountMonitor) return;
+    mountMonitor = setInterval(async () => {
+      if (!currentIpodId) {
+        stopMountMonitor();
+        return;
+      }
+      if (!isMountPoint(gadgetMountPoint)) {
+        stopMountMonitor();
+        console.log('[usb] External unmount detected — completing unplug sequence');
+        // gadget.unplug() silently skips umount if already unmounted, then tears
+        // down configfs and unloads modules — safe to call here.
+        await unplug();
+        callbacks.onExternalUnplug?.();
+      }
+    }, 1000);
+  }
+
+  function stopMountMonitor(): void {
+    if (mountMonitor) {
+      clearInterval(mountMonitor);
+      mountMonitor = undefined;
     }
   }
 
@@ -75,11 +108,13 @@ export function createUsbBus(
 
     currentIpodId = ipodId;
     persistState();
+    startMountMonitor();
   }
 
   async function unplug(): Promise<void> {
     if (!currentIpodId) return;
 
+    stopMountMonitor();
     const ipodId = currentIpodId;
 
     // Unmount the block device and tear down the gadget
@@ -130,8 +165,9 @@ export function createUsbBus(
 
     // Gadget is plugged in
     if (currentIpodId) {
-      // We know which iPod was plugged — state is consistent
+      // We know which iPod was plugged — state is consistent, start monitoring
       console.log(`USB gadget active with iPod '${currentIpodId}'`);
+      startMountMonitor();
     } else {
       // Gadget plugged but we don't know which iPod — stale state, clean up
       console.warn('Stale gadget state on startup, cleaning up');
