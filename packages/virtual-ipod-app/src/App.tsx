@@ -3,7 +3,7 @@ import { VirtualIpod, RemoteStorage } from '@podkit/ipod-web';
 import './App.css';
 
 const SERVER_PORT = 3456;
-const storage = new RemoteStorage(`http://localhost:${SERVER_PORT}`);
+const storage = new RemoteStorage(`http://localhost:${SERVER_PORT}`, 'default');
 
 function App() {
   return (

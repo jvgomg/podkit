@@ -146,7 +146,11 @@ limactl shell virtual-ipod -- sudo bash -c "
 
 echo "=== Installing shell completions ==="
 limactl shell virtual-ipod -- sudo -u james bash -c 'mkdir -p ~/.bashrc.d && podkit completions bash > ~/.bashrc.d/podkit'
-limactl shell virtual-ipod -- sudo -u james bash -c 'grep -q bashrc.d ~/.bashrc 2>/dev/null || echo "for f in ~/.bashrc.d/*; do source $f; done" >> ~/.bashrc'
+limactl shell virtual-ipod -- sudo -u james bash << 'BASHRC'
+grep -q bashrc.d ~/.bashrc 2>/dev/null || cat >> ~/.bashrc << 'EOF'
+for f in ~/.bashrc.d/*; do source "$f"; done
+EOF
+BASHRC
 
 echo ""
 echo "=== Done ==="
@@ -159,20 +163,34 @@ description = "Start the virtual iPod server inside the VM"
 run = "limactl shell virtual-ipod -- sudo bash -c 'cd /opt/podkit/packages/virtual-ipod-server && bun run src/main.ts'"
 
 [tasks."vipod:plug"]
-description = "Plug in the virtual iPod"
-run = "curl -s -X POST http://localhost:3456/plug && echo 'Plugged in'"
+description = "Plug the virtual iPod into USB"
+run = """
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"ipodId":"default"}' \
+  http://localhost:3456/usb/plug && echo 'Plugged in'
+"""
 
 [tasks."vipod:unplug"]
-description = "Unplug the virtual iPod"
-run = "curl -s -X POST http://localhost:3456/unplug && echo 'Unplugged'"
+description = "Unplug the virtual iPod from USB"
+run = "curl -s -X POST http://localhost:3456/usb/unplug && echo 'Unplugged'"
 
 [tasks."vipod:status"]
-description = "Check virtual iPod server status"
-run = "curl -s http://localhost:3456/status | python3 -m json.tool"
+description = "Check virtual iPod storage and USB status"
+run = """
+echo '=== iPod Storages ===' && \
+curl -s http://localhost:3456/ipods | python3 -m json.tool && \
+echo '=== USB Bus ===' && \
+curl -s http://localhost:3456/usb/status | python3 -m json.tool
+"""
 
 [tasks."vipod:wipe"]
-description = "Wipe the virtual iPod to factory state (delete all music, reset database)"
-run = "curl -s -X POST http://localhost:3456/reset | python3 -m json.tool"
+description = "Wipe the virtual iPod storage and recreate it"
+run = """
+curl -s -X DELETE http://localhost:3456/ipods/default > /dev/null && \
+curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"id":"default"}' \
+  http://localhost:3456/ipods | python3 -m json.tool
+"""
 
 [tasks."vipod:destroy"]
 description = "Delete the virtual iPod VM entirely"

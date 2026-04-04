@@ -3,7 +3,8 @@ import type { IpodDatabase } from '../firmware/types.js';
 export type StorageStatus =
   | { state: 'connecting' }
   | { state: 'server-unreachable' }
-  | { state: 'no-device' }
+  | { state: 'no-storage' }
+  | { state: 'connected-to-host' }
   | { state: 'database-error'; message: string }
   | { state: 'ready'; database?: IpodDatabase };
 

@@ -9,22 +9,16 @@ import {
   rmdirSync,
   readdirSync,
 } from 'node:fs';
-import type { GadgetController, ServerConfig } from './types.js';
+import type { GadgetController } from './types.js';
 
 /**
  * Manages the Linux USB gadget (configfs) lifecycle for a virtual iPod
  * mass storage device. All operations require root and a Linux kernel
  * with configfs, dummy_hcd, and libcomposite support.
  */
-export function createGadget(config: ServerConfig): GadgetController {
-  const { gadgetPath, imagePath, mountPoint } = config;
-
-  async function plug(): Promise<void> {
-    // Already fully set up — nothing to do.
-    if (isPluggedIn() && isMounted()) return;
-
-    // Plugged but not mounted (e.g. server restarted without VM reboot).
-    // The block device must already exist — no need to wait for it.
+export function createGadget(gadgetPath: string): GadgetController {
+  async function plug(imagePath: string, mountPoint: string): Promise<void> {
+    // Already plugged — remount if needed (e.g. server restarted without VM reboot).
     if (isPluggedIn()) {
       const blockDev = existsSync('/dev/sda1')
         ? '/dev/sda1'
@@ -39,7 +33,7 @@ export function createGadget(config: ServerConfig): GadgetController {
       return;
     }
 
-    // Not plugged: full setup.
+    // Full setup: load modules, create gadget, bind UDC, mount block device.
 
     // 1. Load kernel modules (idempotent)
     execSync('modprobe dummy_hcd');
@@ -85,7 +79,7 @@ export function createGadget(config: ServerConfig): GadgetController {
     execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${mountPoint}`);
   }
 
-  async function unplug(): Promise<void> {
+  async function unplug(mountPoint: string): Promise<void> {
     // 1. Unmount
     try {
       execSync(`umount ${mountPoint}`);
@@ -141,16 +135,7 @@ export function createGadget(config: ServerConfig): GadgetController {
     }
   }
 
-  function isMounted(): boolean {
-    try {
-      execSync(`mountpoint -q ${mountPoint}`);
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  return { plug, unplug, isPluggedIn, isMounted };
+  return { plug, unplug, isPluggedIn };
 }
 
 async function waitForBlockDevice(timeout = 10000): Promise<string> {

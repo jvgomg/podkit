@@ -1,10 +1,8 @@
 import type { ServerWebSocket } from 'bun';
-import { execSync } from 'node:child_process';
-import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createApi } from './api.js';
 import { createGadget } from './gadget.js';
-import { createImage, initializeIpodStructure } from './image.js';
-import { mountImage, unmountAndDetach, isMountPoint } from './mount.js';
+import { createStorageRegistry } from './storage.js';
+import { createUsbBus } from './usb.js';
 import { watchDatabase } from './watcher.js';
 import { DEFAULT_CONFIG } from './types.js';
 import type { ServerEvent, ServerConfig } from './types.js';
@@ -14,8 +12,9 @@ import type { ServerEvent, ServerConfig } from './types.js';
 const config: ServerConfig = {
   ...DEFAULT_CONFIG,
   port: parseInt(process.env.PORT ?? String(DEFAULT_CONFIG.port), 10),
-  imagePath: process.env.IMAGE_PATH ?? DEFAULT_CONFIG.imagePath,
-  mountPoint: process.env.MOUNT_POINT ?? DEFAULT_CONFIG.mountPoint,
+  storageRoot: process.env.STORAGE_ROOT ?? DEFAULT_CONFIG.storageRoot,
+  mountRoot: process.env.MOUNT_ROOT ?? DEFAULT_CONFIG.mountRoot,
+  gadgetMountPoint: process.env.GADGET_MOUNT_POINT ?? DEFAULT_CONFIG.gadgetMountPoint,
 };
 
 // --- WebSocket client tracking ---
@@ -25,7 +24,8 @@ const wsClients = new Set<ServerWebSocket<unknown>>();
 const EVENT_LABELS: Record<ServerEvent['type'], string> = {
   plugged: 'iPod plugged in',
   unplugged: 'iPod unplugged',
-  reset: 'iPod reset to factory state',
+  'storage-created': 'iPod storage created',
+  'storage-wiped': 'iPod storage wiped',
   'database-changed': 'iTunesDB changed',
 };
 
@@ -39,79 +39,40 @@ function broadcastEvent(event: ServerEvent): void {
 
 // --- Initialize ---
 
-const gadget = createGadget(config);
+const registry = createStorageRegistry(config);
+await registry.initialize();
 
-/**
- * Ensure the FAT32 image exists. If the image is freshly created,
- * loop-mount it and initialize the iPod directory structure.
- */
-async function ensureImage(): Promise<void> {
-  const isNew = !existsSync(config.imagePath);
-  createImage(config.imagePath, config.imageSizeMb);
+const gadget = createGadget(config.gadgetPath);
+const watchers = new Map<string, () => void>();
 
-  if (isNew) {
-    // Temporarily loop-mount the new image to set up iPod structure,
-    // then unmount. The gadget plug() will mount it via the USB block device.
-    const loopDev = mountImage(config.imagePath, config.mountPoint);
-    initializeIpodStructure(config.mountPoint);
-    unmountAndDetach(config.mountPoint, loopDev);
+// Watcher lifecycle functions — defined here so USB bus can call them
+// during plug/unplug to avoid "target is busy" on unmount
+function startWatcherForStorage(id: string): void {
+  const storage = registry.get(id);
+  if (!storage?.mounted) return;
+  if (watchers.has(id)) return;
+
+  const stop = watchDatabase(storage.mountPoint, () => {
+    broadcastEvent({ type: 'database-changed' });
+  });
+  watchers.set(id, stop);
+}
+
+function stopWatcherForStorage(id: string): void {
+  const stop = watchers.get(id);
+  if (stop) {
+    stop();
+    watchers.delete(id);
   }
 }
 
-/**
- * Reset the virtual iPod to factory state.
- *
- * When plugged: unmount, reformat the partition in-place via the gadget's
- * block device, reinitialize the iPod directory structure, and remount.
- * This avoids tearing down the USB gadget (which causes block device
- * reappearance timing issues).
- *
- * When unplugged: delete and recreate the disk image from scratch.
- */
-async function resetIpod(): Promise<void> {
-  if (gadget.isPluggedIn()) {
-    // Gadget has the image open as a block device — reformat in-place.
-    // Deleting the image file while the gadget is bound would leave it
-    // with a stale file handle, so we always use the block device path.
-    if (gadget.isMounted()) {
-      execSync(`umount ${config.mountPoint}`);
-    }
+const usbBus = createUsbBus(registry, gadget, config.storageRoot, config.gadgetMountPoint, {
+  onBeforeUnmount: stopWatcherForStorage,
+  onAfterMount: startWatcherForStorage,
+});
+await usbBus.recoverStaleState();
 
-    // Find the block device backing the gadget (sda1 or sda)
-    const blockDev = existsSync('/dev/sda1') ? '/dev/sda1' : '/dev/sda';
-    execSync(`mkfs.vfat -F 32 -n IPOD ${blockDev}`);
-
-    mkdirSync(config.mountPoint, { recursive: true });
-    execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${config.mountPoint}`);
-    initializeIpodStructure(config.mountPoint);
-  } else {
-    // Not plugged — safe to delete and recreate the image file
-    rmSync(config.imagePath, { force: true });
-    await ensureImage();
-  }
-}
-
-await ensureImage();
-
-// If the gadget was plugged in a previous session but the filesystem mount was
-// lost (e.g. after a server restart), remount so the database is accessible.
-if (gadget.isPluggedIn() && !gadget.isMounted()) {
-  try {
-    await gadget.plug();
-    console.log('Remounted iPod filesystem on startup');
-  } catch (e) {
-    // Block device is gone — gadget state is stale from a previous session.
-    // Unplug to clean up so the user can start fresh with POST /plug.
-    console.warn('Stale gadget state on startup, cleaning up:', e instanceof Error ? e.message : e);
-    try {
-      await gadget.unplug();
-    } catch {
-      /* best effort */
-    }
-  }
-}
-
-const app = createApi(gadget, config, broadcastEvent, resetIpod);
+const app = createApi(registry, usbBus, broadcastEvent);
 
 // --- Start server ---
 
@@ -145,14 +106,11 @@ const server = Bun.serve({
   },
 });
 
-// --- Start database watcher if mounted ---
-
-let stopWatcher: (() => void) | null = null;
-
-if (isMountPoint(config.mountPoint)) {
-  stopWatcher = watchDatabase(config.mountPoint, () => {
-    broadcastEvent({ type: 'database-changed' });
-  });
+// --- Start database watchers for all currently mounted storages ---
+for (const storage of registry.list()) {
+  if (storage.mounted) {
+    startWatcherForStorage(storage.id);
+  }
 }
 
 console.log(`Virtual iPod server running on http://localhost:${server.port}`);
@@ -161,14 +119,14 @@ console.log(`Virtual iPod server running on http://localhost:${server.port}`);
 
 process.on('SIGINT', () => {
   console.log('Shutting down...');
-  stopWatcher?.();
+  for (const stop of watchers.values()) stop();
   server.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', () => {
   console.log('Shutting down...');
-  stopWatcher?.();
+  for (const stop of watchers.values()) stop();
   server.stop();
   process.exit(0);
 });

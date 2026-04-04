@@ -466,6 +466,35 @@ describe('collectPartitions', () => {
 
     expect(collectPartitions(devices)).toEqual([]);
   });
+
+  it('skips partitions inside loop devices', () => {
+    const devices = [
+      {
+        name: 'loop0',
+        uuid: null,
+        label: null,
+        mountpoint: null,
+        fstype: null,
+        size: 2147483648,
+        'phy-sec': 512,
+        type: 'loop',
+        children: [
+          {
+            name: 'loop0p1',
+            uuid: 'AAAA-BBBB',
+            label: 'IPOD',
+            mountpoint: '/srv/ipod-storage/default',
+            fstype: 'vfat',
+            size: 2147483648,
+            'phy-sec': 512,
+            type: 'part',
+          },
+        ],
+      },
+    ];
+
+    expect(collectPartitions(devices)).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -3,14 +3,16 @@ import { IpodReader } from '@podkit/ipod-db';
 
 export class RemoteStorage implements StorageProvider {
   private baseUrl: string;
+  private ipodId: string;
   private ws: WebSocket | null = null;
   private _wsConnected = false;
   private _status: StorageStatus = { state: 'connecting' };
   private listeners = new Set<(status: StorageStatus) => void>();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-  constructor(baseUrl: string = 'http://localhost:3456') {
+  constructor(baseUrl: string = 'http://localhost:3456', ipodId: string = 'default') {
     this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.ipodId = ipodId;
     this.connectWebSocket();
   }
 
@@ -26,7 +28,7 @@ export class RemoteStorage implements StorageProvider {
   }
 
   async getAudioUrl(ipodPath: string): Promise<string> {
-    return `${this.baseUrl}/audio/${encodeURIComponent(ipodPath)}`;
+    return `${this.baseUrl}/ipods/${this.ipodId}/audio/${encodeURIComponent(ipodPath)}`;
   }
 
   async reload(): Promise<void> {
@@ -45,14 +47,14 @@ export class RemoteStorage implements StorageProvider {
   private async tryLoadDatabase(): Promise<void> {
     try {
       const [itunesDbRes, artworkDbRes, sysInfoRes] = await Promise.allSettled([
-        fetch(`${this.baseUrl}/database`),
-        fetch(`${this.baseUrl}/artwork-db`),
-        fetch(`${this.baseUrl}/sysinfo`),
+        fetch(`${this.baseUrl}/ipods/${this.ipodId}/database`),
+        fetch(`${this.baseUrl}/ipods/${this.ipodId}/artwork-db`),
+        fetch(`${this.baseUrl}/ipods/${this.ipodId}/sysinfo`),
       ]);
 
       if (!this._wsConnected) return;
 
-      // A missing iTunesDB could mean no device, or a connected but unsynced iPod.
+      // A missing iTunesDB could mean no storage, or a connected but unsynced iPod.
       // SysInfo is written during iPod initialisation and serves as a presence
       // indicator: if it exists the filesystem is mounted but has no database yet.
       if (itunesDbRes.status !== 'fulfilled' || !itunesDbRes.value.ok) {
@@ -60,7 +62,7 @@ export class RemoteStorage implements StorageProvider {
         if (sysInfoPresent) {
           this.setStatus({ state: 'database-error', message: 'No iTunes database found' });
         } else {
-          this.setStatus({ state: 'no-device' });
+          this.setStatus({ state: 'no-storage' });
         }
         return;
       }
@@ -132,13 +134,19 @@ export class RemoteStorage implements StorageProvider {
   private handleEvent(event: { type: string; [key: string]: unknown }): void {
     switch (event.type) {
       case 'plugged':
-        this.tryLoadDatabase();
+        this.setStatus({ state: 'connected-to-host' });
         break;
       case 'unplugged':
-        this.setStatus({ state: 'no-device' });
+        this.tryLoadDatabase();
         break;
       case 'database-changed':
         this.tryLoadDatabase();
+        break;
+      case 'storage-created':
+        this.tryLoadDatabase();
+        break;
+      case 'storage-wiped':
+        this.setStatus({ state: 'no-storage' });
         break;
     }
   }

@@ -1,12 +1,13 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
-import type { GadgetController, ServerConfig, ServerEvent, StatusResponse } from './types.js';
+import type { ServerEvent } from './types.js';
+import type { StorageRegistry } from './storage.js';
+import type { UsbBus } from './usb.js';
 
 /**
  * Convert a colon-separated iPod path to a filesystem path.
- * e.g. ":iPod_Control:Music:F00:ABCD.m4a" -> "/mnt/ipod/iPod_Control/Music/F00/ABCD.m4a"
+ * e.g. ":iPod_Control:Music:F00:ABCD.m4a" -> "/mnt/ipod/storages/default/iPod_Control/Music/F00/ABCD.m4a"
  */
 export function ipodPathToFs(ipodPath: string, mountPoint: string): string {
   // The path may or may not have a leading colon; normalize by replacing all colons with slashes
@@ -18,28 +19,6 @@ export function ipodPathToFs(ipodPath: string, mountPoint: string): string {
   return mountPoint + '/' + relativePath;
 }
 
-/**
- * Count audio files in the iPod Music directory.
- */
-function countTracks(mountPoint: string): number {
-  const musicDir = join(mountPoint, 'iPod_Control/Music');
-  if (!existsSync(musicDir)) return 0;
-
-  let count = 0;
-  try {
-    const subdirs = readdirSync(musicDir, { withFileTypes: true });
-    for (const subdir of subdirs) {
-      if (subdir.isDirectory()) {
-        const files = readdirSync(join(musicDir, subdir.name));
-        count += files.length;
-      }
-    }
-  } catch {
-    // Music directory may not be readable
-  }
-  return count;
-}
-
 const MIME_TYPES: Record<string, string> = {
   m4a: 'audio/mp4',
   mp3: 'audio/mpeg',
@@ -49,54 +28,60 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 export function createApi(
-  gadget: GadgetController,
-  config: ServerConfig,
-  broadcastEvent: (event: ServerEvent) => void,
-  resetIpod: () => Promise<void>
+  registry: StorageRegistry,
+  usbBus: UsbBus,
+  broadcastEvent: (event: ServerEvent) => void
 ): Hono {
   const app = new Hono();
-  const { mountPoint } = config;
 
   app.use('*', cors());
 
-  // --- Status ---
+  // --- Storage Registry ---
 
-  app.get('/status', (c) => {
-    const status: StatusResponse = {
-      connected: gadget.isPluggedIn(),
-      mounted: gadget.isMounted(),
-      mountPoint,
-      trackCount: countTracks(mountPoint),
-    };
-    return c.json(status);
+  app.get('/ipods', (c) => {
+    return c.json(registry.list());
   });
 
-  // --- Plug/Unplug ---
+  app.post('/ipods', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const id = (body as { id?: string }).id ?? 'default';
+    try {
+      const storage = await registry.create(id);
+      broadcastEvent({ type: 'storage-created' });
+      return c.json(storage, 201);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'Create failed' }, 500);
+    }
+  });
 
-  app.post('/plug', async (c) => {
-    await gadget.plug();
-    broadcastEvent({ type: 'plugged' });
+  app.delete('/ipods/:id', async (c) => {
+    const id = c.req.param('id');
+
+    // Auto-unplug if this iPod is on the USB bus
+    const usb = usbBus.status();
+    if (usb.pluggedIn && usb.ipodId === id) {
+      await usbBus.unplug();
+      broadcastEvent({ type: 'unplugged' });
+    }
+
+    try {
+      await registry.wipe(id);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'Wipe failed' }, 500);
+    }
+    broadcastEvent({ type: 'storage-wiped' });
     return c.json({ ok: true });
   });
 
-  app.post('/unplug', async (c) => {
-    await gadget.unplug();
-    broadcastEvent({ type: 'unplugged' });
-    return c.json({ ok: true });
-  });
+  // --- iPod file access ---
 
-  // --- Reset ---
+  app.get('/ipods/:id/database', async (c) => {
+    const id = c.req.param('id');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
 
-  app.post('/reset', async (c) => {
-    await resetIpod();
-    broadcastEvent({ type: 'reset' });
-    return c.json({ ok: true });
-  });
-
-  // --- Database files ---
-
-  app.get('/database', async (c) => {
-    const path = join(mountPoint, 'iPod_Control/iTunes/iTunesDB');
+    const path = join(storage.mountPoint, 'iPod_Control/iTunes/iTunesDB');
     const file = Bun.file(path);
     if (!(await file.exists())) {
       return c.json({ error: 'iTunesDB not found' }, 404);
@@ -104,8 +89,13 @@ export function createApi(
     return new Response(file);
   });
 
-  app.get('/artwork-db', async (c) => {
-    const path = join(mountPoint, 'iPod_Control/Artwork/ArtworkDB');
+  app.get('/ipods/:id/artwork-db', async (c) => {
+    const id = c.req.param('id');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
+
+    const path = join(storage.mountPoint, 'iPod_Control/Artwork/ArtworkDB');
     const file = Bun.file(path);
     if (!(await file.exists())) {
       return c.json({ error: 'ArtworkDB not found' }, 404);
@@ -113,8 +103,13 @@ export function createApi(
     return new Response(file);
   });
 
-  app.get('/sysinfo', async (c) => {
-    const path = join(mountPoint, 'iPod_Control/Device/SysInfo');
+  app.get('/ipods/:id/sysinfo', async (c) => {
+    const id = c.req.param('id');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
+
+    const path = join(storage.mountPoint, 'iPod_Control/Device/SysInfo');
     const file = Bun.file(path);
     if (!(await file.exists())) {
       return c.json({ error: 'SysInfo not found' }, 404);
@@ -123,11 +118,14 @@ export function createApi(
     return c.text(content);
   });
 
-  // --- Audio streaming with range request support ---
+  app.get('/ipods/:id/audio/:path{.+}', async (c) => {
+    const id = c.req.param('id');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
 
-  app.get('/audio/:path{.+}', async (c) => {
     const ipodPath = decodeURIComponent(c.req.param('path'));
-    const fsPath = ipodPathToFs(ipodPath, mountPoint);
+    const fsPath = ipodPathToFs(ipodPath, storage.mountPoint);
 
     const file = Bun.file(fsPath);
     if (!(await file.exists())) {
@@ -169,6 +167,37 @@ export function createApi(
         'Accept-Ranges': 'bytes',
       },
     });
+  });
+
+  // --- USB Bus ---
+
+  app.post('/usb/plug', async (c) => {
+    const body = await c.req.json().catch(() => ({}));
+    const ipodId = (body as { ipodId?: string }).ipodId;
+    if (!ipodId) {
+      return c.json({ error: 'ipodId is required' }, 400);
+    }
+    try {
+      await usbBus.plug(ipodId);
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'Plug failed' }, 500);
+    }
+    broadcastEvent({ type: 'plugged' });
+    return c.json({ ok: true });
+  });
+
+  app.post('/usb/unplug', async (c) => {
+    try {
+      await usbBus.unplug();
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'Unplug failed' }, 500);
+    }
+    broadcastEvent({ type: 'unplugged' });
+    return c.json({ ok: true });
+  });
+
+  app.get('/usb/status', (c) => {
+    return c.json(usbBus.status());
   });
 
   return app;

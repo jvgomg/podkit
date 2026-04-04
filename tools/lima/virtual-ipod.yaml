@@ -81,6 +81,7 @@ provision:
       echo "=== Creating directories ==="
       mkdir -p /var/lib/virtual-ipod
       mkdir -p /mnt/ipod
+      mkdir -p /srv/ipod-storage
       mkdir -p /opt/podkit
 
       # Set up the james user with an isolated home directory
