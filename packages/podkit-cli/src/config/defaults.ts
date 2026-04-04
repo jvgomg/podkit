@@ -4,13 +4,35 @@
 
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { readFileSync } from 'node:fs';
 import type { PodkitConfig } from './types.js';
 import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './types.js';
 
 /**
+ * Resolve the home directory, accounting for sudo environments where $HOME is
+ * reset to root's home. Falls back to the invoking user's home via /etc/passwd.
+ */
+function resolveHomedir(): string {
+  const sudoUser = process.env.SUDO_USER ?? process.env.DOAS_USER;
+  if (sudoUser) {
+    try {
+      const passwd = readFileSync('/etc/passwd', 'utf-8');
+      const line = passwd.split('\n').find((l) => l.startsWith(`${sudoUser}:`));
+      if (line) {
+        const homedir = line.split(':')[5];
+        if (homedir) return homedir;
+      }
+    } catch {
+      // Fall through to os.homedir()
+    }
+  }
+  return os.homedir();
+}
+
+/**
  * Default location for config file
  */
-export const DEFAULT_CONFIG_PATH = path.join(os.homedir(), '.config', 'podkit', 'config.toml');
+export const DEFAULT_CONFIG_PATH = path.join(resolveHomedir(), '.config', 'podkit', 'config.toml');
 
 /**
  * Default configuration values
