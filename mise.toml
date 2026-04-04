@@ -170,6 +170,10 @@ run = "curl -s -X POST http://localhost:3456/unplug && echo 'Unplugged'"
 description = "Check virtual iPod server status"
 run = "curl -s http://localhost:3456/status | python3 -m json.tool"
 
+[tasks."vipod:wipe"]
+description = "Wipe the virtual iPod to factory state (delete all music, reset database)"
+run = "curl -s -X POST http://localhost:3456/reset | python3 -m json.tool"
+
 [tasks."vipod:destroy"]
 description = "Delete the virtual iPod VM entirely"
 run = "limactl delete virtual-ipod --force 2>/dev/null; echo Done."

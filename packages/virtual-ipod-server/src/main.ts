@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from 'bun';
-import { existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
 import { createApi } from './api.js';
 import { createGadget } from './gadget.js';
 import { createImage, initializeIpodStructure } from './image.js';
@@ -21,7 +22,15 @@ const config: ServerConfig = {
 
 const wsClients = new Set<ServerWebSocket<unknown>>();
 
+const EVENT_LABELS: Record<ServerEvent['type'], string> = {
+  plugged: 'iPod plugged in',
+  unplugged: 'iPod unplugged',
+  reset: 'iPod reset to factory state',
+  'database-changed': 'iTunesDB changed',
+};
+
 function broadcastEvent(event: ServerEvent): void {
+  console.log(`[event] ${EVENT_LABELS[event.type]}`);
   const msg = JSON.stringify(event);
   for (const ws of wsClients) {
     ws.send(msg);
@@ -31,7 +40,6 @@ function broadcastEvent(event: ServerEvent): void {
 // --- Initialize ---
 
 const gadget = createGadget(config);
-const app = createApi(gadget, config, broadcastEvent);
 
 /**
  * Ensure the FAT32 image exists. If the image is freshly created,
@@ -50,7 +58,37 @@ async function ensureImage(): Promise<void> {
   }
 }
 
+/**
+ * Reset the virtual iPod to factory state.
+ *
+ * When plugged: unmount, reformat the partition in-place via the gadget's
+ * block device, reinitialize the iPod directory structure, and remount.
+ * This avoids tearing down the USB gadget (which causes block device
+ * reappearance timing issues).
+ *
+ * When unplugged: delete and recreate the disk image from scratch.
+ */
+async function resetIpod(): Promise<void> {
+  if (gadget.isMounted()) {
+    // Unmount, reformat in-place, remount — no gadget teardown needed
+    execSync(`umount ${config.mountPoint}`);
+
+    // Find the block device backing the mount (sda1 or sda)
+    const blockDev = existsSync('/dev/sda1') ? '/dev/sda1' : '/dev/sda';
+    execSync(`mkfs.vfat -F 32 -n IPOD ${blockDev}`);
+
+    execSync(`mount -o fmask=0000,dmask=0000 ${blockDev} ${config.mountPoint}`);
+    initializeIpodStructure(config.mountPoint);
+  } else {
+    // Not mounted — safe to delete and recreate the image file
+    rmSync(config.imagePath, { force: true });
+    await ensureImage();
+  }
+}
+
 await ensureImage();
+
+const app = createApi(gadget, config, broadcastEvent, resetIpod);
 
 // --- Start server ---
 

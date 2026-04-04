@@ -51,7 +51,8 @@ const MIME_TYPES: Record<string, string> = {
 export function createApi(
   gadget: GadgetController,
   config: ServerConfig,
-  broadcastEvent: (event: ServerEvent) => void
+  broadcastEvent: (event: ServerEvent) => void,
+  resetIpod: () => Promise<void>
 ): Hono {
   const app = new Hono();
   const { mountPoint } = config;
@@ -81,6 +82,14 @@ export function createApi(
   app.post('/unplug', async (c) => {
     await gadget.unplug();
     broadcastEvent({ type: 'unplugged' });
+    return c.json({ ok: true });
+  });
+
+  // --- Reset ---
+
+  app.post('/reset', async (c) => {
+    await resetIpod();
+    broadcastEvent({ type: 'reset' });
     return c.json({ ok: true });
   });
 
