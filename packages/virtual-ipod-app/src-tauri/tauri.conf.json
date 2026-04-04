@@ -10,12 +10,13 @@
     "beforeBuildCommand": "bun run build:frontend"
   },
   "app": {
+    "macOSPrivateApi": true,
     "withGlobalTauri": true,
     "windows": [
       {
         "title": "Virtual iPod",
-        "width": 420,
-        "height": 700,
+        "width": 476,
+        "height": 733,
         "resizable": false,
         "decorations": false,
         "transparent": true,

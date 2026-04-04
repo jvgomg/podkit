@@ -1,0 +1,39 @@
+.ipod-wrapper {
+  display: inline-flex;
+  padding: 48px;
+}
+
+.ipod-container {
+  position: relative;
+}
+
+.ipod-grip {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 3px;
+  padding: 4px 6px;
+  cursor: grab;
+}
+
+.ipod-grip:active {
+  cursor: grabbing;
+  z-index: 10;
+  border-radius: 4px;
+}
+
+.ipod-grip:hover span {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.ipod-grip span {
+  display: block;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}

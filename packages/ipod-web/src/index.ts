@@ -1,5 +1,6 @@
 export { VirtualIpod } from './ui/VirtualIpod.js';
-export type { StorageProvider } from './storage/types.js';
+export { IPOD_WIDTH, IPOD_HEIGHT } from './ui/Shell.js';
+export type { StorageProvider, StorageStatus } from './storage/types.js';
 export { BrowserStorage } from './storage/browser.js';
 export { RemoteStorage } from './storage/remote.js';
 
@@ -34,6 +35,7 @@ export {
   goToMenuAtom,
 } from './store/navigation.js';
 export { databaseAtom } from './store/database.js';
+export { connectionStatusAtom } from './store/connection.js';
 export {
   shuffleModeAtom,
   repeatModeAtom,
