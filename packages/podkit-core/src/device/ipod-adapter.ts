@@ -17,6 +17,8 @@ import type { IpodDatabase } from '../ipod/database.js';
 import type { IpodTrack, TrackInput, TrackFields } from '../ipod/types.js';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
+import type { AudioNormalization } from '../metadata/normalization.js';
+import { normalizationToSoundcheck } from '../metadata/normalization.js';
 
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.
@@ -58,16 +60,22 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
 
   addTrack(input: DeviceTrackInput): IpodTrack {
     // If a syncTag is provided, embed it into the comment field for iPod storage
-    const { syncTag, ...rest } = input;
+    const { syncTag, normalization, ...rest } = input;
     const trackInput = rest as TrackInput;
     if (syncTag) {
       trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
     }
+    // Convert normalization → soundcheck for iPod's iTunesDB storage
+    applyNormalizationAsSoundcheck(trackInput, normalization);
     return this.ipod.addTrack(trackInput);
   }
 
   updateTrack(track: IpodTrack, fields: DeviceTrackMetadata): IpodTrack {
-    return this.ipod.updateTrack(track, fields as TrackFields);
+    const { normalization, ...rest } = fields;
+    const trackFields = rest as TrackFields;
+    // Convert normalization → soundcheck for iPod's iTunesDB storage
+    applyNormalizationAsSoundcheck(trackFields, normalization);
+    return this.ipod.updateTrack(track, trackFields);
   }
 
   removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): void {
@@ -119,5 +127,23 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
 
   close(): void {
     this.ipod.close();
+  }
+}
+
+/**
+ * Convert normalization data to an iPod soundcheck value and apply it to track fields.
+ *
+ * The DeviceAdapter interface uses AudioNormalization (format-agnostic), but the iPod
+ * stores normalization as a soundcheck integer in the iTunesDB. This function bridges
+ * that gap by extracting the soundcheck value from the normalization data.
+ */
+function applyNormalizationAsSoundcheck(
+  fields: TrackInput | TrackFields,
+  normalization: AudioNormalization | undefined
+): void {
+  if (normalization === undefined) return;
+  const sc = normalizationToSoundcheck(normalization);
+  if (sc !== undefined) {
+    fields.soundcheck = sc;
   }
 }
