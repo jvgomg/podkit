@@ -14,6 +14,9 @@ export const menuStackAtom = atom<MenuLevel[]>([]);
 /** Index of the highlighted item within the current menu. */
 export const selectedIndexAtom = atom<number>(0);
 
+/** Last scroll direction: 1 (down) or -1 (up). Used by ListView for anchoring. */
+export const scrollDirectionAtom = atom<1 | -1>(1);
+
 /**
  * Monotonically increasing counter that forces `currentItemsAtom` to
  * recompute. Bump this whenever menu-visible state changes outside the
@@ -62,13 +65,16 @@ export const headerTitleAtom = atom((get) => {
 // Action atoms (write-only)
 // ---------------------------------------------------------------------------
 
-/** Scroll the selection up (-1) or down (+1), wrapping at boundaries. */
+/** Scroll the selection up (-1) or down (+1), clamped at boundaries. */
 export const scrollAtom = atom(null, (get, set, direction: 1 | -1) => {
   const items = get(currentItemsAtom);
   if (items.length === 0) return;
   const current = get(selectedIndexAtom);
-  const next = (current + direction + items.length) % items.length;
-  set(selectedIndexAtom, next);
+  const next = Math.max(0, Math.min(items.length - 1, current + direction));
+  if (next !== current) {
+    set(selectedIndexAtom, next);
+    set(scrollDirectionAtom, direction);
+  }
 });
 
 /** Select the currently highlighted item (center-button press). */

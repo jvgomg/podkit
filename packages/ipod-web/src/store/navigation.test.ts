@@ -114,18 +114,18 @@ describe('navigation atoms', () => {
     expect(store.get(selectedIndexAtom)).toBe(2);
   });
 
-  test('scroll wraps around forward', () => {
+  test('scroll clamps at end of list', () => {
     const store = storeWithMenu(makeMenu('Test', 3));
     store.set(selectedIndexAtom, 2);
     store.set(scrollAtom, 1);
-    expect(store.get(selectedIndexAtom)).toBe(0);
+    expect(store.get(selectedIndexAtom)).toBe(2);
   });
 
-  test('scroll wraps around backward', () => {
+  test('scroll clamps at start of list', () => {
     const store = storeWithMenu(makeMenu('Test', 3));
     store.set(selectedIndexAtom, 0);
     store.set(scrollAtom, -1);
-    expect(store.get(selectedIndexAtom)).toBe(2);
+    expect(store.get(selectedIndexAtom)).toBe(0);
   });
 
   test('scroll does nothing when menu is empty', () => {
