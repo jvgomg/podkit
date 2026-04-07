@@ -81,8 +81,14 @@ export class RemoteStorage implements StorageProvider {
           ? await sysInfoRes.value.text()
           : undefined;
 
+      // Fetch ithmb files so IpodReader can decode artwork thumbnails
+      let ithmbs: Map<string, Uint8Array> | undefined;
+      if (artworkDb) {
+        ithmbs = await this.fetchIthmbFiles();
+      }
+
       // IpodReader.fromFiles throws if the database bytes are corrupt or unreadable
-      const database = IpodReader.fromFiles({ itunesDb, artworkDb, sysInfo });
+      const database = IpodReader.fromFiles({ itunesDb, artworkDb, sysInfo, ithmbs });
       this.setStatus({ state: 'ready', database });
     } catch (e) {
       if (!this._wsConnected) return;
@@ -90,6 +96,34 @@ export class RemoteStorage implements StorageProvider {
         state: 'database-error',
         message: e instanceof Error ? e.message : 'Failed to read iPod database',
       });
+    }
+  }
+
+  private async fetchIthmbFiles(): Promise<Map<string, Uint8Array> | undefined> {
+    try {
+      const listRes = await fetch(`${this.baseUrl}/ipods/${this.ipodId}/artwork-files`);
+      if (!listRes.ok) return undefined;
+
+      const { files } = (await listRes.json()) as { files: string[] };
+      if (!files.length) return undefined;
+
+      const entries = await Promise.all(
+        files.map(async (name) => {
+          const res = await fetch(
+            `${this.baseUrl}/ipods/${this.ipodId}/artwork-files/${encodeURIComponent(name)}`
+          );
+          if (!res.ok) return null;
+          return [name, new Uint8Array(await res.arrayBuffer())] as const;
+        })
+      );
+
+      const map = new Map<string, Uint8Array>();
+      for (const entry of entries) {
+        if (entry) map.set(entry[0], entry[1]);
+      }
+      return map.size > 0 ? map : undefined;
+    } catch {
+      return undefined;
     }
   }
 

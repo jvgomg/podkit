@@ -313,8 +313,12 @@ export class IpodReader {
       return null;
     }
 
-    // Find the artwork image with matching ID
-    const image = this.artworkDb.images.find((img) => img.imageId === track.artworkId);
+    // Find the artwork image for this track.
+    // Primary: match by sourceId (track dbid) — this is how libgpod links them.
+    // Fallback: match by imageId === trackId (legacy/synthetic data).
+    const image =
+      this.artworkDb.images.find((img) => img.sourceId === track.dbid) ??
+      this.artworkDb.images.find((img) => img.imageId === track.artworkId);
     if (!image || image.thumbnails.length === 0) return null;
 
     // Pick the largest thumbnail

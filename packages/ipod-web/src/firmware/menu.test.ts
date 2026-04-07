@@ -73,6 +73,7 @@ function createMockDb(): IpodDatabase {
     getTracksByAlbum: (_artist: string, album: string) =>
       mockTracks.filter((t) => t.album === album),
     getTracksByGenre: (genre: string) => mockTracks.filter((t) => t.genre === genre),
+    getTrackArtwork: () => null,
   };
 }
 
