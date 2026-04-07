@@ -1,5 +1,6 @@
 import React from 'react';
 import type { ReactNode } from 'react';
+import { BsUsbSymbol } from 'react-icons/bs';
 import './StatusScreen.css';
 
 export interface StatusScreenProps {
@@ -36,24 +37,7 @@ export function SickPodIcon({ src }: { src: string }) {
   return <img className="status-screen__sickpod" src={src} alt="Sad iPod" width={64} height={64} />;
 }
 
-/** USB "Do not disconnect" checkmark icon */
+/** USB "Do not disconnect" icon */
 export function ConnectedIcon() {
-  return (
-    <svg
-      className="status-screen__connected-icon"
-      viewBox="0 0 64 64"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <circle cx="32" cy="32" r="30" fill="none" stroke="#1a1a1a" strokeWidth="3" />
-      <polyline
-        points="18,32 28,42 46,24"
-        fill="none"
-        stroke="#1a1a1a"
-        strokeWidth="4"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <BsUsbSymbol className="status-screen__connected-icon" aria-hidden="true" />;
 }

@@ -30,6 +30,7 @@
 .status-screen__connected-icon {
   width: 52px;
   height: auto;
+  color: #1a1a1a;
 }
 
 .status-screen__primary {
