@@ -218,7 +218,7 @@ function parseMhli(reader: BufferReader, sectionEnd: number, images: ArtworkImag
  *   [0x08] totalLen           (uint32)
  *   [0x0c] numChildren        (uint32)
  *   [0x10] imageId            (uint32)
- *   [0x14] songId             (int64)  — packed, no alignment padding
+ *   [0x14] songId             (uint64) — track dbid, packed, no alignment padding
  *   [0x1c] unknown4           (uint32)
  *   [0x20] rating             (uint32)
  *   [0x24] unknown6           (uint32)
@@ -244,7 +244,7 @@ function parseMhii(reader: BufferReader): ArtworkImage {
   const totalLen = reader.readUInt32();
   const numChildren = reader.readUInt32();
   const imageId = reader.readUInt32();
-  const songId = reader.readInt64();
+  const songId = reader.readUInt64();
 
   // Skip to origImgSize
   reader.seek(startOffset + 0x30);

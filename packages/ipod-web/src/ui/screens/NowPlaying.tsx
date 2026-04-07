@@ -11,6 +11,7 @@ import {
 import { nowPlayingModeAtom, volumeOverlayVisibleAtom } from '../../store/now-playing-mode.js';
 import { ProgressBar } from '../shared/ProgressBar.js';
 import { useHeaderTitle } from '../../hooks/useHeaderTitle.js';
+import { useTrackArtwork } from '../../hooks/useTrackArtwork.js';
 import './NowPlaying.css';
 
 // ---------------------------------------------------------------------------
@@ -49,7 +50,13 @@ function NowPlayingLayout({
 // Artwork
 // ---------------------------------------------------------------------------
 
-function ArtworkDisplay(_props: { trackId: number }) {
+function ArtworkDisplay({ trackId }: { trackId: number }) {
+  const artworkUrl = useTrackArtwork(trackId);
+
+  if (artworkUrl) {
+    return <img src={artworkUrl} className="np-artwork-image" alt="" />;
+  }
+
   return (
     <div className="np-artwork-placeholder">
       <span className="np-music-note">{'\u266B'}</span>

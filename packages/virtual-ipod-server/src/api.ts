@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { join } from 'node:path';
+import { readdirSync } from 'node:fs';
 import type { ServerEvent } from './types.js';
 import type { StorageRegistry } from './storage.js';
 import type { UsbBus } from './usb.js';
@@ -116,6 +117,46 @@ export function createApi(
     }
     const content = await file.text();
     return c.text(content);
+  });
+
+  app.get('/ipods/:id/artwork-files', async (c) => {
+    const id = c.req.param('id');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
+
+    const artworkDir = join(storage.mountPoint, 'iPod_Control/Artwork');
+    try {
+      const entries = readdirSync(artworkDir, { withFileTypes: true });
+      const files = entries
+        .filter((e) => e.isFile() && e.name.endsWith('.ithmb'))
+        .map((e) => e.name)
+        .sort();
+      return c.json({ files });
+    } catch {
+      return c.json({ files: [] });
+    }
+  });
+
+  app.get('/ipods/:id/artwork-files/:filename', async (c) => {
+    const id = c.req.param('id');
+    const filename = c.req.param('filename');
+    const storage = registry.get(id);
+    if (!storage) return c.json({ error: `iPod '${id}' not found` }, 404);
+    if (!storage.mounted) return c.json({ error: 'iPod storage is not mounted' }, 404);
+
+    if (!filename.endsWith('.ithmb') || filename.includes('/') || filename.includes('..')) {
+      return c.json({ error: 'Invalid filename' }, 400);
+    }
+
+    const fsPath = join(storage.mountPoint, 'iPod_Control/Artwork', filename);
+    const file = Bun.file(fsPath);
+    if (!(await file.exists())) {
+      return c.json({ error: 'File not found' }, 404);
+    }
+    return new Response(file, {
+      headers: { 'Content-Type': 'application/octet-stream' },
+    });
   });
 
   app.get('/ipods/:id/audio/:path{.+}', async (c) => {

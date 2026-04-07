@@ -49,6 +49,7 @@ export interface IpodDatabase {
   getTracksByArtist(artist: string): Track[];
   getTracksByAlbum(artist: string, album: string): Track[];
   getTracksByGenre(genre: string): Track[];
+  getTrackArtwork(trackId: number): { width: number; height: number; data: Uint8Array } | null;
 }
 
 // ---------------------------------------------------------------------------

@@ -73,6 +73,15 @@
   color: #a09888;
 }
 
+.np-artwork-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #c0bbb2;
+  box-sizing: border-box;
+}
+
 /* Track info — right of artwork */
 .np-track-info {
   flex: 1;
@@ -137,4 +146,14 @@
   width: auto;
   height: 100%;
   aspect-ratio: 1;
+}
+
+.np-artwork-fullscreen .np-artwork-image {
+  width: auto;
+  height: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #c0bbb2;
+  box-sizing: border-box;
 }
