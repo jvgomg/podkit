@@ -237,6 +237,7 @@ export function updateDevice(
     musicDir?: string | null;
     moviesDir?: string | null;
     tvShowsDir?: string | null;
+    cleanArtists?: boolean | null;
   },
   options?: UpdateConfigOptions
 ): UpdateConfigResult {

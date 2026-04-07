@@ -305,6 +305,8 @@ podkit device set -d <name> [options]
 | `--clear-audio-quality` | Remove audio quality setting |
 | `--clear-video-quality` | Remove video quality setting |
 | `--clear-artwork` | Remove artwork setting (use global default) |
+| `--clean-artists` / `--no-clean-artists` | Enable or disable clean artists transform |
+| `--clear-clean-artists` | Remove clean artists setting (use global default) |
 | `--music-dir <path>` | Music directory path on the device (mass-storage only) |
 | `--movies-dir <path>` | Movies directory path on the device (mass-storage only) |
 | `--tv-shows-dir <path>` | TV shows directory path on the device (mass-storage only) |
@@ -318,6 +320,9 @@ podkit device set -d nano --audio-quality medium --video-quality low
 
 # Disable artwork
 podkit device set -d nano --no-artwork
+
+# Enable clean artists on a device
+podkit device set -d classic --clean-artists
 
 # Reset to global defaults
 podkit device set -d classic --clear-quality --clear-artwork
