@@ -18,6 +18,7 @@ import {
 } from '../store/navigation.js';
 import {
   playbackStateAtom,
+  currentTrackAtom,
   playPauseAtom,
   nextTrackAtom,
   previousTrackAtom,
@@ -53,6 +54,7 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
   const store = useStore();
   const title = useAtomValue(headerTitleAtom);
   const playbackState = useAtomValue(playbackStateAtom);
+  const currentTrack = useAtomValue(currentTrackAtom);
   const screen = useAtomValue(screenAtom);
   const connectionStatus = useAtomValue(connectionStatusAtom);
   const scroll = useSetAtom(scrollAtom);
@@ -152,7 +154,12 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
       <div className="ipod-shell__screen-area">
         <Screen>
           {connectionStatus.state === 'ready' && (
-            <Header title={title} showPlayIndicator={playbackState === 'playing'} />
+            <Header
+              title={title}
+              playbackIndicator={
+                currentTrack === null ? 'none' : playbackState === 'playing' ? 'playing' : 'paused'
+              }
+            />
           )}
           <ScreenRouter />
         </Screen>
