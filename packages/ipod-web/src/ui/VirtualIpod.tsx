@@ -22,6 +22,7 @@ import {
   playPauseAtom,
   nextTrackAtom,
   previousTrackAtom,
+  adjustVolumeAtom,
   storageProviderAtom,
   audioPlayerAtom,
   positionAtom,
@@ -67,6 +68,22 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
   const npSelect = useSetAtom(nowPlayingSelectAtom);
   const npScroll = useSetAtom(nowPlayingScrollAtom);
   const resetNpMode = useSetAtom(resetNowPlayingModeAtom);
+
+  // Global keyboard shortcuts for volume (=, +, -, _)
+  useEffect(() => {
+    const handleVolumeKey = (e: KeyboardEvent) => {
+      const delta = e.key === '=' || e.key === '+' ? 5 : e.key === '-' || e.key === '_' ? -5 : 0;
+      if (delta === 0) return;
+      e.preventDefault();
+      if (store.get(screenAtom) === 'nowPlaying') {
+        store.set(nowPlayingScrollAtom, delta > 0 ? 1 : -1);
+      } else {
+        store.set(adjustVolumeAtom, delta);
+      }
+    };
+    window.addEventListener('keydown', handleVolumeKey);
+    return () => window.removeEventListener('keydown', handleVolumeKey);
+  }, [store]);
 
   // Initialize menu stack with the main menu on mount
   useEffect(() => {
