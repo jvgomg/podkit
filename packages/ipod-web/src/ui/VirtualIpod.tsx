@@ -158,6 +158,17 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
         store.set(resetNowPlayingModeAtom);
       } else {
         store.set(databaseAtom, null);
+
+        // Stop any active playback when leaving ready state
+        const player = store.get(audioPlayerAtom);
+        if (player) player.pause();
+        store.set(playbackStateAtom, 'stopped');
+        store.set(currentTrackAtom, null);
+        store.set(queueAtom, []);
+        store.set(queueIndexAtom, 0);
+        store.set(positionAtom, 0);
+        store.set(durationAtom, 0);
+        store.set(resetNowPlayingModeAtom);
       }
     });
 
