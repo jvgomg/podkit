@@ -696,9 +696,12 @@ const musicSubcommand = new Command('music')
         trackNumber: t.trackNumber && t.trackNumber > 0 ? t.trackNumber : undefined,
         discNumber: t.discNumber && t.discNumber > 0 ? t.discNumber : undefined,
         filePath: t.filePath || undefined,
-        artwork: undefined, // Not available from collection adapter
+        artwork: t.hasArtwork,
+        hasArtwork: t.hasArtwork,
         compilation: t.compilation,
         format: t.fileType || undefined,
+        codec: t.codec || undefined,
+        lossless: t.lossless,
         bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
         normalization: t.normalization,
       }));
