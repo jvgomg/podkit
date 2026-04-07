@@ -15,6 +15,7 @@ import {
   menuBackAtom,
   goToMenuAtom,
   menuStackAtom,
+  selectedIndexAtom,
 } from '../store/navigation.js';
 import {
   playbackStateAtom,
@@ -27,6 +28,8 @@ import {
   audioPlayerAtom,
   positionAtom,
   durationAtom,
+  queueAtom,
+  queueIndexAtom,
 } from '../store/playback.js';
 import { connectionStatusAtom } from '../store/connection.js';
 import { databaseAtom } from '../store/database.js';
@@ -133,6 +136,26 @@ function VirtualIpodInner({ storage, variant = 'white' }: VirtualIpodProps) {
       store.set(connectionStatusAtom, status);
       if (status.state === 'ready') {
         store.set(databaseAtom, status.database ?? null);
+
+        // Reset UI to home screen when a device connects
+        const mainMenu = createMainMenu(
+          (atom) => store.get(atom),
+          (atom, ...args) => store.set(atom, ...args)
+        );
+        store.set(menuStackAtom, [mainMenu]);
+        store.set(selectedIndexAtom, 0);
+        store.set(screenAtom, 'menu');
+
+        // Stop any active playback
+        const player = store.get(audioPlayerAtom);
+        if (player) player.pause();
+        store.set(playbackStateAtom, 'stopped');
+        store.set(currentTrackAtom, null);
+        store.set(queueAtom, []);
+        store.set(queueIndexAtom, 0);
+        store.set(positionAtom, 0);
+        store.set(durationAtom, 0);
+        store.set(resetNowPlayingModeAtom);
       } else {
         store.set(databaseAtom, null);
       }

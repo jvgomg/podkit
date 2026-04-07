@@ -21,6 +21,10 @@
   color: #1a1a1a;
   text-align: center;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .ipod-header__battery {
