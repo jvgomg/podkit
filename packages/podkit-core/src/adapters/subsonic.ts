@@ -532,7 +532,11 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       const artworkInfo = await this.fetchArtworkInfo(song.coverArt);
       hasArtwork = artworkInfo.hasArtwork;
       artworkHash = artworkInfo.hash;
-    } else if (!song.coverArt) {
+    } else if (song.coverArt) {
+      // coverArt ID exists but we're not fetching — optimistically report true.
+      // This avoids HTTP calls; placeholder filtering only matters during sync.
+      hasArtwork = true;
+    } else {
       hasArtwork = false;
     }
 

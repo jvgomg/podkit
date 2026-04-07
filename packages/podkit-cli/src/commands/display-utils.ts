@@ -29,6 +29,8 @@ export interface DisplayTrack {
   artwork?: boolean;
   compilation?: boolean;
   format?: string;
+  codec?: string;
+  lossless?: boolean;
   bitrate?: number;
   normalization?: AudioNormalization;
   syncTag?: SyncTagData | null;
@@ -52,6 +54,8 @@ export const AVAILABLE_FIELDS = [
   'artwork',
   'compilation',
   'format',
+  'codec',
+  'lossless',
   'bitrate',
   'normalization',
   'syncTag',
@@ -85,6 +89,8 @@ export const FIELD_HEADERS: Record<FieldName, string> = {
   artwork: 'Art',
   compilation: 'Comp',
   format: 'Format',
+  codec: 'Codec',
+  lossless: 'Lossless',
   bitrate: 'Bitrate',
   normalization: 'Norm',
   syncTag: 'Sync',
@@ -111,6 +117,8 @@ export const DEFAULT_COLUMN_WIDTHS: Record<FieldName, number> = {
   artwork: 3,
   compilation: 4,
   format: 8,
+  codec: 10,
+  lossless: 8,
   bitrate: 7,
   normalization: 10,
   syncTag: 7,
@@ -203,6 +211,10 @@ export function getFieldValue(track: DisplayTrack, field: FieldName): string {
       return track.compilation === true ? '\u2713' : track.compilation === false ? '\u2717' : '-';
     case 'format':
       return track.format || '';
+    case 'codec':
+      return track.codec || '';
+    case 'lossless':
+      return track.lossless === true ? '\u2713' : track.lossless === false ? '\u2717' : '-';
     case 'bitrate':
       return track.bitrate ? `${track.bitrate}` : '';
     case 'normalization':
