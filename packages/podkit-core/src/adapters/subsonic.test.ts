@@ -381,7 +381,9 @@ describe('SubsonicAdapter artwork presence detection', () => {
       checkArtwork: false,
     });
     const track = await mapSong({ coverArt: 'al-123' });
-    expect(track.hasArtwork).toBeUndefined();
+    // When checkArtwork is false but coverArt ID exists, optimistically report true
+    // without making any HTTP calls
+    expect(track.hasArtwork).toBe(true);
     expect(track.artworkHash).toBeUndefined();
     expect(fetchCount).toBe(0);
   });
