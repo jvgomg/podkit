@@ -4135,6 +4135,8 @@ interface SetOptions {
   clearMusicDir?: boolean;
   clearMoviesDir?: boolean;
   clearTvShowsDir?: boolean;
+  cleanArtists?: boolean;
+  clearCleanArtists?: boolean;
 }
 
 const setSubcommand = new Command('set')
@@ -4184,6 +4186,9 @@ const setSubcommand = new Command('set')
   .option('--clear-music-dir', 'remove music directory override (use default "Music")')
   .option('--clear-movies-dir', 'remove movies directory override (use default "Video/Movies")')
   .option('--clear-tv-shows-dir', 'remove TV shows directory override (use default "Video/Shows")')
+  .option('--clean-artists', 'enable clean artists transform')
+  .option('--no-clean-artists', 'disable clean artists transform')
+  .option('--clear-clean-artists', 'remove clean artists setting (use global default)')
   .action(async (options: SetOptions) => {
     const { config, globalOpts, configResult } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -4380,9 +4385,15 @@ const setSubcommand = new Command('set')
       updates.tvShowsDir = options.tvShowsDir;
     }
 
+    if (options.clearCleanArtists) {
+      updates.cleanArtists = null;
+    } else if (options.cleanArtists !== undefined) {
+      updates.cleanArtists = options.cleanArtists;
+    }
+
     if (Object.keys(updates).length === 0) {
       const error =
-        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).';
+        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, --clean-artists, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).';
       out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
       process.exitCode = 1;
       return;
