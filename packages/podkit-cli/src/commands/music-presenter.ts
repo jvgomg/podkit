@@ -13,6 +13,7 @@ import type {
   MusicHandler,
   CollectionAdapter,
 } from '@podkit/core';
+import { DEFAULT_LOSSLESS_STACK } from '@podkit/core';
 import type { OutputContext, CollectedError } from '../output/index.js';
 import {
   formatBytes,
@@ -64,6 +65,31 @@ function formatCopyByFileType(operations: MusicOperation[]): string[] {
     parts.push(`Copy (${fileType}): ${formatNumber(count)}`);
   }
   return parts;
+}
+
+/**
+ * Resolve the quality label for display (e.g. 'max' → 'lossless' on ALAC devices).
+ */
+function resolveDisplayQuality(config: MusicContentConfig): string {
+  if (config.effectiveQuality === 'max') {
+    return config.deviceSupportsAlac ? 'lossless' : 'high';
+  }
+  return config.effectiveQuality;
+}
+
+/**
+ * Find the lossless codec that will be used for transcoding (first device-supported
+ * non-source entry in the lossless preference stack).
+ */
+function resolveLosslessCodecForDisplay(config: MusicContentConfig): string | undefined {
+  const deviceCodecs = new Set(config.capabilities?.supportedAudioCodecs ?? []);
+  const stack = config.effectiveCodecPreference?.lossless ?? DEFAULT_LOSSLESS_STACK;
+  for (const entry of stack) {
+    if (entry !== 'source' && deviceCodecs.has(entry as import('@podkit/core').AudioCodec)) {
+      return entry as string;
+    }
+  }
+  return config.deviceSupportsAlac ? 'alac' : undefined;
 }
 
 /**
@@ -365,7 +391,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     out.newline();
     out.print(`Source: ${sourcePath}`);
     out.print(`Device: ${devicePath}`);
-    out.print(`Quality: ${config.effectiveQuality}`);
+    out.print(`Quality: ${resolveDisplayQuality(config)}`);
     const transformsDisplay = formatTransformsConfig(config.effectiveTransforms);
     if (transformsDisplay) {
       out.print(`Transforms: ${transformsDisplay}`);
@@ -383,11 +409,24 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     if (config.skipUpgrades) {
       out.print(`Skip upgrades: enabled`);
     }
-    // Only show Codec line when there are actual transcode operations
+    // Only show codec lines when there are actual transcode operations
     const hasTranscodes = summary.addTranscodeCount > 0 || summary.upgradeTranscodeCount > 0;
-    if (config.resolvedLossyCodec && config.lossyPreferenceStack && hasTranscodes) {
-      const chain = config.lossyPreferenceStack.join(' \u2192 ');
-      out.print(`Codec: ${config.resolvedLossyCodec} (preference: ${chain})`);
+    if (hasTranscodes) {
+      const displayQuality = resolveDisplayQuality(config);
+      if (displayQuality === 'lossless') {
+        const losslessCodec = resolveLosslessCodecForDisplay(config);
+        if (losslessCodec) {
+          out.print(`Lossless codec: ${losslessCodec}`);
+        }
+      }
+      const hasLossyTranscodes = plan.operations.some(
+        (op) =>
+          (op.type === 'add-transcode' || op.type === 'upgrade-transcode') &&
+          op.preset.name !== 'lossless'
+      );
+      if (config.resolvedLossyCodec && hasLossyTranscodes) {
+        out.print(`Lossy codec: ${config.resolvedLossyCodec}`);
+      }
     }
 
     // Codec change count
@@ -402,7 +441,26 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     out.print('Changes:');
     out.print(`  Tracks to add: ${formatNumber(diff.toAdd.length)}`);
     if (summary.addTranscodeCount > 0) {
-      out.print(`    - Transcode: ${formatNumber(summary.addTranscodeCount)}`);
+      const byCodec = new Map<string, number>();
+      for (const op of plan.operations) {
+        if (op.type === 'add-transcode') {
+          const codec = op.preset.targetCodec ?? 'aac';
+          byCodec.set(codec, (byCodec.get(codec) ?? 0) + 1);
+        }
+      }
+      if (byCodec.size === 1) {
+        const [codec, count] = [...byCodec][0]!;
+        out.print(`    - Transcode to ${codec.toUpperCase()}: ${formatNumber(count)}`);
+      } else if (byCodec.size > 1) {
+        const parts = [...byCodec].map(
+          ([codec, count]) => `to ${codec.toUpperCase()}: ${formatNumber(count)}`
+        );
+        out.print(
+          `    - Transcode (${parts.join(', ')}): ${formatNumber(summary.addTranscodeCount)}`
+        );
+      } else {
+        out.print(`    - Transcode: ${formatNumber(summary.addTranscodeCount)}`);
+      }
     }
     if (summary.addDirectCopyCount + summary.addOptimizedCopyCount > 0) {
       const copyFormatParts = formatCopyByFileType(plan.operations);
