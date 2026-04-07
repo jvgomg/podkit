@@ -823,7 +823,8 @@ async function generateDiagnosticReport(
         }
         lines.push(`  Level: Ready \u2014 ${parts.join(', ')}`);
       } else {
-        lines.push(`  Level: ${formatReadinessLevel(readiness.level, label)}`);
+        const cmdId = configName ?? device.mountPoint ?? label;
+        lines.push(`  Level: ${formatReadinessLevel(readiness.level, cmdId)}`);
       }
     }
 
@@ -1064,13 +1065,16 @@ const scanSubcommand = new Command('scan')
           if (configName) {
             out.print(`  Configured as: ${configName}`);
           } else {
-            out.print(`  Not configured \u2014 run: podkit device add`);
+            const suggestedName = label.toLowerCase().replace(/[^a-z0-9-]/g, '-') || 'myipod';
+            out.print(`  Not configured \u2014 run: podkit device add -d ${suggestedName}`);
           }
 
           out.newline();
 
           if (readiness) {
-            printReadinessStages(out, readiness.stages, readiness, label);
+            // Use configured name, mount path, or volume label (in that order) for CLI hints
+            const cmdId = configName ?? device.mountPoint ?? label;
+            printReadinessStages(out, readiness.stages, readiness, cmdId);
           } else {
             // Unsupported platform — fall back to basic display
             out.print(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
