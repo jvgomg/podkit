@@ -190,9 +190,10 @@ export class IpodReader {
     }
 
     // Build album index (key = "artist|album")
+    // iPods don't use albumArtist — always index by track artist.
     this.albumIndex = new Map();
     for (const track of this.tracks) {
-      const artist = track.albumArtist || track.artist;
+      const artist = track.artist;
       const album = track.album;
       if (!album) continue;
       const key = `${artist}|${album}`;
