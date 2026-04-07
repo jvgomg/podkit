@@ -352,6 +352,165 @@ describe('self-healing sync: upgrade workflow', () => {
 });
 
 // =============================================================================
+// Normalization update: verify soundcheck is written and re-sync is idempotent
+//
+// Source FLAC fixtures include ReplayGain tags. After the initial sync, the iPod
+// should have non-zero soundcheck values. A re-sync with no changes should
+// produce zero updates (proving the normalization was actually persisted).
+// =============================================================================
+
+describe('self-healing sync: normalization update', () => {
+  beforeAll(async () => {
+    const fixtures = await areFixturesAvailable();
+    if (!fixtures) throw new Error('Test fixtures not available — run the fixture generator first');
+    if (!isMetaflacAvailable()) throw new Error('metaflac not found — install flac');
+  });
+
+  it('initial sync writes soundcheck and re-sync is idempotent', async () => {
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      let collectionDir: string | undefined;
+
+      try {
+        // Step 1: Create collection with ReplayGain tags and sync
+        collectionDir = await createTestCollection();
+
+        // Ensure all tracks have ReplayGain tags
+        for (const track of TEST_TRACKS) {
+          const filePath = join(collectionDir, track.source.filename);
+          execSync(
+            `metaflac --remove-tag=REPLAYGAIN_TRACK_GAIN --set-tag="REPLAYGAIN_TRACK_GAIN=-7.50 dB" "${filePath}"`,
+            { stdio: 'ignore' }
+          );
+        }
+
+        const configPath = await createConfigFile(configDir, {
+          source: collectionDir,
+        });
+
+        const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+
+        expect(result1.exitCode).toBe(0);
+        expect(json1?.success).toBe(true);
+        expect(json1?.result?.completed).toBe(3);
+
+        // Step 2: Re-sync with no changes — should be a no-op
+        const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+
+        expect(result2.exitCode).toBe(0);
+        expect(json2?.success).toBe(true);
+
+        if (json2?.plan) {
+          expect(json2.plan.tracksToUpdate).toBe(0);
+          expect(json2.plan.tracksToAdd).toBe(0);
+          expect(json2.plan.tracksExisting).toBe(3);
+        }
+      } finally {
+        if (collectionDir) {
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 120000);
+
+  it('detects and applies normalization changes', async () => {
+    await withTarget(async (target) => {
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
+      let collectionDir: string | undefined;
+
+      try {
+        // Step 1: Create collection with ReplayGain -3.0 dB and sync
+        collectionDir = await createTestCollection();
+
+        for (const track of TEST_TRACKS) {
+          const filePath = join(collectionDir, track.source.filename);
+          execSync(
+            `metaflac --remove-tag=REPLAYGAIN_TRACK_GAIN --set-tag="REPLAYGAIN_TRACK_GAIN=-3.00 dB" "${filePath}"`,
+            { stdio: 'ignore' }
+          );
+        }
+
+        const configPath = await createConfigFile(configDir, {
+          source: collectionDir,
+        });
+
+        await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+
+        // Step 2: Change ReplayGain to -9.0 dB (>0.1 dB change triggers update)
+        for (const track of TEST_TRACKS) {
+          const filePath = join(collectionDir, track.source.filename);
+          execSync(
+            `metaflac --remove-tag=REPLAYGAIN_TRACK_GAIN --set-tag="REPLAYGAIN_TRACK_GAIN=-9.00 dB" "${filePath}"`,
+            { stdio: 'ignore' }
+          );
+        }
+
+        // Step 3: Re-sync — should detect normalization updates
+        const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+
+        expect(result2.exitCode).toBe(0);
+        expect(json2?.success).toBe(true);
+
+        if (json2?.plan) {
+          expect(json2.plan.tracksToUpdate).toBe(3);
+          expect(json2.plan.tracksToAdd).toBe(0);
+        }
+
+        // Step 4: Re-sync again — should be idempotent now
+        const { result: result3, json: json3 } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--json',
+        ]);
+
+        expect(result3.exitCode).toBe(0);
+        if (json3?.plan) {
+          expect(json3.plan.tracksToUpdate).toBe(0);
+          expect(json3.plan.tracksExisting).toBe(3);
+        }
+      } finally {
+        if (collectionDir) {
+          await rm(collectionDir, { recursive: true, force: true });
+        }
+        await rm(configDir, { recursive: true, force: true });
+      }
+    });
+  }, 180000);
+});
+
+// =============================================================================
 // Format upgrade: MP3 → FLAC (transcoded to AAC)
 //
 // This is the exact scenario that caused playback failures on real iPods:
