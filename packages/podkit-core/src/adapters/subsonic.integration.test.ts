@@ -694,7 +694,9 @@ describe('SubsonicAdapter artwork presence detection', () => {
     const adapter = createAdapter(false);
     const tracks = await adapter.getItems();
 
-    expect(tracks[0]?.hasArtwork).toBeUndefined();
+    // When checkArtwork is false but coverArt ID exists, optimistically report true
+    // without making any HTTP calls
+    expect(tracks[0]?.hasArtwork).toBe(true);
     expect(tracks[0]?.artworkHash).toBeUndefined();
     expect(serverState.coverArtRequests['al-1']).toBeUndefined();
   });
