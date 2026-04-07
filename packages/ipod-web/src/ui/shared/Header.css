@@ -11,7 +11,9 @@
 
 .ipod-header__play-indicator {
   width: 24px;
-  line-height: 1;
+  height: 20px;
+  display: flex;
+  align-items: center;
   color: #333;
 }
 

@@ -9,16 +9,28 @@ describe('Header', () => {
     expect(getByText('Music')).toBeTruthy();
   });
 
-  test('hides play indicator by default', () => {
+  test('shows no indicator by default', () => {
     const { container } = render(<Header title="iPod" />);
     const indicator = container.querySelector('.ipod-header__play-indicator');
-    expect(indicator?.textContent).toBe('');
+    expect(indicator?.querySelector('svg')).toBeNull();
   });
 
-  test('shows play indicator when enabled', () => {
-    const { container } = render(<Header title="iPod" showPlayIndicator />);
+  test('shows play icon when playing', () => {
+    const { container } = render(<Header title="iPod" playbackIndicator="playing" />);
     const indicator = container.querySelector('.ipod-header__play-indicator');
-    expect(indicator?.textContent).toBe('\u25B6');
+    expect(indicator?.querySelector('svg')).toBeTruthy();
+  });
+
+  test('shows pause icon when paused', () => {
+    const { container } = render(<Header title="iPod" playbackIndicator="paused" />);
+    const indicator = container.querySelector('.ipod-header__play-indicator');
+    expect(indicator?.querySelector('svg')).toBeTruthy();
+  });
+
+  test('shows no indicator when none', () => {
+    const { container } = render(<Header title="iPod" playbackIndicator="none" />);
+    const indicator = container.querySelector('.ipod-header__play-indicator');
+    expect(indicator?.querySelector('svg')).toBeNull();
   });
 
   test('renders battery icon', () => {
