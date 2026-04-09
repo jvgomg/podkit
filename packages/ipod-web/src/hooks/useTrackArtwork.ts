@@ -7,14 +7,15 @@ import { databaseAtom } from '../store/database.js';
  * Uses an OffscreenCanvas (or falls back to a regular canvas) to encode as PNG.
  */
 function rgbaToObjectUrl(data: Uint8Array, width: number, height: number): Promise<string> {
+  // Copy into a fresh ArrayBuffer (ImageData doesn't accept SharedArrayBuffer)
+  const buf = new ArrayBuffer(data.byteLength);
+  new Uint8Array(buf).set(data);
+  const clamped = new Uint8ClampedArray(buf);
+
   if (typeof OffscreenCanvas !== 'undefined') {
     const canvas = new OffscreenCanvas(width, height);
     const ctx = canvas.getContext('2d')!;
-    const imageData = new ImageData(
-      new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
-      width,
-      height
-    );
+    const imageData = new ImageData(clamped, width, height);
     ctx.putImageData(imageData, 0, 0);
     return canvas.convertToBlob({ type: 'image/png' }).then((blob) => URL.createObjectURL(blob));
   }
@@ -24,11 +25,7 @@ function rgbaToObjectUrl(data: Uint8Array, width: number, height: number): Promi
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
-  const imageData = new ImageData(
-    new Uint8ClampedArray(data.buffer, data.byteOffset, data.byteLength),
-    width,
-    height
-  );
+  const imageData = new ImageData(clamped, width, height);
   ctx.putImageData(imageData, 0, 0);
   return new Promise((resolve) => {
     canvas.toBlob((blob) => {
