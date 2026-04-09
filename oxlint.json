@@ -65,6 +65,18 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": ["**/ipod-web/src/**/*.ts", "**/ipod-web/src/**/*.tsx"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/podkit-cli/src/main.ts"],
+      "rules": {
+        "no-console": "off"
+      }
     }
   ],
   "ignorePatterns": ["node_modules", "dist", "*.d.ts", "backlog", "docs"]
