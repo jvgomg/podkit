@@ -39,9 +39,24 @@ jobs:
       version: 0.0.0-verify
       push: false
 
+  # Verify the docs site builds — we don't want to merge a Version Packages PR
+  # if the post-release docs deploy would fail.
+  docs:
+    needs: check-pr
+    if: needs.check-pr.outputs.is_version_pr == 'true'
+    runs-on: ubuntu-latest
+    name: Verify Docs Build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build docs site
+        run: cd packages/docs-site && bun run build
+
   # Summary job for branch protection rules
   release-ci-passed:
-    needs: [check-pr, build, docker]
+    needs: [check-pr, build, docker, docs]
     if: always()
     runs-on: ubuntu-latest
     name: Release CI Status
@@ -58,6 +73,10 @@ jobs:
           fi
           if [[ "${{ needs.docker.result }}" != "success" ]]; then
             echo "Docker build failed or was cancelled"
+            exit 1
+          fi
+          if [[ "${{ needs.docs.result }}" != "success" ]]; then
+            echo "Docs build failed or was cancelled"
             exit 1
           fi
           echo "All release CI checks passed"

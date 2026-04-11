@@ -261,7 +261,43 @@ jobs:
             echo "Created tag $TAG"
           fi
 
-  # Step 5: Update the Homebrew formula in the tap repository (CLI releases only)
+  # Step 5: Sync docs-live branch to the release commit so the docs site deploys.
+  # docs-live is a deployment branch — only updated by this job (on release) or
+  # by manual cherry-pick (for docs-only tweaks). Pushing to docs-live triggers
+  # deploy-docs.yml.
+  #
+  # Force-with-lease is safe here: any commits on docs-live (from docs-only
+  # cherry-picks) must already exist on main, since cherry-picks always
+  # originate from main. Resetting docs-live to the release commit realigns
+  # the branch without losing content.
+  sync-docs-live:
+    needs: [changesets, release, docker-tag]
+    # Run only if every component that was supposed to release did release.
+    # always() is required because some needs may be skipped (CLI-only or
+    # Docker-only releases). For each component: if it wasn't being released,
+    # we don't care about its result; if it was, it must have succeeded.
+    if: |
+      always() &&
+      needs.changesets.outputs.should_release == 'true' &&
+      (needs.changesets.outputs.has_cli_release != 'true' || needs.release.result == 'success') &&
+      (needs.changesets.outputs.has_docker_release != 'true' || needs.docker-tag.result == 'success')
+    runs-on: ubuntu-latest
+    name: Sync docs-live to release
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Reset docs-live to release commit
+        run: |
+          git fetch origin docs-live
+          git push origin HEAD:docs-live --force-with-lease
+
+  # Step 6: Update the Homebrew formula in the tap repository (CLI releases only)
   update-homebrew:
     needs: [changesets, release]
     if: needs.release.result == 'success'

@@ -3,11 +3,7 @@ name: Deploy Docs
 on:
   push:
     branches:
-      - main
-    paths:
-      - 'docs/**'
-      - 'packages/docs-site/**'
-      - 'packages/demo/demo.gif'
+      - docs-live
   workflow_dispatch:
 
 permissions:

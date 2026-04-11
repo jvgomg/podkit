@@ -1,0 +1,24 @@
+name: PR Checks
+
+# General PR validation. Currently runs the docs site build whenever a PR
+# touches docs sources, so docs breakage is caught at the PR that introduced
+# it rather than at release time.
+
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'packages/docs-site/**'
+      - 'packages/demo/demo.gif'
+
+jobs:
+  docs-build:
+    runs-on: ubuntu-latest
+    name: Build docs site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+      - name: Build docs site
+        run: cd packages/docs-site && bun run build
