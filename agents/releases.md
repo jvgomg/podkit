@@ -56,6 +56,44 @@ bunx changeset
 6. Homebrew formula is auto-updated with new version and checksums
 7. Users get the update via `brew upgrade podkit` or `docker pull ghcr.io/jvgomg/podkit:latest`
 
+## Docs Site Deployment
+
+The docs site (`packages/docs-site`, published to https://jvgomg.github.io/podkit) deploys from a dedicated `docs-live` branch — **not** from `main`. This decouples docs publishing from code merges so unreleased work on `main` cannot accidentally appear on the public site.
+
+### How it works
+
+- `deploy-docs.yml` triggers on push to `docs-live` (or manually via `workflow_dispatch`).
+- `docs-live` is updated automatically by `release.yml`'s `sync-docs-live` job at the end of every successful release. The job force-pushes `docs-live` to the release commit.
+- Force-with-lease is safe because any commits on `docs-live` (from docs-only cherry-picks) must already exist on `main` — they originated there.
+- `verify-release.yml` and `pr-checks.yml` both run a docs build to catch breakage before it reaches `docs-live`.
+
+### Normal flow (release-coupled docs)
+
+You don't need to do anything — when the Version Packages PR merges and `release.yml` runs, `docs-live` is updated automatically and the docs site deploys with the release.
+
+### Docs-only deploy (between releases)
+
+When you want to publish a docs-only change without releasing the rest of `main`:
+
+1. Make the docs change as a normal PR against `main` (so it lives in canonical history and gets reviewed)
+2. After it merges, cherry-pick the merge commit onto `docs-live`:
+   ```bash
+   git checkout docs-live && git pull
+   git cherry-pick <commit-sha-from-main>
+   git push origin docs-live
+   ```
+3. The push triggers `deploy-docs.yml` and the docs site updates with **only** the cherry-picked change — unreleased work on `main` stays unpublished.
+
+Only cherry-pick from `main`. Never commit directly to `docs-live` — keeping `main` as the single source of truth is what makes the force-push at release time safe.
+
+### Manual / emergency deploy
+
+Trigger `deploy-docs.yml` from the GitHub Actions UI via `Run workflow`. This deploys whatever is currently on `docs-live`.
+
+### GitHub Pages environment
+
+The `github-pages` environment in repo settings restricts which branches can deploy. It must allow `docs-live` (not `main`). If a deploy fails with a permissions error, check Settings → Environments → github-pages → Deployment branches.
+
 ## Reviewing and Improving a Release PR
 
 Before merging a Version Packages PR, add a hand-written release summary above the auto-generated changelog. This makes the release accessible to users who follow the project. The audience is primarily CLI end users, but they're also interested in the technical side of how the tool is built.
