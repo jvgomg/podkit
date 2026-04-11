@@ -19,8 +19,8 @@
     "build": "bun build src/index.ts --outdir dist --target bun && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
-    "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No unit tests found'",
-    "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); [ -n \"$FILES\" ] && bun test $FILES || echo 'No integration tests found'",
+    "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No unit tests found'; fi",
+    "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No integration tests found'; fi",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
