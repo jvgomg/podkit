@@ -1,5 +1,232 @@
 # podkit
 
+## 0.7.0
+
+### Minor Changes
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`0f3e4dd`](https://github.com/jvgomg/podkit/commit/0f3e4ddae134228b5e874b21db33f74547867b6c) Thanks [@jvgomg](https://github.com/jvgomg)! - Add capability-gated clean artists transform
+
+  Devices now declare whether they use Album Artist for browse navigation via `supportsAlbumArtistBrowsing`. When enabled globally, the `cleanArtists` transform is automatically suppressed on devices that support Album Artist browsing (Rockbox, Echo Mini, generic) and auto-applied on devices that don't (iPod). Per-device overrides still take priority.
+
+  The dry-run summary shows when the transform is skipped (`Clean artists: skipped (device supports Album Artist browsing)`), and warns when it's force-enabled on a capable device. Both `sync --dry-run` and `device info` surface these in text and JSON output.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`036b107`](https://github.com/jvgomg/podkit/commit/036b1077748253385b6f4ff873a7cdb52c54b004) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix mass-storage directory structure to use album artist instead of track artist, and add template-based path system with self-healing relocate.
+
+  **Bug fix:** Mass-storage devices (Echo Mini, Rockbox) now use `albumArtist` for directory grouping, falling back to `artist` when absent. Previously, compilation/various-artist albums had their tracks scattered across separate artist directories instead of being grouped together under the album artist.
+
+  **Path templates:** File paths are now generated from a configurable template string (`{albumArtist}/{album}/{trackNumber} - {title}{ext}` by default). This lays the groundwork for user-customisable folder structures in a future release.
+
+  **Self-healing relocate:** When source metadata changes (e.g. album artist corrected) or the path template changes, the next sync detects the path mismatch and moves files to their correct location via `fs.rename()` — no re-copying of audio data. Relocate operations appear in dry-run output and are tracked as a new `relocate` operation type.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`89ff40c`](https://github.com/jvgomg/podkit/commit/89ff40c2adedd9fec38ae5ad0eb89b75525642f2) Thanks [@jvgomg](https://github.com/jvgomg)! - Add audioNormalization device capability for device-appropriate Sound Check / ReplayGain handling
+
+  Devices now declare their normalization support: 'soundcheck' (iPod), 'replaygain' (Rockbox), or 'none' (Echo Mini, generic). Devices with no normalization support skip soundcheck upgrade detection entirely, and the dry-run output hides or relabels the normalization line accordingly. Configurable via `audioNormalization` in device config.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`c5c0236`](https://github.com/jvgomg/podkit/commit/c5c0236c232cc3fa086fd3937b0e2fbe0f326185) Thanks [@jvgomg](https://github.com/jvgomg)! - Refactor audio normalization from iPod-centric Sound Check to a generic `AudioNormalization` type, and add ReplayGain album gain/peak support
+
+  **Normalization refactoring:**
+  - Introduce `AudioNormalization` type that preserves source format fidelity (ReplayGain dB, iTunNORM soundcheck integers) without unnecessary round-trip conversions
+  - Replace scattered `soundcheck`, `soundcheckSource`, `replayGainTrackGain`, `replayGainTrackPeak` fields on `CollectionTrack` with a single `normalization` field
+  - Replace `soundcheck`, `replayGainTrackGain`, `replayGainTrackPeak` fields on `DeviceTrackInput` with `normalization`
+  - Conversions now happen at device boundaries: iPod adapter reads soundcheck integers, mass-storage adapter reads dB values directly
+  - Upgrade detection compares in dB space with 0.1 dB epsilon tolerance, eliminating false positives from integer rounding
+  - Metadata update diffs show human-readable dB values (e.g., `normalization: -7.5 dB → -6.2 dB`) instead of opaque integers
+
+  **Album gain/peak support (TASK-253):**
+  - Extract `albumGain` and `albumPeak` from local file metadata and Subsonic API
+  - Write `REPLAYGAIN_ALBUM_GAIN` and `REPLAYGAIN_ALBUM_PEAK` via FFmpeg metadata flags during transcode
+  - Write album gain/peak via node-taglib-sharp tag writer for M4A files
+  - Thread album data through the full sync pipeline for mass-storage devices (Rockbox, etc.)
+
+  **Breaking changes:**
+  - `CollectionTrack` shape: four normalization fields replaced by single `normalization?: AudioNormalization`
+  - `SoundCheckSource` type removed, replaced by `NormalizationSource`
+  - Upgrade reason `'soundcheck-update'` renamed to `'normalization-update'` in JSON output
+  - `soundCheckTracks` stat renamed to `normalizedTracks`
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`513173d`](https://github.com/jvgomg/podkit/commit/513173d1832bf9ca2894214e97d9d65cf02c52a5) Thanks [@jvgomg](https://github.com/jvgomg)! - Add configurable codec preference system for multi-device audio format support
+
+  Users can now configure an ordered list of preferred audio codecs globally and per-device. The system walks the list top-to-bottom, selecting the first codec that is both supported by the target device and has an available FFmpeg encoder. This replaces the hardcoded AAC-only transcoding pipeline.
+  - **Default lossy stack:** opus → aac → mp3 (Rockbox devices get Opus automatically, iPods fall through to AAC)
+  - **Default lossless stack:** source → flac → alac (lossless files are kept in their original format when possible)
+  - **Quality presets are codec-aware:** "high" delivers perceptually equivalent quality regardless of codec (e.g., Opus 160 kbps ≈ AAC 256 kbps)
+  - **Codec change detection:** changing your codec preference re-transcodes affected tracks on the next sync
+  - **`podkit device info`** shows your codec preference list with supported/unsupported codecs marked
+  - **`podkit sync --dry-run`** shows which codec will be used and any codec changes
+  - **`podkit doctor`** warns when FFmpeg is missing an encoder for a preferred codec
+
+  Configure via `config.toml`:
+
+  ```toml
+  [codec]
+  lossy = ["opus", "aac", "mp3"]
+  lossless = ["source", "flac", "alac"]
+
+  [devices.myipod.codec]
+  lossy = "aac"
+  ```
+
+  No configuration is required — existing setups work unchanged with sensible defaults.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`7534c2f`](https://github.com/jvgomg/podkit/commit/7534c2f19d81087413af8abbf764fe20cef61384) Thanks [@jvgomg](https://github.com/jvgomg)! - Add device-aware diagnostics framework to `podkit doctor`. The doctor command now handles mass-storage devices gracefully instead of crashing when pointed at a non-iPod device. Diagnostic checks declare which device types they apply to, and the runner filters them automatically. JSON output now includes a `deviceType` field.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`8bc3126`](https://github.com/jvgomg/podkit/commit/8bc3126ec415aa836b746ec921b6738abdd9e538) Thanks [@jvgomg](https://github.com/jvgomg)! - Enhanced device commands with readiness diagnostics
+  - `device scan`: verbose readiness output with per-stage checks, USB discovery for unpartitioned devices, config relationship display, `--mount` flag for automatic mounting, `--report` flag for diagnostic reports
+  - `podkit doctor`: two-phase diagnostics — readiness checks before database health, graceful handling of devices without databases
+  - `device info`: readiness summary line in output
+  - `device init`: readiness-aware guidance with stub messages for format/partition operations
+  - OS error codes (errno 71, 13, 19, 5) translated to plain-language explanations
+
+- [`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `podkit doctor --repair artwork-reset` to clear all artwork from an iPod without needing a source collection. This is a fast alternative to a full rebuild — useful when your source collection isn't available or you just want to clear corrupted artwork quickly.
+
+  Rename `--repair artwork-integrity` to `--repair artwork-rebuild` to better describe what the repair does. The old name no longer works.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`94c85d2`](https://github.com/jvgomg/podkit/commit/94c85d2a9d6c85875432a0ebecab540a9ebd67d7) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix `--delete` to only remove managed files on mass-storage devices, and add orphan file detection via `podkit doctor`.
+
+  **Bug fix:** `--delete` previously removed all unmatched files on mass-storage devices, including user-placed files. It now only removes files that podkit manages (tracked in `.podkit/state.json`), matching iPod behavior where only database tracks are candidates for deletion.
+
+  **Collision detection:** Sync now detects when a planned file write would collide with an existing unmanaged file and reports the conflict before writing. Works in both normal sync and `--dry-run` mode.
+
+  **New diagnostic check:** `podkit doctor` now runs health checks on mass-storage devices. The `orphan-files-mass-storage` check detects unmanaged files in content directories and can clean them up via `podkit doctor --repair orphan-files-mass-storage`.
+
+  **Other improvements:**
+  - State manifest (`.podkit/state.json`) is now written without pretty-printing to reduce file size on device storage
+  - Shell completions now include valid repair IDs for the `--repair` option
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`efa14c6`](https://github.com/jvgomg/podkit/commit/efa14c623e7bda81066bd77142cddb28e4de615d) Thanks [@jvgomg](https://github.com/jvgomg)! - Add mass-storage device support for non-iPod portable music players.
+
+  **Supported device types:** Echo Mini, Rockbox, and generic mass-storage DAPs. iPod support is unchanged.
+
+  **New in CLI (`podkit`):**
+  - `podkit device add --type <type>` registers mass-storage devices by type and mount path
+  - `podkit device info/music/video` work with mass-storage devices via `DeviceAdapter` interface
+  - `podkit device scan` shows configured path-based devices alongside auto-detected iPods
+  - `podkit sync` routes to the correct adapter (iPod or mass-storage) based on device config
+  - Video sync now uses capabilities-based gating instead of iPod-only checks
+  - Safety gates on `device init/reset/clear` (iPod-only commands) for mass-storage devices
+  - Mount and eject commands show device-appropriate messaging
+  - Config validation rejects capability overrides on iPod devices (capabilities are auto-detected from generation)
+  - Shared `openDevice()` function eliminates duplicated device-opening logic across commands
+
+  **New in core (`@podkit/core`):**
+  - `DeviceAdapter` interface — generic abstraction over device databases (iPod, mass-storage)
+  - `MassStorageAdapter` — filesystem-based track management with `.podkit/state.json` manifest
+  - `IpodDeviceAdapter` — thin wrapper making `IpodDatabase` implement `DeviceAdapter`
+  - Device capability presets for Echo Mini, Rockbox, and generic devices
+  - `resolveDeviceCapabilities()` merges preset defaults with user config overrides
+  - `DeviceTrack` type used throughout sync engine (replaces `IPodTrack` casts in execution paths)
+  - Configurable content path prefixes (`musicDir`, `moviesDir`, `tvShowsDir`) with device-type defaults
+  - Device presets include default content paths (Echo Mini: root for music; generic/Rockbox: `Music/`, `Video/Movies/`, `Video/Shows/`)
+  - Manifest v2 stores active content paths; files automatically moved when prefixes change
+  - Root path support (`/`, `.`, or empty string all normalize to device root)
+  - Content path duplicate validation (no two content types can share the same prefix)
+  - Video scanning support for mass-storage devices (.m4v, .mp4, .mov, .avi, .mkv)
+
+  **New in daemon (`@podkit/daemon`):**
+  - Mass-storage device polling via `PODKIT_MASS_STORAGE_PATHS` env var (colon/comma separated)
+  - Second `DevicePoller` + `SyncOrchestrator` pair for mass-storage devices
+  - No-op mount/eject runners (mass-storage devices are externally managed)
+  - Graceful shutdown handles both iPod and mass-storage sync pipelines
+
+  **Configuration:**
+
+  ```toml
+  [devices.echo]
+  type = "echo-mini"
+  path = "/Volumes/ECHO"
+
+  # Optional capability overrides (mass-storage only)
+  artworkMaxResolution = 800
+  supportedAudioCodecs = ["aac", "mp3", "flac"]
+
+  # Optional content path overrides (mass-storage only)
+  musicDir = "/"           # Place music at device root
+  moviesDir = "Films"      # Custom movies directory
+  tvShowsDir = "TV Shows"  # Custom TV shows directory
+  ```
+
+  **Environment variables for content paths:**
+  - `PODKIT_MUSIC_DIR` — global default music directory
+  - `PODKIT_MOVIES_DIR` — global default movies directory
+  - `PODKIT_TV_SHOWS_DIR` — global default TV shows directory
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`f72fa01`](https://github.com/jvgomg/podkit/commit/f72fa0170872fc0a6e5719b4509abae24e6414cd) Thanks [@jvgomg](https://github.com/jvgomg)! - Refactor sync engine to be fully content-type-agnostic with per-handler operation types.
+
+  **Breaking:** `createMusicHandler()` and `createVideoHandler()` now take a config object at construction instead of using `setTransformsConfig()`/`setExecutionConfig()`. Removed `HandlerDiffOptions`, `HandlerPlanOptions`, `MusicExecutionConfig` types. Renamed `MusicExecutor` to `MusicPipeline`. Removed legacy planner functions (`createMusicPlan`, `planVideoSync` and related helpers).
+
+  **New:** `MusicSyncConfig`, `VideoSyncConfig`, `MusicTrackClassifier`, `VideoTrackClassifier`, `MusicOperationFactory`, `MusicOperation`, `VideoOperation`, `BaseOperation` types. Handlers now own their operation types via `TOp` type parameter on `ContentTypeHandler`.
+
+- [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df) Thanks [@jvgomg](https://github.com/jvgomg)! - Add three-tier transfer mode system controlling how files are prepared for the device.
+
+  **Transfer modes:**
+  - `fast` (default): optimizes for sync speed — direct-copies compatible files, strips artwork from transcodes
+  - `optimized`: strips embedded artwork from all file types (including MP3, M4A, ALAC copies) via FFmpeg stream-copy, reducing storage usage without re-encoding
+  - `portable`: preserves embedded artwork in all files for use outside the iPod ecosystem
+
+  **Configuration:**
+  - `transferMode` config option (global and per-device)
+  - `--transfer-mode` CLI flag
+  - `PODKIT_TRANSFER_MODE` environment variable
+
+  **Selective re-processing:**
+  - `--force-transfer-mode` flag re-processes only tracks whose transfer mode doesn't match the current setting
+  - `PODKIT_FORCE_TRANSFER_MODE` environment variable
+  - Works on all file types including direct copies (unlike `--force-transcode` which only affects transcoded tracks)
+
+  **Device inspection:**
+  - `podkit device music` and `podkit device video` stats show transfer mode distribution
+  - Missing transfer field flagged alongside missing artwork hash in sync tag summary
+  - New `syncTagTransfer` field available in `--tracks --fields` for querying transfer mode data
+  - Dry-run output shows configured transfer mode
+
+  **Under the hood:**
+  - Granular operation types: `add-direct-copy`, `add-optimized-copy`, `add-transcode` (and upgrade equivalents)
+  - Sync tags written to all tracks including direct copies (`quality=copy`)
+  - `DeviceCapabilities` abstraction for device-aware sync decisions
+  - Sync tag field `transfer=` tracks which mode was used per track
+
+### Patch Changes
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`0ef210b`](https://github.com/jvgomg/podkit/commit/0ef210be6e5fc38203e5501d33cc1bb978ecc0c6) Thanks [@jvgomg](https://github.com/jvgomg)! - Add `--clean-artists` / `--no-clean-artists` / `--clear-clean-artists` options to `podkit device set`
+
+  The clean artists transform can now be toggled per-device from the CLI instead of requiring manual config file edits.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`56c7ec3`](https://github.com/jvgomg/podkit/commit/56c7ec36fb00b6996beffdce76eb17a23211c628) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix shell completions namespace conflict when multiple podkit binaries are installed.
+
+  The `--cmd` flag now derives the completion function prefix from the binary name (`podkit-dev` → `_podkit_dev`), so `podkit` and `podkit-dev` each get an isolated namespace and their completion scripts no longer clobber each other. The `podkit-dev` binary built via `install:dev` now reports a `-dev` version suffix.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`3db3d88`](https://github.com/jvgomg/podkit/commit/3db3d887ae2cd19d01ba2c1f00b8682e783fac84) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix multiple bugs discovered during end-to-end Echo Mini hardware validation
+
+  **Sync pipeline:**
+  - Create temp directory for optimized-copy operations (not just transcodes), fixing "No such file or directory" FFmpeg failures on mass-storage devices
+  - Capture last 1000 chars of FFmpeg stderr (instead of first 500) so actual errors aren't swallowed by the version banner
+
+  **Device preset content paths:**
+  - Pass device preset content paths to adapter even when no user overrides exist, fixing Echo Mini's `musicDir: ''` being ignored and files landing in `Music/` instead of device root
+
+  **Artwork:**
+  - Read embedded artwork during mass-storage device scan (`skipCovers: false`) so artwork presence is correctly detected, preventing false `artwork-added` upgrades on every sync
+  - Force `yuvj420p` (4:2:0) pixel format in artwork scale filter — JPEG with 4:4:4 chroma subsampling does not display on the Echo Mini
+
+  **Sync tag and preset detection:**
+  - Treat `quality=copy` sync tags as in-sync when the classifier would also route the source as a copy, preventing false preset-upgrade detection on FLAC-capable mass-storage devices
+  - Route lossless sources to transcode (not copy) when quality preset is non-lossless, even if the device natively supports the source codec (e.g., FLAC device with quality=high should produce AAC)
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`7ebb7c5`](https://github.com/jvgomg/podkit/commit/7ebb7c5c0e1c7c3d549196347029d9ce660fcb8b) Thanks [@jvgomg](https://github.com/jvgomg)! - Use configurable device label in eject messages instead of hardcoded 'iPod'
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`1caab19`](https://github.com/jvgomg/podkit/commit/1caab1991d43739aaba3d9ae2e4a5dd6575f331a) Thanks [@jvgomg](https://github.com/jvgomg)! - Hard error on invalid `--fields` names with message listing valid fields; valid fields now listed in `--help`
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`3fe7853`](https://github.com/jvgomg/podkit/commit/3fe785330f8b92c21159ae253456942a92e7c8e2) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix stdout truncation when piping CLI output to another process. Commands that used `process.exit(1)` could terminate before stdout buffers flushed, truncating JSON output (e.g. `podkit init --json | node -e ...`). All error exit paths now use `process.exitCode = 1` and return normally, allowing Node.js to drain streams before exiting.
+
+- [`26733cc`](https://github.com/jvgomg/podkit/commit/26733cc77fd56681387b29e4241ad05e4d1fd348) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix blank source path in sync output for subsonic collections
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`e58ae80`](https://github.com/jvgomg/podkit/commit/e58ae806a494e3f526a828d4b72dab558ae4b121) Thanks [@jvgomg](https://github.com/jvgomg)! - Fix config not found when running `podkit` under `sudo`. The default config path now resolves the invoking user's home directory via `SUDO_USER`/`DOAS_USER` and `/etc/passwd`, rather than using root's home.
+
+- [#58](https://github.com/jvgomg/podkit/pull/58) [`17eac11`](https://github.com/jvgomg/podkit/commit/17eac114719f93cef40beb58381e534a28ebc35f) Thanks [@jvgomg](https://github.com/jvgomg)! - Move spinners and progress bars to stderr and auto-suppress when stdout is not a TTY. Adds `--no-tty` flag for explicit suppression. Piped output (e.g. `podkit collection music --format json | jq .`) now produces clean stdout without needing `--quiet`.
+
+- Updated dependencies [[`0f3e4dd`](https://github.com/jvgomg/podkit/commit/0f3e4ddae134228b5e874b21db33f74547867b6c), [`036b107`](https://github.com/jvgomg/podkit/commit/036b1077748253385b6f4ff873a7cdb52c54b004), [`89ff40c`](https://github.com/jvgomg/podkit/commit/89ff40c2adedd9fec38ae5ad0eb89b75525642f2), [`c5c0236`](https://github.com/jvgomg/podkit/commit/c5c0236c232cc3fa086fd3937b0e2fbe0f326185), [`513173d`](https://github.com/jvgomg/podkit/commit/513173d1832bf9ca2894214e97d9d65cf02c52a5), [`7534c2f`](https://github.com/jvgomg/podkit/commit/7534c2f19d81087413af8abbf764fe20cef61384), [`8bc3126`](https://github.com/jvgomg/podkit/commit/8bc3126ec415aa836b746ec921b6738abdd9e538), [`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb), [`3db3d88`](https://github.com/jvgomg/podkit/commit/3db3d887ae2cd19d01ba2c1f00b8682e783fac84), [`7ebb7c5`](https://github.com/jvgomg/podkit/commit/7ebb7c5c0e1c7c3d549196347029d9ce660fcb8b), [`94c85d2`](https://github.com/jvgomg/podkit/commit/94c85d2a9d6c85875432a0ebecab540a9ebd67d7), [`efa14c6`](https://github.com/jvgomg/podkit/commit/efa14c623e7bda81066bd77142cddb28e4de615d), [`208e482`](https://github.com/jvgomg/podkit/commit/208e482db9730064a25e53e03121bdcfcbea6341), [`bb96778`](https://github.com/jvgomg/podkit/commit/bb96778dde9063267188b2b83535ec279cd5c550), [`f72fa01`](https://github.com/jvgomg/podkit/commit/f72fa0170872fc0a6e5719b4509abae24e6414cd), [`c9c268e`](https://github.com/jvgomg/podkit/commit/c9c268ea4b25b39543e5c53a1928e72b4c31e0c8), [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df)]:
+  - @podkit/core@0.7.0
+
 ## 0.6.0
 
 ### Minor Changes

@@ -119,7 +119,7 @@
     },
     "packages/podkit-cli": {
       "name": "podkit",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "bin": {
         "podkit": "./dist/main.js",
       },
@@ -136,7 +136,7 @@
     },
     "packages/podkit-core": {
       "name": "@podkit/core",
-      "version": "0.6.0",
+      "version": "0.7.0",
       "dependencies": {
         "@ctrl/video-filename-parser": "^5.4.1",
         "@podkit/libgpod-node": "workspace:*",
@@ -152,7 +152,7 @@
     },
     "packages/podkit-daemon": {
       "name": "@podkit/daemon",
-      "version": "0.2.2",
+      "version": "0.3.0",
       "dependencies": {
         "@podkit/core": "workspace:*",
       },
@@ -162,7 +162,7 @@
     },
     "packages/podkit-docker": {
       "name": "@podkit/docker",
-      "version": "0.2.3",
+      "version": "0.2.4",
       "dependencies": {
         "@podkit/daemon": "workspace:*",
         "podkit": "workspace:*",
