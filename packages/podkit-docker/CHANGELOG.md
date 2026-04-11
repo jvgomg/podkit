@@ -1,5 +1,13 @@
 # @podkit/docker
 
+## 0.2.4
+
+### Patch Changes
+
+- Updated dependencies [[`0f3e4dd`](https://github.com/jvgomg/podkit/commit/0f3e4ddae134228b5e874b21db33f74547867b6c), [`036b107`](https://github.com/jvgomg/podkit/commit/036b1077748253385b6f4ff873a7cdb52c54b004), [`89ff40c`](https://github.com/jvgomg/podkit/commit/89ff40c2adedd9fec38ae5ad0eb89b75525642f2), [`c5c0236`](https://github.com/jvgomg/podkit/commit/c5c0236c232cc3fa086fd3937b0e2fbe0f326185), [`0ef210b`](https://github.com/jvgomg/podkit/commit/0ef210be6e5fc38203e5501d33cc1bb978ecc0c6), [`56c7ec3`](https://github.com/jvgomg/podkit/commit/56c7ec36fb00b6996beffdce76eb17a23211c628), [`513173d`](https://github.com/jvgomg/podkit/commit/513173d1832bf9ca2894214e97d9d65cf02c52a5), [`7534c2f`](https://github.com/jvgomg/podkit/commit/7534c2f19d81087413af8abbf764fe20cef61384), [`8bc3126`](https://github.com/jvgomg/podkit/commit/8bc3126ec415aa836b746ec921b6738abdd9e538), [`03f1046`](https://github.com/jvgomg/podkit/commit/03f1046b70898b0282d0c96927bca60ee0d55eeb), [`3db3d88`](https://github.com/jvgomg/podkit/commit/3db3d887ae2cd19d01ba2c1f00b8682e783fac84), [`7ebb7c5`](https://github.com/jvgomg/podkit/commit/7ebb7c5c0e1c7c3d549196347029d9ce660fcb8b), [`1caab19`](https://github.com/jvgomg/podkit/commit/1caab1991d43739aaba3d9ae2e4a5dd6575f331a), [`3fe7853`](https://github.com/jvgomg/podkit/commit/3fe785330f8b92c21159ae253456942a92e7c8e2), [`26733cc`](https://github.com/jvgomg/podkit/commit/26733cc77fd56681387b29e4241ad05e4d1fd348), [`e58ae80`](https://github.com/jvgomg/podkit/commit/e58ae806a494e3f526a828d4b72dab558ae4b121), [`94c85d2`](https://github.com/jvgomg/podkit/commit/94c85d2a9d6c85875432a0ebecab540a9ebd67d7), [`efa14c6`](https://github.com/jvgomg/podkit/commit/efa14c623e7bda81066bd77142cddb28e4de615d), [`455e115`](https://github.com/jvgomg/podkit/commit/455e115d5f724411f970ed49dda2cca57c7aff2f), [`f72fa01`](https://github.com/jvgomg/podkit/commit/f72fa0170872fc0a6e5719b4509abae24e6414cd), [`1c3ebc3`](https://github.com/jvgomg/podkit/commit/1c3ebc381276accdb8361f50454b90c75f2391df), [`17eac11`](https://github.com/jvgomg/podkit/commit/17eac114719f93cef40beb58381e534a28ebc35f)]:
+  - podkit@0.7.0
+  - @podkit/daemon@0.3.0
+
 ## 0.2.3
 
 ### Patch Changes
