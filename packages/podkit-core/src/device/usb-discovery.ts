@@ -31,6 +31,12 @@ export interface UsbDiscoveredDevice {
   supported: boolean;
   /** Human-readable not-supported message for unsupported models */
   notSupportedReason?: string;
+  /** USB serial number (= FirewireGuid for iPods, 16 hex chars) */
+  serialNumber?: string;
+  /** USB bus number (for libusb device addressing) */
+  busNumber?: number;
+  /** USB device address (for libusb device addressing) */
+  deviceAddress?: number;
 }
 
 // ── Unsupported device definitions ───────────────────────────────────────────
@@ -41,6 +47,7 @@ const UNSUPPORTED_IPODS: Record<string, string> = {
   '0x1303':
     'iPod Shuffle 3rd/4th generation requires iTunes authentication and cannot be used with podkit.',
   '0x120d': 'iPod Nano 6th generation uses a different database format not supported by libgpod.',
+  '0x1266': 'iPod Nano 6th generation uses a different database format not supported by libgpod.',
 };
 
 /** Product ID ranges for iPod Touch / iOS devices */
@@ -74,6 +81,8 @@ interface SystemProfilerItem {
   _name?: string;
   vendor_id?: string;
   product_id?: string;
+  serial_num?: string;
+  location_id?: string;
   _items?: SystemProfilerItem[];
   Media?: Array<{ bsd_name?: string; [key: string]: unknown }>;
   [key: string]: unknown;
@@ -107,6 +116,8 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
             // It's a known iPod — check if supported
             const unsupportedReason = getUnsupportedReason(productId);
             const diskIdentifier = extractBsdName(item);
+            const serialNumber = extractSerialNumber(item);
+            const { busNumber, deviceAddress } = parseLocationId(item.location_id);
 
             results.push({
               vendorId: APPLE_VENDOR_ID,
@@ -115,6 +126,9 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
               ...(diskIdentifier ? { diskIdentifier } : {}),
               supported: !unsupportedReason,
               ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
+              ...(serialNumber ? { serialNumber } : {}),
+              ...(busNumber !== undefined ? { busNumber } : {}),
+              ...(deviceAddress !== undefined ? { deviceAddress } : {}),
             });
           }
           // Non-iPod Apple devices (iPhones, iPads, AirPods) are silently ignored
@@ -156,6 +170,47 @@ function extractBsdName(item: SystemProfilerItem): string | undefined {
   return undefined;
 }
 
+/** Extract serial_num from a system_profiler item (16 hex chars for iPods) */
+function extractSerialNumber(item: SystemProfilerItem): string | undefined {
+  if (typeof item.serial_num === 'string' && item.serial_num.length > 0) {
+    return item.serial_num;
+  }
+  return undefined;
+}
+
+/**
+ * Parse location_id from system_profiler into bus number and device address.
+ * Format: "0x03100000 / 14" → { busNumber: 3, deviceAddress: 14 }
+ * The top byte of the hex value is the bus number; the number after " / " is the device address.
+ */
+export function parseLocationId(locationId: string | undefined): {
+  busNumber?: number;
+  deviceAddress?: number;
+} {
+  if (!locationId || typeof locationId !== 'string') return {};
+
+  const match = locationId.match(/^0x([\da-fA-F]+)\s*\/\s*(\d+)$/);
+  if (!match) {
+    // Try format without device address: "0x03100000"
+    const hexOnly = locationId.match(/^0x([\da-fA-F]+)$/);
+    if (hexOnly) {
+      const hexValue = parseInt(hexOnly[1]!, 16);
+      const busNumber = (hexValue >> 24) & 0xff;
+      return busNumber > 0 ? { busNumber } : {};
+    }
+    return {};
+  }
+
+  const hexValue = parseInt(match[1]!, 16);
+  const busNumber = (hexValue >> 24) & 0xff;
+  const deviceAddress = parseInt(match[2]!, 10);
+
+  return {
+    ...(busNumber > 0 ? { busNumber } : {}),
+    ...(Number.isFinite(deviceAddress) ? { deviceAddress } : {}),
+  };
+}
+
 async function discoverMacOS(): Promise<UsbDiscoveredDevice[]> {
   try {
     const stdout = await new Promise<string>((resolve, reject) => {
@@ -180,9 +235,12 @@ async function discoverMacOS(): Promise<UsbDiscoveredDevice[]> {
 
 // ── Linux implementation ─────────────────────────────────────────────────────
 
-interface SysfsUsbDevice {
+export interface SysfsUsbDevice {
   idVendor: string;
   idProduct: string;
+  busnum?: string;
+  devnum?: string;
+  serial?: string;
 }
 
 /**
@@ -201,6 +259,9 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
     if (!modelName) continue;
 
     const unsupportedReason = getUnsupportedReason(productId);
+    const busNumber = device.busnum ? parseInt(device.busnum, 10) : undefined;
+    const deviceAddress = device.devnum ? parseInt(device.devnum, 10) : undefined;
+    const serialNumber = device.serial && device.serial.length > 0 ? device.serial : undefined;
 
     results.push({
       vendorId: APPLE_VENDOR_ID,
@@ -209,6 +270,9 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
       // No disk identifier available from sysfs easily
       supported: !unsupportedReason,
       ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
+      ...(serialNumber ? { serialNumber } : {}),
+      ...(Number.isFinite(busNumber) ? { busNumber } : {}),
+      ...(Number.isFinite(deviceAddress) ? { deviceAddress } : {}),
     });
   }
 
@@ -230,7 +294,28 @@ async function discoverLinux(): Promise<UsbDiscoveredDevice[]> {
       try {
         const idVendor = fs.readFileSync(vendorPath, 'utf-8').trim();
         const idProduct = fs.readFileSync(productPath, 'utf-8').trim();
-        devices.push({ idVendor, idProduct });
+
+        // Read optional sysfs fields for bus/device/serial
+        let busnum: string | undefined;
+        let devnum: string | undefined;
+        let serial: string | undefined;
+        try {
+          busnum = fs.readFileSync(path.join(deviceDir, 'busnum'), 'utf-8').trim();
+        } catch {
+          /* not always present */
+        }
+        try {
+          devnum = fs.readFileSync(path.join(deviceDir, 'devnum'), 'utf-8').trim();
+        } catch {
+          /* not always present */
+        }
+        try {
+          serial = fs.readFileSync(path.join(deviceDir, 'serial'), 'utf-8').trim();
+        } catch {
+          /* not always present */
+        }
+
+        devices.push({ idVendor, idProduct, busnum, devnum, serial });
       } catch {
         // Not all entries have idVendor/idProduct (e.g., hub ports) — skip
         continue;
@@ -242,6 +327,226 @@ async function discoverLinux(): Promise<UsbDiscoveredDevice[]> {
     // /sys/bus/usb/devices doesn't exist or permission denied — graceful degradation
     return [];
   }
+}
+
+// ── Path-to-USB correlation ─────────────────────────────────────────────────
+
+/**
+ * Resolve USB device info (bus number, device address, serial) from a mount path.
+ *
+ * macOS: Runs diskutil + system_profiler to correlate mount path → bsd_name → USB device.
+ * Linux: Parses /proc/mounts → sysfs block device → walks up to USB ancestor for bus/address/serial.
+ *
+ * Never throws — returns null on any failure.
+ */
+export async function resolveUsbDeviceFromPath(
+  mountPath: string,
+  options?: { platform?: string }
+): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+  const platform = options?.platform ?? process.platform;
+
+  try {
+    switch (platform) {
+      case 'darwin':
+        return await resolveUsbDeviceFromPathMacOS(mountPath);
+      case 'linux':
+        return await resolveUsbDeviceFromPathLinux(mountPath);
+      default:
+        return null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Find the block device for a mount path by parsing /proc/mounts.
+ * Exported for testing.
+ *
+ * @returns Block device basename (e.g., "sda1") or null
+ */
+export function findBlockDeviceForMount(
+  mountPath: string,
+  procMountsContent: string
+): string | null {
+  // Normalise trailing slash for comparison
+  const normalised =
+    mountPath.endsWith('/') && mountPath !== '/' ? mountPath.slice(0, -1) : mountPath;
+
+  for (const line of procMountsContent.split('\n')) {
+    const parts = line.split(' ');
+    if (parts.length < 2) continue;
+    const device = parts[0]!;
+    const mount = parts[1]!;
+    if (mount === normalised && device.startsWith('/dev/')) {
+      return path.basename(device);
+    }
+  }
+  return null;
+}
+
+/**
+ * Walk from a sysfs block device path up to the USB device ancestor.
+ * Exported for testing.
+ *
+ * Starting from /sys/block/{dev}/device, follows the symlink and walks
+ * parent directories until finding one that contains busnum+devnum files
+ * (indicating a USB device node).
+ *
+ * @returns Absolute path to the USB device sysfs directory, or null
+ */
+export function findUsbAncestor(
+  sysBlockDevicePath: string,
+  fsAccess: {
+    realpathSync: (p: string) => string;
+    existsSync: (p: string) => boolean;
+  } = fs
+): string | null {
+  let devicePath: string;
+  try {
+    devicePath = fsAccess.realpathSync(sysBlockDevicePath);
+  } catch {
+    return null;
+  }
+
+  // Walk up from the resolved device path looking for busnum + devnum
+  let current = devicePath;
+  const root = '/sys';
+  while (current.length > root.length) {
+    const busnumPath = path.join(current, 'busnum');
+    const devnumPath = path.join(current, 'devnum');
+    if (fsAccess.existsSync(busnumPath) && fsAccess.existsSync(devnumPath)) {
+      return current;
+    }
+    current = path.dirname(current);
+  }
+  return null;
+}
+
+async function resolveUsbDeviceFromPathLinux(
+  mountPath: string
+): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+  // Step 1: Find block device from /proc/mounts
+  let procMounts: string;
+  try {
+    procMounts = fs.readFileSync('/proc/mounts', 'utf-8');
+  } catch {
+    return null;
+  }
+
+  const blockDev = findBlockDeviceForMount(mountPath, procMounts);
+  if (!blockDev) return null;
+
+  // Strip partition suffix (sda1 → sda) for sysfs lookup
+  const baseDev = blockDev.replace(/\d+$/, '');
+
+  // Step 2: Follow /sys/block/{dev}/device symlink up to USB device
+  const sysBlockDevice = `/sys/block/${baseDev}/device`;
+  const usbDevicePath = findUsbAncestor(sysBlockDevice);
+  if (!usbDevicePath) return null;
+
+  // Step 3: Read USB device attributes
+  const result: Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+
+  try {
+    const busnum = parseInt(
+      fs.readFileSync(path.join(usbDevicePath, 'busnum'), 'utf-8').trim(),
+      10
+    );
+    if (Number.isFinite(busnum)) result.busNumber = busnum;
+  } catch {
+    /* not available */
+  }
+
+  try {
+    const devnum = parseInt(
+      fs.readFileSync(path.join(usbDevicePath, 'devnum'), 'utf-8').trim(),
+      10
+    );
+    if (Number.isFinite(devnum)) result.deviceAddress = devnum;
+  } catch {
+    /* not available */
+  }
+
+  try {
+    const serial = fs.readFileSync(path.join(usbDevicePath, 'serial'), 'utf-8').trim();
+    if (serial.length > 0) result.serialNumber = serial;
+  } catch {
+    /* not available */
+  }
+
+  return Object.keys(result).length > 0 ? result : null;
+}
+
+async function resolveUsbDeviceFromPathMacOS(
+  mountPath: string
+): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+  // Step 1: Get BSD name from diskutil info
+  const diskutilOutput = await new Promise<string>((resolve, reject) => {
+    execFile('diskutil', ['info', mountPath], { timeout: 10_000 }, (error, stdout) => {
+      if (error) reject(error);
+      else resolve(stdout);
+    });
+  });
+
+  // Extract "Device Node: /dev/disk5s2" → "disk5s2", then strip partition suffix → "disk5"
+  const deviceNodeMatch = diskutilOutput.match(/Device Node:\s*\/dev\/(disk\d+)/);
+  if (!deviceNodeMatch) return null;
+  const bsdNamePrefix = deviceNodeMatch[1]!;
+
+  // Step 2: Get system_profiler USB data
+  const spOutput = await new Promise<string>((resolve, reject) => {
+    execFile(
+      'system_profiler',
+      ['SPUSBDataType', '-json'],
+      { timeout: 10_000 },
+      (error, stdout) => {
+        if (error) reject(error);
+        else resolve(stdout);
+      }
+    );
+  });
+
+  const spData = JSON.parse(spOutput) as SystemProfilerData;
+  if (!spData.SPUSBDataType) return null;
+
+  // Step 3: Walk USB tree to find device with matching bsd_name
+  function findDeviceByBsdName(items: SystemProfilerItem[]): SystemProfilerItem | undefined {
+    for (const item of items) {
+      if (Array.isArray(item.Media)) {
+        for (const media of item.Media) {
+          if (typeof media.bsd_name === 'string' && media.bsd_name === bsdNamePrefix) {
+            return item;
+          }
+        }
+      }
+      if (Array.isArray(item._items)) {
+        const found = findDeviceByBsdName(item._items);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  let matchedItem: SystemProfilerItem | undefined;
+  for (const bus of spData.SPUSBDataType) {
+    if (Array.isArray(bus._items)) {
+      matchedItem = findDeviceByBsdName(bus._items);
+      if (matchedItem) break;
+    }
+  }
+
+  if (!matchedItem) return null;
+
+  const serialNumber = extractSerialNumber(matchedItem);
+  const { busNumber, deviceAddress } = parseLocationId(matchedItem.location_id);
+
+  const result: Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+  if (serialNumber) result.serialNumber = serialNumber;
+  if (busNumber !== undefined) result.busNumber = busNumber;
+  if (deviceAddress !== undefined) result.deviceAddress = deviceAddress;
+
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────

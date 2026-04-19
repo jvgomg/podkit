@@ -93,7 +93,20 @@ export type {
 } from './assessment.js';
 
 export { detectIFlash } from './assessment.js';
-export { lookupIpodModel } from './ipod-models.js';
+export {
+  lookupIpodModel,
+  lookupIpodModelByNumber,
+  lookupIpodModelBySerial,
+  lookupGenerationByProductId,
+  getGenerationInfo,
+  getChecksumType,
+} from './ipod-models.js';
+export type {
+  IpodChecksumType,
+  IpodGenerationId,
+  IpodGeneration,
+  IpodModelVariant,
+} from './ipod-models.js';
 
 // Readiness pipeline
 export type {
@@ -114,7 +127,7 @@ export {
 
 // USB discovery
 export type { UsbDiscoveredDevice } from './usb-discovery.js';
-export { discoverUsbIpods } from './usb-discovery.js';
+export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './error-codes.js';

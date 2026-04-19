@@ -21,6 +21,17 @@
 #include "database_wrapper.h"
 #include "photo_database_wrapper.h"
 
+// Declaration for itdb_read_sysinfo_extended_from_usb from libgpod.
+// USB SysInfoExtended reading — resolved at runtime via dlsym so the binding
+// loads even when libgpod was built without HAVE_LIBUSB (e.g., system packages).
+#include <dlfcn.h>
+typedef gchar *(*ReadSysInfoExtendedFn)(guint bus_number, guint device_address);
+static ReadSysInfoExtendedFn resolve_sysinfo_fn() {
+    static ReadSysInfoExtendedFn fn = reinterpret_cast<ReadSysInfoExtendedFn>(
+        dlsym(RTLD_DEFAULT, "itdb_read_sysinfo_extended_from_usb"));
+    return fn;
+}
+
 /**
  * Parse an iPod database from a mountpoint.
  * @param mountpoint Path to iPod mount point
@@ -261,6 +272,47 @@ Napi::Value CreatePhotoDb(const Napi::CallbackInfo& info) {
 }
 
 /**
+ * Read SysInfoExtended XML from an iPod via USB vendor control transfer.
+ * This is a standalone function that does not require an open database.
+ *
+ * @param busNumber USB bus number
+ * @param deviceAddress USB device address
+ * @returns XML string or null if the read fails
+ */
+Napi::Value ReadSysInfoExtendedFromUsb(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 2) {
+        Napi::TypeError::New(env, "Expected 2 arguments: busNumber, deviceAddress").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    if (!info[0].IsNumber() || !info[1].IsNumber()) {
+        Napi::TypeError::New(env, "busNumber and deviceAddress must be numbers").ThrowAsJavaScriptException();
+        return env.Null();
+    }
+
+    unsigned int busNumber = info[0].As<Napi::Number>().Uint32Value();
+    unsigned int deviceAddress = info[1].As<Napi::Number>().Uint32Value();
+
+    ReadSysInfoExtendedFn fn = resolve_sysinfo_fn();
+    if (!fn) {
+        // libgpod was built without libusb support
+        return env.Null();
+    }
+
+    gchar *xml = fn(busNumber, deviceAddress);
+
+    if (xml == nullptr) {
+        return env.Null();
+    }
+
+    Napi::String result = Napi::String::New(env, xml);
+    g_free(xml);
+    return result;
+}
+
+/**
  * Module initialization.
  */
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
@@ -276,6 +328,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
     // Photo database functions
     exports.Set("parsePhotoDb", Napi::Function::New(env, ParsePhotoDb));
     exports.Set("createPhotoDb", Napi::Function::New(env, CreatePhotoDb));
+
+    // USB functions
+    exports.Set("readSysInfoExtendedFromUsb", Napi::Function::New(env, ReadSysInfoExtendedFromUsb));
 
     return exports;
 }

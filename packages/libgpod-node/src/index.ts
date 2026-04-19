@@ -131,3 +131,6 @@ export {
 
 // Native binding utilities (for advanced use)
 export { isNativeAvailable, getVersion as getNativeVersion } from './binding';
+
+// USB functions
+export { readSysInfoExtendedFromUsb } from './binding';

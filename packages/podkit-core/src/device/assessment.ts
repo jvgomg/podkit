@@ -46,6 +46,12 @@ export interface UsbDeviceInfo {
   vendorId: string;
   /** Resolved human-readable model name if the product ID is known */
   modelName?: string;
+  /** USB serial number (= FirewireGuid for iPods, 16 hex chars) */
+  serialNumber?: string;
+  /** USB bus number (for libusb device addressing) */
+  busNumber?: number;
+  /** USB device address (for libusb device addressing) */
+  deviceAddress?: number;
 }
 
 /**
