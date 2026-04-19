@@ -13,7 +13,7 @@ This document covers the internal structure of iPod devices, focusing on the dat
 iPod_Control/
 ├── Device/
 │   ├── SysInfo              # Device model information
-│   └── SysInfoExtended      # Detailed device capabilities (iTunes-created)
+│   └── SysInfoExtended      # Detailed device capabilities (written by libgpod tooling)
 ├── iTunes/
 │   ├── iTunesDB             # Main track database (binary)
 │   ├── iTunesPrefs          # Device preferences
@@ -76,7 +76,9 @@ Using just `A147` would skip 'A' and look for '147', which doesn't exist.
 
 ### Creating SysInfo Manually
 
-If an iPod doesn't have a SysInfo file (common after reformatting):
+On pre-2006 iPods (1G–5G, Nano 1G), the firmware writes a populated SysInfo file automatically during reset or restore. On later models (Classic, Nano 2G+, 5.5G+, Shuffle 2G+), the firmware either creates an empty (0-byte) SysInfo or nothing at all after an iTunes restore — libgpod writes the populated SysInfo during `itdb_init_ipod`. If SysInfo is missing or empty after a reformat, create it manually:
+
+If an iPod doesn't have a populated SysInfo file:
 
 ```bash
 IPOD="/media/username/IPOD"
