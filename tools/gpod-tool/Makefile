@@ -17,13 +17,15 @@ PREFIX ?= /usr/local
 
 # Get flags from pkg-config
 PKG_CONFIG ?= pkg-config
-LIBGPOD_CFLAGS := $(shell $(PKG_CONFIG) --cflags libgpod-1.0 2>/dev/null)
-LIBGPOD_LIBS := $(shell $(PKG_CONFIG) --libs libgpod-1.0 2>/dev/null)
+LIBGPOD_CFLAGS := $(shell $(PKG_CONFIG) --cflags libgpod-1.0 glib-2.0 2>/dev/null)
+LIBGPOD_LIBS := $(shell $(PKG_CONFIG) --libs libgpod-1.0 glib-2.0 2>/dev/null)
 
-# Path to libgpod source for private headers (itdb_thumb.h, itdb_device.h)
-# Required for artwork-dump command which accesses internal thumb structures
+# Path to libgpod source for private headers (itdb_thumb.h)
+# Optional: enables artwork-dump command which accesses internal thumb structures.
+# On macOS with local build, these are found automatically. On Linux with system
+# libgpod-dev, private headers are not installed so artwork-dump is disabled.
 LIBGPOD_SRC_DIR ?= $(realpath $(dir $(lastword $(MAKEFILE_LIST)))/../../tools/libgpod-macos/build/libgpod-0.8.3/src)
-LIBGPOD_PRIVATE_CFLAGS := $(if $(wildcard $(LIBGPOD_SRC_DIR)/itdb_thumb.h),-I$(LIBGPOD_SRC_DIR),)
+LIBGPOD_PRIVATE_CFLAGS := $(if $(wildcard $(LIBGPOD_SRC_DIR)/itdb_thumb.h),-I$(LIBGPOD_SRC_DIR) -DHAVE_LIBGPOD_PRIVATE,)
 
 # Check if libgpod was found
 ifeq ($(LIBGPOD_CFLAGS),)

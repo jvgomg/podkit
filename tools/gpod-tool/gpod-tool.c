@@ -23,7 +23,9 @@
 #include <getopt.h>
 #include <gpod/itdb.h>
 #include <glib.h>
+#ifdef HAVE_LIBGPOD_PRIVATE
 #include "itdb_thumb.h"
+#endif
 
 #define VERSION "0.1.0"
 
@@ -807,9 +809,10 @@ static int cmd_verify(int argc, char *argv[]) {
 }
 
 /* ============================================================================
- * Command: artwork-dump
+ * Command: artwork-dump (requires private libgpod headers)
  * ============================================================================ */
 
+#ifdef HAVE_LIBGPOD_PRIVATE
 static void print_artwork_dump_usage(void) {
     fprintf(stderr, "Usage: gpod-tool artwork-dump <path> [options]\n");
     fprintf(stderr, "\n");
@@ -1006,6 +1009,7 @@ static int cmd_artwork_dump(int argc, char *argv[]) {
     itdb_free(itdb);
     return 0;
 }
+#endif /* HAVE_LIBGPOD_PRIVATE */
 
 /* ============================================================================
  * Main
@@ -1022,7 +1026,9 @@ static void print_usage(void) {
     fprintf(stderr, "  tracks        List all tracks\n");
     fprintf(stderr, "  add-track     Add a track entry (metadata only)\n");
     fprintf(stderr, "  verify        Verify database can be parsed\n");
+#ifdef HAVE_LIBGPOD_PRIVATE
     fprintf(stderr, "  artwork-dump  Dump artwork information from the database\n");
+#endif
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -j, --json  Output as JSON (all commands)\n");
@@ -1033,7 +1039,9 @@ static void print_usage(void) {
     fprintf(stderr, "  gpod-tool info ./test-ipod --json\n");
     fprintf(stderr, "  gpod-tool add-track ./test-ipod -t \"Song\" -a \"Artist\"\n");
     fprintf(stderr, "  gpod-tool verify ./test-ipod\n");
+#ifdef HAVE_LIBGPOD_PRIVATE
     fprintf(stderr, "  gpod-tool artwork-dump /Volumes/iPod --json\n");
+#endif
 }
 
 int main(int argc, char *argv[]) {
@@ -1071,8 +1079,10 @@ int main(int argc, char *argv[]) {
         return cmd_add_track(argc, argv);
     } else if (strcmp(command, "verify") == 0) {
         return cmd_verify(argc, argv);
+#ifdef HAVE_LIBGPOD_PRIVATE
     } else if (strcmp(command, "artwork-dump") == 0) {
         return cmd_artwork_dump(argc, argv);
+#endif
     } else {
         fprintf(stderr, "Unknown command: %s\n\n", command);
         print_usage();
