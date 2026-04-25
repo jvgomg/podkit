@@ -24,7 +24,12 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
 
   if [ "$(uname)" = "Darwin" ]; then
     # macOS: statically link everything — all .a files are built with -fPIC
-    add_static "${STATIC_DEPS_DIR}/lib/libgpod.a" ""
+    # Force-load libgpod to ensure itdb_usb.o is included — it's only
+    # referenced via dlsym at runtime, so the linker would otherwise drop it.
+    if [ -f "${STATIC_DEPS_DIR}/lib/libgpod.a" ]; then
+      LIBS="$LIBS -Wl,-force_load,${STATIC_DEPS_DIR}/lib/libgpod.a"
+    fi
+    add_static "${STATIC_DEPS_DIR}/lib/libusb-1.0.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libgio-2.0.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libgobject-2.0.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libgmodule-2.0.a" ""
@@ -37,7 +42,7 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
     add_static "${STATIC_DEPS_DIR}/lib/libpng16.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libjpeg.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libtiff.a" ""
-    LIBS="$LIBS -liconv -lz -lm -lresolv -framework Foundation -framework CoreFoundation -framework AppKit -framework Carbon"
+    LIBS="$LIBS -liconv -lz -lm -lresolv -framework Foundation -framework CoreFoundation -framework AppKit -framework Carbon -framework IOKit -framework Security"
   else
     # Linux: statically link everything — all .a files built with -fPIC
     # Glib libraries may be in lib/ or lib/{arch}-linux-gnu/ depending on meson
@@ -58,7 +63,12 @@ if [ -n "$STATIC_DEPS_DIR" ]; then
       fi
     }
 
-    add_static "${STATIC_DEPS_DIR}/lib/libgpod.a" ""
+    # Whole-archive libgpod to ensure itdb_usb.o is included — it's only
+    # referenced via dlsym at runtime, so the linker would otherwise drop it.
+    if [ -f "${STATIC_DEPS_DIR}/lib/libgpod.a" ]; then
+      LIBS="$LIBS -Wl,--whole-archive ${STATIC_DEPS_DIR}/lib/libgpod.a -Wl,--no-whole-archive"
+    fi
+    add_static "${STATIC_DEPS_DIR}/lib/libusb-1.0.a" ""
     add_static "${STATIC_DEPS_DIR}/lib/libgdk_pixbuf-2.0.a" ""
     add_static_multiarch "libgio-2.0.a"
     add_static_multiarch "libgobject-2.0.a"

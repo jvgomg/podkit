@@ -4,7 +4,7 @@ title: Integrate SysInfoExtended into device add flow
 status: Done
 assignee: []
 created_date: '2026-04-19 17:12'
-updated_date: '2026-04-25 14:56'
+updated_date: '2026-04-25 15:17'
 labels:
   - cli
   - device
@@ -49,7 +49,7 @@ See PRD: doc-029 — "CLI Integration: device add" section.
 - [x] #2 Device summary shows exact model name (color, capacity, generation) after SysInfoExtended is read
 - [x] #3 Works with both --path and auto-detected device paths
 - [x] #4 USB read failure produces a warning but does not block device add
-- [ ] #5 E2E test verifies device add flow attempts SysInfoExtended read when file is missing
+- [x] #5 E2E test verifies device add flow attempts SysInfoExtended read when file is missing
 - [x] #6 Existing device add tests still pass
 <!-- AC:END -->
 
@@ -57,4 +57,6 @@ See PRD: doc-029 — "CLI Integration: device add" section.
 
 <!-- SECTION:NOTES:BEGIN -->
 Added attemptSysInfoExtended helper in device.ts CLI. Called in both explicit-path and auto-discovery flows after mount, before DB init. Enriches model name in device summary. Never blocks device add — all failures logged at verbose level. Added exports to @podkit/core top-level and demo mock stubs.
+
+AC #5: E2E test added in device.e2e.test.ts. Uses -vv verbose flag to assert 'SysInfoExtended' appears in output, proving attemptSysInfoExtended code path ran. Test passes in dummy iPod environment (no real USB device needed).
 <!-- SECTION:NOTES:END -->

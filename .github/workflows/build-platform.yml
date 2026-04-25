@@ -60,7 +60,7 @@ jobs:
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && matrix.platform == 'darwin' && steps.static-cache.outputs.cache-hit != 'true'
         run: |
           brew install --quiet libplist gdk-pixbuf intltool autoconf automake libtool \
-            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja 2>/dev/null
+            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja libusb 2>/dev/null
           sudo cpan -T XML::Parser
 
       - name: Build static dependencies
@@ -69,7 +69,7 @@ jobs:
 
       - name: Install macOS prebuild deps
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit == 'true'
-        run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff 2>/dev/null
+        run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff libusb 2>/dev/null
 
       - uses: actions/setup-node@v4
         if: steps.prebuild-cache.outputs.cache-hit != 'true'
@@ -96,7 +96,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           otool -L "$PREBUILD"
-          if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+          if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -135,7 +135,7 @@ jobs:
         run: |
           echo "Dynamic dependencies:"
           otool -L packages/podkit-cli/bin/podkit
-          if otool -L packages/podkit-cli/bin/podkit | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+          if otool -L packages/podkit-cli/bin/podkit | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -231,7 +231,7 @@ jobs:
             zlib-dev zlib-static \
             gettext-static gettext-dev \
             intltool autoconf automake libtool gtk-doc \
-            perl-xml-parser linux-headers
+            perl-xml-parser linux-headers libusb-dev
 
       - name: Build static dependencies
         if: steps.prebuild-cache.outputs.cache-hit != 'true' && steps.static-cache.outputs.cache-hit != 'true'
@@ -281,7 +281,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD" || true
-          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
+          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -413,7 +413,7 @@ jobs:
                 tiff-dev \
                 zlib-dev zlib-static \
                 intltool autoconf automake libtool gtk-doc \
-                perl-xml-parser linux-headers \
+                perl-xml-parser linux-headers libusb-dev \
                 nodejs npm
 
               if [ ! -f /workspace/static-deps/lib/libgpod.a ] || [ ! -f /workspace/static-deps/lib/libgdk_pixbuf-2.0.a ]; then
@@ -438,7 +438,7 @@ jobs:
               echo "==> Verifying static linking..."
               PREBUILD=$(find prebuilds -name "*.node" | head -1)
               ldd "$PREBUILD" || true
-              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff"; then
+              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff|libusb"; then
                 echo "ERROR: Found unexpected dynamic dependencies"
                 exit 1
               fi
@@ -480,7 +480,7 @@ jobs:
               packages/podkit-cli/bin/podkit --help
 
               ldd packages/podkit-cli/bin/podkit || true
-              if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff"; then
+              if ldd packages/podkit-cli/bin/podkit 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libffi|libplist|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff|libusb"; then
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
 

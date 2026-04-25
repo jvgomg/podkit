@@ -51,7 +51,7 @@ jobs:
         if: matrix.platform == 'darwin' && steps.cache.outputs.cache-hit != 'true'
         run: |
           brew install --quiet libplist gdk-pixbuf intltool autoconf automake libtool \
-            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja 2>/dev/null
+            gtk-doc pkg-config gettext libpng jpeg-turbo libtiff meson ninja libusb 2>/dev/null
           sudo cpan -T XML::Parser
 
       - name: Install Linux build deps
@@ -62,7 +62,7 @@ jobs:
             build-essential pkg-config python3-pip \
             libglib2.0-dev libgdk-pixbuf-2.0-dev \
             libplist-dev libffi-dev libsqlite3-dev \
-            libpng-dev libjpeg-dev libtiff-dev libxml2-dev \
+            libpng-dev libjpeg-dev libtiff-dev libxml2-dev libusb-1.0-0-dev \
             intltool autoconf automake libtool gtk-doc-tools \
             meson ninja-build curl
 
@@ -74,7 +74,7 @@ jobs:
 
       - name: Install macOS prebuild deps
         if: matrix.platform == 'darwin' && steps.cache.outputs.cache-hit == 'true'
-        run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff 2>/dev/null
+        run: brew install --quiet libplist gdk-pixbuf pkg-config gettext libpng jpeg-turbo libtiff libusb 2>/dev/null
 
       - name: Install Linux prebuild deps
         if: matrix.platform == 'linux' && steps.cache.outputs.cache-hit == 'true'
@@ -110,7 +110,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           otool -L "$PREBUILD"
-          if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf'; then
+          if otool -L "$PREBUILD" | tail -n +2 | grep -E 'libgpod|libglib|libgobject|libgdk_pixbuf|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -122,7 +122,7 @@ jobs:
           echo "Dynamic dependencies:"
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD"
-          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf'; then
+          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"
             exit 1
           fi
@@ -171,7 +171,7 @@ jobs:
             bash build-base pkgconf python3 curl \
             glib-dev gdk-pixbuf-dev \
             libplist-dev libffi-dev sqlite-dev \
-            libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+            libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev libusb-dev \
             intltool autoconf automake libtool gtk-doc \
             meson ninja perl-xml-parser linux-headers
 
@@ -211,7 +211,7 @@ jobs:
         run: |
           PREBUILD=$(find prebuilds -name "*.node" | head -1)
           ldd "$PREBUILD" || true
-          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf'; then
+          if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libusb'; then
             echo "ERROR: Found unexpected dynamic dependencies"; exit 1
           fi
 
@@ -246,7 +246,7 @@ jobs:
                 bash build-base pkgconf python3 curl git \
                 glib-dev gdk-pixbuf-dev \
                 libplist-dev libffi-dev sqlite-dev \
-                libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
+                libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev libusb-dev \
                 intltool autoconf automake libtool gtk-doc \
                 meson ninja perl-xml-parser linux-headers \
                 nodejs npm
@@ -263,7 +263,7 @@ jobs:
 
               PREBUILD=$(find prebuilds -name "*.node" | head -1)
               ldd "$PREBUILD" || true
-              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf"; then
+              if ldd "$PREBUILD" 2>/dev/null | grep -E "libgpod|libgdk_pixbuf|libusb"; then
                 echo "ERROR: Found unexpected dynamic dependencies"; exit 1
               fi
 
