@@ -2336,6 +2336,18 @@ export async function discoverUsbIpods(): Promise<any[]> {
   return [];
 }
 
+export async function resolveUsbDeviceFromPath(_mountPath: string): Promise<any> {
+  return null;
+}
+
+export function readSysInfoExtended(_mountPoint: string): any {
+  return null;
+}
+
+export async function ensureSysInfoExtended(_mountPoint: string, _usbAddress: any): Promise<any> {
+  return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
+}
+
 export function createUsbOnlyReadinessResult(_device: any): any {
   return { level: 'needs-partition', stages: [] };
 }

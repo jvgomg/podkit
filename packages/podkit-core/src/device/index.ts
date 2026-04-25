@@ -125,6 +125,10 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 
+// SysInfoExtended orchestrator
+export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from './sysinfo-extended.js';
+export { ensureSysInfoExtended, readSysInfoExtended } from './sysinfo-extended.js';
+
 // USB discovery
 export type { UsbDiscoveredDevice } from './usb-discovery.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
