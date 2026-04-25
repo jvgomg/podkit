@@ -4,6 +4,7 @@ title: Refactor model tables and USB tree traversal
 status: To Do
 assignee: []
 created_date: '2026-04-19 17:13'
+updated_date: '2026-04-25 14:56'
 labels:
   - refactoring
   - device
@@ -48,10 +49,16 @@ See PRD: doc-029 — "Refactoring Opportunities" section.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Old separate IPOD_MODELS and SYSINFO_MODEL_NAMES tables removed, all consumers use unified registry
+- [x] #1 Old separate IPOD_MODELS and SYSINFO_MODEL_NAMES tables removed, all consumers use unified registry
 - [ ] #2 macOS USB tree traversal uses shared generic search utility (no duplicated recursive walks)
 - [ ] #3 determineLevel() restructured for clarity (ordered rules, not nested conditionals)
 - [ ] #4 macOS and Linux device managers provide consistent USB info interface
 - [ ] #5 All existing tests pass after refactoring
 - [ ] #6 No functional behavior changes — refactoring only
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+AC #1 (remove old separate tables) already done in phase 1 when 279.03+04 were combined into unified registry. Remaining ACs (tree traversal consolidation, determineLevel cleanup, platform alignment) are deferred as low-priority refactoring for a follow-up PR.
+<!-- SECTION:NOTES:END -->

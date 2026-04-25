@@ -4,7 +4,7 @@ title: Integrate SysInfoExtended into device add flow
 status: Done
 assignee: []
 created_date: '2026-04-19 17:12'
-updated_date: '2026-04-25 13:45'
+updated_date: '2026-04-25 14:56'
 labels:
   - cli
   - device
@@ -56,12 +56,5 @@ See PRD: doc-029 — "CLI Integration: device add" section.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Integrated SysInfoExtended into the `podkit device add` command in both iPod flows (explicit path and auto-discovery).
-
-**Changes:**
-1. `packages/podkit-cli/src/commands/device.ts` — Added `attemptSysInfoExtended()` helper and integrated it into both add paths
-2. `packages/podkit-core/src/index.ts` — Added re-exports for `readSysInfoExtended`, `ensureSysInfoExtended`, `resolveUsbDeviceFromPath`, and `SysInfoExtendedResult` (were exported from device/index.ts but not from top-level)
-3. `packages/demo/src/mock-core.ts` — Added stub implementations for the three new exports
-
-AC #5 (E2E test) was out of scope per task description.
+Added attemptSysInfoExtended helper in device.ts CLI. Called in both explicit-path and auto-discovery flows after mount, before DB init. Enriches model name in device summary. Never blocks device add — all failures logged at verbose level. Added exports to @podkit/core top-level and demo mock stubs.
 <!-- SECTION:NOTES:END -->
