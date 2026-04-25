@@ -225,11 +225,32 @@ function findUsbIdentity(blockDeviceName: string): UsbDeviceInfo | undefined {
         const vendorId = `0x${readFileSync(vendorPath, 'utf-8').trim()}`;
         const productId = `0x${readFileSync(productPath, 'utf-8').trim()}`;
 
-        return {
+        const info: UsbDeviceInfo = {
           productId,
           vendorId,
           modelName: lookupIpodModel(productId),
         };
+
+        // Read optional USB identity fields from the same sysfs node
+        const serialPath = join(sysPath, 'serial');
+        if (existsSync(serialPath)) {
+          const serial = readFileSync(serialPath, 'utf-8').trim();
+          if (serial.length > 0) info.serialNumber = serial;
+        }
+
+        const busnumPath = join(sysPath, 'busnum');
+        if (existsSync(busnumPath)) {
+          const busnum = parseInt(readFileSync(busnumPath, 'utf-8').trim(), 10);
+          if (Number.isFinite(busnum)) info.busNumber = busnum;
+        }
+
+        const devnumPath = join(sysPath, 'devnum');
+        if (existsSync(devnumPath)) {
+          const devnum = parseInt(readFileSync(devnumPath, 'utf-8').trim(), 10);
+          if (Number.isFinite(devnum)) info.deviceAddress = devnum;
+        }
+
+        return info;
       }
 
       // Move up one directory

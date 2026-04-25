@@ -19,6 +19,7 @@ import type {
 import type { DeviceAssessment, UsbDeviceInfo } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
 import { lookupIpodModel } from '../ipod-models.js';
+import { parseLocationId } from '../usb-discovery.js';
 
 /**
  * Execute a command and return stdout
@@ -550,34 +551,46 @@ Replace diskXsY with your actual device identifier`;
    * disks (e.g., internal storage + SD card).
    */
   private findAllBsdNamesForDevice(node: unknown, targetDisk: string): string[] {
-    if (!node || typeof node !== 'object') return [];
+    const deviceNode = this.findUsbDeviceNode(node, targetDisk);
+    return deviceNode ? this.collectAllBsdNames(deviceNode) : [];
+  }
+
+  /**
+   * Walk a system_profiler JSON tree, finding the first node with a `product_id`
+   * field whose subtree contains the target `bsd_name`.
+   */
+  private findUsbDeviceNode(
+    node: unknown,
+    targetBsdName: string
+  ): Record<string, unknown> | undefined {
+    if (!node || typeof node !== 'object') return undefined;
 
     if (Array.isArray(node)) {
       for (const item of node) {
-        const result = this.findAllBsdNamesForDevice(item, targetDisk);
-        if (result.length > 0) return result;
+        const result = this.findUsbDeviceNode(item, targetBsdName);
+        if (result) return result;
       }
-      return [];
+      return undefined;
     }
 
     const record = node as Record<string, unknown>;
 
     // A USB device node has a product_id. If it contains our target BSD name,
-    // collect ALL BSD names from its entire subtree.
+    // this is the device we want.
     if (
       typeof record['product_id'] === 'string' &&
-      this.subtreeContainsBsdName(record, targetDisk)
+      this.subtreeContainsBsdName(record, targetBsdName)
     ) {
-      return this.collectAllBsdNames(record);
+      return record;
     }
 
     // Recurse into child values
     for (const value of Object.values(record)) {
-      const result = this.findAllBsdNamesForDevice(value, targetDisk);
-      if (result.length > 0) return result;
+      const result = this.findUsbDeviceNode(value, targetBsdName);
+      if (result) return result;
     }
 
-    return [];
+    return undefined;
   }
 
   /**
@@ -653,53 +666,48 @@ Replace diskXsY with your actual device identifier`;
   }
 
   /**
-   * Recursively search a system_profiler data structure for a USB device entry
-   * that owns the given whole-disk BSD name.
-   *
-   * The product_id lives on the USB device node, while bsd_name is nested
-   * inside its Media sub-array. We search for a node that has a product_id
-   * and contains the target bsd_name anywhere in its subtree.
+   * Search a system_profiler data structure for a USB device entry
+   * that owns the given whole-disk BSD name, and extract its USB info.
    */
   private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbDeviceInfo | undefined {
-    if (!node || typeof node !== 'object') return undefined;
+    const deviceNode = this.findUsbDeviceNode(node, wholeDisk);
+    if (!deviceNode) return undefined;
+    return this.extractUsbInfo(deviceNode);
+  }
 
-    if (Array.isArray(node)) {
-      for (const item of node) {
-        const result = this.findUsbDeviceByBsdName(item, wholeDisk);
-        if (result) return result;
-      }
-      return undefined;
+  /**
+   * Extract UsbDeviceInfo from a system_profiler USB device node.
+   *
+   * Reads product_id, vendor_id, serial_num, and location_id from
+   * the node and normalises them into the UsbDeviceInfo shape.
+   */
+  private extractUsbInfo(record: Record<string, unknown>): UsbDeviceInfo {
+    const productId = record['product_id'] as string;
+    const rawVendorId = typeof record['vendor_id'] === 'string' ? record['vendor_id'] : '';
+
+    // vendor_id may be the string "apple_vendor_id" or "0x05ac (Apple Inc.)"
+    const vendorId =
+      rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
+
+    const info: UsbDeviceInfo = {
+      productId,
+      vendorId,
+      modelName: lookupIpodModel(productId),
+    };
+
+    // Extract serial number (FirewireGuid for iPods)
+    if (typeof record['serial_num'] === 'string' && record['serial_num'].length > 0) {
+      info.serialNumber = record['serial_num'];
     }
 
-    const record = node as Record<string, unknown>;
+    // Extract bus number and device address from location_id
+    const locationId =
+      typeof record['location_id'] === 'string' ? record['location_id'] : undefined;
+    const { busNumber, deviceAddress } = parseLocationId(locationId);
+    if (busNumber !== undefined) info.busNumber = busNumber;
+    if (deviceAddress !== undefined) info.deviceAddress = deviceAddress;
 
-    // If this node has a product_id and the target bsd_name appears anywhere
-    // in its subtree, this is the USB device entry we want.
-    if (
-      typeof record['product_id'] === 'string' &&
-      this.subtreeContainsBsdName(record, wholeDisk)
-    ) {
-      const productId = record['product_id'];
-      const rawVendorId = typeof record['vendor_id'] === 'string' ? record['vendor_id'] : '';
-
-      // vendor_id may be the string "apple_vendor_id" or "0x05ac (Apple Inc.)"
-      const vendorId =
-        rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
-
-      return {
-        productId,
-        vendorId,
-        modelName: lookupIpodModel(productId),
-      };
-    }
-
-    // Recurse into all child values to find a matching USB device deeper in the tree
-    for (const value of Object.values(record)) {
-      const result = this.findUsbDeviceByBsdName(value, wholeDisk);
-      if (result) return result;
-    }
-
-    return undefined;
+    return info;
   }
 
   /**
