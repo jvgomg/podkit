@@ -72,7 +72,11 @@ import {
   formatValidationMessages,
   DEFAULT_LOSSY_STACK,
   DEFAULT_LOSSLESS_STACK,
+  readSysInfoExtended,
+  ensureSysInfoExtended,
+  resolveUsbDeviceFromPath,
 } from '@podkit/core';
+import type { SysInfoExtendedResult } from '@podkit/core';
 import {
   openDevice,
   isMassStorageDevice,
@@ -92,6 +96,52 @@ import type { ReadinessResult, ReadinessStageResult, ReadinessLevel } from '@pod
 // Re-export formatting utilities for backward compatibility
 export { formatBytes, formatNumber } from '../output/index.js';
 export { formatGeneration } from '@podkit/core';
+
+/**
+ * Attempt to read or obtain SysInfoExtended for an iPod.
+ *
+ * Returns the result if SysInfoExtended is present (existing or freshly read
+ * from USB), or null if unavailable. Never throws — USB read failures are
+ * logged at verbose/debug level and do not block the caller.
+ */
+async function attemptSysInfoExtended(
+  mountPoint: string,
+  out: OutputContext
+): Promise<SysInfoExtendedResult | null> {
+  try {
+    // 1. Check for existing SysInfoExtended on disk
+    const existing = readSysInfoExtended(mountPoint);
+    if (existing?.present && existing.deviceInfo) {
+      return existing;
+    }
+
+    // 2. Try to resolve USB device info from mount path
+    const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
+    if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
+      out.verbose1('Could not resolve USB device for SysInfoExtended read');
+      return null;
+    }
+
+    // 3. Attempt USB read via orchestrator
+    const result = await ensureSysInfoExtended(mountPoint, {
+      busNumber: usbInfo.busNumber,
+      deviceAddress: usbInfo.deviceAddress,
+    });
+
+    if (result.present && result.source === 'usb-read') {
+      const model = result.deviceInfo?.modelName ?? 'Unknown iPod';
+      out.print(`Device identified via USB: ${model}`);
+    } else if (!result.present) {
+      out.verbose1(`SysInfoExtended read failed: ${result.error ?? 'unknown error'}`);
+    }
+
+    return result.present ? result : null;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    out.verbose1(`SysInfoExtended attempt failed: ${message}`);
+    return null;
+  }
+}
 
 /**
  * Get storage information for a mount point.
@@ -1571,6 +1621,9 @@ const addSubcommand = new Command('add')
         return;
       }
 
+      // Attempt SysInfoExtended read (before database init so it's available for checksums)
+      const sysInfoResult = await attemptSysInfoExtended(explicitPath, out);
+
       // Check if database exists
       const hasDb = await IpodDatabase.hasDatabase(explicitPath);
       let trackCount = 0;
@@ -1619,6 +1672,11 @@ const addSubcommand = new Command('add')
           const message = err instanceof Error ? err.message : String(err);
           out.verbose1(`Warning: Could not read database: ${message}`);
         }
+      }
+
+      // Enrich model name from SysInfoExtended if available (more specific than database model)
+      if (sysInfoResult?.deviceInfo?.modelName) {
+        modelName = sysInfoResult.deviceInfo.modelName;
       }
 
       // Get volume UUID if possible (for macOS)
@@ -1894,6 +1952,12 @@ const addSubcommand = new Command('add')
       }
     }
 
+    // Attempt SysInfoExtended read (before database init so it's available for checksums)
+    let autoSysInfoResult: SysInfoExtendedResult | null = null;
+    if (ipod.mountPoint) {
+      autoSysInfoResult = await attemptSysInfoExtended(ipod.mountPoint, out);
+    }
+
     // Check if the iPod has a database
     let trackCount = 0;
     let modelName = 'Unknown';
@@ -1944,6 +2008,11 @@ const addSubcommand = new Command('add')
           // Couldn't read database info, continue anyway
         }
       }
+    }
+
+    // Enrich model name from SysInfoExtended if available (more specific than database model)
+    if (autoSysInfoResult?.deviceInfo?.modelName) {
+      modelName = autoSysInfoResult.deviceInfo.modelName;
     }
 
     const deviceInfo = {

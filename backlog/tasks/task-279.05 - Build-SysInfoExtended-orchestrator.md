@@ -1,9 +1,10 @@
 ---
 id: TASK-279.05
 title: Build SysInfoExtended orchestrator
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-19 17:12'
+updated_date: '2026-04-25 13:40'
 labels:
   - device
   - usb
@@ -50,12 +51,18 @@ See PRD: doc-029 — "SysInfoExtended Orchestrator" section.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 ensureSysInfoExtended writes XML to iPod_Control/Device/SysInfoExtended when file is missing
-- [ ] #2 ensureSysInfoExtended skips writing when SysInfoExtended already exists
-- [ ] #3 Returns extracted device info (FirewireGuid, serial, model name) on success
-- [ ] #4 Returns clear error message when USB read fails
-- [ ] #5 Validates XML contains FireWireGUID and SerialNumber keys
-- [ ] #6 Creates Device directory if it doesn't exist
-- [ ] #7 Unit tests with fixture XML verify write, skip, and error paths
-- [ ] #8 Unit tests verify XML validation catches missing required keys
+- [x] #1 ensureSysInfoExtended writes XML to iPod_Control/Device/SysInfoExtended when file is missing
+- [x] #2 ensureSysInfoExtended skips writing when SysInfoExtended already exists
+- [x] #3 Returns extracted device info (FirewireGuid, serial, model name) on success
+- [x] #4 Returns clear error message when USB read fails
+- [x] #5 Validates XML contains FireWireGUID and SerialNumber keys
+- [x] #6 Creates Device directory if it doesn't exist
+- [x] #7 Unit tests with fixture XML verify write, skip, and error paths
+- [x] #8 Unit tests verify XML validation catches missing required keys
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+New module sysinfo-extended.ts with ensureSysInfoExtended (USB read + write) and readSysInfoExtended (read-only). Dependency injection for testing via optional readFromUsb parameter. Regex-based plist parsing handles both FireWireGUID/FirewireGuid casing. 17 tests.
+<!-- SECTION:NOTES:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-279.07
 title: Integrate SysInfoExtended into device add flow
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-19 17:12'
+updated_date: '2026-04-25 13:45'
 labels:
   - cli
   - device
@@ -44,10 +45,23 @@ See PRD: doc-029 — "CLI Integration: device add" section.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 device add automatically reads SysInfoExtended when missing on a mounted iPod
-- [ ] #2 Device summary shows exact model name (color, capacity, generation) after SysInfoExtended is read
-- [ ] #3 Works with both --path and auto-detected device paths
-- [ ] #4 USB read failure produces a warning but does not block device add
+- [x] #1 device add automatically reads SysInfoExtended when missing on a mounted iPod
+- [x] #2 Device summary shows exact model name (color, capacity, generation) after SysInfoExtended is read
+- [x] #3 Works with both --path and auto-detected device paths
+- [x] #4 USB read failure produces a warning but does not block device add
 - [ ] #5 E2E test verifies device add flow attempts SysInfoExtended read when file is missing
-- [ ] #6 Existing device add tests still pass
+- [x] #6 Existing device add tests still pass
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Integrated SysInfoExtended into the `podkit device add` command in both iPod flows (explicit path and auto-discovery).
+
+**Changes:**
+1. `packages/podkit-cli/src/commands/device.ts` — Added `attemptSysInfoExtended()` helper and integrated it into both add paths
+2. `packages/podkit-core/src/index.ts` — Added re-exports for `readSysInfoExtended`, `ensureSysInfoExtended`, `resolveUsbDeviceFromPath`, and `SysInfoExtendedResult` (were exported from device/index.ts but not from top-level)
+3. `packages/demo/src/mock-core.ts` — Added stub implementations for the three new exports
+
+AC #5 (E2E test) was out of scope per task description.
+<!-- SECTION:NOTES:END -->
