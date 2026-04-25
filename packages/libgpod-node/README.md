@@ -115,6 +115,30 @@ gboolean success = itdb_cp_track_to_ipod(track, newFilePath.c_str(), &error);
 
 **Why:** Self-healing sync needs to upgrade track files in-place (e.g., MP3 → AAC) while preserving play counts, ratings, and playlist membership. Clearing `ipod_path` is critical because the iPod firmware uses the file extension to select the audio decoder — an AAC file stored with a `.mp3` extension will not play. libgpod also derives `filetype_marker` (a 4-byte binary field) from the destination extension, so the extension must match the content.
 
+### 6. SysInfoExtended USB Read: Custom libgpod Patch
+
+**libgpod behavior:** The upstream release tarball compiles `ipod-usb.c` only into a standalone binary (`ipod-read-sysinfo-extended`), not into the library. The function `read_sysinfo_extended_from_usb()` is not available to downstream consumers.
+
+**Our behavior:** The prebuild CI applies a patch that moves this function into the library as `itdb_read_sysinfo_extended_from_usb()`, compiled conditionally when `HAVE_LIBUSB` is set. The N-API binding resolves the symbol at runtime via `dlsym` rather than linking directly.
+
+```cpp
+// native/gpod_binding.cc — runtime symbol resolution
+typedef gchar *(*ReadSysInfoExtendedFn)(guint bus_number, guint device_address);
+static ReadSysInfoExtendedFn resolve_sysinfo_fn() {
+    static ReadSysInfoExtendedFn fn = reinterpret_cast<ReadSysInfoExtendedFn>(
+        dlsym(RTLD_DEFAULT, "itdb_read_sysinfo_extended_from_usb"));
+    return fn;
+}
+```
+
+**Why dlsym?** The function must work in shipped prebuilds (where libgpod is patched and statically linked with `--whole-archive`) AND in development environments where system libgpod may lack the symbol. `dlsym` resolves this gracefully — returns null when unavailable instead of failing at load time.
+
+**Why `--whole-archive`?** Since no code references the symbol at link time (only `dlsym` at runtime), the linker would normally discard `itdb_usb.o` from the static archive. `-Wl,-force_load` (macOS) and `-Wl,--whole-archive` (Linux) force all object files to be linked.
+
+**Build patch files:**
+- `tools/prebuild/patches/itdb_usb.c` — the C implementation
+- `tools/prebuild/patches/apply-sysinfo-usb.sh` — applies to fresh libgpod source tree
+
 ## API Reference
 
 ### Database Operations
