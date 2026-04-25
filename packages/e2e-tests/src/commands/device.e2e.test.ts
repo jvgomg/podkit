@@ -155,6 +155,42 @@ volumeName = "test"
     });
   });
 
+  describe('SysInfoExtended', () => {
+    it('attempts SysInfoExtended read when file is missing', async () => {
+      await withTarget(async (target) => {
+        // Ensure SysInfoExtended doesn't exist
+        const sysInfoExtPath = join(target.path, 'iPod_Control', 'Device', 'SysInfoExtended');
+        try {
+          await rm(sysInfoExtPath);
+        } catch {
+          /* may not exist */
+        }
+
+        await writeFile(configPath, 'version = 1\n');
+
+        const result = await runCli([
+          '--config',
+          configPath,
+          '--device',
+          'testipod',
+          '-vv',
+          'device',
+          'add',
+          '--path',
+          target.path,
+          '--yes',
+        ]);
+
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout).toContain('added to config');
+
+        // Verify the SysInfoExtended code path was entered —
+        // verbose output should show the USB resolution attempt failed gracefully
+        expect(result.stdout).toContain('SysInfoExtended');
+      });
+    });
+  });
+
   describe('with uninitialized device', () => {
     let uninitDir: string;
 
