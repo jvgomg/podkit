@@ -583,7 +583,11 @@ export {
 
 // USB discovery
 export type { UsbDiscoveredDevice } from './device/index.js';
-export { discoverUsbIpods } from './device/index.js';
+export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
+
+// SysInfoExtended (device identity from USB firmware)
+export type { SysInfoExtendedResult } from './device/index.js';
+export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './device/index.js';

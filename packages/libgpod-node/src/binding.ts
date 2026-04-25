@@ -194,6 +194,9 @@ export interface NativeBinding {
   PhotoDatabase: new () => NativePhotoDatabase;
   parsePhotoDb(mountpoint: string): NativePhotoDatabase;
   createPhotoDb(mountpoint?: string): NativePhotoDatabase;
+
+  // USB functions
+  readSysInfoExtendedFromUsb(busNumber: number, deviceAddress: number): string | null;
 }
 
 // Cached binding reference
@@ -522,4 +525,27 @@ export function parsePhotoDb(mountpoint: string): NativePhotoDatabase {
 export function createPhotoDb(mountpoint?: string): NativePhotoDatabase {
   const binding = loadBinding();
   return binding.createPhotoDb(mountpoint);
+}
+
+/**
+ * Read SysInfoExtended XML from an iPod via USB vendor control transfer.
+ *
+ * This is a standalone function that does not require an open database.
+ * It communicates directly with the iPod's USB interface to retrieve
+ * the SysInfoExtended XML, which contains detailed device identification
+ * data (model, serial, firmware version, etc.).
+ *
+ * Requires libusb. The bus number and device address identify the USB
+ * device (obtainable from system_profiler on macOS or sysfs on Linux).
+ *
+ * @param busNumber USB bus number
+ * @param deviceAddress USB device address
+ * @returns XML string or null if the read fails
+ */
+export function readSysInfoExtendedFromUsb(
+  busNumber: number,
+  deviceAddress: number
+): string | null {
+  const binding = loadBinding();
+  return binding.readSysInfoExtendedFromUsb(busNumber, deviceAddress);
 }

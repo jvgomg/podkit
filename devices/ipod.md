@@ -261,7 +261,7 @@ with a companion ArtworkDB.
 iPod_Control/
 ├── Device/
 │   ├── SysInfo              # Model identification
-│   └── SysInfoExtended      # Capabilities (iTunes-created)
+│   └── SysInfoExtended      # Capabilities (written by libgpod tooling via SCSI)
 ├── iTunes/
 │   ├── iTunesDB             # Main binary database
 │   ├── iTunesPrefs          # Device preferences
@@ -319,9 +319,10 @@ iPod_Control/
   not write. iTunes handles this natively.
 - **H.264 High profile** — not supported on any iPod generation. Must use
   Baseline or Main profile.
-- **SysInfoExtended** — capabilities file created by iTunes. May not exist if
-  the iPod was never synced with iTunes. libgpod can work without it but some
-  features may be limited.
+- **SysInfoExtended** — capabilities file extracted via SCSI commands by
+  `ipod-read-sysinfo-extended` (a libgpod tool). Not written by iTunes or
+  firmware. May not exist on devices that have never been set up with libgpod
+  tooling. libgpod can work without it but some features may be limited.
 
 ## Research Notes
 

@@ -1,12 +1,18 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { PlatformDeviceInfo } from './types.js';
-import type { DeviceAssessment } from './assessment.js';
+import type { DeviceAssessment, UsbDeviceInfo } from './assessment.js';
 import type { UsbDiscoveredDevice } from './usb-discovery.js';
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodError } from '../ipod/errors.js';
 import { interpretError } from './error-codes.js';
-import { lookupIpodModelByNumber } from './ipod-models.js';
+import {
+  lookupIpodModelByNumber,
+  lookupGenerationByProductId,
+  getChecksumType,
+} from './ipod-models.js';
+import type { IpodChecksumType } from './ipod-models.js';
+import { readSysInfoExtended } from './sysinfo-extended.js';
 
 // ── Stage identifiers ────────────────────────────────────────────────────────
 
@@ -48,6 +54,7 @@ export interface ReadinessResult {
 export interface ReadinessInput {
   device: PlatformDeviceInfo;
   assessment?: DeviceAssessment;
+  usbInfo?: UsbDeviceInfo;
 }
 
 // ── Stage display names ───────────────────────────────────────────────────────
@@ -148,10 +155,59 @@ function isBinaryContent(buf: Buffer): boolean {
   return false;
 }
 
-export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageResult> {
+export async function checkSysInfo(
+  mountPoint: string,
+  usbInfo?: UsbDeviceInfo
+): Promise<ReadinessStageResult> {
   const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
+  const sysInfoExtendedPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfoExtended');
 
-  // Check existence
+  // ── Step 1: Check SysInfoExtended ──────────────────────────────────────
+  const sysInfoExtended = readSysInfoExtended(mountPoint);
+  const sysInfoExtendedExists = sysInfoExtended !== null;
+
+  // Determine checksum type from USB product ID or SysInfoExtended serial
+  let checksumType: IpodChecksumType | undefined;
+  if (usbInfo?.productId) {
+    const gen = lookupGenerationByProductId(usbInfo.productId);
+    if (gen) checksumType = getChecksumType(gen);
+  }
+  if (!checksumType && sysInfoExtended?.deviceInfo?.checksumType) {
+    checksumType = sysInfoExtended.deviceInfo.checksumType as IpodChecksumType;
+  }
+
+  // Build limitation note for hash72/hashAB devices
+  let checksumNote: string | undefined;
+  if (checksumType === 'hash72') {
+    checksumNote = 'This device requires an initial iTunes sync for HashInfo bootstrapping';
+  } else if (checksumType === 'hashAB') {
+    checksumNote = 'This device requires proprietary components not available in podkit';
+  }
+
+  // ── Step 2: If SysInfoExtended is present, use it ────────────────────
+  if (sysInfoExtendedExists && sysInfoExtended.deviceInfo) {
+    const info = sysInfoExtended.deviceInfo;
+    const displayName = info.modelName ?? 'Unknown iPod';
+    return {
+      stage: 'sysinfo',
+      status: 'pass',
+      summary: `${displayName} (SysInfoExtended)`,
+      details: {
+        sysInfoPath,
+        sysInfoExtendedPath,
+        exists: true,
+        sysInfoExtendedExists: true,
+        hasModelNum: true,
+        modelName: info.modelName,
+        firewireGuid: info.firewireGuid,
+        serialNumber: info.serialNumber,
+        checksumType: info.checksumType ?? checksumType,
+        ...(checksumNote ? { checksumNote } : {}),
+      },
+    };
+  }
+
+  // ── Step 3: Check SysInfo (classic file) ─────────────────────────────
   let fileExists = false;
   try {
     fs.accessSync(sysInfoPath, fs.constants.F_OK);
@@ -161,14 +217,21 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
   }
 
   if (!fileExists) {
+    // Both missing → fail
+    const suggestion =
+      'Run `podkit doctor --repair sysinfo-extended` to read device identity from USB.';
     return {
       stage: 'sysinfo',
       status: 'fail',
-      summary: 'SysInfo file not found',
+      summary: 'SysInfo and SysInfoExtended not found',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: false,
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        sysInfoExtendedExists: false,
+        hasModelNum: false,
+        checksumType,
+        suggestion,
       },
     };
   }
@@ -184,7 +247,9 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: 'SysInfo file could not be read',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         error: error instanceof Error ? error.message : String(error),
         suggestion: SYSINFO_SUGGESTION_RESET,
       },
@@ -199,7 +264,9 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: 'SysInfo file is empty',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_RESET,
       },
     };
@@ -213,7 +280,9 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: 'SysInfo file appears to be binary/corrupt',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_RESET,
       },
     };
@@ -230,7 +299,9 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: 'SysInfo file contains invalid UTF-8',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_RESET,
       },
     };
@@ -245,7 +316,9 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: 'SysInfo exists but ModelNumStr not found',
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         hasModelNum: false,
         suggestion: SYSINFO_SUGGESTION_RESET,
       },
@@ -262,20 +335,61 @@ export async function checkSysInfo(mountPoint: string): Promise<ReadinessStageRe
       summary: `Unrecognized model: ${modelNumber}`,
       details: {
         sysInfoPath,
+        sysInfoExtendedPath,
         exists: true,
+        sysInfoExtendedExists: false,
         hasModelNum: true,
         modelNumber,
+        checksumType,
         suggestion:
           'Device will be treated as a generic iPod. This is usually fine but may affect artwork format detection.',
       },
     };
   }
 
+  // ── Step 4: SysInfo present but SysInfoExtended missing ────────────────
+  // Determine severity based on checksum type
+  const needsChecksumSysInfoExtended =
+    checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
+
+  if (needsChecksumSysInfoExtended) {
+    // Hash-requiring devices FAIL without SysInfoExtended
+    return {
+      stage: 'sysinfo',
+      status: 'fail',
+      summary: `${modelName} (${modelNumber}) — SysInfoExtended required for checksum`,
+      details: {
+        sysInfoPath,
+        sysInfoExtendedPath,
+        exists: true,
+        sysInfoExtendedExists: false,
+        hasModelNum: true,
+        modelNumber,
+        modelName,
+        checksumType,
+        ...(checksumNote ? { checksumNote } : {}),
+        suggestion: 'Run `podkit doctor --repair sysinfo-extended` for full device identification.',
+      },
+    };
+  }
+
+  // Non-checksum devices WARN — SysInfoExtended is nice to have
   return {
     stage: 'sysinfo',
-    status: 'pass',
+    status: 'warn',
     summary: `${modelName} (${modelNumber})`,
-    details: { sysInfoPath, exists: true, hasModelNum: true, modelNumber, modelName },
+    details: {
+      sysInfoPath,
+      sysInfoExtendedPath,
+      exists: true,
+      sysInfoExtendedExists: false,
+      hasModelNum: true,
+      modelNumber,
+      modelName,
+      checksumType,
+      suggestion:
+        'SysInfo present but SysInfoExtended missing. Run `podkit doctor --repair sysinfo-extended` for full device identification.',
+    },
   };
 }
 
@@ -483,7 +597,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
 
   // Stage 5: Valid SysInfo
   try {
-    const sysInfoResult = await checkSysInfo(device.mountPoint);
+    const sysInfoResult = await checkSysInfo(device.mountPoint, input.usbInfo);
     stages.push(sysInfoResult);
     // SysInfo warns but doesn't block — continue to database
   } catch (error) {

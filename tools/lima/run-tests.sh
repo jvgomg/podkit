@@ -72,10 +72,25 @@ run_tests() {
       --exclude 'packages/libgpod-node/prebuilds' \
       --exclude 'packages/demo/bin' \
       --exclude 'packages/podkit-cli/bin' \
+      --exclude 'bin/' \
+      --exclude 'tools/gpod-tool/gpod-tool' \
+      --exclude 'tools/gpod-tool/*.o' \
       '$REPO_DIR/' '$VM_WORK_DIR/'
 
     cd '$VM_WORK_DIR'
+    rm -rf .turbo
     bun install
+
+    # Build native tools and bindings (needed for integration tests)
+    make -C tools/gpod-tool clean 2>/dev/null || true
+    make -C tools/gpod-tool
+    mkdir -p bin
+    cp tools/gpod-tool/gpod-tool bin/
+    export PATH=\$PWD/bin:\$PATH
+
+    # Build libgpod-node native binding for this platform
+    cd packages/libgpod-node && node-gyp rebuild && cd \$OLDPWD
+
     bun run test --filter @podkit/core
   "
 

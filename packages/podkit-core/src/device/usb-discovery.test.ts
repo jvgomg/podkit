@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
   parseSystemProfilerUsbData,
   parseSysfsUsbDevices,
+  parseLocationId,
   discoverUsbIpods,
+  resolveUsbDeviceFromPath,
+  findBlockDeviceForMount,
+  findUsbAncestor,
 } from './usb-discovery.js';
 import { createUsbOnlyReadinessResult } from './readiness.js';
 
@@ -280,6 +287,56 @@ describe('parseSystemProfilerUsbData', () => {
     expect(result[0]!.modelName).toBe('iPod 5th generation (Video)');
   });
 
+  it('extracts serial number, bus number, and device address', () => {
+    const data = {
+      SPUSBDataType: [
+        {
+          _name: 'USB 3.0 Bus',
+          _items: [
+            {
+              _name: 'iPod',
+              vendor_id: 'apple_vendor_id',
+              product_id: '0x1209',
+              serial_num: '000A27001BC8EED6',
+              location_id: '0x03100000 / 14',
+              Media: [{ bsd_name: 'disk5s2' }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = parseSystemProfilerUsbData(data);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.serialNumber).toBe('000A27001BC8EED6');
+    expect(result[0]!.busNumber).toBe(3);
+    expect(result[0]!.deviceAddress).toBe(14);
+    expect(result[0]!.diskIdentifier).toBe('disk5s2');
+  });
+
+  it('omits serial/bus/address fields when not present in system_profiler data', () => {
+    const data = {
+      SPUSBDataType: [
+        {
+          _name: 'USB 3.0 Bus',
+          _items: [
+            {
+              _name: 'iPod',
+              vendor_id: 'apple_vendor_id',
+              product_id: '0x1209',
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = parseSystemProfilerUsbData(data);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.serialNumber).toBeUndefined();
+    expect(result[0]!.busNumber).toBeUndefined();
+    expect(result[0]!.deviceAddress).toBeUndefined();
+  });
+
   it('handles vendor_id in "0x05ac (Apple Inc.)" format', () => {
     const data = {
       SPUSBDataType: [
@@ -299,6 +356,42 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.vendorId).toBe('0x05ac');
+  });
+});
+
+// ── parseLocationId ─────────────────────────────────────────────────────────
+
+describe('parseLocationId', () => {
+  it('parses standard format "0x03100000 / 14"', () => {
+    expect(parseLocationId('0x03100000 / 14')).toEqual({ busNumber: 3, deviceAddress: 14 });
+  });
+
+  it('parses bus 1 with device address 1', () => {
+    expect(parseLocationId('0x01100000 / 1')).toEqual({ busNumber: 1, deviceAddress: 1 });
+  });
+
+  it('parses high bus number', () => {
+    expect(parseLocationId('0xff100000 / 42')).toEqual({ busNumber: 255, deviceAddress: 42 });
+  });
+
+  it('parses hex-only format without device address', () => {
+    expect(parseLocationId('0x03100000')).toEqual({ busNumber: 3 });
+  });
+
+  it('returns empty for undefined input', () => {
+    expect(parseLocationId(undefined)).toEqual({});
+  });
+
+  it('returns empty for empty string', () => {
+    expect(parseLocationId('')).toEqual({});
+  });
+
+  it('returns empty for malformed input', () => {
+    expect(parseLocationId('not-a-location-id')).toEqual({});
+  });
+
+  it('handles no spaces around slash', () => {
+    expect(parseLocationId('0x02100000/7')).toEqual({ busNumber: 2, deviceAddress: 7 });
   });
 });
 
@@ -360,6 +453,33 @@ describe('parseSysfsUsbDevices', () => {
     const result = parseSysfsUsbDevices(devices);
     expect(result[0]!.diskIdentifier).toBeUndefined();
   });
+
+  it('extracts busnum, devnum, and serial from sysfs', () => {
+    const devices = [
+      {
+        idVendor: '05ac',
+        idProduct: '1209',
+        busnum: '3',
+        devnum: '14',
+        serial: '000A27001BC8EED6',
+      },
+    ];
+
+    const result = parseSysfsUsbDevices(devices);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.busNumber).toBe(3);
+    expect(result[0]!.deviceAddress).toBe(14);
+    expect(result[0]!.serialNumber).toBe('000A27001BC8EED6');
+  });
+
+  it('omits bus/address/serial when not present in sysfs', () => {
+    const devices = [{ idVendor: '05ac', idProduct: '1209' }];
+
+    const result = parseSysfsUsbDevices(devices);
+    expect(result[0]!.busNumber).toBeUndefined();
+    expect(result[0]!.deviceAddress).toBeUndefined();
+    expect(result[0]!.serialNumber).toBeUndefined();
+  });
 });
 
 // ── discoverUsbIpods ─────────────────────────────────────────────────────────
@@ -373,6 +493,132 @@ describe('discoverUsbIpods', () => {
   it('returns empty array for unknown platform', async () => {
     const result = await discoverUsbIpods({ platform: 'freebsd' });
     expect(result).toEqual([]);
+  });
+});
+
+// ── resolveUsbDeviceFromPath ─────────────────────────────────────────────────
+
+describe('resolveUsbDeviceFromPath', () => {
+  it('returns null for unsupported platform', async () => {
+    const result = await resolveUsbDeviceFromPath('/mnt/ipod', { platform: 'win32' });
+    expect(result).toBeNull();
+  });
+
+  it('returns null for unknown platform', async () => {
+    const result = await resolveUsbDeviceFromPath('/mnt/ipod', { platform: 'freebsd' });
+    expect(result).toBeNull();
+  });
+});
+
+// ── findBlockDeviceForMount ──────────────────────────────────────────────────
+
+describe('findBlockDeviceForMount', () => {
+  const PROC_MOUNTS = [
+    '/dev/sda1 /mnt/ipod ext4 rw,relatime 0 0',
+    '/dev/sdb1 /mnt/usb vfat rw,relatime 0 0',
+    'tmpfs /tmp tmpfs rw 0 0',
+    'proc /proc proc rw 0 0',
+  ].join('\n');
+
+  it('finds block device for matching mount path', () => {
+    expect(findBlockDeviceForMount('/mnt/ipod', PROC_MOUNTS)).toBe('sda1');
+  });
+
+  it('finds second device', () => {
+    expect(findBlockDeviceForMount('/mnt/usb', PROC_MOUNTS)).toBe('sdb1');
+  });
+
+  it('returns null for unmatched mount path', () => {
+    expect(findBlockDeviceForMount('/mnt/other', PROC_MOUNTS)).toBeNull();
+  });
+
+  it('ignores non-device mounts (tmpfs, proc)', () => {
+    expect(findBlockDeviceForMount('/tmp', PROC_MOUNTS)).toBeNull();
+    expect(findBlockDeviceForMount('/proc', PROC_MOUNTS)).toBeNull();
+  });
+
+  it('handles trailing slash on mount path', () => {
+    expect(findBlockDeviceForMount('/mnt/ipod/', PROC_MOUNTS)).toBe('sda1');
+  });
+
+  it('returns null for empty content', () => {
+    expect(findBlockDeviceForMount('/mnt/ipod', '')).toBeNull();
+  });
+});
+
+// ── findUsbAncestor ─────────────────────────────────────────────────────────
+
+describe('findUsbAncestor', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'usb-ancestor-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('finds USB ancestor with busnum and devnum', () => {
+    // Simulate sysfs: /sys/devices/pci.../usb1/1-1/1-1:1.0/host0/target0/0:0:0:0/block/sda
+    // The USB device is at 1-1 level where busnum + devnum live
+    const usbDevice = path.join(tmpDir, 'usb1', '1-1');
+    const blockDevice = path.join(usbDevice, '1-1:1.0', 'host0', 'target0', '0:0:0:0');
+
+    fs.mkdirSync(blockDevice, { recursive: true });
+    fs.writeFileSync(path.join(usbDevice, 'busnum'), '1\n');
+    fs.writeFileSync(path.join(usbDevice, 'devnum'), '14\n');
+
+    // The "sysBlockDevicePath" is what /sys/block/sda/device resolves to
+    const result = findUsbAncestor(blockDevice, {
+      realpathSync: (p: string) => p, // already resolved in test
+      existsSync: (p: string) => fs.existsSync(p),
+    });
+
+    expect(result).toBe(usbDevice);
+  });
+
+  it('returns null when no USB ancestor exists', () => {
+    const noUsbPath = path.join(tmpDir, 'some', 'deep', 'path');
+    fs.mkdirSync(noUsbPath, { recursive: true });
+
+    const result = findUsbAncestor(noUsbPath, {
+      realpathSync: (p: string) => p,
+      existsSync: (p: string) => fs.existsSync(p),
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('returns null when realpath fails (broken symlink)', () => {
+    const result = findUsbAncestor('/sys/block/nonexistent/device', {
+      realpathSync: () => {
+        throw new Error('ENOENT');
+      },
+      existsSync: () => false,
+    });
+
+    expect(result).toBeNull();
+  });
+
+  it('finds nearest USB ancestor (not a higher one)', () => {
+    // Two levels with busnum/devnum — should find the deepest (nearest to device)
+    const outerUsb = path.join(tmpDir, 'usb1');
+    const innerUsb = path.join(outerUsb, '1-1');
+    const device = path.join(innerUsb, '1-1:1.0', 'host0');
+
+    fs.mkdirSync(device, { recursive: true });
+    fs.writeFileSync(path.join(outerUsb, 'busnum'), '1\n');
+    fs.writeFileSync(path.join(outerUsb, 'devnum'), '1\n');
+    fs.writeFileSync(path.join(innerUsb, 'busnum'), '1\n');
+    fs.writeFileSync(path.join(innerUsb, 'devnum'), '14\n');
+
+    const result = findUsbAncestor(device, {
+      realpathSync: (p: string) => p,
+      existsSync: (p: string) => fs.existsSync(p),
+    });
+
+    expect(result).toBe(innerUsb);
   });
 });
 
