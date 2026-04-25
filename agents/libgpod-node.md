@@ -31,6 +31,26 @@ See `packages/libgpod-node/README.md` for the full list. Key deviations:
 | `clearTrackChapters()` | NULL chapterdata crashes | Create empty chapterdata |
 | `replaceTrackFile()` | `copyTrackToDevice()` no-ops if already transferred | Reset `transferred` flag, overwrite file in place |
 
+## Custom libgpod Build (SysInfoExtended USB)
+
+The prebuild CI applies a **custom patch** to libgpod that adds `itdb_read_sysinfo_extended_from_usb()` to the library. This function reads device identity XML from iPod firmware via USB vendor control transfers (libusb).
+
+**Why a patch?** The upstream libgpod 0.8.3 tarball has the `HAVE_LIBUSB` conditional in `configure.ac` and `tools/Makefile.am`, but the actual `itdb_usb.c` source file was only compiled into a standalone binary (`ipod-read-sysinfo-extended`), never into the library itself. Our patch:
+1. Copies `itdb_usb.c` into `src/` (the library)
+2. Adds `HAVE_LIBUSB` conditional to `src/Makefile.am`
+3. Adds the public declaration to `src/itdb.h`
+
+**Build implications:**
+- `build-static-deps.sh` builds libusb 1.0.27 as a static dependency
+- `get-ldflags.sh` uses `-Wl,-force_load` (macOS) / `-Wl,--whole-archive` (Linux) for `libgpod.a` — this forces all object files into the binary, including `itdb_usb.o` which is only referenced via `dlsym` at runtime
+- The N-API binding resolves the symbol at runtime via `dlsym(RTLD_DEFAULT, "itdb_read_sysinfo_extended_from_usb")` — if the symbol isn't present (e.g., system libgpod without the patch), the function gracefully returns null
+
+**Files involved:**
+- `tools/prebuild/patches/itdb_usb.c` — the C source
+- `tools/prebuild/patches/apply-sysinfo-usb.sh` — applies the patch to a fresh libgpod source tree
+- `tools/prebuild/build-static-deps.sh` — builds libusb + applies patch
+- `packages/libgpod-node/native/gpod_binding.cc` — dlsym resolution
+
 ## Investigating New Issues
 
 When encountering libgpod CRITICAL assertions or unexpected behavior:
