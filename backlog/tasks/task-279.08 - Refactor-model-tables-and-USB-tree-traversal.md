@@ -1,10 +1,10 @@
 ---
 id: TASK-279.08
 title: Refactor model tables and USB tree traversal
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-04-19 17:13'
-updated_date: '2026-04-25 14:56'
+updated_date: '2026-04-25 17:06'
 labels:
   - refactoring
   - device
@@ -50,15 +50,15 @@ See PRD: doc-029 — "Refactoring Opportunities" section.
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [x] #1 Old separate IPOD_MODELS and SYSINFO_MODEL_NAMES tables removed, all consumers use unified registry
-- [ ] #2 macOS USB tree traversal uses shared generic search utility (no duplicated recursive walks)
-- [ ] #3 determineLevel() restructured for clarity (ordered rules, not nested conditionals)
-- [ ] #4 macOS and Linux device managers provide consistent USB info interface
-- [ ] #5 All existing tests pass after refactoring
-- [ ] #6 No functional behavior changes — refactoring only
+- [x] #2 macOS USB tree traversal uses shared generic search utility (no duplicated recursive walks)
+- [x] #3 determineLevel() restructured for clarity (ordered rules, not nested conditionals)
+- [x] #4 macOS and Linux device managers provide consistent USB info interface
+- [x] #5 All existing tests pass after refactoring
+- [x] #6 No functional behavior changes — refactoring only
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-AC #1 (remove old separate tables) already done in phase 1 when 279.03+04 were combined into unified registry. Remaining ACs (tree traversal consolidation, determineLevel cleanup, platform alignment) are deferred as low-priority refactoring for a follow-up PR.
+AC#2: Extracted findUsbDeviceNode() as shared recursive search. Both findAllBsdNamesForDevice and findUsbDeviceByBsdName delegate to it. AC#3: determineLevel() restructured as READINESS_RULES ordered array with match predicates. AC#4: macOS extracts serial_num/location_id, Linux reads serial/busnum/devnum from sysfs. All 2394 tests pass.
 <!-- SECTION:NOTES:END -->
