@@ -139,8 +139,12 @@ export async function checkIpodStructure(mountPoint: string): Promise<ReadinessS
   };
 }
 
-const SYSINFO_SUGGESTION_RESET =
-  'Run `podkit device reset` to recreate, or manually create iPod_Control/Device/SysInfo with your model number.';
+// Non-destructive repair hint for any sysinfo-stage failure: read identity
+// from USB firmware and write SysInfoExtended. libgpod prefers
+// SysInfoExtended over classic SysInfo, so this fixes missing/empty/corrupt
+// SysInfo files without resetting the device or touching user data.
+const SYSINFO_SUGGESTION_REPAIR =
+  'Run `podkit doctor --repair sysinfo-extended` to read device identity from USB.';
 
 /** Returns true if the buffer contains control characters that indicate binary content. */
 function isBinaryContent(buf: Buffer): boolean {
@@ -218,8 +222,6 @@ export async function checkSysInfo(
 
   if (!fileExists) {
     // Both missing → fail
-    const suggestion =
-      'Run `podkit doctor --repair sysinfo-extended` to read device identity from USB.';
     return {
       stage: 'sysinfo',
       status: 'fail',
@@ -231,7 +233,7 @@ export async function checkSysInfo(
         sysInfoExtendedExists: false,
         hasModelNum: false,
         checksumType,
-        suggestion,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -251,7 +253,7 @@ export async function checkSysInfo(
         exists: true,
         sysInfoExtendedExists: false,
         error: error instanceof Error ? error.message : String(error),
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -267,7 +269,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -283,7 +285,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -302,7 +304,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -320,7 +322,7 @@ export async function checkSysInfo(
         exists: true,
         sysInfoExtendedExists: false,
         hasModelNum: false,
-        suggestion: SYSINFO_SUGGESTION_RESET,
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -368,7 +370,7 @@ export async function checkSysInfo(
         modelName,
         checksumType,
         ...(checksumNote ? { checksumNote } : {}),
-        suggestion: 'Run `podkit doctor --repair sysinfo-extended` for full device identification.',
+        suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
@@ -390,8 +392,7 @@ export async function checkSysInfo(
       modelNumber,
       modelName,
       checksumType,
-      suggestion:
-        'SysInfo present but SysInfoExtended missing. Run `podkit doctor --repair sysinfo-extended` for full device identification.',
+      suggestion: SYSINFO_SUGGESTION_REPAIR,
     },
   };
 }

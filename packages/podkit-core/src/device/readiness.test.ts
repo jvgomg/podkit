@@ -147,7 +147,7 @@ describe('checkSysInfo', () => {
     expect(result.details?.modelNumber).toBe('MA147');
     expect(result.details?.modelName).toBeTruthy();
     expect(result.details?.sysInfoExtendedExists).toBe(false);
-    expect(result.details?.suggestion).toContain('SysInfoExtended missing');
+    expect(result.details?.suggestion).toContain('--repair sysinfo-extended');
   });
 
   it('fails when SysInfo has known model but SysInfoExtended is missing (hash58 device)', async () => {

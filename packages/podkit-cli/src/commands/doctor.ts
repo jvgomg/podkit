@@ -83,6 +83,35 @@ interface DoctorOptions {
   format?: 'csv';
 }
 
+// ── Suggested actions ────────────────────────────────────────────────────────
+
+interface SuggestedAction {
+  /** Why the user might want to run this — printed as a section heading. */
+  reason: string;
+  /** Exact command to run, including the user's `-d` argument. */
+  command: string;
+}
+
+/**
+ * Quote a CLI argument so users can copy-paste the action verbatim. Returns
+ * an unquoted token when the value has no whitespace or shell metacharacters,
+ * otherwise wraps it in double quotes with embedded `"` and `\` escaped.
+ */
+function shellQuote(value: string): string {
+  if (/^[A-Za-z0-9_./:@%+,=-]+$/.test(value)) return value;
+  return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
+}
+
+function printSuggestedActions(out: OutputContext, actions: SuggestedAction[]): void {
+  if (actions.length === 0) return;
+  out.newline();
+  out.print('Suggested actions:');
+  for (const action of actions) {
+    out.print(`  ${action.reason}:`);
+    out.print(`    ${action.command}`);
+  }
+}
+
 // ── Status symbols ──────────────────────────────────────────────────────────
 
 function statusSymbol(status: string): string {
@@ -318,7 +347,7 @@ async function runDoctorDiagnostics(
     return;
   }
 
-  const { config } = getContext();
+  const { config, globalOpts } = getContext();
   const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
 
   // Mass-storage devices: resolve content paths and run applicable checks
@@ -371,15 +400,6 @@ async function runDoctorDiagnostics(
 
           const sym = statusSymbol(check.status);
           out.print(`  ${sym} ${check.name}    ${check.summary}`);
-
-          // Show repair instructions if repairable
-          if (check.repairable) {
-            const diagCheck = getDiagnosticCheck(check.id);
-            if (diagCheck?.repair) {
-              out.newline();
-              out.print(`    To repair: podkit doctor --repair ${check.id}`);
-            }
-          }
         }
       }
 
@@ -393,6 +413,20 @@ async function runDoctorDiagnostics(
         ).length;
         out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
       }
+
+      const msDeviceArg = shellQuote(globalOpts.device ?? devicePath);
+      const msActions: SuggestedAction[] = [];
+      for (const check of report.checks) {
+        if (!check.repairable || check.repairOnly) continue;
+        if (check.status !== 'fail' && check.status !== 'warn') continue;
+        const diagCheck = getDiagnosticCheck(check.id);
+        if (!diagCheck?.repair) continue;
+        msActions.push({
+          reason: check.name,
+          command: `podkit doctor --repair ${check.id} -d ${msDeviceArg}`,
+        });
+      }
+      printSuggestedActions(out, msActions);
     });
 
     if (!report.healthy) {
@@ -530,6 +564,50 @@ async function runDoctorDiagnostics(
 
   const getDiagnosticCheck = core.getDiagnosticCheck;
 
+  // Echo back the device argument the user typed (config name or path)
+  // so action commands are copy-pasteable verbatim.
+  const deviceArg = shellQuote(globalOpts.device ?? devicePath);
+
+  // Collect actions across readiness + DB checks; rendered as a single
+  // section after the issue summary.
+  const actions: SuggestedAction[] = [];
+  if (readinessResult) {
+    for (const stage of readinessResult.stages) {
+      if (stage.stage === 'sysinfo' && (stage.status === 'fail' || stage.status === 'warn')) {
+        actions.push({
+          reason: 'Create SysInfoExtended from USB device information',
+          command: `podkit doctor --repair sysinfo-extended -d ${deviceArg}`,
+        });
+      }
+      if (stage.stage === 'database' && stage.status === 'fail') {
+        actions.push({
+          reason: 'Initialize the iPod database',
+          command: `podkit device init -d ${deviceArg}`,
+        });
+      }
+    }
+  }
+  if (report) {
+    for (const check of report.checks) {
+      if (!check.repairable || check.repairOnly || check.scope === 'system') continue;
+      if (check.status !== 'fail' && check.status !== 'warn') continue;
+      const diagCheck = getDiagnosticCheck(check.id);
+      if (!diagCheck?.repair) continue;
+      const needsCollection = diagCheck.repair.requirements.includes('source-collection');
+      const colArg = needsCollection ? ' -c <collection>' : '';
+      actions.push({
+        reason: check.name,
+        command: `podkit doctor --repair ${check.id} -d ${deviceArg}${colArg}`,
+      });
+      if (check.id === 'artwork-rebuild') {
+        actions.push({
+          reason: 'Or clear all artwork (no source needed)',
+          command: `podkit doctor --repair artwork-reset -d ${deviceArg}`,
+        });
+      }
+    }
+  }
+
   out.result<DoctorOutput>(output, () => {
     out.print(`podkit doctor \u2014 checking iPod at ${devicePath}`);
 
@@ -606,27 +684,6 @@ async function runDoctorDiagnostics(
           printOrphanSummary(check.details as Record<string, unknown>, out);
         }
 
-        // Show repair instructions if the check is repairable
-        if (check.repairable) {
-          const diagCheck = getDiagnosticCheck(check.id);
-          if (diagCheck?.repair) {
-            out.newline();
-            const reqHints: string[] = [];
-            if (diagCheck.repair.requirements.includes('source-collection')) {
-              reqHints.push('-c <collection>');
-            }
-            const reqStr = reqHints.length > 0 ? ` ${reqHints.join(' ')}` : '';
-            out.print(`    To repair: podkit doctor --repair ${check.id}${reqStr}`);
-
-            // For artwork-rebuild, offer the reset alternative (no source needed)
-            if (check.id === 'artwork-rebuild') {
-              out.print(
-                `    Or clear all artwork (no source needed): podkit doctor --repair artwork-reset`
-              );
-            }
-          }
-        }
-
         if (check.docsUrl) {
           out.print(`    More info: ${check.docsUrl}`);
         }
@@ -650,6 +707,8 @@ async function runDoctorDiagnostics(
       if (issueCount === 0) issueCount = 1;
       out.error(`${issueCount} issue${issueCount === 1 ? '' : 's'} found.`);
     }
+
+    printSuggestedActions(out, actions);
   });
 
   opened?.ipod?.close();
