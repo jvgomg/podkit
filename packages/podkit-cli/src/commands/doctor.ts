@@ -324,8 +324,21 @@ function printReadinessStages(out: OutputContext, stages: ReadinessStageResult[]
       stage.stage !== 'filesystem'
     ) {
       out.print(`    ${stage.summary}`);
+    } else if (stage.status === 'warn') {
+      out.print(`    ${stage.summary}`);
     } else if (stage.status === 'skip') {
       out.print(`    ${stage.summary}`);
+    }
+
+    // Always surface SysInfoExtended presence under the sysinfo stage so
+    // users don't have to infer it from the model summary.
+    if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
+      const present = stage.details?.sysInfoExtendedExists;
+      if (present === true) {
+        out.print('    SysInfoExtended: present');
+      } else if (present === false) {
+        out.print('    SysInfoExtended: not present');
+      }
     }
   }
 }

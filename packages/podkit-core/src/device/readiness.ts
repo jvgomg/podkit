@@ -195,7 +195,9 @@ export async function checkSysInfo(
     return {
       stage: 'sysinfo',
       status: 'pass',
-      summary: `${displayName} (SysInfoExtended)`,
+      // SysInfoExtended-present is surfaced separately by the renderer via
+      // details.sysInfoExtendedExists, so the summary stays model-only.
+      summary: displayName,
       details: {
         sysInfoPath,
         sysInfoExtendedPath,
