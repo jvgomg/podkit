@@ -135,11 +135,13 @@ describe('checkSysInfo', () => {
     expect(result.summary).toContain('SysInfoExtended');
   });
 
-  it('warns when SysInfo has known model but SysInfoExtended is missing (no-checksum device)', async () => {
-    // MA147 = iPod Video 5th gen = checksumType 'none'
+  it('passes with advisory when SysInfo has known model but SysInfoExtended is missing (no-checksum device)', async () => {
+    // MA147 = iPod Video 5th gen = checksumType 'none'.
+    // Classic SysInfo is sufficient — SysInfoExtended is optional richer
+    // identity metadata. Absence is surfaced via details, not a warn.
     writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('warn');
+    expect(result.status).toBe('pass');
     expect(result.summary).toContain('MA147');
     expect(result.summary).toContain('iPod Video');
     expect(result.details?.modelNumber).toBe('MA147');
@@ -427,15 +429,16 @@ describe('checkReadiness', () => {
       expect(sysinfo?.summary).toContain('XX999');
     });
 
-    it('warns for SysInfo with known model but missing SysInfoExtended (no-checksum device)', async () => {
+    it('passes for SysInfo with known model but missing SysInfoExtended (no-checksum device)', async () => {
       createIpodStructure(tmpDir);
-      // MA147 = iPod Video 5th gen = checksumType 'none'
+      // MA147 = iPod Video 5th gen = checksumType 'none'.
+      // SysInfoExtended is optional for non-hash devices.
       writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
       const device = createDevice({ mountPoint: tmpDir });
       const result = await checkReadiness({ device });
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
-      expect(sysinfo?.status).toBe('warn');
+      expect(sysinfo?.status).toBe('pass');
       expect(sysinfo?.summary).toContain('MA147');
     });
 
@@ -496,12 +499,12 @@ describe('checkReadiness', () => {
     });
 
     it('checkSysInfo is callable independently', async () => {
-      // MC297 = iPod Classic 7th gen — without SysInfoExtended this warns (no-checksum: unknown without USB info)
+      // MC297 = iPod Classic 7th gen. Without USB info we can't tell the
+      // checksum severity, so we treat SysInfoExtended as optional → pass.
       writeSysInfo(tmpDir, 'ModelNumStr: MC297');
       const result = await checkSysInfo(tmpDir);
       expect(result.stage).toBe('sysinfo');
-      // SysInfo present without SysInfoExtended → warn (no USB info to determine checksum severity)
-      expect(result.status).toBe('warn');
+      expect(result.status).toBe('pass');
       expect(result.summary).toContain('MC297');
       expect(result.details?.modelNumber).toBe('MC297');
     });

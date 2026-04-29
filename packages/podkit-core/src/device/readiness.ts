@@ -373,10 +373,13 @@ export async function checkSysInfo(
     };
   }
 
-  // Non-checksum devices WARN — SysInfoExtended is nice to have
+  // Non-checksum devices: classic SysInfo is sufficient. SysInfoExtended is
+  // optional richer-identity metadata. Surface absence in details so verbose
+  // output can show the `--repair sysinfo-extended` suggestion, but don't
+  // warn — that would flag every dummy fixture and freshly-reset iPod.
   return {
     stage: 'sysinfo',
-    status: 'warn',
+    status: 'pass',
     summary: `${modelName} (${modelNumber})`,
     details: {
       sysInfoPath,
