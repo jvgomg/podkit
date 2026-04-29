@@ -117,14 +117,13 @@ function validateXml(xml: string): { valid: boolean; error?: string } {
 // ── Default USB reader ──────────────────────────────────────────────────────
 
 /**
- * Create the default USB reader function.
+ * Dynamically import the USB reader function from libgpod-node.
  * Returns null if native bindings are not available.
+ * Uses dynamic import() to avoid hard dependency on native bindings.
  */
-function getDefaultUsbReader(): ReadFromUsbFn | null {
+async function getDefaultUsbReader(): Promise<ReadFromUsbFn | null> {
   try {
-    // Dynamic import to avoid hard dependency on native bindings
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const libgpod = require('@podkit/libgpod-node');
+    const libgpod = await import('@podkit/libgpod-node');
     if (typeof libgpod.isNativeAvailable === 'function' && !libgpod.isNativeAvailable()) {
       return null;
     }
@@ -189,7 +188,7 @@ export async function ensureSysInfoExtended(
   }
 
   // Step 2: Resolve USB reader
-  const reader = readFromUsb ?? getDefaultUsbReader();
+  const reader = readFromUsb ?? (await getDefaultUsbReader());
   if (!reader) {
     return {
       present: false,

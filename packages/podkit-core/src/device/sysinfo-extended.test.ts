@@ -233,15 +233,17 @@ describe('ensureSysInfoExtended', () => {
     expect(result.error).toBe('Could not read device identity from USB');
   });
 
-  it('returns unavailable when no reader is provided and native is unavailable', async () => {
+  it('returns unavailable when no reader is provided and USB read fails', async () => {
     createIpodStructure(tmpDir);
 
-    // Pass no readFromUsb — the default resolver will fail in test env
+    // Pass no readFromUsb — uses default resolver. With native available,
+    // the real function runs but returns null for invalid bus/address.
+    // Without native, the import fails and returns null reader.
+    // Either way: result is unavailable.
     const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS);
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
-    expect(result.error).toContain('not available');
   });
 
   it('validates XML and rejects missing FireWireGUID', async () => {
