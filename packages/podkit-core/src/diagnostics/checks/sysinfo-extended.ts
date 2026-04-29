@@ -1,12 +1,13 @@
 /**
- * SysInfoExtended diagnostic check
+ * SysInfoExtended repair-only check.
  *
- * Checks whether SysInfoExtended is present on the device and provides
- * a repair action that reads device identity from iPod firmware via USB
- * and writes it to the filesystem.
+ * Detection lives in the readiness `sysinfo` stage (single source of truth
+ * for device identity). This check exposes the repair action that reads
+ * device identity from iPod firmware via USB and writes it to the filesystem,
+ * accessible via `podkit doctor --repair sysinfo-extended`.
  */
 
-import { readSysInfoExtended, ensureSysInfoExtended } from '../../device/sysinfo-extended.js';
+import { ensureSysInfoExtended } from '../../device/sysinfo-extended.js';
 import { resolveUsbDeviceFromPath } from '../../device/usb-discovery.js';
 import type {
   DiagnosticCheck,
@@ -21,32 +22,13 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
   id: 'sysinfo-extended',
   name: 'SysInfoExtended',
   applicableTo: ['ipod'],
+  repairOnly: true,
 
-  async check(ctx: DiagnosticContext): Promise<CheckResult> {
-    const result = readSysInfoExtended(ctx.mountPoint);
-
-    if (result && result.present && result.deviceInfo) {
-      const info = result.deviceInfo;
-      const model = info.modelName ?? 'Unknown iPod';
-      return {
-        status: 'pass',
-        summary: `${model} — SysInfoExtended present`,
-        repairable: false,
-        details: {
-          firewireGuid: info.firewireGuid,
-          serialNumber: info.serialNumber,
-          modelName: info.modelName,
-          generationId: info.generationId,
-          checksumType: info.checksumType,
-        },
-      };
-    }
-
+  async check(_ctx: DiagnosticContext): Promise<CheckResult> {
     return {
-      status: 'warn',
-      summary:
-        'SysInfoExtended not found — run `podkit doctor --repair sysinfo-extended` to read from USB',
-      repairable: true,
+      status: 'skip',
+      summary: 'SysInfoExtended is a repair-only action (run with --repair sysinfo-extended)',
+      repairable: false,
     };
   },
 
