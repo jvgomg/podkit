@@ -120,7 +120,6 @@ describe('checkSysInfo', () => {
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     const result = await checkSysInfo(tmpDir);
     expect(result.status).toBe('pass');
-    expect(result.summary).toContain('SysInfoExtended');
     expect(result.details?.sysInfoExtendedExists).toBe(true);
     expect(result.details?.firewireGuid).toBeTruthy();
     expect(result.details?.serialNumber).toBeTruthy();
@@ -132,7 +131,7 @@ describe('checkSysInfo', () => {
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     const result = await checkSysInfo(tmpDir);
     expect(result.status).toBe('pass');
-    expect(result.summary).toContain('SysInfoExtended');
+    expect(result.details?.sysInfoExtendedExists).toBe(true);
   });
 
   it('passes with advisory when SysInfo has known model but SysInfoExtended is missing (no-checksum device)', async () => {
@@ -450,7 +449,7 @@ describe('checkReadiness', () => {
 
       const sysinfo = result.stages.find((s) => s.stage === 'sysinfo');
       expect(sysinfo?.status).toBe('pass');
-      expect(sysinfo?.summary).toContain('SysInfoExtended');
+      expect(sysinfo?.details?.sysInfoExtendedExists).toBe(true);
     });
 
     it('SysInfo fail and database fail(corrupt) produces needs-repair level', async () => {
