@@ -535,8 +535,11 @@ const READINESS_RULES: ReadinessRule[] = [
     level: 'needs-repair',
   },
   {
-    description: 'All stages passed — device is ready',
-    match: (stages) => stages.get('database')?.status === 'pass',
+    description: 'All stages passed or warned — device is ready',
+    match: (stages) => {
+      const db = stages.get('database')?.status;
+      return db === 'pass' || db === 'warn';
+    },
     level: 'ready',
   },
 ];
