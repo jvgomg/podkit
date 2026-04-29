@@ -87,6 +87,13 @@ describe('lookupIpodModelByNumber', () => {
     expect(lookupIpodModelByNumber('B261')).toBe('iPod nano 8GB Black (3rd Generation)');
   });
 
+  test('strips Apple service / refurb prefixes (P, F)', () => {
+    // P-prefix = service stock / replacement unit. Same hardware as M9804.
+    expect(lookupIpodModelByNumber('P9804')).toContain('iPod mini');
+    // F-prefix = factory refurbished. Same hardware as M9436.
+    expect(lookupIpodModelByNumber('F9436')).toContain('iPod mini');
+  });
+
   test('is case-insensitive', () => {
     expect(lookupIpodModelByNumber('ma147')).toBe('iPod Video 60GB Black (5th Generation)');
     expect(lookupIpodModelByNumber('mb261')).toBe('iPod nano 8GB Black (3rd Generation)');

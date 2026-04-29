@@ -1574,14 +1574,20 @@ export function lookupIpodModel(productId: string): string | undefined {
  * Look up a human-readable model name from an iPod SysInfo model number string.
  *
  * @param modelNumStr - The `ModelNumStr` value from `iPod_Control/Device/SysInfo`
- *                      (e.g., "MA147", "MC297")
+ *                      (e.g., "MA147", "P9804", "F9436")
  * @returns Model name if the model number is known, undefined otherwise
+ *
+ * Apple uses single-letter prefixes that all map to the same underlying
+ * hardware: `M` (retail), `P` (service stock / replacement unit), `F`
+ * (factory refurbished). The registry is keyed on the bare suffix, so we
+ * strip any of those before looking up.
  */
 export function lookupIpodModelByNumber(modelNumStr: string): string | undefined {
   const upper = modelNumStr.toUpperCase();
 
-  // Strip leading "M" if present (SysInfo format -> internal format)
-  const stripped = upper.startsWith('M') ? upper.slice(1) : upper;
+  // Strip a leading M / P / F prefix (Apple's retail / service / refurb
+  // prefixes, all referring to the same model).
+  const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
 
   // Try the stripped form first, then the full form (for entries like "A099LL")
   const entry = MODEL_INDEX.get(stripped) ?? MODEL_INDEX.get(upper);
