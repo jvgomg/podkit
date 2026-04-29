@@ -826,6 +826,40 @@ describe('podkit doctor with readiness', () => {
 });
 
 // =============================================================================
+// Doctor repair options
+// =============================================================================
+
+describe('podkit doctor --repair', () => {
+  let tempDir: string;
+  let configPath: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), 'podkit-doctor-repair-'));
+    configPath = join(tempDir, 'config.toml');
+    await writeFile(configPath, 'version = 1\n');
+  });
+
+  it('accepts sysinfo-extended as a valid repair check ID', async () => {
+    // Use a nonexistent device path — we just need to verify the option is
+    // accepted by the CLI parser (not rejected as "invalid choice")
+    const result = await runCli([
+      '--config',
+      configPath,
+      '--device',
+      join(tempDir, 'fake-ipod'),
+      'doctor',
+      '--repair',
+      'sysinfo-extended',
+    ]);
+
+    // Should fail because device doesn't exist, NOT because the option is invalid
+    expect(result.exitCode).not.toBe(0);
+    expect(result.stderr).not.toContain('is invalid');
+    expect(result.stderr).not.toContain('Allowed choices');
+  });
+});
+
+// =============================================================================
 // Device init with readiness-related behavior
 // =============================================================================
 

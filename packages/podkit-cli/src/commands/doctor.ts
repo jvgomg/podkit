@@ -156,11 +156,14 @@ async function resolveDevice(
 export const doctorCommand = new Command('doctor')
   .description('run health checks on a device')
   .addOption(
+    // Note: this list must be kept in sync with diagnostic checks registered
+    // in packages/podkit-core/src/diagnostics/index.ts (getDiagnosticCheckIds)
     new Option('--repair <check-id>', 'repair a specific check by ID').choices([
       'artwork-rebuild',
       'artwork-reset',
       'orphan-files',
       'orphan-files-mass-storage',
+      'sysinfo-extended',
     ])
   )
   .option('-c, --collection <name>', 'music collection to use as artwork source')
