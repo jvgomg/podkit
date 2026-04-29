@@ -19,6 +19,7 @@
  * podkit device init [-d name]        # initialize iPod database
  * ```
  */
+import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statSync, statfsSync } from '../utils/fs.js';
@@ -98,48 +99,94 @@ export { formatBytes, formatNumber } from '../output/index.js';
 export { formatGeneration } from '@podkit/core';
 
 /**
- * Attempt to read or obtain SysInfoExtended for an iPod.
+ * Outcome of attempting to ensure the iPod has identity data.
  *
- * Returns the result if SysInfoExtended is present (existing or freshly read
- * from USB), or null if unavailable. Never throws — USB read failures are
- * logged at verbose/debug level and do not block the caller.
+ * - `result`: parsed SysInfoExtended (existing or freshly read), or null if
+ *   the device only has classic SysInfo and we didn't need to write anything.
+ * - `abort`: true if the device-add flow should stop. Set when the iPod has
+ *   no identity files, USB is unreachable or the user declined the prompt.
+ *   Caller is responsible for printing nothing further and returning early.
+ */
+interface SysInfoAttempt {
+  result: SysInfoExtendedResult | null;
+  abort: boolean;
+}
+
+/**
+ * Ensure an iPod has at least one identity file (SysInfo or SysInfoExtended).
+ *
+ * Skip path: if either file already exists, return without touching the
+ * device — classic SysInfo alone is sufficient for podkit.
+ *
+ * Gate path: if neither file is present, prompt the user (default no) before
+ * reading SysInfoExtended from USB firmware and writing it to the device.
+ * `--yes` and JSON output bypass the prompt. If the user declines or USB
+ * cannot be reached, signal abort so the caller stops the device-add flow.
  */
 async function attemptSysInfoExtended(
   mountPoint: string,
-  out: OutputContext
-): Promise<SysInfoExtendedResult | null> {
+  out: OutputContext,
+  opts: { autoConfirm: boolean }
+): Promise<SysInfoAttempt> {
+  // 1. SysInfoExtended already present and parseable → done.
+  const existing = readSysInfoExtended(mountPoint);
+  if (existing?.present && existing.deviceInfo) {
+    return { result: existing, abort: false };
+  }
+
+  // 2. Classic SysInfo present → also sufficient. Skip silently.
+  const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
+  if (existsSync(sysInfoPath)) {
+    return { result: null, abort: false };
+  }
+
+  // 3. Neither file present. Resolve USB before prompting — without it we
+  //    can't perform the read. If USB is unreachable (e.g. --path fixture,
+  //    offline reattach), silently skip: the downstream init step will
+  //    create classic SysInfo if the database is also missing.
+  const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
+  if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
+    out.verbose1('No SysInfo or SysInfoExtended on device, and USB device could not be located.');
+    return { result: null, abort: false };
+  }
+
+  // 4. Prompt the user.
+  const skipPrompt = opts.autoConfirm || out.isJson;
+  if (!skipPrompt) {
+    out.newline();
+    out.print('This iPod has no identity files (SysInfo / SysInfoExtended).');
+    out.print("podkit needs one to recognize the device's model, serial, and FireWireGUID.");
+    out.print(
+      'It will read this from the iPod firmware via USB and save\n' +
+        'iPod_Control/Device/SysInfoExtended to the device.'
+    );
+    out.newline();
+    const proceed = await confirmNo('Continue?');
+    if (!proceed) {
+      out.print('Cancelled. Device not added.');
+      return { result: null, abort: true };
+    }
+  }
+
+  // 5. Read from USB and write the file.
   try {
-    // 1. Check for existing SysInfoExtended on disk
-    const existing = readSysInfoExtended(mountPoint);
-    if (existing?.present && existing.deviceInfo) {
-      return existing;
-    }
-
-    // 2. Try to resolve USB device info from mount path
-    const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-    if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
-      out.verbose1('Could not resolve USB device for SysInfoExtended read');
-      return null;
-    }
-
-    // 3. Attempt USB read via orchestrator
     const result = await ensureSysInfoExtended(mountPoint, {
       busNumber: usbInfo.busNumber,
       deviceAddress: usbInfo.deviceAddress,
     });
 
-    if (result.present && result.source === 'usb-read') {
-      const model = result.deviceInfo?.modelName ?? 'Unknown iPod';
-      out.print(`Device identified via USB: ${model}`);
-    } else if (!result.present) {
-      out.verbose1(`SysInfoExtended read failed: ${result.error ?? 'unknown error'}`);
+    if (!result.present) {
+      out.error(`Failed to read SysInfoExtended from USB: ${result.error ?? 'unknown error'}`);
+      return { result: null, abort: true };
     }
 
-    return result.present ? result : null;
+    const model = result.deviceInfo?.modelName ?? 'Unknown iPod';
+    out.print(`Device identified via USB: ${model}`);
+    return { result, abort: false };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    out.verbose1(`SysInfoExtended attempt failed: ${message}`);
-    return null;
+    out.error(`SysInfoExtended read failed: ${message}`);
+    return { result: null, abort: true };
   }
 }
 
@@ -1622,7 +1669,12 @@ const addSubcommand = new Command('add')
       }
 
       // Attempt SysInfoExtended read (before database init so it's available for checksums)
-      const sysInfoResult = await attemptSysInfoExtended(explicitPath, out);
+      const sysInfoAttempt = await attemptSysInfoExtended(explicitPath, out, { autoConfirm });
+      if (sysInfoAttempt.abort) {
+        process.exitCode = 1;
+        return;
+      }
+      const sysInfoResult = sysInfoAttempt.result;
 
       // Check if database exists
       const hasDb = await IpodDatabase.hasDatabase(explicitPath);
@@ -1955,7 +2007,12 @@ const addSubcommand = new Command('add')
     // Attempt SysInfoExtended read (before database init so it's available for checksums)
     let autoSysInfoResult: SysInfoExtendedResult | null = null;
     if (ipod.mountPoint) {
-      autoSysInfoResult = await attemptSysInfoExtended(ipod.mountPoint, out);
+      const attempt = await attemptSysInfoExtended(ipod.mountPoint, out, { autoConfirm });
+      if (attempt.abort) {
+        process.exitCode = 1;
+        return;
+      }
+      autoSysInfoResult = attempt.result;
     }
 
     // Check if the iPod has a database

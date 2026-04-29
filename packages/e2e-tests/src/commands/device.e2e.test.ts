@@ -156,14 +156,17 @@ volumeName = "test"
   });
 
   describe('SysInfoExtended', () => {
-    it('attempts SysInfoExtended read when file is missing', async () => {
+    it('attempts SysInfoExtended read when neither identity file is present', async () => {
       await withTarget(async (target) => {
-        // Ensure SysInfoExtended doesn't exist
-        const sysInfoExtPath = join(target.path, 'iPod_Control', 'Device', 'SysInfoExtended');
-        try {
-          await rm(sysInfoExtPath);
-        } catch {
-          /* may not exist */
+        // Remove BOTH identity files so the SysInfoExtended attempt fires.
+        // If either file is present, the device-add flow correctly skips.
+        const deviceDir = join(target.path, 'iPod_Control', 'Device');
+        for (const file of ['SysInfo', 'SysInfoExtended']) {
+          try {
+            await rm(join(deviceDir, file));
+          } catch {
+            /* may not exist */
+          }
         }
 
         await writeFile(configPath, 'version = 1\n');
@@ -184,8 +187,9 @@ volumeName = "test"
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('added to config');
 
-        // Verify the SysInfoExtended code path was entered —
-        // verbose output should show the USB resolution attempt failed gracefully
+        // Verify the SysInfoExtended code path was entered — verbose output
+        // should mention SysInfoExtended (USB resolution fails gracefully on
+        // the test target since there's no real USB device).
         expect(result.stdout).toContain('SysInfoExtended');
       });
     });
