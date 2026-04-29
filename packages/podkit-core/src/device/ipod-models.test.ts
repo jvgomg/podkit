@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   getChecksumType,
+  getChecksumTypeByModelNumber,
   getGenerationInfo,
   lookupGenerationByProductId,
   lookupIpodModel,
@@ -370,5 +371,37 @@ describe('end-to-end identification pipeline', () => {
     expect(byNumber).toBeDefined();
     expect(bySerial).toBeDefined();
     expect(bySerial!.displayName).toBe(byNumber);
+  });
+});
+
+// ── getChecksumTypeByModelNumber ────────────────────────────────────────────
+
+describe('getChecksumTypeByModelNumber', () => {
+  test('returns none for iPod Video 5G (MA147)', () => {
+    expect(getChecksumTypeByModelNumber('MA147')).toBe('none');
+  });
+
+  test('returns hash58 for iPod Classic 6G (MB147)', () => {
+    expect(getChecksumTypeByModelNumber('MB147')).toBe('hash58');
+  });
+
+  test('returns hash58 for iPod Classic 7G (MC297)', () => {
+    expect(getChecksumTypeByModelNumber('MC297')).toBe('hash58');
+  });
+
+  test('returns hash58 for iPod Nano 3G (MB261)', () => {
+    expect(getChecksumTypeByModelNumber('MB261')).toBe('hash58');
+  });
+
+  test('returns none for iPod Nano 1G (MA350)', () => {
+    expect(getChecksumTypeByModelNumber('MA350')).toBe('none');
+  });
+
+  test('returns undefined for unrecognized model number', () => {
+    expect(getChecksumTypeByModelNumber('ZZZZ')).toBeUndefined();
+  });
+
+  test('handles lowercase model numbers', () => {
+    expect(getChecksumTypeByModelNumber('mb147')).toBe('hash58');
   });
 });

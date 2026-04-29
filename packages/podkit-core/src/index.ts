@@ -589,6 +589,9 @@ export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
 export type { SysInfoExtendedResult } from './device/index.js';
 export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
+// iPod model lookup
+export { getChecksumTypeByModelNumber } from './device/index.js';
+
 // OS error code interpreter
 export type { InterpretedError } from './device/index.js';
 export { interpretError } from './device/index.js';
