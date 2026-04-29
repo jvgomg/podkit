@@ -19,6 +19,7 @@
  * podkit device init [-d name]        # initialize iPod database
  * ```
  */
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import { confirm, confirmNo } from '../utils/confirm.js';
@@ -76,6 +77,7 @@ import {
   readSysInfoExtended,
   ensureSysInfoExtended,
   resolveUsbDeviceFromPath,
+  getChecksumTypeByModelNumber,
 } from '@podkit/core';
 import type { SysInfoExtendedResult } from '@podkit/core';
 import {
@@ -113,10 +115,14 @@ interface SysInfoAttempt {
 }
 
 /**
- * Ensure an iPod has at least one identity file (SysInfo or SysInfoExtended).
+ * Ensure an iPod has SysInfoExtended when required, or at least SysInfo.
  *
- * Skip path: if either file already exists, return without touching the
- * device — classic SysInfo alone is sufficient for podkit.
+ * Skip path: if SysInfoExtended already exists, return it. If only SysInfo
+ * exists and the device doesn't require checksums, that's sufficient.
+ *
+ * Upgrade path: if only SysInfo exists but the device requires checksums
+ * (hash58+), SysInfoExtended is mandatory — prompt the user to read it
+ * from USB firmware.
  *
  * Gate path: if neither file is present, prompt the user (default no) before
  * reading SysInfoExtended from USB firmware and writing it to the device.
@@ -134,10 +140,69 @@ async function attemptSysInfoExtended(
     return { result: existing, abort: false };
   }
 
-  // 2. Classic SysInfo present → also sufficient. Skip silently.
+  // 2. Classic SysInfo present — check if SysInfoExtended is needed.
   const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
   if (existsSync(sysInfoPath)) {
-    return { result: null, abort: false };
+    // Read the ModelNumStr to determine if this device needs checksums
+    let needsChecksum = false;
+    let modelNumber: string | undefined;
+    try {
+      const content = readFileSync(sysInfoPath, 'utf-8');
+      const match = content.match(/ModelNumStr:\s*(\S+)/);
+      if (match?.[1]) {
+        modelNumber = match[1];
+        const checksumType = getChecksumTypeByModelNumber(modelNumber);
+        needsChecksum =
+          checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
+      }
+    } catch {
+      // Can't read SysInfo — fall through to USB read
+    }
+
+    if (!needsChecksum) {
+      // Non-checksum device: SysInfo alone is sufficient.
+      return { result: null, abort: false };
+    }
+
+    // Checksum device with only SysInfo — SysInfoExtended is required.
+    // Try to read it from USB.
+    const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
+    if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
+      out.newline();
+      out.print(
+        `Warning: This iPod (${modelNumber ?? 'unknown model'}) requires SysInfoExtended for database checksums,` +
+          ' but USB device could not be located to read it.'
+      );
+      out.print(
+        '  Run `podkit doctor --repair sysinfo-extended` when the device is connected via USB.'
+      );
+      return { result: null, abort: false };
+    }
+
+    const skipPrompt = opts.autoConfirm || out.isJson;
+    if (!skipPrompt) {
+      out.newline();
+      out.print(
+        `This iPod (${modelNumber ?? 'unknown'}) requires SysInfoExtended for database checksums.`
+      );
+      out.print('Without it, the iPod will reject the database and show "No Music" after syncing.');
+      out.print(
+        'podkit can read this from the iPod firmware via USB and save\n' +
+          'iPod_Control/Device/SysInfoExtended to the device.'
+      );
+      out.newline();
+      const proceed = await confirmNo('Read SysInfoExtended from USB?');
+      if (!proceed) {
+        out.print('Skipped. You can run `podkit doctor --repair sysinfo-extended` later.');
+        return { result: null, abort: false };
+      }
+    }
+
+    return readSysInfoExtendedFromUsb(
+      mountPoint,
+      { busNumber: usbInfo.busNumber!, deviceAddress: usbInfo.deviceAddress! },
+      out
+    );
   }
 
   // 3. Neither file present. Resolve USB before prompting — without it we
@@ -169,6 +234,19 @@ async function attemptSysInfoExtended(
   }
 
   // 5. Read from USB and write the file.
+  return readSysInfoExtendedFromUsb(
+    mountPoint,
+    { busNumber: usbInfo.busNumber, deviceAddress: usbInfo.deviceAddress },
+    out
+  );
+}
+
+/** Shared helper: read SysInfoExtended from USB and write to device. */
+async function readSysInfoExtendedFromUsb(
+  mountPoint: string,
+  usbInfo: { busNumber: number; deviceAddress: number },
+  out: OutputContext
+): Promise<SysInfoAttempt> {
   try {
     const result = await ensureSysInfoExtended(mountPoint, {
       busNumber: usbInfo.busNumber,
@@ -779,12 +857,18 @@ function printReadinessStages(
       out.print(`    ${stage.summary}`);
     }
 
-    // Always surface SysInfoExtended presence under the sysinfo stage so
-    // users don't have to infer it from the model summary.
+    // Surface SysInfoExtended status under the sysinfo stage. For checksum
+    // devices, absence is a problem — make that clear.
     if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
       const present = stage.details?.sysInfoExtendedExists;
+      const checksumType = stage.details?.checksumType as string | undefined;
+      const needsChecksum =
+        checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
       if (present === true) {
         out.print('    SysInfoExtended: present');
+      } else if (present === false && needsChecksum) {
+        out.print('    SysInfoExtended: missing (required for database checksums)');
+        out.print('    Run `podkit doctor --repair sysinfo-extended` to fix');
       } else if (present === false) {
         out.print('    SysInfoExtended: not present');
       }

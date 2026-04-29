@@ -100,6 +100,7 @@ export {
   lookupGenerationByProductId,
   getGenerationInfo,
   getChecksumType,
+  getChecksumTypeByModelNumber,
 } from './ipod-models.js';
 export type {
   IpodChecksumType,

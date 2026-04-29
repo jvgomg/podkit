@@ -51,6 +51,7 @@ If problems are detected, doctor tells you what's wrong and how to fix it. Devic
 | **Artwork Integrity** | Corrupted artwork database — wrong album art, glitched images, artwork from other albums | Failure |
 | **Encoder Availability** | Missing FFmpeg encoders for codecs in your [preference stack](/user-guide/transcoding/codec-preferences) | Warning |
 | **Orphan Files** | Unreferenced audio/video files wasting storage space | Warning |
+| **SysInfoExtended** | Missing device identity file required for database checksums on newer iPods | Failure (repair-only) |
 
 ### Mass-Storage Devices
 
@@ -140,6 +141,18 @@ podkit doctor -d mydevice --repair orphan-files-mass-storage
 ```
 
 Files outside the content directories are always ignored — doctor only considers directories that podkit manages. The `--delete` flag during sync also respects this boundary: it only removes files that podkit placed on the device.
+
+## Repairing Missing SysInfoExtended
+
+Newer iPods (Classic 6G/7G, Nano 3G+) require a `SysInfoExtended` file for database checksum signing. Without it, the iPod rejects the database after a sync and shows "No Music". If `podkit device scan` or `podkit doctor` reports a SysInfoExtended failure, repair it:
+
+```bash
+podkit doctor --repair sysinfo-extended
+```
+
+This reads the device identity from the iPod's firmware via USB and writes the `SysInfoExtended` file to `iPod_Control/Device/`. It does not modify music, playlists, or database content.
+
+Older iPods (Video 5G/5.5G, Nano 1G–2G, Mini, Shuffle) do not need SysInfoExtended — a SysInfo file with the correct `ModelNumStr` is sufficient. See [iPod Internals — SysInfoExtended](/devices/ipod-internals#sysinfoextended-file) for technical details.
 
 ## Previewing Repairs
 

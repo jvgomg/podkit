@@ -12,8 +12,8 @@ This document covers the internal structure of iPod devices, focusing on the dat
 ```
 iPod_Control/
 ├── Device/
-│   ├── SysInfo              # Device model information
-│   └── SysInfoExtended      # Detailed device capabilities (written by libgpod tooling)
+│   ├── SysInfo              # Device model number (plain text key-value)
+│   └── SysInfoExtended      # Device identity — serial, FirewireGuid (Apple plist XML)
 ├── iTunes/
 │   ├── iTunesDB             # Main track database (binary)
 │   ├── iTunesPrefs          # Device preferences
@@ -35,9 +35,10 @@ The `SysInfo` file in `iPod_Control/Device/` identifies the iPod model to softwa
 
 ### Format
 
+Plain text key-value pairs:
+
 ```
 ModelNumStr: MA147
-FirewireGuid: XXXXXXXXXXXXXXXX
 ```
 
 ### Model Numbers
@@ -84,6 +85,45 @@ If an iPod doesn't have a populated SysInfo file:
 IPOD="/media/username/IPOD"
 echo "ModelNumStr: MA147" > "$IPOD/iPod_Control/Device/SysInfo"
 ```
+
+## SysInfoExtended File
+
+The `SysInfoExtended` file in `iPod_Control/Device/` is an Apple plist XML file containing detailed device identity information. It is read from the iPod's firmware via USB vendor control transfers — it is not created by editing a text file.
+
+### What it contains
+
+- **FireWireGUID**: 16-character hex device identifier
+- **SerialNumber**: 11-character serial number (last 3 characters identify the exact model variant — color, capacity)
+- **ModelNumber**, **FamilyID**, **DBVersion**: Internal device metadata
+
+### Why it matters
+
+On newer iPods (Classic 6G/7G, Nano 3G+), the iTunesDB must be signed with an HMAC checksum derived from the device's FireWireGUID. Without SysInfoExtended, libgpod cannot compute this checksum, the iPod rejects the database, and the device shows "No Music".
+
+Older iPods (Video 5G/5.5G, Nano 1G–2G, Mini, Shuffle) do not require checksums. These devices work fine with just a SysInfo file containing `ModelNumStr`.
+
+### SysInfo vs SysInfoExtended
+
+| | SysInfo | SysInfoExtended |
+|---|---|---|
+| **Format** | Plain text key-value | Apple plist XML |
+| **Key data** | `ModelNumStr` (model identification) | `FireWireGUID` (database checksums), `SerialNumber` (exact variant ID) |
+| **Created by** | `gpod-tool init`, iTunes, or manually | iPod firmware (read via USB) |
+| **Used by libgpod for** | Model lookup → generation, artwork formats, codec support | Database checksum signing (hash58+ devices) |
+| **Required on older iPods** | Yes | No |
+| **Required on newer iPods** | Either SysInfo or SysInfoExtended | Yes — without it, database writes fail |
+
+When both files are present, libgpod prefers SysInfoExtended.
+
+### Getting SysInfoExtended
+
+podkit reads SysInfoExtended from the iPod firmware automatically during `podkit device add`. If the file is missing, you can repair it:
+
+```bash
+podkit doctor --repair sysinfo-extended
+```
+
+This reads the device identity from USB and writes the file to the iPod. It does not modify any music, playlists, or database content.
 
 ## iTunesDB Format
 
@@ -198,9 +238,9 @@ Each file contains concatenated images for multiple tracks.
 
 ### Artwork Requirements
 
-1. **SysInfo must exist** - libgpod needs model info for format selection
-2. **Artwork directory must exist** - Create `iPod_Control/Artwork/` if missing
-3. **Source image** - JPEG or PNG, any size (libgpod resizes)
+1. **SysInfo must exist with `ModelNumStr`** — libgpod uses the model number to determine which artwork formats and sizes the device supports
+2. **Artwork directory must exist** — Create `iPod_Control/Artwork/` if missing
+3. **Source image** — JPEG or PNG, any size (libgpod resizes)
 
 ### Fixing Missing Artwork
 

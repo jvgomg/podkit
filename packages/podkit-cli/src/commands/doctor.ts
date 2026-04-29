@@ -330,12 +330,17 @@ function printReadinessStages(out: OutputContext, stages: ReadinessStageResult[]
       out.print(`    ${stage.summary}`);
     }
 
-    // Always surface SysInfoExtended presence under the sysinfo stage so
-    // users don't have to infer it from the model summary.
+    // Surface SysInfoExtended status under the sysinfo stage. For checksum
+    // devices, absence is a problem — make that clear.
     if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
       const present = stage.details?.sysInfoExtendedExists;
+      const checksumType = stage.details?.checksumType as string | undefined;
+      const needsChecksum =
+        checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
       if (present === true) {
         out.print('    SysInfoExtended: present');
+      } else if (present === false && needsChecksum) {
+        out.print('    SysInfoExtended: missing (required for database checksums)');
       } else if (present === false) {
         out.print('    SysInfoExtended: not present');
       }

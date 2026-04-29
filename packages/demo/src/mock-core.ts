@@ -2348,6 +2348,10 @@ export async function ensureSysInfoExtended(_mountPoint: string, _usbAddress: an
   return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
 }
 
+export function getChecksumTypeByModelNumber(_modelNumStr: string): string | undefined {
+  return undefined;
+}
+
 export function createUsbOnlyReadinessResult(_device: any): any {
   return { level: 'needs-partition', stages: [] };
 }

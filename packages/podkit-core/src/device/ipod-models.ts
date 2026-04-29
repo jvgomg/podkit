@@ -1594,6 +1594,20 @@ export function lookupIpodModelByNumber(modelNumStr: string): string | undefined
   return entry?.displayName;
 }
 
+/**
+ * Get the checksum type required for a device identified by its ModelNumStr.
+ *
+ * @param modelNumStr - Model number string from SysInfo (e.g., "MA147", "MB147")
+ * @returns Checksum type, or undefined if the model number is not recognized
+ */
+export function getChecksumTypeByModelNumber(modelNumStr: string): IpodChecksumType | undefined {
+  const upper = modelNumStr.toUpperCase();
+  const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
+  const entry = MODEL_INDEX.get(stripped) ?? MODEL_INDEX.get(upper);
+  if (!entry) return undefined;
+  return GENERATIONS[entry.generation].checksumType;
+}
+
 // ── Public API: new functions ───────────────────────────────────────────────
 
 /**

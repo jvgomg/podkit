@@ -544,7 +544,7 @@ The pipeline runs six stages in sequence. A failure at any stage skips remaining
 | Partition Table | Device has a recognizable partition table |
 | Filesystem | Partition contains a FAT32 filesystem |
 | Mounted | Filesystem is mounted and accessible |
-| SysInfo | `iPod_Control/Device/SysInfo` exists and is readable |
+| SysInfo | `SysInfo` or `SysInfoExtended` exists; newer iPods require `SysInfoExtended` for checksums |
 | Database | `iPod_Control/iTunes/iTunesDB` exists and can be opened |
 
 ## `podkit collection`
