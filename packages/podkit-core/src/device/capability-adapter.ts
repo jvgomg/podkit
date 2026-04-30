@@ -25,10 +25,10 @@ import { IPOD_GENERATIONS } from '../ipod/generation.js';
 
 /** The subset of libgpod Device capabilities needed by the adapter */
 export interface LibgpodDeviceInfo {
-  supportsArtwork: boolean;
-  supportsVideo: boolean;
-  generation: IpodGeneration | 'unknown';
-  modelNumber: string | null;
+  readonly supportsArtwork: boolean;
+  readonly supportsVideo: boolean;
+  readonly generation: string;
+  readonly modelNumber?: string | null;
 }
 
 // =============================================================================

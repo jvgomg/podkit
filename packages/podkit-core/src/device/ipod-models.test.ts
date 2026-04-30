@@ -9,6 +9,7 @@ import {
   lookupIpodModel,
   lookupIpodModelByNumber,
   lookupIpodModelBySerial,
+  toLibgpodGeneration,
 } from './ipod-models.js';
 
 import type { IpodChecksumType, IpodGenerationId } from './ipod-models.js';
@@ -445,5 +446,45 @@ describe('lookupGenerationByModelNumber', () => {
 
   test('returns generation for legacy override (MC477)', () => {
     expect(lookupGenerationByModelNumber('MC477')).toBe('classic_7g');
+  });
+});
+
+describe('toLibgpodGeneration', () => {
+  test('maps nano generations correctly', () => {
+    expect(toLibgpodGeneration('nano_1g')).toBe('nano_1');
+    expect(toLibgpodGeneration('nano_4g')).toBe('nano_4');
+    expect(toLibgpodGeneration('nano_6g')).toBe('nano_6');
+  });
+
+  test('maps classic generations (non-trivial naming)', () => {
+    expect(toLibgpodGeneration('classic_6g')).toBe('classic_1');
+    expect(toLibgpodGeneration('classic_7g')).toBe('classic_3');
+  });
+
+  test('maps video generations (non-trivial naming)', () => {
+    expect(toLibgpodGeneration('video_5g')).toBe('video_1');
+    expect(toLibgpodGeneration('video_5_5g')).toBe('video_2');
+  });
+
+  test('maps early iPod generations', () => {
+    expect(toLibgpodGeneration('classic_1g')).toBe('first');
+    expect(toLibgpodGeneration('classic_2g')).toBe('second');
+    expect(toLibgpodGeneration('classic_3g')).toBe('third');
+    expect(toLibgpodGeneration('classic_4g')).toBe('fourth');
+    expect(toLibgpodGeneration('photo')).toBe('photo');
+  });
+
+  test('maps touch/shuffle/mini generations', () => {
+    expect(toLibgpodGeneration('touch_1g')).toBe('touch_1');
+    expect(toLibgpodGeneration('shuffle_2g')).toBe('shuffle_2');
+    expect(toLibgpodGeneration('mini_1g')).toBe('mini_1');
+    expect(toLibgpodGeneration('mini_2g')).toBe('mini_2');
+  });
+
+  test('returns unknown for generations not in libgpod', () => {
+    expect(toLibgpodGeneration('nano_7g')).toBe('unknown');
+    expect(toLibgpodGeneration('touch_5g')).toBe('unknown');
+    expect(toLibgpodGeneration('touch_6g')).toBe('unknown');
+    expect(toLibgpodGeneration('touch_7g')).toBe('unknown');
   });
 });

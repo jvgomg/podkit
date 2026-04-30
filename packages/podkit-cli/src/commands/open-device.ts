@@ -159,26 +159,13 @@ export async function openDevice(
   const isIpod = !deviceType || deviceType === 'ipod';
 
   if (isIpod) {
-    // iPod: open database, derive capabilities from generation
+    // iPod: open database, derive capabilities from libgpod device data
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
-    const deviceSupportsAlac = ipodDeviceInfo?.generation
-      ? core.supportsAlac(ipodDeviceInfo.generation)
-      : false;
+    const capabilities = core.createIpodCapabilities(ipodDeviceInfo);
 
-    const generationCaps = ipodDeviceInfo?.generation
-      ? core.getDeviceCapabilities(ipodDeviceInfo.generation)
-      : undefined;
-
-    const capabilities = generationCaps ?? {
-      artworkSources: ['database'] as const,
-      artworkMaxResolution: 320,
-      supportedAudioCodecs: ['aac', 'mp3'] as const,
-      supportsVideo: false,
-      audioNormalization: 'soundcheck' as const,
-      supportsAlbumArtistBrowsing: false,
-    };
+    const deviceSupportsAlac = capabilities.supportedAudioCodecs.includes('alac');
 
     const adapter = new core.IpodDeviceAdapter(ipod, capabilities);
 

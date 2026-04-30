@@ -148,46 +148,55 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
   touch_1: {
     id: 'touch_1',
     displayName: 'Touch (1st Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   touch_2: {
     id: 'touch_2',
     displayName: 'Touch (2nd Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   touch_3: {
     id: 'touch_3',
     displayName: 'Touch (3rd Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   touch_4: {
     id: 'touch_4',
     displayName: 'Touch (4th Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   iphone_1: {
     id: 'iphone_1',
     displayName: 'iPhone (1st Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   iphone_2: {
     id: 'iphone_2',
     displayName: 'iPhone 3G',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   iphone_3: {
     id: 'iphone_3',
     displayName: 'iPhone 3GS',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   iphone_4: {
     id: 'iphone_4',
     displayName: 'iPhone 4',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
   ipad_1: {
     id: 'ipad_1',
     displayName: 'iPad (1st Generation)',
+    videoProfile: 'ipod-classic',
     supportsAlac: true,
   },
 };
