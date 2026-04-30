@@ -451,12 +451,18 @@ export interface DeviceListOutput {
   devices: Array<{
     name: string;
     isDefault: boolean;
+    connected: boolean;
+    type: string;
     volumeUuid?: string;
     volumeName?: string;
-    quality?: string;
-    audioQuality?: string;
-    videoQuality?: string;
-    artwork?: boolean;
+    quality: string;
+    qualitySource: string;
+    audio: string;
+    audioSource: string;
+    video: string | null;
+    videoSource: string;
+    artwork: boolean | null;
+    artworkSource: string;
   }>;
   defaultDevice?: string;
   error?: string;
@@ -670,8 +676,7 @@ export interface DeviceScanOutput {
   configuredDevices?: Array<{
     name: string;
     type: string;
-    path: string;
-    connected: boolean;
+    path?: string;
   }>;
   error?: string;
 }
@@ -848,6 +853,59 @@ export function findConfiguredDeviceName(
 }
 
 /**
+ * Find configured devices that were not detected in the scan.
+ * Returns devices from config whose volumeUuid doesn't match any detected iPod.
+ * Devices without an explicit type default to 'ipod'.
+ */
+export function findUndetectedDevices(
+  detectedUuids: Set<string>,
+  devices: Record<string, DeviceConfig>
+): Array<{ name: string; type: string; path?: string }> {
+  const result: Array<{ name: string; type: string; path?: string }> = [];
+  for (const [deviceName, deviceConfig] of Object.entries(devices)) {
+    const type = deviceConfig.type ?? 'ipod';
+
+    // Skip devices that were already detected in the scan
+    if (deviceConfig.volumeUuid && detectedUuids.has(deviceConfig.volumeUuid.toUpperCase())) {
+      continue;
+    }
+
+    result.push({
+      name: deviceName,
+      type,
+      path: deviceConfig.path,
+    });
+  }
+  return result;
+}
+
+/**
+ * Sort devices for display: connected first, then default, then alphabetical.
+ */
+export function sortDevicesForDisplay<
+  T extends { connected: boolean; isDefault: boolean; name: string },
+>(devices: T[]): T[] {
+  return [...devices].sort((a, b) => {
+    if (a.connected !== b.connected) return a.connected ? -1 : 1;
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+}
+
+/**
+ * Get the prefix character for a device row.
+ *
+ * - ● for connected devices
+ * - * for the default device (when not connected)
+ * - (space) for other devices
+ */
+export function getDevicePrefix(device: { connected: boolean; isDefault: boolean }): string {
+  if (device.connected) return '\u25CF '; // ●
+  if (device.isDefault) return '* ';
+  return '  ';
+}
+
+/**
  * Redact user home directory paths from text.
  * Volume names and mount points under /Volumes/ are preserved.
  */
@@ -871,7 +929,7 @@ async function generateDiagnosticReport(
   }>,
   readinessResults: ReadinessResult[],
   usbOnlyDevices: Array<{ modelName?: string; supported?: boolean; notSupportedReason?: string }>,
-  configuredDevices: Array<{ name: string; type: string; path: string; connected: boolean }>,
+  configuredDevices: Array<{ name: string; type: string; path?: string }>,
   config: { devices?: Record<string, DeviceConfig> },
   version: string
 ): Promise<string> {
@@ -972,11 +1030,11 @@ async function generateDiagnosticReport(
     lines.push('');
   }
 
-  // Configured mass-storage devices
+  // Configured devices not detected
   for (const cd of configuredDevices) {
     lines.push('---');
-    const status = cd.connected ? 'connected' : 'disconnected';
-    lines.push(`  ${cd.name} (${cd.type}) \u2014 ${cd.path} [${status}]`);
+    const pathInfo = cd.path ? ` \u2014 ${cd.path}` : '';
+    lines.push(`  ${cd.name} (${cd.type})${pathInfo} [not detected]`);
     lines.push('');
   }
 
@@ -1051,25 +1109,9 @@ const scanSubcommand = new Command('scan')
       (usb) => !usb.diskIdentifier || !matchedDiskIds.has(usb.diskIdentifier)
     );
 
-    // Gather configured mass-storage devices
-    const configuredDevices: Array<{
-      name: string;
-      type: string;
-      path: string;
-      connected: boolean;
-    }> = [];
-
-    const deviceEntries = config.devices ? Object.entries(config.devices) : [];
-    for (const [deviceName, deviceConfig] of deviceEntries) {
-      if (isMassStorageDevice(deviceConfig.type) && deviceConfig.path) {
-        configuredDevices.push({
-          name: deviceName,
-          type: deviceConfig.type!,
-          path: deviceConfig.path,
-          connected: existsSync(deviceConfig.path),
-        });
-      }
-    }
+    // Gather configured devices not found in the scan
+    const detectedUuids = new Set(ipods.map((d) => d.volumeUuid?.toUpperCase()).filter(Boolean));
+    const configuredDevices = findUndetectedDevices(detectedUuids, config.devices ?? {});
 
     // Run readiness pipeline on each iPod (only on supported platforms)
     const readinessResults: ReadinessResult[] = [];
@@ -1276,14 +1318,12 @@ const scanSubcommand = new Command('scan')
         out.newline();
       }
 
-      // Show configured mass-storage devices
+      // Show configured devices not detected in the scan
       if (configuredDevices.length > 0) {
-        out.print('Configured devices:');
+        out.print('Not detected:');
         for (const cd of configuredDevices) {
-          const status = cd.connected ? 'connected' : 'disconnected';
-          out.print(
-            `  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd.type)}) \u2014 ${cd.path} [${status}]`
-          );
+          const pathInfo = cd.path ? ` \u2014 ${cd.path}` : '';
+          out.print(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd.type)})${pathInfo}`);
         }
         out.newline();
       }
@@ -1311,49 +1351,139 @@ const listSubcommand = new Command('list')
       return;
     }
 
-    const deviceList = deviceNames.map((name) => {
-      const device = devices[name]!;
-      return {
-        name,
-        isDefault: name === defaultDevice,
-        volumeUuid: device.volumeUuid,
-        volumeName: device.volumeName,
-        quality: device.quality,
-        audioQuality: device.audioQuality,
-        videoQuality: device.videoQuality,
-        artwork: device.artwork,
-      };
-    });
+    // Detect connected iPods (lightweight — no readiness pipeline)
+    const connectedUuids = new Map<string, { mountPoint?: string }>();
+    try {
+      const { getDeviceManager } = await import('@podkit/core');
+      const manager = getDeviceManager();
+      if (manager.isSupported) {
+        const ipods = await manager.findIpodDevices();
+        for (const ipod of ipods) {
+          if (ipod.volumeUuid) {
+            connectedUuids.set(ipod.volumeUuid.toUpperCase(), {
+              mountPoint: ipod.isMounted ? ipod.mountPoint : undefined,
+            });
+          }
+        }
+      }
+    } catch {
+      // Core not available — skip detection
+    }
+
+    // Also check mass-storage device paths
+    const connectedPaths = new Set<string>();
+    for (const [, deviceConfig] of Object.entries(devices)) {
+      if (
+        isMassStorageDevice(deviceConfig.type) &&
+        deviceConfig.path &&
+        existsSync(deviceConfig.path)
+      ) {
+        connectedPaths.add(deviceConfig.path);
+      }
+    }
+
+    // Resolve capabilities and settings for each device
+    const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
+      await import('../config/resolve.js');
+    const { getDeviceCapabilities, resolveDeviceCapabilities } = await import('@podkit/core');
+
+    const globalResolved = resolveGlobalConfig(config);
+
+    const resolvedDevices: ReturnType<typeof resolveDeviceSettings>[] = [];
+
+    for (const name of deviceNames) {
+      const deviceConfig = devices[name]!;
+      const type = deviceConfig.type ?? 'ipod';
+      const isDefault = name === defaultDevice;
+
+      // Determine connection status
+      let connected = false;
+      let capabilities: import('@podkit/core').DeviceCapabilities | null = null;
+
+      if (type === 'ipod') {
+        const uuid = deviceConfig.volumeUuid?.toUpperCase();
+        const connInfo = uuid ? connectedUuids.get(uuid) : undefined;
+        connected = connInfo !== undefined;
+
+        if (connected && connInfo?.mountPoint) {
+          // Connected iPod — read generation from SysInfoExtended
+          try {
+            const sysInfo = readSysInfoExtended(connInfo.mountPoint);
+            if (sysInfo?.deviceInfo?.generationId) {
+              capabilities = getDeviceCapabilities(sysInfo.deviceInfo.generationId);
+            }
+          } catch {
+            // Fall through — capabilities remain null
+          }
+        }
+        // Disconnected iPod — capabilities stay null (unknown)
+      } else {
+        // Mass-storage device — use preset capabilities
+        connected = deviceConfig.path ? connectedPaths.has(deviceConfig.path) : false;
+        capabilities = resolveDeviceCapabilities(type, deviceConfig) ?? null;
+      }
+
+      resolvedDevices.push(
+        resolveDeviceSettings(config, name, deviceConfig, capabilities, connected, isDefault)
+      );
+    }
+
+    // Sort: connected first, then default, then alphabetical
+    const sorted = sortDevicesForDisplay(resolvedDevices);
+    resolvedDevices.length = 0;
+    resolvedDevices.push(...sorted);
+
+    // Build JSON output (backward-compatible shape + new resolved fields)
+    const deviceList = resolvedDevices.map((d) => ({
+      name: d.name,
+      isDefault: d.isDefault,
+      connected: d.connected,
+      type: d.type,
+      volumeUuid: devices[d.name]?.volumeUuid,
+      volumeName: devices[d.name]?.volumeName,
+      quality: d.quality.value,
+      qualitySource: d.quality.source,
+      audio: d.audio.value,
+      audioSource: d.audio.source,
+      video: d.video.value,
+      videoSource: d.video.source,
+      artwork: d.artwork.value,
+      artworkSource: d.artwork.source,
+    }));
 
     out.result<DeviceListOutput>({ success: true, devices: deviceList, defaultDevice }, () => {
-      out.print('Configured devices:');
+      // Global config line
+      out.print(
+        `Global: quality=${formatGlobalResolved(globalResolved.quality)}` +
+          `  audio=${formatGlobalResolved(globalResolved.audio)}` +
+          `  video=${formatGlobalResolved(globalResolved.video)}` +
+          `  artwork=${formatGlobalResolved(globalResolved.artwork)}`
+      );
       out.newline();
 
-      const headers = ['NAME', 'VOLUME', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
+      const headers = ['NAME', 'TYPE', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
       const widths = [
-        Math.max(6, ...deviceNames.map((n) => n.length + 2)),
-        Math.max(8, ...deviceNames.map((n) => (devices[n]?.volumeName || '').length)),
-        8,
-        8,
-        6,
-        7,
+        Math.max(6, ...resolvedDevices.map((d) => d.name.length + 2)),
+        Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d.type).length)),
+        9,
+        9,
+        9,
+        9,
       ];
 
       out.print('  ' + formatRow(headers, widths));
 
-      for (const name of deviceNames) {
-        const device = devices[name]!;
-        const isDefault = name === defaultDevice;
-        const prefix = isDefault ? '* ' : '  ';
+      for (const d of resolvedDevices) {
+        const prefix = getDevicePrefix(d);
 
         const row = formatRow(
           [
-            name,
-            device.volumeName || '-',
-            device.quality || '-',
-            device.audioQuality || '-',
-            device.videoQuality || '-',
-            device.artwork === true ? 'yes' : device.artwork === false ? 'no' : '-',
+            d.name,
+            getDeviceTypeDisplayName(d.type),
+            formatResolved(d.quality),
+            formatResolved(d.audio),
+            formatResolved(d.video),
+            formatResolved(d.artwork),
           ],
           widths
         );
@@ -1362,7 +1492,9 @@ const listSubcommand = new Command('list')
       }
 
       out.newline();
-      out.print('* = default device');
+      out.print(
+        '\u25CF = connected  * = default  [value] = inherited  \u2717 = unsupported  ? = unknown'
+      );
     });
   });
 

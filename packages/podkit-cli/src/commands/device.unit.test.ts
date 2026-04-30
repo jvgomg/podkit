@@ -10,6 +10,9 @@ import {
   formatSyncTagSummary,
   redactPaths,
   findConfiguredDeviceName,
+  findUndetectedDevices,
+  sortDevicesForDisplay,
+  getDevicePrefix,
 } from './device.js';
 import { stageMarker, formatReadinessLevel } from './readiness-display.js';
 
@@ -391,6 +394,164 @@ describe('device utility functions', () => {
 
     it('returns ? for unknown status', () => {
       expect(stageMarker('other')).toBe('?');
+    });
+  });
+
+  describe('findUndetectedDevices', () => {
+    it('returns all devices when none are detected', () => {
+      const detected = new Set<string>();
+      const devices = {
+        terapod: { volumeUuid: 'AAA-BBB' },
+        nano: { volumeUuid: 'CCC-DDD' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toEqual([
+        { name: 'terapod', type: 'ipod', path: undefined },
+        { name: 'nano', type: 'ipod', path: undefined },
+      ]);
+    });
+
+    it('excludes devices whose UUID was detected (case-insensitive)', () => {
+      const detected = new Set(['AAA-BBB']);
+      const devices = {
+        terapod: { volumeUuid: 'aaa-bbb' },
+        nano: { volumeUuid: 'CCC-DDD' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toEqual([{ name: 'nano', type: 'ipod', path: undefined }]);
+    });
+
+    it('defaults type to ipod when not specified', () => {
+      const detected = new Set<string>();
+      const devices = {
+        myipod: { volumeUuid: 'AAA' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result[0]!.type).toBe('ipod');
+    });
+
+    it('preserves explicit device type', () => {
+      const detected = new Set<string>();
+      const devices = {
+        echomini: { type: 'echo-mini' as const, path: '/Volumes/Echo SD' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toEqual([{ name: 'echomini', type: 'echo-mini', path: '/Volumes/Echo SD' }]);
+    });
+
+    it('includes mass-storage and ipod devices together', () => {
+      const detected = new Set<string>();
+      const devices = {
+        terapod: { volumeUuid: 'AAA' },
+        echomini: { type: 'echo-mini' as const, path: '/Volumes/Echo SD' },
+        nano: { volumeUuid: 'BBB' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toHaveLength(3);
+      expect(result.map((d) => d.name)).toEqual(['terapod', 'echomini', 'nano']);
+    });
+
+    it('includes devices without volumeUuid (never matches detected)', () => {
+      const detected = new Set(['AAA']);
+      const devices = {
+        echomini: { type: 'echo-mini' as const, path: '/Volumes/Echo SD' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toHaveLength(1);
+      expect(result[0]!.name).toBe('echomini');
+    });
+
+    it('returns empty array when all devices are detected', () => {
+      const detected = new Set(['AAA', 'BBB']);
+      const devices = {
+        terapod: { volumeUuid: 'aaa' },
+        nano: { volumeUuid: 'bbb' },
+      };
+      const result = findUndetectedDevices(detected, devices);
+      expect(result).toEqual([]);
+    });
+
+    it('returns empty array for empty config', () => {
+      const detected = new Set<string>();
+      const result = findUndetectedDevices(detected, {});
+      expect(result).toEqual([]);
+    });
+  });
+
+  describe('sortDevicesForDisplay', () => {
+    function device(name: string, connected: boolean, isDefault: boolean) {
+      return { name, connected, isDefault };
+    }
+
+    it('sorts connected devices first', () => {
+      const devices = [device('alpha', false, false), device('beta', true, false)];
+      const sorted = sortDevicesForDisplay(devices);
+      expect(sorted.map((d) => d.name)).toEqual(['beta', 'alpha']);
+    });
+
+    it('sorts default device before non-default', () => {
+      const devices = [device('alpha', false, false), device('beta', false, true)];
+      const sorted = sortDevicesForDisplay(devices);
+      expect(sorted.map((d) => d.name)).toEqual(['beta', 'alpha']);
+    });
+
+    it('connected beats default', () => {
+      const devices = [device('default-one', false, true), device('connected-one', true, false)];
+      const sorted = sortDevicesForDisplay(devices);
+      expect(sorted.map((d) => d.name)).toEqual(['connected-one', 'default-one']);
+    });
+
+    it('sorts alphabetically within same priority', () => {
+      const devices = [
+        device('charlie', false, false),
+        device('alpha', false, false),
+        device('bravo', false, false),
+      ];
+      const sorted = sortDevicesForDisplay(devices);
+      expect(sorted.map((d) => d.name)).toEqual(['alpha', 'bravo', 'charlie']);
+    });
+
+    it('full sort order: connected, default, then alphabetical', () => {
+      const devices = [
+        device('nano', false, false),
+        device('terapod', false, true),
+        device('echomini', false, false),
+        device('ipod-nano-slim', true, false),
+        device('sallys-ipod', false, false),
+      ];
+      const sorted = sortDevicesForDisplay(devices);
+      expect(sorted.map((d) => d.name)).toEqual([
+        'ipod-nano-slim',
+        'terapod',
+        'echomini',
+        'nano',
+        'sallys-ipod',
+      ]);
+    });
+
+    it('does not mutate input array', () => {
+      const devices = [device('beta', false, false), device('alpha', true, false)];
+      const original = [...devices];
+      sortDevicesForDisplay(devices);
+      expect(devices).toEqual(original);
+    });
+  });
+
+  describe('getDevicePrefix', () => {
+    it('returns ● for connected device', () => {
+      expect(getDevicePrefix({ connected: true, isDefault: false })).toBe('\u25CF ');
+    });
+
+    it('returns ● for connected default device (connected wins)', () => {
+      expect(getDevicePrefix({ connected: true, isDefault: true })).toBe('\u25CF ');
+    });
+
+    it('returns * for default device when not connected', () => {
+      expect(getDevicePrefix({ connected: false, isDefault: true })).toBe('* ');
+    });
+
+    it('returns spaces for non-default, non-connected device', () => {
+      expect(getDevicePrefix({ connected: false, isDefault: false })).toBe('  ');
     });
   });
 });
