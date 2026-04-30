@@ -23,15 +23,11 @@ podkit doctor — checking iPod at /Volumes/TERAPOD
 Device Readiness
   ✓ USB Connection
   ✓ Partition Table
-  ✓ Filesystem
-  ✓ Mounted
-    /Volumes/TERAPOD
-  ✓ SysInfo
-    iPod Classic (6th gen) — MA147
-  ✓ Database
-    2,450 tracks
-
-  Ready — 2,450 tracks, 8.2 GB free
+  ✓ Filesystem    TERAPOD
+  ✓ Mounted    /Volumes/TERAPOD
+  ✓ SysInfo    iPod Classic 120GB Black (6th Generation) (MB147)
+    SysInfoExtended: present
+  ✓ Database    2,450 tracks
 
 Database Health
   ✓ Artwork Integrity    2,532 entries, 2 formats (1028, 1029), all offsets valid

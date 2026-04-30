@@ -253,6 +253,87 @@ describe('checkSysInfo', () => {
     expect(result.details?.checksumNote).toBeDefined();
     expect(result.details?.checksumNote).toContain('proprietary');
   });
+
+  // ── Generation mismatch detection ──────────────────────────────────────
+
+  it('warns when SysInfoExtended generation mismatches USB generation', async () => {
+    createIpodStructure(tmpDir);
+    // Default fixture serial YXX → nano_3g
+    writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
+    // USB reports classic_6g (0x1209) — mismatch
+    const result = await checkSysInfo(tmpDir, {
+      productId: '0x1209',
+      vendorId: '0x05ac',
+      modelName: 'iPod Classic 6th generation',
+    });
+    expect(result.status).toBe('warn');
+    expect(result.summary).toContain('mismatch');
+    expect(result.details?.generationMismatch).toBe(true);
+    expect(result.details?.sysInfoGeneration).toBeDefined();
+    expect(result.details?.usbGeneration).toBeDefined();
+    expect(result.details?.usbModelName).toBe('iPod Classic 6th generation');
+  });
+
+  it('passes when SysInfoExtended generation matches USB generation', async () => {
+    createIpodStructure(tmpDir);
+    // Default fixture serial YXX → nano_3g
+    writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
+    // USB also nano_3g (0x1208)
+    const result = await checkSysInfo(tmpDir, { productId: '0x1208', vendorId: '0x05ac' });
+    expect(result.status).toBe('pass');
+    expect(result.details?.generationMismatch).toBeUndefined();
+  });
+
+  it('warns when classic SysInfo generation mismatches USB generation (no-checksum device)', async () => {
+    // MA350 = iPod Nano 1G (nano_1g, checksumType 'none')
+    writeSysInfo(tmpDir, 'ModelNumStr: MA350\nFirewireGuid: 0001234');
+    // USB reports video_5g (0x1207) — mismatch but neither needs checksum
+    const result = await checkSysInfo(tmpDir, {
+      productId: '0x1207',
+      vendorId: '0x05ac',
+      modelName: 'iPod 5th generation (Video)',
+    });
+    expect(result.status).toBe('warn');
+    expect(result.summary).toContain('mismatch');
+    expect(result.details?.generationMismatch).toBe(true);
+    expect(result.details?.usbModelName).toBe('iPod 5th generation (Video)');
+  });
+
+  it('passes when classic SysInfo generation matches USB generation', async () => {
+    // MA147 = iPod Video 5G (video_5g)
+    writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
+    // USB also video_5g (0x1207)
+    const result = await checkSysInfo(tmpDir, { productId: '0x1207', vendorId: '0x05ac' });
+    expect(result.status).toBe('pass');
+    expect(result.details?.generationMismatch).toBeUndefined();
+  });
+
+  it('skips mismatch check when no USB info provided', async () => {
+    writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
+    const result = await checkSysInfo(tmpDir);
+    expect(result.status).toBe('pass');
+    expect(result.details?.generationMismatch).toBeUndefined();
+  });
+
+  it('includes usbModelName in details when USB info provided', async () => {
+    writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
+    const result = await checkSysInfo(tmpDir, {
+      productId: '0x1207',
+      vendorId: '0x05ac',
+      modelName: 'iPod 5th generation (Video)',
+    });
+    expect(result.status).toBe('pass');
+    expect(result.details?.usbModelName).toBe('iPod 5th generation (Video)');
+  });
+
+  it('keeps fail status when checksum device has mismatch (fail takes priority)', async () => {
+    // MC297 = Classic 7G (hash58) — needs SysInfoExtended
+    writeSysInfo(tmpDir, 'ModelNumStr: MC297\nFirewireGuid: 0001234');
+    // USB reports nano_3g (0x1208) — mismatch, but fail for missing SysInfoExtended takes priority
+    const result = await checkSysInfo(tmpDir, { productId: '0x1208', vendorId: '0x05ac' });
+    expect(result.status).toBe('fail');
+    expect(result.details?.generationMismatch).toBe(true);
+  });
 });
 
 // ── checkDatabase ────────────────────────────────────────────────────────────

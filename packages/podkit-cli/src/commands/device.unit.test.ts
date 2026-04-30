@@ -9,10 +9,9 @@ import {
   getStorageInfo,
   formatSyncTagSummary,
   redactPaths,
-  formatReadinessLevel,
   findConfiguredDeviceName,
-  stageMarker,
 } from './device.js';
+import { stageMarker, formatReadinessLevel } from './readiness-display.js';
 
 describe('device utility functions', () => {
   describe('formatBytes', () => {

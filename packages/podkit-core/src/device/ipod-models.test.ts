@@ -4,6 +4,7 @@ import {
   getChecksumType,
   getChecksumTypeByModelNumber,
   getGenerationInfo,
+  lookupGenerationByModelNumber,
   lookupGenerationByProductId,
   lookupIpodModel,
   lookupIpodModelByNumber,
@@ -370,7 +371,7 @@ describe('end-to-end identification pipeline', () => {
 
     expect(byNumber).toBeDefined();
     expect(bySerial).toBeDefined();
-    expect(bySerial!.displayName).toBe(byNumber);
+    expect(bySerial!.displayName).toBe(byNumber!);
   });
 });
 
@@ -403,5 +404,46 @@ describe('getChecksumTypeByModelNumber', () => {
 
   test('handles lowercase model numbers', () => {
     expect(getChecksumTypeByModelNumber('mb147')).toBe('hash58');
+  });
+});
+
+// ── lookupGenerationByModelNumber ──────────────────────────────────────────
+
+describe('lookupGenerationByModelNumber', () => {
+  test('returns generation for known model number', () => {
+    expect(lookupGenerationByModelNumber('MA147')).toBe('video_5g');
+  });
+
+  test('returns generation for Classic 6G (MB147)', () => {
+    expect(lookupGenerationByModelNumber('MB147')).toBe('classic_6g');
+  });
+
+  test('returns generation for Classic 7G (MC297)', () => {
+    expect(lookupGenerationByModelNumber('MC297')).toBe('classic_7g');
+  });
+
+  test('strips M prefix (retail)', () => {
+    expect(lookupGenerationByModelNumber('MA350')).toBe('nano_1g');
+  });
+
+  test('strips P prefix (service stock)', () => {
+    // P prefix should behave same as M prefix
+    expect(lookupGenerationByModelNumber('PA147')).toBe('video_5g');
+  });
+
+  test('strips F prefix (refurbished)', () => {
+    expect(lookupGenerationByModelNumber('FA147')).toBe('video_5g');
+  });
+
+  test('returns undefined for unrecognized model number', () => {
+    expect(lookupGenerationByModelNumber('ZZZZ')).toBeUndefined();
+  });
+
+  test('handles lowercase model numbers', () => {
+    expect(lookupGenerationByModelNumber('mb147')).toBe('classic_6g');
+  });
+
+  test('returns generation for legacy override (MC477)', () => {
+    expect(lookupGenerationByModelNumber('MC477')).toBe('classic_7g');
   });
 });

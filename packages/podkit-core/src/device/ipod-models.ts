@@ -1608,6 +1608,19 @@ export function getChecksumTypeByModelNumber(modelNumStr: string): IpodChecksumT
   return GENERATIONS[entry.generation].checksumType;
 }
 
+/**
+ * Look up the generation identifier for an iPod from its SysInfo model number.
+ *
+ * @param modelNumStr - The `ModelNumStr` value from SysInfo (e.g., "MA147", "PC293")
+ * @returns Generation identifier, or undefined if the model number is not recognized
+ */
+export function lookupGenerationByModelNumber(modelNumStr: string): IpodGenerationId | undefined {
+  const upper = modelNumStr.toUpperCase();
+  const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
+  const entry = MODEL_INDEX.get(stripped) ?? MODEL_INDEX.get(upper);
+  return entry?.generation;
+}
+
 // ── Public API: new functions ───────────────────────────────────────────────
 
 /**

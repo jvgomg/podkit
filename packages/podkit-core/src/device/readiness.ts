@@ -8,10 +8,12 @@ import { IpodError } from '../ipod/errors.js';
 import { interpretError } from './error-codes.js';
 import {
   lookupIpodModelByNumber,
+  lookupGenerationByModelNumber,
   lookupGenerationByProductId,
   getChecksumType,
+  getGenerationInfo,
 } from './ipod-models.js';
-import type { IpodChecksumType } from './ipod-models.js';
+import type { IpodChecksumType, IpodGenerationId } from './ipod-models.js';
 import { readSysInfoExtended } from './sysinfo-extended.js';
 
 // ── Stage identifiers ────────────────────────────────────────────────────────
@@ -159,6 +161,21 @@ function isBinaryContent(buf: Buffer): boolean {
   return false;
 }
 
+/** Check if SysInfo and USB report different iPod generations. */
+function detectGenerationMismatch(
+  sysInfoGenId: IpodGenerationId | undefined,
+  usbInfo: UsbDeviceInfo | undefined
+): { sysInfoGeneration: string; usbGeneration: string; usbModelName?: string } | undefined {
+  if (!sysInfoGenId || !usbInfo?.productId) return undefined;
+  const usbGenId = lookupGenerationByProductId(usbInfo.productId);
+  if (!usbGenId || sysInfoGenId === usbGenId) return undefined;
+  return {
+    sysInfoGeneration: getGenerationInfo(sysInfoGenId).displayName,
+    usbGeneration: getGenerationInfo(usbGenId).displayName,
+    usbModelName: usbInfo.modelName,
+  };
+}
+
 export async function checkSysInfo(
   mountPoint: string,
   usbInfo?: UsbDeviceInfo
@@ -192,12 +209,14 @@ export async function checkSysInfo(
   if (sysInfoExtendedExists && sysInfoExtended.deviceInfo) {
     const info = sysInfoExtended.deviceInfo;
     const displayName = info.modelName ?? 'Unknown iPod';
+
+    // Check for generation mismatch between SysInfoExtended and USB
+    const mismatch = detectGenerationMismatch(info.generationId, usbInfo);
+
     return {
       stage: 'sysinfo',
-      status: 'pass',
-      // SysInfoExtended-present is surfaced separately by the renderer via
-      // details.sysInfoExtendedExists, so the summary stays model-only.
-      summary: displayName,
+      status: mismatch ? 'warn' : 'pass',
+      summary: mismatch ? `${displayName} — generation mismatch with USB` : displayName,
       details: {
         sysInfoPath,
         sysInfoExtendedPath,
@@ -209,6 +228,14 @@ export async function checkSysInfo(
         serialNumber: info.serialNumber,
         checksumType: info.checksumType ?? checksumType,
         ...(checksumNote ? { checksumNote } : {}),
+        ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
+        ...(mismatch
+          ? {
+              generationMismatch: true,
+              sysInfoGeneration: mismatch.sysInfoGeneration,
+              usbGeneration: mismatch.usbGeneration,
+            }
+          : {}),
       },
     };
   }
@@ -345,11 +372,26 @@ export async function checkSysInfo(
         hasModelNum: true,
         modelNumber,
         checksumType,
+        ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
         suggestion:
           'Device will be treated as a generic iPod. This is usually fine but may affect artwork format detection.',
       },
     };
   }
+
+  // Check for generation mismatch between SysInfo model and USB
+  const sysInfoGenId = lookupGenerationByModelNumber(modelNumber);
+  const mismatch = detectGenerationMismatch(sysInfoGenId, usbInfo);
+  const mismatchDetails = {
+    ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
+    ...(mismatch
+      ? {
+          generationMismatch: true,
+          sysInfoGeneration: mismatch.sysInfoGeneration,
+          usbGeneration: mismatch.usbGeneration,
+        }
+      : {}),
+  };
 
   // ── Step 4: SysInfo present but SysInfoExtended missing ────────────────
   // Determine severity based on checksum type
@@ -357,7 +399,8 @@ export async function checkSysInfo(
     checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
 
   if (needsChecksumSysInfoExtended) {
-    // Hash-requiring devices FAIL without SysInfoExtended
+    // Hash-requiring devices FAIL without SysInfoExtended.
+    // Mismatch is secondary to the checksum requirement — keep status 'fail'.
     return {
       stage: 'sysinfo',
       status: 'fail',
@@ -372,19 +415,20 @@ export async function checkSysInfo(
         modelName,
         checksumType,
         ...(checksumNote ? { checksumNote } : {}),
+        ...mismatchDetails,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     };
   }
 
   // Non-checksum devices: classic SysInfo is sufficient. SysInfoExtended is
-  // optional richer-identity metadata. Surface absence in details so verbose
-  // output can show the `--repair sysinfo-extended` suggestion, but don't
-  // warn — that would flag every dummy fixture and freshly-reset iPod.
+  // optional richer-identity metadata. A generation mismatch promotes to warn.
   return {
     stage: 'sysinfo',
-    status: 'pass',
-    summary: `${modelName} (${modelNumber})`,
+    status: mismatch ? 'warn' : 'pass',
+    summary: mismatch
+      ? `${modelName} (${modelNumber}) — generation mismatch with USB`
+      : `${modelName} (${modelNumber})`,
     details: {
       sysInfoPath,
       sysInfoExtendedPath,
@@ -394,6 +438,7 @@ export async function checkSysInfo(
       modelNumber,
       modelName,
       checksumType,
+      ...mismatchDetails,
       suggestion: SYSINFO_SUGGESTION_REPAIR,
     },
   };

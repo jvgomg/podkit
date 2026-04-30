@@ -91,6 +91,13 @@ import type { DeviceValidationResult } from '@podkit/core';
 import type { DeviceTrack, IpodTrack } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
 import type { ReadinessResult, ReadinessStageResult, ReadinessLevel } from '@podkit/core';
+import {
+  stageMarker,
+  formatReadinessLevel,
+  printReadinessSummary,
+  collectReadinessIssues,
+  printIssues,
+} from './readiness-display.js';
 
 // =============================================================================
 // Shared utilities
@@ -790,91 +797,13 @@ function parseFormat(filetype: string | undefined): string {
 
 // ── Readiness display helpers ────────────────────────────────────────────────
 
-export function stageMarker(status: string): string {
-  switch (status) {
-    case 'pass':
-      return '\u2713';
-    case 'fail':
-      return '\u2717';
-    case 'warn':
-      return '!';
-    case 'skip':
-      return '-';
-    default:
-      return '?';
-  }
-}
-
-export function formatReadinessLevel(level: ReadinessLevel, deviceName: string): string {
-  switch (level) {
-    case 'ready':
-      return 'Ready';
-    case 'needs-repair':
-      return 'Needs repair \u2014 run: podkit doctor -d ' + deviceName;
-    case 'needs-init':
-      return 'Needs initialization \u2014 run: podkit device init -d ' + deviceName;
-    case 'needs-format':
-      return 'Needs formatting \u2014 device has no recognized filesystem';
-    case 'needs-partition':
-      return 'Needs partitioning \u2014 see: podkit device init';
-    case 'hardware-error':
-      return 'Hardware error \u2014 device may be disconnected or failing';
-    default:
-      return 'Unknown state';
-  }
-}
-
 function printReadinessStages(
   out: OutputContext,
   stages: ReadinessStageResult[],
   readiness: ReadinessResult,
   deviceName: string
 ): void {
-  for (const stage of stages) {
-    const marker = stageMarker(stage.status);
-    const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
-    out.print(`  ${marker} ${name}`);
-
-    // Show detail line for certain stages
-    if (stage.stage === 'mount' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.stage === 'mount' && stage.status === 'warn') {
-      out.print(`    ${stage.details?.mountPoint} (read-only)`);
-    } else if (stage.stage === 'sysinfo' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.stage === 'database' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (
-      stage.status === 'fail' &&
-      stage.stage !== 'usb' &&
-      stage.stage !== 'partition' &&
-      stage.stage !== 'filesystem'
-    ) {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.status === 'warn') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.status === 'skip') {
-      out.print(`    ${stage.summary}`);
-    }
-
-    // Surface SysInfoExtended status under the sysinfo stage. For checksum
-    // devices, absence is a problem — make that clear.
-    if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
-      const present = stage.details?.sysInfoExtendedExists;
-      const checksumType = stage.details?.checksumType as string | undefined;
-      const needsChecksum =
-        checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
-      if (present === true) {
-        out.print('    SysInfoExtended: present');
-      } else if (present === false && needsChecksum) {
-        out.print('    SysInfoExtended: missing (required for database checksums)');
-        out.print('    Run `podkit doctor --repair sysinfo-extended` to fix');
-      } else if (present === false) {
-        out.print('    SysInfoExtended: not present');
-      }
-    }
-  }
-
+  printReadinessSummary(out, stages);
   out.newline();
 
   // Summary line
@@ -887,6 +816,13 @@ function printReadinessStages(
     out.print(`  Ready \u2014 ${parts.join(', ')}`);
   } else {
     out.print(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
+  }
+
+  // Issues section
+  const issues = collectReadinessIssues(stages, deviceName);
+  if (issues.length > 0) {
+    out.newline();
+    printIssues(out, issues);
   }
 }
 
@@ -1082,23 +1018,38 @@ const scanSubcommand = new Command('scan')
 
     const manager = getDeviceManager();
 
-    // Scan for iPods (only on supported platforms)
+    // Scan for iPods and USB devices in parallel (only on supported platforms)
+    type UsbDiscoveredDevice = Awaited<ReturnType<typeof discoverUsbIpods>>[number];
     let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
+    let allUsbDevices: UsbDiscoveredDevice[] = [];
     if (manager.isSupported) {
-      ipods = await manager.findIpodDevices();
+      [ipods, allUsbDevices] = await Promise.all([manager.findIpodDevices(), discoverUsbIpods()]);
     }
 
-    // Fast path: only query USB subsystem when no disk-based iPods found.
-    // This avoids the 2-3s system_profiler query when devices are already visible.
-    type UsbDiscoveredDevice = Awaited<ReturnType<typeof discoverUsbIpods>>[number];
-    let usbOnlyDevices: UsbDiscoveredDevice[] = [];
-    if (ipods.length === 0 && manager.isSupported) {
-      const usbDevices = await discoverUsbIpods();
-      // All USB devices are "USB-only" since no disk iPods were found.
-      // If a USB device has a diskIdentifier, it means the disk exists but
-      // wasn't recognized as an iPod — still treat as USB-only for display.
-      usbOnlyDevices = usbDevices;
+    // Correlate USB devices with disk iPods by diskIdentifier ↔ identifier.
+    // USB diskIdentifier is the whole-disk BSD name (e.g., "disk5"),
+    // PlatformDeviceInfo.identifier is the partition (e.g., "disk5s2").
+    const usbByDisk = new Map<string, UsbDiscoveredDevice>();
+    for (const usb of allUsbDevices) {
+      if (usb.diskIdentifier) {
+        usbByDisk.set(usb.diskIdentifier, usb);
+      }
     }
+
+    function findMatchingUsb(identifier: string): UsbDiscoveredDevice | undefined {
+      const wholeDisk = identifier.replace(/s\d+$/, '');
+      return usbByDisk.get(wholeDisk);
+    }
+
+    // USB-only = USB devices that didn't match any disk iPod
+    const matchedDiskIds = new Set<string>();
+    for (const ipod of ipods) {
+      const wholeDisk = ipod.identifier.replace(/s\d+$/, '');
+      if (usbByDisk.has(wholeDisk)) matchedDiskIds.add(wholeDisk);
+    }
+    const usbOnlyDevices = allUsbDevices.filter(
+      (usb) => !usb.diskIdentifier || !matchedDiskIds.has(usb.diskIdentifier)
+    );
 
     // Gather configured mass-storage devices
     const configuredDevices: Array<{
@@ -1124,7 +1075,18 @@ const scanSubcommand = new Command('scan')
     const readinessResults: ReadinessResult[] = [];
     if (manager.isSupported) {
       for (const ipod of ipods) {
-        readinessResults.push(await checkReadiness({ device: ipod }));
+        const matchedUsb = findMatchingUsb(ipod.identifier);
+        const usbInfo = matchedUsb
+          ? {
+              productId: matchedUsb.productId,
+              vendorId: matchedUsb.vendorId,
+              modelName: matchedUsb.modelName,
+              serialNumber: matchedUsb.serialNumber,
+              busNumber: matchedUsb.busNumber,
+              deviceAddress: matchedUsb.deviceAddress,
+            }
+          : undefined;
+        readinessResults.push(await checkReadiness({ device: ipod, usbInfo }));
       }
     }
 
@@ -1252,7 +1214,13 @@ const scanSubcommand = new Command('scan')
           const label = device.volumeName || '(unnamed)';
           const identifier = device.identifier ? ` (${device.identifier})` : '';
 
-          out.print(`  ${bold(label)}${identifier}`);
+          const matchedUsb = findMatchingUsb(device.identifier);
+          const usbModel = matchedUsb?.modelName;
+          if (usbModel) {
+            out.print(`  ${bold(label)}${identifier}  ${usbModel} (USB)`);
+          } else {
+            out.print(`  ${bold(label)}${identifier}`);
+          }
 
           // Show config relationship
           const configName = findConfiguredDeviceName(device, config.devices ?? {});
@@ -2641,9 +2609,12 @@ const infoSubcommand = new Command('info')
         readiness: readinessData,
       },
       () => {
-        // Human-readable output
+        // Human-readable output — Summary zone then Issues zone
         const isMassStorage = device ? isMassStorageDevice(device.type) : false;
+        const infoIssues: import('./readiness-display.js').ReadinessIssue[] = [];
+        const cmdTarget = deviceName || cliPath || 'device';
 
+        // ── Summary zone ──────────────────────────────────────────────
         if (device) {
           out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
           if (isMassStorage) {
@@ -2669,37 +2640,46 @@ const infoSubcommand = new Command('info')
             out.print(`  Status:        Not mounted`);
           }
 
+          // Model line — compact, no multi-line warnings
           if (!isMassStorage && liveStatus.model) {
             const capacityStr =
               liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
             const genStr = formatGeneration(liveStatus.model.generation);
             out.print(`  Model:         ${liveStatus.model.name}${capacityStr} - ${genStr}`);
+          } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
+            out.print('  Model:         Unknown \u2014 SysInfo missing');
           }
 
-          // Show readiness summary (iPod only)
+          // Readiness line — short status only
           if (!isMassStorage && readinessData) {
-            const readinessLabel = formatReadinessLevel(
-              readinessData.level as ReadinessLevel,
-              deviceName || cliPath || 'device'
+            const levelLabel =
+              readinessData.level === 'ready'
+                ? 'Ready'
+                : formatReadinessLevel(readinessData.level as ReadinessLevel, cmdTarget);
+            out.print(`  Readiness:     ${levelLabel}`);
+
+            // Collect readiness issues for the Issues zone
+            const readinessIssues = collectReadinessIssues(
+              readinessData.stages as import('@podkit/core').ReadinessStageResult[],
+              cmdTarget
             );
-            out.print(`  Readiness:     ${readinessLabel}`);
+            infoIssues.push(...readinessIssues);
           }
 
-          // Show validation issues/warnings (iPod only)
+          // Collect validation issues for the Issues zone (iPod only)
           if (!isMassStorage && liveStatus.validation) {
             for (const issue of liveStatus.validation.issues) {
-              if (issue.type === 'unsupported_device') {
-                out.print(`  ** ${issue.message}`);
-              } else {
-                out.warn(issue.message);
-              }
-              if (issue.suggestion) {
-                out.print(`     ${issue.suggestion}`);
-              }
+              infoIssues.push({
+                marker: issue.type === 'unsupported_device' ? '\u2717' : '!',
+                label: 'Validation',
+                summary: issue.message,
+                details: [],
+                ...(issue.suggestion ? { docsUrl: undefined, fixCommand: undefined } : {}),
+              });
             }
           }
 
-          // Show capabilities (iPod: from validation, mass-storage: from preset)
+          // Capabilities — compact
           if (!isMassStorage && liveStatus.capabilities && liveStatus.model) {
             out.print('  Capabilities:');
             const caps = liveStatus.capabilities;
@@ -2717,6 +2697,8 @@ const infoSubcommand = new Command('info')
                 out.print(`    - ${name} (not supported on ${gen})`);
               }
             }
+          } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
+            out.print('  Capabilities:  Music only (model unknown)');
           } else if (isMassStorage && resolvedDeviceCapabilities) {
             out.print('  Capabilities:');
             out.print(
@@ -2818,10 +2800,15 @@ const infoSubcommand = new Command('info')
             }
           }
 
-          // Show transform warnings (computed before out.result for JSON)
+          // Collect transform warnings for Issues zone
           if (deviceTransformWarnings) {
             for (const warning of deviceTransformWarnings) {
-              out.warn(warning.message);
+              infoIssues.push({
+                marker: '!',
+                label: 'Transform',
+                summary: warning.message,
+                details: [],
+              });
             }
           }
 
@@ -2869,6 +2856,12 @@ const infoSubcommand = new Command('info')
               }
             }
           }
+        }
+
+        // ── Issues zone ───────────────────────────────────────────────
+        if (infoIssues.length > 0) {
+          out.newline();
+          printIssues(out, infoIssues);
         }
 
         // Show tips based on sync tag state

@@ -34,8 +34,14 @@ import { existsSync } from '../utils/fs.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
-import { STAGE_DISPLAY_NAMES } from '@podkit/core';
-import type { ReadinessStageResult, ReadinessResult } from '@podkit/core';
+import type { ReadinessResult } from '@podkit/core';
+import {
+  stageMarker,
+  printReadinessSummary,
+  collectReadinessIssues,
+  printIssues,
+  type ReadinessIssue,
+} from './readiness-display.js';
 
 // ── Output types ────────────────────────────────────────────────────────────
 
@@ -100,33 +106,6 @@ interface SuggestedAction {
 function shellQuote(value: string): string {
   if (/^[A-Za-z0-9_./:@%+,=-]+$/.test(value)) return value;
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
-}
-
-function printSuggestedActions(out: OutputContext, actions: SuggestedAction[]): void {
-  if (actions.length === 0) return;
-  out.newline();
-  out.print('Suggested actions:');
-  for (const action of actions) {
-    out.print(`  ${action.reason}:`);
-    out.print(`    ${action.command}`);
-  }
-}
-
-// ── Status symbols ──────────────────────────────────────────────────────────
-
-function statusSymbol(status: string): string {
-  switch (status) {
-    case 'pass':
-      return '\u2713'; // ✓
-    case 'fail':
-      return '\u2717'; // ✗
-    case 'warn':
-      return '!';
-    case 'skip':
-      return '-';
-    default:
-      return '?';
-  }
 }
 
 // ── Resolve device helper ───────────────────────────────────────────────────
@@ -300,54 +279,6 @@ export const doctorCommand = new Command('doctor')
     await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
   });
 
-// ── Readiness display helpers ────────────────────────────────────────────────
-
-function printReadinessStages(out: OutputContext, stages: ReadinessStageResult[]): void {
-  for (const stage of stages) {
-    const marker = statusSymbol(stage.status);
-    const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
-    out.print(`  ${marker} ${name}`);
-
-    // Show detail line for certain stages
-    if (stage.stage === 'mount' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.stage === 'mount' && stage.status === 'warn') {
-      out.print(`    ${stage.details?.mountPoint} (read-only)`);
-    } else if (stage.stage === 'sysinfo' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.stage === 'database' && stage.status === 'pass') {
-      out.print(`    ${stage.summary}`);
-    } else if (
-      stage.status === 'fail' &&
-      stage.stage !== 'usb' &&
-      stage.stage !== 'partition' &&
-      stage.stage !== 'filesystem'
-    ) {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.status === 'warn') {
-      out.print(`    ${stage.summary}`);
-    } else if (stage.status === 'skip') {
-      out.print(`    ${stage.summary}`);
-    }
-
-    // Surface SysInfoExtended status under the sysinfo stage. For checksum
-    // devices, absence is a problem — make that clear.
-    if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
-      const present = stage.details?.sysInfoExtendedExists;
-      const checksumType = stage.details?.checksumType as string | undefined;
-      const needsChecksum =
-        checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
-      if (present === true) {
-        out.print('    SysInfoExtended: present');
-      } else if (present === false && needsChecksum) {
-        out.print('    SysInfoExtended: missing (required for database checksums)');
-      } else if (present === false) {
-        out.print('    SysInfoExtended: not present');
-      }
-    }
-  }
-}
-
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
 async function runDoctorDiagnostics(
@@ -409,19 +340,16 @@ async function runDoctorDiagnostics(
         out.print('  No health checks are currently available for this device.');
         out.print('  Run `podkit sync --dry-run` to verify your collection configuration.');
       } else {
-        // Device Health section
         out.newline();
         out.print('Device Health');
 
         for (const check of report.checks) {
           if (check.repairOnly) continue;
-
-          const sym = statusSymbol(check.status);
+          const sym = stageMarker(check.status);
           out.print(`  ${sym} ${check.name}    ${check.summary}`);
         }
       }
 
-      // Summary line
       out.newline();
       if (report.healthy) {
         out.success('All checks passed.');
@@ -432,19 +360,29 @@ async function runDoctorDiagnostics(
         out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
       }
 
+      // Issues section
       const msDeviceArg = shellQuote(globalOpts.device ?? devicePath);
-      const msActions: SuggestedAction[] = [];
+      const msIssues: ReadinessIssue[] = [];
       for (const check of report.checks) {
-        if (!check.repairable || check.repairOnly) continue;
-        if (check.status !== 'fail' && check.status !== 'warn') continue;
+        if (check.repairOnly || check.status === 'pass' || check.status === 'skip') continue;
         const diagCheck = getDiagnosticCheck(check.id);
-        if (!diagCheck?.repair) continue;
-        msActions.push({
-          reason: check.name,
-          command: `podkit doctor --repair ${check.id} -d ${msDeviceArg}`,
+        const fixCommand =
+          check.repairable && diagCheck?.repair
+            ? `podkit doctor --repair ${check.id} -d ${msDeviceArg}`
+            : undefined;
+        msIssues.push({
+          marker: stageMarker(check.status),
+          label: check.name,
+          summary: check.summary,
+          details: [],
+          docsUrl: check.docsUrl,
+          fixCommand,
         });
       }
-      printSuggestedActions(out, msActions);
+      if (msIssues.length > 0) {
+        out.newline();
+        printIssues(out, msIssues);
+      }
     });
 
     if (!report.healthy) {
@@ -636,32 +574,27 @@ async function runDoctorDiagnostics(
         out.newline();
         out.print('System');
         for (const check of systemChecks) {
-          const sym = statusSymbol(check.status);
+          const sym = stageMarker(check.status);
           out.print(`  ${sym} ${check.name}    ${check.summary}`);
-          if (check.docsUrl) {
-            out.print(`    More info: ${check.docsUrl}`);
-          }
         }
       }
     }
 
-    // ── Device Readiness section ──
+    // ── Device Readiness section (compact summary) ──
     out.newline();
     out.print('Device Readiness');
 
     if (readinessResult) {
-      printReadinessStages(out, readinessResult.stages);
+      printReadinessSummary(out, readinessResult.stages);
     }
 
-    // ── Database Health section ──
+    // ── Database Health section (compact summary) ──
     out.newline();
     out.print('Database Health');
 
     if (!report) {
-      // DB not available — show skip message
       if (readinessResult && !dbAvailable) {
         out.print('  Skipped \u2014 device database is not available.');
-        out.print('  Run `podkit device init` to initialize the iPod database.');
       } else if (!readinessResult) {
         out.print('  Skipped \u2014 could not run database health checks.');
       } else {
@@ -669,41 +602,13 @@ async function runDoctorDiagnostics(
       }
     } else {
       for (const check of report.checks) {
-        // Skip repair-only and system checks here
         if (check.repairOnly || check.scope === 'system') continue;
-
-        const sym = statusSymbol(check.status);
+        const sym = stageMarker(check.status);
         out.print(`  ${sym} ${check.name}    ${check.summary}`);
 
-        // For failures, show details and repair instructions
-        if (check.status === 'fail' && check.details) {
-          out.newline();
-          const d = check.details as Record<string, unknown>;
-
-          if (d.totalEntries !== undefined) {
-            const total = (d.totalEntries as number).toLocaleString();
-            const corrupt = (d.corruptEntries as number).toLocaleString();
-            const healthyEntries = (d.healthyEntries as number).toLocaleString();
-            const pct = d.corruptPercent;
-
-            out.print(
-              `    Corrupt:      ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
-            );
-            out.print(`    Healthy:      ${healthyEntries} entries with valid offsets`);
-          }
-
-          out.newline();
-          out.print('    The artwork database is out of sync with the thumbnail files.');
-          out.print('    Affected tracks display wrong or missing artwork on the iPod.');
-        }
-
-        // Orphan files: verbose summary
+        // Orphan files: verbose summary inline (it's informational, not an error)
         if (check.id === 'orphan-files' && check.status === 'warn' && check.details) {
           printOrphanSummary(check.details as Record<string, unknown>, out);
-        }
-
-        if (check.docsUrl) {
-          out.print(`    More info: ${check.docsUrl}`);
         }
       }
     }
@@ -713,7 +618,6 @@ async function runDoctorDiagnostics(
     if (healthy) {
       out.success('All checks passed.');
     } else {
-      // Count issues: readiness failures + DB check failures
       let issueCount = 0;
       if (readinessResult) {
         issueCount += readinessResult.stages.filter((s) => s.status === 'fail').length;
@@ -721,12 +625,91 @@ async function runDoctorDiagnostics(
       if (report) {
         issueCount += report.checks.filter((c) => c.status === 'fail' && !c.repairOnly).length;
       }
-      // Ensure at least 1 if unhealthy
       if (issueCount === 0) issueCount = 1;
       out.error(`${issueCount} issue${issueCount === 1 ? '' : 's'} found.`);
     }
 
-    printSuggestedActions(out, actions);
+    // ── Issues section (detailed) ──
+    const allIssues: ReadinessIssue[] = [];
+
+    // Readiness issues
+    if (readinessResult) {
+      allIssues.push(...collectReadinessIssues(readinessResult.stages, deviceArg));
+    }
+
+    // System check issues
+    if (report) {
+      const systemChecks = report.checks.filter((c) => c.scope === 'system' && !c.repairOnly);
+      for (const check of systemChecks) {
+        if (check.status !== 'fail' && check.status !== 'warn') continue;
+        allIssues.push({
+          marker: stageMarker(check.status),
+          label: check.name,
+          summary: check.summary,
+          details: [],
+          docsUrl: check.docsUrl,
+        });
+      }
+    }
+
+    // Database health issues
+    if (report) {
+      for (const check of report.checks) {
+        if (check.repairOnly || check.scope === 'system') continue;
+        if (check.status !== 'fail' && check.status !== 'warn') continue;
+
+        const details: string[] = [];
+
+        // Artwork corruption details
+        if (check.status === 'fail' && check.details) {
+          const d = check.details as Record<string, unknown>;
+          if (d.totalEntries !== undefined) {
+            const total = (d.totalEntries as number).toLocaleString();
+            const corrupt = (d.corruptEntries as number).toLocaleString();
+            const healthyEntries = (d.healthyEntries as number).toLocaleString();
+            const pct = d.corruptPercent;
+            details.push(
+              `Corrupt: ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
+            );
+            details.push(`Healthy: ${healthyEntries} entries with valid offsets`);
+          }
+          details.push('The artwork database is out of sync with the thumbnail files.');
+          details.push('Affected tracks display wrong or missing artwork on the iPod.');
+        }
+
+        // Build fix command from actions
+        const action = actions.find((a) => a.command.includes(check.id));
+        const fixCommand = action?.command;
+
+        allIssues.push({
+          marker: stageMarker(check.status),
+          label: check.name,
+          summary: check.summary,
+          details,
+          docsUrl: check.docsUrl,
+          fixCommand,
+        });
+
+        // Artwork rebuild also suggests artwork-reset
+        if (check.id === 'artwork-rebuild') {
+          const resetAction = actions.find((a) => a.command.includes('artwork-reset'));
+          if (resetAction) {
+            allIssues.push({
+              marker: '!',
+              label: 'Alternative',
+              summary: 'Clear all artwork (no source needed)',
+              details: [],
+              fixCommand: resetAction.command,
+            });
+          }
+        }
+      }
+    }
+
+    if (allIssues.length > 0) {
+      out.newline();
+      printIssues(out, allIssues);
+    }
   });
 
   opened?.ipod?.close();
