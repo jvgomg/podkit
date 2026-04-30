@@ -2452,3 +2452,9 @@ export function sanitizeFilename(name: string): string {
 export function soundcheckToReplayGainDb(_sc: number): number {
   return 0;
 }
+export function toLibgpodGeneration(_id: string): string {
+  return 'unknown';
+}
+export function createIpodCapabilities(_device: any): any {
+  return {};
+}
