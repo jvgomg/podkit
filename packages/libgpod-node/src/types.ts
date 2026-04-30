@@ -467,6 +467,26 @@ export interface DeviceCapabilities {
   modelName: string;
 }
 
+/**
+ * Artwork format specification.
+ *
+ * Represents one thumbnail format that the device supports.
+ * Each iPod model has a specific set of formats with different
+ * dimensions used for various display contexts (album list, now playing, etc.).
+ */
+export interface ArtworkFormat {
+  /** Unique format identifier */
+  formatId: number;
+  /** Pixel width of the thumbnail */
+  width: number;
+  /** Pixel height of the thumbnail */
+  height: number;
+  /** Whether the image should be cropped to fill */
+  crop: boolean;
+  /** Rotation in degrees */
+  rotation: number;
+}
+
 // ============================================================================
 // Smart Playlist Types
 // ============================================================================

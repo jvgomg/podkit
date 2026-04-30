@@ -18,6 +18,7 @@ import type {
   DeviceInfo,
   TrackInput,
   ArtworkCapabilities,
+  ArtworkFormat,
   DeviceCapabilities,
   SmartPlaylist,
   SPLRule,
@@ -182,6 +183,26 @@ export interface NativePhotoDatabase {
 /**
  * Native binding module interface.
  */
+/**
+ * Native Device class interface.
+ *
+ * Lightweight device handle for capability queries without opening a database.
+ * Created via static factory methods.
+ */
+export interface NativeDevice {
+  getCapabilities(): DeviceCapabilities & { capacity: number };
+  getArtworkFormats(): ArtworkFormat[];
+  getSysInfo(field: string): string | null;
+  getInfo(): DeviceInfo;
+  close(): void;
+}
+
+export interface NativeDeviceConstructor {
+  new (): NativeDevice;
+  fromMountPoint(mountpoint: string): NativeDevice;
+  fromModelNumber(modelNumber: string): NativeDevice;
+}
+
 export interface NativeBinding {
   Database: new () => NativeDatabase;
   parse(mountpoint: string): NativeDatabase;
@@ -189,6 +210,9 @@ export interface NativeBinding {
   create(): NativeDatabase;
   initIpod(mountpoint: string, model?: string, name?: string): NativeDatabase;
   getVersion(): NativeVersion;
+
+  // Standalone device handle
+  Device: NativeDeviceConstructor;
 
   // Photo database
   PhotoDatabase: new () => NativePhotoDatabase;
@@ -548,4 +572,36 @@ export function readSysInfoExtendedFromUsb(
 ): string | null {
   const binding = loadBinding();
   return binding.readSysInfoExtendedFromUsb(busNumber, deviceAddress);
+}
+
+/**
+ * Create a standalone device handle from an iPod mount point.
+ *
+ * Reads SysInfo from the filesystem to determine device capabilities
+ * WITHOUT opening the iTunes database. Use this for lightweight
+ * capability queries (e.g., device list, validation).
+ *
+ * @param mountpoint Path to the iPod mount point
+ * @returns Native device handle
+ * @throws Error if the device handle cannot be created
+ */
+export function deviceFromMountPoint(mountpoint: string): NativeDevice {
+  const binding = loadBinding();
+  return binding.Device.fromMountPoint(mountpoint);
+}
+
+/**
+ * Create a standalone device handle from a cached model number.
+ *
+ * Determines device capabilities from the model number alone,
+ * without accessing the filesystem. Use this when the model number
+ * has been previously cached (e.g., in device config).
+ *
+ * @param modelNumber iPod model number string (e.g., "MA147")
+ * @returns Native device handle
+ * @throws Error if the device handle cannot be created
+ */
+export function deviceFromModelNumber(modelNumber: string): NativeDevice {
+  const binding = loadBinding();
+  return binding.Device.fromModelNumber(modelNumber);
 }

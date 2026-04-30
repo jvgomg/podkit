@@ -20,6 +20,7 @@
 
 #include "database_wrapper.h"
 #include "photo_database_wrapper.h"
+#include "device_wrapper.h"
 
 // Declaration for itdb_read_sysinfo_extended_from_usb from libgpod.
 // USB SysInfoExtended reading — resolved at runtime via dlsym so the binding
@@ -318,6 +319,7 @@ Napi::Value ReadSysInfoExtendedFromUsb(const Napi::CallbackInfo& info) {
 Napi::Object Init(Napi::Env env, Napi::Object exports) {
     DatabaseWrapper::Init(env, exports);
     PhotoDatabaseWrapper::Init(env, exports);
+    DeviceWrapper::Init(env, exports);
 
     exports.Set("parse", Napi::Function::New(env, Parse));
     exports.Set("parseFile", Napi::Function::New(env, ParseFile));
