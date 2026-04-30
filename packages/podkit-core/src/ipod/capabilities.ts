@@ -33,54 +33,47 @@ export type {
  * @param generation - Generation identifier from libgpod
  * @returns Maximum artwork dimension in pixels (square), or 0 if no artwork support
  */
+/**
+ * Maximum artwork resolution per iPod generation.
+ *
+ * Values based on device screen dimensions. This table is also
+ * maintained in capability-adapter.ts (ARTWORK_MAX_RESOLUTION) which
+ * is the primary path for connected devices via libgpod. This copy
+ * serves as a fallback for generation-only capability queries.
+ */
+const ARTWORK_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
+  // Classic/Video — 320x240 screen
+  classic_1: 320,
+  classic_2: 320,
+  classic_3: 320,
+  video_1: 320,
+  video_2: 320,
+
+  // Nano — varies by generation
+  nano_1: 176,
+  nano_2: 176,
+  nano_3: 320, // 320x240 widescreen
+  nano_4: 240, // 240x320
+  nano_5: 240, // 240x376
+  nano_6: 240, // 240x240
+
+  // Photo — ArtworkDB stores 320x240
+  photo: 320,
+
+  // Touch/iPhone/iPad — 320x480+
+  touch_1: 320,
+  touch_2: 320,
+  touch_3: 320,
+  touch_4: 320,
+  iphone_1: 320,
+  iphone_2: 320,
+  iphone_3: 320,
+  iphone_4: 320,
+  ipad_1: 320,
+};
+
 function getArtworkMaxResolution(generation: IpodGeneration): number {
-  switch (generation) {
-    // Color screen, large display (320x240 or similar)
-    case 'classic_1':
-    case 'classic_2':
-    case 'classic_3':
-    case 'video_1':
-    case 'video_2':
-      return 320;
-
-    // Color screen, smaller display
-    case 'nano_1':
-    case 'nano_2':
-    case 'nano_3':
-    case 'nano_4':
-    case 'nano_5':
-    case 'nano_6':
-    case 'photo':
-      return 176;
-
-    // Touch devices (color, large)
-    case 'touch_1':
-    case 'touch_2':
-    case 'touch_3':
-    case 'touch_4':
-    case 'iphone_1':
-    case 'iphone_2':
-    case 'iphone_3':
-    case 'iphone_4':
-    case 'ipad_1':
-      return 320;
-
-    // No color screen or no screen
-    case 'first':
-    case 'second':
-    case 'third':
-    case 'fourth':
-    case 'mini_1':
-    case 'mini_2':
-    case 'mobile':
-    case 'shuffle_1':
-    case 'shuffle_2':
-    case 'shuffle_3':
-    case 'shuffle_4':
-    case 'unknown':
-    default:
-      return 0;
-  }
+  return ARTWORK_RESOLUTION[generation] ?? 0;
 }
 
 // =============================================================================

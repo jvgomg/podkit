@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { IPOD_GENERATIONS, supportsAlac, supportsVideo } from './generation.js';
+import { IPOD_GENERATIONS, supportsAlac } from './generation.js';
 
 describe('supportsAlac', () => {
   it('returns true for iPod Video 5G', () => {
@@ -42,16 +42,19 @@ describe('supportsAlac', () => {
     expect(supportsAlac('shuffle_4')).toBe(false);
   });
 
-  it('returns false for Mini', () => {
+  it('returns false for Mini 1G', () => {
     expect(supportsAlac('mini_1')).toBe(false);
-    expect(supportsAlac('mini_2')).toBe(false);
   });
 
-  it('returns false for Touch', () => {
-    expect(supportsAlac('touch_1')).toBe(false);
-    expect(supportsAlac('touch_2')).toBe(false);
-    expect(supportsAlac('touch_3')).toBe(false);
-    expect(supportsAlac('touch_4')).toBe(false);
+  it('returns true for Mini 2G', () => {
+    expect(supportsAlac('mini_2')).toBe(true);
+  });
+
+  it('returns true for Touch', () => {
+    expect(supportsAlac('touch_1')).toBe(true);
+    expect(supportsAlac('touch_2')).toBe(true);
+    expect(supportsAlac('touch_3')).toBe(true);
+    expect(supportsAlac('touch_4')).toBe(true);
   });
 
   it('returns false for unknown generation', () => {
@@ -62,25 +65,19 @@ describe('supportsAlac', () => {
     expect(supportsAlac('nonexistent_gen')).toBe(false);
   });
 
-  it('returns false for early iPods', () => {
+  it('returns true for 4th gen and Photo (ALAC-capable)', () => {
+    expect(supportsAlac('fourth')).toBe(true);
+    expect(supportsAlac('photo')).toBe(true);
+  });
+
+  it('returns false for early iPods without ALAC', () => {
     expect(supportsAlac('first')).toBe(false);
     expect(supportsAlac('second')).toBe(false);
     expect(supportsAlac('third')).toBe(false);
-    expect(supportsAlac('fourth')).toBe(false);
-    expect(supportsAlac('photo')).toBe(false);
   });
 });
 
 describe('IPOD_GENERATIONS metadata', () => {
-  it('all ALAC-capable generations also support video', () => {
-    // All ALAC-capable models happen to be video-capable too
-    for (const [id, metadata] of Object.entries(IPOD_GENERATIONS)) {
-      if (metadata.supportsAlac) {
-        expect(supportsVideo(id)).toBe(true);
-      }
-    }
-  });
-
   it('supportsAlac field is consistent with supportsAlac function', () => {
     for (const [id, metadata] of Object.entries(IPOD_GENERATIONS)) {
       expect(supportsAlac(id)).toBe(metadata.supportsAlac ?? false);

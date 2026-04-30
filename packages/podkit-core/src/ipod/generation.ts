@@ -49,10 +49,12 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
   fourth: {
     id: 'fourth',
     displayName: '4th Generation',
+    supportsAlac: true,
   },
   photo: {
     id: 'photo',
     displayName: 'Photo',
+    supportsAlac: true,
   },
   mobile: {
     id: 'mobile',
@@ -65,6 +67,7 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
   mini_2: {
     id: 'mini_2',
     displayName: 'Mini (2nd Generation)',
+    supportsAlac: true,
   },
   shuffle_1: {
     id: 'shuffle_1',
@@ -145,38 +148,47 @@ export const IPOD_GENERATIONS: Record<IpodGeneration, IpodGenerationMetadata> = 
   touch_1: {
     id: 'touch_1',
     displayName: 'Touch (1st Generation)',
+    supportsAlac: true,
   },
   touch_2: {
     id: 'touch_2',
     displayName: 'Touch (2nd Generation)',
+    supportsAlac: true,
   },
   touch_3: {
     id: 'touch_3',
     displayName: 'Touch (3rd Generation)',
+    supportsAlac: true,
   },
   touch_4: {
     id: 'touch_4',
     displayName: 'Touch (4th Generation)',
+    supportsAlac: true,
   },
   iphone_1: {
     id: 'iphone_1',
     displayName: 'iPhone (1st Generation)',
+    supportsAlac: true,
   },
   iphone_2: {
     id: 'iphone_2',
     displayName: 'iPhone 3G',
+    supportsAlac: true,
   },
   iphone_3: {
     id: 'iphone_3',
     displayName: 'iPhone 3GS',
+    supportsAlac: true,
   },
   iphone_4: {
     id: 'iphone_4',
     displayName: 'iPhone 4',
+    supportsAlac: true,
   },
   ipad_1: {
     id: 'ipad_1',
     displayName: 'iPad (1st Generation)',
+    supportsAlac: true,
   },
 };
 
@@ -244,8 +256,9 @@ export function supportsVideo(generation: string): boolean {
 /**
  * Check if a generation supports ALAC (Apple Lossless) playback.
  *
- * ALAC-capable generations: Video 5G/5.5G, Classic all, Nano 3G-5G.
- * All other generations (Nano 1G-2G, 6G-7G, Shuffle, Mini, Touch, etc.) do not.
+ * ALAC-capable generations: 4th gen (click wheel), Photo, Mini 2G,
+ * Video 5G/5.5G, Classic all, Nano 3G-5G, Touch all, iPhone all, iPad.
+ * Non-ALAC: 1st-3rd gen, Mini 1G, Nano 1G-2G, Nano 6G, all Shuffles.
  *
  * @param generation - Generation identifier from libgpod
  * @returns True if the generation supports ALAC playback
