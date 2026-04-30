@@ -1385,7 +1385,18 @@ const listSubcommand = new Command('list')
     // Resolve capabilities and settings for each device
     const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
       await import('../config/resolve.js');
-    const { getDeviceCapabilities, resolveDeviceCapabilities } = await import('@podkit/core');
+    const { resolveDeviceCapabilities, createIpodCapabilities } = await import('@podkit/core');
+
+    // Import Device class for lightweight capability queries (no database needed)
+    let deviceFromMountPoint:
+      | typeof import('@podkit/libgpod-node').deviceFromMountPoint
+      | undefined;
+    try {
+      const libgpod = await import('@podkit/libgpod-node');
+      deviceFromMountPoint = libgpod.deviceFromMountPoint;
+    } catch {
+      // libgpod not available — fall back to generation-based capabilities
+    }
 
     const globalResolved = resolveGlobalConfig(config);
 
@@ -1405,13 +1416,13 @@ const listSubcommand = new Command('list')
         const connInfo = uuid ? connectedUuids.get(uuid) : undefined;
         connected = connInfo !== undefined;
 
-        if (connected && connInfo?.mountPoint) {
-          // Connected iPod — read generation from SysInfoExtended
+        if (connected && connInfo?.mountPoint && deviceFromMountPoint) {
+          // Connected iPod — use libgpod Device for capability queries
           try {
-            const sysInfo = readSysInfoExtended(connInfo.mountPoint);
-            if (sysInfo?.deviceInfo?.generationId) {
-              capabilities = getDeviceCapabilities(sysInfo.deviceInfo.generationId);
-            }
+            const dev = deviceFromMountPoint(connInfo.mountPoint);
+            const caps = dev.getCapabilities();
+            capabilities = createIpodCapabilities(caps);
+            dev.close();
           } catch {
             // Fall through — capabilities remain null
           }

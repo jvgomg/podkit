@@ -18,6 +18,8 @@
  * (tracked in ipod-db) will unify these into a single source of truth.
  */
 
+import type { IpodGeneration as LibgpodGeneration } from '@podkit/libgpod-node';
+
 // ── Types ───────────────────────────────────────────────────────────────────
 
 /** Checksum type required for iPod database */
@@ -131,6 +133,46 @@ const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   touch_5g: { id: 'touch_5g', displayName: 'iPod touch (5th Generation)', checksumType: 'none' },
   touch_6g: { id: 'touch_6g', displayName: 'iPod touch (6th Generation)', checksumType: 'none' },
   touch_7g: { id: 'touch_7g', displayName: 'iPod touch (7th Generation)', checksumType: 'none' },
+};
+
+// ── IpodGenerationId → libgpod IpodGeneration mapping ──────────────────────
+//
+// Maps the detection-layer generation IDs (nano_4g, classic_6g) to the
+// libgpod-native generation IDs (nano_4, classic_1) used by the capability
+// and metadata systems. The naming differs because libgpod uses sequential
+// numbering within each family (classic_1 = first Classic model) while the
+// detection layer uses Apple's overall generation numbering (classic_6g = 6th gen iPod).
+
+const GENERATION_ID_TO_LIBGPOD: Record<IpodGenerationId, LibgpodGeneration> = {
+  classic_1g: 'first',
+  classic_2g: 'second',
+  classic_3g: 'third',
+  classic_4g: 'fourth',
+  photo: 'photo',
+  video_5g: 'video_1',
+  video_5_5g: 'video_2',
+  classic_6g: 'classic_1',
+  classic_7g: 'classic_3',
+  mini_1g: 'mini_1',
+  mini_2g: 'mini_2',
+  nano_1g: 'nano_1',
+  nano_2g: 'nano_2',
+  nano_3g: 'nano_3',
+  nano_4g: 'nano_4',
+  nano_5g: 'nano_5',
+  nano_6g: 'nano_6',
+  nano_7g: 'unknown', // nano 7G not in libgpod's generation enum
+  shuffle_1g: 'shuffle_1',
+  shuffle_2g: 'shuffle_2',
+  shuffle_3g: 'shuffle_3',
+  shuffle_4g: 'shuffle_4',
+  touch_1g: 'touch_1',
+  touch_2g: 'touch_2',
+  touch_3g: 'touch_3',
+  touch_4g: 'touch_4',
+  touch_5g: 'unknown', // touch 5-7G not in libgpod's generation enum
+  touch_6g: 'unknown',
+  touch_7g: 'unknown',
 };
 
 // ── USB product ID table ────────────────────────────────────────────────────
@@ -1685,6 +1727,19 @@ export function getGenerationInfo(generationId: IpodGenerationId): IpodGeneratio
  */
 export function getChecksumType(generationId: IpodGenerationId): IpodChecksumType {
   return GENERATIONS[generationId].checksumType;
+}
+
+/**
+ * Map an IpodGenerationId (detection-layer) to a libgpod IpodGeneration.
+ *
+ * This bridges the two generation ID systems:
+ * - IpodGenerationId: used by USB/serial/SysInfo detection (e.g., 'nano_4g', 'classic_6g')
+ * - IpodGeneration: used by libgpod and the capability/metadata systems (e.g., 'nano_4', 'classic_1')
+ *
+ * Returns 'unknown' for generations not supported by libgpod (nano_7g, touch 5-7g).
+ */
+export function toLibgpodGeneration(generationId: IpodGenerationId): LibgpodGeneration {
+  return GENERATION_ID_TO_LIBGPOD[generationId];
 }
 
 /**

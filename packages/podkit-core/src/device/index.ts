@@ -102,6 +102,7 @@ export {
   getChecksumType,
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
+  toLibgpodGeneration,
 } from './ipod-models.js';
 export type {
   IpodChecksumType,
@@ -109,6 +110,9 @@ export type {
   IpodGeneration,
   IpodModelVariant,
 } from './ipod-models.js';
+
+export { createIpodCapabilities } from './capability-adapter.js';
+export type { LibgpodDeviceInfo } from './capability-adapter.js';
 
 // Readiness pipeline
 export type {
