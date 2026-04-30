@@ -8,7 +8,13 @@
  * @module
  */
 
-import type { QualityPreset, VideoQualityPreset, DeviceCapabilities } from '@podkit/core';
+import type {
+  QualityPreset,
+  VideoQualityPreset,
+  DeviceCapabilities,
+  EncodingMode,
+  TransferMode,
+} from '@podkit/core';
 import type { DeviceConfig, PodkitConfig } from './types.js';
 
 // =============================================================================
@@ -54,6 +60,12 @@ export interface ResolvedDeviceSettings {
   audio: ResolvedValue<QualityPreset>;
   video: ResolvedValue<VideoQualityPreset | null>;
   artwork: ResolvedValue<boolean | null>;
+  checkArtwork: ResolvedValue<boolean>;
+  skipUpgrades: ResolvedValue<boolean>;
+  encoding: ResolvedValue<EncodingMode | undefined>;
+  transferMode: ResolvedValue<TransferMode>;
+  customBitrate: ResolvedValue<number | undefined>;
+  bitrateTolerance: ResolvedValue<number | undefined>;
 }
 
 // =============================================================================
@@ -148,6 +160,20 @@ export function resolveDeviceSettings(
     audio: resolveDeviceAudio(config, deviceConfig, quality),
     video: resolveDeviceVideo(config, deviceConfig, quality, capabilities),
     artwork: resolveDeviceArtwork(config, deviceConfig, capabilities),
+    checkArtwork: resolveSimpleBoolean(config.checkArtwork, deviceConfig.checkArtwork, false),
+    skipUpgrades: resolveSimpleBoolean(config.skipUpgrades, deviceConfig.skipUpgrades, false),
+    encoding: resolveSimple(config.encoding, deviceConfig.encoding, undefined),
+    transferMode: resolveSimple(
+      config.transferMode,
+      deviceConfig.transferMode,
+      'fast' as TransferMode
+    ),
+    customBitrate: resolveSimple(config.customBitrate, deviceConfig.customBitrate, undefined),
+    bitrateTolerance: resolveSimple(
+      config.bitrateTolerance,
+      deviceConfig.bitrateTolerance,
+      undefined
+    ),
   };
 }
 
@@ -246,6 +272,36 @@ function resolveDeviceArtwork(
     return { value: deviceConfig.artwork, source: 'device' };
   }
   return { value: config.artwork, source: 'global' };
+}
+
+// -- Simple settings (device → global → default) -----------------------------
+
+/**
+ * Generic resolution for simple scalar settings.
+ *   device value → global value → default
+ */
+function resolveSimple<T>(
+  globalValue: T | undefined,
+  deviceValue: T | undefined,
+  defaultValue: T
+): ResolvedValue<T> {
+  if (deviceValue !== undefined) return { value: deviceValue, source: 'device' };
+  if (globalValue !== undefined) return { value: globalValue, source: 'global' };
+  return { value: defaultValue, source: 'default' };
+}
+
+/**
+ * Boolean resolution with explicit default.
+ *   device value → global value → default
+ */
+function resolveSimpleBoolean(
+  globalValue: boolean | undefined,
+  deviceValue: boolean | undefined,
+  defaultValue: boolean
+): ResolvedValue<boolean> {
+  if (deviceValue !== undefined) return { value: deviceValue, source: 'device' };
+  if (globalValue !== undefined) return { value: globalValue, source: 'global' };
+  return { value: defaultValue, source: 'default' };
 }
 
 // =============================================================================

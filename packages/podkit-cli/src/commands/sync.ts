@@ -38,6 +38,7 @@ import type {
   DeviceConfig,
 } from '../config/index.js';
 import { QUALITY_PRESETS, ENCODING_MODES, CONTENT_TYPES, TRANSFER_MODES } from '../config/index.js';
+import { resolveDeviceSettings } from '../config/resolve.js';
 import {
   resolveDevicePath,
   formatDeviceError,
@@ -382,122 +383,8 @@ function getEffectiveVideoTransforms(
   };
 }
 
-/**
- * Get effective audio quality preset
- *
- * Resolution order: device audioQuality > device quality > global audioQuality > global quality
- */
-function getEffectiveAudioQuality(
-  config: { quality: QualityPreset; audioQuality?: QualityPreset },
-  deviceConfig?: DeviceConfig
-): QualityPreset {
-  return (
-    deviceConfig?.audioQuality ?? deviceConfig?.quality ?? config.audioQuality ?? config.quality
-  );
-}
-
-/**
- * Get effective video quality preset
- *
- * Resolution order: device videoQuality > device quality (if valid for video) > global videoQuality > global quality (if valid for video) > 'high'
- */
-function getEffectiveVideoQuality(
-  config: { quality: QualityPreset; videoQuality?: VideoQualityPreset },
-  deviceConfig?: DeviceConfig
-): VideoQualityPreset {
-  if (deviceConfig?.videoQuality) return deviceConfig.videoQuality;
-  if (deviceConfig?.quality && isVideoQualityCompatible(deviceConfig.quality))
-    return deviceConfig.quality as VideoQualityPreset;
-  if (config.videoQuality) return config.videoQuality;
-  if (isVideoQualityCompatible(config.quality)) return config.quality as VideoQualityPreset;
-  return 'high';
-}
-
-/**
- * Check if an audio quality preset is also valid as a video quality preset
- */
-function isVideoQualityCompatible(quality: QualityPreset): boolean {
-  return ['max', 'high', 'medium', 'low'].includes(quality);
-}
-
-/**
- * Get effective artwork setting for a device
- */
-function getEffectiveArtwork(globalArtwork: boolean, deviceConfig?: DeviceConfig): boolean {
-  return deviceConfig?.artwork ?? globalArtwork;
-}
-
-/**
- * Get effective checkArtwork setting for a device
- *
- * Resolution order: device checkArtwork > global checkArtwork > default (false)
- */
-function getEffectiveCheckArtwork(
-  globalCheckArtwork: boolean | undefined,
-  deviceConfig?: DeviceConfig
-): boolean {
-  return deviceConfig?.checkArtwork ?? globalCheckArtwork ?? false;
-}
-
-/**
- * Get effective skipUpgrades setting for a device
- *
- * Resolution order: device skipUpgrades > global skipUpgrades > default (false)
- */
-function getEffectiveSkipUpgrades(
-  globalSkipUpgrades: boolean | undefined,
-  deviceConfig?: DeviceConfig
-): boolean {
-  return deviceConfig?.skipUpgrades ?? globalSkipUpgrades ?? false;
-}
-
-/**
- * Get effective transfer mode
- *
- * Resolution order: device transferMode > global transferMode > 'fast' (default)
- */
-function getEffectiveTransferMode(
-  config: PodkitConfig,
-  deviceConfig?: DeviceConfig
-): import('@podkit/core').TransferMode {
-  return deviceConfig?.transferMode ?? config.transferMode ?? 'fast';
-}
-
-/**
- * Get effective encoding mode
- *
- * Resolution order: device encoding > global encoding > undefined (defaults to VBR)
- */
-function getEffectiveEncoding(
-  config: PodkitConfig,
-  deviceConfig?: DeviceConfig
-): import('@podkit/core').EncodingMode | undefined {
-  return deviceConfig?.encoding ?? config.encoding;
-}
-
-/**
- * Get effective custom bitrate
- *
- * Resolution order: device customBitrate > global customBitrate > undefined
- */
-function getEffectiveCustomBitrate(
-  config: PodkitConfig,
-  deviceConfig?: DeviceConfig
-): number | undefined {
-  return deviceConfig?.customBitrate ?? config.customBitrate;
-}
-
-/**
- * Get effective bitrate tolerance
- *
- * Resolution order: device bitrateTolerance > global bitrateTolerance > undefined
- */
-function getEffectiveBitrateTolerance(
-  config: PodkitConfig,
-  deviceConfig?: DeviceConfig
-): number | undefined {
-  return deviceConfig?.bitrateTolerance ?? config.bitrateTolerance;
-}
+// Quality/audio/video/artwork/encoding/transferMode/customBitrate/bitrateTolerance
+// resolution is handled by resolveDeviceSettings() from config/resolve.ts.
 
 // =============================================================================
 // Re-exports from sync-presenter (for backward compatibility and testing)
@@ -635,7 +522,11 @@ export const syncCommand = new Command('sync')
 
     // Derive all effective settings from device config.
     // Called once now and potentially re-called after auto-matching.
+    // Uses the config resolver for device → global → default chain,
+    // then overlays CLI options (highest priority).
     function deriveSettings(dc: DeviceConfig | undefined) {
+      const resolved = resolveDeviceSettings(config, '', dc ?? {}, null, false, false);
+
       return {
         transforms: getEffectiveTransforms(config.transforms, dc),
         videoTransforms: getEffectiveVideoTransforms(config.videoTransforms, dc),
@@ -643,26 +534,23 @@ export const syncCommand = new Command('sync')
           ? (options.audioQuality as QualityPreset)
           : options.quality
             ? (options.quality as QualityPreset)
-            : getEffectiveAudioQuality(config, dc),
+            : resolved.audio.value,
         videoQuality: options.videoQuality
           ? (options.videoQuality as VideoQualityPreset)
-          : options.quality && isVideoQualityCompatible(options.quality as QualityPreset)
+          : options.quality
             ? (options.quality as VideoQualityPreset)
-            : getEffectiveVideoQuality(config, dc),
-        artwork:
-          options.artwork !== undefined ? options.artwork : getEffectiveArtwork(config.artwork, dc),
+            : (resolved.video.value ?? ('high' as VideoQualityPreset)),
+        artwork: options.artwork !== undefined ? options.artwork : (resolved.artwork.value ?? true),
         skipUpgrades:
-          options.skipUpgrades !== undefined
-            ? options.skipUpgrades
-            : getEffectiveSkipUpgrades(config.skipUpgrades, dc),
+          options.skipUpgrades !== undefined ? options.skipUpgrades : resolved.skipUpgrades.value,
         encoding: options.encoding
           ? (options.encoding as import('@podkit/core').EncodingMode)
-          : getEffectiveEncoding(config, dc),
+          : resolved.encoding.value,
         transferMode: options.transferMode
           ? (options.transferMode as import('@podkit/core').TransferMode)
-          : getEffectiveTransferMode(config, dc),
-        customBitrate: getEffectiveCustomBitrate(config, dc),
-        bitrateTolerance: getEffectiveBitrateTolerance(config, dc),
+          : resolved.transferMode.value,
+        customBitrate: resolved.customBitrate.value,
+        bitrateTolerance: resolved.bitrateTolerance.value,
       };
     }
 
@@ -1054,7 +942,9 @@ export const syncCommand = new Command('sync')
             forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
             forceMetadata: options.forceMetadata ?? false,
             checkArtwork:
-              options.checkArtwork ?? getEffectiveCheckArtwork(config.checkArtwork, deviceConfig),
+              options.checkArtwork ??
+              resolveDeviceSettings(config, '', deviceConfig ?? {}, null, false, false).checkArtwork
+                .value,
             transcoder,
             capabilities: deviceCapabilities,
             effectiveCodecPreference,

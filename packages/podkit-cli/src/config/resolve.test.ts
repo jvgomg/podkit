@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { DeviceCapabilities } from '@podkit/core';
 import type { DeviceConfig, PodkitConfig } from './types.js';
+import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './types.js';
 import {
   resolveGlobalConfig,
   resolveDeviceSettings,
@@ -18,8 +19,8 @@ function makeConfig(overrides?: Partial<PodkitConfig>): PodkitConfig {
     quality: 'high',
     artwork: true,
     tips: true,
-    transforms: { cleanArtists: undefined },
-    videoTransforms: { showLanguage: undefined },
+    transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
     ...overrides,
   };
 }
@@ -312,6 +313,102 @@ describe('resolveDeviceSettings', () => {
       const result = resolveDeviceSettings(config, 'test', device, null, false, false);
 
       expect(result.type).toBe('ipod');
+    });
+  });
+
+  // ===========================================================================
+  // Simple settings (encoding, transferMode, etc.)
+  // ===========================================================================
+
+  describe('simple settings', () => {
+    it('uses device encoding over global', () => {
+      const config = makeConfig({ encoding: 'cbr' });
+      const device: DeviceConfig = { encoding: 'vbr' };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.encoding).toEqual({ value: 'vbr', source: 'device' });
+    });
+
+    it('falls back to global encoding', () => {
+      const config = makeConfig({ encoding: 'cbr' });
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.encoding).toEqual({ value: 'cbr', source: 'global' });
+    });
+
+    it('defaults encoding to undefined', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.encoding).toEqual({ value: undefined, source: 'default' });
+    });
+
+    it('resolves transferMode through chain', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = { transferMode: 'optimized' };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.transferMode).toEqual({ value: 'optimized', source: 'device' });
+    });
+
+    it('defaults transferMode to fast', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.transferMode).toEqual({ value: 'fast', source: 'default' });
+    });
+
+    it('resolves checkArtwork with default false', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.checkArtwork).toEqual({ value: false, source: 'default' });
+    });
+
+    it('uses device checkArtwork over global', () => {
+      const config = makeConfig({ checkArtwork: true });
+      const device: DeviceConfig = { checkArtwork: false };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.checkArtwork).toEqual({ value: false, source: 'device' });
+    });
+
+    it('resolves skipUpgrades with default false', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.skipUpgrades).toEqual({ value: false, source: 'default' });
+    });
+
+    it('resolves customBitrate through chain', () => {
+      const config = makeConfig({ customBitrate: 192 });
+      const device: DeviceConfig = {};
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.customBitrate).toEqual({ value: 192, source: 'global' });
+    });
+
+    it('resolves bitrateTolerance through chain', () => {
+      const config = makeConfig();
+      const device: DeviceConfig = { bitrateTolerance: 0.1 };
+
+      const result = resolveDeviceSettings(config, 'test', device, FULL_CAPABILITIES, false, false);
+
+      expect(result.bitrateTolerance).toEqual({ value: 0.1, source: 'device' });
     });
   });
 });
