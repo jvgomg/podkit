@@ -105,7 +105,9 @@ export interface ResolvedVideoConfig {
 const DEFAULT_VIDEO_QUALITY: VideoQualityPreset = 'high';
 
 /** Default hardware acceleration setting */
-const DEFAULT_HARDWARE_ACCELERATION = true;
+// Hardware acceleration via VideoToolbox is macOS-only. Defaulting to true on
+// Linux/Windows poisons every transcode with `Unknown encoder 'h264_videotoolbox'`.
+const DEFAULT_HARDWARE_ACCELERATION = process.platform === 'darwin';
 
 // =============================================================================
 // Resolver

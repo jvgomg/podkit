@@ -185,7 +185,8 @@ describe('VideoHandler', () => {
       const source = makeCollectionVideo();
       const op = handler.planAdd(source);
       if (op.type === 'video-transcode') {
-        expect(op.settings.useHardwareAcceleration).toBe(true);
+        // Hardware acceleration defaults to platform availability (macOS only).
+        expect(op.settings.useHardwareAcceleration).toBe(process.platform === 'darwin');
         expect(op.settings.targetVideoBitrate).toBe(1500);
         expect(op.settings.targetAudioBitrate).toBe(128);
       }

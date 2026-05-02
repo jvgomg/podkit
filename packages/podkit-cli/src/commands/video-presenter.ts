@@ -341,7 +341,10 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
     signal?: AbortSignal
   ) {
     let videoCompleted = 0;
+    let videoFailed = 0;
     let lastIndex = -1;
+    let lastIndexFailed = false;
+    const collectedErrors: CollectedError[] = [];
     const videoDisplay = new DualProgressDisplay((content) => out.raw(content));
 
     const videoExecutor = core.createSyncExecutor(this.handler!);
@@ -353,14 +356,34 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
         dryRun: false,
         device,
         signal,
+        continueOnError: true,
       })) {
-        if (!progress.error && progress.index !== lastIndex && !progress.skipped) {
-          // New operation started — previous one (if any) is complete
+        // Track operation transitions: when index changes, the previous op is
+        // settled (succeeded unless it yielded an error event).
+        if (progress.index !== lastIndex && !progress.skipped) {
           if (lastIndex >= 0) {
-            videoCompleted++;
+            if (lastIndexFailed) {
+              videoFailed++;
+            } else {
+              videoCompleted++;
+            }
           }
           displayCount++;
           lastIndex = progress.index;
+          lastIndexFailed = false;
+        }
+
+        if (progress.error) {
+          lastIndexFailed = true;
+          const err = progress.error;
+          collectedErrors.push({
+            trackName: this.handler!.getDisplayName(progress.operation),
+            category: progress.categorizedError?.category ?? 'unknown',
+            message: err instanceof Error ? err.message : String(err),
+            retryAttempts: 0,
+            wasRetried: false,
+            stack: err instanceof Error ? err.stack : undefined,
+          });
         }
 
         const overallLine = formatOverallLine(displayCount, progress.total, 'videos');
@@ -392,14 +415,14 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
         videoDisplay.finish();
         return {
           completed: videoCompleted,
-          failed: 0,
+          failed: videoFailed,
           interrupted: true,
-          collectedErrors: [] as CollectedError[],
+          collectedErrors,
         };
       }
       const message = err instanceof Error ? err.message : 'Video execution failed';
       out.error(`\nVideo sync error: ${message}`);
-      return { completed: videoCompleted, failed: 1, collectedErrors: [] as CollectedError[] };
+      return { completed: videoCompleted, failed: videoFailed + 1, collectedErrors };
     }
 
     // Check if aborted after normal generator completion (generic SyncExecutor
@@ -409,21 +432,32 @@ export class VideoPresenter implements ContentTypePresenter<CollectionVideo, Dev
       videoDisplay.finish();
       return {
         completed: videoCompleted,
-        failed: 0,
+        failed: videoFailed,
         interrupted: true,
-        collectedErrors: [] as CollectedError[],
+        collectedErrors,
       };
     }
 
-    // Last operation completed successfully (no abort, no error)
+    // Settle the last operation (succeeded unless it yielded an error)
     if (lastIndex >= 0) {
-      videoCompleted++;
+      if (lastIndexFailed) {
+        videoFailed++;
+      } else {
+        videoCompleted++;
+      }
     }
 
     videoDisplay.finish();
-    out.print('Video sync complete.');
+    if (videoFailed > 0) {
+      out.print(`Video sync finished with ${videoFailed} failure(s).`);
+      for (const e of collectedErrors) {
+        out.error(`  ✗ ${e.trackName}: ${e.message}`);
+      }
+    } else {
+      out.print('Video sync complete.');
+    }
 
-    return { completed: videoCompleted, failed: 0, collectedErrors: [] as CollectedError[] };
+    return { completed: videoCompleted, failed: videoFailed, collectedErrors };
   }
 
   getCollisionCheckInputs(plan: SyncPlan<VideoOperation>) {

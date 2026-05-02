@@ -36,9 +36,9 @@ describe('resolveVideoConfig', () => {
       expect(resolved.videoQuality).toBe('high');
     });
 
-    it('defaults hardwareAcceleration to true', () => {
+    it('defaults hardwareAcceleration based on platform (darwin only)', () => {
       const resolved = resolveVideoConfig({});
-      expect(resolved.hardwareAcceleration).toBe(true);
+      expect(resolved.hardwareAcceleration).toBe(process.platform === 'darwin');
     });
 
     it('defaults supportsVideo to true when no capabilities provided', () => {

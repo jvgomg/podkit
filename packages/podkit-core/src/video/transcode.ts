@@ -176,8 +176,10 @@ export function buildVideoTranscodeArgs(
   // Force 8-bit output (required for iPod compatibility and HDR/10-bit sources)
   args.push('-pix_fmt', 'yuv420p');
 
-  // Video codec selection
-  if (settings.useHardwareAcceleration) {
+  // Video codec selection. VideoToolbox is macOS-only; ignore the request on
+  // other platforms and fall through to libx264 rather than failing with
+  // `Unknown encoder 'h264_videotoolbox'`.
+  if (settings.useHardwareAcceleration && process.platform === 'darwin') {
     // VideoToolbox hardware encoder (macOS)
     // Note: VideoToolbox doesn't support CRF, uses bitrate-based encoding
     args.push(

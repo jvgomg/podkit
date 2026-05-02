@@ -40,6 +40,7 @@ provision:
         libgpod-dev \
         libglib2.0-dev \
         ffmpeg \
+        flac \
         util-linux \
         git \
         curl \

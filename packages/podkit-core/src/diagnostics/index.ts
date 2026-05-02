@@ -19,6 +19,7 @@ import { codecEncodersCheck } from './checks/codec-encoders.js';
 import { orphanFilesCheck } from './checks/orphans.js';
 import { orphanFilesMassStorageCheck } from './checks/orphans-mass-storage.js';
 import { sysInfoExtendedCheck } from './checks/sysinfo-extended.js';
+import { videoEncoderCheck } from './checks/video-encoder.js';
 import type {
   DiagnosticCheck,
   DiagnosticReport,
@@ -47,6 +48,7 @@ const CHECKS: DiagnosticCheck[] = [
   artworkRebuildCheck,
   artworkResetCheck,
   codecEncodersCheck,
+  videoEncoderCheck,
   orphanFilesCheck,
   orphanFilesMassStorageCheck,
   sysInfoExtendedCheck,

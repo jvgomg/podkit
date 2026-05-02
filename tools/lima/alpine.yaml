@@ -53,6 +53,7 @@ provision:
         libgpod-dev \
         glib-dev \
         ffmpeg \
+        flac \
         lsblk \
         git \
         curl \

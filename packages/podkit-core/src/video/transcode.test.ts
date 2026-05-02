@@ -196,22 +196,37 @@ describe('buildVideoTranscodeArgs', () => {
     expect(args).toContain('600k');
   });
 
-  it('builds correct args for hardware acceleration (VideoToolbox)', () => {
-    const args = buildVideoTranscodeArgs('/input.mkv', '/output.m4v', hardwareSettings);
+  it.skipIf(process.platform !== 'darwin')(
+    'builds correct args for hardware acceleration (VideoToolbox, macOS only)',
+    () => {
+      const args = buildVideoTranscodeArgs('/input.mkv', '/output.m4v', hardwareSettings);
 
-    // VideoToolbox encoder
-    expect(args).toContain('-c:v');
-    expect(args).toContain('h264_videotoolbox');
-    expect(args).toContain('-profile:v');
-    expect(args).toContain('main');
-    expect(args).toContain('-b:v');
-    expect(args).toContain('2000k');
+      // VideoToolbox encoder
+      expect(args).toContain('-c:v');
+      expect(args).toContain('h264_videotoolbox');
+      expect(args).toContain('-profile:v');
+      expect(args).toContain('main');
+      expect(args).toContain('-b:v');
+      expect(args).toContain('2000k');
 
-    // Should NOT have CRF (not supported by VideoToolbox)
-    expect(args).not.toContain('-crf');
-    expect(args).not.toContain('-maxrate');
-    expect(args).not.toContain('-bufsize');
-  });
+      // Should NOT have CRF (not supported by VideoToolbox)
+      expect(args).not.toContain('-crf');
+      expect(args).not.toContain('-maxrate');
+      expect(args).not.toContain('-bufsize');
+    }
+  );
+
+  it.skipIf(process.platform === 'darwin')(
+    'falls back to libx264 when hardware acceleration requested on non-macOS',
+    () => {
+      const args = buildVideoTranscodeArgs('/input.mkv', '/output.m4v', hardwareSettings);
+
+      // h264_videotoolbox is macOS-only; libx264 is the universal fallback.
+      expect(args).toContain('-c:v');
+      expect(args).toContain('libx264');
+      expect(args).not.toContain('h264_videotoolbox');
+    }
+  );
 
   it('includes scale filter', () => {
     const args = buildVideoTranscodeArgs('/input.mkv', '/output.m4v', defaultSettings);
