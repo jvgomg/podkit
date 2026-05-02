@@ -16,28 +16,13 @@ if (!isNativeAvailable()) {
   );
 }
 
-// The libgpod source ships a tiny MP3 used by tests that copy audio onto an
-// iPod. It lives under tools/libgpod-macos/build (gitignored — produced by
-// the libgpod build script).
+// Tiny in-repo MP3 fixture (~1.4KB) used by tests that copy audio onto a
+// virtual iPod. Tracked in git — must be present for integration runs.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const TEST_MP3_PATH = join(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  'tools',
-  'libgpod-macos',
-  'build',
-  'libgpod-0.8.3',
-  'bindings',
-  'python',
-  'tests',
-  'resources',
-  'tiny.mp3'
-);
+const TEST_MP3_PATH = join(__dirname, 'fixtures', 'tiny.mp3');
 if (!existsSync(TEST_MP3_PATH)) {
   failMissingDep(
-    'libgpod test MP3 fixture',
-    `Expected at:\n     ${TEST_MP3_PATH}\n\n Build libgpod (which extracts the fixture):\n     cd tools/libgpod-macos && ./build.sh`
+    'tiny test MP3 fixture',
+    `Expected at:\n     ${TEST_MP3_PATH}\n\n Restore via:\n     git checkout HEAD -- ${TEST_MP3_PATH}`
   );
 }

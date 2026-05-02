@@ -28,23 +28,8 @@ export {
   type TrackHandle,
 } from '../../index';
 
-// Path to the test MP3 file in libgpod source. The fixture itself is asserted
-// to exist by `test/integration-preflight.ts`; this just exports the path.
+// Tiny tracked MP3 fixture (~1.4KB). Originally extracted from the libgpod
+// python bindings test resources; kept in-repo so Linux test runs don't need
+// the macOS libgpod build artifacts.
 const __dirname = dirname(fileURLToPath(import.meta.url));
-export const TEST_MP3_PATH = join(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  '..',
-  'tools',
-  'libgpod-macos',
-  'build',
-  'libgpod-0.8.3',
-  'bindings',
-  'python',
-  'tests',
-  'resources',
-  'tiny.mp3'
-);
+export const TEST_MP3_PATH = join(__dirname, '..', '..', '..', 'test', 'fixtures', 'tiny.mp3');
