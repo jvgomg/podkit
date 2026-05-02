@@ -16,9 +16,9 @@ import type {
   EjectOptions,
   MountOptions,
 } from '../types.js';
-import type { DeviceAssessment, UsbDeviceInfo } from '../assessment.js';
+import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import { lookupIpodModel } from '../ipod-models.js';
+import type { UsbConnectionInfo } from '../usb-discovery.js';
 import { parseLocationId } from '../usb-discovery.js';
 
 /**
@@ -648,10 +648,9 @@ Replace diskXsY with your actual device identifier`;
    *
    * Parses system_profiler SPUSBDataType JSON output and searches the USB
    * device tree for an entry whose bsd_name matches the given whole-disk
-   * identifier (e.g., "disk5"). Returns USB product/vendor IDs and a
-   * resolved model name if the product ID is in the lookup table.
+   * identifier (e.g., "disk5"). Returns USB product/vendor IDs and connection data.
    */
-  private async queryUsbInfo(wholeDisk: string): Promise<UsbDeviceInfo | undefined> {
+  private async queryUsbInfo(wholeDisk: string): Promise<UsbConnectionInfo | undefined> {
     const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
     if (code !== 0 || !stdout) return undefined;
 
@@ -669,19 +668,19 @@ Replace diskXsY with your actual device identifier`;
    * Search a system_profiler data structure for a USB device entry
    * that owns the given whole-disk BSD name, and extract its USB info.
    */
-  private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbDeviceInfo | undefined {
+  private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbConnectionInfo | undefined {
     const deviceNode = this.findUsbDeviceNode(node, wholeDisk);
     if (!deviceNode) return undefined;
     return this.extractUsbInfo(deviceNode);
   }
 
   /**
-   * Extract UsbDeviceInfo from a system_profiler USB device node.
+   * Extract UsbConnectionInfo from a system_profiler USB device node.
    *
    * Reads product_id, vendor_id, serial_num, and location_id from
-   * the node and normalises them into the UsbDeviceInfo shape.
+   * the node and normalises them into the UsbConnectionInfo shape.
    */
-  private extractUsbInfo(record: Record<string, unknown>): UsbDeviceInfo {
+  private extractUsbInfo(record: Record<string, unknown>): UsbConnectionInfo {
     const productId = record['product_id'] as string;
     const rawVendorId = typeof record['vendor_id'] === 'string' ? record['vendor_id'] : '';
 
@@ -689,10 +688,9 @@ Replace diskXsY with your actual device identifier`;
     const vendorId =
       rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
 
-    const info: UsbDeviceInfo = {
+    const info: UsbConnectionInfo = {
       productId,
       vendorId,
-      modelName: lookupIpodModel(productId),
     };
 
     // Extract serial number (FirewireGuid for iPods)

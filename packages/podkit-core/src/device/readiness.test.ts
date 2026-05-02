@@ -119,10 +119,10 @@ describe('checkSysInfo', () => {
     createIpodStructure(tmpDir);
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('pass');
-    expect(result.details?.sysInfoExtendedExists).toBe(true);
-    expect(result.details?.firewireGuid).toBeTruthy();
-    expect(result.details?.serialNumber).toBeTruthy();
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(true);
+    expect(result.stage.details?.firewireGuid).toBeTruthy();
+    expect(result.stage.details?.serialNumber).toBeTruthy();
   });
 
   it('passes when SysInfoExtended is present even without SysInfo', async () => {
@@ -130,8 +130,8 @@ describe('checkSysInfo', () => {
     // No SysInfo, only SysInfoExtended
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('pass');
-    expect(result.details?.sysInfoExtendedExists).toBe(true);
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(true);
   });
 
   it('passes with advisory when SysInfo has known model but SysInfoExtended is missing (no-checksum device)', async () => {
@@ -140,13 +140,13 @@ describe('checkSysInfo', () => {
     // identity metadata. Absence is surfaced via details, not a warn.
     writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('pass');
-    expect(result.summary).toContain('MA147');
-    expect(result.summary).toContain('iPod Video');
-    expect(result.details?.modelNumber).toBe('MA147');
-    expect(result.details?.modelName).toBeTruthy();
-    expect(result.details?.sysInfoExtendedExists).toBe(false);
-    expect(result.details?.suggestion).toContain('--repair sysinfo-extended');
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.summary).toContain('MA147');
+    expect(result.stage.summary).toContain('iPod Video');
+    expect(result.stage.details?.modelNumber).toBe('MA147');
+    expect(result.stage.details?.modelName).toBeTruthy();
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(false);
+    expect(result.stage.details?.suggestion).toContain('--repair sysinfo-extended');
   });
 
   it('fails when SysInfo has known model but SysInfoExtended is missing (hash58 device)', async () => {
@@ -154,44 +154,44 @@ describe('checkSysInfo', () => {
     writeSysInfo(tmpDir, 'ModelNumStr: MC297\nFirewireGuid: 0001234');
     // Pass USB info for a Classic 7G (0x120a)
     const result = await checkSysInfo(tmpDir, { productId: '0x120a', vendorId: '0x05ac' });
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('SysInfoExtended required');
-    expect(result.details?.checksumType).toBe('hash58');
-    expect(result.details?.suggestion).toContain('doctor --repair sysinfo-extended');
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('SysInfoExtended required');
+    expect(result.stage.details?.checksumType).toBe('hash58');
+    expect(result.stage.details?.suggestion).toContain('doctor --repair sysinfo-extended');
   });
 
   it('warns when SysInfo has ModelNumStr that is not in the known model list', async () => {
     writeSysInfo(tmpDir, 'ModelNumStr: XX999\nFirewireGuid: 0001234');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('warn');
-    expect(result.summary).toContain('XX999');
-    expect(result.details?.modelNumber).toBe('XX999');
-    expect(result.details?.suggestion).toBeTruthy();
+    expect(result.stage.status).toBe('warn');
+    expect(result.stage.summary).toContain('XX999');
+    expect(result.stage.details?.modelNumber).toBe('XX999');
+    expect(result.stage.details?.suggestion).toBeTruthy();
   });
 
   it('fails when both SysInfo and SysInfoExtended are missing', async () => {
     createIpodStructure(tmpDir);
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('not found');
-    expect(result.details?.exists).toBe(false);
-    expect(result.details?.sysInfoExtendedExists).toBe(false);
-    expect(result.details?.suggestion).toContain('doctor --repair sysinfo-extended');
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('not found');
+    expect(result.stage.details?.exists).toBe(false);
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(false);
+    expect(result.stage.details?.suggestion).toContain('doctor --repair sysinfo-extended');
   });
 
   it('fails when Device directory does not exist', async () => {
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('not found');
-    expect(result.details?.suggestion).toBeTruthy();
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('not found');
+    expect(result.stage.details?.suggestion).toBeTruthy();
   });
 
   it('fails when SysInfo file is empty', async () => {
     writeSysInfo(tmpDir, '');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('empty');
-    expect(result.details?.suggestion).toBeTruthy();
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('empty');
+    expect(result.stage.details?.suggestion).toBeTruthy();
   });
 
   it('fails when SysInfo file contains binary content', async () => {
@@ -201,37 +201,37 @@ describe('checkSysInfo', () => {
     const binaryBuf = Buffer.from([0x00, 0x01, 0x02, 0x4d, 0x6f, 0x64, 0x65, 0x6c]);
     fs.writeFileSync(path.join(deviceDir, 'SysInfo'), binaryBuf);
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('binary');
-    expect(result.details?.suggestion).toBeTruthy();
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('binary');
+    expect(result.stage.details?.suggestion).toBeTruthy();
   });
 
   it('fails when SysInfo exists but ModelNumStr key is absent', async () => {
     writeSysInfo(tmpDir, 'FirewireGuid: 0001234\nSomethingElse: value');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('ModelNumStr not found');
-    expect(result.details?.suggestion).toBeTruthy();
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.summary).toContain('ModelNumStr not found');
+    expect(result.stage.details?.suggestion).toBeTruthy();
   });
 
   it('includes suggestion strings in all fail results', async () => {
     // Missing
     createIpodStructure(tmpDir);
     const missing = await checkSysInfo(tmpDir);
-    expect(missing.status).toBe('fail');
-    expect(typeof missing.details?.suggestion).toBe('string');
+    expect(missing.stage.status).toBe('fail');
+    expect(typeof missing.stage.details?.suggestion).toBe('string');
 
     // Empty
     writeSysInfo(tmpDir, '');
     const empty = await checkSysInfo(tmpDir);
-    expect(empty.status).toBe('fail');
-    expect(typeof empty.details?.suggestion).toBe('string');
+    expect(empty.stage.status).toBe('fail');
+    expect(typeof empty.stage.details?.suggestion).toBe('string');
 
     // No ModelNumStr
     writeSysInfo(tmpDir, 'FirewireGuid: 0001234');
     const noModel = await checkSysInfo(tmpDir);
-    expect(noModel.status).toBe('fail');
-    expect(typeof noModel.details?.suggestion).toBe('string');
+    expect(noModel.stage.status).toBe('fail');
+    expect(typeof noModel.stage.details?.suggestion).toBe('string');
   });
 
   it('includes checksumNote for hash72 devices', async () => {
@@ -241,8 +241,8 @@ describe('checkSysInfo', () => {
     const result = await checkSysInfo(tmpDir, { productId: '0x120c', vendorId: '0x05ac' });
     // SysInfoExtended present → pass, but should have checksumNote
     // checksumType derived from USB productId 0x120c → nano_5g → hash72
-    expect(result.details?.checksumNote).toBeDefined();
-    expect(result.details?.checksumNote).toContain('iTunes sync');
+    expect(result.stage.details?.checksumNote).toBeDefined();
+    expect(result.stage.details?.checksumNote).toContain('iTunes sync');
   });
 
   it('includes checksumNote for hashAB devices via USB productId', async () => {
@@ -250,8 +250,8 @@ describe('checkSysInfo', () => {
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     // Pass USB info for touch 4G (0x129a) which is hashAB
     const result = await checkSysInfo(tmpDir, { productId: '0x129a', vendorId: '0x05ac' });
-    expect(result.details?.checksumNote).toBeDefined();
-    expect(result.details?.checksumNote).toContain('proprietary');
+    expect(result.stage.details?.checksumNote).toBeDefined();
+    expect(result.stage.details?.checksumNote).toContain('proprietary');
   });
 
   // ── Generation mismatch detection ──────────────────────────────────────
@@ -261,17 +261,20 @@ describe('checkSysInfo', () => {
     // Default fixture serial YXX → nano_3g
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     // USB reports classic_6g (0x1209) — mismatch
-    const result = await checkSysInfo(tmpDir, {
-      productId: '0x1209',
-      vendorId: '0x05ac',
-      modelName: 'iPod Classic 6th generation',
-    });
-    expect(result.status).toBe('warn');
-    expect(result.summary).toContain('mismatch');
-    expect(result.details?.generationMismatch).toBe(true);
-    expect(result.details?.sysInfoGeneration).toBeDefined();
-    expect(result.details?.usbGeneration).toBeDefined();
-    expect(result.details?.usbModelName).toBe('iPod Classic 6th generation');
+    const result = await checkSysInfo(
+      tmpDir,
+      {
+        productId: '0x1209',
+        vendorId: '0x05ac',
+      },
+      'iPod Classic 6th generation'
+    );
+    expect(result.stage.status).toBe('warn');
+    expect(result.stage.summary).toContain('mismatch');
+    expect(result.stage.details?.generationMismatch).toBe(true);
+    expect(result.stage.details?.sysInfoGeneration).toBeDefined();
+    expect(result.stage.details?.usbGeneration).toBeDefined();
+    expect(result.stage.details?.usbModelName).toBe('iPod Classic 6th generation');
   });
 
   it('passes when SysInfoExtended generation matches USB generation', async () => {
@@ -280,23 +283,26 @@ describe('checkSysInfo', () => {
     writeSysInfoExtended(tmpDir, makeSysInfoExtendedXml());
     // USB also nano_3g (0x1208)
     const result = await checkSysInfo(tmpDir, { productId: '0x1208', vendorId: '0x05ac' });
-    expect(result.status).toBe('pass');
-    expect(result.details?.generationMismatch).toBeUndefined();
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.generationMismatch).toBeUndefined();
   });
 
   it('warns when classic SysInfo generation mismatches USB generation (no-checksum device)', async () => {
     // MA350 = iPod Nano 1G (nano_1g, checksumType 'none')
     writeSysInfo(tmpDir, 'ModelNumStr: MA350\nFirewireGuid: 0001234');
     // USB reports video_5g (0x1207) — mismatch but neither needs checksum
-    const result = await checkSysInfo(tmpDir, {
-      productId: '0x1207',
-      vendorId: '0x05ac',
-      modelName: 'iPod 5th generation (Video)',
-    });
-    expect(result.status).toBe('warn');
-    expect(result.summary).toContain('mismatch');
-    expect(result.details?.generationMismatch).toBe(true);
-    expect(result.details?.usbModelName).toBe('iPod 5th generation (Video)');
+    const result = await checkSysInfo(
+      tmpDir,
+      {
+        productId: '0x1207',
+        vendorId: '0x05ac',
+      },
+      'iPod 5th generation (Video)'
+    );
+    expect(result.stage.status).toBe('warn');
+    expect(result.stage.summary).toContain('mismatch');
+    expect(result.stage.details?.generationMismatch).toBe(true);
+    expect(result.stage.details?.usbModelName).toBe('iPod 5th generation (Video)');
   });
 
   it('passes when classic SysInfo generation matches USB generation', async () => {
@@ -304,26 +310,29 @@ describe('checkSysInfo', () => {
     writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
     // USB also video_5g (0x1207)
     const result = await checkSysInfo(tmpDir, { productId: '0x1207', vendorId: '0x05ac' });
-    expect(result.status).toBe('pass');
-    expect(result.details?.generationMismatch).toBeUndefined();
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.generationMismatch).toBeUndefined();
   });
 
   it('skips mismatch check when no USB info provided', async () => {
     writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
     const result = await checkSysInfo(tmpDir);
-    expect(result.status).toBe('pass');
-    expect(result.details?.generationMismatch).toBeUndefined();
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.generationMismatch).toBeUndefined();
   });
 
   it('includes usbModelName in details when USB info provided', async () => {
     writeSysInfo(tmpDir, 'ModelNumStr: MA147\nFirewireGuid: 0001234');
-    const result = await checkSysInfo(tmpDir, {
-      productId: '0x1207',
-      vendorId: '0x05ac',
-      modelName: 'iPod 5th generation (Video)',
-    });
-    expect(result.status).toBe('pass');
-    expect(result.details?.usbModelName).toBe('iPod 5th generation (Video)');
+    const result = await checkSysInfo(
+      tmpDir,
+      {
+        productId: '0x1207',
+        vendorId: '0x05ac',
+      },
+      'iPod 5th generation (Video)'
+    );
+    expect(result.stage.status).toBe('pass');
+    expect(result.stage.details?.usbModelName).toBe('iPod 5th generation (Video)');
   });
 
   it('keeps fail status when checksum device has mismatch (fail takes priority)', async () => {
@@ -331,8 +340,8 @@ describe('checkSysInfo', () => {
     writeSysInfo(tmpDir, 'ModelNumStr: MC297\nFirewireGuid: 0001234');
     // USB reports nano_3g (0x1208) — mismatch, but fail for missing SysInfoExtended takes priority
     const result = await checkSysInfo(tmpDir, { productId: '0x1208', vendorId: '0x05ac' });
-    expect(result.status).toBe('fail');
-    expect(result.details?.generationMismatch).toBe(true);
+    expect(result.stage.status).toBe('fail');
+    expect(result.stage.details?.generationMismatch).toBe(true);
   });
 });
 
@@ -583,10 +592,10 @@ describe('checkReadiness', () => {
       // checksum severity, so we treat SysInfoExtended as optional → pass.
       writeSysInfo(tmpDir, 'ModelNumStr: MC297');
       const result = await checkSysInfo(tmpDir);
-      expect(result.stage).toBe('sysinfo');
-      expect(result.status).toBe('pass');
-      expect(result.summary).toContain('MC297');
-      expect(result.details?.modelNumber).toBe('MC297');
+      expect(result.stage.stage).toBe('sysinfo');
+      expect(result.stage.status).toBe('pass');
+      expect(result.stage.summary).toContain('MC297');
+      expect(result.stage.details?.modelNumber).toBe('MC297');
     });
 
     it('checkDatabase is callable independently', async () => {

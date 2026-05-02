@@ -35,9 +35,13 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      vendorId: '0x05ac',
-      productId: '0x1209',
-      modelName: 'iPod Classic 6th generation',
+      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      model: {
+        displayName: 'iPod Classic 6th generation',
+        generationId: 'classic_6g',
+        checksumType: 'hash58',
+        source: 'usb',
+      },
       supported: true,
     });
   });
@@ -73,9 +77,9 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     // iPod Classic + iPod Touch 5th gen (unsupported)
     expect(result).toHaveLength(2);
-    expect(result[0]!.productId).toBe('0x1209');
+    expect(result[0]!.usb.productId).toBe('0x1209');
     expect(result[0]!.supported).toBe(true);
-    expect(result[1]!.productId).toBe('0x12a0');
+    expect(result[1]!.usb.productId).toBe('0x12a0');
     expect(result[1]!.supported).toBe(false);
   });
 
@@ -104,8 +108,8 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.productId).toBe('0x120a');
-    expect(result[0]!.modelName).toBe('iPod Classic 7th generation');
+    expect(result[0]!.usb.productId).toBe('0x120a');
+    expect(result[0]!.model!.displayName).toBe('iPod Classic 7th generation');
   });
 
   it('extracts disk identifier from Media subtree', () => {
@@ -182,7 +186,7 @@ describe('parseSystemProfilerUsbData', () => {
     expect(result).toHaveLength(1);
     expect(result[0]!.supported).toBe(false);
     expect(result[0]!.notSupportedReason).toContain('iTunes authentication');
-    expect(result[0]!.modelName).toBe('iPod shuffle 3rd generation');
+    expect(result[0]!.model!.displayName).toBe('iPod shuffle 3rd generation');
   });
 
   it('marks unsupported iPod Shuffle 4th gen with reason', () => {
@@ -283,8 +287,8 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.productId).toBe('0x1207');
-    expect(result[0]!.modelName).toBe('iPod 5th generation (Video)');
+    expect(result[0]!.usb.productId).toBe('0x1207');
+    expect(result[0]!.model!.displayName).toBe('iPod 5th generation (Video)');
   });
 
   it('extracts serial number, bus number, and device address', () => {
@@ -308,9 +312,9 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.serialNumber).toBe('000A27001BC8EED6');
-    expect(result[0]!.busNumber).toBe(3);
-    expect(result[0]!.deviceAddress).toBe(14);
+    expect(result[0]!.usb.serialNumber).toBe('000A27001BC8EED6');
+    expect(result[0]!.usb.busNumber).toBe(3);
+    expect(result[0]!.usb.deviceAddress).toBe(14);
     expect(result[0]!.diskIdentifier).toBe('disk5s2');
   });
 
@@ -332,9 +336,9 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.serialNumber).toBeUndefined();
-    expect(result[0]!.busNumber).toBeUndefined();
-    expect(result[0]!.deviceAddress).toBeUndefined();
+    expect(result[0]!.usb.serialNumber).toBeUndefined();
+    expect(result[0]!.usb.busNumber).toBeUndefined();
+    expect(result[0]!.usb.deviceAddress).toBeUndefined();
   });
 
   it('handles vendor_id in "0x05ac (Apple Inc.)" format', () => {
@@ -355,7 +359,7 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.vendorId).toBe('0x05ac');
+    expect(result[0]!.usb.vendorId).toBe('0x05ac');
   });
 });
 
@@ -404,9 +408,13 @@ describe('parseSysfsUsbDevices', () => {
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      vendorId: '0x05ac',
-      productId: '0x1209',
-      modelName: 'iPod Classic 6th generation',
+      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      model: {
+        displayName: 'iPod Classic 6th generation',
+        generationId: 'classic_6g',
+        checksumType: 'hash58',
+        source: 'usb',
+      },
       supported: true,
     });
   });
@@ -420,7 +428,7 @@ describe('parseSysfsUsbDevices', () => {
 
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
-    expect(result[0]!.productId).toBe('0x120a');
+    expect(result[0]!.usb.productId).toBe('0x120a');
   });
 
   it('ignores Apple devices that are not iPods', () => {
@@ -431,7 +439,7 @@ describe('parseSysfsUsbDevices', () => {
 
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
-    expect(result[0]!.productId).toBe('0x1209');
+    expect(result[0]!.usb.productId).toBe('0x1209');
   });
 
   it('returns empty array for empty input', () => {
@@ -467,18 +475,18 @@ describe('parseSysfsUsbDevices', () => {
 
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
-    expect(result[0]!.busNumber).toBe(3);
-    expect(result[0]!.deviceAddress).toBe(14);
-    expect(result[0]!.serialNumber).toBe('000A27001BC8EED6');
+    expect(result[0]!.usb.busNumber).toBe(3);
+    expect(result[0]!.usb.deviceAddress).toBe(14);
+    expect(result[0]!.usb.serialNumber).toBe('000A27001BC8EED6');
   });
 
   it('omits bus/address/serial when not present in sysfs', () => {
     const devices = [{ idVendor: '05ac', idProduct: '1209' }];
 
     const result = parseSysfsUsbDevices(devices);
-    expect(result[0]!.busNumber).toBeUndefined();
-    expect(result[0]!.deviceAddress).toBeUndefined();
-    expect(result[0]!.serialNumber).toBeUndefined();
+    expect(result[0]!.usb.busNumber).toBeUndefined();
+    expect(result[0]!.usb.deviceAddress).toBeUndefined();
+    expect(result[0]!.usb.serialNumber).toBeUndefined();
   });
 });
 
@@ -627,9 +635,13 @@ describe('findUsbAncestor', () => {
 describe('createUsbOnlyReadinessResult', () => {
   it('creates readiness result with USB pass and partition fail', () => {
     const result = createUsbOnlyReadinessResult({
-      vendorId: '0x05ac',
-      productId: '0x1209',
-      modelName: 'iPod Classic 6th generation',
+      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      model: {
+        displayName: 'iPod Classic 6th generation',
+        generationId: 'classic_6g',
+        checksumType: 'hash58',
+        source: 'usb' as const,
+      },
       supported: true,
     });
 
@@ -656,8 +668,7 @@ describe('createUsbOnlyReadinessResult', () => {
 
   it('handles device without model name', () => {
     const result = createUsbOnlyReadinessResult({
-      vendorId: '0x05ac',
-      productId: '0x9999',
+      usb: { vendorId: '0x05ac', productId: '0x9999' },
       supported: true,
     });
 
@@ -667,9 +678,13 @@ describe('createUsbOnlyReadinessResult', () => {
 
   it('has no summary (not ready)', () => {
     const result = createUsbOnlyReadinessResult({
-      vendorId: '0x05ac',
-      productId: '0x1209',
-      modelName: 'iPod Classic 6th generation',
+      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      model: {
+        displayName: 'iPod Classic 6th generation',
+        generationId: 'classic_6g',
+        checksumType: 'hash58',
+        source: 'usb' as const,
+      },
       supported: true,
     });
 

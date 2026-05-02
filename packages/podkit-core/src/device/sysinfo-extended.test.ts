@@ -103,9 +103,9 @@ describe('readSysInfoExtended', () => {
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
     expect(result!.source).toBe('existing');
-    expect(result!.deviceInfo).toBeDefined();
-    expect(result!.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result!.deviceInfo!.serialNumber).toBe('5U828GFNYXX');
+    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.serialNumber).toBe('5U828GFNYXX');
+    expect(result!.model).toBeDefined();
   });
 
   it('returns null when file does not exist', () => {
@@ -126,15 +126,15 @@ describe('readSysInfoExtended', () => {
     expect(result).toBeNull();
   });
 
-  it('returns result with no deviceInfo when XML lacks required keys', () => {
+  it('returns result with no model when XML lacks required keys', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML_NO_GUID);
     const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
     expect(result!.source).toBe('existing');
-    // deviceInfo is undefined because FireWireGUID is missing
-    expect(result!.deviceInfo).toBeUndefined();
+    // model is undefined because FireWireGUID is missing (identity extraction fails)
+    expect(result!.model).toBeUndefined();
   });
 
   it('handles alternate FirewireGuid casing', () => {
@@ -142,35 +142,32 @@ describe('readSysInfoExtended', () => {
     const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
-    expect(result!.deviceInfo).toBeDefined();
-    expect(result!.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
   });
 
   it('looks up model from serial suffix', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML);
     const result = readSysInfoExtended(tmpDir);
 
-    expect(result!.deviceInfo!.modelName).toBeDefined();
+    expect(result!.model).toBeDefined();
     // Serial "5U828GFNYXX" -> suffix "YXX" -> iPod nano 3rd Gen
-    expect(result!.deviceInfo!.modelName).toContain('nano');
-    expect(result!.deviceInfo!.modelName).toContain('3rd Generation');
-    expect(result!.deviceInfo!.generationId).toBe('nano_3g');
-    expect(result!.deviceInfo!.checksumType).toBeDefined();
+    expect(result!.model!.displayName).toContain('nano');
+    expect(result!.model!.displayName).toContain('3rd Generation');
+    expect(result!.model!.generationId).toBe('nano_3g');
+    expect(result!.model!.checksumType).toBeDefined();
+    expect(result!.model!.source).toBe('serial');
   });
 
-  it('returns deviceInfo without model fields for unknown serial suffix', () => {
+  it('returns identity without model for unknown serial suffix', () => {
     const xml = FIXTURE_XML.replace('5U828GFNYXX', 'UNKNOWNZZZ');
     writeSysInfoExtended(tmpDir, xml);
 
     const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
-    expect(result!.deviceInfo).toBeDefined();
-    expect(result!.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result!.deviceInfo!.serialNumber).toBe('UNKNOWNZZZ');
-    expect(result!.deviceInfo!.modelName).toBeUndefined();
-    expect(result!.deviceInfo!.generationId).toBeUndefined();
-    expect(result!.deviceInfo!.checksumType).toBeUndefined();
+    expect(result!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.serialNumber).toBe('UNKNOWNZZZ');
+    expect(result!.model).toBeUndefined();
   });
 });
 
@@ -200,7 +197,7 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('existing');
-    expect(result.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.firewireGuid).toBe('000A27001DCECFB5');
     expect(usbReadCalled).toBe(false);
   });
 
@@ -212,8 +209,8 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
-    expect(result.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
-    expect(result.deviceInfo!.serialNumber).toBe('5U828GFNYXX');
+    expect(result.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.serialNumber).toBe('5U828GFNYXX');
 
     // Verify file was written
     const filePath = path.join(tmpDir, 'iPod_Control', 'Device', 'SysInfoExtended');
@@ -296,12 +293,13 @@ describe('ensureSysInfoExtended', () => {
 
     const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
 
-    expect(result.deviceInfo).toBeDefined();
+    expect(result.model).toBeDefined();
     // Serial "5U828GFNYXX" -> suffix "YXX" -> nano 3G
-    expect(result.deviceInfo!.modelName).toContain('nano');
-    expect(result.deviceInfo!.modelName).toContain('3rd Generation');
-    expect(result.deviceInfo!.generationId).toBe('nano_3g');
-    expect(result.deviceInfo!.checksumType).toBeDefined();
+    expect(result.model!.displayName).toContain('nano');
+    expect(result.model!.displayName).toContain('3rd Generation');
+    expect(result.model!.generationId).toBe('nano_3g');
+    expect(result.model!.checksumType).toBeDefined();
+    expect(result.model!.source).toBe('serial');
   });
 
   it('handles alternate FirewireGuid casing in USB-read XML', async () => {
@@ -312,6 +310,6 @@ describe('ensureSysInfoExtended', () => {
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
-    expect(result.deviceInfo!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.firewireGuid).toBe('000A27001DCECFB5');
   });
 });

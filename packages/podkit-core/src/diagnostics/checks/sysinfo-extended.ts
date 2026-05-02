@@ -92,17 +92,17 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
         };
       }
 
-      const model = result.deviceInfo?.modelName ?? 'Unknown iPod';
+      const modelName = result.model?.displayName ?? 'Unknown iPod';
       return {
         success: true,
-        summary: `SysInfoExtended ${result.source === 'existing' ? 'already present' : 'written'} — ${model}`,
+        summary: `SysInfoExtended ${result.source === 'existing' ? 'already present' : 'written'} — ${modelName}`,
         details: {
           source: result.source,
-          firewireGuid: result.deviceInfo?.firewireGuid,
-          serialNumber: result.deviceInfo?.serialNumber,
-          modelName: result.deviceInfo?.modelName,
-          generationId: result.deviceInfo?.generationId,
-          checksumType: result.deviceInfo?.checksumType,
+          firewireGuid: result.firewireGuid,
+          serialNumber: result.serialNumber,
+          modelName: result.model?.displayName,
+          generationId: result.model?.generationId,
+          checksumType: result.model?.checksumType,
         },
       };
     },

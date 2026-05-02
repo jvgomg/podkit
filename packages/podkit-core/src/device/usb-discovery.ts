@@ -14,29 +14,36 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { lookupIpodModel } from './ipod-models.js';
+import { resolveIpodModel } from './ipod-models.js';
+import type { IpodModel } from './ipod-models.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export interface UsbDiscoveredDevice {
+/** USB bus connection data — how to reach the device */
+export interface UsbConnectionInfo {
   /** USB vendor ID (e.g., '0x05ac') */
   vendorId: string;
   /** USB product ID (e.g., '0x1209') */
   productId: string;
-  /** Resolved model name from lookup table (e.g., 'iPod Classic 6th generation') */
-  modelName?: string;
+  /** USB serial number (FireWire GUID for older iPods, Apple serial for newer) */
+  serialNumber?: string;
+  /** USB bus number (for libusb device addressing) */
+  busNumber?: number;
+  /** USB device address (for libusb device addressing) */
+  deviceAddress?: number;
+}
+
+export interface UsbDiscoveredDevice {
+  /** USB connection details */
+  usb: UsbConnectionInfo;
+  /** Identified iPod model from USB product ID lookup */
+  model?: IpodModel;
   /** Disk identifier if this USB device has a disk representation */
   diskIdentifier?: string;
   /** Whether this device model is supported by podkit */
   supported: boolean;
   /** Human-readable not-supported message for unsupported models */
   notSupportedReason?: string;
-  /** USB serial number (= FirewireGuid for iPods, 16 hex chars) */
-  serialNumber?: string;
-  /** USB bus number (for libusb device addressing) */
-  busNumber?: number;
-  /** USB device address (for libusb device addressing) */
-  deviceAddress?: number;
 }
 
 // ── Unsupported device definitions ───────────────────────────────────────────
@@ -111,24 +118,28 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
       if (item.vendor_id && isAppleVendorId(item.vendor_id)) {
         const productId = extractProductId(item.product_id);
         if (productId) {
-          const modelName = lookupIpodModel(productId);
-          if (modelName) {
+          const model = resolveIpodModel({ from: 'usb', productId });
+          if (model) {
             // It's a known iPod — check if supported
             const unsupportedReason = getUnsupportedReason(productId);
             const diskIdentifier = extractBsdName(item);
             const serialNumber = extractSerialNumber(item);
             const { busNumber, deviceAddress } = parseLocationId(item.location_id);
 
-            results.push({
+            const usb: UsbConnectionInfo = {
               vendorId: APPLE_VENDOR_ID,
               productId,
-              modelName,
-              ...(diskIdentifier ? { diskIdentifier } : {}),
-              supported: !unsupportedReason,
-              ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
               ...(serialNumber ? { serialNumber } : {}),
               ...(busNumber !== undefined ? { busNumber } : {}),
               ...(deviceAddress !== undefined ? { deviceAddress } : {}),
+            };
+
+            results.push({
+              usb,
+              model,
+              ...(diskIdentifier ? { diskIdentifier } : {}),
+              supported: !unsupportedReason,
+              ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
             });
           }
           // Non-iPod Apple devices (iPhones, iPads, AirPods) are silently ignored
@@ -255,24 +266,27 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
     if (vendorId !== APPLE_VENDOR_ID) continue;
 
     const productId = `0x${device.idProduct.toLowerCase()}`;
-    const modelName = lookupIpodModel(productId);
-    if (!modelName) continue;
+    const model = resolveIpodModel({ from: 'usb', productId });
+    if (!model) continue;
 
     const unsupportedReason = getUnsupportedReason(productId);
     const busNumber = device.busnum ? parseInt(device.busnum, 10) : undefined;
     const deviceAddress = device.devnum ? parseInt(device.devnum, 10) : undefined;
     const serialNumber = device.serial && device.serial.length > 0 ? device.serial : undefined;
 
-    results.push({
+    const usb: UsbConnectionInfo = {
       vendorId: APPLE_VENDOR_ID,
       productId,
-      modelName,
-      // No disk identifier available from sysfs easily
-      supported: !unsupportedReason,
-      ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
       ...(serialNumber ? { serialNumber } : {}),
       ...(Number.isFinite(busNumber) ? { busNumber } : {}),
       ...(Number.isFinite(deviceAddress) ? { deviceAddress } : {}),
+    };
+
+    results.push({
+      usb,
+      model,
+      supported: !unsupportedReason,
+      ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
     });
   }
 
@@ -342,7 +356,7 @@ async function discoverLinux(): Promise<UsbDiscoveredDevice[]> {
 export async function resolveUsbDeviceFromPath(
   mountPath: string,
   options?: { platform?: string }
-): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
   const platform = options?.platform ?? process.platform;
 
   try {
@@ -425,7 +439,7 @@ export function findUsbAncestor(
 
 async function resolveUsbDeviceFromPathLinux(
   mountPath: string
-): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
   // Step 1: Find block device from /proc/mounts
   let procMounts: string;
   try {
@@ -446,7 +460,7 @@ async function resolveUsbDeviceFromPathLinux(
   if (!usbDevicePath) return null;
 
   // Step 3: Read USB device attributes
-  const result: Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+  const result: Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
 
   try {
     const busnum = parseInt(
@@ -480,7 +494,7 @@ async function resolveUsbDeviceFromPathLinux(
 
 async function resolveUsbDeviceFromPathMacOS(
   mountPath: string
-): Promise<Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
   // Step 1: Get BSD name from diskutil info
   const diskutilOutput = await new Promise<string>((resolve, reject) => {
     execFile('diskutil', ['info', mountPath], { timeout: 10_000 }, (error, stdout) => {
@@ -541,7 +555,7 @@ async function resolveUsbDeviceFromPathMacOS(
   const serialNumber = extractSerialNumber(matchedItem);
   const { busNumber, deviceAddress } = parseLocationId(matchedItem.location_id);
 
-  const result: Pick<UsbDiscoveredDevice, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+  const result: Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
   if (serialNumber) result.serialNumber = serialNumber;
   if (busNumber !== undefined) result.busNumber = busNumber;
   if (deviceAddress !== undefined) result.deviceAddress = deviceAddress;

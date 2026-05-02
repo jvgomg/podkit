@@ -1,8 +1,8 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { PlatformDeviceInfo } from './types.js';
-import type { DeviceAssessment, UsbDeviceInfo } from './assessment.js';
-import type { UsbDiscoveredDevice } from './usb-discovery.js';
+import type { DeviceAssessment } from './assessment.js';
+import type { UsbConnectionInfo, UsbDiscoveredDevice } from './usb-discovery.js';
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodError } from '../ipod/errors.js';
 import { interpretError } from './error-codes.js';
@@ -12,8 +12,9 @@ import {
   lookupGenerationByProductId,
   getChecksumType,
   getGenerationInfo,
+  resolveIpodModel,
 } from './ipod-models.js';
-import type { IpodChecksumType, IpodGenerationId } from './ipod-models.js';
+import type { IpodChecksumType, IpodGenerationId, IpodModel } from './ipod-models.js';
 import { readSysInfoExtended } from './sysinfo-extended.js';
 
 // ── Stage identifiers ────────────────────────────────────────────────────────
@@ -43,9 +44,12 @@ export type ReadinessLevel =
 export interface ReadinessResult {
   level: ReadinessLevel;
   stages: ReadinessStageResult[];
+  /** Model from USB product ID lookup (generation only, no color) */
+  usbModel?: IpodModel;
+  /** Model from SysInfo/SysInfoExtended (has color, capacity, model number) */
+  deviceModel?: IpodModel;
   summary?: {
     trackCount: number;
-    modelName?: string;
     freeBytes?: number;
     totalBytes?: number;
   };
@@ -56,7 +60,10 @@ export interface ReadinessResult {
 export interface ReadinessInput {
   device: PlatformDeviceInfo;
   assessment?: DeviceAssessment;
-  usbInfo?: UsbDeviceInfo;
+  /** USB connection data */
+  usbConnection?: UsbConnectionInfo;
+  /** iPod model from USB discovery */
+  usbModel?: IpodModel;
 }
 
 // ── Stage display names ───────────────────────────────────────────────────────
@@ -164,22 +171,27 @@ function isBinaryContent(buf: Buffer): boolean {
 /** Check if SysInfo and USB report different iPod generations. */
 function detectGenerationMismatch(
   sysInfoGenId: IpodGenerationId | undefined,
-  usbInfo: UsbDeviceInfo | undefined
-): { sysInfoGeneration: string; usbGeneration: string; usbModelName?: string } | undefined {
-  if (!sysInfoGenId || !usbInfo?.productId) return undefined;
-  const usbGenId = lookupGenerationByProductId(usbInfo.productId);
+  usbConnection: UsbConnectionInfo | undefined
+): { sysInfoGeneration: string; usbGeneration: string } | undefined {
+  if (!sysInfoGenId || !usbConnection?.productId) return undefined;
+  const usbGenId = lookupGenerationByProductId(usbConnection.productId);
   if (!usbGenId || sysInfoGenId === usbGenId) return undefined;
   return {
     sysInfoGeneration: getGenerationInfo(sysInfoGenId).displayName,
     usbGeneration: getGenerationInfo(usbGenId).displayName,
-    usbModelName: usbInfo.modelName,
   };
+}
+
+export interface SysInfoCheckResult {
+  stage: ReadinessStageResult;
+  deviceModel?: IpodModel;
 }
 
 export async function checkSysInfo(
   mountPoint: string,
-  usbInfo?: UsbDeviceInfo
-): Promise<ReadinessStageResult> {
+  usbConnection?: UsbConnectionInfo,
+  usbModelName?: string
+): Promise<SysInfoCheckResult> {
   const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
   const sysInfoExtendedPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfoExtended');
 
@@ -189,12 +201,12 @@ export async function checkSysInfo(
 
   // Determine checksum type from USB product ID or SysInfoExtended serial
   let checksumType: IpodChecksumType | undefined;
-  if (usbInfo?.productId) {
-    const gen = lookupGenerationByProductId(usbInfo.productId);
+  if (usbConnection?.productId) {
+    const gen = lookupGenerationByProductId(usbConnection.productId);
     if (gen) checksumType = getChecksumType(gen);
   }
-  if (!checksumType && sysInfoExtended?.deviceInfo?.checksumType) {
-    checksumType = sysInfoExtended.deviceInfo.checksumType as IpodChecksumType;
+  if (!checksumType && sysInfoExtended?.model?.checksumType) {
+    checksumType = sysInfoExtended.model.checksumType;
   }
 
   // Build limitation note for hash72/hashAB devices
@@ -206,37 +218,39 @@ export async function checkSysInfo(
   }
 
   // ── Step 2: If SysInfoExtended is present, use it ────────────────────
-  if (sysInfoExtendedExists && sysInfoExtended.deviceInfo) {
-    const info = sysInfoExtended.deviceInfo;
-    const displayName = info.modelName ?? 'Unknown iPod';
+  if (sysInfoExtendedExists && sysInfoExtended.firewireGuid) {
+    const displayName = sysInfoExtended.model?.displayName ?? 'Unknown iPod';
 
     // Check for generation mismatch between SysInfoExtended and USB
-    const mismatch = detectGenerationMismatch(info.generationId, usbInfo);
+    const mismatch = detectGenerationMismatch(sysInfoExtended.model?.generationId, usbConnection);
 
     return {
-      stage: 'sysinfo',
-      status: mismatch ? 'warn' : 'pass',
-      summary: mismatch ? `${displayName} — generation mismatch with USB` : displayName,
-      details: {
-        sysInfoPath,
-        sysInfoExtendedPath,
-        exists: true,
-        sysInfoExtendedExists: true,
-        hasModelNum: true,
-        modelName: info.modelName,
-        firewireGuid: info.firewireGuid,
-        serialNumber: info.serialNumber,
-        checksumType: info.checksumType ?? checksumType,
-        ...(checksumNote ? { checksumNote } : {}),
-        ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
-        ...(mismatch
-          ? {
-              generationMismatch: true,
-              sysInfoGeneration: mismatch.sysInfoGeneration,
-              usbGeneration: mismatch.usbGeneration,
-            }
-          : {}),
+      stage: {
+        stage: 'sysinfo',
+        status: mismatch ? 'warn' : 'pass',
+        summary: mismatch ? `${displayName} — generation mismatch with USB` : displayName,
+        details: {
+          sysInfoPath,
+          sysInfoExtendedPath,
+          exists: true,
+          sysInfoExtendedExists: true,
+          hasModelNum: true,
+          modelName: sysInfoExtended.model?.displayName,
+          firewireGuid: sysInfoExtended.firewireGuid,
+          serialNumber: sysInfoExtended.serialNumber,
+          checksumType: sysInfoExtended.model?.checksumType ?? checksumType,
+          ...(checksumNote ? { checksumNote } : {}),
+          ...(usbModelName ? { usbModelName } : {}),
+          ...(mismatch
+            ? {
+                generationMismatch: true,
+                sysInfoGeneration: mismatch.sysInfoGeneration,
+                usbGeneration: mismatch.usbGeneration,
+              }
+            : {}),
+        },
       },
+      deviceModel: sysInfoExtended.model,
     };
   }
 
@@ -249,9 +263,14 @@ export async function checkSysInfo(
     // File doesn't exist
   }
 
+  /** Helper: wrap a stage-only result (no deviceModel) */
+  function stageOnly(result: ReadinessStageResult): SysInfoCheckResult {
+    return { stage: result };
+  }
+
   if (!fileExists) {
     // Both missing → fail
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo and SysInfoExtended not found',
@@ -264,7 +283,7 @@ export async function checkSysInfo(
         checksumType,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   // Read raw bytes for binary detection and UTF-8 validation
@@ -272,7 +291,7 @@ export async function checkSysInfo(
   try {
     rawBuf = fs.readFileSync(sysInfoPath);
   } catch (error) {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo file could not be read',
@@ -284,12 +303,12 @@ export async function checkSysInfo(
         error: error instanceof Error ? error.message : String(error),
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   // Empty file
   if (rawBuf.length === 0) {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo file is empty',
@@ -300,12 +319,12 @@ export async function checkSysInfo(
         sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   // Binary/corrupt content
   if (isBinaryContent(rawBuf)) {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo file appears to be binary/corrupt',
@@ -316,7 +335,7 @@ export async function checkSysInfo(
         sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   // Decode as UTF-8
@@ -324,7 +343,7 @@ export async function checkSysInfo(
   try {
     content = new TextDecoder('utf-8', { fatal: true }).decode(rawBuf);
   } catch {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo file contains invalid UTF-8',
@@ -335,13 +354,13 @@ export async function checkSysInfo(
         sysInfoExtendedExists: false,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   // Extract ModelNumStr
   const modelMatch = content.match(/ModelNumStr:\s*(\S+)/);
   if (!modelMatch) {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'fail',
       summary: 'SysInfo exists but ModelNumStr not found',
@@ -353,14 +372,15 @@ export async function checkSysInfo(
         hasModelNum: false,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
+    });
   }
 
   const modelNumber = modelMatch[1]!;
   const modelName = lookupIpodModelByNumber(modelNumber);
+  const sysInfoModel = resolveIpodModel({ from: 'sysinfo', modelNumStr: modelNumber });
 
   if (!modelName) {
-    return {
+    return stageOnly({
       stage: 'sysinfo',
       status: 'warn',
       summary: `Unrecognized model: ${modelNumber}`,
@@ -372,18 +392,18 @@ export async function checkSysInfo(
         hasModelNum: true,
         modelNumber,
         checksumType,
-        ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
+        ...(usbModelName ? { usbModelName } : {}),
         suggestion:
           'Device will be treated as a generic iPod. This is usually fine but may affect artwork format detection.',
       },
-    };
+    });
   }
 
   // Check for generation mismatch between SysInfo model and USB
   const sysInfoGenId = lookupGenerationByModelNumber(modelNumber);
-  const mismatch = detectGenerationMismatch(sysInfoGenId, usbInfo);
+  const mismatch = detectGenerationMismatch(sysInfoGenId, usbConnection);
   const mismatchDetails = {
-    ...(usbInfo?.modelName ? { usbModelName: usbInfo.modelName } : {}),
+    ...(usbModelName ? { usbModelName } : {}),
     ...(mismatch
       ? {
           generationMismatch: true,
@@ -402,9 +422,37 @@ export async function checkSysInfo(
     // Hash-requiring devices FAIL without SysInfoExtended.
     // Mismatch is secondary to the checksum requirement — keep status 'fail'.
     return {
+      stage: {
+        stage: 'sysinfo',
+        status: 'fail',
+        summary: `${modelName} (${modelNumber}) — SysInfoExtended required for checksum`,
+        details: {
+          sysInfoPath,
+          sysInfoExtendedPath,
+          exists: true,
+          sysInfoExtendedExists: false,
+          hasModelNum: true,
+          modelNumber,
+          modelName,
+          checksumType,
+          ...(checksumNote ? { checksumNote } : {}),
+          ...mismatchDetails,
+          suggestion: SYSINFO_SUGGESTION_REPAIR,
+        },
+      },
+      deviceModel: sysInfoModel,
+    };
+  }
+
+  // Non-checksum devices: classic SysInfo is sufficient. SysInfoExtended is
+  // optional richer-identity metadata. A generation mismatch promotes to warn.
+  return {
+    stage: {
       stage: 'sysinfo',
-      status: 'fail',
-      summary: `${modelName} (${modelNumber}) — SysInfoExtended required for checksum`,
+      status: mismatch ? 'warn' : 'pass',
+      summary: mismatch
+        ? `${modelName} (${modelNumber}) — generation mismatch with USB`
+        : `${modelName} (${modelNumber})`,
       details: {
         sysInfoPath,
         sysInfoExtendedPath,
@@ -414,33 +462,11 @@ export async function checkSysInfo(
         modelNumber,
         modelName,
         checksumType,
-        ...(checksumNote ? { checksumNote } : {}),
         ...mismatchDetails,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
-    };
-  }
-
-  // Non-checksum devices: classic SysInfo is sufficient. SysInfoExtended is
-  // optional richer-identity metadata. A generation mismatch promotes to warn.
-  return {
-    stage: 'sysinfo',
-    status: mismatch ? 'warn' : 'pass',
-    summary: mismatch
-      ? `${modelName} (${modelNumber}) — generation mismatch with USB`
-      : `${modelName} (${modelNumber})`,
-    details: {
-      sysInfoPath,
-      sysInfoExtendedPath,
-      exists: true,
-      sysInfoExtendedExists: false,
-      hasModelNum: true,
-      modelNumber,
-      modelName,
-      checksumType,
-      ...mismatchDetails,
-      suggestion: SYSINFO_SUGGESTION_REPAIR,
     },
+    deviceModel: sysInfoModel,
   };
 }
 
@@ -685,9 +711,15 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   }
 
   // Stage 5: Valid SysInfo
+  let deviceModel: IpodModel | undefined;
   try {
-    const sysInfoResult = await checkSysInfo(device.mountPoint, input.usbInfo);
-    stages.push(sysInfoResult);
+    const sysInfoResult = await checkSysInfo(
+      device.mountPoint,
+      input.usbConnection,
+      input.usbModel?.displayName
+    );
+    deviceModel = sysInfoResult.deviceModel;
+    stages.push(sysInfoResult.stage);
     // SysInfo warns but doesn't block — continue to database
   } catch (error) {
     stages.push({
@@ -700,12 +732,10 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
 
   // Stage 6: Has Database
   let trackCount: number | undefined;
-  let modelName: string | undefined;
   try {
     const dbResult = await checkDatabase(device.mountPoint);
     stages.push(dbResult);
     trackCount = dbResult.trackCount;
-    modelName = dbResult.modelName;
   } catch (error) {
     const interpreted = interpretError(error instanceof Error ? error : new Error(String(error)));
     stages.push({
@@ -739,13 +769,12 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
 
     summary = {
       trackCount,
-      modelName,
       freeBytes,
       totalBytes,
     };
   }
 
-  return { level, stages, summary };
+  return { level, stages, usbModel: input.usbModel, deviceModel, summary };
 }
 
 // ── USB-only readiness result ─────────────────────────────────────────────────
@@ -760,11 +789,11 @@ export function createUsbOnlyReadinessResult(usbDevice: UsbDiscoveredDevice): Re
     {
       stage: 'usb',
       status: 'pass',
-      summary: `${usbDevice.modelName ?? 'Unknown iPod'} (Apple ${usbDevice.vendorId})`,
+      summary: `${usbDevice.model?.displayName ?? 'Unknown iPod'} (Apple ${usbDevice.usb.vendorId})`,
       details: {
-        vendorId: usbDevice.vendorId,
-        productId: usbDevice.productId,
-        modelName: usbDevice.modelName,
+        vendorId: usbDevice.usb.vendorId,
+        productId: usbDevice.usb.productId,
+        modelName: usbDevice.model?.displayName,
       },
     },
     {
@@ -780,5 +809,6 @@ export function createUsbOnlyReadinessResult(usbDevice: UsbDiscoveredDevice): Re
   return {
     level: 'needs-partition',
     stages,
+    usbModel: usbDevice.model,
   };
 }

@@ -550,7 +550,6 @@ export type {
   DeviceAssessment,
   IFlashAssessment,
   IFlashEvidence,
-  UsbDeviceInfo,
   EjectProgressEvent,
   EjectWithRetryOptions,
 } from './device/index.js';
@@ -582,7 +581,7 @@ export {
 } from './device/index.js';
 
 // USB discovery
-export type { UsbDiscoveredDevice } from './device/index.js';
+export type { UsbDiscoveredDevice, UsbConnectionInfo } from './device/index.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
 
 // SysInfoExtended (device identity from USB firmware)
@@ -590,9 +589,18 @@ export type { SysInfoExtendedResult } from './device/index.js';
 export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
 // iPod model lookup and capability adapter
-export { getChecksumTypeByModelNumber, toLibgpodGeneration } from './device/index.js';
+export {
+  getChecksumTypeByModelNumber,
+  toLibgpodGeneration,
+  resolveIpodModel,
+} from './device/index.js';
 export { createIpodCapabilities } from './device/index.js';
-export type { LibgpodDeviceInfo } from './device/index.js';
+export type {
+  LibgpodDeviceInfo,
+  IpodModel,
+  IpodModelSource,
+  IpodModelInput,
+} from './device/index.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './device/index.js';

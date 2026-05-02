@@ -19,9 +19,9 @@ import type {
   EjectOptions,
   MountOptions,
 } from '../types.js';
-import type { DeviceAssessment, UsbDeviceInfo } from '../assessment.js';
+import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import { lookupIpodModel } from '../ipod-models.js';
+import type { UsbConnectionInfo } from '../usb-discovery.js';
 
 // ---------------------------------------------------------------------------
 // Shell execution helper
@@ -204,7 +204,7 @@ export function stripPartitionSuffix(name: string): string {
  * Walks /sys/bus/usb/devices/ looking for a USB device whose child block
  * device matches the given name (e.g., "sda"). Returns vendor/product IDs.
  */
-function findUsbIdentity(blockDeviceName: string): UsbDeviceInfo | undefined {
+function findUsbIdentity(blockDeviceName: string): UsbConnectionInfo | undefined {
   // Strip partition suffix to get the base device (sda1 → sda, nvme0n1p2 → nvme0n1)
   const baseName = stripPartitionSuffix(blockDeviceName);
 
@@ -225,10 +225,9 @@ function findUsbIdentity(blockDeviceName: string): UsbDeviceInfo | undefined {
         const vendorId = `0x${readFileSync(vendorPath, 'utf-8').trim()}`;
         const productId = `0x${readFileSync(productPath, 'utf-8').trim()}`;
 
-        const info: UsbDeviceInfo = {
+        const info: UsbConnectionInfo = {
           productId,
           vendorId,
-          modelName: lookupIpodModel(productId),
         };
 
         // Read optional USB identity fields from the same sysfs node
@@ -364,7 +363,7 @@ export class LinuxDeviceManager implements DeviceManager {
     for (const device of devices) {
       // Check USB identity — most reliable for unmounted devices
       const usb = findUsbIdentity(device.identifier);
-      if (usb?.vendorId === '0x05ac' && usb.modelName) {
+      if (usb?.vendorId === '0x05ac') {
         ipods.push(device);
         continue;
       }

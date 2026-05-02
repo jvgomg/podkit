@@ -253,7 +253,6 @@ export type {
   DeviceAssessment,
   IFlashAssessment,
   IFlashEvidence,
-  UsbDeviceInfo,
   EjectProgressEvent,
   EjectWithRetryOptions,
 } from '@podkit/core';
@@ -2349,6 +2348,10 @@ export async function ensureSysInfoExtended(_mountPoint: string, _usbAddress: an
 }
 
 export function getChecksumTypeByModelNumber(_modelNumStr: string): string | undefined {
+  return undefined;
+}
+
+export function resolveIpodModel(_input: any): any {
   return undefined;
 }
 

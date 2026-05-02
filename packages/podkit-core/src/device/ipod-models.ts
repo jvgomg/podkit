@@ -1755,3 +1755,124 @@ export function lookupGenerationByProductId(productId: string): IpodGenerationId
 
   return USB_INDEX.get(normalised)?.generation;
 }
+
+// ── IpodModel: canonical device identity ──────────────────────────────────
+
+/** How an IpodModel was identified */
+export type IpodModelSource = 'usb' | 'sysinfo' | 'serial';
+
+/**
+ * Canonical representation of an identified iPod model.
+ *
+ * Built from a single identification source. USB discovery yields generation
+ * and a generic displayName. SysInfo/serial yields richer data including
+ * color, capacity, and model number.
+ *
+ * The readiness pipeline keeps USB-derived and device-derived models separate
+ * so they can be compared (doctor mismatch checks) and the CLI can render
+ * the richest one available.
+ */
+export interface IpodModel {
+  /** Best available human-readable name (e.g., "iPod nano 4GB Silver (2nd Generation)") */
+  readonly displayName: string;
+  /** iPod generation identifier */
+  readonly generationId: IpodGenerationId;
+  /** Checksum type required for this generation's iTunesDB */
+  readonly checksumType: IpodChecksumType;
+  /** Apple model number without prefix, e.g., "A426" (present for sysinfo/serial sources) */
+  readonly modelNumber?: string;
+  /** Storage capacity in GB (present for sysinfo/serial sources) */
+  readonly capacityGb?: number;
+  /** Device color (present for sysinfo/serial sources) */
+  readonly color?: string;
+  /** How this model was identified */
+  readonly source: IpodModelSource;
+}
+
+/** Discriminated input for resolveIpodModel */
+export type IpodModelInput =
+  | { from: 'usb'; productId: string }
+  | { from: 'sysinfo'; modelNumStr: string }
+  | { from: 'serial'; serialNumber: string };
+
+/**
+ * Build an IpodModel from a single identification source.
+ *
+ * Each call produces one IpodModel — no merging. Callers hold multiple
+ * models from different sources and pick or compare as needed.
+ *
+ * @returns IpodModel if the input matches a known model, undefined otherwise
+ *
+ * @example
+ * ```ts
+ * // From USB product ID (generation only)
+ * resolveIpodModel({ from: 'usb', productId: '0x1260' })
+ * // → { displayName: "iPod nano 2nd generation", generationId: "nano_2g", source: "usb" }
+ *
+ * // From SysInfo model number (full variant)
+ * resolveIpodModel({ from: 'sysinfo', modelNumStr: 'MA477' })
+ * // → { displayName: "iPod nano 2GB Silver (2nd Generation)", color: "Silver", source: "sysinfo" }
+ *
+ * // From serial number suffix (full variant)
+ * resolveIpodModel({ from: 'serial', serialNumber: '5U828GFNYXX' })
+ * // → { displayName: "iPod nano 8GB Black (3rd Generation)", color: "Black", source: "serial" }
+ * ```
+ */
+export function resolveIpodModel(input: IpodModelInput): IpodModel | undefined {
+  switch (input.from) {
+    case 'usb': {
+      const normalised = input.productId.toLowerCase().startsWith('0x')
+        ? input.productId.toLowerCase()
+        : `0x${input.productId.toLowerCase()}`;
+      const entry = USB_INDEX.get(normalised);
+      if (!entry) return undefined;
+      const gen = GENERATIONS[entry.generation];
+      return {
+        displayName: entry.displayName,
+        generationId: entry.generation,
+        checksumType: gen.checksumType,
+        source: 'usb',
+      };
+    }
+
+    case 'sysinfo': {
+      const upper = input.modelNumStr.toUpperCase();
+      const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
+      const entry = MODEL_INDEX.get(stripped) ?? MODEL_INDEX.get(upper);
+      if (!entry) return undefined;
+      const gen = GENERATIONS[entry.generation];
+      return {
+        displayName: entry.displayName,
+        generationId: entry.generation,
+        checksumType: gen.checksumType,
+        modelNumber: stripped,
+        capacityGb: entry.capacityGb,
+        color: entry.color,
+        source: 'sysinfo',
+      };
+    }
+
+    case 'serial': {
+      const serial = input.serialNumber;
+      if (!serial || serial.length < 3) return undefined;
+      const suffix = serial.slice(-3).toUpperCase();
+      const modelNumber = SERIAL_INDEX.get(suffix);
+      if (!modelNumber) return undefined;
+      const entry = MODEL_INDEX.get(modelNumber);
+      if (!entry) {
+        // Serial suffix known but model number not in table
+        return undefined;
+      }
+      const gen = GENERATIONS[entry.generation];
+      return {
+        displayName: entry.displayName,
+        generationId: entry.generation,
+        checksumType: gen.checksumType,
+        modelNumber,
+        capacityGb: entry.capacityGb,
+        color: entry.color,
+        source: 'serial',
+      };
+    }
+  }
+}

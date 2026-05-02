@@ -13,8 +13,8 @@
 
 import * as fs from 'node:fs';
 import { join } from 'node:path';
-import { lookupIpodModelBySerial, getChecksumType } from './ipod-models.js';
-import type { IpodGenerationId } from './ipod-models.js';
+import { resolveIpodModel } from './ipod-models.js';
+import type { IpodModel } from './ipod-models.js';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,14 +24,12 @@ export interface SysInfoExtendedResult {
   present: boolean;
   /** How the result was obtained */
   source: 'existing' | 'usb-read' | 'unavailable';
-  /** Extracted device identity (when present) */
-  deviceInfo?: {
-    firewireGuid: string;
-    serialNumber: string;
-    modelName?: string;
-    generationId?: IpodGenerationId;
-    checksumType?: 'none' | 'hash58' | 'hash72' | 'hashAB';
-  };
+  /** Identified iPod model from serial number lookup */
+  model?: IpodModel;
+  /** FireWire GUID (device instance identifier, not model info) */
+  firewireGuid?: string;
+  /** Full Apple serial number */
+  serialNumber?: string;
   /** Error message when source is 'unavailable' */
   error?: string;
 }
@@ -62,10 +60,17 @@ function extractPlistString(xml: string, key: string): string | undefined {
   return match?.[1];
 }
 
+/** Parsed identity from SysInfoExtended XML */
+interface ExtractedIdentity {
+  firewireGuid: string;
+  serialNumber: string;
+  model?: IpodModel;
+}
+
 /**
  * Extract device identity fields from SysInfoExtended XML.
  */
-function extractDeviceInfo(xml: string): SysInfoExtendedResult['deviceInfo'] | undefined {
+function extractIdentity(xml: string): ExtractedIdentity | undefined {
   // Try both casing variants for FireWireGUID
   const firewireGuid =
     extractPlistString(xml, 'FireWireGUID') ?? extractPlistString(xml, 'FirewireGuid');
@@ -76,23 +81,13 @@ function extractDeviceInfo(xml: string): SysInfoExtendedResult['deviceInfo'] | u
     return undefined;
   }
 
-  const info: NonNullable<SysInfoExtendedResult['deviceInfo']> = {
-    firewireGuid,
-    serialNumber,
-  };
-
   // Look up model from last 3 chars of serial number
+  let model: IpodModel | undefined;
   if (serialNumber.length >= 3) {
-    const suffix = serialNumber.slice(-3);
-    const model = lookupIpodModelBySerial(suffix);
-    if (model) {
-      info.modelName = model.displayName;
-      info.generationId = model.generation;
-      info.checksumType = getChecksumType(model.generation as IpodGenerationId);
-    }
+    model = resolveIpodModel({ from: 'serial', serialNumber });
   }
 
-  return info;
+  return { firewireGuid, serialNumber, model };
 }
 
 /**
@@ -158,11 +153,13 @@ export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult |
     return null;
   }
 
-  const deviceInfo = extractDeviceInfo(content);
+  const identity = extractIdentity(content);
   return {
     present: true,
     source: 'existing',
-    deviceInfo,
+    model: identity?.model,
+    firewireGuid: identity?.firewireGuid,
+    serialNumber: identity?.serialNumber,
   };
 }
 
@@ -223,10 +220,12 @@ export async function ensureSysInfoExtended(
   fs.writeFileSync(join(mountPoint, SYSINFO_EXTENDED_PATH), xml, 'utf-8');
 
   // Step 6: Extract device info and return
-  const deviceInfo = extractDeviceInfo(xml);
+  const identity = extractIdentity(xml);
   return {
     present: true,
     source: 'usb-read',
-    deviceInfo,
+    model: identity?.model,
+    firewireGuid: identity?.firewireGuid,
+    serialNumber: identity?.serialNumber,
   };
 }

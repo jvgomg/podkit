@@ -6,6 +6,8 @@
  * automatically mounted by the operating system.
  */
 
+import type { UsbConnectionInfo } from './usb-discovery.js';
+
 /**
  * A piece of evidence contributing to an iFlash storage determination.
  * Each signal is independently observable from OS-level device data
@@ -36,25 +38,6 @@ export interface IFlashAssessment {
 }
 
 /**
- * USB device identity gathered from the host OS USB subsystem.
- * Available before mounting and independent of the filesystem.
- */
-export interface UsbDeviceInfo {
-  /** USB product ID in normalised hex (e.g., "0x1209") */
-  productId: string;
-  /** USB vendor ID in normalised hex (e.g., "0x05ac") */
-  vendorId: string;
-  /** Resolved human-readable model name if the product ID is known */
-  modelName?: string;
-  /** USB serial number (= FirewireGuid for iPods, 16 hex chars) */
-  serialNumber?: string;
-  /** USB bus number (for libusb device addressing) */
-  busNumber?: number;
-  /** USB device address (for libusb device addressing) */
-  deviceAddress?: number;
-}
-
-/**
  * Pre-mount assessment of a detected iPod device.
  *
  * Combines raw OS-level disk data with USB identity and interpreted
@@ -81,7 +64,7 @@ export interface DeviceAssessment {
   /** Mount point path if currently mounted */
   mountPoint?: string;
   /** USB subsystem identity, if available on this platform */
-  usb?: UsbDeviceInfo;
+  usb?: UsbConnectionInfo;
   /** iFlash storage analysis derived from disk and USB characteristics */
   iFlash: IFlashAssessment;
 }

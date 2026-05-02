@@ -85,12 +85,7 @@ export type {
   EjectWithRetryOptions,
 } from './types.js';
 
-export type {
-  DeviceAssessment,
-  IFlashAssessment,
-  IFlashEvidence,
-  UsbDeviceInfo,
-} from './assessment.js';
+export type { DeviceAssessment, IFlashAssessment, IFlashEvidence } from './assessment.js';
 
 export { detectIFlash } from './assessment.js';
 export {
@@ -103,12 +98,16 @@ export {
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
   toLibgpodGeneration,
+  resolveIpodModel,
 } from './ipod-models.js';
 export type {
   IpodChecksumType,
   IpodGenerationId,
   IpodGeneration,
   IpodModelVariant,
+  IpodModel,
+  IpodModelSource,
+  IpodModelInput,
 } from './ipod-models.js';
 
 export { createIpodCapabilities } from './capability-adapter.js';
@@ -136,7 +135,7 @@ export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from './s
 export { ensureSysInfoExtended, readSysInfoExtended } from './sysinfo-extended.js';
 
 // USB discovery
-export type { UsbDiscoveredDevice } from './usb-discovery.js';
+export type { UsbDiscoveredDevice, UsbConnectionInfo } from './usb-discovery.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
 
 // OS error code interpreter

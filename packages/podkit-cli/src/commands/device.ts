@@ -143,7 +143,7 @@ async function attemptSysInfoExtended(
 ): Promise<SysInfoAttempt> {
   // 1. SysInfoExtended already present and parseable → done.
   const existing = readSysInfoExtended(mountPoint);
-  if (existing?.present && existing.deviceInfo) {
+  if (existing?.present && (existing.model || existing.firewireGuid)) {
     return { result: existing, abort: false };
   }
 
@@ -265,7 +265,7 @@ async function readSysInfoExtendedFromUsb(
       return { result: null, abort: true };
     }
 
-    const model = result.deviceInfo?.modelName ?? 'Unknown iPod';
+    const model = result.model?.displayName ?? 'Unknown iPod';
     out.print(`Device identified via USB: ${model}`);
     return { result, abort: false };
   } catch (err) {
@@ -568,7 +568,8 @@ export interface DeviceInfoOutput {
       summary: string;
       details?: Record<string, unknown>;
     }>;
-    summary?: { trackCount: number; modelName?: string; freeBytes?: number; totalBytes?: number };
+    model?: DeviceModelOutput;
+    summary?: { trackCount: number; freeBytes?: number; totalBytes?: number };
   };
   error?: string;
 }
@@ -647,6 +648,17 @@ export interface DeviceDefaultOutput {
   error?: string;
 }
 
+/** Serialised iPod model identity for JSON output */
+export interface DeviceModelOutput {
+  displayName: string;
+  generationId: string;
+  checksumType: string;
+  source: string;
+  modelNumber?: string;
+  capacityGb?: number;
+  color?: string;
+}
+
 export interface DeviceScanOutput {
   success: boolean;
   devices?: Array<{
@@ -657,6 +669,8 @@ export interface DeviceScanOutput {
     isMounted: boolean;
     mountPoint?: string;
     configuredAs?: string;
+    /** Best available model (deviceModel ?? usbModel) */
+    model?: DeviceModelOutput;
     readiness?: {
       level: string;
       stages: Array<{
@@ -667,7 +681,6 @@ export interface DeviceScanOutput {
       }>;
       summary?: {
         trackCount: number;
-        modelName?: string;
         freeBytes?: number;
         totalBytes?: number;
       };
@@ -1118,17 +1131,13 @@ const scanSubcommand = new Command('scan')
     if (manager.isSupported) {
       for (const ipod of ipods) {
         const matchedUsb = findMatchingUsb(ipod.identifier);
-        const usbInfo = matchedUsb
-          ? {
-              productId: matchedUsb.productId,
-              vendorId: matchedUsb.vendorId,
-              modelName: matchedUsb.modelName,
-              serialNumber: matchedUsb.serialNumber,
-              busNumber: matchedUsb.busNumber,
-              deviceAddress: matchedUsb.deviceAddress,
-            }
-          : undefined;
-        readinessResults.push(await checkReadiness({ device: ipod, usbInfo }));
+        readinessResults.push(
+          await checkReadiness({
+            device: ipod,
+            usbConnection: matchedUsb?.usb,
+            usbModel: matchedUsb?.model,
+          })
+        );
       }
     }
 
@@ -1193,6 +1202,7 @@ const scanSubcommand = new Command('scan')
     const devices = ipods.map((d, i) => {
       const readiness = readinessResults[i];
       const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
+      const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
       return {
         volumeName: d.volumeName,
         volumeUuid: d.volumeUuid,
@@ -1201,6 +1211,7 @@ const scanSubcommand = new Command('scan')
         isMounted: d.isMounted,
         ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
         ...(configuredAs ? { configuredAs } : {}),
+        ...(bestModel ? { model: bestModel } : {}),
         ...(readiness
           ? {
               readiness: {
@@ -1256,10 +1267,13 @@ const scanSubcommand = new Command('scan')
           const label = device.volumeName || '(unnamed)';
           const identifier = device.identifier ? ` (${device.identifier})` : '';
 
+          // Use richest available model: deviceModel (from SysInfo) > usbModel (from USB product ID)
+          const displayModel = readiness?.deviceModel ?? readiness?.usbModel;
           const matchedUsb = findMatchingUsb(device.identifier);
-          const usbModel = matchedUsb?.modelName;
-          if (usbModel) {
-            out.print(`  ${bold(label)}${identifier}  ${usbModel} (USB)`);
+          const modelLabel = displayModel?.displayName ?? matchedUsb?.model?.displayName;
+          const modelSource = displayModel?.source === 'usb' ? ' (USB)' : '';
+          if (modelLabel) {
+            out.print(`  ${bold(label)}${identifier}  ${modelLabel}${modelSource}`);
           } else {
             out.print(`  ${bold(label)}${identifier}`);
           }
@@ -1296,7 +1310,7 @@ const scanSubcommand = new Command('scan')
       // Show USB-only devices (no disk representation)
       if (usbOnlyDevices.length > 0) {
         for (const usbDevice of usbOnlyDevices) {
-          const label = usbDevice.modelName ?? 'Unknown iPod';
+          const label = usbDevice.model?.displayName ?? 'Unknown iPod';
           out.print(`  ${bold(label)} (USB only)`);
           out.newline();
 
@@ -1935,8 +1949,8 @@ const addSubcommand = new Command('add')
       }
 
       // Enrich model name from SysInfoExtended if available (more specific than database model)
-      if (sysInfoResult?.deviceInfo?.modelName) {
-        modelName = sysInfoResult.deviceInfo.modelName;
+      if (sysInfoResult?.model?.displayName) {
+        modelName = sysInfoResult.model.displayName;
       }
 
       // Get volume UUID if possible (for macOS)
@@ -2165,10 +2179,12 @@ const addSubcommand = new Command('add')
 
       out.newline();
       out.print(`Found iPod: ${ipod.volumeName} (${formatBytes(ipod.size)}) — not mounted`);
-      if (assessment?.usb?.modelName) {
-        out.print(`  Model:   ${assessment.usb.modelName}`);
-      } else if (assessment?.usb?.productId) {
-        out.print(`  Model:   iPod (USB ${assessment.usb.productId})`);
+      if (assessment?.usb?.productId) {
+        const { resolveIpodModel } = await import('@podkit/core');
+        const assessModel = resolveIpodModel({ from: 'usb', productId: assessment.usb.productId });
+        out.print(
+          `  Model:   ${assessModel?.displayName ?? `iPod (USB ${assessment.usb.productId})`}`
+        );
       }
       if (assessment?.iFlash.confirmed) {
         out.print(
@@ -2276,8 +2292,8 @@ const addSubcommand = new Command('add')
     }
 
     // Enrich model name from SysInfoExtended if available (more specific than database model)
-    if (autoSysInfoResult?.deviceInfo?.modelName) {
-      modelName = autoSysInfoResult.deviceInfo.modelName;
+    if (autoSysInfoResult?.model?.displayName) {
+      modelName = autoSysInfoResult.model.displayName;
     }
 
     const deviceInfo = {
@@ -2674,6 +2690,7 @@ const infoSubcommand = new Command('info')
               : undefined;
             if (matchingIpod) {
               const readiness = await core.checkReadiness({ device: matchingIpod });
+              const bestModel = readiness.deviceModel ?? readiness.usbModel;
               readinessData = {
                 level: readiness.level,
                 stages: readiness.stages.map((s) => ({
@@ -2682,6 +2699,7 @@ const infoSubcommand = new Command('info')
                   summary: s.summary,
                   ...(s.details ? { details: s.details } : {}),
                 })),
+                ...(bestModel ? { model: bestModel } : {}),
                 ...(readiness.summary ? { summary: readiness.summary } : {}),
               };
             }
@@ -2783,8 +2801,10 @@ const infoSubcommand = new Command('info')
             out.print(`  Status:        Not mounted`);
           }
 
-          // Model line — compact, no multi-line warnings
-          if (!isMassStorage && liveStatus.model) {
+          // Model line — prefer IpodModel (has color) over database model
+          if (!isMassStorage && readinessData?.model) {
+            out.print(`  Model:         ${readinessData.model.displayName}`);
+          } else if (!isMassStorage && liveStatus.model) {
             const capacityStr =
               liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
             const genStr = formatGeneration(liveStatus.model.generation);

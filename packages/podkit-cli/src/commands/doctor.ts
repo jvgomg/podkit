@@ -460,7 +460,8 @@ async function runDoctorDiagnostics(
 
   const deviceModel =
     report?.deviceModel ??
-    (readinessResult?.summary?.modelName ? readinessResult.summary.modelName : 'Unknown');
+    (readinessResult?.deviceModel ?? readinessResult?.usbModel)?.displayName ??
+    'Unknown';
 
   const readinessOutput = readinessResult
     ? {
