@@ -6,9 +6,9 @@
  *
  * The tests use real iPod databases created by gpod-testing.
  */
-import { describe, expect, it, afterEach, beforeAll } from 'bun:test';
+import { describe, expect, it, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
-import { withTestIpod, TestModels, isGpodToolAvailable } from '@podkit/gpod-testing';
+import { withTestIpod, TestModels } from '@podkit/gpod-testing';
 import {
   IpodDatabase,
   MediaType,
@@ -97,14 +97,6 @@ function createDeviceContext(
     },
   });
 }
-
-// Check if gpod-tool is available before running tests
-beforeAll(async () => {
-  const available = await isGpodToolAvailable();
-  if (!available) {
-    throw new Error('gpod-tool is not available. Run `mise run tools:build` to build it.');
-  }
-});
 
 describe('device info integration', () => {
   afterEach(() => {

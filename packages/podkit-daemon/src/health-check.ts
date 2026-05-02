@@ -28,7 +28,9 @@ export function touchHealthFile(path: string = DEFAULT_HEALTH_FILE): void {
 export function isHealthy(maxAgeSeconds: number, path: string = DEFAULT_HEALTH_FILE): boolean {
   try {
     const stat = statSync(path);
-    const ageMs = Date.now() - stat.mtimeMs;
+    // Clamp at 0: filesystem mtime resolution can round up so a just-touched
+    // file's mtime is briefly in the future relative to Date.now().
+    const ageMs = Math.max(0, Date.now() - stat.mtimeMs);
     return ageMs < maxAgeSeconds * 1000;
   } catch {
     // File doesn't exist or can't be read

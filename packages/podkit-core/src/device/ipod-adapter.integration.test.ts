@@ -23,12 +23,6 @@ import { getDeviceCapabilities } from '../ipod/capabilities.js';
 import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
-import { requireGpodTool, requireLibgpod, requireFFmpeg } from '../__tests__/helpers/test-setup.js';
-
-// Fail early if dependencies are not available
-requireGpodTool();
-requireLibgpod();
-requireFFmpeg();
 
 // =============================================================================
 // Test Helpers

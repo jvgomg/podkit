@@ -106,7 +106,7 @@ bun run test              # Unit + integration
 bun run test:e2e          # E2E with dummy iPod
 
 # 3. Linux tests (cross-platform or device-related changes)
-mise run lima:test         # Runs on Debian + Alpine VMs (requires: brew install lima)
+mise run test:linux        # Runs on Debian + Alpine VMs (requires: brew install lima)
 
 # 4. Docker E2E (Subsonic changes only)
 bun run test:e2e:docker
@@ -121,11 +121,12 @@ bun run test:integration  # Integration tests only (cached independently)
 bun run test:e2e          # E2E tests (dummy iPod, not composed)
 bun run test:e2e:real     # E2E tests (real iPod, requires IPOD_MOUNT)
 bun run test:e2e:docker   # E2E tests requiring Docker (Subsonic, etc.)
-mise run lima:test         # Run tests on Debian + Alpine VMs
-mise run lima:test:debian  # Debian only
-mise run lima:test:alpine  # Alpine only
-mise run lima:stop         # Stop VMs (preserves state)
-mise run lima:destroy      # Delete VMs entirely
+mise run test:linux              # Run tests on Debian + Alpine VMs
+mise run test:linux:debian       # Debian (glibc) only
+mise run test:linux:alpine       # Alpine (musl, Docker parity) only
+mise run test:linux:stop         # Stop VMs (preserves state + turbo cache)
+mise run test:linux:destroy      # Delete VMs entirely
+mise run test:linux:cache:clear  # Clear turbo cache without deleting VMs
 mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
 # Container cleanup (in packages/e2e-tests/)

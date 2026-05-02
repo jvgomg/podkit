@@ -316,17 +316,20 @@ brew install lima
 
 ```bash
 # Run tests on both Debian and Alpine (creates VMs on first run)
-mise run lima:test
+mise run test:linux
 
 # Run on a specific distro
-mise run lima:test:debian
-mise run lima:test:alpine
+mise run test:linux:debian        # glibc — general Linux env
+mise run test:linux:alpine        # musl — Docker image parity
 
-# Stop VMs when done (preserves state for fast restart)
-mise run lima:stop
+# Stop VMs when done (preserves state and turbo cache for fast restart)
+mise run test:linux:stop
 
-# Delete VMs entirely
-mise run lima:destroy
+# Clear the turbo cache inside the VMs without deleting them
+mise run test:linux:cache:clear
+
+# Delete VMs entirely (also wipes turbo cache)
+mise run test:linux:destroy
 ```
 
 VMs are created and provisioned automatically on first run. Subsequent runs reuse the existing VMs. See `tools/lima/README.md` for VM details and troubleshooting.

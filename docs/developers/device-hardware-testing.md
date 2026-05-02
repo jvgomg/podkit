@@ -11,7 +11,7 @@ Manual test checklist for validating device mount, eject, detection, and UUID op
 
 - A real iPod connected via USB (FAT32 formatted)
 - For iFlash tests: an iPod with an iFlash adapter
-- Lima VMs provisioned: `mise run lima:test` (creates VMs if needed)
+- Lima VMs provisioned: `mise run test:linux` (creates VMs if needed)
 
 ### Platform setup
 

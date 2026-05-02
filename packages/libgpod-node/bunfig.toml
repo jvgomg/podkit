@@ -1,0 +1,4 @@
+[test]
+# See packages/podkit-core/bunfig.toml for the rationale.
+preload = ["./test/preload.ts"]
+pathIgnorePatterns = ["**/*.integration.test.ts"]

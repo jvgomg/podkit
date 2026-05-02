@@ -8,11 +8,10 @@
  * Run: mise run tools:build
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 
 import {
   withTestIpod,
-  isGpodToolAvailable,
   Database,
   starsToRating,
   ratingToStars,
@@ -24,13 +23,6 @@ import {
 } from './helpers/test-setup';
 
 describe('libgpod-node', () => {
-  beforeAll(async () => {
-    // Check prerequisites
-    if (!(await isGpodToolAvailable())) {
-      throw new Error('gpod-tool not available. Run `mise run tools:build` to build it.');
-    }
-  });
-
   describe('track utilities', () => {
     it('converts stars to rating and back', () => {
       expect(starsToRating(0)).toBe(0);

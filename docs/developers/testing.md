@@ -115,7 +115,7 @@ bun run test              # Unit + integration
 bun run test:e2e          # E2E with dummy iPod
 
 # 3. Linux tests (requires Lima — brew install lima)
-mise run lima:test         # Runs on both Debian + Alpine VMs
+mise run test:linux        # Runs on both Debian + Alpine VMs
 
 # 4. Docker E2E (requires Docker — for Subsonic tests)
 bun run test:e2e:docker
@@ -138,9 +138,9 @@ IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 | `bun run test:e2e` | E2E with dummy iPod | After CLI changes |
 | `bun run test:e2e:real` | E2E with real iPod (needs `IPOD_MOUNT`) | Device-related changes |
 | `bun run test:e2e:docker` | Docker-based E2E (Subsonic) | Subsonic adapter changes |
-| `mise run lima:test` | Full suite on Debian + Alpine VMs | Linux/device manager changes |
-| `mise run lima:test:debian` | Full suite on Debian VM only | Quick Linux check |
-| `mise run lima:test:alpine` | Full suite on Alpine VM only | Docker image compatibility |
+| `mise run test:linux` | Full suite on Debian + Alpine Linux VMs | Linux/device manager changes |
+| `mise run test:linux:debian` | Full suite on Debian VM (glibc) | Quick Linux check |
+| `mise run test:linux:alpine` | Full suite on Alpine VM (musl) | Docker image parity |
 | `mise run tools:brew-test` | Homebrew install smoke test | After releases |
 | `bun run build` | Build all packages | Every change |
 | `bun run typecheck` | TypeScript type checking | Every change |
@@ -319,11 +319,11 @@ The test suite can be run on Linux via Lima VMs to validate platform-specific co
 
 ```bash
 # Run tests on both Debian and Alpine
-mise run lima:test
+mise run test:linux
 
 # Run on a specific distro
-mise run lima:test:debian
-mise run lima:test:alpine
+mise run test:linux:debian
+mise run test:linux:alpine
 ```
 
 VMs are created automatically on first run. See [Development Setup](/developers/development#cross-platform-testing-with-lima) for setup instructions and `tools/lima/README.md` for VM details.

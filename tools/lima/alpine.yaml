@@ -1,13 +1,14 @@
-# Lima VM: Alpine 3.23
+# Lima VM: Alpine 3.23 — Linux test environment (musl, Docker image parity)
 #
-# Used for cross-platform testing of podkit on Alpine/musl systems.
-# Uses Alpine 3.23 (closest version with Lima-compatible cloud images).
-# Docker image uses Alpine 3.21 — the minor version difference is acceptable
-# for device manager and test suite validation.
+# Purpose: prove the test suite passes against musl libc, which is what the
+# published Docker image runs on. Uses Alpine 3.23 (closest version with
+# Lima-compatible cloud images); Docker image uses Alpine 3.21 — the minor
+# version difference is acceptable for device manager and test suite validation.
 #
 # Usage:
-#   limactl start tools/lima/alpine.yaml --name=podkit-alpine
-#   limactl shell podkit-alpine
+#   limactl start tools/lima/alpine.yaml --name=linux-tests-alpine
+#   limactl shell linux-tests-alpine
+#   # Or use the wrapper: mise run test:linux:alpine
 #
 # Note: Bun has experimental musl/Alpine support. If Bun fails to install,
 # use Node.js + npm as the test runner fallback.

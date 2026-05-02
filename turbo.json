@@ -62,12 +62,18 @@
     },
     "test:unit": {
       "dependsOn": ["build"],
-      "inputs": ["src/**", "!src/**/*.integration.test.ts", "!src/**/*.e2e.test.ts"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.integration.test.ts",
+        "!src/**/*.e2e.test.ts",
+        "test/preload.ts",
+        "bunfig.toml"
+      ],
       "outputs": []
     },
     "test:integration": {
       "dependsOn": ["build"],
-      "inputs": ["src/**"],
+      "inputs": ["src/**", "test/**", "bunfig.toml"],
       "outputs": []
     },
     "@podkit/e2e-tests#test": {

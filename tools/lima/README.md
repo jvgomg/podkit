@@ -1,6 +1,12 @@
-# Lima VMs for Cross-Platform Testing
+# Linux Test VMs (Lima)
 
-Lima VMs for testing podkit on Debian and Alpine Linux from macOS.
+Lima VMs for running the podkit test suite against Linux from macOS.
+
+| VM | Distro | Libc | Purpose |
+|----|--------|------|---------|
+| `linux-tests-debian` | Debian 12 | glibc | General Linux test environment (matches Homebrew Linux users) |
+| `linux-tests-alpine` | Alpine 3.23 | musl  | Docker image parity (published image is Alpine-based) |
+| `virtual-ipod`       | Debian 12 | glibc | USB gadget host for the virtual iPod demo (not used for tests) |
 
 ## Prerequisites
 
@@ -8,143 +14,95 @@ Lima VMs for testing podkit on Debian and Alpine Linux from macOS.
 brew install lima
 ```
 
-## Quick Start
+## Running tests
+
+The mise wrappers handle VM lifecycle (create on first run, start if stopped, recreate if broken):
 
 ```bash
-# Create and start a VM (first run takes a few minutes to provision)
-limactl start tools/lima/debian.yaml --name=podkit-debian
-limactl start tools/lima/alpine.yaml --name=podkit-alpine
-
-# Open a shell inside the VM
-limactl shell podkit-debian
-
-# Run tests (from inside the VM)
-cd /path/to/podkit
-bun install
-bun run test
+mise run test:linux               # Both VMs
+mise run test:linux:debian        # Debian only
+mise run test:linux:alpine        # Alpine only
+mise run test:linux:stop          # Stop both VMs (preserves state + turbo cache)
+mise run test:linux:destroy       # Delete both VMs entirely
+mise run test:linux:cache:clear   # Clear turbo cache without deleting VMs
 ```
 
-The macOS filesystem is mounted inside the VM, so you're working on the same files — no need to copy anything.
+Under the hood, `tools/lima/run-tests.sh`:
 
-## VM Specs
+1. Ensures the VM exists, is running, and isn't in a degraded state.
+2. Rsyncs the repo to `/tmp/podkit-test` inside the VM with aggressive excludes — host node_modules, build outputs, native binaries, fixtures, and docs are all stripped so the VM rebuilds cleanly against its own libc.
+3. Runs `bun install`, builds `gpod-tool` and the `libgpod-node` native binding, then runs `bun run test --filter @podkit/core`.
+4. Turbo cache lives at `$HOME/.cache/podkit-turbo` inside the VM — outside the source tree so `rsync --delete` cannot touch it. The cache survives `limactl stop/start` and is only wiped by `test:linux:destroy` or `test:linux:cache:clear`.
 
-| | Debian | Alpine | Virtual iPod |
-|---|--------|--------|--------------|
-| Base | Debian 12 (Bookworm) | Alpine 3.21 | Debian 12 (Bookworm) |
-| Purpose | Cross-platform testing | Docker image testing | Virtual iPod server |
-| CPUs | 4 | 4 | 2 |
-| Memory | 4 GiB | 4 GiB | 2 GiB |
-| Disk | 20 GiB | 20 GiB | 20 GiB |
+## Interactive shell
 
-### Pre-installed
-
-Both VMs include:
-- Bun (primary test runner)
-- Node.js 22 LTS
-- FFmpeg
-- libgpod-dev + GLib (for native addon compilation)
-- Build tools (gcc, g++, make, python3, pkg-config)
-- util-linux (`lsblk` for Linux device manager)
-- git, curl
-
-## Virtual iPod VM
-
-The `virtual-ipod` VM provides a Linux environment with USB gadget support for the virtual iPod demo system.
-
-### Quick Start
+For ad-hoc work inside a VM:
 
 ```bash
-# Create the VM
-limactl create --name=virtual-ipod tools/lima/virtual-ipod.yaml
-
-# Start the VM
-limactl start virtual-ipod
-
-# Shell into the VM
-limactl shell virtual-ipod
-
-# Inside the VM: start the virtual iPod server
-cd /path/to/podkit/packages/virtual-ipod-server
-bun run start
-
-# From macOS: the server is accessible at http://localhost:3456
+limactl shell linux-tests-debian
+limactl shell linux-tests-alpine
 ```
 
-### What's included
-
-- Debian 12 Bookworm
-- `dummy_hcd` and `libcomposite` kernel modules for USB gadget emulation
-- configfs mounted at `/sys/kernel/config` (persisted in `/etc/fstab`)
-- Node.js 22, Bun runtime
-- libgpod-dev, FFmpeg, and all podkit build dependencies
-- Port 3456 forwarded to host for virtual-ipod-server API
-- 20 GiB disk for FAT32 iPod image and audio files
-
-## Common Commands
-
-```bash
-# List VMs
-limactl list
-
-# Stop a VM (preserves state)
-limactl stop podkit-debian
-
-# Start a stopped VM
-limactl start podkit-debian
-
-# Delete a VM entirely
-limactl delete podkit-debian
-
-# Run a single command without entering a shell
-limactl shell podkit-debian -- bash -c "cd /path/to/podkit && bun run test"
-```
-
-## Troubleshooting
-
-### Native binary overwritten (macOS broken after VM tests)
-
-Lima VMs share your macOS filesystem. Running `bun install` inside a VM recompiles the native `gpod_binding.node` for Linux, overwriting the macOS binary. Fix by rebuilding on macOS:
+The macOS filesystem is mounted under your home directory inside the VM, so you can `cd` into the repo. **Do not** run `bun install` against the mounted source — it recompiles the `libgpod-node` native binding for Linux and overwrites your macOS binary. Rebuild on macOS afterward:
 
 ```bash
 cd packages/libgpod-node
 bun run build:native
 ```
 
-### Native modules fail to build
+The mise wrappers avoid this pitfall by rsyncing into `/tmp/podkit-test` instead.
 
-The native addon (`libgpod-node`) compiles inside the VM. If `bun install` fails:
+## Virtual iPod VM
+
+The `virtual-ipod` VM is a separate concern — it provides USB gadget kernel modules for the virtual iPod demo. It is not used by the test suite.
 
 ```bash
-# Force rebuild native modules
-bun install --force
+mise run vipod:create
+mise run vipod:start
+mise run vipod:shell
+```
 
-# Or rebuild just the native addon
-cd packages/libgpod-node
+See `tools/lima/virtual-ipod.yaml` and `tools/demo/README.md` for details.
+
+## VM specs
+
+| | Debian | Alpine | Virtual iPod |
+|---|--------|--------|--------------|
+| Base | Debian 12 (Bookworm) | Alpine 3.23 | Debian 12 (Bookworm) |
+| CPUs | 4 | 4 | 2 |
+| Memory | 4 GiB | 4 GiB | 2 GiB |
+| Disk | 20 GiB | 10 GiB | 20 GiB |
+
+Both test VMs include: Bun (primary), Node.js 22 LTS, FFmpeg, libgpod-dev + GLib (native addon compilation), build tools (gcc, g++, make, python3, pkg-config), util-linux (`lsblk`), git, curl.
+
+## Troubleshooting
+
+### Native modules fail to build
+
+Inside the VM:
+
+```bash
+cd /tmp/podkit-test/packages/libgpod-node
 npx node-gyp rebuild
 ```
 
 ### Bun not available on Alpine
 
-Bun's musl/Alpine support is experimental. If Bun fails to install, use Node.js:
+Bun's musl support is experimental. Fallback:
 
 ```bash
-# Install bun as a Node.js package
 npm install -g bun
-
-# Or run tests directly with node
-npx bun test
 ```
 
-### gpod-tool not built
-
-Integration tests need the gpod-tool binary. Build it inside the VM:
+### Cache seems stale
 
 ```bash
-# Requires mise (or build manually)
-cd tools/gpod-tool
-gcc -o gpod-tool gpod-tool.c $(pkg-config --cflags --libs libgpod-1.0 glib-2.0)
+mise run test:linux:cache:clear
 ```
 
-### Filesystem permissions
+If turbo cache corruption is suspected, destroy and rebuild the VM:
 
-Lima mounts the macOS filesystem with the VM user's UID. If you see permission errors, ensure files are owned by your macOS user.
+```bash
+mise run test:linux:destroy
+mise run test:linux:debian
+```

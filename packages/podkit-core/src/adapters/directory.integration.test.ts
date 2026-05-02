@@ -11,10 +11,6 @@ import { mkdir, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
-
-// Fail early if FFmpeg is not available
-requireFFmpeg();
 
 describe('DirectoryAdapter integration', () => {
   let testDir: string;

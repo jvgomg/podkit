@@ -33,10 +33,6 @@ import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
 import { getDeviceCapabilities } from '../../ipod/capabilities.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncPlan } from '../engine/types.js';
-import { requireAllDeps } from '../../__tests__/helpers/test-setup.js';
-
-// Fail early if dependencies are not available
-requireAllDeps();
 
 // =============================================================================
 // Test Helpers
