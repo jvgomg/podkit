@@ -114,7 +114,12 @@ run_tests() {
     cp tools/gpod-tool/gpod-tool bin/
     export PATH=\$PWD/bin:\$PATH
 
-    cd packages/libgpod-node && node-gyp rebuild && cd \$OLDPWD
+    # Build the libgpod-node native binding. Use \`bun run --cwd\` so
+    # node_modules/.bin is on PATH (node-gyp is a workspace devDep). Avoid
+    # \`cd a && cmd && cd b\` chains: bash skips \`set -e\` on non-final
+    # commands in && lists, so a node-gyp failure would silently fall
+    # through to the test run.
+    bun run --cwd packages/libgpod-node build:native
 
     # Run the full suite (unit + integration across every workspace package).
     # Turbo's content-hashed cache (at \$TURBO_CACHE_DIR) means unchanged
