@@ -10,9 +10,12 @@
 export type IpodModelNumber =
   | 'MA147' // iPod Video 60GB (5th gen) - default
   | 'MA002' // iPod Video 30GB (5th gen)
-  | 'MB565' // iPod Classic 120GB (6th gen)
+  | 'MA146' // iPod Video 30GB Black (5th gen)
   | 'MA477' // iPod Nano 2GB (2nd gen)
-  | string; // Allow other model numbers
+  | 'MB565' // iPod Classic 120GB (6th gen) — hash58
+  | 'MC293' // iPod Classic 160GB (7th gen) — hash58
+  | 'MC027' // iPod Nano 8GB (5th gen) — hash72 + HashInfo
+  | (string & {}); // Allow other model numbers without losing literal autocomplete
 
 /**
  * Options for creating a test iPod.

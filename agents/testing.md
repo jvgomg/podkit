@@ -169,6 +169,43 @@ it('works with iPod database', async () => {
 
 See [packages/gpod-testing/README.md](../packages/gpod-testing/README.md) for full API documentation.
 
+### Template Fast-Path
+
+`createTestIpod()` is internally backed by pre-built iPod database templates. When a test calls it with default arguments, it copies a template directory (~5ms) instead of spawning `gpod-tool init` (~300ms). This delivers a ~3.3× speedup on `test:integration` (111s → 34s on the maintainer's machine).
+
+**Transparent to test authors** — no API change. Use `createTestIpod()` and `withTestIpod()` exactly as before.
+
+**When the fast path is used:** all of the following must be true:
+- `model` is in `TEMPLATE_MODELS` (MA147, MA002, MA146, MA477, MB565, MC293, MC027)
+- `name` is the default (`'Test iPod'`)
+- `firewireId` is the default (`TEST_FIREWIRE_GUID`)
+- The template directory exists on disk
+
+Otherwise it falls back to a `gpod-tool init` subprocess. The fallback is correct but ~60× slower per call.
+
+**Regenerating templates:**
+
+```bash
+bun turbo run generate-templates --filter=@podkit/gpod-testing  # cached
+bun turbo run generate-templates --filter=@podkit/gpod-testing --force  # force rebuild
+```
+
+Templates live in `packages/gpod-testing/templates/` (gitignored, ~290KB total). The turbo task invalidates on changes to the generation script, `src/templates.ts`, `src/test-ipod.ts`, `src/gpod-tool.ts`, or the `bin/gpod-tool` binary itself. Consuming integration test tasks (`@podkit/gpod-testing#test:integration`, the global `test:integration`, `@podkit/ipod-db#test:integration`, `@podkit/e2e-tests#test`, `@podkit/ipod-db#generate-fixtures`) declare it as a dependency, so templates rebuild automatically when needed.
+
+**Adding a new model:**
+1. Add the model number to `TEMPLATE_MODELS` in `packages/gpod-testing/src/templates.ts`.
+2. Add it to the `IpodModelNumber` literal union in `packages/gpod-testing/src/types.ts`.
+3. (Optional) Add a friendly alias to `TestModels` in `packages/gpod-testing/src/test-ipod.ts`.
+4. Run `bun turbo run generate-templates --filter=@podkit/gpod-testing --force` to regenerate.
+
+**Disabling the fast path** (for benchmarking or debugging suspected template-induced bugs):
+
+```bash
+PODKIT_DISABLE_TEMPLATE_CACHE=1 bun turbo run test:integration --force
+```
+
+This forces every `createTestIpod()` call through the subprocess path. The env var is declared in `globalPassThroughEnv` in `turbo.json` so turbo passes it through to test runs.
+
 ## Test Audio Fixtures
 
 Pre-built FLAC files with metadata and artwork are available in `test/fixtures/audio/` for integration tests. See [test/fixtures/audio/README.md](../test/fixtures/audio/README.md) for details.

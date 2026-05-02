@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["PODKIT_DISABLE_TEMPLATE_CACHE"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -66,12 +67,12 @@
       "outputs": []
     },
     "test:integration": {
-      "dependsOn": ["build"],
+      "dependsOn": ["build", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["src/**"],
       "outputs": []
     },
     "@podkit/e2e-tests#test": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["src/**"],
       "outputs": []
     },
@@ -92,8 +93,25 @@
       "inputs": ["src/**", "build.ts", "demo.tape", "run.sh", "package.json"],
       "outputs": ["demo.gif"]
     },
+    "@podkit/gpod-testing#test:integration": {
+      "dependsOn": ["build", "generate-templates"],
+      "inputs": ["src/**"],
+      "outputs": []
+    },
+    "@podkit/gpod-testing#generate-templates": {
+      "dependsOn": [],
+      "inputs": [
+        "scripts/generate-templates.ts",
+        "src/templates.ts",
+        "src/test-ipod.ts",
+        "src/gpod-tool.ts",
+        "$TURBO_ROOT$/bin/gpod-tool"
+      ],
+      "outputs": ["templates/**"],
+      "cache": true
+    },
     "@podkit/ipod-db#generate-fixtures": {
-      "dependsOn": ["^build"],
+      "dependsOn": ["^build", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["fixtures/generate.ts"],
       "outputs": ["fixtures/databases/**"],
       "cache": true
@@ -104,7 +122,7 @@
       "outputs": []
     },
     "@podkit/ipod-db#test:integration": {
-      "dependsOn": ["build", "generate-fixtures"],
+      "dependsOn": ["build", "generate-fixtures", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["src/**", "__tests__/**"],
       "outputs": []
     },

@@ -45,6 +45,9 @@ export {
   TEST_FIREWIRE_GUID,
 } from './test-ipod';
 
+// Template internals (exported for tests / introspection)
+export { TEMPLATE_MODELS, templatesDir, templatePath } from './templates';
+
 // Low-level gpod-tool wrapper (for advanced use)
 export * as gpodTool from './gpod-tool';
 export { GpodToolError, isGpodToolAvailable, getGpodToolVersion } from './gpod-tool';

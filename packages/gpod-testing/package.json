@@ -18,11 +18,12 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "generate-templates": "bun run scripts/generate-templates.ts",
     "test": "true",
     "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No unit tests found'; fi",
     "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No integration tests found'; fi",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist templates"
   },
   "devDependencies": {
     "@types/bun": "latest"
