@@ -137,8 +137,38 @@ cd packages/e2e-tests && bun run cleanup:docker
 
 ```bash
 mise trust             # Trust mise config (first time only)
+mise install           # Pin to the bun version in mise.toml
 mise run tools:build   # Build gpod-tool CLI
 ```
+
+### Preflight checks
+
+Each package that has integration tests ships a `bunfig.toml` and a small `test/` directory:
+
+```
+packages/<pkg>/
+  bunfig.toml                    # [test] preload + pathIgnorePatterns
+  test/preload.ts                # smart loader: only fires preflight when an integration test is in argv
+  test/integration-preflight.ts  # actual dep assertions (gpod-tool, libgpod-node binding, ffmpeg, fixtures)
+```
+
+**Behavior:**
+
+- `bun test` (bare) and `bun run test:unit` honour `pathIgnorePatterns` and skip `*.integration.test.ts` files entirely — unit-only iteration works without libgpod-node or gpod-tool installed.
+- `bun run test:integration` clears the ignore (`--path-ignore-patterns=`) and filters to `.integration.` substring. The preload sees `.integration.` in argv, imports `integration-preflight.ts`, and that file throws if any required system dep is missing. **No silent skips.**
+- The preload also fires for direct invocations like `bun test src/foo.integration.test.ts`, so you cannot bypass dep checks by calling bun directly.
+
+**Adding a new integration test in a package without these files yet:** add `bunfig.toml`, `test/preload.ts`, `test/integration-preflight.ts` (copy from another package), and update `package.json scripts.test:unit` / `test:integration` to the standard form.
+
+### Diagnosing environment issues
+
+When integration tests pass but `podkit sync` produces no tracks (or similar silent failures), run the diagnostic suite against a virtual iPod:
+
+```bash
+node packages/podkit-cli/dist/main.js doctor --device <mount> --json
+```
+
+Particularly relevant checks: `codec-encoders` (audio encoders for the configured preference stack) and `video-encoder` (libx264 / h264_videotoolbox availability). The `doctor-system.e2e.test.ts` suite asserts both pass on every supported platform — Linux VMs especially, where macOS-only paths historically slipped through.
 
 ## Working in Git Worktrees
 
@@ -147,10 +177,11 @@ When working in a git worktree (e.g., `.claude/worktrees/`), you must run these 
 ```bash
 bun install            # Install dependencies (worktree has its own node_modules)
 mise trust             # Trust mise config for this worktree
+mise install           # Pull pinned bun version into this worktree
 mise run tools:build   # Build gpod-tool (needed for iPod database tests)
 ```
 
-Without these steps, integration and E2E tests that use `@podkit/gpod-testing` will fail with "Missing iTunesDB file" errors because `gpod-tool` won't be in PATH.
+Without these steps, integration tests will fail at preload time with a clear "Missing required test dependency" message naming the missing tool. That's the preflight system doing its job — fix the environment, don't suppress the error.
 
 ## Writing Tests with iPod Databases
 
