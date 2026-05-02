@@ -16,11 +16,9 @@
  * Run: mise run tools:build
  */
 
-import { describe, it, expect, afterEach } from 'bun:test';
-import { writeFile, rm, mkdir, readFile } from 'node:fs/promises';
+import { describe, it, expect } from 'bun:test';
+import { writeFile, readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { withTestIpod } from '@podkit/gpod-testing';
@@ -37,31 +35,10 @@ const FIXTURES_PATH = join(__dirname, '..', '..', '..', '..', 'test', 'fixtures'
 const COVER_ALBUM_A = join(FIXTURES_PATH, 'goldberg-selections', 'cover.jpg');
 const COVER_ALBUM_B = join(FIXTURES_PATH, 'synthetic-tests', 'cover.jpg');
 
+// Image files are written into the per-test iPod directory (`ipod.path`) which
+// is created and cleaned up by withTestIpod. See sibling artwork.integration
+// .test.ts for the rationale on avoiding describe-scoped tempDir state.
 describe('libgpod artwork deduplication (TASK-037)', () => {
-  // Temp directory for test images
-  let tempDir: string | null = null;
-
-  // Create temp directory for test images
-  async function getTempDir(): Promise<string> {
-    if (tempDir === null) {
-      tempDir = join(tmpdir(), `libgpod-dedup-test-${randomUUID()}`);
-      await mkdir(tempDir, { recursive: true });
-    }
-    return tempDir;
-  }
-
-  // Cleanup temp directory after each test
-  afterEach(async () => {
-    if (tempDir !== null) {
-      try {
-        await rm(tempDir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-      tempDir = null;
-    }
-  });
-
   // ============================================================================
   // Scenario 1: Single album with identical artwork on all tracks
   // ============================================================================
@@ -74,7 +51,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
         const db = Database.openSync(ipod.path);
 
         // Create a test JPEG image
-        const dir = await getTempDir();
+        const dir = ipod.path;
         const imagePath = join(dir, 'cover-a.jpg');
         await writeFile(imagePath, createMinimalJpeg());
 
@@ -120,7 +97,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
     it('persists artwork state after database reopen', async () => {
       await withTestIpod(async (ipod) => {
         // Create a test image
-        const dir = await getTempDir();
+        const dir = ipod.path;
         const imagePath = join(dir, 'cover.jpg');
         await writeFile(imagePath, createMinimalJpeg());
 
@@ -265,7 +242,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const dir = await getTempDir();
+        const dir = ipod.path;
         const imagePath = join(dir, 'cover.jpg');
         await writeFile(imagePath, createMinimalJpeg());
 
@@ -318,7 +295,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
         const db = Database.openSync(ipod.path);
 
         // Create a single test image
-        const dir = await getTempDir();
+        const dir = ipod.path;
         const imagePath = join(dir, 'shared-cover.jpg');
         await writeFile(imagePath, createMinimalJpeg());
 
@@ -495,7 +472,7 @@ describe('libgpod artwork deduplication (TASK-037)', () => {
       await withTestIpod(async (ipod) => {
         const db = Database.openSync(ipod.path);
 
-        const dir = await getTempDir();
+        const dir = ipod.path;
         const imagePath = join(dir, 'cover.jpg');
         await writeFile(imagePath, createMinimalJpeg());
 

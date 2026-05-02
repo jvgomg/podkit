@@ -8,48 +8,26 @@
  * Run: mise run tools:build
  */
 
-import { describe, it, expect, afterEach } from 'bun:test';
-import { writeFile, rm, mkdir } from 'node:fs/promises';
+import { describe, it, expect } from 'bun:test';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { randomUUID } from 'node:crypto';
 
 import { withTestIpod, Database, LibgpodError, TEST_MP3_PATH } from './helpers/test-setup';
 
 import { createMinimalJpeg, createMinimalPng } from './fixtures/images';
 
 // Tests for artwork functionality (setTrackArtwork / setTrackThumbnails)
+// Image files are written into the per-test iPod directory (`ipod.path`) which
+// is created and cleaned up by withTestIpod. Sharing a describe-scoped tempDir
+// is unsafe under concurrent test execution (afterEach can rm it while another
+// test still has files open inside it).
 describe('libgpod-node artwork (setTrackArtwork)', () => {
-  // Temp directory for test images
-  let tempDir: string | null = null;
-
-  // Create temp directory for test images
-  async function getTempDir(): Promise<string> {
-    if (tempDir === null) {
-      tempDir = join(tmpdir(), `libgpod-test-${randomUUID()}`);
-      await mkdir(tempDir, { recursive: true });
-    }
-    return tempDir;
-  }
-
-  // Cleanup temp directory after each test
-  afterEach(async () => {
-    if (tempDir !== null) {
-      try {
-        await rm(tempDir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-      tempDir = null;
-    }
-  });
-
   it('can set artwork for a track from JPEG file', async () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
       // Create a test JPEG image
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'test-artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -88,7 +66,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
       const db = Database.openSync(ipod.path);
 
       // Create a test PNG image
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'test-artwork.png');
       await writeFile(imagePath, createMinimalPng());
 
@@ -140,7 +118,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
       const db = Database.openSync(ipod.path);
 
       // Create test images
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath1 = join(dir, 'artwork1.jpg');
       const imagePath2 = join(dir, 'artwork2.jpg');
       await writeFile(imagePath1, createMinimalJpeg());
@@ -207,7 +185,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
     await withTestIpod(async (ipod) => {
       const db = await Database.open(ipod.path);
 
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -225,7 +203,7 @@ describe('libgpod-node artwork (setTrackArtwork)', () => {
       const db = Database.openSync(ipod.path);
 
       // Create test image
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -306,42 +284,34 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      // Create a test JPEG image
-      const dir = join(tmpdir(), `libgpod-test-${randomUUID()}`);
-      await mkdir(dir, { recursive: true });
-      const imagePath = join(dir, 'test-artwork.jpg');
+      const imagePath = join(ipod.path, 'test-artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
-      try {
-        // Add tracks and set artwork
-        const handle1 = db.addTrack({ title: 'Track 1' });
-        const handle2 = db.addTrack({ title: 'Track 2' });
-        db.addTrack({ title: 'Track 3 (no artwork)' });
+      // Add tracks and set artwork
+      const handle1 = db.addTrack({ title: 'Track 1' });
+      const handle2 = db.addTrack({ title: 'Track 2' });
+      db.addTrack({ title: 'Track 3 (no artwork)' });
 
-        // Set artwork for first two tracks
-        db.setTrackArtwork(handle1, imagePath);
-        db.setTrackArtwork(handle2, imagePath);
+      // Set artwork for first two tracks
+      db.setTrackArtwork(handle1, imagePath);
+      db.setTrackArtwork(handle2, imagePath);
 
-        // Save to ensure mhii_link values are assigned
-        db.saveSync();
+      // Save to ensure mhii_link values are assigned
+      db.saveSync();
 
-        // Get unique artwork IDs
-        const artworkIds = db.getUniqueArtworkIds();
+      // Get unique artwork IDs
+      const artworkIds = db.getUniqueArtworkIds();
 
-        // Should have at least one unique artwork ID
-        // (tracks with same artwork may share the same mhii_link)
-        expect(artworkIds.length).toBeGreaterThanOrEqual(1);
+      // Should have at least one unique artwork ID
+      // (tracks with same artwork may share the same mhii_link)
+      expect(artworkIds.length).toBeGreaterThanOrEqual(1);
 
-        // All IDs should be non-zero
-        for (const id of artworkIds) {
-          expect(id).toBeGreaterThan(0);
-        }
-
-        db.close();
-      } finally {
-        // Cleanup
-        await rm(dir, { recursive: true, force: true });
+      // All IDs should be non-zero
+      for (const id of artworkIds) {
+        expect(id).toBeGreaterThan(0);
       }
+
+      db.close();
     });
   });
 
@@ -349,42 +319,34 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      // Create test images
-      const dir = join(tmpdir(), `libgpod-test-${randomUUID()}`);
-      await mkdir(dir, { recursive: true });
-      const imagePath1 = join(dir, 'artwork1.jpg');
-      const imagePath2 = join(dir, 'artwork2.jpg');
+      const imagePath1 = join(ipod.path, 'artwork1.jpg');
+      const imagePath2 = join(ipod.path, 'artwork2.jpg');
       await writeFile(imagePath1, createMinimalJpeg());
       await writeFile(imagePath2, createMinimalJpeg());
 
-      try {
-        // Add multiple tracks with same artwork
-        const handle1 = db.addTrack({ title: 'Track 1' });
-        const handle2 = db.addTrack({ title: 'Track 2' });
-        const handle3 = db.addTrack({ title: 'Track 3' });
-        db.addTrack({ title: 'Track 4' }); // intentionally no artwork
+      // Add multiple tracks with same artwork
+      const handle1 = db.addTrack({ title: 'Track 1' });
+      const handle2 = db.addTrack({ title: 'Track 2' });
+      const handle3 = db.addTrack({ title: 'Track 3' });
+      db.addTrack({ title: 'Track 4' }); // intentionally no artwork
 
-        // Set same artwork for tracks 1 and 2, different for track 3
-        db.setTrackArtwork(handle1, imagePath1);
-        db.setTrackArtwork(handle2, imagePath1);
-        db.setTrackArtwork(handle3, imagePath2);
-        // track4 gets no artwork
+      // Set same artwork for tracks 1 and 2, different for track 3
+      db.setTrackArtwork(handle1, imagePath1);
+      db.setTrackArtwork(handle2, imagePath1);
+      db.setTrackArtwork(handle3, imagePath2);
+      // track4 gets no artwork
 
-        // Save to ensure mhii_link values are assigned
-        db.saveSync();
+      // Save to ensure mhii_link values are assigned
+      db.saveSync();
 
-        // Get unique artwork IDs
-        const artworkIds = db.getUniqueArtworkIds();
+      // Get unique artwork IDs
+      const artworkIds = db.getUniqueArtworkIds();
 
-        // The IDs should be unique (no duplicates)
-        const uniqueSet = new Set(artworkIds);
-        expect(artworkIds.length).toBe(uniqueSet.size);
+      // The IDs should be unique (no duplicates)
+      const uniqueSet = new Set(artworkIds);
+      expect(artworkIds.length).toBe(uniqueSet.size);
 
-        db.close();
-      } finally {
-        // Cleanup
-        await rm(dir, { recursive: true, force: true });
-      }
+      db.close();
     });
   });
 
@@ -403,30 +365,6 @@ describe('libgpod-node artwork IDs (getUniqueArtworkIds)', () => {
 // ============================================================================
 
 describe('libgpod-node artwork management APIs', () => {
-  // Temp directory for test images
-  let tempDir: string | null = null;
-
-  // Create temp directory for test images
-  async function getTempDir(): Promise<string> {
-    if (tempDir === null) {
-      tempDir = join(tmpdir(), `libgpod-artwork-test-${randomUUID()}`);
-      await mkdir(tempDir, { recursive: true });
-    }
-    return tempDir;
-  }
-
-  // Cleanup temp directory after each test
-  afterEach(async () => {
-    if (tempDir !== null) {
-      try {
-        await rm(tempDir, { recursive: true, force: true });
-      } catch {
-        // Ignore cleanup errors
-      }
-      tempDir = null;
-    }
-  });
-
   // -------------------------------------------------------------------------
   // hasTrackArtwork tests
   // -------------------------------------------------------------------------
@@ -448,7 +386,7 @@ describe('libgpod-node artwork management APIs', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'test.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -470,7 +408,7 @@ describe('libgpod-node artwork management APIs', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -512,7 +450,7 @@ describe('libgpod-node artwork management APIs', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'artwork.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
@@ -623,7 +561,7 @@ describe('libgpod-node artwork management APIs', () => {
     await withTestIpod(async (ipod) => {
       const db = Database.openSync(ipod.path);
 
-      const dir = await getTempDir();
+      const dir = ipod.path;
       const imagePath = join(dir, 'original.jpg');
       await writeFile(imagePath, createMinimalJpeg());
 
