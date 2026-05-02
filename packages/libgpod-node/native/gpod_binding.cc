@@ -298,13 +298,21 @@ Napi::Value ReadSysInfoExtendedFromUsb(const Napi::CallbackInfo& info) {
 
     ReadSysInfoExtendedFn fn = resolve_sysinfo_fn();
     if (!fn) {
-        // libgpod was built without libusb support
+        Napi::Error::New(env,
+            "libgpod was compiled without USB support (libusb not linked)")
+            .ThrowAsJavaScriptException();
         return env.Null();
     }
 
     gchar *xml = fn(busNumber, deviceAddress);
 
     if (xml == nullptr) {
+        std::string msg = "USB control transfer failed (bus " +
+            std::to_string(busNumber) + ", device " +
+            std::to_string(deviceAddress) +
+            ") — device may not support SysInfoExtended over USB, "
+            "or insufficient USB permissions";
+        Napi::Error::New(env, msg).ThrowAsJavaScriptException();
         return env.Null();
     }
 

@@ -788,12 +788,10 @@ async function runRepair(
   }
 
   if (!dryRun) {
-    out.print(`Repairing ${check.id} for ${db.trackCount.toLocaleString()} tracks...`);
+    out.print(`Repairing ${check.id}: ${repair.description}...`);
     out.newline();
   } else {
-    out.print(
-      `Dry run: checking ${check.id} repair for ${db.trackCount.toLocaleString()} tracks...`
-    );
+    out.print(`Dry run: ${repair.description}...`);
     out.newline();
   }
 
@@ -808,12 +806,17 @@ async function runRepair(
         signal: shutdown.signal,
         onProgress: (progress) => {
           if (!out.isText) return;
-          const p = progress as Record<string, number>;
-          if (p.current !== undefined && p.total !== undefined) {
+          const p = progress as Record<string, unknown>;
+          if (typeof p.current === 'number' && typeof p.total === 'number') {
             const pct = Math.round((p.current / p.total) * 100);
-            process.stderr.write(
-              `\r  ${p.current} / ${p.total}  (${pct}%)  Matched: ${p.matched ?? 0}  No source: ${p.noSource ?? 0}  No artwork: ${p.noArtwork ?? 0}`
-            );
+            let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
+            // Append check-specific counters when present
+            if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
+            if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
+            if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
+            process.stderr.write(line);
+          } else if (typeof p.message === 'string') {
+            process.stderr.write(`\r  ${p.message}`);
           }
         },
       }
@@ -926,10 +929,10 @@ async function runMassStorageRepair(
   const contentPaths = resolveMassStorageContentPaths(deviceConfig, config.deviceDefaults, core);
 
   if (!dryRun) {
-    out.print(`Repairing ${check.id} on ${getDeviceTypeDisplayName(deviceConfig.type)}...`);
+    out.print(`Repairing ${check.id}: ${repair.description}...`);
     out.newline();
   } else {
-    out.print(`Dry run: checking ${check.id} repair...`);
+    out.print(`Dry run: ${repair.description}...`);
     out.newline();
   }
 

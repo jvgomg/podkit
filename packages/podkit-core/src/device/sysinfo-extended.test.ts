@@ -230,6 +230,22 @@ describe('ensureSysInfoExtended', () => {
     expect(result.error).toBe('Could not read device identity from USB');
   });
 
+  it('surfaces error message when USB read throws', async () => {
+    createIpodStructure(tmpDir);
+    const mockReader: ReadFromUsbFn = () => {
+      throw new Error(
+        'USB control transfer failed (bus 1, device 4) — device may not support SysInfoExtended over USB, or insufficient USB permissions'
+      );
+    };
+
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+
+    expect(result.present).toBe(false);
+    expect(result.source).toBe('unavailable');
+    expect(result.error).toContain('USB control transfer failed');
+    expect(result.error).toContain('bus 1, device 4');
+  });
+
   it('returns unavailable when no reader is provided and USB read fails', async () => {
     createIpodStructure(tmpDir);
 

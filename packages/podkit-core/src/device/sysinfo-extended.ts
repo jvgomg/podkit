@@ -195,7 +195,16 @@ export async function ensureSysInfoExtended(
   }
 
   // Step 3: Read from USB
-  const xml = reader(usbAddress.busNumber, usbAddress.deviceAddress);
+  let xml: string | null;
+  try {
+    xml = reader(usbAddress.busNumber, usbAddress.deviceAddress);
+  } catch (err) {
+    return {
+      present: false,
+      source: 'unavailable',
+      error: err instanceof Error ? err.message : 'Could not read device identity from USB',
+    };
+  }
   if (!xml) {
     return {
       present: false,
