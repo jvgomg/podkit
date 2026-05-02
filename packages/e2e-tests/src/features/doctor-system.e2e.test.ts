@@ -40,7 +40,9 @@ describe('doctor: system checks', () => {
         throw new Error(`doctor --json failed to produce JSON: ${result.result.stderr}`);
       }
       const videoEncoder = result.json.checks.find((c) => c.id === 'video-encoder');
-      expect(videoEncoder).toBeDefined();
+      if (!videoEncoder) {
+        throw new Error('doctor output missing video-encoder check');
+      }
       // Pass means a usable encoder is present (libx264 universally; or
       // h264_videotoolbox on macOS as a bonus). Warn is acceptable on macOS
       // when only VideoToolbox is present. Fail means no encoder at all —
