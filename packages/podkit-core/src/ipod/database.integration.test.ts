@@ -9,26 +9,15 @@
  * - libgpod-node native bindings: `bun run build`
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
-import { withTestIpod, isGpodToolAvailable } from '@podkit/gpod-testing';
+import { describe, it, expect } from 'bun:test';
+import { withTestIpod } from '@podkit/gpod-testing';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IpodDatabase } from './database.js';
 import { IpodError } from './errors.js';
-import { requireGpodTool, requireLibgpod } from '../__tests__/helpers/test-setup.js';
-
-// Fail early if dependencies are not available
-requireGpodTool();
-requireLibgpod();
 
 describe('IpodDatabase integration', () => {
-  beforeAll(async () => {
-    if (!(await isGpodToolAvailable())) {
-      throw new Error('gpod-tool not available. Run `mise run tools:build` first.');
-    }
-  });
-
   describe('open()', () => {
     it('opens database from mount point', async () => {
       await withTestIpod(async (testIpod) => {

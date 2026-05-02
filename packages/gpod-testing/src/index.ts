@@ -51,3 +51,7 @@ export { TEMPLATE_MODELS, templatesDir, templatePath } from './templates';
 // Low-level gpod-tool wrapper (for advanced use)
 export * as gpodTool from './gpod-tool';
 export { GpodToolError, isGpodToolAvailable, getGpodToolVersion } from './gpod-tool';
+
+// Preflight assertions for integration test runs.
+// Wire into a package's `test:integration` script via `bun test --preload`.
+export { requireFFmpeg, requireGpodTool, failMissingDep } from './preflight';

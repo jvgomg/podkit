@@ -19,10 +19,6 @@ import {
   TranscodeError,
 } from './ffmpeg.js';
 import type { TranscodeProgress } from './types.js';
-import { requireFFmpeg } from '../__tests__/helpers/test-setup.js';
-
-// Fail early if FFmpeg is not available
-requireFFmpeg();
 
 let transcoder: FFmpegTranscoder;
 let testDir: string;

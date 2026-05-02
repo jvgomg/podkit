@@ -25,7 +25,7 @@
     "prebuildify": "prebuildify --napi --strip",
     "clean": "rm -rf dist build",
     "test": "true",
-    "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No unit tests found'; fi",
+    "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "gpod-tests-parallel",
     "typecheck": "tsc --noEmit",
     "rebuild": "node-gyp rebuild"

@@ -17,7 +17,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, writeFileSync, mkdirSync } from 'node:fs';
 
-import { withTestIpod, isGpodToolAvailable } from '@podkit/gpod-testing';
+import { withTestIpod } from '@podkit/gpod-testing';
 
 // Import test-setup to trigger early native binding availability check
 import './helpers/test-setup';
@@ -119,12 +119,7 @@ function ensurePhotosDir(mountpoint: string): void {
 }
 
 describe('PhotoDatabase', () => {
-  beforeAll(async () => {
-    // Check prerequisites
-    if (!(await isGpodToolAvailable())) {
-      throw new Error('gpod-tool not available. Run `mise run tools:build` to build it.');
-    }
-
+  beforeAll(() => {
     // Create test fixtures directory and image if needed
     if (!existsSync(TEST_IMAGES_DIR)) {
       mkdirSync(TEST_IMAGES_DIR, { recursive: true });

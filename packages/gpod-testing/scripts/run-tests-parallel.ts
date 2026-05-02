@@ -81,10 +81,18 @@ function runFile(file: string, timeout: number): Promise<TestResult> {
   return new Promise((resolve) => {
     const start = Date.now();
     let output = '';
-    const proc = spawn('bun', ['test', '--timeout', String(timeout), file], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      env: process.env,
-    });
+    // Prefix with `./` so bun treats the arg as a file path (not a substring
+    // filter) and override bunfig's pathIgnorePatterns so integration files
+    // aren't excluded.
+    const filePath = file.startsWith('./') || file.startsWith('/') ? file : `./${file}`;
+    const proc = spawn(
+      'bun',
+      ['test', '--timeout', String(timeout), '--path-ignore-patterns=', filePath],
+      {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: process.env,
+      }
+    );
     proc.stdout.on('data', (d) => (output += d.toString()));
     proc.stderr.on('data', (d) => (output += d.toString()));
     proc.on('close', (code) => {

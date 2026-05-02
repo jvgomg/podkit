@@ -1,12 +1,12 @@
-# Lima VM: Debian 12 (Bookworm)
+# Lima VM: Debian 12 (Bookworm) — Linux test environment (glibc)
 #
-# Used for cross-platform testing of podkit on Debian/Ubuntu-like systems.
+# Purpose: run the podkit test suite on a general-purpose Linux/glibc system.
 # Matches the environment of Homebrew Linux users.
 #
 # Usage:
-#   limactl start tools/lima/debian.yaml --name=podkit-debian
-#   limactl shell podkit-debian
-#   # Inside VM: cd /Users/james/Development/projects/podkit && bun install && bun run test
+#   limactl start tools/lima/debian.yaml --name=linux-tests-debian
+#   limactl shell linux-tests-debian
+#   # Or use the wrapper: mise run test:linux:debian
 
 images:
   - location: 'https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-generic-arm64.qcow2'

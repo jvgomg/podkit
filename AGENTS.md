@@ -46,7 +46,7 @@ bun run test:unit                # Run unit tests only
 bun run test:integration         # Run integration tests only
 bun run test:e2e                 # Run E2E tests (dummy iPod)
 bun run test --filter podkit-core # Run tests for specific package
-mise run lima:test                # Run tests on Debian + Alpine VMs
+mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 
 # Build
 bun run build                    # Build all packages for Node.js

@@ -1,5 +1,5 @@
 [tools]
-bun = "1.3.9"
+bun = "1.3.13"
 rust = "latest"
 
 [env]
@@ -45,28 +45,36 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 """
 
 # ---------------------------------------------------------------------------
-# Lima VMs (cross-platform testing on Debian + Alpine)
+# Linux test VMs (Lima — cross-platform testing on Debian + Alpine)
 # ---------------------------------------------------------------------------
 
-[tasks."lima:test"]
+[tasks."test:linux"]
 description = "Run test suite on both Linux VMs (Debian + Alpine)"
 run = "tools/lima/run-tests.sh all"
 
-[tasks."lima:test:debian"]
-description = "Run test suite on Debian VM"
+[tasks."test:linux:debian"]
+description = "Run test suite on Debian VM (glibc — general Linux env)"
 run = "tools/lima/run-tests.sh debian"
 
-[tasks."lima:test:alpine"]
-description = "Run test suite on Alpine VM"
+[tasks."test:linux:alpine"]
+description = "Run test suite on Alpine VM (musl — Docker image parity)"
 run = "tools/lima/run-tests.sh alpine"
 
-[tasks."lima:stop"]
-description = "Stop Lima VMs (preserves state for fast restart)"
-run = "limactl stop podkit-debian 2>/dev/null; limactl stop podkit-alpine 2>/dev/null; echo Done."
+[tasks."test:linux:stop"]
+description = "Stop Linux test VMs (preserves state and turbo cache)"
+run = "limactl stop linux-tests-debian 2>/dev/null; limactl stop linux-tests-alpine 2>/dev/null; echo Done."
 
-[tasks."lima:destroy"]
-description = "Delete Lima VMs entirely"
-run = "limactl delete podkit-debian --force 2>/dev/null; limactl delete podkit-alpine --force 2>/dev/null; echo Done."
+[tasks."test:linux:destroy"]
+description = "Delete Linux test VMs entirely (wipes turbo cache too)"
+run = "limactl delete linux-tests-debian --force 2>/dev/null; limactl delete linux-tests-alpine --force 2>/dev/null; echo Done."
+
+[tasks."test:linux:cache:clear"]
+description = "Clear turbo cache inside Linux test VMs without deleting them"
+run = """
+limactl shell linux-tests-debian -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+limactl shell linux-tests-alpine -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+echo Done.
+"""
 
 # ---------------------------------------------------------------------------
 # Virtual iPod (Lima VM + server)
