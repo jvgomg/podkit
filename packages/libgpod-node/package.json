@@ -26,7 +26,7 @@
     "clean": "rm -rf dist build",
     "test": "true",
     "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No unit tests found'; fi",
-    "test:integration": "FILES=$(find src -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No integration tests found'; fi",
+    "test:integration": "gpod-tests-parallel",
     "typecheck": "tsc --noEmit",
     "rebuild": "node-gyp rebuild"
   },

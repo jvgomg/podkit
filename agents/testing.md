@@ -175,6 +175,30 @@ Test setup uses `gpod-tool` (an independent C program built from `tools/gpod-too
 
 **Do not use `IpodDatabase` to seed test fixtures.** That would create circular validation: a libgpod-node bug where its writes are only readable by itself would still pass the test, because both sides of the round-trip use the same code. Setup with one tool, exercise with another, verify cross-tool compatibility.
 
+### Parallel integration test execution
+
+Packages with many integration test files (`@podkit/libgpod-node`, `@podkit/core`) use the `gpod-tests-parallel` runner from `@podkit/gpod-testing` to run files in parallel subprocesses.
+
+Direct invocation gets a big speedup:
+
+```bash
+cd packages/libgpod-node && bun run test:integration   # ~12s (was ~25s serial)
+cd packages/podkit-core && bun run test:integration    # ~5s (was ~18s serial)
+```
+
+When run via `bun turbo run test:integration` across all packages, total wall-clock barely changes — turbo already runs packages in parallel and CPU is saturated. The runner's value is the **dev-iteration loop on a single package**, not full-suite wall-clock.
+
+**Why files, not in-process `--concurrent`:** libgpod's native binding has non-thread-safe global state. `bun test --concurrent` collides — observed 4 failures. File-level subprocess isolation (one `bun test` per file) sidesteps this entirely.
+
+**Why not all packages:** packages with few files (`podkit-cli` 3 files, `gpod-testing` 2 files) regress under parallelism — CPU contention overhead exceeds the parallelism gain. The runner is opt-in per package via `package.json scripts.test:integration`.
+
+**Tuning:**
+
+```bash
+TEST_CONCURRENCY=4 bun run test:integration   # lower if oversubscribed
+TEST_TIMEOUT=60000 bun run test:integration   # bump if tests are CPU-starved
+```
+
 ### Adding multiple tracks: use `addTracks`, not a loop of `addTrack`
 
 Each call to `ipod.addTrack(...)` spawns a `gpod-tool` subprocess (~150ms). For tests that need more than one track of setup state, use the bulk helper:

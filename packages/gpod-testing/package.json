@@ -13,8 +13,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "scripts"
   ],
+  "bin": {
+    "gpod-tests-parallel": "./scripts/run-tests-parallel.ts"
+  },
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",

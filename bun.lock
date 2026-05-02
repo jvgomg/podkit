@@ -65,6 +65,9 @@
     "packages/gpod-testing": {
       "name": "@podkit/gpod-testing",
       "version": "0.0.0",
+      "bin": {
+        "gpod-tests-parallel": "./scripts/run-tests-parallel.ts",
+      },
       "devDependencies": {
         "@types/bun": "latest",
       },
