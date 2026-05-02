@@ -25,7 +25,7 @@ describe('parseSystemProfilerUsbData', () => {
             {
               _name: 'iPod',
               vendor_id: 'apple_vendor_id',
-              product_id: '0x1209',
+              product_id: '0x1261',
             },
           ],
         },
@@ -35,7 +35,7 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      usb: { vendorId: '0x05ac', productId: '0x1261' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',
@@ -109,7 +109,7 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.usb.productId).toBe('0x120a');
-    expect(result[0]!.model!.displayName).toBe('iPod Classic 7th generation');
+    expect(result[0]!.model!.displayName).toBe('iPod nano 1st generation');
   });
 
   it('extracts disk identifier from Media subtree', () => {
@@ -403,12 +403,12 @@ describe('parseLocationId', () => {
 
 describe('parseSysfsUsbDevices', () => {
   it('finds a single iPod', () => {
-    const devices = [{ idVendor: '05ac', idProduct: '1209' }];
+    const devices = [{ idVendor: '05ac', idProduct: '1261' }];
 
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      usb: { vendorId: '0x05ac', productId: '0x1261' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',

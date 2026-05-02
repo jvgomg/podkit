@@ -19,10 +19,10 @@ import type { IpodChecksumType, IpodGenerationId } from './ipod-models.js';
 
 describe('lookupIpodModel', () => {
   test('returns model name for known 0x120x product IDs', () => {
-    expect(lookupIpodModel('0x1209')).toBe('iPod Classic 6th generation');
-    expect(lookupIpodModel('0x120a')).toBe('iPod Classic 7th generation');
     expect(lookupIpodModel('0x1207')).toBe('iPod 5th generation (Video)');
-    expect(lookupIpodModel('0x1205')).toBe('iPod nano 1st generation');
+    expect(lookupIpodModel('0x1209')).toBe('iPod 5th generation (Video)');
+    expect(lookupIpodModel('0x1205')).toBe('iPod mini');
+    expect(lookupIpodModel('0x120a')).toBe('iPod nano 1st generation');
     expect(lookupIpodModel('0x1208')).toBe('iPod nano 3rd generation');
     expect(lookupIpodModel('0x120b')).toBe('iPod nano 4th generation');
     expect(lookupIpodModel('0x120c')).toBe('iPod nano 5th generation');
@@ -58,12 +58,12 @@ describe('lookupIpodModel', () => {
   });
 
   test('normalises input without 0x prefix', () => {
-    expect(lookupIpodModel('1209')).toBe('iPod Classic 6th generation');
+    expect(lookupIpodModel('1209')).toBe('iPod 5th generation (Video)');
     expect(lookupIpodModel('1262')).toBe('iPod nano 3rd generation');
   });
 
   test('normalises uppercase input', () => {
-    expect(lookupIpodModel('0X1209')).toBe('iPod Classic 6th generation');
+    expect(lookupIpodModel('0X1209')).toBe('iPod 5th generation (Video)');
     expect(lookupIpodModel('0X1262')).toBe('iPod nano 3rd generation');
   });
 
@@ -290,16 +290,17 @@ describe('getChecksumType', () => {
     ['nano_6g', 'hashAB'],
     ['touch_4g', 'hashAB'],
 
+    ['nano_7g', 'hashAB'],
+    ['touch_1g', 'hash72'],
+    ['touch_2g', 'hash72'],
+    ['touch_3g', 'hash72'],
+
     // none (unsupported but included for completeness)
     ['shuffle_3g', 'none'],
     ['shuffle_4g', 'none'],
-    ['touch_1g', 'none'],
-    ['touch_2g', 'none'],
-    ['touch_3g', 'none'],
     ['touch_5g', 'none'],
     ['touch_6g', 'none'],
     ['touch_7g', 'none'],
-    ['nano_7g', 'none'],
   ])('%s -> %s', (generation, expectedType) => {
     expect(getChecksumType(generation)).toBe(expectedType);
   });
@@ -309,8 +310,8 @@ describe('getChecksumType', () => {
 
 describe('lookupGenerationByProductId', () => {
   test('returns generation for 0x120x range', () => {
-    expect(lookupGenerationByProductId('0x1209')).toBe('classic_6g');
-    expect(lookupGenerationByProductId('0x120a')).toBe('classic_7g');
+    expect(lookupGenerationByProductId('0x1209')).toBe('video_5g');
+    expect(lookupGenerationByProductId('0x120a')).toBe('nano_1g');
     expect(lookupGenerationByProductId('0x1208')).toBe('nano_3g');
     expect(lookupGenerationByProductId('0x120b')).toBe('nano_4g');
     expect(lookupGenerationByProductId('0x120c')).toBe('nano_5g');
@@ -336,7 +337,7 @@ describe('lookupGenerationByProductId', () => {
   });
 
   test('normalises input without 0x prefix', () => {
-    expect(lookupGenerationByProductId('1209')).toBe('classic_6g');
+    expect(lookupGenerationByProductId('1209')).toBe('video_5g');
   });
 });
 
@@ -507,7 +508,7 @@ describe('resolveIpodModel', () => {
     });
 
     test('resolves Classic 6G', () => {
-      const model = resolveIpodModel({ from: 'usb', productId: '0x1209' });
+      const model = resolveIpodModel({ from: 'usb', productId: '0x1261' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('classic_6g');
       expect(model!.checksumType).toBe('hash58');
@@ -515,7 +516,7 @@ describe('resolveIpodModel', () => {
     });
 
     test('normalises product ID without 0x prefix', () => {
-      const model = resolveIpodModel({ from: 'usb', productId: '1209' });
+      const model = resolveIpodModel({ from: 'usb', productId: '1261' });
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('classic_6g');
     });
@@ -606,7 +607,7 @@ describe('resolveIpodModel', () => {
 
   describe('source field tracks provenance', () => {
     test('USB source has no variant details', () => {
-      const model = resolveIpodModel({ from: 'usb', productId: '0x1209' });
+      const model = resolveIpodModel({ from: 'usb', productId: '0x1261' });
       expect(model!.source).toBe('usb');
       expect(model!.color).toBeUndefined();
       expect(model!.capacityGb).toBeUndefined();
@@ -638,7 +639,7 @@ describe('resolveIpodModel', () => {
     });
 
     test('classic 6G from USB matches classic 6G from SysInfo', () => {
-      const usb = resolveIpodModel({ from: 'usb', productId: '0x1209' });
+      const usb = resolveIpodModel({ from: 'usb', productId: '0x1261' });
       const sysinfo = resolveIpodModel({ from: 'sysinfo', modelNumStr: 'MB029' });
       expect(usb!.generationId).toBe(sysinfo!.generationId);
     });

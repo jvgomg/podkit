@@ -105,7 +105,7 @@ const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
   nano_4g: { id: 'nano_4g', displayName: 'iPod nano (4th Generation)', checksumType: 'hash58' },
   nano_5g: { id: 'nano_5g', displayName: 'iPod nano (5th Generation)', checksumType: 'hash72' },
   nano_6g: { id: 'nano_6g', displayName: 'iPod nano (6th Generation)', checksumType: 'hashAB' },
-  nano_7g: { id: 'nano_7g', displayName: 'iPod nano (7th Generation)', checksumType: 'none' },
+  nano_7g: { id: 'nano_7g', displayName: 'iPod nano (7th Generation)', checksumType: 'hashAB' },
   shuffle_1g: {
     id: 'shuffle_1g',
     displayName: 'iPod shuffle (1st Generation)',
@@ -126,9 +126,9 @@ const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     displayName: 'iPod shuffle (4th Generation)',
     checksumType: 'none',
   },
-  touch_1g: { id: 'touch_1g', displayName: 'iPod touch (1st Generation)', checksumType: 'none' },
-  touch_2g: { id: 'touch_2g', displayName: 'iPod touch (2nd Generation)', checksumType: 'none' },
-  touch_3g: { id: 'touch_3g', displayName: 'iPod touch (3rd Generation)', checksumType: 'none' },
+  touch_1g: { id: 'touch_1g', displayName: 'iPod touch (1st Generation)', checksumType: 'hash72' },
+  touch_2g: { id: 'touch_2g', displayName: 'iPod touch (2nd Generation)', checksumType: 'hash72' },
+  touch_3g: { id: 'touch_3g', displayName: 'iPod touch (3rd Generation)', checksumType: 'hash72' },
   touch_4g: { id: 'touch_4g', displayName: 'iPod touch (4th Generation)', checksumType: 'hashAB' },
   touch_5g: { id: 'touch_5g', displayName: 'iPod touch (5th Generation)', checksumType: 'none' },
   touch_6g: { id: 'touch_6g', displayName: 'iPod touch (6th Generation)', checksumType: 'none' },
@@ -198,15 +198,18 @@ interface UsbProductIdEntry {
 const USB_PRODUCT_IDS: Record<string, UsbProductIdEntry> = {
   // ── iPod Classic (hard disk / iFlash) ───────────────────────────────────
   '0x1207': { generation: 'video_5g', displayName: 'iPod 5th generation (Video)' },
-  '0x1209': { generation: 'classic_6g', displayName: 'iPod Classic 6th generation' },
-  '0x120a': { generation: 'classic_7g', displayName: 'iPod Classic 7th generation' },
+  '0x1209': { generation: 'video_5g', displayName: 'iPod 5th generation (Video)' },
 
   // ── iPod mini ───────────────────────────────────────────────────────────
+  // 0x1205 covers both mini 1G and 2G per linux-usb.org — mapped to mini_1g as
+  // the two are functionally identical for podkit (same capabilities, checksumType: none).
+  // Distinguish via SysInfo ModelNumStr or SCSI inquiry when precision is needed.
   '0x1202': { generation: 'mini_1g', displayName: 'iPod mini 1st generation' },
   '0x1204': { generation: 'mini_2g', displayName: 'iPod mini 2nd generation' },
+  '0x1205': { generation: 'mini_1g', displayName: 'iPod mini' },
 
   // ── iPod nano (0x120x range) ────────────────────────────────────────────
-  '0x1205': { generation: 'nano_1g', displayName: 'iPod nano 1st generation' },
+  '0x120a': { generation: 'nano_1g', displayName: 'iPod nano 1st generation' },
   '0x1206': { generation: 'nano_2g', displayName: 'iPod nano 2nd generation' },
   '0x1208': { generation: 'nano_3g', displayName: 'iPod nano 3rd generation' },
   '0x120b': { generation: 'nano_4g', displayName: 'iPod nano 4th generation' },
@@ -812,11 +815,6 @@ const MODEL_NUMBERS: Record<string, ModelEntry> = {
     capacityGb: 16,
     color: 'Black',
   },
-  B867: {
-    displayName: 'iPod nano 4GB (4th Generation)',
-    generation: 'nano_4g',
-    capacityGb: 4,
-  },
 
   // ── iPod nano (5th Generation) ──────────────────────────────────────────
   C027: {
@@ -1009,10 +1007,98 @@ const MODEL_NUMBERS: Record<string, ModelEntry> = {
   },
 
   // ── iPod nano (7th Generation) ──────────────────────────────────────────
-  D477: {
-    displayName: 'iPod nano 16GB (7th Generation)',
+  // 2012 launch (all 16GB, hardware model A1446)
+  D475: {
+    displayName: 'iPod nano 16GB Pink (7th Generation)',
     generation: 'nano_7g',
     capacityGb: 16,
+    color: 'Pink',
+  },
+  D476: {
+    displayName: 'iPod nano 16GB Yellow (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Yellow',
+  },
+  D477: {
+    displayName: 'iPod nano 16GB Blue (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Blue',
+  },
+  D478: {
+    displayName: 'iPod nano 16GB Green (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Green',
+  },
+  D479: {
+    displayName: 'iPod nano 16GB Purple (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Purple',
+  },
+  D480: {
+    displayName: 'iPod nano 16GB Silver (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Silver',
+  },
+  D481: {
+    displayName: 'iPod nano 16GB Slate (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Slate',
+  },
+  D744: {
+    displayName: 'iPod nano 16GB Red (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Red',
+  },
+  // 2013 update
+  E971: {
+    displayName: 'iPod nano 16GB Space Gray (7th Generation)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Space Gray',
+  },
+  // 2015 refresh (all 16GB, same A1446 hardware)
+  KN02: {
+    displayName: 'iPod nano 16GB Blue (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Blue',
+  },
+  KN22: {
+    displayName: 'iPod nano 16GB Silver (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Silver',
+  },
+  KN52: {
+    displayName: 'iPod nano 16GB Space Gray (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Space Gray',
+  },
+  KN72: {
+    displayName: 'iPod nano 16GB Red (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Red',
+  },
+  KMV2: {
+    displayName: 'iPod nano 16GB Pink (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Pink',
+  },
+  KMX2: {
+    displayName: 'iPod nano 16GB Gold (7th Generation, 2015)',
+    generation: 'nano_7g',
+    capacityGb: 16,
+    color: 'Gold',
   },
 
   // ── iPod shuffle (1st Generation) ───────────────────────────────────────
@@ -1131,6 +1217,12 @@ const MODEL_NUMBERS: Record<string, ModelEntry> = {
     generation: 'shuffle_3g',
     capacityGb: 4,
     color: 'Stainless',
+  },
+  B867: {
+    displayName: 'iPod shuffle 4GB Silver (3rd Generation)',
+    generation: 'shuffle_3g',
+    capacityGb: 4,
+    color: 'Silver',
   },
   C307: {
     displayName: 'iPod shuffle 4GB Green (3rd Generation)',
@@ -1252,12 +1344,31 @@ const MODEL_NUMBERS: Record<string, ModelEntry> = {
 // Maps the last 3 characters of an iPod serial number to model numbers.
 // The model number (prepended with "M") is the SysInfo ModelNumStr.
 //
-// Source: libgpod itdb_device.c serial_to_model_mapping (lines 633-868).
+// Source: libgpod itdb_device.c serial_to_model_mapping (lines 633-868)
+// for generations up to nano 6G / touch 4G. Entries after that are
+// crowd-sourced from real hardware testing (see below).
+//
 // Example: serial "5U8280FNYXX" -> suffix "YXX" -> model "B261" -> "MB261"
 //        -> "iPod nano 8GB Black (3rd Generation)"
 //
 // Note: Some suffixes map to the same model. Where libgpod had duplicate
 // suffix entries with different models, the last entry wins (matching C behavior).
+//
+// ── Adding new serial suffix mappings ──────────────────────────────────────
+//
+// For post-libgpod generations (nano 7G, touch 5G+), no public mapping table
+// exists. New entries are added from real hardware:
+//
+//   1. Read the serial number from SysInfoExtended (via SCSI or USB inquiry)
+//   2. Take the last 3 characters as the suffix
+//   3. Identify the model number from the physical device (back engraving,
+//      Settings > About, or Apple order number lookup)
+//   4. Add the mapping below with a comment noting the source device
+//
+// Over time, patterns may emerge in the suffix space that let us infer
+// mappings (e.g., nearby suffixes often map to the same generation and
+// differ only in color). Cross-reference new entries against existing
+// suffixes for the same generation to look for patterns.
 
 const SERIAL_SUFFIX_TO_MODEL: Record<string, string> = {
   // iPod (1st Generation)
@@ -1539,6 +1650,30 @@ const SERIAL_SUFFIX_TO_MODEL: Record<string, string> = {
   '75J': 'C086',
   '6K2': 'C008',
   '6K4': 'C011',
+
+  // iPod touch (4th Generation)
+  // Source: libgpod itdb_device.c serial_to_model_mapping (lines 869-871).
+  // These were in libgpod but missed during initial transcription to podkit.
+  CP7: 'C540',
+  CP9: 'C544',
+  CPC: 'C547',
+
+  // ── Post-libgpod generations (crowd-sourced from real hardware) ──────────
+  //
+  // Entries below are NOT from libgpod. They are captured from real devices
+  // and added one at a time. Confidence is noted per entry.
+  //
+  // When adding entries, note: the nano 7G has two Space Gray models —
+  // E971 (2013 mid-cycle update) and KN52 (2015 refresh). These are
+  // functionally identical for podkit but have different order numbers.
+  // If a pattern emerges in suffix ranges that distinguishes 2013 vs 2015,
+  // update the mapping accordingly.
+
+  // iPod nano (7th Generation)
+  // Source: real hardware — serial DCYN72R8FJQ1, device is Space Gray.
+  // Mapped to E971 (2013 Space Gray). Could be KN52 (2015 Space Gray) —
+  // both are 16GB Space Gray nano 7G, identical capabilities.
+  JQ1: 'E971',
 };
 
 // Duplicate-suffix handling: libgpod's C array has duplicate keys where "last wins".

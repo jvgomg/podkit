@@ -152,8 +152,8 @@ describe('checkSysInfo', () => {
   it('fails when SysInfo has known model but SysInfoExtended is missing (hash58 device)', async () => {
     // MC297 = iPod Classic 7th gen = checksumType 'hash58'
     writeSysInfo(tmpDir, 'ModelNumStr: MC297\nFirewireGuid: 0001234');
-    // Pass USB info for a Classic 7G (0x120a)
-    const result = await checkSysInfo(tmpDir, { productId: '0x120a', vendorId: '0x05ac' });
+    // Pass USB info for a Classic 6G (0x1261) — also hash58
+    const result = await checkSysInfo(tmpDir, { productId: '0x1261', vendorId: '0x05ac' });
     expect(result.stage.status).toBe('fail');
     expect(result.stage.summary).toContain('SysInfoExtended required');
     expect(result.stage.details?.checksumType).toBe('hash58');
