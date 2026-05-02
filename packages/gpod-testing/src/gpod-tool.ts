@@ -247,6 +247,105 @@ export async function addTrack(path: string, track: TrackInput): Promise<AddTrac
 }
 
 /**
+ * Bulk-add multiple tracks in a single subprocess invocation.
+ *
+ * Significantly faster than calling addTrack() in a loop: one process spawn,
+ * one libgpod open, one save. Use this whenever a test needs more than one
+ * track of setup state.
+ *
+ * @param path - Path to the iPod directory
+ * @param tracks - Track metadata for each track to add (must contain at least one entry)
+ * @returns Added track information, in the same order as input
+ * @throws {GpodToolError} If adding fails
+ */
+export async function addTracks(path: string, tracks: TrackInput[]): Promise<AddTrackResult[]> {
+  if (tracks.length === 0) return [];
+
+  const columns = [
+    'title',
+    'artist',
+    'album',
+    'track_num',
+    'duration',
+    'bitrate',
+    'sample_rate',
+  ] as const;
+
+  const escape = (v: unknown): string => {
+    if (v === undefined || v === null) return '';
+    // TSV: tabs and newlines must not appear in field values.
+    return String(v).replace(/[\t\r\n]+/g, ' ');
+  };
+
+  const lines: string[] = [columns.join('\t')];
+  for (const track of tracks) {
+    lines.push(
+      [
+        escape(track.title),
+        escape(track.artist),
+        escape(track.album),
+        escape(track.trackNumber),
+        escape(track.durationMs),
+        escape(track.bitrate),
+        escape(track.sampleRate),
+      ].join('\t')
+    );
+  }
+  const tsv = lines.join('\n') + '\n';
+
+  const proc = Bun.spawn(['gpod-tool', 'add-tracks', path, '--json'], {
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  proc.stdin.write(tsv);
+  await proc.stdin.end();
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  let json: {
+    success?: boolean;
+    error?: string;
+    tracks?: Array<{
+      track_id: number;
+      title: string;
+      artist: string | null;
+      album: string | null;
+    }>;
+  };
+  try {
+    const jsonStart = stdout.indexOf('{\n');
+    json = JSON.parse(jsonStart >= 0 ? stdout.slice(jsonStart) : stdout);
+  } catch {
+    throw new GpodToolError(
+      `Failed to parse gpod-tool output: add-tracks ${path}`,
+      `gpod-tool add-tracks ${path} --json`,
+      exitCode,
+      stderr
+    );
+  }
+
+  if (json.success === false || !json.tracks) {
+    throw new GpodToolError(
+      json.error ?? 'add-tracks failed',
+      `gpod-tool add-tracks ${path} --json`,
+      exitCode,
+      stderr
+    );
+  }
+
+  return json.tracks.map((t) => ({
+    trackId: t.track_id,
+    title: t.title,
+    artist: t.artist,
+    album: t.album,
+  }));
+}
+
+/**
  * Verify an iPod database can be parsed.
  *
  * @param path - Path to the iPod directory

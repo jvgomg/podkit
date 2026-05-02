@@ -149,6 +149,7 @@ export async function createTestIpod(
     info: () => gpodTool.info(ipodPath),
     tracks: () => gpodTool.tracks(ipodPath),
     addTrack: (track: TrackInput) => gpodTool.addTrack(ipodPath, track),
+    addTracks: (batch: TrackInput[]) => gpodTool.addTracks(ipodPath, batch),
     verify: () => gpodTool.verify(ipodPath),
   };
 
@@ -167,6 +168,13 @@ interface TestIpodHelpers {
 
   /** Add a track */
   addTrack(track: TrackInput): Promise<AddTrackResult>;
+
+  /**
+   * Bulk-add multiple tracks in a single subprocess invocation. Use this
+   * instead of calling addTrack() in a loop — it is significantly faster
+   * (one process spawn, one libgpod open, one save).
+   */
+  addTracks(tracks: TrackInput[]): Promise<AddTrackResult[]>;
 
   /** Verify database integrity */
   verify(): Promise<VerifyResult>;

@@ -1,15 +1,15 @@
 ---
 id: TASK-230
 title: Shared test iPod instances in podkit-core and podkit-cli integration tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:34'
-updated_date: '2026-03-23 20:34'
+updated_date: '2026-05-02 11:40'
 labels:
   - testing
   - performance
   - refactor
-milestone: "Test Suite Performance"
+milestone: Test Suite Performance
 dependencies:
   - TASK-227
   - TASK-228
@@ -61,3 +61,25 @@ See doc-021 (Test Suite Performance Plan), opportunity #3.
 - [ ] #3 All existing tests continue to pass
 - [ ] #4 No test-order dependencies introduced
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Closed without implementation — superseded by TASK-227 + bulk addTracks
+
+Same reasoning as TASK-228 and TASK-229. After templates and the new `gpod-tool add-tracks` bulk helper:
+
+- podkit-cli integration: 18.0s → 13.6s (bulk addTracks recovered ~4.4s in `device.integration.test.ts` alone — see TASK-227 follow-up commit)
+- podkit-core integration: ~17s, dominated by libgpod save/reopen patterns inside test bodies, not setup overhead
+
+doc-021's predicted Phase 2 saving here was ~1s. Real measured savings from sharing instances would now be sub-second after templates and bulk-add. The refactor cost (auditing 76 `withTestIpod` callsites in podkit-core + podkit-cli for state-leak risk between sharing) is disproportionate.
+
+The actionable wins from this profiling pass are already captured:
+- TASK-227: pre-built templates (~77s saved)
+- Bulk `addTracks` helper added to gpod-testing (~4.4s saved in podkit-cli)
+- Time-modified test fixed to use `toBeGreaterThan` (assertion was previously a no-op)
+
+Future ergonomic refactors that happen to share instances are fine, but they shouldn't be milestone-tracked perf work.
+
+Closed as superseded.
+<!-- SECTION:FINAL_SUMMARY:END -->

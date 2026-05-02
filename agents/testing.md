@@ -169,6 +169,36 @@ it('works with iPod database', async () => {
 
 See [packages/gpod-testing/README.md](../packages/gpod-testing/README.md) for full API documentation.
 
+### Why gpod-testing for setup, not the production code
+
+Test setup uses `gpod-tool` (an independent C program built from `tools/gpod-tool/`) to populate the iPod database. The production code being exercised — `IpodDatabase` from `@podkit/core`, backed by `@podkit/libgpod-node` — is then used to read or manipulate that state.
+
+**Do not use `IpodDatabase` to seed test fixtures.** That would create circular validation: a libgpod-node bug where its writes are only readable by itself would still pass the test, because both sides of the round-trip use the same code. Setup with one tool, exercise with another, verify cross-tool compatibility.
+
+### Adding multiple tracks: use `addTracks`, not a loop of `addTrack`
+
+Each call to `ipod.addTrack(...)` spawns a `gpod-tool` subprocess (~150ms). For tests that need more than one track of setup state, use the bulk helper:
+
+```typescript
+// SLOW: 5 subprocess spawns + 5 libgpod open/save cycles
+await ipod.addTrack({ title: 'A', artist: 'X' });
+await ipod.addTrack({ title: 'B', artist: 'X' });
+await ipod.addTrack({ title: 'C', artist: 'X' });
+await ipod.addTrack({ title: 'D', artist: 'X' });
+await ipod.addTrack({ title: 'E', artist: 'X' });
+
+// FAST: one spawn, one open/save (~150ms total instead of ~750ms)
+await ipod.addTracks([
+  { title: 'A', artist: 'X' },
+  { title: 'B', artist: 'X' },
+  { title: 'C', artist: 'X' },
+  { title: 'D', artist: 'X' },
+  { title: 'E', artist: 'X' },
+]);
+```
+
+Internally this is one `gpod-tool add-tracks` invocation that reads a TSV stream on stdin. Returns `AddTrackResult[]` in the same order as the input. Single-track tests can keep using `addTrack` — there's no benefit to converting them.
+
 ### Template Fast-Path
 
 `createTestIpod()` is internally backed by pre-built iPod database templates. When a test calls it with default arguments, it copies a template directory (~5ms) instead of spawning `gpod-tool init` (~300ms). This delivers a ~3.3× speedup on `test:integration` (111s → 34s on the maintainer's machine).

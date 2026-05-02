@@ -379,13 +379,15 @@ describe('libgpod-node track updates (updateTrack)', () => {
       const track = db.getTrack(handle);
       const originalModified = track.timeModified;
 
-      // Small delay to ensure time difference
+      // libgpod stores time_modified at second resolution, so wait >1s to
+      // guarantee a different timestamp on the update below.
       await new Promise((resolve) => setTimeout(resolve, 1100));
 
       const updated = db.updateTrack(handle, { title: 'Updated' });
 
-      // timeModified should be updated to a later time
-      expect(updated.timeModified).toBeGreaterThanOrEqual(originalModified);
+      // Must be strictly greater — toBeGreaterThanOrEqual would silently
+      // pass even if updateTrack failed to bump the timestamp.
+      expect(updated.timeModified).toBeGreaterThan(originalModified);
 
       db.close();
     });

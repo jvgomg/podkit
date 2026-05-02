@@ -1,15 +1,15 @@
 ---
 id: TASK-229
 title: Shared test iPod instances in libgpod-node integration tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-03-23 20:34'
-updated_date: '2026-03-23 20:34'
+updated_date: '2026-05-02 11:40'
 labels:
   - testing
   - performance
   - refactor
-milestone: "Test Suite Performance"
+milestone: Test Suite Performance
 dependencies:
   - TASK-227
   - TASK-228
@@ -75,3 +75,23 @@ See doc-021 (Test Suite Performance Plan), opportunity #2.
 - [ ] #4 No test-order dependencies introduced (tests pass when run individually)
 - [ ] #5 beforeEach uses resetTestIpod() to ensure clean state
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Closed without implementation — superseded by TASK-227
+
+doc-021 originally estimated this task at ~5s additional savings on top of templates (160s → 90s → 85s for libgpod-node). Actual measurements after TASK-227 show libgpod-node integration at ~24s — already well below doc-021's "after Phase 2" target of 85s.
+
+Refactoring 242 individual `withTestIpod` calls into 12-20 shared instances would:
+- Save ~5ms × 220 calls ≈ 1s wall-clock at most (after templates)
+- Require auditing every test for state-leak risk between sharing
+- Add a `beforeAll`/`afterAll` reset cycle that itself takes time
+- Couple unrelated tests (a leaked write in test A breaks test B)
+
+The remaining 24s in libgpod-node is dominated by real work inside test bodies — `saveSync()` and `openSync()` calls that flush/parse the iTunesDB. Sharing instances doesn't reduce those.
+
+doc-021 itself acknowledged the value would be "test clarity and maintainability ... rather than speed." The current per-test isolation reads cleanly, so the maintainability argument doesn't compel either.
+
+Closed as superseded. See TASK-227 for the actual perf wins delivered.
+<!-- SECTION:FINAL_SUMMARY:END -->

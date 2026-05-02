@@ -131,10 +131,11 @@ describe('device info integration', () => {
 
   it('shows track count correctly', async () => {
     await withTestIpod(async (ipod) => {
-      // Add some tracks
-      await ipod.addTrack({ title: 'Song 1', artist: 'Artist 1' });
-      await ipod.addTrack({ title: 'Song 2', artist: 'Artist 2' });
-      await ipod.addTrack({ title: 'Song 3', artist: 'Artist 3' });
+      await ipod.addTracks([
+        { title: 'Song 1', artist: 'Artist 1' },
+        { title: 'Song 2', artist: 'Artist 2' },
+        { title: 'Song 3', artist: 'Artist 3' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true });
 
@@ -211,9 +212,10 @@ describe('device music integration', () => {
 
   it('lists music tracks on iPod', async () => {
     await withTestIpod(async (ipod) => {
-      // Add test tracks
-      await ipod.addTrack({ title: 'Track 1', artist: 'Artist A', album: 'Album X' });
-      await ipod.addTrack({ title: 'Track 2', artist: 'Artist B', album: 'Album Y' });
+      await ipod.addTracks([
+        { title: 'Track 1', artist: 'Artist A', album: 'Album X' },
+        { title: 'Track 2', artist: 'Artist B', album: 'Album Y' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true });
 
@@ -283,9 +285,11 @@ describe('device music integration', () => {
 
   it('handles multiple tracks with same artist', async () => {
     await withTestIpod(async (ipod) => {
-      await ipod.addTrack({ title: 'Song A', artist: 'Same Artist', album: 'Album 1' });
-      await ipod.addTrack({ title: 'Song B', artist: 'Same Artist', album: 'Album 1' });
-      await ipod.addTrack({ title: 'Song C', artist: 'Same Artist', album: 'Album 2' });
+      await ipod.addTracks([
+        { title: 'Song A', artist: 'Same Artist', album: 'Album 1' },
+        { title: 'Song B', artist: 'Same Artist', album: 'Album 1' },
+        { title: 'Song C', artist: 'Same Artist', album: 'Album 2' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true });
 
@@ -473,9 +477,10 @@ describe('device clear integration', () => {
 
   it('removes all tracks with confirmation', async () => {
     await withTestIpod(async (ipod) => {
-      // Add tracks first
-      await ipod.addTrack({ title: 'Song 1', artist: 'Artist 1' });
-      await ipod.addTrack({ title: 'Song 2', artist: 'Artist 2' });
+      await ipod.addTracks([
+        { title: 'Song 1', artist: 'Artist 1' },
+        { title: 'Song 2', artist: 'Artist 2' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true, quiet: true });
 
@@ -498,9 +503,11 @@ describe('device clear integration', () => {
 
   it('dry-run shows what would be removed', async () => {
     await withTestIpod(async (ipod) => {
-      await ipod.addTrack({ title: 'Song 1', artist: 'Artist 1' });
-      await ipod.addTrack({ title: 'Song 2', artist: 'Artist 2' });
-      await ipod.addTrack({ title: 'Song 3', artist: 'Artist 3' });
+      await ipod.addTracks([
+        { title: 'Song 1', artist: 'Artist 1' },
+        { title: 'Song 2', artist: 'Artist 2' },
+        { title: 'Song 3', artist: 'Artist 3' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true, quiet: true });
 
@@ -541,11 +548,13 @@ describe('device clear integration', () => {
 
   it('reports correct track count in result', async () => {
     await withTestIpod(async (ipod) => {
-      await ipod.addTrack({ title: 'Track A', artist: 'Artist' });
-      await ipod.addTrack({ title: 'Track B', artist: 'Artist' });
-      await ipod.addTrack({ title: 'Track C', artist: 'Artist' });
-      await ipod.addTrack({ title: 'Track D', artist: 'Artist' });
-      await ipod.addTrack({ title: 'Track E', artist: 'Artist' });
+      await ipod.addTracks([
+        { title: 'Track A', artist: 'Artist' },
+        { title: 'Track B', artist: 'Artist' },
+        { title: 'Track C', artist: 'Artist' },
+        { title: 'Track D', artist: 'Artist' },
+        { title: 'Track E', artist: 'Artist' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true, quiet: true });
 
@@ -927,8 +936,10 @@ describe('device reset integration', () => {
 
   it('removes all tracks with confirmation', async () => {
     await withTestIpod(async (ipod) => {
-      await ipod.addTrack({ title: 'Song 1', artist: 'Artist 1' });
-      await ipod.addTrack({ title: 'Song 2', artist: 'Artist 2' });
+      await ipod.addTracks([
+        { title: 'Song 1', artist: 'Artist 1' },
+        { title: 'Song 2', artist: 'Artist 2' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true, quiet: true });
 
@@ -981,9 +992,11 @@ describe('device reset integration', () => {
 
   it('correctly reports removed count', async () => {
     await withTestIpod(async (ipod) => {
-      await ipod.addTrack({ title: 'A', artist: 'X' });
-      await ipod.addTrack({ title: 'B', artist: 'X' });
-      await ipod.addTrack({ title: 'C', artist: 'X' });
+      await ipod.addTracks([
+        { title: 'A', artist: 'X' },
+        { title: 'B', artist: 'X' },
+        { title: 'C', artist: 'X' },
+      ]);
 
       createDeviceContext(ipod.path, { json: true, quiet: true });
 

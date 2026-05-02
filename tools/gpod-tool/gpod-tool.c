@@ -9,6 +9,7 @@
  *   info          Display database information
  *   tracks        List all tracks
  *   add-track     Add a track entry (metadata only)
+ *   add-tracks    Bulk-add track entries from TSV on stdin (single open/save)
  *   verify        Verify database can be parsed
  *   artwork-dump  Dump artwork information from the database
  *
@@ -702,6 +703,227 @@ static int cmd_add_track(int argc, char *argv[]) {
 }
 
 /* ============================================================================
+ * Command: add-tracks (bulk add from TSV on stdin, single open/save)
+ * ============================================================================ */
+
+static void print_add_tracks_usage(void) {
+    fprintf(stderr, "Usage: gpod-tool add-tracks <path> [options]\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Bulk-add tracks from a TSV stream on stdin. The database is\n");
+    fprintf(stderr, "opened and saved exactly once, so this is significantly faster\n");
+    fprintf(stderr, "than running add-track in a loop.\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Stdin format:\n");
+    fprintf(stderr, "  First line  : tab-separated column names\n");
+    fprintf(stderr, "  Other lines : tab-separated values, one track per line\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Recognised columns: title (required), artist, album,\n");
+    fprintf(stderr, "                    track_num, duration, bitrate, sample_rate\n");
+    fprintf(stderr, "\n");
+    fprintf(stderr, "Options:\n");
+    fprintf(stderr, "  -j, --json   Output result as JSON (recommended)\n");
+    fprintf(stderr, "  -h, --help   Show this help\n");
+}
+
+#define ADD_TRACKS_MAX_COLS 16
+#define ADD_TRACKS_LINE_BUF 8192
+
+typedef enum {
+    COL_UNKNOWN = 0,
+    COL_TITLE,
+    COL_ARTIST,
+    COL_ALBUM,
+    COL_TRACK_NUM,
+    COL_DURATION,
+    COL_BITRATE,
+    COL_SAMPLE_RATE
+} TrackColumn;
+
+static TrackColumn parse_column_name(const char *name) {
+    if (strcmp(name, "title") == 0) return COL_TITLE;
+    if (strcmp(name, "artist") == 0) return COL_ARTIST;
+    if (strcmp(name, "album") == 0) return COL_ALBUM;
+    if (strcmp(name, "track_num") == 0) return COL_TRACK_NUM;
+    if (strcmp(name, "duration") == 0) return COL_DURATION;
+    if (strcmp(name, "bitrate") == 0) return COL_BITRATE;
+    if (strcmp(name, "sample_rate") == 0) return COL_SAMPLE_RATE;
+    return COL_UNKNOWN;
+}
+
+/* Split `line` in place on TAB; store up to ADD_TRACKS_MAX_COLS pointers in `out`.
+ * Trailing newline is stripped. Returns number of fields. */
+static int split_tsv(char *line, char *out[ADD_TRACKS_MAX_COLS]) {
+    /* strip trailing \n or \r\n */
+    size_t len = strlen(line);
+    while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r')) {
+        line[--len] = '\0';
+    }
+
+    int count = 0;
+    out[count++] = line;
+    for (size_t i = 0; i < len && count < ADD_TRACKS_MAX_COLS; i++) {
+        if (line[i] == '\t') {
+            line[i] = '\0';
+            out[count++] = &line[i + 1];
+        }
+    }
+    return count;
+}
+
+static int cmd_add_tracks(int argc, char *argv[]) {
+    const char *path = NULL;
+
+    static struct option long_options[] = {
+        {"json", no_argument, 0, 'j'},
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    int opt;
+    optind = 1;
+    while ((opt = getopt_long(argc, argv, "jh", long_options, NULL)) != -1) {
+        switch (opt) {
+            case 'j': json_output = true; break;
+            case 'h': print_add_tracks_usage(); return 0;
+            default:  print_add_tracks_usage(); return 1;
+        }
+    }
+
+    if (optind >= argc) {
+        fprintf(stderr, "Error: path required\n\n");
+        print_add_tracks_usage();
+        return 1;
+    }
+
+    path = argv[optind];
+
+    /* Read header line */
+    char header[ADD_TRACKS_LINE_BUF];
+    if (!fgets(header, sizeof(header), stdin)) {
+        fprintf(stderr, "Error: empty input (expected TSV header on stdin)\n");
+        return 1;
+    }
+
+    char *header_fields[ADD_TRACKS_MAX_COLS];
+    int header_count = split_tsv(header, header_fields);
+    TrackColumn col_type[ADD_TRACKS_MAX_COLS];
+    int title_col = -1;
+    for (int i = 0; i < header_count; i++) {
+        col_type[i] = parse_column_name(header_fields[i]);
+        if (col_type[i] == COL_TITLE) title_col = i;
+    }
+    if (title_col < 0) {
+        fprintf(stderr, "Error: TSV header must include a 'title' column\n");
+        return 1;
+    }
+
+    /* Open database once */
+    GError *error = NULL;
+    Itdb_iTunesDB *itdb = itdb_parse(path, &error);
+    if (!itdb) {
+        if (json_output) {
+            printf("{\n");
+            print_json_bool("success", false, true);
+            print_json_string("error", error ? error->message : "Failed to parse database", false);
+            printf("}\n");
+        } else {
+            fprintf(stderr, "Error: %s\n", error ? error->message : "Failed to parse database");
+        }
+        if (error) g_error_free(error);
+        return 1;
+    }
+
+    Itdb_Playlist *mpl = itdb_playlist_mpl(itdb);
+
+    /* Collect added tracks for JSON output */
+    GPtrArray *added = g_ptr_array_new();
+
+    char line[ADD_TRACKS_LINE_BUF];
+    int line_no = 1;
+    while (fgets(line, sizeof(line), stdin)) {
+        line_no++;
+        char *fields[ADD_TRACKS_MAX_COLS];
+        int field_count = split_tsv(line, fields);
+
+        /* Skip blank lines */
+        if (field_count == 1 && fields[0][0] == '\0') continue;
+
+        Itdb_Track *track = itdb_track_new();
+        track->bitrate = 256;
+        track->samplerate = 44100;
+        track->filetype = g_strdup("m4a");
+        track->mediatype = ITDB_MEDIATYPE_AUDIO;
+
+        for (int i = 0; i < field_count && i < header_count; i++) {
+            const char *v = fields[i];
+            if (!v || v[0] == '\0') continue;
+            switch (col_type[i]) {
+                case COL_TITLE:       track->title       = g_strdup(v);  break;
+                case COL_ARTIST:      track->artist      = g_strdup(v);  break;
+                case COL_ALBUM:       track->album       = g_strdup(v);  break;
+                case COL_TRACK_NUM:   track->track_nr    = atoi(v);      break;
+                case COL_DURATION:    track->tracklen    = atoi(v);      break;
+                case COL_BITRATE:     track->bitrate     = atoi(v);      break;
+                case COL_SAMPLE_RATE: track->samplerate  = atoi(v);      break;
+                case COL_UNKNOWN:     /* ignore */                       break;
+            }
+        }
+
+        if (!track->title) {
+            fprintf(stderr, "Error: line %d has no title\n", line_no);
+            itdb_track_free(track);
+            itdb_free(itdb);
+            g_ptr_array_free(added, TRUE);
+            return 1;
+        }
+
+        itdb_track_add(itdb, track, -1);
+        if (mpl) itdb_playlist_add_track(mpl, track, -1);
+        g_ptr_array_add(added, track);
+    }
+
+    /* Single write at end */
+    if (!itdb_write(itdb, &error)) {
+        if (json_output) {
+            printf("{\n");
+            print_json_bool("success", false, true);
+            print_json_string("error", error ? error->message : "Failed to write database", false);
+            printf("}\n");
+        } else {
+            fprintf(stderr, "Error: %s\n", error ? error->message : "Failed to write database");
+        }
+        if (error) g_error_free(error);
+        g_ptr_array_free(added, TRUE);
+        itdb_free(itdb);
+        return 1;
+    }
+
+    if (json_output) {
+        printf("{\n");
+        print_json_bool("success", true, true);
+        printf("  \"tracks\": [\n");
+        for (guint i = 0; i < added->len; i++) {
+            Itdb_Track *t = (Itdb_Track *)g_ptr_array_index(added, i);
+            char title_buf[1024], artist_buf[1024], album_buf[1024];
+            json_escape_string(t->title, title_buf, sizeof(title_buf));
+            json_escape_string(t->artist, artist_buf, sizeof(artist_buf));
+            json_escape_string(t->album, album_buf, sizeof(album_buf));
+            printf("    { \"track_id\": %u, \"title\": %s, \"artist\": %s, \"album\": %s }%s\n",
+                   t->id, title_buf, artist_buf, album_buf,
+                   (i + 1 < added->len) ? "," : "");
+        }
+        printf("  ]\n");
+        printf("}\n");
+    } else {
+        printf("Added %u tracks\n", added->len);
+    }
+
+    g_ptr_array_free(added, TRUE);
+    itdb_free(itdb);
+    return 0;
+}
+
+/* ============================================================================
  * Command: verify
  * ============================================================================ */
 
@@ -1025,6 +1247,7 @@ static void print_usage(void) {
     fprintf(stderr, "  info          Display database information\n");
     fprintf(stderr, "  tracks        List all tracks\n");
     fprintf(stderr, "  add-track     Add a track entry (metadata only)\n");
+    fprintf(stderr, "  add-tracks    Bulk-add tracks from a TSV stream on stdin\n");
     fprintf(stderr, "  verify        Verify database can be parsed\n");
 #ifdef HAVE_LIBGPOD_PRIVATE
     fprintf(stderr, "  artwork-dump  Dump artwork information from the database\n");
@@ -1038,6 +1261,7 @@ static void print_usage(void) {
     fprintf(stderr, "  gpod-tool init ./test-ipod --model MA147\n");
     fprintf(stderr, "  gpod-tool info ./test-ipod --json\n");
     fprintf(stderr, "  gpod-tool add-track ./test-ipod -t \"Song\" -a \"Artist\"\n");
+    fprintf(stderr, "  printf 'title\\tartist\\nA\\tX\\nB\\tX\\n' | gpod-tool add-tracks ./test-ipod --json\n");
     fprintf(stderr, "  gpod-tool verify ./test-ipod\n");
 #ifdef HAVE_LIBGPOD_PRIVATE
     fprintf(stderr, "  gpod-tool artwork-dump /Volumes/iPod --json\n");
@@ -1077,6 +1301,8 @@ int main(int argc, char *argv[]) {
         return cmd_tracks(argc, argv);
     } else if (strcmp(command, "add-track") == 0) {
         return cmd_add_track(argc, argv);
+    } else if (strcmp(command, "add-tracks") == 0) {
+        return cmd_add_tracks(argc, argv);
     } else if (strcmp(command, "verify") == 0) {
         return cmd_verify(argc, argv);
 #ifdef HAVE_LIBGPOD_PRIVATE
