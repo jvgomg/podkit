@@ -1,0 +1,43 @@
+---
+id: TASK-293
+title: P2 — USB inquiry consolidation
+status: To Do
+assignee: []
+created_date: '2026-05-03 11:30'
+labels:
+  - device-capability-architecture
+  - phase-2
+milestone: m-18
+dependencies:
+  - TASK-292
+documentation:
+  - backlog/docs/doc-030 - PRD-Device-Capability-Architecture.md
+  - backlog/docs/doc-033 - Spec-Phase-2-USB-inquiry-consolidation.md
+ordinal: 9000
+---
+
+## Description
+
+<!-- SECTION:DESCRIPTION:BEGIN -->
+Move USB-vendor inquiry out of the `@podkit/libgpod-node` native binding and into `@podkit/ipod-firmware`. After this phase, all iPod firmware I/O lives in TypeScript and the libgpod binding has no USB / libusb concerns.
+
+User-visible outcome: none. P2 is the architectural cleanup that consolidates inquiry under one package.
+
+This is the parent task for the P2 phase. Sub-tasks cover the FFI implementation, native code removal, and validation.
+
+See spec doc-033 for full details.
+
+Parent PRD: doc-030 (PRD: Device Capability Architecture).
+Blocked by: TASK-292 (P1 main).
+<!-- SECTION:DESCRIPTION:END -->
+
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 @podkit/ipod-firmware USB transport reads SysInfoExtended XML via libusb FFI on macOS and Linux against real iPods
+- [ ] #2 Hardware parity validation: nano 4G and nano 7G produce identical XML to P1's libgpod-shim path
+- [ ] #3 @podkit/libgpod-node binding contains no libusb references
+- [ ] #4 @podkit/libgpod-node builds successfully on Linux distros without libusb development headers
+- [ ] #5 All existing tests pass with no regressions
+- [ ] #6 P1's hardware validation re-run on all five devices, results unchanged
+- [ ] #7 Breaking-change changeset documents libgpod-node export removal
+<!-- AC:END -->
