@@ -61,6 +61,12 @@
       }
     },
     {
+      "files": ["**/scsi-spike/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
       "files": ["**/ipod-db/fixtures/**/*.ts"],
       "rules": {
         "no-console": "off"

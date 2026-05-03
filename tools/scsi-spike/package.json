@@ -1,0 +1,19 @@
+{
+  "name": "scsi-spike",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Throwaway P0 spike — koffi FFI for SCSI VPD-page-0xC0 inquiry against real iPods. See doc-031.",
+  "type": "module",
+  "//": "Run the spikes directly with your runtime of choice — koffi works under both. Examples: `node --import tsx ./linux.ts /dev/sg3 out.xml`, `bun ./linux.ts /dev/sg3 out.xml`, `node --import tsx ./macos.ts out.xml`. Wrapping these in npm scripts pins them to one runtime, defeating the cross-runtime validation.",
+  "dependencies": {
+    "koffi": "^2.13.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.5.0"
+  },
+  "trustedDependencies": [
+    "koffi"
+  ]
+}
