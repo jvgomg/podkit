@@ -16,7 +16,7 @@
  */
 
 import type { IpodGeneration } from '@podkit/libgpod-node';
-import type { DeviceCapabilities, AudioCodec, DeviceArtworkSource } from './capabilities.js';
+import type { DeviceCapabilities, AudioCodec, DeviceArtworkSource } from '@podkit/device-types';
 import { IPOD_GENERATIONS } from '../ipod/generation.js';
 
 // =============================================================================

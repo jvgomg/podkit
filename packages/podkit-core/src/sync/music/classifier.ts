@@ -18,7 +18,7 @@
  */
 
 import type { CollectionTrack } from '../../adapters/interface.js';
-import type { AudioCodec } from '../../device/capabilities.js';
+import type { AudioCodec } from '@podkit/device-types';
 import type { SourceCategory, TranscodePresetRef } from '../engine/types.js';
 import type { ResolvedMusicConfig } from './config.js';
 import { categorizeSource, isDeviceCompatible, fileTypeToAudioCodec } from './planner.js';

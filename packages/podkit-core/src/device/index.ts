@@ -27,7 +27,7 @@
  */
 
 // Device capability types
-export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from './capabilities.js';
+export type { DeviceCapabilities, DeviceArtworkSource, AudioCodec } from '@podkit/device-types';
 
 // Device adapter interface
 export type {

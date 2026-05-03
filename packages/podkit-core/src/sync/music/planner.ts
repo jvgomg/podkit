@@ -21,7 +21,7 @@
 
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { AudioFileType, TrackMetadata } from '../../types.js';
-import type { AudioCodec } from '../../device/capabilities.js';
+import type { AudioCodec } from '@podkit/device-types';
 import { getPresetBitrate } from '../../transcode/types.js';
 import { replayGainToSoundcheck } from '../../metadata/normalization.js';
 import type { MetadataChange, SourceCategory } from '../engine/types.js';

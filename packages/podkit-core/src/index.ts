@@ -148,13 +148,13 @@ export {
   MUSIC_RETRY_CONFIG,
 } from './sync/music/pipeline.js';
 
-// Device capabilities
+// Device capabilities (canonical types in @podkit/device-types)
 export type {
   DeviceCapabilities,
   DeviceArtworkSource,
   AudioCodec,
   AudioNormalizationMode,
-} from './device/capabilities.js';
+} from '@podkit/device-types';
 export { getDeviceCapabilities } from './ipod/capabilities.js';
 
 // Device presets

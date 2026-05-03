@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import {
   parseSyncTag,
   writeSyncTag,

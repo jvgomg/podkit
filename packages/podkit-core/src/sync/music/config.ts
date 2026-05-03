@@ -12,11 +12,7 @@
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { QualityPreset, EncodingMode, TransferMode } from '../../transcode/types.js';
 import { getPresetBitrate, getCodecPresetBitrate } from '../../transcode/types.js';
-import type {
-  DeviceCapabilities,
-  AudioCodec,
-  AudioNormalizationMode,
-} from '../../device/capabilities.js';
+import type { DeviceCapabilities, AudioCodec, AudioNormalizationMode } from '@podkit/device-types';
 import type { CollectionAdapter } from '../../adapters/interface.js';
 import type { TransformsConfig } from '../../transforms/types.js';
 import { hasEnabledTransforms } from '../../transforms/pipeline.js';

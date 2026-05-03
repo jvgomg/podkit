@@ -1,9 +1,10 @@
 ---
 id: TASK-292
 title: P1 — ipod-firmware SCSI delivery
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-03 11:28'
+updated_date: '2026-05-03 12:59'
 labels:
   - device-capability-architecture
   - phase-1

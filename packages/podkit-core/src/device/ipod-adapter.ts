@@ -12,7 +12,7 @@
  */
 
 import type { DeviceAdapter, DeviceTrackInput, DeviceTrackMetadata } from './adapter.js';
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import type { IpodDatabase } from '../ipod/database.js';
 import type { IpodTrack, TrackInput, TrackFields } from '../ipod/types.js';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';

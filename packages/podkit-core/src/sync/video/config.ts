@@ -16,7 +16,7 @@ import type { VideoQualityPreset, VideoDeviceProfile } from '../../video/types.j
 import { getPresetSettingsWithFallback } from '../../video/types.js';
 import type { VideoTransformsConfig } from '../../transforms/types.js';
 import { hasEnabledVideoTransforms } from '../../transforms/video-pipeline.js';
-import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
 // =============================================================================
 // Public Config

@@ -4,6 +4,7 @@ title: 'P1.9 — Doctor checks: inquiry-methods + sysinfo-consistency'
 status: To Do
 assignee: []
 created_date: '2026-05-03 11:30'
+updated_date: '2026-05-03 14:55'
 labels:
   - device-capability-architecture
   - phase-1
@@ -38,3 +39,9 @@ See spec doc-032, Scope > Diagnostics.
 - [ ] #8 Existing sysinfo-extended repair is rewired through the new orchestrator (gets SCSI fallback)
 - [ ] #9 Unit tests with mocked probe results and mocked filesystem/USB descriptor
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Decision (2026-05-03): Checks live in packages/podkit-core/src/diagnostics/checks/, NOT in @podkit/ipod-firmware as originally spec'd in doc-032. Reason: core's DiagnosticCheck interface imports IpodDatabase + CollectionAdapter (deep core types); placing checks in ipod-firmware would create a circular dep or require extracting the entire diagnostics framework to a 3rd package. Cleaner one-way dep: core/diagnostics/checks/inquiry-methods.ts imports probeInquiryMethods from @podkit/ipod-firmware. The placeholder stubs in packages/ipod-firmware/src/diagnostics/ have been deleted in the Phase A cleanup pass — recreate the checks in core when this task starts.
+<!-- SECTION:NOTES:END -->

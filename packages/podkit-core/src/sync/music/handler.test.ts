@@ -8,7 +8,7 @@ import type { MusicOperation } from './types.js';
 import type { UnifiedSyncDiff } from '../engine/content-type.js';
 import { parseSyncTag } from '../../metadata/sync-tags.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
-import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
 // =============================================================================
 // Test Fixtures

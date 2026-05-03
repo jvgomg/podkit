@@ -4,7 +4,7 @@ import type { VideoSyncConfig } from './config.js';
 import type { VideoDeviceProfile } from '../../video/types.js';
 import { DEVICE_PROFILES } from '../../video/types.js';
 import type { VideoTransformsConfig } from '../../transforms/types.js';
-import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
 // =============================================================================
 // Fixtures

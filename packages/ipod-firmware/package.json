@@ -1,0 +1,37 @@
+{
+  "name": "@podkit/ipod-firmware",
+  "version": "0.0.1",
+  "description": "iPod firmware inquiry — SCSI and USB delivery for podkit",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "bun test",
+    "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/device-types": "workspace:*",
+    "@podkit/libgpod-node": "workspace:*",
+    "koffi": "^2.13.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "trustedDependencies": [
+    "koffi"
+  ]
+}

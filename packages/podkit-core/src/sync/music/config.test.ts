@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { resolveMusicConfig } from './config.js';
 import type { MusicSyncConfig } from './config.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
-import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
 // Minimal stub — resolveMusicConfig never calls transcoder methods
 const stubTranscoder = {} as FFmpegTranscoder;

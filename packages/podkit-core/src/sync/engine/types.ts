@@ -15,7 +15,7 @@ import type {
   TransferMode,
 } from '../../transcode/types.js';
 import type { TranscodeTargetCodec } from '../../transcode/codecs.js';
-import type { DeviceCapabilities } from '../../device/capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import type { MusicOperation } from '../music/types.js';
 import type { VideoOperation } from '../video/types.js';
 

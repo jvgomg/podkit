@@ -13,7 +13,7 @@
  * @module
  */
 
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 

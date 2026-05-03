@@ -2,24 +2,13 @@
  * iPod device capabilities
  *
  * Derives DeviceCapabilities from iPod generation metadata.
- * The shared type definitions live in `device/capabilities.ts`.
+ * The shared type definitions live in `@podkit/device-types`.
  */
 
 import type { IpodGeneration } from '@podkit/libgpod-node';
 import { IPOD_GENERATIONS } from './generation.js';
 import { getVideoProfile } from './generation.js';
-import type {
-  AudioCodec,
-  DeviceArtworkSource,
-  DeviceCapabilities,
-} from '../device/capabilities.js';
-
-// Re-export types from their canonical location for backward compatibility
-export type {
-  DeviceArtworkSource,
-  AudioCodec,
-  DeviceCapabilities,
-} from '../device/capabilities.js';
+import type { AudioCodec, DeviceArtworkSource, DeviceCapabilities } from '@podkit/device-types';
 
 // =============================================================================
 // Artwork Resolution

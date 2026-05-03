@@ -8,7 +8,7 @@
  * @module
  */
 
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import { DEFAULT_CONTENT_PATHS, type ContentPaths } from './mass-storage-utils.js';
 
 /** Supported device type identifiers */

@@ -23,7 +23,7 @@ import type {
   DeviceTrackInput,
   DeviceTrackMetadata,
 } from './adapter.js';
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import {

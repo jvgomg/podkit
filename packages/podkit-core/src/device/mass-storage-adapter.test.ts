@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { MetadataReader } from './mass-storage-adapter.js';
 import type { TagWriter } from './mass-storage-tag-writer.js';
-import type { DeviceCapabilities } from './capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import {
   sanitizeFilename,
   generateTrackPath,
