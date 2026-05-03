@@ -17,7 +17,7 @@
     "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "true",
-    "test:unit": "bun test --pass-with-no-tests",
+    "test:unit": "FILES=$(find src -name '*.test.ts' ! -name '*.integration.test.ts' 2>/dev/null); if [ -n \"$FILES\" ]; then bun test $FILES; else echo 'No unit tests found'; fi",
     "test:integration": "gpod-tests-parallel",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
