@@ -1,0 +1,32 @@
+{
+  "name": "@podkit/devices-mass-storage",
+  "version": "0.0.1",
+  "description": "Mass-storage device presets and types for podkit (Echo Mini, Rockbox, generic DAPs)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "bun test",
+    "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/device-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

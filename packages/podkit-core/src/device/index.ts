@@ -69,8 +69,19 @@ export {
 export type { MassStorageManifest, ContentPaths } from './mass-storage-utils.js';
 
 // Device presets
-export { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './presets.js';
-export type { DeviceTypeId, DevicePreset } from './presets.js';
+export {
+  DEVICE_PRESETS,
+  getDevicePreset,
+  resolveDeviceCapabilities,
+  BUILT_IN_DEVICE_TYPE_IDS,
+  PRESET_DEVICE_TYPE_IDS,
+} from './presets.js';
+export type {
+  DeviceTypeId,
+  BuiltInDeviceTypeId,
+  PresetDeviceTypeId,
+  DevicePreset,
+} from './presets.js';
 
 // Types
 export type {
@@ -80,7 +91,7 @@ export type {
   MountResult,
   EjectOptions,
   MountOptions,
-  IpodIdentity,
+  StoredIpodLink,
   EjectProgressEvent,
   EjectWithRetryOptions,
 } from './types.js';
@@ -137,6 +148,10 @@ export { ensureSysInfoExtended, readSysInfoExtended } from './sysinfo-extended.j
 // USB discovery
 export type { UsbDiscoveredDevice, UsbConnectionInfo } from './usb-discovery.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
+
+// Device enumeration framework
+export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';
+export { enumerateConnectedDevices } from './enumeration.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './error-codes.js';

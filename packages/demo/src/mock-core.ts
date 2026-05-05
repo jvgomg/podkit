@@ -249,7 +249,7 @@ export type {
   MountResult,
   EjectOptions,
   MountOptions,
-  IpodIdentity,
+  StoredIpodLink,
   DeviceAssessment,
   IFlashAssessment,
   IFlashEvidence,
@@ -2332,6 +2332,10 @@ export async function checkReadiness(_input: any): Promise<any> {
 }
 
 export async function discoverUsbIpods(): Promise<any[]> {
+  return [];
+}
+
+export async function enumerateConnectedDevices(_opts: any): Promise<any[]> {
   return [];
 }
 

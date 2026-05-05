@@ -26,7 +26,7 @@ import type { AudioCodec, DeviceArtworkSource, DeviceCapabilities } from '@podki
  * Maximum artwork resolution per iPod generation.
  *
  * Values based on device screen dimensions. This table is also
- * maintained in capability-adapter.ts (ARTWORK_MAX_RESOLUTION) which
+ * maintained in capability-adapter.ts (LIBGPOD_ARTWORK_RESOLUTION) which
  * is the primary path for connected devices via libgpod. This copy
  * serves as a fallback for generation-only capability queries.
  */

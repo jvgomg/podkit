@@ -630,9 +630,16 @@ export class LinuxDeviceManager implements DeviceManager {
   // Device assessment
   // ------------------------------------------------------------------
 
+  /**
+   * Linux currently has no devices in the inventory that expose multiple LUNs
+   * to the OS as separate sibling volumes. Echo Mini's dual-LUN behaviour
+   * surfaces only on macOS (the kernel/driver presents the LUNs differently).
+   *
+   * This stub returns an empty list so the cross-platform `DeviceManager`
+   * contract is unified. If a future Linux device requires sibling-volume
+   * discovery (e.g., via `/sys/block` walks or `lsblk -J`), revisit here.
+   */
   async getSiblingVolumes(_mountPoint: string): Promise<string[]> {
-    // TODO: implement for Linux (e.g., using lsblk to find sibling partitions
-    // on the same USB device via the /sys/block hierarchy)
     return [];
   }
 

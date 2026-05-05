@@ -12,6 +12,12 @@
  *   - artworkSources (always 'database' for iPods with artwork)
  *   - supportsAlbumArtistBrowsing (always false for stock iPod firmware)
  *
+ * @deprecated This adapter is superseded by `getCapabilities()` from
+ * `@podkit/devices-ipod`, which derives capabilities from the generation table
+ * without relying on libgpod runtime data. Migrate callers to
+ * `identify()` + `getCapabilities()` from `@podkit/devices-ipod`.
+ * This file will be removed in TASK-295.05 (P4).
+ *
  * @module
  */
 
@@ -23,7 +29,12 @@ import { IPOD_GENERATIONS } from '../ipod/generation.js';
 // Types
 // =============================================================================
 
-/** The subset of libgpod Device capabilities needed by the adapter */
+/**
+ * The subset of libgpod Device capabilities needed by the adapter.
+ *
+ * @deprecated Use `IpodModel` from `@podkit/devices-ipod` instead.
+ * This type will be removed in TASK-295.05 (P4).
+ */
 export interface LibgpodDeviceInfo {
   readonly supportsArtwork: boolean;
   readonly supportsVideo: boolean;
@@ -36,13 +47,17 @@ export interface LibgpodDeviceInfo {
 // =============================================================================
 
 /**
- * Maximum artwork resolution per iPod generation.
+ * Maximum artwork resolution per libgpod generation name.
  *
  * This supplements libgpod which knows WHETHER a device supports artwork
  * but doesn't export the resolution (itdb_device_get_cover_art_formats
  * is G_GNUC_INTERNAL). Values based on device screen dimensions.
+ *
+ * The canonical per-generation data now lives in `@podkit/devices-ipod`'s
+ * GENERATIONS table (artworkMaxResolution field). This private copy is
+ * retained for the libgpod adapter shim; it will be removed in TASK-295.05.
  */
-const ARTWORK_MAX_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
+const LIBGPOD_ARTWORK_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
   // Classic/Video — 320x240 screen
   classic_1: 320,
   classic_2: 320,
@@ -83,6 +98,11 @@ const ARTWORK_MAX_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
  * Uses libgpod as the authority for video and artwork support,
  * then supplements codec support and artwork resolution from
  * generation metadata.
+ *
+ * @deprecated Use `getCapabilities()` from `@podkit/devices-ipod` instead.
+ * Pair it with `identify()` to resolve the `IpodModel` input from USB product
+ * ID, SysInfo model number, or serial. This function will be removed in
+ * TASK-295.05 (P4).
  */
 export function createIpodCapabilities(device: LibgpodDeviceInfo): DeviceCapabilities {
   const generation = device.generation as IpodGeneration;
@@ -96,7 +116,7 @@ export function createIpodCapabilities(device: LibgpodDeviceInfo): DeviceCapabil
 
   // Artwork — use libgpod for support flag, supplement resolution from table
   const artworkMaxResolution = device.supportsArtwork
-    ? (ARTWORK_MAX_RESOLUTION[generation] ?? 0)
+    ? (LIBGPOD_ARTWORK_RESOLUTION[generation] ?? 0)
     : 0;
   const artworkSources: DeviceArtworkSource[] = device.supportsArtwork ? ['database'] : [];
 

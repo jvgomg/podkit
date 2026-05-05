@@ -46,7 +46,7 @@ describe('parseSystemProfilerUsbData', () => {
     });
   });
 
-  it('returns only iPod when iPod and iPhone are both connected', () => {
+  it('returns all USB devices including non-iPod Apple devices', () => {
     const data = {
       SPUSBDataType: [
         {
@@ -61,8 +61,7 @@ describe('parseSystemProfilerUsbData', () => {
               _name: 'iPhone',
               vendor_id: '0x05ac (Apple Inc.)',
               product_id: '0x12a0',
-              // This is an iPod Touch 5th gen product ID, but let's also
-              // test with a non-iPod product ID
+              // This is an iPod Touch 5th gen product ID
             },
             {
               _name: 'AirPods',
@@ -75,12 +74,21 @@ describe('parseSystemProfilerUsbData', () => {
     };
 
     const result = parseSystemProfilerUsbData(data);
-    // iPod Classic + iPod Touch 5th gen (unsupported)
-    expect(result).toHaveLength(2);
-    expect(result[0]!.usb.productId).toBe('0x1209');
-    expect(result[0]!.supported).toBe(true);
-    expect(result[1]!.usb.productId).toBe('0x12a0');
-    expect(result[1]!.supported).toBe(false);
+    // All three devices are returned; classification is the provider layer's job.
+    expect(result).toHaveLength(3);
+    // iPod Classic (supported)
+    const ipodResult = result.find((r) => r.usb.productId === '0x1209');
+    expect(ipodResult).toBeDefined();
+    expect(ipodResult!.supported).toBe(true);
+    // iPod Touch 5th gen (unsupported — still tagged because it's an Apple device)
+    const touchResult = result.find((r) => r.usb.productId === '0x12a0');
+    expect(touchResult).toBeDefined();
+    expect(touchResult!.supported).toBe(false);
+    // AirPods — not an iPod product ID, no model, supported: true (no unsupported reason)
+    const airpodsResult = result.find((r) => r.usb.productId === '0x2002');
+    expect(airpodsResult).toBeDefined();
+    expect(airpodsResult!.model).toBeUndefined();
+    expect(airpodsResult!.supported).toBe(true);
   });
 
   it('finds iPod connected through a USB hub (nested _items)', () => {
@@ -107,9 +115,14 @@ describe('parseSystemProfilerUsbData', () => {
     };
 
     const result = parseSystemProfilerUsbData(data);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.usb.productId).toBe('0x120a');
-    expect(result[0]!.model!.displayName).toBe('iPod nano 1st generation');
+    // Hub (0x1234) + iPod (0x120a) — both returned now that vendor filter is gone.
+    expect(result).toHaveLength(2);
+    const ipodResult = result.find((r) => r.usb.productId === '0x120a');
+    expect(ipodResult).toBeDefined();
+    expect(ipodResult!.model!.displayName).toBe('iPod nano 1st generation');
+    const hubResult = result.find((r) => r.usb.productId === '0x5678');
+    expect(hubResult).toBeDefined();
+    expect(hubResult!.model).toBeUndefined();
   });
 
   it('extracts disk identifier from Media subtree', () => {
@@ -139,7 +152,7 @@ describe('parseSystemProfilerUsbData', () => {
     expect(result[0]!.diskIdentifier).toBe('disk5');
   });
 
-  it('returns empty array when no Apple devices are connected', () => {
+  it('returns non-Apple USB devices (vendor filtering removed)', () => {
     const data = {
       SPUSBDataType: [
         {
@@ -156,7 +169,12 @@ describe('parseSystemProfilerUsbData', () => {
     };
 
     const result = parseSystemProfilerUsbData(data);
-    expect(result).toHaveLength(0);
+    // All USB devices are now returned regardless of vendor.
+    expect(result).toHaveLength(1);
+    expect(result[0]!.usb.vendorId).toBe('0x1234');
+    expect(result[0]!.usb.productId).toBe('0x5678');
+    expect(result[0]!.model).toBeUndefined();
+    expect(result[0]!.supported).toBe(true);
   });
 
   it('returns empty array for invalid/null data', () => {
@@ -286,9 +304,14 @@ describe('parseSystemProfilerUsbData', () => {
     };
 
     const result = parseSystemProfilerUsbData(data);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.usb.productId).toBe('0x1207');
-    expect(result[0]!.model!.displayName).toBe('iPod 5th generation (Video)');
+    // Both the iPod and the keyboard are returned (vendor filter removed).
+    expect(result).toHaveLength(2);
+    const ipodResult = result.find((r) => r.usb.productId === '0x1207');
+    expect(ipodResult).toBeDefined();
+    expect(ipodResult!.model!.displayName).toBe('iPod 5th generation (Video)');
+    const kbdResult = result.find((r) => r.usb.productId === '0x0260');
+    expect(kbdResult).toBeDefined();
+    expect(kbdResult!.model).toBeUndefined();
   });
 
   it('extracts serial number, bus number, and device address', () => {
@@ -419,7 +442,7 @@ describe('parseSysfsUsbDevices', () => {
     });
   });
 
-  it('filters non-Apple devices', () => {
+  it('returns all devices regardless of vendor (vendor filtering removed)', () => {
     const devices = [
       { idVendor: '1234', idProduct: '5678' },
       { idVendor: '05ac', idProduct: '120a' },
@@ -427,19 +450,29 @@ describe('parseSysfsUsbDevices', () => {
     ];
 
     const result = parseSysfsUsbDevices(devices);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.usb.productId).toBe('0x120a');
+    // All three devices are returned now; provider layer classifies them.
+    expect(result).toHaveLength(3);
+    const appleResult = result.find((r) => r.usb.productId === '0x120a');
+    expect(appleResult).toBeDefined();
+    expect(appleResult!.model).toBeDefined(); // iPod nano 1st gen
   });
 
-  it('ignores Apple devices that are not iPods', () => {
+  it('returns non-iPod Apple devices (no model, supported: true)', () => {
     const devices = [
-      { idVendor: '05ac', idProduct: '0260' }, // Apple keyboard
+      { idVendor: '05ac', idProduct: '0260' }, // Apple keyboard — not in iPod table
       { idVendor: '05ac', idProduct: '1209' }, // iPod Classic
     ];
 
     const result = parseSysfsUsbDevices(devices);
-    expect(result).toHaveLength(1);
-    expect(result[0]!.usb.productId).toBe('0x1209');
+    // Both devices are returned; the keyboard has no model, the iPod does.
+    expect(result).toHaveLength(2);
+    const keyboardResult = result.find((r) => r.usb.productId === '0x0260');
+    expect(keyboardResult).toBeDefined();
+    expect(keyboardResult!.model).toBeUndefined();
+    expect(keyboardResult!.supported).toBe(true);
+    const ipodResult = result.find((r) => r.usb.productId === '0x1209');
+    expect(ipodResult).toBeDefined();
+    expect(ipodResult!.model).toBeDefined();
   });
 
   it('returns empty array for empty input', () => {

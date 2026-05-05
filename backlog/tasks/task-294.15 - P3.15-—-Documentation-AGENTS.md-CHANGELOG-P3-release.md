@@ -1,9 +1,10 @@
 ---
 id: TASK-294.15
 title: 'P3.15 — Documentation, AGENTS.md, CHANGELOG, P3 release'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:33'
+updated_date: '2026-05-05 19:00'
 labels:
   - device-capability-architecture
   - phase-3
@@ -28,10 +29,16 @@ See spec doc-034, Migration steps 19–20.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 @podkit/devices-ipod README written
-- [ ] #2 @podkit/devices-mass-storage README written
-- [ ] #3 TSDoc on public exports of both packages
-- [ ] #4 AGENTS.md updated with both new packages in the monorepo structure list
-- [ ] #5 Changeset entries for podkit (auto-detect behaviour change), @podkit/core (internal restructure with shims), new packages
+- [x] #1 @podkit/devices-ipod README written
+- [x] #2 @podkit/devices-mass-storage README written
+- [x] #3 TSDoc on public exports of both packages
+- [x] #4 AGENTS.md updated with both new packages in the monorepo structure list
+- [x] #5 Changeset entries for podkit (auto-detect behaviour change), @podkit/core (internal restructure with shims), new packages
 - [ ] #6 P3 released through CI
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+READMEs written: devices-ipod (~130 lines), devices-mass-storage (~115 lines). TSDoc additions: `@param`/`@returns`/`@example` added to `definePreset`, `createMassStorageProvider`, `getCapabilities` (mass-storage), and `identify` (mass-storage). All pre-existing headline functions already had full TSDoc. AGENTS.md updated with two new packages in monorepo structure (alphabetical) and three new Entry Points rows (iPod identity, iPod capabilities, Mass-storage preset). Changeset `.changeset/devices-extraction-and-providers.md` created: podkit minor, @podkit/core minor, @podkit/devices-ipod patch, @podkit/devices-mass-storage patch. All gates passed: typecheck clean (27/27), podkit-core 2521 pass / 1 skip, devices-ipod 167 pass, devices-mass-storage 74 pass, lint 14 warnings / 0 errors (pre-existing), build 16/16 cached+successful. AC #6 (CI release) deferred to TASK-294 hardware HITL task.
+<!-- SECTION:FINAL_SUMMARY:END -->

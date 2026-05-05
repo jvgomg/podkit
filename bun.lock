@@ -40,6 +40,27 @@
         "@types/bun": "latest",
       },
     },
+    "packages/devices-ipod": {
+      "name": "@podkit/devices-ipod",
+      "version": "0.0.1",
+      "dependencies": {
+        "@podkit/device-types": "workspace:*",
+        "@podkit/ipod-firmware": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
+    "packages/devices-mass-storage": {
+      "name": "@podkit/devices-mass-storage",
+      "version": "0.0.1",
+      "dependencies": {
+        "@podkit/device-types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/docs-site": {
       "name": "@podkit/docs-site",
       "version": "0.0.2",
@@ -146,6 +167,8 @@
       },
       "dependencies": {
         "@podkit/core": "workspace:*",
+        "@podkit/devices-ipod": "workspace:*",
+        "@podkit/devices-mass-storage": "workspace:*",
         "@podkit/libgpod-node": "workspace:*",
         "commander": "^14.0.3",
         "smol-toml": "^1.6.0",
@@ -161,6 +184,8 @@
       "dependencies": {
         "@ctrl/video-filename-parser": "^5.4.1",
         "@podkit/device-types": "workspace:*",
+        "@podkit/devices-ipod": "workspace:*",
+        "@podkit/devices-mass-storage": "workspace:*",
         "@podkit/ipod-firmware": "workspace:*",
         "@podkit/libgpod-node": "workspace:*",
         "glob": "^13.0.6",
@@ -576,6 +601,10 @@
     "@podkit/demo": ["@podkit/demo@workspace:packages/demo"],
 
     "@podkit/device-types": ["@podkit/device-types@workspace:packages/device-types"],
+
+    "@podkit/devices-ipod": ["@podkit/devices-ipod@workspace:packages/devices-ipod"],
+
+    "@podkit/devices-mass-storage": ["@podkit/devices-mass-storage@workspace:packages/devices-mass-storage"],
 
     "@podkit/docker": ["@podkit/docker@workspace:packages/podkit-docker"],
 

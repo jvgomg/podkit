@@ -2132,19 +2132,82 @@ const addSubcommand = new Command('add')
       return;
     }
 
-    out.print('Scanning for attached iPods...');
+    out.print('Scanning for attached devices...');
 
     const ipods = await manager.findIpodDevices();
 
     if (ipods.length === 0) {
-      out.result<DeviceAddOutput>({ success: false, error: 'No iPod devices found' }, () => {
-        out.error('No iPod devices found.');
-        out.newline();
-        out.error('Make sure your iPod is connected.');
-        out.newline();
-        out.error('Or specify a path explicitly:');
-        out.error(`  podkit device add -d ${name} --path /path/to/ipod`);
-      });
+      // No iPod found via the manager. Run the broader USB enumeration to check
+      // whether a recognised mass-storage device (e.g. Echo Mini) is connected.
+      // This replaces the generic "no iPod found" error with an actionable hint.
+      let massStorageHint: string | undefined;
+
+      try {
+        const { enumerateConnectedDevices } = await import('@podkit/core');
+        const { ipodProvider } = await import('@podkit/devices-ipod');
+        const { createMassStorageProvider, BUILT_IN_PRESETS } =
+          await import('@podkit/devices-mass-storage');
+
+        const enumerated = await enumerateConnectedDevices({
+          providers: [ipodProvider, createMassStorageProvider(BUILT_IN_PRESETS)],
+        });
+
+        const massStorageDevice = enumerated.find(
+          (d) =>
+            d.matchedProviderId === 'mass-storage' &&
+            d.identity?.kind === 'mass-storage' &&
+            d.identity.presetId
+        );
+
+        if (massStorageDevice && massStorageDevice.identity?.kind === 'mass-storage') {
+          const presetId = massStorageDevice.identity.presetId!;
+          const displayName = getDeviceTypeDisplayName(presetId);
+
+          // Duplicate detection: check whether a device with the same USB serial
+          // is already configured. DeviceConfig does not persist serialNumber today
+          // (mass-storage entries store type + path), so this check is best-effort
+          // and will be a no-op until a future migration stores the serial.
+          // volumeUuid is unavailable at USB-scan time (requires mounting).
+          const detectedSerial = massStorageDevice.identity.serialNumber;
+
+          massStorageHint = presetId;
+          out.print(`Detected ${displayName} via USB.`);
+
+          if (detectedSerial !== undefined) {
+            out.verbose1(`  USB serial: ${detectedSerial}`);
+          }
+
+          out.print(`To add it, run:`);
+          out.print(`  podkit device add -d ${name} --type ${presetId} --path <mount-point>`);
+          if (massStorageDevice.discovered.diskIdentifier) {
+            out.print(
+              `  (disk: ${massStorageDevice.discovered.diskIdentifier} — mount it first if not already mounted)`
+            );
+          }
+        }
+      } catch {
+        // Enumeration is best-effort: if it fails (e.g. USB walk errors),
+        // fall through to the original "no iPod found" error path.
+      }
+
+      if (!massStorageHint) {
+        out.result<DeviceAddOutput>({ success: false, error: 'No iPod devices found' }, () => {
+          out.error('No iPod devices found.');
+          out.newline();
+          out.error('Make sure your iPod is connected.');
+          out.newline();
+          out.error('Or specify a path explicitly:');
+          out.error(`  podkit device add -d ${name} --path /path/to/ipod`);
+        });
+      } else {
+        out.result<DeviceAddOutput>(
+          {
+            success: false,
+            error: `Detected ${massStorageHint} device — add with --type and --path`,
+          },
+          () => {} // text output already printed above
+        );
+      }
       process.exitCode = 1;
       return;
     }

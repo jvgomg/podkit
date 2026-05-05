@@ -546,7 +546,7 @@ export type {
   MountResult,
   EjectOptions,
   MountOptions,
-  IpodIdentity,
+  StoredIpodLink,
   DeviceAssessment,
   IFlashAssessment,
   IFlashEvidence,
@@ -583,6 +583,10 @@ export {
 // USB discovery
 export type { UsbDiscoveredDevice, UsbConnectionInfo } from './device/index.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
+
+// Device enumeration framework
+export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';
+export { enumerateConnectedDevices } from './device/index.js';
 
 // SysInfoExtended (device identity from USB firmware)
 export type { SysInfoExtendedResult } from './device/index.js';

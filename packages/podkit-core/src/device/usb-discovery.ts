@@ -1,9 +1,14 @@
 /**
- * USB device discovery for iPods
+ * USB device discovery
  *
- * Discovers iPods connected via USB even when they have no disk representation
+ * Discovers USB devices even when they have no disk representation
  * (unpartitioned/uninitialized devices). This supplements disk-based discovery
  * from diskutil/lsblk.
+ *
+ * The vendor filter that previously limited results to Apple VID 0x05ac has
+ * been removed. Discovery now returns all candidate USB devices; classification
+ * (iPod vs mass-storage vs unknown) is the responsibility of the provider layer
+ * (`enumerateConnectedDevices` in enumeration.ts).
  *
  * Platform support:
  * - macOS: Queries system_profiler SPUSBDataType
@@ -114,35 +119,45 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
 
   function walkItems(items: SystemProfilerItem[]): void {
     for (const item of items) {
-      // Check if this is an Apple device
-      if (item.vendor_id && isAppleVendorId(item.vendor_id)) {
+      // Collect all USB devices — vendor filtering is the provider layer's job.
+      if (item.vendor_id) {
+        const rawVendorId = item.vendor_id;
         const productId = extractProductId(item.product_id);
         if (productId) {
-          const model = resolveIpodModel({ from: 'usb', productId });
-          if (model) {
-            // It's a known iPod — check if supported
-            const unsupportedReason = getUnsupportedReason(productId);
-            const diskIdentifier = extractBsdName(item);
-            const serialNumber = extractSerialNumber(item);
-            const { busNumber, deviceAddress } = parseLocationId(item.location_id);
+          // Normalise vendor ID to "0x…" form when possible; keep raw string otherwise.
+          const vendorIdMatch = rawVendorId.match(/0x[\da-fA-F]+/i);
+          const normalisedVendorId = vendorIdMatch
+            ? vendorIdMatch[0]!.toLowerCase()
+            : isAppleVendorId(rawVendorId)
+              ? APPLE_VENDOR_ID
+              : rawVendorId.toLowerCase();
 
-            const usb: UsbConnectionInfo = {
-              vendorId: APPLE_VENDOR_ID,
-              productId,
-              ...(serialNumber ? { serialNumber } : {}),
-              ...(busNumber !== undefined ? { busNumber } : {}),
-              ...(deviceAddress !== undefined ? { deviceAddress } : {}),
-            };
+          // iPod-specific enrichment: model lookup and unsupported reasons.
+          // Only populated for Apple devices with a recognised product ID.
+          const isApple = isAppleVendorId(rawVendorId);
+          const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
+          const unsupportedReason = isApple && model ? getUnsupportedReason(productId) : undefined;
 
-            results.push({
-              usb,
-              model,
-              ...(diskIdentifier ? { diskIdentifier } : {}),
-              supported: !unsupportedReason,
-              ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
-            });
-          }
-          // Non-iPod Apple devices (iPhones, iPads, AirPods) are silently ignored
+          const diskIdentifier = extractBsdName(item);
+          const serialNumber = extractSerialNumber(item);
+          const { busNumber, deviceAddress } = parseLocationId(item.location_id);
+
+          const usb: UsbConnectionInfo = {
+            vendorId: normalisedVendorId,
+            productId,
+            ...(serialNumber ? { serialNumber } : {}),
+            ...(busNumber !== undefined ? { busNumber } : {}),
+            ...(deviceAddress !== undefined ? { deviceAddress } : {}),
+          };
+
+          const entry: UsbDiscoveredDevice = {
+            usb,
+            ...(model ? { model } : {}),
+            ...(diskIdentifier ? { diskIdentifier } : {}),
+            supported: !unsupportedReason,
+            ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
+          };
+          results.push(entry);
         }
       }
 
@@ -263,19 +278,20 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
 
   for (const device of deviceDirs) {
     const vendorId = `0x${device.idVendor.toLowerCase()}`;
-    if (vendorId !== APPLE_VENDOR_ID) continue;
-
     const productId = `0x${device.idProduct.toLowerCase()}`;
-    const model = resolveIpodModel({ from: 'usb', productId });
-    if (!model) continue;
 
-    const unsupportedReason = getUnsupportedReason(productId);
+    // iPod-specific enrichment: model lookup and unsupported reasons.
+    // Only populated when this is an Apple VID with a recognised product ID.
+    const isApple = vendorId === APPLE_VENDOR_ID;
+    const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
+    const unsupportedReason = isApple && model ? getUnsupportedReason(productId) : undefined;
+
     const busNumber = device.busnum ? parseInt(device.busnum, 10) : undefined;
     const deviceAddress = device.devnum ? parseInt(device.devnum, 10) : undefined;
     const serialNumber = device.serial && device.serial.length > 0 ? device.serial : undefined;
 
     const usb: UsbConnectionInfo = {
-      vendorId: APPLE_VENDOR_ID,
+      vendorId,
       productId,
       ...(serialNumber ? { serialNumber } : {}),
       ...(Number.isFinite(busNumber) ? { busNumber } : {}),
@@ -284,7 +300,7 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
 
     results.push({
       usb,
-      model,
+      ...(model ? { model } : {}),
       supported: !unsupportedReason,
       ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
     });
@@ -566,11 +582,16 @@ async function resolveUsbDeviceFromPathMacOS(
 // ── Main entry point ─────────────────────────────────────────────────────────
 
 /**
- * Discover iPods connected via USB subsystem.
+ * Discover all USB devices visible to the OS.
  *
- * Finds iPods even when they have no disk representation (unpartitioned
- * or uninitialized devices). Results include both supported and unsupported
- * iPod models.
+ * Returns all USB devices regardless of vendor, including non-Apple devices.
+ * Classification (iPod vs mass-storage vs unknown) is the responsibility of
+ * the provider layer in `enumerateConnectedDevices`.
+ *
+ * For devices that happen to be iPods, the result includes the `model` and
+ * `supported`/`notSupportedReason` fields as a convenience; for non-Apple
+ * devices, `model` is absent and `supported` is `true` (no-op — the provider
+ * layer decides supportedness).
  *
  * Never throws — returns an empty array on any failure.
  *

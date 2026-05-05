@@ -9,6 +9,32 @@
  */
 
 // =============================================================================
+// USB connection info
+// =============================================================================
+
+/**
+ * USB bus connection data — the minimal descriptor fields needed to match
+ * a device against a VID/PID hint table.
+ *
+ * This is a shared, platform-agnostic view of a connected USB device.
+ * The full `UsbConnectionInfo` in `podkit-core/device/usb-discovery.ts`
+ * extends this with OS-specific bus addressing fields; providers that only
+ * need matching work against this minimal type.
+ */
+export type UsbConnectionInfo = {
+  /** USB vendor ID as a hex string with 0x prefix, e.g. `'0x071b'` */
+  vendorId: string;
+  /** USB product ID as a hex string with 0x prefix, e.g. `'0x3203'` */
+  productId: string;
+  /** USB serial number string, if reported by the device */
+  serialNumber?: string;
+  /** USB bus number */
+  busNumber?: number;
+  /** USB device address on the bus */
+  deviceAddress?: number;
+};
+
+// =============================================================================
 // USB fingerprint
 // =============================================================================
 
@@ -49,11 +75,17 @@ export type IpodIdentity = {
  * Identity for a generic USB mass-storage device.
  * Either `volumeUuid` or `serialNumber` (or both) may be available depending
  * on the OS and device firmware.
+ *
+ * `presetId` is set by the mass-storage provider when a USB VID/PID hint
+ * matched a known preset (e.g. `'echo-mini'`). Absent when the device was
+ * matched as a generic mass-storage device.
  */
 export type MassStorageIdentity = {
   kind: 'mass-storage';
   volumeUuid?: string;
   serialNumber?: string;
+  /** Preset id matched via USB VID/PID hint table, if any */
+  presetId?: string;
 };
 
 /**

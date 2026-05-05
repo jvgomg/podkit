@@ -25,6 +25,8 @@
   "dependencies": {
     "@ctrl/video-filename-parser": "^5.4.1",
     "@podkit/device-types": "workspace:*",
+    "@podkit/devices-ipod": "workspace:*",
+    "@podkit/devices-mass-storage": "workspace:*",
     "@podkit/ipod-firmware": "workspace:*",
     "@podkit/libgpod-node": "workspace:*",
     "glob": "^13.0.6",

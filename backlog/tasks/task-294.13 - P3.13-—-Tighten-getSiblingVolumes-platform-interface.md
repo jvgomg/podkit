@@ -1,9 +1,10 @@
 ---
 id: TASK-294.13
 title: P3.13 — Tighten getSiblingVolumes platform interface
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:33'
+updated_date: '2026-05-05 18:17'
 labels:
   - device-capability-architecture
   - phase-3
@@ -27,8 +28,14 @@ See spec doc-034, Scope > Core changes > getSiblingVolumes interface tightening.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 LinuxDeviceManager implements getSiblingVolumes returning []
-- [ ] #2 macOS implementation unchanged
-- [ ] #3 DeviceManager interface contract is uniform across platforms
-- [ ] #4 No tests broken by the change
+- [x] #1 LinuxDeviceManager implements getSiblingVolumes returning []
+- [x] #2 macOS implementation unchanged
+- [x] #3 DeviceManager interface contract is uniform across platforms
+- [x] #4 No tests broken by the change
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Lead-implemented inline. Linux platform's getSiblingVolumes already returned [] but had a TODO suggesting future implementation. Replaced TODO with a documented decision: Echo Mini's dual-LUN surfacing is macOS-only; Linux contract is intentionally a no-op. Cross-platform DeviceManager interface unchanged (already declares the method).
+<!-- SECTION:NOTES:END -->

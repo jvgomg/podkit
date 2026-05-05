@@ -13,6 +13,8 @@ Instructions for AI agents (Claude Code, Cursor, etc.) working in this repositor
 packages/
 ├── demo/            # Animated GIF demo (VHS + mocked CLI build)
 ├── device-types/    # Shared TypeScript types for device capabilities, identity, firmware
+├── devices-ipod/    # Pure TypeScript iPod generation tables + capability synthesis (no libgpod)
+├── devices-mass-storage/ # User-extensible mass-storage preset framework (Echo Mini, Rockbox, generic)
 ├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
 ├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
 ├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
@@ -258,6 +260,9 @@ Key files to understand:
 | Virtual iPod Lima config | `tools/lima/virtual-ipod.yaml` |
 | Live demo guide | `tools/demo/README.md` |
 | Device-types entry | `packages/device-types/src/index.ts` |
+| iPod identity | `packages/devices-ipod/src/identity.ts` |
+| iPod capabilities | `packages/devices-ipod/src/capabilities.ts` |
+| Mass-storage preset | `packages/devices-mass-storage/src/preset.ts` |
 | iPod firmware orchestrator | `packages/ipod-firmware/src/inquiry/orchestrator.ts` |
 | iPod firmware SCSI transport | `packages/ipod-firmware/src/inquiry/scsi/index.ts` |
 | Plist parser | `packages/ipod-firmware/src/plist/parser.ts` |

@@ -202,12 +202,17 @@ export interface DeviceManager {
 }
 
 /**
- * Stored iPod identity for auto-detection
+ * Stored iPod link for auto-detection
  *
  * Saved to config file to enable automatic device discovery
  * without requiring explicit device path.
+ *
+ * This represents the config-side stored device link (how to relocate
+ * the device by Volume UUID). Distinct from the live device identity
+ * in @podkit/device-types which carries firmware-level fields
+ * (firewireGuid, serialNumber, familyId).
  */
-export interface IpodIdentity {
+export interface StoredIpodLink {
   /** Volume UUID for persistent identification across mounts */
   volumeUuid: string;
   /** Human-readable volume name */
