@@ -60,7 +60,7 @@ export type UsbTransport = (fp: UsbFingerprint, opts?: TransportOptions) => Prom
 export interface InquireOptions {
   /**
    * Override the default transports. Primarily useful for testing.
-   * If omitted, the production transports are used (USB via libgpod-node,
+   * If omitted, the production transports are used (USB via libusb FFI,
    * SCSI via koffi/IOKit or SG_IO).
    */
   transports?: {

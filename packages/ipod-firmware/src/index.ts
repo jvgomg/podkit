@@ -42,8 +42,17 @@ export {
   type ScsiSyscallResult,
 } from './inquiry/scsi/types.js';
 
-// USB transport (transitional shim over libgpod-node)
-export { readUsbInquiry, type UsbReadOptions, type LibgpodReader } from './inquiry/usb.js';
+// USB transport (libusb-1.0 via koffi FFI)
+export {
+  readUsbInquiry,
+  loadLibusb,
+  UsbInquiryError,
+  type UsbReadOptions,
+  type LibusbBinding,
+  type LibusbPtr,
+  type LibusbLoadResult,
+  type UsbInquiryErrorKind,
+} from './inquiry/usb.js';
 
 // Method availability probe
 export {

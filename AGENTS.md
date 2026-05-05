@@ -16,9 +16,9 @@ packages/
 ├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
 ├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
 ├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
-├── ipod-firmware/   # iPod firmware inquiry — SCSI (SG_IO/IOKit via koffi) + USB delivery
+├── ipod-firmware/   # iPod firmware inquiry — SCSI (SG_IO/IOKit) + USB (libusb-1.0), all via koffi FFI
 ├── ipod-web/        # Virtual iPod UI — React + Jotai web component
-├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
+├── libgpod-node/    # Native Node.js bindings for libgpod (database operations only; no USB/libusb)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
 ├── podkit-cli/      # Command-line interface
 ├── podkit-docker/   # Docker image (Dockerfile, entrypoint, compose files)

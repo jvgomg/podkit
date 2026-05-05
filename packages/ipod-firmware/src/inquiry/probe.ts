@@ -9,16 +9,17 @@
  * extensions and device nodes is stable within a single process lifetime.
  * Call `clearProbeCache()` in tests to reset between cases.
  *
- * USB availability is proxied through `@podkit/libgpod-node`'s native binding
- * (`isNativeAvailable`). This is simpler than loading libusb via koffi directly
- * and reflects the actual runtime requirement for P1: the USB inquiry path
- * depends on the compiled `.node` binding, not raw libusb.
+ * USB availability is determined by attempting to load libusb-1.0 via koffi
+ * directly (P2 — TASK-293.01). The probe shares the loader with `usb.ts` so
+ * "probe says available" implies the inquiry path can run without further
+ * setup.
  *
  * @module
  */
 
 import * as nodefs from 'node:fs';
 import * as nodeos from 'node:os';
+import { loadLibusb } from './usb.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -36,7 +37,7 @@ export interface InquiryMethodAvailability {
 export interface InquiryMethodsAvailability {
   /** SCSI generic inquiry (IOKit on macOS, SG_IO on Linux). */
   scsi: InquiryMethodAvailability;
-  /** USB control-transfer inquiry (via libgpod-node's libusb shim). */
+  /** USB control-transfer inquiry (via libusb-1.0 loaded with koffi). */
   usb: InquiryMethodAvailability;
 }
 
@@ -88,17 +89,14 @@ const defaultPlatform: ProbePlatform = {
 };
 
 /**
- * Default USB loader: tries to import `@podkit/libgpod-node` and checks
- * `isNativeAvailable()`. This is the simpler option vs koffi loading libusb
- * directly — it reflects the actual P1 runtime requirement.
+ * Default USB loader: tries to load libusb-1.0 directly via koffi using
+ * the same candidate list as the inquiry path. Returns `true` only when
+ * the library was found and bound — meaning the USB inquiry can actually
+ * proceed with no further setup.
  */
 const defaultUsbLoader: ProbeUsbLoader = async () => {
   try {
-    const libgpod = await import('@podkit/libgpod-node');
-    if (typeof libgpod.isNativeAvailable === 'function') {
-      return libgpod.isNativeAvailable();
-    }
-    // Binding loaded but isNativeAvailable not exported — treat as available.
+    await loadLibusb();
     return true;
   } catch {
     return false;
@@ -205,7 +203,7 @@ export function clearProbeCache(): void {
 
 /**
  * Options for `probeInquiryMethods`. All fields are optional; defaults use
- * real filesystem, `os.platform()`, and `@podkit/libgpod-node`.
+ * real filesystem, `os.platform()`, and a direct libusb-1.0 koffi load.
  *
  * Pass fakes here in unit tests to avoid touching real FS or native bindings.
  */

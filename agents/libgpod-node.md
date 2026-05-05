@@ -31,25 +31,13 @@ See `packages/libgpod-node/README.md` for the full list. Key deviations:
 | `clearTrackChapters()` | NULL chapterdata crashes | Create empty chapterdata |
 | `replaceTrackFile()` | `copyTrackToDevice()` no-ops if already transferred | Reset `transferred` flag, overwrite file in place |
 
-## Custom libgpod Build (SysInfoExtended USB)
+## Scope: Database Operations Only (post-P2)
 
-The prebuild CI applies a **custom patch** to libgpod that adds `itdb_read_sysinfo_extended_from_usb()` to the library. This function reads device identity XML from iPod firmware via USB vendor control transfers (libusb).
+As of P2 (m-18 device-capability architecture), `@podkit/libgpod-node` is database-only. It handles reading and writing the iTunesDB via libgpod — nothing else.
 
-**Why a patch?** The upstream libgpod 0.8.3 tarball has the `HAVE_LIBUSB` conditional in `configure.ac` and `tools/Makefile.am`, but the actual `itdb_usb.c` source file was only compiled into a standalone binary (`ipod-read-sysinfo-extended`), never into the library itself. Our patch:
-1. Copies `itdb_usb.c` into `src/` (the library)
-2. Adds `HAVE_LIBUSB` conditional to `src/Makefile.am`
-3. Adds the public declaration to `src/itdb.h`
+USB firmware inquiry (`itdb_read_sysinfo_extended_from_usb`, the dlsym shim, the libusb build dependency) was removed in TASK-293.04. That capability now lives entirely in `@podkit/ipod-firmware`, which uses koffi FFI to call libusb-1.0 directly. The native binding no longer requires libusb at build or runtime — no `HAVE_LIBUSB` patch, no `libusb-1.0-0-dev` system header.
 
-**Build implications:**
-- `build-static-deps.sh` builds libusb 1.0.27 as a static dependency
-- `get-ldflags.sh` uses `-Wl,-force_load` (macOS) / `-Wl,--whole-archive` (Linux) for `libgpod.a` — this forces all object files into the binary, including `itdb_usb.o` which is only referenced via `dlsym` at runtime
-- The N-API binding resolves the symbol at runtime via `dlsym(RTLD_DEFAULT, "itdb_read_sysinfo_extended_from_usb")` — if the symbol isn't present (e.g., system libgpod without the patch), the function gracefully returns null
-
-**Files involved:**
-- `tools/prebuild/patches/itdb_usb.c` — the C source
-- `tools/prebuild/patches/apply-sysinfo-usb.sh` — applies the patch to a fresh libgpod source tree
-- `tools/prebuild/build-static-deps.sh` — builds libusb + applies patch
-- `packages/libgpod-node/native/gpod_binding.cc` — dlsym resolution
+If you encounter any remaining libusb references in `packages/libgpod-node/native/` or `binding.gyp`, they are bugs introduced after P2 and should be removed.
 
 ## Investigating New Issues
 

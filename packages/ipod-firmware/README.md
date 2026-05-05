@@ -108,6 +108,5 @@ Tested against:
 
 ## Dependencies
 
-- `koffi` — FFI for SG_IO (Linux) and IOKit (macOS) SCSI access
+- `koffi` — FFI for SG_IO (Linux), IOKit (macOS), and libusb-1.0 (USB control transfer)
 - `@podkit/device-types` — shared type definitions
-- `@podkit/libgpod-node` — USB inquiry shim (transitional; replaced in P2 with a native koffi/libusb implementation)

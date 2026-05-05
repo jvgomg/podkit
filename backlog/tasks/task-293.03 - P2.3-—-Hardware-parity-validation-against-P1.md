@@ -4,6 +4,7 @@ title: P2.3 — Hardware parity validation against P1
 status: To Do
 assignee: []
 created_date: '2026-05-03 11:31'
+updated_date: '2026-05-05 18:01'
 labels:
   - device-capability-architecture
   - phase-2
@@ -35,3 +36,9 @@ See spec doc-033, Hardware validation.
 - [ ] #3 mini 2G, nano 2G, iPod 5G Video: SCSI path unchanged from P1 (no regression)
 - [ ] #4 documents/test-devices.md updated to reflect post-P2 state
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+HITL deferred — requires physical hardware (nano 4G, nano 7G, mini 2G, nano 2G, iPod 5G Video). Status remains To Do pending hardware sweep after P2 merge. All software-side gates pass.
+<!-- SECTION:NOTES:END -->

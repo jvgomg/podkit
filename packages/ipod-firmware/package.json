@@ -25,7 +25,6 @@
   },
   "dependencies": {
     "@podkit/device-types": "workspace:*",
-    "@podkit/libgpod-node": "workspace:*",
     "koffi": "^2.13.0"
   },
   "devDependencies": {

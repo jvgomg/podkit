@@ -130,6 +130,10 @@ export class Database {
 - [ADR-001](/developers/adr/adr-001-runtime): Runtime choice - N-API chosen for compatibility
 - [ADR-003](/developers/adr/adr-003-transcoding): Transcoding backend - Independent of binding choice
 
+## Update (2026-05): USB inquiry moved to @podkit/ipod-firmware (P2)
+
+The `readSysInfoExtendedFromUsb` N-API export, the `dlsym` runtime shim for `itdb_read_sysinfo_extended_from_usb`, and the libusb build dependency were removed from `@podkit/libgpod-node` in P2 of the m-18 device-capability architecture (TASK-293.04). USB firmware inquiry now lives in `@podkit/ipod-firmware` via koffi FFI directly against libusb-1.0. The binding scope is now limited to iTunesDB operations.
+
 ## References
 
 - [node-addon-api Documentation](https://github.com/nodejs/node-addon-api)

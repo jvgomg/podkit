@@ -91,7 +91,7 @@ describe('macOS — USB availability', () => {
   const platform = makePlatform('darwin');
   const fs = makeFs({}, { '/System/Library/Extensions/iPodDriver.kext': true });
 
-  it('reports USB available when libgpod-node binding loads', async () => {
+  it('reports USB available when libusb FFI loads', async () => {
     const result = await probeInquiryMethods({ fs, platform, loadUsb: usbAvailable });
     expect(result.usb.available).toBe(true);
   });
