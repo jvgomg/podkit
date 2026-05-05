@@ -1,10 +1,10 @@
 ---
 id: TASK-292.09
 title: 'P1.9 — Doctor checks: inquiry-methods + sysinfo-consistency'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:30'
-updated_date: '2026-05-03 14:55'
+updated_date: '2026-05-03 15:24'
 labels:
   - device-capability-architecture
   - phase-1
@@ -29,19 +29,19 @@ See spec doc-032, Scope > Diagnostics.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 inquiryMethodsCheck registered, shows in podkit doctor output (no device required)
-- [ ] #2 On macOS, reports iPodDriver.kext presence
-- [ ] #3 On Linux, reports /dev/sg* presence
-- [ ] #4 Both platforms: reports libusb FFI availability
-- [ ] #5 sysinfoConsistencyCheck registered, shows in podkit doctor -d <device>
-- [ ] #6 Detects firewireGuid mismatch between disk SysInfoExtended and live USB descriptor
-- [ ] #7 On mismatch, recommends podkit doctor --repair sysinfo-extended
-- [ ] #8 Existing sysinfo-extended repair is rewired through the new orchestrator (gets SCSI fallback)
-- [ ] #9 Unit tests with mocked probe results and mocked filesystem/USB descriptor
+- [x] #1 inquiryMethodsCheck registered, shows in podkit doctor output (no device required)
+- [x] #2 On macOS, reports iPodDriver.kext presence
+- [x] #3 On Linux, reports /dev/sg* presence
+- [x] #4 Both platforms: reports libusb FFI availability
+- [x] #5 sysinfoConsistencyCheck registered, shows in podkit doctor -d <device>
+- [x] #6 Detects firewireGuid mismatch between disk SysInfoExtended and live USB descriptor
+- [x] #7 On mismatch, recommends podkit doctor --repair sysinfo-extended
+- [x] #8 Existing sysinfo-extended repair is rewired through the new orchestrator (gets SCSI fallback)
+- [x] #9 Unit tests with mocked probe results and mocked filesystem/USB descriptor
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Decision (2026-05-03): Checks live in packages/podkit-core/src/diagnostics/checks/, NOT in @podkit/ipod-firmware as originally spec'd in doc-032. Reason: core's DiagnosticCheck interface imports IpodDatabase + CollectionAdapter (deep core types); placing checks in ipod-firmware would create a circular dep or require extracting the entire diagnostics framework to a 3rd package. Cleaner one-way dep: core/diagnostics/checks/inquiry-methods.ts imports probeInquiryMethods from @podkit/ipod-firmware. The placeholder stubs in packages/ipod-firmware/src/diagnostics/ have been deleted in the Phase A cleanup pass — recreate the checks in core when this task starts.
+Both checks created in packages/podkit-core/src/diagnostics/checks/ (deviation from spec — see prior implementation notes for the architectural reasoning). inquiryMethodsCheck is system-scope, applies to all device types, surfaces probeInquiryMethods output with platform-aware summary text. sysinfoConsistencyCheck is device-scope (iPod only), reads on-disk SysInfoExtended via injected fs reader, compares its FireWireGUID against the live USB descriptor serial obtained from resolveUsbDeviceFromPath() — for classic iPods the USB serialNumber field IS the FireWireGUID verbatim. Skips (not fails) when USB descriptor unavailable to avoid false positives on non-USB mounts. DiagnosticContext.db has no GUID accessor — TODO documented to plumb GUID through context in a future task. Repair re-uses sysInfoExtendedRepair (TASK-292.08 already wired it through the orchestrator). 20 new tests / 2486 total pass / 0 fail. Hardware validated: macOS no-iPod scenario shows "iPodDriver.kext present, libusb available" + "SysInfoExtended not present — run --repair sysinfo-extended".
 <!-- SECTION:NOTES:END -->

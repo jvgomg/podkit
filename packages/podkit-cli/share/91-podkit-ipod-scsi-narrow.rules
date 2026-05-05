@@ -1,0 +1,104 @@
+# podkit — udev rule for SCSI access to Apple iPod devices (product-ID-narrowed variant).
+#
+# This is the security-conscious alternative to 91-podkit-ipod-scsi.rules.
+# It restricts access by product ID to the known iPod USB product ID ranges,
+# rather than all Apple-vendor SCSI generic devices. Install this if you
+# prefer principle-of-least-privilege over operational convenience.
+#
+# Trade-off: if you connect a new iPod model whose product ID is not listed
+# here, it will fall back to the root:disk 0660 default (i.e. sudo required).
+# When that happens, switch to the broader vendor-only rule or add the new ID.
+#
+# Install (instead of the broad rule):
+#   sudo cp 91-podkit-ipod-scsi-narrow.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+#   (then unplug and replug your iPod)
+#
+# Known iPod USB product ID ranges (from Apple's USB device database):
+#
+#   iPod 1st gen:     0x1200
+#   iPod 2nd gen:     0x1201
+#   iPod 3rd gen:     0x1203
+#   iPod 4th gen (Color/Photo): 0x1204-0x1205
+#   iPod mini 1st:   0x1209
+#   iPod mini 2nd:   0x120a
+#   iPod nano 1st:   0x120b
+#   iPod nano 2nd:   0x1260
+#   iPod nano 3rd:   0x1261
+#   iPod nano 4th:   0x1262
+#   iPod nano 5th:   0x1264
+#   iPod nano 6th:   0x126c
+#   iPod nano 7th:   0x1265
+#   iPod video 5th:  0x1206-0x1207
+#   iPod classic 6th/7th: 0x1261-0x1263
+#
+# Note: This list is best-effort. Keep the broader vendor-only rule if you
+# sync new/uncommon devices regularly or have multiple iPod generations.
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1200", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1201", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1203", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1204", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1205", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1206", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1207", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1209", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="120a", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="120b", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1260", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1261", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1262", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1263", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1264", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="1265", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", ATTRS{idProduct}=="126c", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"

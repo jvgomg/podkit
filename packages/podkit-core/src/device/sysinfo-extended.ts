@@ -13,6 +13,8 @@
 
 import * as fs from 'node:fs';
 import { join } from 'node:path';
+import { inquireFirmware } from '@podkit/ipod-firmware';
+import type { UsbFingerprint } from '@podkit/device-types';
 import { resolveIpodModel } from './ipod-models.js';
 import type { IpodModel } from './ipod-models.js';
 
@@ -109,26 +111,35 @@ function validateXml(xml: string): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// ── Default USB reader ──────────────────────────────────────────────────────
+// ── Default firmware inquiry (orchestrator) ─────────────────────────────────
 
 /**
- * Dynamically import the USB reader function from libgpod-node.
- * Returns null if native bindings are not available.
- * Uses dynamic import() to avoid hard dependency on native bindings.
+ * Run the @podkit/ipod-firmware orchestrator against a USB device address.
+ *
+ * The orchestrator probes available transports (USB via libgpod-node shim and
+ * SCSI via koffi/IOKit or SG_IO) and falls back to SCSI when USB inquiry is
+ * unavailable or fails. Returns the raw SysInfoExtended XML payload, or null
+ * when no transport could deliver a parseable response.
+ *
+ * Only `bus` and `devnum` are populated on the {@link UsbFingerprint} here —
+ * those are the fields the Linux SCSI path needs to derive `/dev/sgN`. macOS
+ * SCSI also benefits from `vendorId`/`productId`, but the libgpod USB shim
+ * does not require them, and `ensureSysInfoExtended`'s caller does not
+ * currently provide them. TODO(P2): thread vendorId/productId/serialNumber
+ * through the call sites to enable cross-platform SCSI fingerprinting.
  */
-async function getDefaultUsbReader(): Promise<ReadFromUsbFn | null> {
-  try {
-    const libgpod = await import('@podkit/libgpod-node');
-    if (typeof libgpod.isNativeAvailable === 'function' && !libgpod.isNativeAvailable()) {
-      return null;
-    }
-    if (typeof libgpod.readSysInfoExtendedFromUsb === 'function') {
-      return libgpod.readSysInfoExtendedFromUsb;
-    }
-    return null;
-  } catch {
-    return null;
-  }
+async function inquireViaOrchestrator(
+  busNumber: number,
+  deviceAddress: number
+): Promise<string | null> {
+  const fp: UsbFingerprint = {
+    vendorId: '',
+    productId: '',
+    bus: busNumber,
+    devnum: deviceAddress,
+  };
+  const result = await inquireFirmware(fp);
+  return result?.rawXml ?? null;
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
@@ -184,20 +195,23 @@ export async function ensureSysInfoExtended(
     return existing;
   }
 
-  // Step 2: Resolve USB reader
-  const reader = readFromUsb ?? (await getDefaultUsbReader());
-  if (!reader) {
-    return {
-      present: false,
-      source: 'unavailable',
-      error: 'Native bindings not available for USB device read',
-    };
-  }
-
-  // Step 3: Read from USB
+  // Step 2: Read SysInfoExtended XML.
+  //
+  // When `readFromUsb` is supplied, use it directly — this preserves the
+  // existing test injection point (tests pass a mock that returns/throws
+  // synthetic XML and assert on the surfaced error path).
+  //
+  // When `readFromUsb` is omitted (production), delegate to the
+  // @podkit/ipod-firmware orchestrator, which probes USB and SCSI transports
+  // and falls back transparently. The orchestrator never throws — it returns
+  // null on any transport or parse failure.
   let xml: string | null;
   try {
-    xml = reader(usbAddress.busNumber, usbAddress.deviceAddress);
+    if (readFromUsb) {
+      xml = readFromUsb(usbAddress.busNumber, usbAddress.deviceAddress);
+    } else {
+      xml = await inquireViaOrchestrator(usbAddress.busNumber, usbAddress.deviceAddress);
+    }
   } catch (err) {
     return {
       present: false,

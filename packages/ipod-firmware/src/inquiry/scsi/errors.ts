@@ -118,7 +118,19 @@ export class ScsiError extends Error {
 function defaultMessage(f: ScsiErrorFields): string {
   switch (f.kind) {
     case 'eacces':
-      return `permission denied accessing ${f.devicePath ?? 'SCSI device'}`;
+      return [
+        `Permission denied accessing ${f.devicePath ?? 'SCSI device'}.`,
+        '',
+        'podkit needs SCSI access to read iPod device identity. To fix:',
+        '',
+        '  1. One-off: re-run with sudo.',
+        '',
+        '  2. Persistent: install the udev rule:',
+        '       podkit doctor --repair udev-rule',
+        '     (then unplug and replug your iPod)',
+        '',
+        'Details: https://podkit.dev/docs/troubleshooting#linux-scsi-permissions',
+      ].join('\n');
     case 'enoent':
       return `${f.devicePath ?? 'SCSI device'} does not exist`;
     case 'ebusy':

@@ -1,14 +1,42 @@
 /**
  * Firmware inquiry orchestrator
  *
- * Single deep entry point for iPod firmware inquiry. Attempts USB inquiry
- * first (via the libgpod-node shim) and falls back to SCSI if USB fails.
- * Both transports can be overridden for testing.
+ * Single deep entry point for iPod firmware inquiry. Probes available
+ * transports, attempts USB inquiry first (richer data on 5G+ devices),
+ * and falls back to SCSI if USB fails or is unavailable. Both transports
+ * can be overridden for testing.
+ *
+ * ## Method-selection rules
+ *
+ * 1. USB is preferred when both transports are available — it returns more
+ *    fields (full video codec list, `ImageSpecifications2`, etc.) than SCSI
+ *    on iPod 5G and later.
+ * 2. A USB transport _failure_ (transport throws) silently falls through to
+ *    SCSI. The user only sees the final outcome.
+ * 3. A USB transport _success_ that returns bytes which fail to parse does
+ *    NOT trigger SCSI fallback. A device that returned bytes is reachable;
+ *    the bytes failing to parse is a different problem (corrupt firmware,
+ *    truncated transfer, encoding mismatch) than a transport failure, and
+ *    silently re-querying via SCSI would hide the real issue. We return
+ *    `null` instead.
+ * 4. If both methods fail at the transport layer, return `null` — the
+ *    orchestrator never throws. Callers branch on `null` for "could not
+ *    inquire" and a populated `ParsedFirmware` for success.
  *
  * @module
  */
 
 import type { UsbFingerprint, ParsedFirmware } from '@podkit/device-types';
+import { extractFromPlist } from '../firmware/extract.js';
+import { parsePlist } from '../plist/parser.js';
+import {
+  probeInquiryMethods,
+  type InquiryMethodsAvailability,
+  type ProbeOptions,
+} from './probe.js';
+import { scsiReadVpdPages } from './scsi/index.js';
+import { readUsbInquiry } from './usb.js';
+import { chooseTransports } from './selection.js';
 
 /** Options forwarded to a transport invocation. */
 export interface TransportOptions {
@@ -41,25 +69,133 @@ export interface InquireOptions {
   };
   /** Per-transport timeout override in milliseconds. Forwarded to each transport. */
   timeoutMs?: number;
+  /**
+   * Override the probe step. If supplied, this exact availability snapshot is
+   * used and `probeInquiryMethods()` is not called. Primarily useful for tests
+   * that want deterministic plan dispatch without touching the FS or native
+   * bindings.
+   */
+  availability?: InquiryMethodsAvailability;
+  /**
+   * Probe overrides used when {@link availability} is not supplied. Forwarded
+   * directly to {@link probeInquiryMethods}. Primarily useful for tests.
+   */
+  probeOptions?: ProbeOptions;
+}
+
+// Default production transports — defined module-scoped so they can be replaced
+// piecemeal by injection.
+const defaultUsbTransport: UsbTransport = (fp, opts) =>
+  readUsbInquiry(fp, opts ? { timeoutMs: opts.timeoutMs } : undefined);
+
+const defaultScsiTransport: ScsiTransport = (fp, opts) =>
+  scsiReadVpdPages(fp, opts ? { timeoutMs: opts.timeoutMs } : undefined);
+
+/**
+ * Parse raw inquiry bytes into a {@link ParsedFirmware}, returning `null`
+ * on any failure. Wraps both decoding (UTF-8) and structured extraction —
+ * a `null` return from this helper means the bytes were unusable, regardless
+ * of whether the failure was at the codec, parser, or extractor stage.
+ */
+function parseAndExtract(bytes: Uint8Array): ParsedFirmware | null {
+  let xml: string;
+  try {
+    xml = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+  let plist;
+  try {
+    plist = parsePlist(xml);
+  } catch {
+    return null;
+  }
+  return extractFromPlist(plist, xml);
 }
 
 /**
  * Inquire the connected iPod's firmware capabilities via USB or SCSI.
  *
- * Attempts USB inquiry first. If USB inquiry fails or is unavailable,
- * falls back to SCSI inquiry. Returns `null` if both transports fail
- * or the device does not respond with a parseable SysInfoExtended payload.
+ * Probes which transports are available, then dispatches:
+ *
+ * - `usb-then-scsi`: USB attempted first; if it throws, SCSI is tried as a
+ *   fallback. USB-success is returned immediately — SCSI is _not_ called when
+ *   USB returns parseable bytes (acceptance criterion #4).
+ * - `usb-only` / `scsi-only`: only the available transport is invoked.
+ * - `none`: returns `null` without calling any transport.
+ *
+ * Returns `null` (never throws) on:
+ * - both transports failing,
+ * - the (sole or fallback) transport returning bytes that don't parse,
+ * - bytes parsing as a plist but missing required identity fields.
  *
  * @param fp - USB fingerprint of the target device.
- * @param opts - Optional transport overrides.
+ * @param opts - Optional transport overrides, timeout, and probe overrides.
  * @returns Parsed firmware data, or `null` on failure.
+ *
+ * @example
+ * ```typescript
+ * import { inquireFirmware } from '@podkit/ipod-firmware';
+ *
+ * const fp = { vendorId: '05ac', productId: '1261', bus: 3, devnum: 4 };
+ * const fw = await inquireFirmware(fp);
+ * if (fw) {
+ *   console.log(fw.serialNumber);            // "7K74HBYZRP2"
+ *   console.log(fw.capabilities?.familyId);   // 120 (nano 4G)
+ * }
+ * ```
  */
 export async function inquireFirmware(
   fp: UsbFingerprint,
   opts?: InquireOptions
 ): Promise<ParsedFirmware | null> {
-  // TODO: implement in TASK-292.05 (inquiry orchestrator)
-  void fp;
-  void opts;
-  throw new Error('not implemented in P1.1');
+  const usbTransport = opts?.transports?.usb ?? defaultUsbTransport;
+  const scsiTransport = opts?.transports?.scsi ?? defaultScsiTransport;
+  const transportOpts: TransportOptions | undefined =
+    opts?.timeoutMs !== undefined ? { timeoutMs: opts.timeoutMs } : undefined;
+
+  const availability = opts?.availability ?? (await probeInquiryMethods(opts?.probeOptions));
+  const plan = chooseTransports(availability);
+
+  switch (plan) {
+    case 'none':
+      return null;
+
+    case 'usb-only': {
+      try {
+        const bytes = await usbTransport(fp, transportOpts);
+        return parseAndExtract(bytes);
+      } catch {
+        return null;
+      }
+    }
+
+    case 'scsi-only': {
+      try {
+        const bytes = await scsiTransport(fp, transportOpts);
+        return parseAndExtract(bytes);
+      } catch {
+        return null;
+      }
+    }
+
+    case 'usb-then-scsi': {
+      // USB success path: parse and return immediately. Bytes that fail to
+      // parse do NOT trigger SCSI fallback (see module TSDoc rule 3).
+      try {
+        const bytes = await usbTransport(fp, transportOpts);
+        return parseAndExtract(bytes);
+      } catch (err) {
+        // TODO(structured-logging): route via core's logger; suppress in test runs.
+        // eslint-disable-next-line no-console
+        console.debug('[ipod-firmware] USB inquiry failed, falling back to SCSI', err);
+      }
+      try {
+        const bytes = await scsiTransport(fp, transportOpts);
+        return parseAndExtract(bytes);
+      } catch {
+        return null;
+      }
+    }
+  }
 }

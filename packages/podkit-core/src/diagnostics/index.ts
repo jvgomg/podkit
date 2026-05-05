@@ -16,9 +16,12 @@ import { IpodDatabase } from '../ipod/database.js';
 import { artworkRebuildCheck } from './checks/artwork.js';
 import { artworkResetCheck } from './checks/artwork-reset.js';
 import { codecEncodersCheck } from './checks/codec-encoders.js';
+import { inquiryMethodsCheck } from './checks/inquiry-methods.js';
 import { orphanFilesCheck } from './checks/orphans.js';
 import { orphanFilesMassStorageCheck } from './checks/orphans-mass-storage.js';
 import { sysInfoExtendedCheck } from './checks/sysinfo-extended.js';
+import { sysinfoConsistencyCheck } from './checks/sysinfo-consistency.js';
+import { udevRuleCheck } from './checks/udev-rule.js';
 import { videoEncoderCheck } from './checks/video-encoder.js';
 import type {
   DiagnosticCheck,
@@ -48,10 +51,13 @@ const CHECKS: DiagnosticCheck[] = [
   artworkRebuildCheck,
   artworkResetCheck,
   codecEncodersCheck,
+  inquiryMethodsCheck,
   videoEncoderCheck,
   orphanFilesCheck,
   orphanFilesMassStorageCheck,
   sysInfoExtendedCheck,
+  sysinfoConsistencyCheck,
+  udevRuleCheck,
 ];
 
 /**

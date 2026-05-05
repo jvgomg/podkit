@@ -171,7 +171,9 @@ export const doctorCommand = new Command('doctor')
       'artwork-reset',
       'orphan-files',
       'orphan-files-mass-storage',
+      'sysinfo-consistency',
       'sysinfo-extended',
+      'udev-rule',
     ])
   )
   .option('-c, --collection <name>', 'music collection to use as artwork source')
@@ -209,6 +211,15 @@ export const doctorCommand = new Command('doctor')
       if (!check.repair) {
         out.error(`Check "${options.repair}" does not support automatic repair.`);
         process.exitCode = 1;
+        return;
+      }
+
+      // System-level repairs (scope === 'system' with no requirements) don't need a device.
+      // Run them immediately without device resolution or database access.
+      const isSystemRepair = check.scope === 'system' && check.repair.requirements.length === 0;
+
+      if (isSystemRepair) {
+        await runSystemRepair(check, options, out);
         return;
       }
 
@@ -716,6 +727,65 @@ async function runDoctorDiagnostics(
   opened?.ipod?.close();
 
   if (!healthy) {
+    process.exitCode = 1;
+  }
+}
+
+// ── System-level repair (no device required) ─────────────────────────────────
+
+/**
+ * Run a system-level repair that requires no device or database access.
+ * Used for repairs like `udev-rule` that operate on the host system
+ * independently of any connected iPod.
+ */
+async function runSystemRepair(
+  check: NonNullable<ReturnType<typeof import('@podkit/core').getDiagnosticCheck>>,
+  options: DoctorOptions,
+  out: OutputContext
+): Promise<void> {
+  const repair = check.repair!;
+  const dryRun = options.dryRun ?? false;
+
+  if (!dryRun) {
+    out.print(`Repairing ${check.id}: ${repair.description}...`);
+    out.newline();
+  } else {
+    out.print(`Dry run: ${repair.description}...`);
+    out.newline();
+  }
+
+  // System repairs receive a minimal stub context (no real device needed).
+  const stubCtx = {
+    mountPoint: '',
+    deviceType: 'ipod' as const,
+    adapters: [],
+  };
+
+  try {
+    const result = await repair.run(stubCtx, { dryRun });
+
+    const output: RepairOutput = {
+      success: result.success,
+      summary: result.summary,
+      checkId: check.id,
+      dryRun,
+      details: result.details,
+    };
+
+    out.result<RepairOutput>(output, () => {
+      out.print(result.summary);
+
+      if (!dryRun && result.success) {
+        out.newline();
+        out.success('Repair complete.');
+      }
+    });
+
+    if (!result.success) {
+      process.exitCode = 1;
+    }
+  } catch (err) {
+    out.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
     process.exitCode = 1;
   }
 }

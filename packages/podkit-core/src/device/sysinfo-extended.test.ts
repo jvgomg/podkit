@@ -246,14 +246,20 @@ describe('ensureSysInfoExtended', () => {
     expect(result.error).toContain('bus 1, device 4');
   });
 
-  it('returns unavailable when no reader is provided and USB read fails', async () => {
+  it('returns unavailable when reader returns null (no XML payload)', async () => {
     createIpodStructure(tmpDir);
 
-    // Pass no readFromUsb — uses default resolver. With native available,
-    // the real function runs but returns null for invalid bus/address.
-    // Without native, the import fails and returns null reader.
-    // Either way: result is unavailable.
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS);
+    // Mock reader returns null — deterministic across machines. Previously
+    // this test omitted the reader and relied on the production path
+    // returning null for invalid bus/devnum. That assumption broke once
+    // ensureSysInfoExtended started routing through @podkit/ipod-firmware's
+    // orchestrator, which on a dev machine with a real iPod attached can
+    // succeed via SCSI fallback regardless of the bus/devnum requested
+    // (macOS SCSI matches by IOService class, not bus/devnum). Injecting
+    // a null-returning reader exercises the same "unavailable" code path
+    // independent of host hardware.
+    const mockReader: ReadFromUsbFn = () => null;
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');

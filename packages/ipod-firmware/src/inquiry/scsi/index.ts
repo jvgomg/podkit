@@ -101,13 +101,17 @@ export async function scsiReadVpdPages(
  * Drive a {@link ScsiSyscall} through the page-0xC0 index → per-subpage
  * read → concatenation flow.
  *
- * Exposed for unit tests under {@link readAllVpdSubpages.NAME} — production
- * callers use {@link scsiReadVpdPages}.
+ * Exposed for unit tests — production callers use {@link scsiReadVpdPages}.
  *
- * Closes risks 1, 2, 3 from FINDINGS.md "Risks":
+ * Closes risks 1, 2, 3 from the P0 spike findings:
  * - sense-data inspection (CHECK CONDITION → parsed sense in ScsiError)
  * - short-read re-read (page-length field drives a second request)
  * - errno → kind translation (delegated to platform layer's syscall result)
+ *
+ * @param syscall - Platform-supplied single-VPD-read function. Inject a fake
+ *   here in tests to drive the loop without any FFI.
+ * @returns Concatenated subpage data forming the full SysInfoExtended XML payload.
+ * @throws {ScsiError} When any VPD read fails or the page-0xC0 index is empty.
  */
 export function readAllVpdSubpages(syscall: ScsiSyscall): Uint8Array {
   const indexBuf = readOneVpdPageWithRetry(syscall, VPD_PAGE_INDEX);

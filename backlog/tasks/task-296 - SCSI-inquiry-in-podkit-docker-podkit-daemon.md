@@ -4,6 +4,7 @@ title: SCSI inquiry in podkit-docker + podkit-daemon
 status: To Do
 assignee: []
 created_date: '2026-05-03 12:46'
+updated_date: '2026-05-03 15:57'
 labels:
   - device-capability-architecture
   - docker
@@ -14,9 +15,9 @@ dependencies:
 documentation:
   - backlog/docs/doc-030 - PRD-Device-Capability-Architecture.md
   - backlog/docs/doc-032 - Spec-Phase-1-ipod-firmware-SCSI-delivery.md
-  - tools/scsi-spike/FINDINGS.md
   - packages/podkit-docker/Dockerfile
   - packages/podkit-docker/entrypoint.sh
+  - packages/ipod-firmware/README.md
 ordinal: 12000
 ---
 

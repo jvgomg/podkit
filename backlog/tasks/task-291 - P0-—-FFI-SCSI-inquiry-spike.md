@@ -4,7 +4,7 @@ title: P0 — FFI SCSI inquiry spike
 status: Done
 assignee: []
 created_date: '2026-05-03 11:28'
-updated_date: '2026-05-03 12:39'
+updated_date: '2026-05-03 15:58'
 labels:
   - device-capability-architecture
   - phase-0
@@ -12,9 +12,9 @@ labels:
 milestone: m-18
 dependencies: []
 references:
-  - tools/scsi-spike/linux.ts
-  - tools/scsi-spike/macos.ts
-  - tools/scsi-spike/FINDINGS.md
+  - packages/ipod-firmware/src/inquiry/scsi/linux.ts
+  - packages/ipod-firmware/src/inquiry/scsi/macos.ts
+  - packages/ipod-firmware/README.md
 documentation:
   - backlog/docs/doc-030 - PRD-Device-Capability-Architecture.md
   - backlog/docs/doc-031 - Spec-Phase-0-FFI-SCSI-inquiry-spike.md

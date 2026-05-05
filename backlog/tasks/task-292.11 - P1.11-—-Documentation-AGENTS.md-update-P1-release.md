@@ -1,9 +1,10 @@
 ---
 id: TASK-292.11
 title: 'P1.11 — Documentation, AGENTS.md update, P1 release'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:30'
+updated_date: '2026-05-03 15:58'
 labels:
   - device-capability-architecture
   - phase-1
@@ -26,11 +27,17 @@ See spec doc-032, Migration steps 12–14.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 @podkit/device-types README written and accurate
-- [ ] #2 @podkit/ipod-firmware README written and accurate
-- [ ] #3 TSDoc on all public exports of both packages
-- [ ] #4 AGENTS.md monorepo structure updated to include both packages
-- [ ] #5 Changeset entries for podkit (doctor output changes), @podkit/core (sysinfo-extended internal change), @podkit/device-types, @podkit/ipod-firmware
-- [ ] #6 tools/scsi-spike/ directory removed from repo
+- [x] #1 @podkit/device-types README written and accurate
+- [x] #2 @podkit/ipod-firmware README written and accurate
+- [x] #3 TSDoc on all public exports of both packages
+- [x] #4 AGENTS.md monorepo structure updated to include both packages
+- [x] #5 Changeset entries for podkit (doctor output changes), @podkit/core (sysinfo-extended internal change), @podkit/device-types, @podkit/ipod-firmware
+- [x] #6 tools/scsi-spike/ directory removed from repo
 - [ ] #7 P1 released through CI
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+READMEs: packages/device-types/README.md (~60 lines) and packages/ipod-firmware/README.md (~110 lines) written. TSDoc was mostly complete; added @param/@returns/@throws to readAllVpdSubpages, and @example blocks to parsePlist, inquireFirmware, and extractFromPlist. AGENTS.md: device-types and ipod-firmware added alphabetically to monorepo structure tree; 4 entry-point rows added to table. Changeset: single grouped changeset ipod-firmware-scsi-delivery.md covering all four packages (podkit minor, @podkit/core minor, @podkit/device-types minor, @podkit/ipod-firmware minor). tools/scsi-spike/ deleted; oxlint.json scsi-spike override removed; TASK-291 references updated from tools/scsi-spike/ paths to packages/ipod-firmware/ paths; TASK-292.12 and TASK-296 documentation lists updated similarly. AC #7 (P1 released through CI) is deferred — requires lead to git push after review.
+<!-- SECTION:NOTES:END -->

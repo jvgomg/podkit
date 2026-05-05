@@ -15,7 +15,11 @@ export {
   type ScsiTransport,
   type UsbTransport,
   type InquireOptions,
+  type TransportOptions,
 } from './inquiry/orchestrator.js';
+
+// Transport selection (pure planning function)
+export { chooseTransports, type SelectionPlan } from './inquiry/selection.js';
 
 // SCSI transport
 export {
@@ -65,6 +69,9 @@ export {
   type PlistBoolean,
   type PlistReal,
 } from './plist/parser.js';
+
+// Firmware extraction
+export { extractFromPlist, bigintToFireWireGuid } from './firmware/extract.js';
 
 // Diagnostic checks live in @podkit/core (see TASK-292.09 — DiagnosticCheck
 // type carries deep core dependencies, so checks are registered in core and

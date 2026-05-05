@@ -13,7 +13,8 @@
   },
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "share"
   ],
   "scripts": {
     "build": "bun build src/main.ts --outdir dist --target node --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\" && bun run build:types",

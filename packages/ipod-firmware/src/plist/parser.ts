@@ -447,6 +447,19 @@ function parseArray(sc: Scanner): PlistArray {
  * @returns Structured plist value tree rooted at the top-level plist element.
  * @throws {Error} If the XML is malformed, contains unsupported element types,
  *   or contains invalid base64 in a `<data>` element.
+ *
+ * @example
+ * ```typescript
+ * import { parsePlist } from '@podkit/ipod-firmware';
+ *
+ * const plist = parsePlist(xmlString);
+ * if (plist.type === 'dict') {
+ *   const familyId = plist.value['FamilyID'];
+ *   if (familyId?.type === 'integer') {
+ *     console.log(Number(familyId.value)); // e.g. 120
+ *   }
+ * }
+ * ```
  */
 export function parsePlist(xml: string): PlistValue {
   const sc = new Scanner(xml);

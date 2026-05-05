@@ -12,9 +12,11 @@ Instructions for AI agents (Claude Code, Cursor, etc.) working in this repositor
 ```
 packages/
 ├── demo/            # Animated GIF demo (VHS + mocked CLI build)
+├── device-types/    # Shared TypeScript types for device capabilities, identity, firmware
 ├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
 ├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
 ├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
+├── ipod-firmware/   # iPod firmware inquiry — SCSI (SG_IO/IOKit via koffi) + USB delivery
 ├── ipod-web/        # Virtual iPod UI — React + Jotai web component
 ├── libgpod-node/    # Native Node.js bindings for libgpod (C library)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
@@ -255,3 +257,7 @@ Key files to understand:
 | Virtual iPod Tauri app | `packages/virtual-ipod-app/src/App.tsx` |
 | Virtual iPod Lima config | `tools/lima/virtual-ipod.yaml` |
 | Live demo guide | `tools/demo/README.md` |
+| Device-types entry | `packages/device-types/src/index.ts` |
+| iPod firmware orchestrator | `packages/ipod-firmware/src/inquiry/orchestrator.ts` |
+| iPod firmware SCSI transport | `packages/ipod-firmware/src/inquiry/scsi/index.ts` |
+| Plist parser | `packages/ipod-firmware/src/plist/parser.ts` |
