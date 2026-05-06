@@ -27,6 +27,19 @@ export interface ContentPaths {
   tvShowsDir: string;
 }
 
+/**
+ * Default content directory layout used by Rockbox and generic presets.
+ *
+ * This is the canonical home for `DEFAULT_CONTENT_PATHS`. The copy in
+ * `podkit-core/device/mass-storage-utils.ts` re-exports from here for
+ * backward-compatibility and is scheduled for removal at m-8.
+ */
+export const DEFAULT_CONTENT_PATHS: ContentPaths = {
+  musicDir: 'Music',
+  moviesDir: 'Video/Movies',
+  tvShowsDir: 'Video/Shows',
+};
+
 // =============================================================================
 // Preset IDs
 // =============================================================================

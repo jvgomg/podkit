@@ -12,6 +12,7 @@ import {
   getPresetBitrate,
   isMaxPreset,
   isValidQualityPreset,
+  isValidTransferMode,
   isVbrEncoding,
 } from './types.js';
 
@@ -152,5 +153,19 @@ describe('isVbrEncoding', () => {
 
   it('returns true for undefined (default is vbr)', () => {
     expect(isVbrEncoding(undefined)).toBe(true);
+  });
+});
+
+describe('isValidTransferMode', () => {
+  it('returns true for valid transfer modes', () => {
+    expect(isValidTransferMode('fast')).toBe(true);
+    expect(isValidTransferMode('optimized')).toBe(true);
+    expect(isValidTransferMode('portable')).toBe(true);
+  });
+
+  it('returns false for invalid values', () => {
+    expect(isValidTransferMode('invalid')).toBe(false);
+    expect(isValidTransferMode('')).toBe(false);
+    expect(isValidTransferMode('optimised')).toBe(false);
   });
 });

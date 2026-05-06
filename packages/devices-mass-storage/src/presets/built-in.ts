@@ -11,25 +11,8 @@
  * @module
  */
 
-import type { BuiltInPresetId, ContentPaths, MassStoragePreset } from './types.js';
-
-// =============================================================================
-// Default content paths
-// =============================================================================
-
-/**
- * Default content directory layout used by Rockbox and generic presets.
- *
- * Mirrors `DEFAULT_CONTENT_PATHS` from `podkit-core/device/mass-storage-utils.ts`.
- * The value is inlined here to avoid a dependency on podkit-core.
- * TASK-294.05 will move `ContentPaths` / `DEFAULT_CONTENT_PATHS` to this
- * package and delete the duplication.
- */
-const DEFAULT_CONTENT_PATHS: ContentPaths = {
-  musicDir: 'Music',
-  moviesDir: 'Video/Movies',
-  tvShowsDir: 'Video/Shows',
-};
+import { DEFAULT_CONTENT_PATHS } from './types.js';
+import type { BuiltInPresetId, MassStoragePreset } from './types.js';
 
 // =============================================================================
 // Built-in presets

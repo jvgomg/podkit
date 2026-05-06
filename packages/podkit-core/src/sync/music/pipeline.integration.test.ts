@@ -30,7 +30,7 @@ import {
 import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import { IpodDatabase } from '../../ipod/database.js';
 import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
-import { getDeviceCapabilities } from '../../ipod/capabilities.js';
+import { capsForLibgpodGeneration } from '../../ipod/test-helpers.js';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncPlan } from '../engine/types.js';
 
@@ -184,7 +184,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 
@@ -242,7 +242,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 
@@ -311,7 +311,7 @@ describe('SyncExecutor integration', () => {
 
           // Now remove it via executor
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 
@@ -364,7 +364,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 
@@ -415,7 +415,7 @@ describe('SyncExecutor integration', () => {
 
         try {
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 
@@ -473,7 +473,7 @@ describe('SyncExecutor integration', () => {
           const initialCount = db.trackCount;
 
           const deps: ExecutorDependencies = {
-            device: new IpodDeviceAdapter(db, getDeviceCapabilities('classic_3')),
+            device: new IpodDeviceAdapter(db, capsForLibgpodGeneration('classic_3')),
             transcoder,
           };
 

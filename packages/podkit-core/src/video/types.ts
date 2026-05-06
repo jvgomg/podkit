@@ -27,7 +27,56 @@
  * | iPod Nano 3G-5G | 320x240 | Baseline 3.0 |
  */
 
-import { getVideoProfile } from '../ipod/generation.js';
+// =============================================================================
+// Video Profile Mapping (libgpod generation → FFmpeg profile name)
+// =============================================================================
+
+/**
+ * Maps libgpod generation strings to video device profile names.
+ *
+ * This is the video-subsystem's own copy of the profile mapping, moved here
+ * from `ipod/generation.ts` (which was video-agnostic generation metadata).
+ * Only video-capable generations appear; all others return undefined via lookup.
+ *
+ * @see DEVICE_PROFILES below for the full profile spec.
+ */
+const LIBGPOD_GENERATION_TO_VIDEO_PROFILE: Record<
+  string,
+  'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g'
+> = {
+  // iPod Video 5G/5.5G
+  video_1: 'ipod-video-5g',
+  video_2: 'ipod-video-5g',
+  // iPod Classic 6G/6.5G/7G
+  classic_1: 'ipod-classic',
+  classic_2: 'ipod-classic',
+  classic_3: 'ipod-classic',
+  // iPod Touch (all generations known to libgpod)
+  touch_1: 'ipod-classic',
+  touch_2: 'ipod-classic',
+  touch_3: 'ipod-classic',
+  touch_4: 'ipod-classic',
+  // iPhone / iPad (libgpod-era)
+  iphone_1: 'ipod-classic',
+  iphone_2: 'ipod-classic',
+  iphone_3: 'ipod-classic',
+  iphone_4: 'ipod-classic',
+  ipad_1: 'ipod-classic',
+  // iPod Nano 3G–5G
+  nano_3: 'ipod-nano-3g',
+  nano_4: 'ipod-nano-3g',
+  nano_5: 'ipod-nano-3g',
+};
+
+/**
+ * Get the video device profile name for a libgpod generation string.
+ * Returns `undefined` for generations that don't support video.
+ */
+function getVideoProfile(
+  generation: string
+): 'ipod-video-5g' | 'ipod-classic' | 'ipod-nano-3g' | undefined {
+  return LIBGPOD_GENERATION_TO_VIDEO_PROFILE[generation];
+}
 
 // =============================================================================
 // Quality Presets

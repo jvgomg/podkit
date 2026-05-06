@@ -28,17 +28,19 @@ export const PODKIT_DIR = '.podkit';
 // Content Paths
 // =============================================================================
 
-export interface ContentPaths {
-  musicDir: string;
-  moviesDir: string;
-  tvShowsDir: string;
-}
+/**
+ * @deprecated Import from `@podkit/devices-mass-storage` instead.
+ * This re-export exists for backward-compatibility and will be removed at m-8.
+ */
+export type { ContentPaths } from '@podkit/devices-mass-storage';
+import type { ContentPaths } from '@podkit/devices-mass-storage';
 
-export const DEFAULT_CONTENT_PATHS: ContentPaths = {
-  musicDir: 'Music',
-  moviesDir: 'Video/Movies',
-  tvShowsDir: 'Video/Shows',
-};
+/**
+ * @deprecated Import from `@podkit/devices-mass-storage` instead.
+ * This re-export exists for backward-compatibility and will be removed at m-8.
+ */
+export { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
+import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 
 export function normalizeContentDir(dir: string): string {
   // Strip leading and trailing slashes

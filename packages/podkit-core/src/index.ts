@@ -161,8 +161,6 @@ export type {
   MassStorageIdentity,
   UsbFingerprint,
 } from '@podkit/device-types';
-export { getDeviceCapabilities } from './ipod/capabilities.js';
-
 // Device type identifiers (CLI-surface)
 export type { DeviceTypeId } from './device/index.js';
 

@@ -17,7 +17,7 @@ export type {
   PresetId,
 } from './presets/types.js';
 
-export { BUILT_IN_PRESET_IDS } from './presets/types.js';
+export { BUILT_IN_PRESET_IDS, DEFAULT_CONTENT_PATHS } from './presets/types.js';
 
 // Runtime functions (TASK-294.05)
 export { definePreset } from './preset.js';

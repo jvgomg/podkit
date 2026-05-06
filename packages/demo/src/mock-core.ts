@@ -2424,9 +2424,6 @@ export function extractNormalization(_metadata: any): any {
 export function generateTrackPath(_track: any, _opts?: any): string {
   return '';
 }
-export function getDeviceCapabilities(_device: any): any {
-  return {};
-}
 export function isAudioExtension(ext: string): boolean {
   return ['.mp3', '.m4a', '.flac', '.ogg', '.opus', '.wav', '.aiff', '.aac', '.alac'].includes(
     ext.toLowerCase()
