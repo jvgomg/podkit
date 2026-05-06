@@ -46,7 +46,9 @@ export {
   lookupByUsbId,
   lookupBySerial,
   lookupByModelNumber,
+  lookupByFamilyId,
   lookupGenerationInfo,
+  FAMILY_ID_TO_GENERATION,
   // Backward-compatible aliases
   lookupIpodModel,
   lookupIpodModelByNumber,

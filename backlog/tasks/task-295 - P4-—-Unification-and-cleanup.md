@@ -1,9 +1,10 @@
 ---
 id: TASK-295
 title: P4 — Unification and cleanup
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-03 11:34'
+updated_date: '2026-05-06 23:27'
 labels:
   - device-capability-architecture
   - phase-4
@@ -33,15 +34,15 @@ Blocked by: TASK-294 (P3 main).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 @podkit/ipod-firmware owns all SysInfoExtended file I/O; regex extraction gone
-- [ ] #2 core/device/sysinfo-extended.ts deleted; consumers import from @podkit/ipod-firmware
-- [ ] #3 core/device/ipod-models.ts, presets.ts, capability-adapter.ts shim files deleted
-- [ ] #4 resolveCapabilities is the only entry point used by sync, transcoding, CLI display
-- [ ] #5 No reference to LibgpodDeviceInfo exists in the codebase
-- [ ] #6 doc-003 D15 corrected with reference to doc-030
-- [ ] #7 ADR written, merged, status Accepted
-- [ ] #8 All existing tests pass with no regressions
+- [x] #1 @podkit/ipod-firmware owns all SysInfoExtended file I/O; regex extraction gone
+- [x] #2 core/device/sysinfo-extended.ts deleted; consumers import from @podkit/ipod-firmware
+- [x] #3 core/device/ipod-models.ts, presets.ts, capability-adapter.ts shim files deleted
+- [x] #4 resolveCapabilities is the only entry point used by sync, transcoding, CLI display
+- [x] #5 No reference to LibgpodDeviceInfo exists in the codebase
+- [x] #6 doc-003 D15 corrected with reference to doc-030
+- [x] #7 ADR written, merged, status Accepted
+- [x] #8 All existing tests pass with no regressions
 - [ ] #9 Hardware validation per inventory: all five devices behave identically to P3
-- [ ] #10 AGENTS.md updated to reflect final package structure
-- [ ] #11 CHANGELOG updated for podkit and all affected packages
+- [x] #10 AGENTS.md updated to reflect final package structure
+- [x] #11 CHANGELOG updated for podkit and all affected packages
 <!-- AC:END -->

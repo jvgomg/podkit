@@ -19,8 +19,8 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolveIpodModel } from './ipod-models.js';
-import type { IpodModel } from './ipod-models.js';
+import { resolveIpodModel } from '@podkit/devices-ipod';
+import type { IpodModel } from '@podkit/devices-ipod';
 import type { UsbFingerprint } from '@podkit/device-types';
 import {
   lookupUnsupportedReason as lookupUnsupportedReasonFromTable,

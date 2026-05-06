@@ -19,6 +19,85 @@ import type {
   IpodModelVariant,
 } from './types.js';
 
+// ── FamilyID → IpodGenerationId mapping ─────────────────────────────────────
+//
+// Apple's FamilyID is a small integer embedded in SysInfoExtended. It identifies
+// the iPod family/generation at the firmware level. Values are confirmed from
+// real device captures in documents/sysinfo-captures/ and documents/test-devices.md.
+//
+// One generation can cover multiple FamilyID values (e.g. 5G and 5.5G share
+// FamilyID 6). When multiple FamilyIDs map to the same family, prefer the one
+// that gives the richer capability set (video_5_5g > video_5g is the same caps).
+//
+// Values from real captures:
+//   3  → mini_2g   (iPod mini 2G 4GB, SCSI inquiry)
+//   6  → video_5g  (iPod 5G Video iFlash, SCSI inquiry; covers 5.5G too)
+//   9  → nano_2g   (iPod nano 2G 4GB Green, SCSI inquiry)
+//  15  → nano_4g   (iPod nano 4G 8GB Black, SCSI inquiry)
+//  18  → nano_7g   (iPod nano 7G 16GB, SCSI+USB inquiry)
+//
+// Additional values sourced from community research (gtkpod, libgpod sources,
+// iPod Linux wiki) — marked with (research):
+//   1  → classic_3g  (iPod 3G, 10/15/20/30/40GB)
+//   2  → classic_4g  (iPod 4G, 20/40GB mono)
+//   4  → photo       (iPod Photo, 30/40/60GB)
+//   5  → mini_1g     (iPod mini 1G)
+//   7  → classic_6g  (iPod Classic 6G 80/160GB)
+//   8  → nano_1g     (iPod nano 1G)
+//  10  → shuffle_1g  (iPod shuffle 1G)
+//  11  → shuffle_2g  (iPod shuffle 2G)
+//  12  → touch_1g    (iPod touch 1G)
+//  13  → nano_3g     (iPod nano 3G)
+//  14  → classic_6g  (iPod Classic 6G 120GB — same gen, different FamilyID)
+//  16  → nano_5g     (iPod nano 5G)
+//  17  → classic_7g  (iPod Classic 7G 160GB — research)
+//  19  → touch_4g    (iPod touch 4G — research)
+//  20  → shuffle_3g  (iPod shuffle 3G — research)
+//  21  → touch_3g    (iPod touch 3G — research)
+//  22  → shuffle_4g  (iPod shuffle 4G — research)
+//  23  → touch_5g    (iPod touch 5G — research)
+//  24  → nano_6g     (iPod nano 6G — research)
+//  25  → touch_6g    (iPod touch 6G — research)
+//  26  → touch_7g    (iPod touch 7G — research)
+//  27  → touch_2g    (iPod touch 2G — research)
+
+/**
+ * Best-effort mapping from Apple FamilyID (firmware integer) to IpodGenerationId.
+ *
+ * Values confirmed from real device captures (documents/test-devices.md) are
+ * authoritative. Values marked from community research may be approximate —
+ * multiple FamilyIDs can map to the same generation.
+ */
+export const FAMILY_ID_TO_GENERATION: Readonly<Record<number, IpodGenerationId>> = {
+  1: 'classic_3g',
+  2: 'classic_4g',
+  3: 'mini_2g',
+  4: 'photo',
+  5: 'mini_1g',
+  6: 'video_5g',
+  7: 'classic_6g',
+  8: 'nano_1g',
+  9: 'nano_2g',
+  10: 'shuffle_1g',
+  11: 'shuffle_2g',
+  12: 'touch_1g',
+  13: 'nano_3g',
+  14: 'classic_6g',
+  15: 'nano_4g',
+  16: 'nano_5g',
+  17: 'classic_7g',
+  18: 'nano_7g',
+  19: 'touch_4g',
+  20: 'shuffle_3g',
+  21: 'touch_3g',
+  22: 'shuffle_4g',
+  23: 'touch_5g',
+  24: 'nano_6g',
+  25: 'touch_6g',
+  26: 'touch_7g',
+  27: 'touch_2g',
+} as const;
+
 // ── Build lookup indexes (once at module load) ───────────────────────────────
 
 const USB_INDEX = new Map<string, UsbProductIdEntry>();
@@ -204,4 +283,25 @@ export function lookupGenerationByProductId(productId: string): IpodGenerationId
  */
 export function toLibgpodGeneration(generationId: IpodGenerationId): LibgpodGenerationName {
   return GENERATION_ID_TO_LIBGPOD[generationId];
+}
+
+/**
+ * Look up an IpodGenerationId from an Apple firmware FamilyID integer.
+ *
+ * FamilyID is the small integer embedded in SysInfoExtended plist under the
+ * `FamilyID` key. It identifies the iPod generation/family at the firmware
+ * level and is exposed as `IpodIdentity.familyId` after a firmware inquiry.
+ *
+ * @param familyId - The `FamilyID` integer from firmware (e.g., 15 for nano_4g)
+ * @returns The matching `IpodGenerationId`, or `undefined` for unknown values
+ *
+ * @example
+ * ```ts
+ * lookupByFamilyId(15)   // → 'nano_4g'
+ * lookupByFamilyId(6)    // → 'video_5g'
+ * lookupByFamilyId(9999) // → undefined
+ * ```
+ */
+export function lookupByFamilyId(familyId: number): IpodGenerationId | undefined {
+  return FAMILY_ID_TO_GENERATION[familyId];
 }

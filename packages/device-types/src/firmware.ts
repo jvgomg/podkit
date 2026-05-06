@@ -53,6 +53,12 @@ export type ParsedFirmware = {
   firewireGuid: string;
   /** Device serial number */
   serialNumber: string;
+  /**
+   * Apple model number string (e.g. "B754", "A487").
+   * Extracted from the `ModelNumStr` or `ModelNumber` plist key when present.
+   * Absent on older devices and on SCSI-only captures that omit this field.
+   */
+  modelNumber?: string;
   /** Raw SysInfoExtended XML payload */
   rawXml: string;
   /** Structured capabilities — populated when extraction succeeds */

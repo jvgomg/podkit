@@ -68,20 +68,17 @@ export {
 } from './mass-storage-utils.js';
 export type { MassStorageManifest, ContentPaths } from './mass-storage-utils.js';
 
-// Device presets
-export {
-  DEVICE_PRESETS,
-  getDevicePreset,
-  resolveDeviceCapabilities,
-  BUILT_IN_DEVICE_TYPE_IDS,
-  PRESET_DEVICE_TYPE_IDS,
-} from './presets.js';
-export type {
-  DeviceTypeId,
-  BuiltInDeviceTypeId,
-  PresetDeviceTypeId,
-  DevicePreset,
-} from './presets.js';
+// Device type identifiers (CLI-surface types; iPod is a built-in type id that
+// has no mass-storage preset, so these live here rather than in
+// @podkit/devices-mass-storage).
+export const PRESET_DEVICE_TYPE_IDS = ['echo-mini', 'rockbox', 'generic'] as const;
+export type PresetDeviceTypeId = (typeof PRESET_DEVICE_TYPE_IDS)[number];
+
+export const BUILT_IN_DEVICE_TYPE_IDS = ['ipod', ...PRESET_DEVICE_TYPE_IDS] as const;
+export type BuiltInDeviceTypeId = (typeof BUILT_IN_DEVICE_TYPE_IDS)[number];
+
+/** Supported device type identifiers. */
+export type DeviceTypeId = BuiltInDeviceTypeId | (string & {});
 
 // Types
 export type {
@@ -110,7 +107,7 @@ export {
   lookupGenerationByModelNumber,
   toLibgpodGeneration,
   resolveIpodModel,
-} from './ipod-models.js';
+} from '@podkit/devices-ipod';
 export type {
   IpodChecksumType,
   IpodGenerationId,
@@ -119,10 +116,14 @@ export type {
   IpodModel,
   IpodModelSource,
   IpodModelInput,
-} from './ipod-models.js';
+} from '@podkit/devices-ipod';
 
-export { createIpodCapabilities } from './capability-adapter.js';
-export type { LibgpodDeviceInfo } from './capability-adapter.js';
+export { modelFromLibgpodInfo } from './libgpod-bridge.js';
+export type { LibgpodDeviceInfo } from './libgpod-bridge.js';
+
+// Unified capability resolver
+export { resolveCapabilities, resolveIpodModelCapabilities } from './resolve-capabilities.js';
+export type { ResolveCapabilitiesOptions } from './resolve-capabilities.js';
 
 // Readiness pipeline
 export type {

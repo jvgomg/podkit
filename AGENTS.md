@@ -265,4 +265,7 @@ Key files to understand:
 | Mass-storage preset | `packages/devices-mass-storage/src/preset.ts` |
 | iPod firmware orchestrator | `packages/ipod-firmware/src/inquiry/orchestrator.ts` |
 | iPod firmware SCSI transport | `packages/ipod-firmware/src/inquiry/scsi/index.ts` |
+| iPod sysinfo I/O | `packages/ipod-firmware/src/sysinfo/` |
 | Plist parser | `packages/ipod-firmware/src/plist/parser.ts` |
+| Capability resolver | `packages/podkit-core/src/device/resolve-capabilities.ts` |
+| libgpod bridge | `packages/podkit-core/src/device/libgpod-bridge.ts` (transitional; deletes at m-8) |

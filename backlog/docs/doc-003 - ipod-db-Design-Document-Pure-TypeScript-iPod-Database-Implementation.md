@@ -3,7 +3,7 @@ id: doc-003
 title: 'ipod-db Design Document: Pure TypeScript iPod Database Implementation'
 type: other
 created_date: '2026-03-12 10:45'
-updated_date: '2026-04-03 19:47'
+updated_date: '2026-05-06 22:16'
 ---
 # @podkit/ipod-db — Design Document
 
@@ -107,7 +107,7 @@ packages/ipod-db/
 │   │   ├── parser.ts, writer.ts, types.ts
 │   │
 │   ├── device/                     # Device identification
-│   │   ├── sysinfo.ts              # SysInfo text parser (NOT SysInfoExtended — see note)
+│   │   ├── sysinfo.ts              # SysInfo text parser (NOT SysInfoExtended — see §2a below)
 │   │   ├── models.ts               # ~200 model entries, 32 generations
 │   │   └── types.ts
 │   │
@@ -125,9 +125,31 @@ packages/ipod-db/
 └── package.json
 ```
 
-### SysInfoExtended: Out of Scope
+### §2a SysInfoExtended: Owned by `@podkit/ipod-firmware`, Not by `@podkit/ipod-db`
 
-SysInfoExtended is an XML/plist file used by Touch/iPhone/iPad — devices outside podkit's target range. The basic SysInfo text parser + model lookup table is sufficient for all target devices. If Touch support is ever added, SysInfoExtended can be implemented as a separate task with a plist parsing dependency.
+> **Corrected 2026-05-06 (TASK-295.06).** An earlier version of this document stated "SysInfoExtended is Out of Scope — Only Touch/iPhone/iPad use it." That was incorrect.
+
+SysInfoExtended **is required** for hash58, hash72, and hashAB devices — all of which are firmly within podkit's target range:
+
+| Hash algorithm | Devices | Requires SysInfoExtended? |
+|----------------|---------|--------------------------|
+| hash58 | iPod Classic 1–3G, Nano 3–4G | Yes — FireWireGUID is the seed for the HMAC-SHA1 key |
+| hash72 | iPod Nano 5G, Touch 1–3G, iPhone 1–3 | Yes — HashInfo file derived from device identity |
+| hashAB | Touch 4G, iPhone 4, iPad 1, Nano 6G | Yes — external libhashab requires device identity |
+
+However, **`@podkit/ipod-db` does not own SysInfoExtended I/O.** That responsibility belongs entirely to `@podkit/ipod-firmware`:
+
+```
+packages/ipod-firmware/src/sysinfo/
+  paths.ts      SYSINFO_EXTENDED_PATH constants
+  read.ts       readSysInfoExtended(mountPoint) — uses structured plist parser
+  write.ts      writeSysInfoExtended(mountPoint, xml)
+  ensure.ts     ensureSysInfoExtended(mountPoint, fingerprint) — uses inquireFirmware
+```
+
+`@podkit/ipod-db` consumes the **parsed FireWireGUID** directly — either from the `ParsedFirmware` value returned by `@podkit/ipod-firmware`'s `inquireFirmware()`, or from a cached `DeviceIdentity`. It does not read the on-disk SysInfoExtended file for its own purposes. The hash implementations in `src/hash/` receive the GUID as a parameter, not as a file path.
+
+See §10 (Relationship to Device Capability Architecture) for the full package boundary map.
 
 ---
 
@@ -149,7 +171,7 @@ SysInfoExtended is an XML/plist file used by Touch/iPhone/iPad — devices outsi
 | D12 | SQLite | **Research needed (TASK-130)** | Classic 3rd gen may require it |
 | D13 | Compressed DBs | Implement (Node.js zlib) | Needed for Nano 5G+ |
 | D14 | Photo database | M3 milestone | Future feature |
-| D15 | SysInfoExtended | Not implemented | Only Touch/iPhone/iPad use it |
+| D15 | SysInfoExtended | **Not owned by ipod-db.** SysInfoExtended IS required for hash58/72/AB iPods. File I/O lives in `@podkit/ipod-firmware/sysinfo/`. `@podkit/ipod-db` receives a parsed FireWireGUID as a parameter — it never reads the on-disk file directly. See §2a and §10. | Correct boundary: firmware I/O in ipod-firmware, not in ipod-db |
 | D16 | WASM compilation | **Rejected** (doc-027) | GLib has no official WASM support; maintenance burden too high |
 | D17 | Browser compat | DataView-based BufferReader | Works with Uint8Array in Web Workers; Buffer extends Uint8Array for Node.js compat |
 
@@ -194,6 +216,8 @@ mhbd (Database Header, 244 bytes)
 | hash58 | Classic 1-3, Nano 3-4 | HMAC-SHA1 via `crypto.createHmac` | FireWire GUID → LCM + S-box tables → 64-byte key |
 | hash72 | Nano 5, Touch 1-3, iPhone 1-3 | SHA-1 + AES-128-CBC via `crypto.createCipheriv` | HashInfo file (device IV + random bytes) |
 | hashAB | Touch 4, iPhone 4, iPad 1, Nano 6 | External `libhashab` binary (proprietary) | Same approach as libgpod — load at runtime |
+
+The FireWireGUID required by hash58 is obtained from `@podkit/ipod-firmware` (via `inquireFirmware()` or a cached `DeviceIdentity`) and passed into the hash implementation as a parameter. `@podkit/ipod-db` never reads SysInfoExtended from disk itself.
 
 ---
 
@@ -328,3 +352,52 @@ Validation function run after every write in tests: playlist references, artwork
 
 ### M3 — ipod-db Photo Database
 - TASK-128: Photo Database (~15 methods)
+
+---
+
+## 10. Relationship to Device Capability Architecture
+
+> **Added 2026-05-06 (TASK-295.06).** The device capability architecture (m-18, doc-030) established a four-package structure that directly affects how `@podkit/ipod-db` obtains device identity at runtime.
+
+### The four-package architecture
+
+```
+@podkit/device-types          shared type definitions (DeviceCapabilities, AudioCodec, DeviceIdentity, …)
+@podkit/devices-ipod          pure data: iPod generations, models, lookups, capability synthesis
+@podkit/devices-mass-storage  pure data: mass-storage presets, lookup framework, capability resolution
+@podkit/ipod-firmware         I/O: SCSI + USB inquiry, plist parsing, SysInfoExtended file management
+                                  ↑
+                              podkit-core consumes all four
+```
+
+See doc-030 (PRD: Device Capability Architecture) for the full design rationale.
+
+### Where SysInfoExtended lives
+
+SysInfoExtended file I/O lives exclusively in `@podkit/ipod-firmware`:
+
+```
+packages/ipod-firmware/src/sysinfo/
+  paths.ts      SYSINFO_EXTENDED_PATH constants
+  read.ts       readSysInfoExtended(mountPoint) — structured plist parser
+  write.ts      writeSysInfoExtended(mountPoint, xml)
+  ensure.ts     ensureSysInfoExtended(mountPoint, fingerprint) — calls inquireFirmware
+```
+
+`@podkit/ipod-db` does **not** read or write SysInfoExtended. It receives device identity — specifically the FireWireGUID needed by hash58/72/AB — as a value passed in from the caller.
+
+### How ipod-db consumes device identity
+
+The hash implementations receive a parsed FireWireGUID from one of two sources:
+
+1. **Live firmware data** — the caller (typically `podkit-core`) calls `inquireFirmware()` from `@podkit/ipod-firmware` and passes the resulting `ParsedFirmware` value when opening the database.
+2. **Cached identity** — the caller passes a stored `DeviceIdentity` (previously obtained from firmware and persisted in device config). This is the fast path — no USB or SCSI I/O on repeated sync.
+
+In both cases, `@podkit/ipod-db` receives a value; it does not perform any disk or bus I/O to obtain device identity.
+
+### Guidance for m-8 implementers
+
+- Do not add SysInfoExtended reading to `packages/ipod-db/`. That boundary is intentional.
+- The hash algorithm implementations in `src/hash/hash58.ts`, `src/hash/hash72.ts`, and `src/hash/hashAB.ts` should accept FireWireGUID (and other required identity fields) as plain parameters.
+- The `Database` class `open()` signature should accept an optional `firmware?: ParsedFirmware` (or equivalent) so that callers can supply identity without a second device I/O call.
+- After m-8 lands, the on-disk SysInfoExtended write by `@podkit/ipod-firmware` becomes optional from podkit's own perspective (ipod-db will consume the in-memory value), but is preserved for iTunes interoperability.

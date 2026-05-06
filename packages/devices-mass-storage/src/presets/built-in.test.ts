@@ -1,10 +1,8 @@
 /**
  * Tests for built-in mass-storage device presets.
  *
- * Migrated from packages/podkit-core/src/device/presets.test.ts — covers the
- * static preset data that moved into this package. Tests for runtime functions
- * (resolveDeviceCapabilities, getDevicePreset) remain in podkit-core until the
- * shim is replaced in TASK-294.12.
+ * Covers the static preset data that lives in this package.
+ * Runtime function tests (resolveCapabilities) live in podkit-core's presets.test.ts.
  */
 
 import { describe, expect, it } from 'bun:test';

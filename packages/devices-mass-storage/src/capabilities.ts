@@ -9,7 +9,7 @@
  *   2. Per-call overrides (opts.overrides)
  *
  * Arrays replace entirely rather than merging element-by-element, consistent
- * with `resolveDeviceCapabilities` in podkit-core.
+ * with `resolveCapabilities` in podkit-core.
  *
  * @module
  */

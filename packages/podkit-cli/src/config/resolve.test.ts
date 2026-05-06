@@ -45,7 +45,7 @@ const NO_VIDEO_CAPABILITIES: DeviceCapabilities = {
 const NO_ARTWORK_CAPABILITIES: DeviceCapabilities = {
   ...FULL_CAPABILITIES,
   artworkSources: [],
-  artworkMaxResolution: 0,
+  artworkMaxResolution: null,
 };
 
 // =============================================================================

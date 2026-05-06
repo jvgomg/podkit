@@ -91,7 +91,8 @@ export function getCapabilities(
 
   // ── Artwork (purely table-driven) ───────────────────────────────────────
   const artworkMaxResolution = gen.artworkMaxResolution;
-  const artworkSources: DeviceArtworkSource[] = artworkMaxResolution > 0 ? ['database'] : [];
+  const artworkSources: DeviceArtworkSource[] =
+    artworkMaxResolution !== null && artworkMaxResolution > 0 ? ['database'] : [];
 
   return {
     artworkSources,

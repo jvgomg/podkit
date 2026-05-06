@@ -159,11 +159,13 @@ export async function openDevice(
   const isIpod = !deviceType || deviceType === 'ipod';
 
   if (isIpod) {
-    // iPod: open database, derive capabilities from libgpod device data
+    // iPod: open database, derive capabilities via resolveIpodModelCapabilities
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
-    const capabilities = core.createIpodCapabilities(ipodDeviceInfo);
+    // Bridge libgpod device info → IpodModel → DeviceCapabilities
+    const model = core.modelFromLibgpodInfo(ipodDeviceInfo);
+    const capabilities = core.resolveIpodModelCapabilities(model);
 
     const deviceSupportsAlac = capabilities.supportedAudioCodecs.includes('alac');
 
@@ -184,15 +186,25 @@ export async function openDevice(
     : deviceDefaults
       ? buildCapabilityOverrides({}, deviceDefaults)
       : undefined;
-  const resolvedCaps = core.resolveDeviceCapabilities(deviceType!, overrides);
 
-  if (!resolvedCaps) {
+  // Build a synthetic MassStorageIdentity and dispatch via resolveCapabilities
+  const massStorageIdentity: import('@podkit/core').MassStorageIdentity = {
+    kind: 'mass-storage',
+    presetId: deviceType!,
+  };
+  let resolvedCaps: import('@podkit/core').DeviceCapabilities;
+  try {
+    resolvedCaps = core.resolveCapabilities(massStorageIdentity, {
+      overrides: overrides ?? undefined,
+    });
+  } catch {
     throw new Error(`Unknown device type: ${deviceType}`);
   }
 
   // Resolve content paths: preset defaults < global deviceDefaults < per-device config
-  const preset = core.getDevicePreset(deviceType!);
-  const presetDefaults = preset?.contentPaths;
+  const { BUILT_IN_PRESETS } = await import('@podkit/devices-mass-storage');
+  const builtInPreset = BUILT_IN_PRESETS[deviceType! as keyof typeof BUILT_IN_PRESETS];
+  const presetDefaults = builtInPreset?.contentPaths;
   const contentPathOverrides: Partial<import('@podkit/core').ContentPaths> = {};
   // Apply global deviceDefaults as fallback
   if (deviceDefaults?.musicDir !== undefined)

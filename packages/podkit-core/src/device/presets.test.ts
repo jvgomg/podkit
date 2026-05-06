@@ -1,34 +1,35 @@
 import { describe, expect, it } from 'bun:test';
-import { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './presets.js';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import { DEFAULT_CONTENT_PATHS } from './mass-storage-utils.js';
+import { resolveCapabilities } from './resolve-capabilities.js';
 
-describe('DEVICE_PRESETS', () => {
+describe('BUILT_IN_PRESETS', () => {
   it('echo-mini supports Album Artist browsing', () => {
-    expect(DEVICE_PRESETS['echo-mini'].supportsAlbumArtistBrowsing).toBe(true);
+    expect(BUILT_IN_PRESETS['echo-mini'].supportsAlbumArtistBrowsing).toBe(true);
   });
 
   it('rockbox supports Album Artist browsing', () => {
-    expect(DEVICE_PRESETS.rockbox.supportsAlbumArtistBrowsing).toBe(true);
+    expect(BUILT_IN_PRESETS.rockbox.supportsAlbumArtistBrowsing).toBe(true);
   });
 
   it('generic supports Album Artist browsing', () => {
-    expect(DEVICE_PRESETS.generic.supportsAlbumArtistBrowsing).toBe(true);
+    expect(BUILT_IN_PRESETS.generic.supportsAlbumArtistBrowsing).toBe(true);
   });
 
   it('echo-mini has root musicDir', () => {
-    expect(DEVICE_PRESETS['echo-mini'].contentPaths.musicDir).toBe('');
+    expect(BUILT_IN_PRESETS['echo-mini'].contentPaths.musicDir).toBe('');
   });
 
   it('rockbox uses default content paths', () => {
-    expect(DEVICE_PRESETS.rockbox.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
+    expect(BUILT_IN_PRESETS.rockbox.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
   });
 
   it('generic uses default content paths', () => {
-    expect(DEVICE_PRESETS.generic.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
+    expect(BUILT_IN_PRESETS.generic.contentPaths).toEqual(DEFAULT_CONTENT_PATHS);
   });
 
   it('all presets have contentPaths', () => {
-    for (const [, preset] of Object.entries(DEVICE_PRESETS)) {
+    for (const [, preset] of Object.entries(BUILT_IN_PRESETS)) {
       expect(preset.contentPaths).toBeDefined();
       expect(typeof preset.contentPaths.musicDir).toBe('string');
       expect(typeof preset.contentPaths.moviesDir).toBe('string');
@@ -37,46 +38,53 @@ describe('DEVICE_PRESETS', () => {
   });
 });
 
-describe('resolveDeviceCapabilities', () => {
-  it('returns preset as-is when no overrides', () => {
-    const caps = resolveDeviceCapabilities('rockbox');
-    expect(caps).toEqual(DEVICE_PRESETS.rockbox);
+describe('resolveCapabilities (mass-storage path)', () => {
+  it('returns preset capabilities as-is when no overrides', () => {
+    const caps = resolveCapabilities({ kind: 'mass-storage', presetId: 'rockbox' });
+    const { contentPaths: _omit, ...expected } = BUILT_IN_PRESETS.rockbox;
+    expect(caps).toEqual(expected);
   });
 
-  it('returns undefined for unknown device type', () => {
-    expect(resolveDeviceCapabilities('unknown-device')).toBeUndefined();
+  it('throws for unknown device type', () => {
+    expect(() =>
+      resolveCapabilities({ kind: 'mass-storage', presetId: 'unknown-device' })
+    ).toThrow();
   });
 
   it('merges supportsAlbumArtistBrowsing override', () => {
-    const caps = resolveDeviceCapabilities('generic', { supportsAlbumArtistBrowsing: false });
-    expect(caps!.supportsAlbumArtistBrowsing).toBe(false);
-    // Other fields should be unchanged
-    expect(caps!.supportedAudioCodecs).toEqual(DEVICE_PRESETS.generic.supportedAudioCodecs);
+    const caps = resolveCapabilities(
+      { kind: 'mass-storage', presetId: 'generic' },
+      { overrides: { supportsAlbumArtistBrowsing: false } }
+    );
+    expect(caps.supportsAlbumArtistBrowsing).toBe(false);
+    expect(caps.supportedAudioCodecs).toEqual(BUILT_IN_PRESETS.generic.supportedAudioCodecs);
   });
 
-  it('keeps preset supportsAlbumArtistBrowsing when not overridden', () => {
-    const caps = resolveDeviceCapabilities('rockbox', { artworkMaxResolution: 100 });
-    expect(caps!.supportsAlbumArtistBrowsing).toBe(true);
-    expect(caps!.artworkMaxResolution).toBe(100);
+  it('merges artworkMaxResolution override while keeping other fields', () => {
+    const caps = resolveCapabilities(
+      { kind: 'mass-storage', presetId: 'rockbox' },
+      { overrides: { artworkMaxResolution: 100 } }
+    );
+    expect(caps.supportsAlbumArtistBrowsing).toBe(true);
+    expect(caps.artworkMaxResolution).toBe(100);
   });
 });
 
-describe('getDevicePreset', () => {
+describe('BUILT_IN_PRESETS direct lookup', () => {
   it('returns preset for known types', () => {
-    expect(getDevicePreset('echo-mini')).toBeDefined();
-    expect(getDevicePreset('rockbox')).toBeDefined();
-    expect(getDevicePreset('generic')).toBeDefined();
+    expect(BUILT_IN_PRESETS['echo-mini']).toBeDefined();
+    expect(BUILT_IN_PRESETS.rockbox).toBeDefined();
+    expect(BUILT_IN_PRESETS.generic).toBeDefined();
   });
 
-  it('returns undefined for unknown types', () => {
-    expect(getDevicePreset('ipod')).toBeUndefined();
-    expect(getDevicePreset('foobar')).toBeUndefined();
+  it('ipod is not a built-in mass-storage preset', () => {
+    expect((BUILT_IN_PRESETS as Record<string, unknown>)['ipod']).toBeUndefined();
   });
 
-  it('includes contentPaths in returned preset', () => {
-    const preset = getDevicePreset('echo-mini');
-    expect(preset!.contentPaths.musicDir).toBe('');
-    expect(preset!.contentPaths.moviesDir).toBe('Video/Movies');
-    expect(preset!.contentPaths.tvShowsDir).toBe('Video/Shows');
+  it('includes contentPaths in echo-mini preset', () => {
+    const preset = BUILT_IN_PRESETS['echo-mini'];
+    expect(preset.contentPaths.musicDir).toBe('');
+    expect(preset.contentPaths.moviesDir).toBe('Video/Movies');
+    expect(preset.contentPaths.tvShowsDir).toBe('Video/Shows');
   });
 });

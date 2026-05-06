@@ -1399,7 +1399,8 @@ const listSubcommand = new Command('list')
     // Resolve capabilities and settings for each device
     const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
       await import('../config/resolve.js');
-    const { resolveDeviceCapabilities, createIpodCapabilities } = await import('@podkit/core');
+    const { resolveCapabilities, resolveIpodModelCapabilities, modelFromLibgpodInfo } =
+      await import('@podkit/core');
 
     // Import Device class for lightweight capability queries (no database needed)
     let deviceFromMountPoint:
@@ -1431,11 +1432,12 @@ const listSubcommand = new Command('list')
         connected = connInfo !== undefined;
 
         if (connected && connInfo?.mountPoint && deviceFromMountPoint) {
-          // Connected iPod — use libgpod Device for capability queries
+          // Connected iPod — bridge libgpod data → IpodModel → capabilities
           try {
             const dev = deviceFromMountPoint(connInfo.mountPoint);
-            const caps = dev.getCapabilities();
-            capabilities = createIpodCapabilities(caps);
+            const libgpodCaps = dev.getCapabilities();
+            const model = modelFromLibgpodInfo(libgpodCaps);
+            capabilities = resolveIpodModelCapabilities(model);
             dev.close();
           } catch {
             // Fall through — capabilities remain null
@@ -1443,9 +1445,19 @@ const listSubcommand = new Command('list')
         }
         // Disconnected iPod — capabilities stay null (unknown)
       } else {
-        // Mass-storage device — use preset capabilities
+        // Mass-storage device — resolve via unified resolveCapabilities
         connected = deviceConfig.path ? connectedPaths.has(deviceConfig.path) : false;
-        capabilities = resolveDeviceCapabilities(type, deviceConfig) ?? null;
+        const massStorageIdentity: import('@podkit/core').MassStorageIdentity = {
+          kind: 'mass-storage',
+          presetId: type,
+        };
+        try {
+          capabilities = resolveCapabilities(massStorageIdentity, {
+            overrides: deviceConfig as Partial<import('@podkit/core').DeviceCapabilities>,
+          });
+        } catch {
+          capabilities = null;
+        }
       }
 
       resolvedDevices.push(

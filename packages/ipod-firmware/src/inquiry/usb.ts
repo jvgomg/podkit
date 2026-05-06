@@ -287,8 +287,15 @@ export async function loadLibusb(): Promise<LibusbLoadResult> {
     decodeDeviceAt: (list, index) => {
       // The list is a NULL-terminated array of `libusb_device *`. Decode the
       // pointer at `list + index * sizeof(void*)` as a void pointer.
-      const ptrSize = 8; // koffi runs on 64-bit Bun — keep it simple.
-      // koffi.decode supports (pointer, offset, type) for offset reads.
+      // Bun targets 64-bit only (arm64/x64 on Darwin/Linux); guard the
+      // assumption explicitly so a hypothetical 32-bit build fails loudly
+      // rather than silently misreading the device list.
+      if (process.arch !== 'arm64' && process.arch !== 'x64') {
+        throw new Error(
+          `unsupported architecture for libusb device-list decode: ${process.arch} (expected arm64 or x64)`
+        );
+      }
+      const ptrSize = 8;
       return koffi.decode(list as Buffer, index * ptrSize, 'void *');
     },
     decodePointer: (buf) => koffi.decode(buf, 0, 'void *'),

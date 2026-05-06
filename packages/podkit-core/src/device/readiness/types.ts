@@ -1,4 +1,4 @@
-import type { IpodModel } from '../ipod-models.js';
+import type { IpodModel } from '@podkit/devices-ipod';
 
 // ── Stage identifiers ────────────────────────────────────────────────────────
 

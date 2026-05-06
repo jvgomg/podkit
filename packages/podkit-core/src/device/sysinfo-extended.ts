@@ -1,254 +1,60 @@
 /**
- * SysInfoExtended orchestrator.
+ * @deprecated SysInfoExtended file I/O moved to `@podkit/ipod-firmware/sysinfo`
+ * in P4 (TASK-295.01). New code should import from `@podkit/ipod-firmware`
+ * directly. This shim is retained for back-compat and will be removed at the
+ * m-8 milestone alongside the other libgpod-coupled bridge code.
  *
- * Coordinates reading SysInfoExtended from iPod firmware via USB and writing
- * it to the device filesystem. Also parses existing SysInfoExtended files
- * to extract device identity information.
- *
- * SysInfoExtended is an Apple plist XML file stored at
- * `iPod_Control/Device/SysInfoExtended` on the iPod filesystem. It contains
- * device identity fields (FireWireGUID, SerialNumber, FamilyID, etc.) that
- * are needed for proper database initialization and checksum generation.
+ * This shim also injects the `resolveModel` callback automatically so callers
+ * continue to receive a populated `result.model` without updating their import
+ * paths. `@podkit/ipod-firmware` itself cannot call `resolveIpodModel` directly
+ * (it would create a circular package dependency — `@podkit/devices-ipod`
+ * depends on `@podkit/ipod-firmware`), so model resolution is injected here.
  */
 
-import * as fs from 'node:fs';
-import { join } from 'node:path';
-import { inquireFirmware } from '@podkit/ipod-firmware';
-import type { UsbFingerprint } from '@podkit/device-types';
-import { resolveIpodModel } from './ipod-models.js';
-import type { IpodModel } from './ipod-models.js';
+import { resolveIpodModel } from '@podkit/devices-ipod';
+import {
+  readSysInfoExtended as _readSysInfoExtended,
+  ensureSysInfoExtended as _ensureSysInfoExtended,
+} from '@podkit/ipod-firmware';
 
-// ── Types ───────────────────────────────────────────────────────────────────
+// Re-export types directly — these now originate in @podkit/device-types (for
+// IpodModel) and @podkit/ipod-firmware (for the sysinfo-specific shapes).
+export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from '@podkit/ipod-firmware';
 
-/** Result of attempting to ensure SysInfoExtended is present */
-export interface SysInfoExtendedResult {
-  /** Whether SysInfoExtended is now present on the device */
-  present: boolean;
-  /** How the result was obtained */
-  source: 'existing' | 'usb-read' | 'unavailable';
-  /** Identified iPod model from serial number lookup */
-  model?: IpodModel;
-  /** FireWire GUID (device instance identifier, not model info) */
-  firewireGuid?: string;
-  /** Full Apple serial number */
-  serialNumber?: string;
-  /** Error message when source is 'unavailable' */
-  error?: string;
+// Build the model resolver once — calls resolveIpodModel from @podkit/devices-ipod.
+function defaultResolveModel(serialNumber: string) {
+  return resolveIpodModel({ from: 'serial', serialNumber }) ?? undefined;
 }
-
-/** USB device addressing for SysInfoExtended reads */
-export interface UsbDeviceAddress {
-  busNumber: number;
-  deviceAddress: number;
-}
-
-/** Function signature for reading SysInfoExtended from USB (for dependency injection in tests) */
-export type ReadFromUsbFn = (busNumber: number, deviceAddress: number) => string | null;
-
-// ── Constants ───────────────────────────────────────────────────────────────
-
-const SYSINFO_EXTENDED_PATH = join('iPod_Control', 'Device', 'SysInfoExtended');
-const DEVICE_DIR = join('iPod_Control', 'Device');
-
-// ── XML extraction ──────────────────────────────────────────────────────────
-
-/**
- * Extract a string value from plist XML by key name.
- * Handles `<key>Name</key>\s*<string>Value</string>` patterns.
- */
-function extractPlistString(xml: string, key: string): string | undefined {
-  const pattern = new RegExp(`<key>${key}</key>\\s*<string>([^<]+)</string>`, 'i');
-  const match = xml.match(pattern);
-  return match?.[1];
-}
-
-/** Parsed identity from SysInfoExtended XML */
-interface ExtractedIdentity {
-  firewireGuid: string;
-  serialNumber: string;
-  model?: IpodModel;
-}
-
-/**
- * Extract device identity fields from SysInfoExtended XML.
- */
-function extractIdentity(xml: string): ExtractedIdentity | undefined {
-  // Try both casing variants for FireWireGUID
-  const firewireGuid =
-    extractPlistString(xml, 'FireWireGUID') ?? extractPlistString(xml, 'FirewireGuid');
-
-  const serialNumber = extractPlistString(xml, 'SerialNumber');
-
-  if (!firewireGuid || !serialNumber) {
-    return undefined;
-  }
-
-  // Look up model from last 3 chars of serial number
-  let model: IpodModel | undefined;
-  if (serialNumber.length >= 3) {
-    model = resolveIpodModel({ from: 'serial', serialNumber });
-  }
-
-  return { firewireGuid, serialNumber, model };
-}
-
-/**
- * Validate that SysInfoExtended XML contains the required identity keys.
- */
-function validateXml(xml: string): { valid: boolean; error?: string } {
-  const hasFirewireGuid =
-    extractPlistString(xml, 'FireWireGUID') !== undefined ||
-    extractPlistString(xml, 'FirewireGuid') !== undefined;
-  const hasSerial = extractPlistString(xml, 'SerialNumber') !== undefined;
-
-  if (!hasFirewireGuid || !hasSerial) {
-    return {
-      valid: false,
-      error: 'Device returned incomplete identity data',
-    };
-  }
-
-  return { valid: true };
-}
-
-// ── Default firmware inquiry (orchestrator) ─────────────────────────────────
-
-/**
- * Run the @podkit/ipod-firmware orchestrator against a USB device address.
- *
- * The orchestrator probes available transports (USB via libgpod-node shim and
- * SCSI via koffi/IOKit or SG_IO) and falls back to SCSI when USB inquiry is
- * unavailable or fails. Returns the raw SysInfoExtended XML payload, or null
- * when no transport could deliver a parseable response.
- *
- * Only `bus` and `devnum` are populated on the {@link UsbFingerprint} here —
- * those are the fields the Linux SCSI path needs to derive `/dev/sgN`. macOS
- * SCSI also benefits from `vendorId`/`productId`, but the libgpod USB shim
- * does not require them, and `ensureSysInfoExtended`'s caller does not
- * currently provide them. TODO(P2): thread vendorId/productId/serialNumber
- * through the call sites to enable cross-platform SCSI fingerprinting.
- */
-async function inquireViaOrchestrator(
-  busNumber: number,
-  deviceAddress: number
-): Promise<string | null> {
-  const fp: UsbFingerprint = {
-    vendorId: '',
-    productId: '',
-    bus: busNumber,
-    devnum: deviceAddress,
-  };
-  const result = await inquireFirmware(fp);
-  return result?.rawXml ?? null;
-}
-
-// ── Public API ──────────────────────────────────────────────────────────────
 
 /**
  * Read and parse an existing SysInfoExtended file from an iPod.
  * Returns null if file doesn't exist or is empty.
  *
- * This is useful for the readiness pipeline to check without triggering a USB read.
+ * Wraps `@podkit/ipod-firmware` `readSysInfoExtended` and injects model
+ * resolution so `result.model` is populated when the serial number is known.
  */
-export function readSysInfoExtended(mountPoint: string): SysInfoExtendedResult | null {
-  const filePath = join(mountPoint, SYSINFO_EXTENDED_PATH);
-
-  let content: string;
-  try {
-    content = fs.readFileSync(filePath, 'utf-8');
-  } catch {
-    return null;
-  }
-
-  if (!content.trim()) {
-    return null;
-  }
-
-  const identity = extractIdentity(content);
-  return {
-    present: true,
-    source: 'existing',
-    model: identity?.model,
-    firewireGuid: identity?.firewireGuid,
-    serialNumber: identity?.serialNumber,
-  };
+export function readSysInfoExtended(mountPoint: string): ReturnType<typeof _readSysInfoExtended> {
+  return _readSysInfoExtended(mountPoint, defaultResolveModel);
 }
 
 /**
  * Ensure SysInfoExtended is present on an iPod's filesystem.
  *
- * If already present, reads and parses it. If missing, reads from USB
- * firmware and writes to disk. Returns extracted device identity info.
+ * Wraps `@podkit/ipod-firmware` `ensureSysInfoExtended` and injects model
+ * resolution so `result.model` is populated when the serial number is known.
  *
  * @param mountPoint - iPod mount point (e.g., "/Volumes/iPod")
  * @param usbAddress - USB bus number and device address
- * @param readFromUsb - Optional USB reader function (for testing). Defaults to libgpod-node binding.
+ * @param readFromUsb - Optional USB reader function (for testing)
  */
 export async function ensureSysInfoExtended(
   mountPoint: string,
-  usbAddress: UsbDeviceAddress,
-  readFromUsb?: ReadFromUsbFn
-): Promise<SysInfoExtendedResult> {
-  // Step 1: Check if file already exists
-  const existing = readSysInfoExtended(mountPoint);
-  if (existing) {
-    return existing;
-  }
-
-  // Step 2: Read SysInfoExtended XML.
-  //
-  // When `readFromUsb` is supplied, use it directly — this preserves the
-  // existing test injection point (tests pass a mock that returns/throws
-  // synthetic XML and assert on the surfaced error path).
-  //
-  // When `readFromUsb` is omitted (production), delegate to the
-  // @podkit/ipod-firmware orchestrator, which probes USB and SCSI transports
-  // and falls back transparently. The orchestrator never throws — it returns
-  // null on any transport or parse failure.
-  let xml: string | null;
-  try {
-    if (readFromUsb) {
-      xml = readFromUsb(usbAddress.busNumber, usbAddress.deviceAddress);
-    } else {
-      xml = await inquireViaOrchestrator(usbAddress.busNumber, usbAddress.deviceAddress);
-    }
-  } catch (err) {
-    return {
-      present: false,
-      source: 'unavailable',
-      error: err instanceof Error ? err.message : 'Could not read device identity from USB',
-    };
-  }
-  if (!xml) {
-    return {
-      present: false,
-      source: 'unavailable',
-      error: 'Could not read device identity from USB',
-    };
-  }
-
-  // Step 4: Validate XML
-  const validation = validateXml(xml);
-  if (!validation.valid) {
-    return {
-      present: false,
-      source: 'unavailable',
-      error: validation.error,
-    };
-  }
-
-  // Step 5: Write to disk
-  const deviceDir = join(mountPoint, DEVICE_DIR);
-  fs.mkdirSync(deviceDir, { recursive: true });
-  fs.writeFileSync(join(mountPoint, SYSINFO_EXTENDED_PATH), xml, 'utf-8');
-
-  // Step 6: Extract device info and return
-  const identity = extractIdentity(xml);
-  return {
-    present: true,
-    source: 'usb-read',
-    model: identity?.model,
-    firewireGuid: identity?.firewireGuid,
-    serialNumber: identity?.serialNumber,
-  };
+  usbAddress: import('@podkit/ipod-firmware').UsbDeviceAddress,
+  readFromUsb?: import('@podkit/ipod-firmware').ReadFromUsbFn
+): Promise<import('@podkit/ipod-firmware').SysInfoExtendedResult> {
+  return _ensureSysInfoExtended(mountPoint, usbAddress, readFromUsb, defaultResolveModel);
 }
+
+// writeSysInfoExtended is also available from ipod-firmware for callers that
+// need direct write access (no wrapping needed — it's a pure file write).
+export { writeSysInfoExtended } from '@podkit/ipod-firmware';

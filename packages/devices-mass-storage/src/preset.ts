@@ -64,7 +64,7 @@ export interface DefinePresetOptions {
  * - `extends` is resolved eagerly: the stored preset contains the merged result,
  *   not a reference to the parent.
  * - Merge order: extended preset (baseline) → this preset's overrides (last wins).
- * - Arrays replace entirely — not concatenated (consistent with `resolveDeviceCapabilities`).
+ * - Arrays replace entirely — not concatenated (consistent with `resolveCapabilities`).
  * - Infinite `extends` loops are detected and rejected.
  *
  * @param input - Preset definition (id required; capabilities and contentPaths are optional overrides).

@@ -148,18 +148,23 @@ export {
   MUSIC_RETRY_CONFIG,
 } from './sync/music/pipeline.js';
 
-// Device capabilities (canonical types in @podkit/device-types)
+// Device capabilities and identity types (canonical types in @podkit/device-types)
 export type {
   DeviceCapabilities,
   DeviceArtworkSource,
   AudioCodec,
   AudioNormalizationMode,
 } from '@podkit/device-types';
+export type {
+  DeviceIdentity,
+  IpodIdentity,
+  MassStorageIdentity,
+  UsbFingerprint,
+} from '@podkit/device-types';
 export { getDeviceCapabilities } from './ipod/capabilities.js';
 
-// Device presets
-export { DEVICE_PRESETS, getDevicePreset, resolveDeviceCapabilities } from './device/index.js';
-export type { DeviceTypeId, DevicePreset } from './device/index.js';
+// Device type identifiers (CLI-surface)
+export type { DeviceTypeId } from './device/index.js';
 
 // Transcoding
 export type {
@@ -592,19 +597,23 @@ export { enumerateConnectedDevices } from './device/index.js';
 export type { SysInfoExtendedResult } from './device/index.js';
 export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
-// iPod model lookup and capability adapter
+// iPod model lookup and libgpod bridge
 export {
   getChecksumTypeByModelNumber,
   toLibgpodGeneration,
   resolveIpodModel,
+  modelFromLibgpodInfo,
 } from './device/index.js';
-export { createIpodCapabilities } from './device/index.js';
 export type {
   LibgpodDeviceInfo,
   IpodModel,
   IpodModelSource,
   IpodModelInput,
 } from './device/index.js';
+
+// Unified capability resolver
+export { resolveCapabilities, resolveIpodModelCapabilities } from './device/index.js';
+export type { ResolveCapabilitiesOptions } from './device/index.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './device/index.js';

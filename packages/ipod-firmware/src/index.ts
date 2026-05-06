@@ -91,3 +91,16 @@ export {
   type SysInfoConsistencyStatus,
   type SysInfoConsistencyResult,
 } from './diagnostics/sysinfo-consistency.js';
+
+// SysInfoExtended file I/O — moved from @podkit/core in P4 (TASK-295.01)
+export {
+  readSysInfoExtended,
+  writeSysInfoExtended,
+  ensureSysInfoExtended,
+  SYSINFO_EXTENDED_PATH,
+  SYSINFO_DEVICE_DIR,
+  type SysInfoExtendedResult,
+  type UsbDeviceAddress,
+  type ReadFromUsbFn,
+  type ModelResolver,
+} from './sysinfo/index.js';

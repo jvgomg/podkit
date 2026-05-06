@@ -139,8 +139,8 @@ function referenceCreateIpodCapabilities(device: LibgpodDeviceInfo): DeviceCapab
   }
 
   const artworkMaxResolution = device.supportsArtwork
-    ? (LEGACY_ARTWORK_MAX_RESOLUTION[device.generation] ?? 0)
-    : 0;
+    ? (LEGACY_ARTWORK_MAX_RESOLUTION[device.generation] ?? null)
+    : null;
   const artworkSources: DeviceArtworkSource[] = device.supportsArtwork ? ['database'] : [];
 
   return {
@@ -198,7 +198,7 @@ describe('getCapabilities — snapshot parity with legacy createIpodCapabilities
       // user-disabled artwork nor an upstream libgpod misreport.
       const libgpodGen = GENERATION_ID_TO_LIBGPOD[generationId] as LibgpodGenerationName;
       const expected = referenceCreateIpodCapabilities({
-        supportsArtwork: gen.artworkMaxResolution > 0,
+        supportsArtwork: gen.artworkMaxResolution !== null && gen.artworkMaxResolution > 0,
         supportsVideo: gen.supportsVideo,
         generation: libgpodGen,
       });
@@ -252,7 +252,9 @@ describe('getCapabilities — coverage', () => {
   test('output shape matches DeviceCapabilities for every generation', () => {
     for (const id of IPOD_GENERATION_IDS) {
       const caps = getCapabilities(makeIdentity(id));
-      expect(typeof caps.artworkMaxResolution).toBe('number');
+      expect(
+        caps.artworkMaxResolution === null || typeof caps.artworkMaxResolution === 'number'
+      ).toBe(true);
       expect(Array.isArray(caps.artworkSources)).toBe(true);
       expect(Array.isArray(caps.supportedAudioCodecs)).toBe(true);
       expect(typeof caps.supportsVideo).toBe('boolean');

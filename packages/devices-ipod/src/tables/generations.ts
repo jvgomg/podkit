@@ -27,7 +27,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   classic_2g: {
     id: 'classic_2g',
@@ -36,7 +36,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   classic_3g: {
     id: 'classic_3g',
@@ -45,7 +45,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   classic_4g: {
     id: 'classic_4g',
@@ -54,7 +54,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: true,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   photo: {
     id: 'photo',
@@ -109,7 +109,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   mini_2g: {
     id: 'mini_2g',
@@ -118,7 +118,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: true,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   nano_1g: {
     id: 'nano_1g',
@@ -194,7 +194,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   shuffle_2g: {
     id: 'shuffle_2g',
@@ -203,7 +203,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: true,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   shuffle_3g: {
     id: 'shuffle_3g',
@@ -213,7 +213,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: false,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   shuffle_4g: {
     id: 'shuffle_4g',
@@ -223,7 +223,7 @@ export const GENERATIONS: Record<IpodGenerationId, IpodGeneration> = {
     supported: false,
     supportsAlac: false,
     supportsVideo: false,
-    artworkMaxResolution: 0,
+    artworkMaxResolution: null,
   },
   touch_1g: {
     id: 'touch_1g',

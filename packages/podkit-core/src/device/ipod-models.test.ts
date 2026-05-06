@@ -11,9 +11,9 @@ import {
   lookupIpodModelBySerial,
   resolveIpodModel,
   toLibgpodGeneration,
-} from './ipod-models.js';
+} from '@podkit/devices-ipod';
 
-import type { IpodChecksumType, IpodGenerationId } from './ipod-models.js';
+import type { IpodChecksumType, IpodGenerationId } from '@podkit/devices-ipod';
 
 // ── Backward compatibility: lookupIpodModel ─────────────────────────────────
 

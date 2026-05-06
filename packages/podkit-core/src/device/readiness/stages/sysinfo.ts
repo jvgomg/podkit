@@ -7,8 +7,8 @@ import {
   getChecksumType,
   getGenerationInfo,
   resolveIpodModel,
-} from '../../ipod-models.js';
-import type { IpodChecksumType, IpodGenerationId } from '../../ipod-models.js';
+} from '@podkit/devices-ipod';
+import type { IpodChecksumType, IpodGenerationId } from '@podkit/devices-ipod';
 import { readSysInfoExtended } from '../../sysinfo-extended.js';
 import type { UsbFingerprint } from '@podkit/device-types';
 import type { SysInfoCheckResult, ReadinessStageResult } from '../types.js';

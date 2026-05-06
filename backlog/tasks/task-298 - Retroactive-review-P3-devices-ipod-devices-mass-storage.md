@@ -1,9 +1,10 @@
 ---
 id: TASK-298
 title: 'Retroactive review: P3 (devices-ipod + devices-mass-storage)'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-06 21:55'
+updated_date: '2026-05-06 22:12'
 labels:
   - device-capability-architecture
   - review-debt
@@ -32,3 +33,9 @@ If review surfaces bugs, fix in P4 cleanup pass.
 
 Backlog task to track gap; no scope until reviewer report comes back.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Holistic sonnet review of P3 (commit 01ecedd) + P3.5 (commit 7022289) completed. Verdict: ship-with-followups. One real bug found: getCapabilities() in devices-ipod returned 0 instead of null for artworkless iPods because IpodGeneration.artworkMaxResolution was still typed as `number` with `0` sentinel (P3.5 changed the public DeviceCapabilities type but missed the producer-side IpodGeneration type). Currently dormant (sync pipeline only reads field for mass-storage embedded path) but becomes live when P4-B wires resolveCapabilities. Fixed inline: IpodGeneration.artworkMaxResolution → number | null, 9 sentinel `0` entries in tables/generations.ts → null, capabilities.ts guard updated, parity test reference + shape assertion updated. Stale comment in devices-mass-storage/src/index.ts also fixed. All 178 devices-ipod tests + 2521 core tests pass.
+<!-- SECTION:NOTES:END -->

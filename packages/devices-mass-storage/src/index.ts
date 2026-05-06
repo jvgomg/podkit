@@ -1,10 +1,9 @@
 /**
  * @podkit/devices-mass-storage — mass-storage device presets and types
  *
- * Provides the built-in preset data (Echo Mini, Rockbox, generic DAPs) and
- * the `MassStoragePreset` interface for the podkit device capability system.
- *
- * Runtime functions (`createMassStorageProvider`) are added in TASK-294.06.
+ * Provides built-in preset data (Echo Mini, Rockbox, generic DAPs), the
+ * `MassStoragePreset` interface, USB hint matching, capability resolution,
+ * and a `DeviceProvider` factory for the podkit device-capability system.
  *
  * @module
  */

@@ -6,7 +6,7 @@ Pure TypeScript iPod generation tables, model lookups, and capability synthesis.
 
 `@podkit/devices-ipod` is the canonical home for everything podkit needs to classify an iPod and determine what it can do. The data was extracted from `podkit-core/device/ipod-models.ts` so that packages outside core — the enumeration framework, the doctor checks, the CLI readiness pipeline — can consume iPod identity and capabilities without pulling in the entire sync engine.
 
-The libgpod-coupled `createIpodCapabilities` adapter from podkit-core is replaced here by a purely table-driven `getCapabilities`. Snapshot parity is verified in tests across all 25 generations that libgpod models; the remaining 4 (nano 7G, touch 5G–7G) were previously `unknown` degenerate cases and are now correctly populated from the table.
+`getCapabilities` is purely table-driven — no libgpod coupling. Snapshot parity was verified in tests across all 29 generations (the 4 that were libgpod `unknown` degenerate cases are now correctly populated from the table). The legacy `createIpodCapabilities` adapter was removed from `@podkit/core` in P4; use `resolveCapabilities` from `@podkit/core` or `getCapabilities` from this package directly.
 
 ## Public API
 
@@ -87,7 +87,7 @@ Used by `enumerateConnectedDevices` in podkit-core. Pre-filters by Apple VID and
 
 ## Design notes
 
-- **`getCapabilities` is libgpod-free.** Capability synthesis consults only the `GENERATIONS` table and an optional firmware overlay. The legacy adapter (`createIpodCapabilities`) that depended on a live libgpod `LibgpodDeviceInfo` struct is deprecated in podkit-core and replaced by this function.
+- **`getCapabilities` is libgpod-free.** Capability synthesis consults only the `GENERATIONS` table and an optional firmware overlay. The `createIpodCapabilities` adapter that depended on `LibgpodDeviceInfo` was removed from `@podkit/core` in P4; `resolveCapabilities` from `@podkit/core` is the replacement.
 - **`IpodGenerationId` literal-plus-runtime union pattern.** `IPOD_GENERATION_IDS` (const array) enables runtime iteration; `IpodGenerationId` (type alias) provides compile-time autocomplete; `IpodGenerationIdLike` accepts user strings without losing the autocomplete suggestions.
 - **Model number prefixes.** Apple uses M (retail), P (service stock), F (factory refurbished). All three map to the same hardware; `lookupByModelNumber` strips any prefix before lookup.
 - **Each `identify` call is independent.** No merging of multiple sources — callers hold multiple `IpodModel` values from different axes and pick or compare as needed.

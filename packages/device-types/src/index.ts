@@ -25,3 +25,12 @@ export type {
 export type { FirmwareCapabilities, ParsedFirmware } from './firmware.js';
 
 export type { DeviceProvider } from './provider.js';
+
+export type {
+  IpodChecksumType,
+  IpodGenerationId,
+  IpodGenerationIdLike,
+  IpodModelSource,
+  IpodModel,
+} from './ipod-model.js';
+export { IPOD_GENERATION_IDS } from './ipod-model.js';

@@ -6,7 +6,7 @@ import { checkSysInfo } from './stages/sysinfo.js';
 import { checkDatabase } from './stages/database.js';
 import { skipRemaining, determineLevel } from './determine-level.js';
 import type { ReadinessInput, ReadinessResult, ReadinessStageResult } from './types.js';
-import type { IpodModel } from '../ipod-models.js';
+import type { IpodModel } from '@podkit/devices-ipod';
 
 export { checkIpodStructure } from './stages/mount.js';
 export { checkSysInfo } from './stages/sysinfo.js';

@@ -104,7 +104,7 @@ Include `'generic'` in the preset map to enable fallback detection for any unrec
 
 - **Stateless by design.** There is no global preset registry. The caller composes the preset map and passes it to `getCapabilities` and `createMassStorageProvider`. Two providers with different preset maps are fully independent.
 - **Eager `extends` resolution.** `definePreset` resolves the inheritance chain at construction time. The stored `MassStoragePreset` is always flat; no chained lookups at capability-resolution time.
-- **Arrays replace, not merge.** When merging capabilities during `extends` resolution or per-call overrides, arrays (e.g. `supportedAudioCodecs`) replace entirely — consistent with `resolveDeviceCapabilities` in podkit-core.
+- **Arrays replace, not merge.** When merging capabilities during `extends` resolution or per-call overrides, arrays (e.g. `supportedAudioCodecs`) replace entirely — consistent with `resolveCapabilities` in podkit-core.
 - **VID/PID hints are additive.** `USB_PRESET_HINTS` grows as new devices are researched. Exact VID+PID matches take precedence; vendor-only matches are supported for future cases where a vendor's entire line maps to one preset.
 
 ## Dependencies

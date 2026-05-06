@@ -353,7 +353,8 @@ export function extractFromPlist(plist: PlistValue, rawXml: string): ParsedFirmw
 
   // ── Required: FireWireGUID ─────────────────────────────────────────────────
   // Stored as a pre-formatted <string> in all known captures, not as <integer>.
-  const guidRaw = getString(root['FireWireGUID']);
+  // Some iPod generations use alternate casing "FirewireGuid" — try both.
+  const guidRaw = getString(root['FireWireGUID']) ?? getString(root['FirewireGuid']);
   if (!guidRaw) return null;
   const firewireGuid = guidRaw.trim().toUpperCase().padStart(16, '0');
 
@@ -365,6 +366,14 @@ export function extractFromPlist(plist: PlistValue, rawXml: string): ParsedFirmw
   // ── Required: FamilyID ─────────────────────────────────────────────────────
   const familyIdNum = getNumber(root['FamilyID']);
   if (familyIdNum === null) return null;
+
+  // ── Optional: ModelNumStr / ModelNumber ────────────────────────────────────
+  // Apple stores the model number string under "ModelNumStr" in SysInfo (older
+  // devices) and "ModelNumber" in SysInfoExtended plists. Try both key names
+  // since the naming is inconsistent across generations.
+  const modelNumberRaw =
+    getString(root['ModelNumStr']) ?? getString(root['ModelNumber']) ?? undefined;
+  const modelNumber = modelNumberRaw?.trim() || undefined;
 
   // ── Optional fields ────────────────────────────────────────────────────────
   const firmwareVersion = getString(root['VisibleBuildID']) ?? undefined;
@@ -396,6 +405,7 @@ export function extractFromPlist(plist: PlistValue, rawXml: string): ParsedFirmw
   return {
     firewireGuid,
     serialNumber,
+    ...(modelNumber !== undefined && { modelNumber }),
     rawXml,
     capabilities,
   };

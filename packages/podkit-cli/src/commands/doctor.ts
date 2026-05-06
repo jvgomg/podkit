@@ -35,6 +35,7 @@ import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import {
   stageMarker,
   printReadinessSummary,
@@ -960,8 +961,9 @@ function resolveMassStorageContentPaths(
   globalDefaults: ReturnType<typeof getContext>['config']['deviceDefaults'],
   core: typeof import('@podkit/core')
 ): import('@podkit/core').ContentPaths {
-  const preset = core.getDevicePreset(deviceConfig.type ?? 'generic');
-  const presetDefaults = preset?.contentPaths;
+  const presetId = (deviceConfig.type ?? 'generic') as keyof typeof BUILT_IN_PRESETS;
+  const builtInPreset = BUILT_IN_PRESETS[presetId];
+  const presetDefaults = builtInPreset?.contentPaths;
   const overrides: Partial<import('@podkit/core').ContentPaths> = {};
   if (globalDefaults?.musicDir !== undefined) overrides.musicDir = globalDefaults.musicDir;
   if (globalDefaults?.moviesDir !== undefined) overrides.moviesDir = globalDefaults.moviesDir;

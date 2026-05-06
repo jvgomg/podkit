@@ -53,7 +53,8 @@ import {
 } from './types.js';
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
-import { normalizeContentPaths, validateContentPaths, getDevicePreset } from '@podkit/core';
+import { normalizeContentPaths, validateContentPaths } from '@podkit/core';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 
 /**
  * Build a quality validation error message.
@@ -1008,8 +1009,9 @@ function parseDevices(
         device.moviesDir !== undefined ||
         device.tvShowsDir !== undefined;
       if (hasAnyContentPath) {
-        const preset = getDevicePreset(device.type!);
-        const presetDefaults = preset?.contentPaths;
+        const presetId = device.type! as keyof typeof BUILT_IN_PRESETS;
+        const builtInPreset = BUILT_IN_PRESETS[presetId];
+        const presetDefaults = builtInPreset?.contentPaths;
         const resolved = normalizeContentPaths(
           {
             musicDir: device.musicDir,
