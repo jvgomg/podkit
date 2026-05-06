@@ -146,7 +146,7 @@ export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from './s
 export { ensureSysInfoExtended, readSysInfoExtended } from './sysinfo-extended.js';
 
 // USB discovery
-export type { UsbDiscoveredDevice, UsbConnectionInfo } from './usb-discovery.js';
+export type { UsbDiscoveredDevice } from './usb-discovery.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
 
 // Device enumeration framework

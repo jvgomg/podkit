@@ -581,7 +581,7 @@ export {
 } from './device/index.js';
 
 // USB discovery
-export type { UsbDiscoveredDevice, UsbConnectionInfo } from './device/index.js';
+export type { UsbDiscoveredDevice } from './device/index.js';
 export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
 
 // Device enumeration framework

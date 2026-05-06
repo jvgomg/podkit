@@ -11,7 +11,7 @@
  * @module
  */
 
-import type { MassStorageIdentity, UsbConnectionInfo } from '@podkit/device-types';
+import type { MassStorageIdentity, UsbFingerprint } from '@podkit/device-types';
 import type { MassStoragePreset } from './presets/types.js';
 import { USB_PRESET_HINTS } from './usb-hints.js';
 
@@ -60,7 +60,7 @@ function normaliseId(id: string): string {
  * ```
  */
 export function identify(
-  usb: UsbConnectionInfo,
+  usb: UsbFingerprint,
   presets?: Record<string, MassStoragePreset>
 ): MassStorageIdentity | null {
   const vendorId = normaliseId(usb.vendorId);

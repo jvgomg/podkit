@@ -34,7 +34,7 @@ describe('createIpodCapabilities', () => {
     it('has no artwork sources when libgpod says artwork not supported', () => {
       const caps = createIpodCapabilities(makeDevice({ supportsArtwork: false }));
       expect(caps.artworkSources).toEqual([]);
-      expect(caps.artworkMaxResolution).toBe(0);
+      expect(caps.artworkMaxResolution).toBeNull();
     });
 
     it('returns correct resolution for classic (320)', () => {
@@ -76,9 +76,9 @@ describe('createIpodCapabilities', () => {
       expect(caps.artworkMaxResolution).toBe(320);
     });
 
-    it('returns 0 for unknown generation even if libgpod says artwork supported', () => {
+    it('returns null for unknown generation even if libgpod says artwork supported', () => {
       const caps = createIpodCapabilities(makeDevice({ generation: 'unknown' }));
-      expect(caps.artworkMaxResolution).toBe(0);
+      expect(caps.artworkMaxResolution).toBeNull();
     });
   });
 

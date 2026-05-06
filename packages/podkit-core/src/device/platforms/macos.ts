@@ -18,7 +18,7 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import type { UsbConnectionInfo } from '../usb-discovery.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 import { parseLocationId } from '../usb-discovery.js';
 
 /**
@@ -650,7 +650,7 @@ Replace diskXsY with your actual device identifier`;
    * device tree for an entry whose bsd_name matches the given whole-disk
    * identifier (e.g., "disk5"). Returns USB product/vendor IDs and connection data.
    */
-  private async queryUsbInfo(wholeDisk: string): Promise<UsbConnectionInfo | undefined> {
+  private async queryUsbInfo(wholeDisk: string): Promise<UsbFingerprint | undefined> {
     const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
     if (code !== 0 || !stdout) return undefined;
 
@@ -668,27 +668,33 @@ Replace diskXsY with your actual device identifier`;
    * Search a system_profiler data structure for a USB device entry
    * that owns the given whole-disk BSD name, and extract its USB info.
    */
-  private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbConnectionInfo | undefined {
+  private findUsbDeviceByBsdName(node: unknown, wholeDisk: string): UsbFingerprint | undefined {
     const deviceNode = this.findUsbDeviceNode(node, wholeDisk);
     if (!deviceNode) return undefined;
     return this.extractUsbInfo(deviceNode);
   }
 
   /**
-   * Extract UsbConnectionInfo from a system_profiler USB device node.
+   * Extract UsbFingerprint from a system_profiler USB device node.
    *
    * Reads product_id, vendor_id, serial_num, and location_id from
-   * the node and normalises them into the UsbConnectionInfo shape.
+   * the node and normalises them into the UsbFingerprint shape (bare hex).
    */
-  private extractUsbInfo(record: Record<string, unknown>): UsbConnectionInfo {
-    const productId = record['product_id'] as string;
+  private extractUsbInfo(record: Record<string, unknown>): UsbFingerprint {
+    const rawProductId = record['product_id'] as string;
     const rawVendorId = typeof record['vendor_id'] === 'string' ? record['vendor_id'] : '';
 
-    // vendor_id may be the string "apple_vendor_id" or "0x05ac (Apple Inc.)"
-    const vendorId =
-      rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
+    // Strip "0x" prefix for bare-hex UsbFingerprint convention.
+    const stripPrefix = (id: string): string =>
+      id.toLowerCase().startsWith('0x') ? id.slice(2).toLowerCase() : id.toLowerCase();
 
-    const info: UsbConnectionInfo = {
+    // vendor_id may be "apple_vendor_id" or "0x05ac (Apple Inc.)"
+    const vendorIdRaw =
+      rawVendorId === 'apple_vendor_id' ? '0x05ac' : (rawVendorId.split(' ')[0] ?? '');
+    const vendorId = stripPrefix(vendorIdRaw);
+    const productId = stripPrefix(rawProductId ?? '');
+
+    const info: UsbFingerprint = {
       productId,
       vendorId,
     };
@@ -702,8 +708,8 @@ Replace diskXsY with your actual device identifier`;
     const locationId =
       typeof record['location_id'] === 'string' ? record['location_id'] : undefined;
     const { busNumber, deviceAddress } = parseLocationId(locationId);
-    if (busNumber !== undefined) info.busNumber = busNumber;
-    if (deviceAddress !== undefined) info.deviceAddress = deviceAddress;
+    if (busNumber !== undefined) info.bus = busNumber;
+    if (deviceAddress !== undefined) info.devnum = deviceAddress;
 
     return info;
   }

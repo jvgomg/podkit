@@ -42,13 +42,13 @@ export interface ReadinessResult {
 
 import type { PlatformDeviceInfo } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
-import type { UsbConnectionInfo } from '../usb-discovery.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 
 export interface ReadinessInput {
   device: PlatformDeviceInfo;
   assessment?: DeviceAssessment;
   /** USB connection data */
-  usbConnection?: UsbConnectionInfo;
+  usbConnection?: UsbFingerprint;
   /** iPod model from USB discovery */
   usbModel?: IpodModel;
 }

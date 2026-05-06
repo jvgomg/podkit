@@ -153,6 +153,88 @@ describe('identify', () => {
       expect(usb!.generationId).toBe(sysinfo!.generationId);
     });
   });
+
+  describe('notSupportedReason — unsupported generations', () => {
+    test('nano 7G via USB PID 0x120e returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x120e' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('nano_7g');
+      expect(model!.notSupportedReason).toBeDefined();
+      expect(model!.notSupportedReason).toContain('libgpod');
+    });
+
+    test('nano 7G via USB PID 0x1267 returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x1267' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('nano_7g');
+      expect(model!.notSupportedReason).toBeDefined();
+    });
+
+    test('iPod touch 1G returns notSupportedReason (proprietary protocol)', () => {
+      const model = identify({ from: 'usb', productId: '0x1291' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('touch_1g');
+      expect(model!.notSupportedReason).toContain('proprietary sync protocol');
+    });
+
+    test('iPod touch 4G returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x129a' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('touch_4g');
+      expect(model!.notSupportedReason).toBeDefined();
+    });
+
+    test('iPod touch 5G returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x12a0' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('touch_5g');
+      expect(model!.notSupportedReason).toContain('proprietary sync protocol');
+    });
+
+    test('iPod touch 6G returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x12ab' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('touch_6g');
+      expect(model!.notSupportedReason).toBeDefined();
+    });
+
+    test('iPod touch 7G returns notSupportedReason', () => {
+      const model = identify({ from: 'usb', productId: '0x12a8' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('touch_7g');
+      expect(model!.notSupportedReason).toBeDefined();
+    });
+
+    test('iPod shuffle 3G returns notSupportedReason (iTunes auth)', () => {
+      const model = identify({ from: 'usb', productId: '0x1302' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('shuffle_3g');
+      expect(model!.notSupportedReason).toContain('iTunes authentication');
+    });
+
+    test('iPod shuffle 4G returns notSupportedReason (iTunes auth)', () => {
+      const model = identify({ from: 'usb', productId: '0x1303' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('shuffle_4g');
+      expect(model!.notSupportedReason).toContain('iTunes authentication');
+    });
+
+    test('nano 6G (0x120d) returns notSupportedReason (iTunesDB format)', () => {
+      const model = identify({ from: 'usb', productId: '0x120d' });
+      expect(model).toBeDefined();
+      expect(model!.generationId).toBe('nano_6g');
+      expect(model!.notSupportedReason).toContain('iTunesDB format');
+    });
+
+    test('supported devices do NOT have notSupportedReason', () => {
+      // iPod Classic 6G — fully supported
+      const classic = identify({ from: 'usb', productId: '0x1261' });
+      expect(classic!.notSupportedReason).toBeUndefined();
+      // iPod nano 5G — fully supported
+      const nano5 = identify({ from: 'usb', productId: '0x120c' });
+      expect(nano5!.notSupportedReason).toBeUndefined();
+    });
+  });
 });
 
 // ── resolveIpodModel (backward-compatible alias) ──────────────────────────

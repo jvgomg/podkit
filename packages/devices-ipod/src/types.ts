@@ -62,6 +62,18 @@ export interface IpodGeneration {
   displayName: string;
   checksumType: IpodChecksumType;
   /**
+   * Whether libgpod 0.8.x can read and write the iTunesDB for this generation.
+   * `false` means the device can be detected and identified, but podkit cannot
+   * sync to it (libgpod has no ipod_info_table entry for it).
+   *
+   * Generations where this is `false`:
+   * - nano_7g: not in libgpod's ipod_info_table
+   * - touch_5g/6g/7g: not in libgpod's ipod_info_table
+   * - nano_6g: in libgpod's table but uses an iTunesDB format libgpod cannot write
+   * - shuffle_3g/4g: in libgpod's table but requires iTunes authentication
+   */
+  supported: boolean;
+  /**
    * Whether this generation natively decodes ALAC (and therefore also
    * tolerates WAV / AIFF). Earlier iPods (1G–3G), Mini 1G, Nano 1G/2G/6G
    * and all Shuffles do not.
@@ -92,6 +104,11 @@ export type IpodModelSource = 'usb' | 'sysinfo' | 'serial';
  * Built from a single identification source. USB discovery yields generation
  * and a generic displayName. SysInfo/serial yields richer data including
  * color, capacity, and model number.
+ *
+ * When `notSupportedReason` is present, the device was identified but podkit
+ * cannot sync to it (libgpod unsupported, iTunes authentication required, or
+ * Apple proprietary sync protocol). Callers should surface this to the user
+ * rather than attempting a sync.
  */
 export interface IpodModel {
   /** Best available human-readable name (e.g., "iPod nano 4GB Silver (2nd Generation)") */
@@ -108,6 +125,12 @@ export interface IpodModel {
   readonly color?: string;
   /** How this model was identified */
   readonly source: IpodModelSource;
+  /**
+   * When present, this device is identified but cannot be synced by podkit.
+   * Populated when `IpodGeneration.supported === false` or the USB product ID
+   * appears in UNSUPPORTED_IPOD_PRODUCT_IDS.
+   */
+  readonly notSupportedReason?: string;
 }
 
 // ── IpodModelVariant ────────────────────────────────────────────────────────

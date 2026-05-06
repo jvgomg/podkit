@@ -44,11 +44,7 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       });
 
       const usbDevice = await resolveUsbDeviceFromPath(ctx.mountPoint);
-      if (
-        !usbDevice ||
-        usbDevice.busNumber === undefined ||
-        usbDevice.deviceAddress === undefined
-      ) {
+      if (!usbDevice || usbDevice.bus === undefined || usbDevice.devnum === undefined) {
         return {
           success: false,
           summary: 'Could not find USB device for this iPod',
@@ -62,10 +58,10 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       if (options?.dryRun) {
         return {
           success: true,
-          summary: `Dry run: would read SysInfoExtended from USB bus ${usbDevice.busNumber} device ${usbDevice.deviceAddress}`,
+          summary: `Dry run: would read SysInfoExtended from USB bus ${usbDevice.bus} device ${usbDevice.devnum}`,
           details: {
-            busNumber: usbDevice.busNumber,
-            deviceAddress: usbDevice.deviceAddress,
+            bus: usbDevice.bus,
+            devnum: usbDevice.devnum,
           },
         };
       }
@@ -73,12 +69,12 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       // Step 2: Read from USB and write to device
       options?.onProgress?.({
         phase: 'reading',
-        message: `Reading SysInfoExtended from USB bus ${usbDevice.busNumber} device ${usbDevice.deviceAddress}`,
+        message: `Reading SysInfoExtended from USB bus ${usbDevice.bus} device ${usbDevice.devnum}`,
       });
 
       const result = await ensureSysInfoExtended(ctx.mountPoint, {
-        busNumber: usbDevice.busNumber,
-        deviceAddress: usbDevice.deviceAddress,
+        busNumber: usbDevice.bus,
+        deviceAddress: usbDevice.devnum,
       });
 
       if (!result.present) {

@@ -24,7 +24,7 @@ function makeDiscovered(
   };
 }
 
-const iPodDiscovered = makeDiscovered('0x05ac', '0x1263', {
+const iPodDiscovered = makeDiscovered('05ac', '1263', {
   model: {
     displayName: 'iPod Classic 6th generation',
     generationId: 'classic_6g',
@@ -33,9 +33,9 @@ const iPodDiscovered = makeDiscovered('0x05ac', '0x1263', {
   },
 });
 
-const echoMiniDiscovered = makeDiscovered('0x071b', '0x3203');
+const echoMiniDiscovered = makeDiscovered('071b', '3203');
 
-const unknownDiscovered = makeDiscovered('0x1234', '0xabcd');
+const unknownDiscovered = makeDiscovered('1234', 'abcd');
 
 // =============================================================================
 // Provider stubs
@@ -222,7 +222,7 @@ describe('enumerateConnectedDevices', () => {
     expect(result[0]!.discovered).toBe(iPodDiscovered);
   });
 
-  it('converts 0x-prefixed VIDs/PIDs to bare hex for providers', async () => {
+  it('passes bare-hex VIDs/PIDs through to providers', async () => {
     // Capture the fingerprint the provider receives.
     const seen: UsbFingerprint[] = [];
     const recordingProvider: DeviceProvider = {
@@ -235,11 +235,11 @@ describe('enumerateConnectedDevices', () => {
 
     await enumerateConnectedDevices({
       providers: [recordingProvider],
-      walk: walk([makeDiscovered('0x05ac', '0x1261')]),
+      walk: walk([makeDiscovered('05ac', '1261')]),
     });
 
     expect(seen).toHaveLength(1);
-    // Providers receive bare hex without "0x" prefix.
+    // Providers receive bare hex (UsbFingerprint canonical form).
     expect(seen[0]!.vendorId).toBe('05ac');
     expect(seen[0]!.productId).toBe('1261');
   });

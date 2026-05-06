@@ -9,50 +9,30 @@
  */
 
 // =============================================================================
-// USB connection info
-// =============================================================================
-
-/**
- * USB bus connection data — the minimal descriptor fields needed to match
- * a device against a VID/PID hint table.
- *
- * This is a shared, platform-agnostic view of a connected USB device.
- * The full `UsbConnectionInfo` in `podkit-core/device/usb-discovery.ts`
- * extends this with OS-specific bus addressing fields; providers that only
- * need matching work against this minimal type.
- */
-export type UsbConnectionInfo = {
-  /** USB vendor ID as a hex string with 0x prefix, e.g. `'0x071b'` */
-  vendorId: string;
-  /** USB product ID as a hex string with 0x prefix, e.g. `'0x3203'` */
-  productId: string;
-  /** USB serial number string, if reported by the device */
-  serialNumber?: string;
-  /** USB bus number */
-  busNumber?: number;
-  /** USB device address on the bus */
-  deviceAddress?: number;
-};
-
-// =============================================================================
 // USB fingerprint
 // =============================================================================
 
 /**
  * Low-level USB descriptor fields that uniquely identify a connected device.
  * Obtained from the OS USB layer before any higher-level protocol is attempted.
+ *
+ * `bus` and `devnum` are optional because some discovery contexts (e.g.
+ * macOS system_profiler when location_id is absent, or early-discovery paths
+ * that have not yet resolved bus addressing) may not provide them.
+ * Providers and transports that require bus addressing must guard against
+ * undefined values before use.
  */
 export type UsbFingerprint = {
-  /** USB vendor ID as a hex string, e.g. `"05ac"` (Apple) */
+  /** USB vendor ID as bare hex string, lowercase, e.g. `"05ac"` (Apple) */
   vendorId: string;
-  /** USB product ID as a hex string, e.g. `"1261"` (iPod nano 2G) */
+  /** USB product ID as bare hex string, lowercase, e.g. `"1261"` (iPod nano 2G) */
   productId: string;
   /** USB serial number string, if reported by the device */
   serialNumber?: string;
-  /** USB bus number */
-  bus: number;
-  /** Device number on the bus */
-  devnum: number;
+  /** USB bus number — optional; may be absent in some discovery contexts */
+  bus?: number;
+  /** Device number on the bus — optional; may be absent in some discovery contexts */
+  devnum?: number;
 };
 
 // =============================================================================
@@ -63,12 +43,22 @@ export type UsbFingerprint = {
  * Identity for an iPod device identified via its USB descriptor and firmware.
  * The `firewireGuid` and `serialNumber` come from SysInfoExtended; `familyId`
  * identifies the iPod generation/model family.
+ *
+ * When `notSupportedReason` is set, the device was identified as an iPod but
+ * is not supported by podkit (libgpod limitation, iTunes-only auth, etc.).
+ * Other identity fields may be empty placeholders in that case.
+ * Callers should surface the reason and stop the add flow.
  */
 export type IpodIdentity = {
   kind: 'ipod';
   firewireGuid: string;
   serialNumber: string;
   familyId: number;
+  /**
+   * If set, the device is a known iPod but cannot be synced by podkit.
+   * Callers should surface this reason to the user and abort the add flow.
+   */
+  notSupportedReason?: string;
 };
 
 /**

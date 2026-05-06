@@ -457,8 +457,15 @@ export async function readUsbInquiry(
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const binding = _binding ?? (await loadLibusb()).binding;
 
+  if (fp.bus === undefined || fp.devnum === undefined) {
+    throw new UsbInquiryError({
+      kind: 'device-not-found',
+      message: 'USB bus/devnum not available in fingerprint — cannot perform USB inquiry',
+    });
+  }
+
   return withLibusbContext(binding, async (ctx) => {
-    const dev = findDeviceByBusDev(binding, ctx, fp.bus, fp.devnum);
+    const dev = findDeviceByBusDev(binding, ctx, fp.bus!, fp.devnum!);
     return withDeviceHandle(binding, dev, async (handle) => {
       const chunks: Uint8Array[] = [];
       let total = 0;

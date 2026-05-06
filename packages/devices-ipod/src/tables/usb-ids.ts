@@ -12,8 +12,10 @@
  * Both ranges map to the same generations. DFU/WTF mode IDs (0x1223, 0x1224, etc.)
  * are intentionally excluded -- those are recovery-mode endpoints, not disk-mode devices.
  *
- * Note: 0x1266 (nano 6g via 0x126x range) should be added to UNSUPPORTED_IPODS
- * in usb-discovery.ts (parallel task 279.02 is editing that file).
+ * Devices that podkit cannot sync (e.g. nano 6G, nano 7G, all Touch generations)
+ * are still listed here for identification purposes. The unsupported flag lives
+ * on `IpodGeneration.supported` (see `tables/generations.ts`) and the
+ * canonical PID-keyed reason map is `tables/unsupported.ts`.
  *
  * @module
  */

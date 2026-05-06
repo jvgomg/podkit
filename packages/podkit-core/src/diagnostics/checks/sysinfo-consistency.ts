@@ -23,7 +23,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { parsePlist, extractFromPlist } from '@podkit/ipod-firmware';
+import { compareSysInfoConsistency } from '@podkit/ipod-firmware';
 import { resolveUsbDeviceFromPath } from '../../device/usb-discovery.js';
 import { sysInfoExtendedCheck } from './sysinfo-extended.js';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
@@ -78,24 +78,6 @@ export async function checkSysinfoConsistency(
     };
   }
 
-  let onDiskGuid: string | null = null;
-  try {
-    const plist = parsePlist(xml);
-    const extracted = extractFromPlist(plist, xml);
-    onDiskGuid = extracted?.firewireGuid ?? null;
-  } catch {
-    // Malformed XML
-  }
-
-  if (!onDiskGuid) {
-    return {
-      status: 'fail',
-      summary: 'SysInfoExtended present but malformed or missing FireWireGUID',
-      repairable: true,
-      details: { filePath },
-    };
-  }
-
   // 3. Obtain live USB serial (FireWireGUID for classic iPods)
   let liveSerial: string | undefined;
   try {
@@ -105,40 +87,43 @@ export async function checkSysinfoConsistency(
     // USB resolution failed — not a fatal check error
   }
 
-  if (!liveSerial) {
-    // Cannot verify — skip rather than false-positive (device may not be USB-connected)
-    return {
-      status: 'skip',
-      summary: `SysInfoExtended present (GUID: ${onDiskGuid}) — live USB GUID unavailable, skipping consistency check`,
-      repairable: false,
-      details: { onDiskGuid },
-    };
+  // 4. Delegate parse + normalise + compare to the pure ipod-firmware function.
+  const result = compareSysInfoConsistency(xml, liveSerial);
+
+  switch (result.status) {
+    case 'malformed':
+      return {
+        status: 'fail',
+        summary: 'SysInfoExtended present but malformed or missing FireWireGUID',
+        repairable: true,
+        details: { filePath },
+      };
+    case 'no-live-guid':
+      return {
+        status: 'skip',
+        summary: `SysInfoExtended present (GUID: ${result.onDiskGuid}) — live USB GUID unavailable, skipping consistency check`,
+        repairable: false,
+        details: { onDiskGuid: result.onDiskGuid },
+      };
+    case 'match':
+      return {
+        status: 'pass',
+        summary: `SysInfoExtended matches live device (GUID: ${result.onDiskGuid})`,
+        repairable: false,
+        details: { guid: result.onDiskGuid },
+      };
+    case 'mismatch':
+      return {
+        status: 'fail',
+        summary: `SysInfoExtended GUID mismatch — on-disk: ${result.onDiskGuid}, live device: ${result.liveGuid}`,
+        repairable: true,
+        details: {
+          onDiskGuid: result.onDiskGuid,
+          liveGuid: result.liveGuid,
+          filePath,
+        },
+      };
   }
-
-  // Normalise both to uppercase 16-char hex for comparison
-  const normOnDisk = onDiskGuid.toUpperCase().padStart(16, '0');
-  const normLive = liveSerial.toUpperCase().padStart(16, '0');
-
-  // 4. Compare
-  if (normOnDisk === normLive) {
-    return {
-      status: 'pass',
-      summary: `SysInfoExtended matches live device (GUID: ${normOnDisk})`,
-      repairable: false,
-      details: { guid: normOnDisk },
-    };
-  }
-
-  return {
-    status: 'fail',
-    summary: `SysInfoExtended GUID mismatch — on-disk: ${normOnDisk}, live device: ${normLive}`,
-    repairable: true,
-    details: {
-      onDiskGuid: normOnDisk,
-      liveGuid: normLive,
-      filePath,
-    },
-  };
 }
 
 // ── Exported check object ─────────────────────────────────────────────────────

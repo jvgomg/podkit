@@ -191,7 +191,9 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
   const artworkSources = config.capabilities?.artworkSources;
   const primaryArtworkSource = artworkSources?.[0];
   const artworkResize =
-    primaryArtworkSource === 'embedded' ? config.capabilities?.artworkMaxResolution : undefined;
+    primaryArtworkSource === 'embedded'
+      ? (config.capabilities?.artworkMaxResolution ?? undefined)
+      : undefined;
 
   const transformsEnabled = config.transforms ? hasEnabledTransforms(config.transforms) : false;
 

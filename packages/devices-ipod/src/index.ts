@@ -33,6 +33,11 @@ export { MODEL_NUMBERS, LEGACY_MODEL_OVERRIDES, type ModelEntry } from './tables
 export { SERIAL_TO_MODEL } from './tables/serials.js';
 export { GENERATION_ID_TO_LIBGPOD, type LibgpodGenerationName } from './tables/libgpod-mapping.js';
 export { ARTWORK_MAX_RESOLUTION, type ArtworkResolution } from './tables/artwork-formats.js';
+export {
+  UNSUPPORTED_IPOD_PRODUCT_IDS,
+  lookupUnsupportedReason,
+  lookupIosRangeFallbackReason,
+} from './tables/unsupported.js';
 
 // ── Lookups ───────────────────────────────────────────────────────────────────
 

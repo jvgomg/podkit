@@ -72,35 +72,18 @@ export interface EnumerateOptions {
 }
 
 // =============================================================================
-// UsbConnectionInfo → UsbFingerprint conversion
+// UsbDiscoveredDevice → UsbFingerprint extraction
 // =============================================================================
 
 /**
- * Convert a `UsbDiscoveredDevice`'s connection info into a `UsbFingerprint`.
+ * Extract the `UsbFingerprint` from a `UsbDiscoveredDevice`.
  *
- * `UsbConnectionInfo` (usb-discovery) uses `busNumber`/`deviceAddress`
- * (optional, with `0x` prefix on IDs).
- * `UsbFingerprint` (device-types) uses `bus`/`devnum` (required numbers,
- * bare hex IDs without `0x` prefix).
- *
- * When bus/device numbers are absent (system_profiler didn't supply them),
- * we fall back to 0 — providers that need real bus addressing will return
- * null if the device isn't reachable, so a sentinel 0 is safe here.
+ * `UsbDiscoveredDevice.usb` is already a `UsbFingerprint` (bare-hex VID/PID,
+ * optional bus/devnum). This function is a trivial pass-through kept for
+ * readability at the call site.
  */
 function toFingerprint(d: UsbDiscoveredDevice): UsbFingerprint {
-  const { usb } = d;
-
-  // Strip leading "0x" prefix to match UsbFingerprint's bare-hex convention.
-  const stripPrefix = (id: string): string =>
-    id.toLowerCase().startsWith('0x') ? id.slice(2).toLowerCase() : id.toLowerCase();
-
-  return {
-    vendorId: stripPrefix(usb.vendorId),
-    productId: stripPrefix(usb.productId),
-    ...(usb.serialNumber !== undefined ? { serialNumber: usb.serialNumber } : {}),
-    bus: usb.busNumber ?? 0,
-    devnum: usb.deviceAddress ?? 0,
-  };
+  return d.usb;
 }
 
 // =============================================================================

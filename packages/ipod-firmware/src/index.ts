@@ -82,6 +82,12 @@ export {
 // Firmware extraction
 export { extractFromPlist, bigintToFireWireGuid } from './firmware/extract.js';
 
-// Diagnostic checks live in @podkit/core (see TASK-292.09 — DiagnosticCheck
-// type carries deep core dependencies, so checks are registered in core and
-// consume this package's `probeInquiryMethods` / `inquireFirmware` primitives.
+// Diagnostic primitives — pure functions consumed by core's check registry.
+// Diagnostic check objects themselves live in @podkit/core because the
+// DiagnosticCheck type has deep core dependencies (see TASK-292.09).
+export {
+  compareSysInfoConsistency,
+  normaliseFireWireGuid,
+  type SysInfoConsistencyStatus,
+  type SysInfoConsistencyResult,
+} from './diagnostics/sysinfo-consistency.js';

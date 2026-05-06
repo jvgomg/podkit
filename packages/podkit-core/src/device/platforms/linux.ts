@@ -21,7 +21,7 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import type { UsbConnectionInfo } from '../usb-discovery.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 
 // ---------------------------------------------------------------------------
 // Shell execution helper
@@ -204,7 +204,7 @@ export function stripPartitionSuffix(name: string): string {
  * Walks /sys/bus/usb/devices/ looking for a USB device whose child block
  * device matches the given name (e.g., "sda"). Returns vendor/product IDs.
  */
-function findUsbIdentity(blockDeviceName: string): UsbConnectionInfo | undefined {
+function findUsbIdentity(blockDeviceName: string): UsbFingerprint | undefined {
   // Strip partition suffix to get the base device (sda1 → sda, nvme0n1p2 → nvme0n1)
   const baseName = stripPartitionSuffix(blockDeviceName);
 
@@ -222,10 +222,11 @@ function findUsbIdentity(blockDeviceName: string): UsbConnectionInfo | undefined
       const productPath = join(sysPath, 'idProduct');
 
       if (existsSync(vendorPath) && existsSync(productPath)) {
-        const vendorId = `0x${readFileSync(vendorPath, 'utf-8').trim()}`;
-        const productId = `0x${readFileSync(productPath, 'utf-8').trim()}`;
+        // sysfs idVendor/idProduct are bare hex without 0x prefix (e.g. "05ac")
+        const vendorId = readFileSync(vendorPath, 'utf-8').trim().toLowerCase();
+        const productId = readFileSync(productPath, 'utf-8').trim().toLowerCase();
 
-        const info: UsbConnectionInfo = {
+        const info: UsbFingerprint = {
           productId,
           vendorId,
         };
@@ -240,13 +241,13 @@ function findUsbIdentity(blockDeviceName: string): UsbConnectionInfo | undefined
         const busnumPath = join(sysPath, 'busnum');
         if (existsSync(busnumPath)) {
           const busnum = parseInt(readFileSync(busnumPath, 'utf-8').trim(), 10);
-          if (Number.isFinite(busnum)) info.busNumber = busnum;
+          if (Number.isFinite(busnum)) info.bus = busnum;
         }
 
         const devnumPath = join(sysPath, 'devnum');
         if (existsSync(devnumPath)) {
           const devnum = parseInt(readFileSync(devnumPath, 'utf-8').trim(), 10);
-          if (Number.isFinite(devnum)) info.deviceAddress = devnum;
+          if (Number.isFinite(devnum)) info.devnum = devnum;
         }
 
         return info;
@@ -363,7 +364,7 @@ export class LinuxDeviceManager implements DeviceManager {
     for (const device of devices) {
       // Check USB identity — most reliable for unmounted devices
       const usb = findUsbIdentity(device.identifier);
-      if (usb?.vendorId === '0x05ac') {
+      if (usb?.vendorId === '05ac') {
         ipods.push(device);
         continue;
       }

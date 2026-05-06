@@ -31,6 +31,7 @@
 import type { DeviceProvider, UsbFingerprint, IpodIdentity } from '@podkit/device-types';
 import { inquireFirmware } from '@podkit/ipod-firmware';
 import { lookupByUsbId } from './lookups.js';
+import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from './tables/unsupported.js';
 
 /** Apple USB vendor ID (lower-case, no 0x prefix) */
 const APPLE_VENDOR_ID = '05ac';
@@ -87,6 +88,21 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
   async detect(fp: UsbFingerprint): Promise<IpodIdentity | null> {
     // Pre-filter: must be an Apple device.
     if (!isAppleVendor(fp)) return null;
+
+    // Unsupported short-circuit — return tagged identity WITHOUT calling
+    // inquireFirmware. Saves the ~5s SCSI/USB timeout per device on
+    // unsupported hardware (Touch/iPhone/iPad/nano 6G/7G/Shuffle 3G/4G).
+    const unsupportedReason =
+      lookupUnsupportedReason(fp.productId) ?? lookupIosRangeFallbackReason(fp.productId);
+    if (unsupportedReason) {
+      return {
+        kind: 'ipod',
+        firewireGuid: '',
+        serialNumber: fp.serialNumber ?? '',
+        familyId: -1,
+        notSupportedReason: unsupportedReason,
+      };
+    }
 
     // Pre-filter: must be a product ID we recognise as an iPod.
     if (!isKnownIpodProduct(fp)) return null;

@@ -6,7 +6,7 @@
  * automatically mounted by the operating system.
  */
 
-import type { UsbConnectionInfo } from './usb-discovery.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 
 /**
  * A piece of evidence contributing to an iFlash storage determination.
@@ -64,7 +64,7 @@ export interface DeviceAssessment {
   /** Mount point path if currently mounted */
   mountPoint?: string;
   /** USB subsystem identity, if available on this platform */
-  usb?: UsbConnectionInfo;
+  usb?: UsbFingerprint;
   /** iFlash storage analysis derived from disk and USB characteristics */
   iFlash: IFlashAssessment;
 }

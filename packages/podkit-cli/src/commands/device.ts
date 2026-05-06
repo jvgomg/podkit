@@ -174,7 +174,7 @@ async function attemptSysInfoExtended(
     // Checksum device with only SysInfo — SysInfoExtended is required.
     // Try to read it from USB.
     const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-    if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
+    if (!usbInfo?.bus || !usbInfo?.devnum) {
       out.newline();
       out.print(
         `Warning: This iPod (${modelNumber ?? 'unknown model'}) requires SysInfoExtended for database checksums,` +
@@ -207,7 +207,7 @@ async function attemptSysInfoExtended(
 
     return readSysInfoExtendedFromUsb(
       mountPoint,
-      { busNumber: usbInfo.busNumber!, deviceAddress: usbInfo.deviceAddress! },
+      { busNumber: usbInfo.bus!, deviceAddress: usbInfo.devnum! },
       out
     );
   }
@@ -217,7 +217,7 @@ async function attemptSysInfoExtended(
   //    offline reattach), silently skip: the downstream init step will
   //    create classic SysInfo if the database is also missing.
   const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-  if (!usbInfo?.busNumber || !usbInfo?.deviceAddress) {
+  if (!usbInfo?.bus || !usbInfo?.devnum) {
     out.verbose1('No SysInfo or SysInfoExtended on device, and USB device could not be located.');
     return { result: null, abort: false };
   }
@@ -243,7 +243,7 @@ async function attemptSysInfoExtended(
   // 5. Read from USB and write the file.
   return readSysInfoExtendedFromUsb(
     mountPoint,
-    { busNumber: usbInfo.busNumber, deviceAddress: usbInfo.deviceAddress },
+    { busNumber: usbInfo.bus, deviceAddress: usbInfo.devnum },
     out
   );
 }
@@ -553,7 +553,7 @@ export interface DeviceInfoOutput {
     massStorageCapabilities?: {
       supportedAudioCodecs: string[];
       artworkSources: string[];
-      artworkMaxResolution: number;
+      artworkMaxResolution: number | null;
       supportsVideo: boolean;
       audioNormalization: string;
       supportsAlbumArtistBrowsing: boolean;

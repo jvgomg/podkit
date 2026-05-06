@@ -8,7 +8,6 @@
  */
 
 import type { DeviceProvider, UsbFingerprint, MassStorageIdentity } from '@podkit/device-types';
-import type { UsbConnectionInfo } from '@podkit/device-types';
 import type { MassStoragePreset } from './presets/types.js';
 import { identify } from './identity.js';
 
@@ -26,14 +25,6 @@ import { identify } from './identity.js';
  *
  * Stateless: each call to `detect()` re-evaluates against the preset
  * map. Two callers with different preset maps get independent providers.
- *
- * **UsbFingerprint → UsbConnectionInfo conversion:**
- * Both types carry `vendorId`, `productId`, and `serialNumber`. They differ
- * in bus-addressing fields: `UsbFingerprint` uses `bus` / `devnum` (required)
- * while `UsbConnectionInfo` uses `busNumber` / `deviceAddress` (optional).
- * `identify()` only needs `vendorId` + `productId` + `serialNumber` for hint
- * matching, so the bus fields are mapped through for completeness but are not
- * required for correctness.
  *
  * @param presets - Preset map in scope (built-in + user-registered). The
  *   resulting provider sees only these presets. Include `'generic'` to enable
@@ -57,21 +48,7 @@ export function createMassStorageProvider(
   return {
     id: 'mass-storage',
     async detect(fp: UsbFingerprint): Promise<MassStorageIdentity | null> {
-      // UsbFingerprint and UsbConnectionInfo both carry vendorId/productId/
-      // serialNumber. The only divergence is bus-addressing field names:
-      //   UsbFingerprint:     bus (number, required), devnum (number, required)
-      //   UsbConnectionInfo:  busNumber (number, optional), deviceAddress (number, optional)
-      // identify() only uses vendorId + productId + serialNumber for matching,
-      // so mapping bus → busNumber and devnum → deviceAddress is purely for
-      // completeness (future-proofing if identify() ever uses bus addressing).
-      const usb: UsbConnectionInfo = {
-        vendorId: fp.vendorId,
-        productId: fp.productId,
-        ...(fp.serialNumber !== undefined ? { serialNumber: fp.serialNumber } : {}),
-        busNumber: fp.bus,
-        deviceAddress: fp.devnum,
-      };
-      return identify(usb, presets);
+      return identify(fp, presets);
     },
   };
 }

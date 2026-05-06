@@ -35,8 +35,11 @@ export type AudioNormalizationMode = 'soundcheck' | 'replaygain' | 'none';
 export interface DeviceCapabilities {
   /** Where the device reads artwork from, ordered by priority (first = preferred) */
   artworkSources: DeviceArtworkSource[];
-  /** Maximum artwork display resolution in pixels (width = height, square) */
-  artworkMaxResolution: number;
+  /**
+   * Maximum artwork display resolution in pixels (square, width === height).
+   * `null` when the device has no display or no artwork support.
+   */
+  artworkMaxResolution: number | null;
   /** Audio codecs the device can play natively without transcoding */
   supportedAudioCodecs: AudioCodec[];
   /** Whether the device supports video playback */

@@ -15,7 +15,7 @@
  * | Field                          | Source     | Notes |
  * | ------------------------------ | ---------- | ----- |
  * | `artworkSources`               | (A) table  | `['database']` if `artworkMaxResolution > 0`, else `[]`. iPods read artwork from the iTunesDB ArtworkDB on disk. |
- * | `artworkMaxResolution`         | (A) table  | Per-generation maximum dimension in pixels. 0 ⇒ no artwork. |
+ * | `artworkMaxResolution`         | (A) table  | Per-generation maximum dimension in pixels. `null` ⇒ no artwork. |
  * | `supportedAudioCodecs`         | (A) + (C)  | `['aac','mp3']` always; `['alac','wav','aiff']` added when `supportsAlac`; firmware overlay may union additional codecs the device advertises. |
  * | `supportsVideo`                | (A) table  | Class capability — does this generation have video hardware. |
  * | `audioNormalization`           | (A) const  | All iPods use Sound Check stored in the database. |

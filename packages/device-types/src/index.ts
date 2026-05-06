@@ -16,7 +16,6 @@ export type {
 } from './capabilities.js';
 
 export type {
-  UsbConnectionInfo,
   UsbFingerprint,
   IpodIdentity,
   MassStorageIdentity,

@@ -21,26 +21,17 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { resolveIpodModel } from './ipod-models.js';
 import type { IpodModel } from './ipod-models.js';
+import type { UsbFingerprint } from '@podkit/device-types';
+import {
+  lookupUnsupportedReason as lookupUnsupportedReasonFromTable,
+  lookupIosRangeFallbackReason,
+} from '@podkit/devices-ipod';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** USB bus connection data — how to reach the device */
-export interface UsbConnectionInfo {
-  /** USB vendor ID (e.g., '0x05ac') */
-  vendorId: string;
-  /** USB product ID (e.g., '0x1209') */
-  productId: string;
-  /** USB serial number (FireWire GUID for older iPods, Apple serial for newer) */
-  serialNumber?: string;
-  /** USB bus number (for libusb device addressing) */
-  busNumber?: number;
-  /** USB device address (for libusb device addressing) */
-  deviceAddress?: number;
-}
-
 export interface UsbDiscoveredDevice {
-  /** USB connection details */
-  usb: UsbConnectionInfo;
+  /** USB fingerprint — bare-hex VID/PID, optional bus/devnum */
+  usb: UsbFingerprint;
   /** Identified iPod model from USB product ID lookup */
   model?: IpodModel;
   /** Disk identifier if this USB device has a disk representation */
@@ -51,40 +42,37 @@ export interface UsbDiscoveredDevice {
   notSupportedReason?: string;
 }
 
-// ── Unsupported device definitions ───────────────────────────────────────────
+// ── Unsupported device lookup (delegates to @podkit/devices-ipod) ─────────────
 
-const UNSUPPORTED_IPODS: Record<string, string> = {
-  '0x1302':
-    'iPod Shuffle 3rd/4th generation requires iTunes authentication and cannot be used with podkit.',
-  '0x1303':
-    'iPod Shuffle 3rd/4th generation requires iTunes authentication and cannot be used with podkit.',
-  '0x120d': 'iPod Nano 6th generation uses a different database format not supported by libgpod.',
-  '0x1266': 'iPod Nano 6th generation uses a different database format not supported by libgpod.',
-};
-
-/** Product ID ranges for iPod Touch / iOS devices */
-const IPOD_TOUCH_IDS = ['0x1291', '0x1292', '0x1293', '0x129a', '0x12a0', '0x12ab', '0x12a8'];
-
-const IPOD_TOUCH_REASON = "iPod Touch / iOS devices use Apple's proprietary sync protocol.";
-
+/**
+ * Check if a product ID (in any hex format) matches an unsupported device.
+ * Accepts both bare hex ('1302') and prefixed ('0x1302') forms.
+ *
+ * Also catches unrecognised Apple PIDs in the iOS range (0x1290–0x12af) that
+ * are not in IPOD_USB_IDS, so future iPhone/iPad/Touch generations produce an
+ * informative message rather than silently appearing as supported.
+ */
 function getUnsupportedReason(productId: string): string | undefined {
-  const normalised = productId.toLowerCase();
-  if (UNSUPPORTED_IPODS[normalised]) {
-    return UNSUPPORTED_IPODS[normalised];
-  }
-  if (IPOD_TOUCH_IDS.includes(normalised)) {
-    return IPOD_TOUCH_REASON;
-  }
-  return undefined;
+  const direct = lookupUnsupportedReasonFromTable(productId);
+  if (direct) return direct;
+  const fallback = lookupIosRangeFallbackReason(productId);
+  return fallback ?? undefined;
 }
 
 // ── Apple vendor ID matching ─────────────────────────────────────────────────
 
-const APPLE_VENDOR_ID = '0x05ac';
+/** Bare-hex Apple vendor ID (UsbFingerprint canonical form) */
+const APPLE_VENDOR_ID = '05ac';
 
 function isAppleVendorId(vendorId: string): boolean {
   const lower = vendorId.toLowerCase();
-  return lower === APPLE_VENDOR_ID || lower.startsWith('0x05ac ') || lower === 'apple_vendor_id';
+  // Accept both bare ('05ac') and prefixed ('0x05ac') forms, plus system_profiler strings.
+  return (
+    lower === APPLE_VENDOR_ID ||
+    lower === '0x05ac' ||
+    lower.startsWith('0x05ac ') ||
+    lower === 'apple_vendor_id'
+  );
 }
 
 // ── macOS implementation ─────────────────────────────────────────────────────
@@ -122,32 +110,42 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
       // Collect all USB devices — vendor filtering is the provider layer's job.
       if (item.vendor_id) {
         const rawVendorId = item.vendor_id;
-        const productId = extractProductId(item.product_id);
-        if (productId) {
-          // Normalise vendor ID to "0x…" form when possible; keep raw string otherwise.
-          const vendorIdMatch = rawVendorId.match(/0x[\da-fA-F]+/i);
+        const productIdRaw = extractProductId(item.product_id);
+        if (productIdRaw) {
+          // Strip "0x" prefix for bare-hex UsbFingerprint convention.
+          const stripPrefix = (id: string): string =>
+            id.toLowerCase().startsWith('0x') ? id.slice(2).toLowerCase() : id.toLowerCase();
+
+          // Normalise vendor ID: extract hex digits, strip prefix.
+          const vendorIdMatch = rawVendorId.match(/0x([\da-fA-F]+)/i);
           const normalisedVendorId = vendorIdMatch
-            ? vendorIdMatch[0]!.toLowerCase()
+            ? vendorIdMatch[1]!.toLowerCase()
             : isAppleVendorId(rawVendorId)
               ? APPLE_VENDOR_ID
               : rawVendorId.toLowerCase();
 
+          const productId = stripPrefix(productIdRaw);
+
+          // iPod-specific enrichment: model lookup and unsupported reasons.
           // iPod-specific enrichment: model lookup and unsupported reasons.
           // Only populated for Apple devices with a recognised product ID.
           const isApple = isAppleVendorId(rawVendorId);
           const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
-          const unsupportedReason = isApple && model ? getUnsupportedReason(productId) : undefined;
+          // getUnsupportedReason applies to all Apple devices — even those not in
+          // IPOD_USB_IDS — so that unrecognised iPhone/iPad PIDs in the iOS range
+          // (0x1290–0x12af) produce an informative "not supported" message.
+          const unsupportedReason = isApple ? getUnsupportedReason(productIdRaw) : undefined;
 
           const diskIdentifier = extractBsdName(item);
           const serialNumber = extractSerialNumber(item);
           const { busNumber, deviceAddress } = parseLocationId(item.location_id);
 
-          const usb: UsbConnectionInfo = {
+          const usb: UsbFingerprint = {
             vendorId: normalisedVendorId,
             productId,
             ...(serialNumber ? { serialNumber } : {}),
-            ...(busNumber !== undefined ? { busNumber } : {}),
-            ...(deviceAddress !== undefined ? { deviceAddress } : {}),
+            ...(busNumber !== undefined ? { bus: busNumber } : {}),
+            ...(deviceAddress !== undefined ? { devnum: deviceAddress } : {}),
           };
 
           const entry: UsbDiscoveredDevice = {
@@ -277,25 +275,29 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
   const results: UsbDiscoveredDevice[] = [];
 
   for (const device of deviceDirs) {
-    const vendorId = `0x${device.idVendor.toLowerCase()}`;
-    const productId = `0x${device.idProduct.toLowerCase()}`;
+    // Bare hex (no 0x prefix) to match UsbFingerprint convention.
+    const vendorId = device.idVendor.toLowerCase();
+    const productId = device.idProduct.toLowerCase();
 
     // iPod-specific enrichment: model lookup and unsupported reasons.
     // Only populated when this is an Apple VID with a recognised product ID.
     const isApple = vendorId === APPLE_VENDOR_ID;
     const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
-    const unsupportedReason = isApple && model ? getUnsupportedReason(productId) : undefined;
+    // getUnsupportedReason applies to all Apple devices — even those not in
+    // IPOD_USB_IDS — so that unrecognised iPhone/iPad PIDs in the iOS range
+    // (0x1290–0x12af) produce an informative "not supported" message.
+    const unsupportedReason = isApple ? getUnsupportedReason(productId) : undefined;
 
     const busNumber = device.busnum ? parseInt(device.busnum, 10) : undefined;
     const deviceAddress = device.devnum ? parseInt(device.devnum, 10) : undefined;
     const serialNumber = device.serial && device.serial.length > 0 ? device.serial : undefined;
 
-    const usb: UsbConnectionInfo = {
+    const usb: UsbFingerprint = {
       vendorId,
       productId,
       ...(serialNumber ? { serialNumber } : {}),
-      ...(Number.isFinite(busNumber) ? { busNumber } : {}),
-      ...(Number.isFinite(deviceAddress) ? { deviceAddress } : {}),
+      ...(Number.isFinite(busNumber) ? { bus: busNumber } : {}),
+      ...(Number.isFinite(deviceAddress) ? { devnum: deviceAddress } : {}),
     };
 
     results.push({
@@ -372,7 +374,7 @@ async function discoverLinux(): Promise<UsbDiscoveredDevice[]> {
 export async function resolveUsbDeviceFromPath(
   mountPath: string,
   options?: { platform?: string }
-): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
   const platform = options?.platform ?? process.platform;
 
   try {
@@ -455,7 +457,7 @@ export function findUsbAncestor(
 
 async function resolveUsbDeviceFromPathLinux(
   mountPath: string
-): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
   // Step 1: Find block device from /proc/mounts
   let procMounts: string;
   try {
@@ -476,14 +478,14 @@ async function resolveUsbDeviceFromPathLinux(
   if (!usbDevicePath) return null;
 
   // Step 3: Read USB device attributes
-  const result: Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+  const result: Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> = {};
 
   try {
     const busnum = parseInt(
       fs.readFileSync(path.join(usbDevicePath, 'busnum'), 'utf-8').trim(),
       10
     );
-    if (Number.isFinite(busnum)) result.busNumber = busnum;
+    if (Number.isFinite(busnum)) result.bus = busnum;
   } catch {
     /* not available */
   }
@@ -493,7 +495,7 @@ async function resolveUsbDeviceFromPathLinux(
       fs.readFileSync(path.join(usbDevicePath, 'devnum'), 'utf-8').trim(),
       10
     );
-    if (Number.isFinite(devnum)) result.deviceAddress = devnum;
+    if (Number.isFinite(devnum)) result.devnum = devnum;
   } catch {
     /* not available */
   }
@@ -510,7 +512,7 @@ async function resolveUsbDeviceFromPathLinux(
 
 async function resolveUsbDeviceFromPathMacOS(
   mountPath: string
-): Promise<Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> | null> {
+): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
   // Step 1: Get BSD name from diskutil info
   const diskutilOutput = await new Promise<string>((resolve, reject) => {
     execFile('diskutil', ['info', mountPath], { timeout: 10_000 }, (error, stdout) => {
@@ -571,10 +573,10 @@ async function resolveUsbDeviceFromPathMacOS(
   const serialNumber = extractSerialNumber(matchedItem);
   const { busNumber, deviceAddress } = parseLocationId(matchedItem.location_id);
 
-  const result: Pick<UsbConnectionInfo, 'busNumber' | 'deviceAddress' | 'serialNumber'> = {};
+  const result: Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> = {};
   if (serialNumber) result.serialNumber = serialNumber;
-  if (busNumber !== undefined) result.busNumber = busNumber;
-  if (deviceAddress !== undefined) result.deviceAddress = deviceAddress;
+  if (busNumber !== undefined) result.bus = busNumber;
+  if (deviceAddress !== undefined) result.devnum = deviceAddress;
 
   return Object.keys(result).length > 0 ? result : null;
 }

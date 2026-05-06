@@ -10,7 +10,7 @@ import {
 } from '../../ipod-models.js';
 import type { IpodChecksumType, IpodGenerationId } from '../../ipod-models.js';
 import { readSysInfoExtended } from '../../sysinfo-extended.js';
-import type { UsbConnectionInfo } from '../../usb-discovery.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 import type { SysInfoCheckResult, ReadinessStageResult } from '../types.js';
 
 // Non-destructive repair hint for any sysinfo-stage failure: read identity
@@ -36,7 +36,7 @@ function isBinaryContent(buf: Buffer): boolean {
 /** Check if SysInfo and USB report different iPod generations. */
 function detectGenerationMismatch(
   sysInfoGenId: IpodGenerationId | undefined,
-  usbConnection: UsbConnectionInfo | undefined
+  usbConnection: UsbFingerprint | undefined
 ): { sysInfoGeneration: string; usbGeneration: string } | undefined {
   if (!sysInfoGenId || !usbConnection?.productId) return undefined;
   const usbGenId = lookupGenerationByProductId(usbConnection.productId);
@@ -49,7 +49,7 @@ function detectGenerationMismatch(
 
 export async function checkSysInfo(
   mountPoint: string,
-  usbConnection?: UsbConnectionInfo,
+  usbConnection?: UsbFingerprint,
   usbModelName?: string
 ): Promise<SysInfoCheckResult> {
   const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');

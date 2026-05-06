@@ -42,7 +42,7 @@ const echoMini1 = definePreset({
 
 Throws if `id` is empty, if `extends` references an unknown preset, or if a cycle is detected.
 
-**`identify(usb: UsbConnectionInfo, presets?: Record<string, MassStoragePreset>): MassStorageIdentity | null`**
+**`identify(usb: UsbFingerprint, presets?: Record<string, MassStoragePreset>): MassStorageIdentity | null`**
 
 Match a USB device against the VID/PID hint table. Returns a `MassStorageIdentity` tagged with the matched preset ID, or `null` if the device is not recognised.
 

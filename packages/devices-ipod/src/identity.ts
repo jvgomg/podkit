@@ -17,6 +17,7 @@
 
 import { GENERATIONS } from './tables/generations.js';
 import { lookupByUsbId, lookupBySerial, lookupByModelNumber } from './lookups.js';
+import { lookupUnsupportedReason } from './tables/unsupported.js';
 import type { IpodModel, IpodModelSource } from './types.js';
 
 // ── Input types ──────────────────────────────────────────────────────────────
@@ -58,11 +59,18 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const entry = lookupByUsbId(input.productId);
       if (!entry) return undefined;
       const gen = GENERATIONS[entry.generation];
+      // Check unsupported PID table first, then fall back to generation flag.
+      const notSupportedReason =
+        lookupUnsupportedReason(input.productId) ??
+        (!gen.supported
+          ? `${entry.displayName} is not supported by podkit (libgpod cannot sync this generation).`
+          : undefined);
       return {
         displayName: entry.displayName,
         generationId: entry.generation,
         checksumType: gen.checksumType,
         source: 'usb' satisfies IpodModelSource,
+        ...(notSupportedReason ? { notSupportedReason } : {}),
       };
     }
 
@@ -73,6 +81,9 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       // Re-derive stripped model number for the modelNumber field
       const upper = input.modelNumStr.toUpperCase();
       const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
+      const notSupportedReason = !gen.supported
+        ? `${entry.displayName} is not supported by podkit (libgpod cannot sync this generation).`
+        : undefined;
       return {
         displayName: entry.displayName,
         generationId: entry.generation,
@@ -81,6 +92,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
         capacityGb: entry.capacityGb,
         color: entry.color,
         source: 'sysinfo' satisfies IpodModelSource,
+        ...(notSupportedReason ? { notSupportedReason } : {}),
       };
     }
 
@@ -91,6 +103,9 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const variant = lookupBySerial(suffix);
       if (!variant) return undefined;
       const gen = GENERATIONS[variant.generation];
+      const notSupportedReason = !gen.supported
+        ? `${variant.displayName} is not supported by podkit (libgpod cannot sync this generation).`
+        : undefined;
       return {
         displayName: variant.displayName,
         generationId: variant.generation,
@@ -99,6 +114,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
         capacityGb: variant.capacityGb,
         color: variant.color,
         source: 'serial' satisfies IpodModelSource,
+        ...(notSupportedReason ? { notSupportedReason } : {}),
       };
     }
   }

@@ -93,9 +93,11 @@ describe('BUILT_IN_PRESETS', () => {
   });
 
   it('echo-mini has lower max artwork resolution than generic', () => {
-    expect(BUILT_IN_PRESETS['echo-mini'].artworkMaxResolution).toBeLessThan(
-      BUILT_IN_PRESETS.generic.artworkMaxResolution
-    );
+    const echoMini = BUILT_IN_PRESETS['echo-mini'].artworkMaxResolution;
+    const generic = BUILT_IN_PRESETS.generic.artworkMaxResolution;
+    expect(echoMini).not.toBeNull();
+    expect(generic).not.toBeNull();
+    expect(echoMini!).toBeLessThan(generic!);
   });
 
   it('rockbox supports sidecar artwork', () => {

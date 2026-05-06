@@ -76,8 +76,8 @@ describe('getDeviceCapabilities', () => {
       expect(caps.artworkSources).toEqual([]);
     });
 
-    it('has 0 artwork resolution', () => {
-      expect(caps.artworkMaxResolution).toBe(0);
+    it('has null artwork resolution', () => {
+      expect(caps.artworkMaxResolution).toBe(null);
     });
   });
 
@@ -108,8 +108,8 @@ describe('getDeviceCapabilities', () => {
       expect(caps.supportsVideo).toBe(false);
     });
 
-    it('has 0 artwork resolution', () => {
-      expect(caps.artworkMaxResolution).toBe(0);
+    it('has null artwork resolution', () => {
+      expect(caps.artworkMaxResolution).toBe(null);
     });
 
     it('has no artwork sources', () => {
@@ -156,7 +156,7 @@ describe('getDeviceCapabilities', () => {
     const caps = getDeviceCapabilities('nonexistent_device');
     expect(caps.supportedAudioCodecs).toEqual(['aac', 'mp3']);
     expect(caps.supportsVideo).toBe(false);
-    expect(caps.artworkMaxResolution).toBe(0);
+    expect(caps.artworkMaxResolution).toBe(null);
     expect(caps.artworkSources).toEqual([]);
   });
 

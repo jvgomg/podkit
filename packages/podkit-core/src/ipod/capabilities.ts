@@ -15,14 +15,6 @@ import type { AudioCodec, DeviceArtworkSource, DeviceCapabilities } from '@podki
 // =============================================================================
 
 /**
- * Get the maximum artwork display resolution for an iPod generation.
- *
- * Returns 0 for devices without a color screen (shuffles, minis, early iPods).
- *
- * @param generation - Generation identifier from libgpod
- * @returns Maximum artwork dimension in pixels (square), or 0 if no artwork support
- */
-/**
  * Maximum artwork resolution per iPod generation.
  *
  * Values based on device screen dimensions. This table is also
@@ -30,7 +22,7 @@ import type { AudioCodec, DeviceArtworkSource, DeviceCapabilities } from '@podki
  * is the primary path for connected devices via libgpod. This copy
  * serves as a fallback for generation-only capability queries.
  */
-const ARTWORK_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
+const ARTWORK_RESOLUTION: Partial<Record<IpodGeneration, number | null>> = {
   // Classic/Video — 320x240 screen
   classic_1: 320,
   classic_2: 320,
@@ -61,8 +53,8 @@ const ARTWORK_RESOLUTION: Partial<Record<IpodGeneration, number>> = {
   ipad_1: 320,
 };
 
-function getArtworkMaxResolution(generation: IpodGeneration): number {
-  return ARTWORK_RESOLUTION[generation] ?? 0;
+function getArtworkMaxResolution(generation: IpodGeneration): number | null {
+  return ARTWORK_RESOLUTION[generation] ?? null;
 }
 
 // =============================================================================
@@ -103,7 +95,8 @@ export function getDeviceCapabilities(generation: string): DeviceCapabilities {
 
   // Determine artwork capabilities
   const artworkMaxResolution = getArtworkMaxResolution(generation as IpodGeneration);
-  const artworkSources: DeviceArtworkSource[] = artworkMaxResolution > 0 ? ['database'] : [];
+  const artworkSources: DeviceArtworkSource[] =
+    artworkMaxResolution !== null && artworkMaxResolution > 0 ? ['database'] : [];
 
   return {
     artworkSources,

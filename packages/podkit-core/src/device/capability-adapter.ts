@@ -116,8 +116,8 @@ export function createIpodCapabilities(device: LibgpodDeviceInfo): DeviceCapabil
 
   // Artwork — use libgpod for support flag, supplement resolution from table
   const artworkMaxResolution = device.supportsArtwork
-    ? (LIBGPOD_ARTWORK_RESOLUTION[generation] ?? 0)
-    : 0;
+    ? (LIBGPOD_ARTWORK_RESOLUTION[generation] ?? null)
+    : null;
   const artworkSources: DeviceArtworkSource[] = device.supportsArtwork ? ['database'] : [];
 
   return {

@@ -35,7 +35,7 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      usb: { vendorId: '0x05ac', productId: '0x1261' },
+      usb: { vendorId: '05ac', productId: '1261' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',
@@ -77,15 +77,15 @@ describe('parseSystemProfilerUsbData', () => {
     // All three devices are returned; classification is the provider layer's job.
     expect(result).toHaveLength(3);
     // iPod Classic (supported)
-    const ipodResult = result.find((r) => r.usb.productId === '0x1209');
+    const ipodResult = result.find((r) => r.usb.productId === '1209');
     expect(ipodResult).toBeDefined();
     expect(ipodResult!.supported).toBe(true);
     // iPod Touch 5th gen (unsupported — still tagged because it's an Apple device)
-    const touchResult = result.find((r) => r.usb.productId === '0x12a0');
+    const touchResult = result.find((r) => r.usb.productId === '12a0');
     expect(touchResult).toBeDefined();
     expect(touchResult!.supported).toBe(false);
     // AirPods — not an iPod product ID, no model, supported: true (no unsupported reason)
-    const airpodsResult = result.find((r) => r.usb.productId === '0x2002');
+    const airpodsResult = result.find((r) => r.usb.productId === '2002');
     expect(airpodsResult).toBeDefined();
     expect(airpodsResult!.model).toBeUndefined();
     expect(airpodsResult!.supported).toBe(true);
@@ -117,10 +117,10 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     // Hub (0x1234) + iPod (0x120a) — both returned now that vendor filter is gone.
     expect(result).toHaveLength(2);
-    const ipodResult = result.find((r) => r.usb.productId === '0x120a');
+    const ipodResult = result.find((r) => r.usb.productId === '120a');
     expect(ipodResult).toBeDefined();
     expect(ipodResult!.model!.displayName).toBe('iPod nano 1st generation');
-    const hubResult = result.find((r) => r.usb.productId === '0x5678');
+    const hubResult = result.find((r) => r.usb.productId === '5678');
     expect(hubResult).toBeDefined();
     expect(hubResult!.model).toBeUndefined();
   });
@@ -171,8 +171,8 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     // All USB devices are now returned regardless of vendor.
     expect(result).toHaveLength(1);
-    expect(result[0]!.usb.vendorId).toBe('0x1234');
-    expect(result[0]!.usb.productId).toBe('0x5678');
+    expect(result[0]!.usb.vendorId).toBe('1234');
+    expect(result[0]!.usb.productId).toBe('5678');
     expect(result[0]!.model).toBeUndefined();
     expect(result[0]!.supported).toBe(true);
   });
@@ -248,7 +248,7 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.supported).toBe(false);
-    expect(result[0]!.notSupportedReason).toContain('database format');
+    expect(result[0]!.notSupportedReason).toContain('iTunesDB format');
   });
 
   it('marks iPod Touch as unsupported', () => {
@@ -306,10 +306,10 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     // Both the iPod and the keyboard are returned (vendor filter removed).
     expect(result).toHaveLength(2);
-    const ipodResult = result.find((r) => r.usb.productId === '0x1207');
+    const ipodResult = result.find((r) => r.usb.productId === '1207');
     expect(ipodResult).toBeDefined();
     expect(ipodResult!.model!.displayName).toBe('iPod 5th generation (Video)');
-    const kbdResult = result.find((r) => r.usb.productId === '0x0260');
+    const kbdResult = result.find((r) => r.usb.productId === '0260');
     expect(kbdResult).toBeDefined();
     expect(kbdResult!.model).toBeUndefined();
   });
@@ -336,8 +336,8 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.usb.serialNumber).toBe('000A27001BC8EED6');
-    expect(result[0]!.usb.busNumber).toBe(3);
-    expect(result[0]!.usb.deviceAddress).toBe(14);
+    expect(result[0]!.usb.bus).toBe(3);
+    expect(result[0]!.usb.devnum).toBe(14);
     expect(result[0]!.diskIdentifier).toBe('disk5s2');
   });
 
@@ -360,8 +360,8 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.usb.serialNumber).toBeUndefined();
-    expect(result[0]!.usb.busNumber).toBeUndefined();
-    expect(result[0]!.usb.deviceAddress).toBeUndefined();
+    expect(result[0]!.usb.bus).toBeUndefined();
+    expect(result[0]!.usb.devnum).toBeUndefined();
   });
 
   it('handles vendor_id in "0x05ac (Apple Inc.)" format', () => {
@@ -382,7 +382,7 @@ describe('parseSystemProfilerUsbData', () => {
 
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
-    expect(result[0]!.usb.vendorId).toBe('0x05ac');
+    expect(result[0]!.usb.vendorId).toBe('05ac');
   });
 });
 
@@ -431,7 +431,7 @@ describe('parseSysfsUsbDevices', () => {
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
     expect(result[0]).toEqual({
-      usb: { vendorId: '0x05ac', productId: '0x1261' },
+      usb: { vendorId: '05ac', productId: '1261' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',
@@ -452,7 +452,7 @@ describe('parseSysfsUsbDevices', () => {
     const result = parseSysfsUsbDevices(devices);
     // All three devices are returned now; provider layer classifies them.
     expect(result).toHaveLength(3);
-    const appleResult = result.find((r) => r.usb.productId === '0x120a');
+    const appleResult = result.find((r) => r.usb.productId === '120a');
     expect(appleResult).toBeDefined();
     expect(appleResult!.model).toBeDefined(); // iPod nano 1st gen
   });
@@ -466,11 +466,11 @@ describe('parseSysfsUsbDevices', () => {
     const result = parseSysfsUsbDevices(devices);
     // Both devices are returned; the keyboard has no model, the iPod does.
     expect(result).toHaveLength(2);
-    const keyboardResult = result.find((r) => r.usb.productId === '0x0260');
+    const keyboardResult = result.find((r) => r.usb.productId === '0260');
     expect(keyboardResult).toBeDefined();
     expect(keyboardResult!.model).toBeUndefined();
     expect(keyboardResult!.supported).toBe(true);
-    const ipodResult = result.find((r) => r.usb.productId === '0x1209');
+    const ipodResult = result.find((r) => r.usb.productId === '1209');
     expect(ipodResult).toBeDefined();
     expect(ipodResult!.model).toBeDefined();
   });
@@ -508,8 +508,8 @@ describe('parseSysfsUsbDevices', () => {
 
     const result = parseSysfsUsbDevices(devices);
     expect(result).toHaveLength(1);
-    expect(result[0]!.usb.busNumber).toBe(3);
-    expect(result[0]!.usb.deviceAddress).toBe(14);
+    expect(result[0]!.usb.bus).toBe(3);
+    expect(result[0]!.usb.devnum).toBe(14);
     expect(result[0]!.usb.serialNumber).toBe('000A27001BC8EED6');
   });
 
@@ -517,8 +517,8 @@ describe('parseSysfsUsbDevices', () => {
     const devices = [{ idVendor: '05ac', idProduct: '1209' }];
 
     const result = parseSysfsUsbDevices(devices);
-    expect(result[0]!.usb.busNumber).toBeUndefined();
-    expect(result[0]!.usb.deviceAddress).toBeUndefined();
+    expect(result[0]!.usb.bus).toBeUndefined();
+    expect(result[0]!.usb.devnum).toBeUndefined();
     expect(result[0]!.usb.serialNumber).toBeUndefined();
   });
 });
@@ -668,7 +668,7 @@ describe('findUsbAncestor', () => {
 describe('createUsbOnlyReadinessResult', () => {
   it('creates readiness result with USB pass and partition fail', () => {
     const result = createUsbOnlyReadinessResult({
-      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      usb: { vendorId: '05ac', productId: '1209' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',
@@ -685,7 +685,7 @@ describe('createUsbOnlyReadinessResult', () => {
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb!.status).toBe('pass');
     expect(usb!.summary).toContain('iPod Classic 6th generation');
-    expect(usb!.summary).toContain('0x05ac');
+    expect(usb!.summary).toContain('05ac');
 
     // Partition should fail
     const partition = result.stages.find((s) => s.stage === 'partition');
@@ -701,7 +701,7 @@ describe('createUsbOnlyReadinessResult', () => {
 
   it('handles device without model name', () => {
     const result = createUsbOnlyReadinessResult({
-      usb: { vendorId: '0x05ac', productId: '0x9999' },
+      usb: { vendorId: '05ac', productId: '9999' },
       supported: true,
     });
 
@@ -711,7 +711,7 @@ describe('createUsbOnlyReadinessResult', () => {
 
   it('has no summary (not ready)', () => {
     const result = createUsbOnlyReadinessResult({
-      usb: { vendorId: '0x05ac', productId: '0x1209' },
+      usb: { vendorId: '05ac', productId: '1209' },
       model: {
         displayName: 'iPod Classic 6th generation',
         generationId: 'classic_6g',
