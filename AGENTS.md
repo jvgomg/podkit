@@ -158,6 +158,7 @@ These decisions are documented in ADRs — read the full ADR for context:
 | Video transcoding | FFmpeg with H.264/M4V output | [ADR-006](adr/adr-006-video-transcoding.md) |
 | Self-healing sync | Detect and upgrade changed source files | [ADR-009](adr/adr-009-self-healing-sync.md) |
 | Artwork change detection | Hash-based artwork diffing with opt-in scanning | [ADR-012](adr/adr-012-artwork-change-detection.md) |
+| Audio change detection | Audio-stream hashing with opt-in `--check-audio` verify | [ADR-014](adr/adr-014-self-healing-audio-detection.md) (master), [ADR-015](adr/adr-015-audio-stream-checksum-sync-tag.md) (impl), [ADR-016](adr/adr-016-track-query-language.md) (query lang) |
 
 ## Testing
 
