@@ -181,6 +181,10 @@ Read [agents/shell-completions.md](agents/shell-completions.md) when modifying C
 
 Read [agents/docker.md](agents/docker.md) when working on Docker distribution, the entrypoint, or daemon mode.
 
+## Subsonic API (Navidrome)
+
+Read [agents/subsonic-api.md](agents/subsonic-api.md) when working on the Subsonic collection adapter, investigating sync behavior with Navidrome, or designing change-detection for remote sources. Covers endpoint shape, the `Child` field list, OpenSubsonic extensions, Navidrome quirks, and which signals are available for change detection.
+
 ## Virtual iPod
 
 The virtual iPod system creates a synthetic iPod for demonstrating podkit. It consists of four packages and a Lima VM. See [backlog/docs/doc-028](backlog/docs/doc-028%20-%20Virtual-iPod-Architecture-and-Package-Design.md) for the full architecture document and [tools/demo/README.md](tools/demo/README.md) for the live demo guide.
