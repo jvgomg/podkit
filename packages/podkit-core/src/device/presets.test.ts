@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
-import { DEFAULT_CONTENT_PATHS } from './mass-storage-utils.js';
+import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 import { resolveCapabilities } from './resolve-capabilities.js';
 
 describe('BUILT_IN_PRESETS', () => {

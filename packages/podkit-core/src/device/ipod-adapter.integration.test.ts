@@ -19,10 +19,24 @@ import { spawn } from 'node:child_process';
 
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodDeviceAdapter } from './ipod-adapter.js';
-import { capsForLibgpodGeneration } from '../ipod/test-helpers.js';
 import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
+import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
+import { resolveIpodModelCapabilities } from './resolve-capabilities.js';
+import type { DeviceCapabilities } from '@podkit/device-types';
+
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
+
+/** Test-local helper: build DeviceCapabilities from an IpodGenerationId. */
+function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
+  const gen = GENERATIONS[id];
+  return resolveIpodModelCapabilities({
+    displayName: gen.displayName,
+    generationId: id,
+    checksumType: gen.checksumType,
+    source: 'usb',
+  });
+}
 
 // =============================================================================
 // Test Helpers
@@ -106,7 +120,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Write phase: add track with sync tag and save
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Audio Tag Test',
           artist: 'Test Artist',
@@ -122,7 +136,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Read phase: reopen database and verify sync tag
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -147,7 +161,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Write phase
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Copy Tag Test',
           artist: 'Test Artist',
@@ -163,7 +177,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Read phase
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -186,7 +200,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Add track WITHOUT a sync tag
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Write Tag Later',
           artist: 'Test Artist',
@@ -201,7 +215,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Reopen, call writeSyncTag, and save again
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -217,7 +231,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Reopen and verify tag is present
       const db3 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter3 = new IpodDeviceAdapter(db3, capsForLibgpodGeneration('classic_3'));
+        const adapter3 = new IpodDeviceAdapter(db3, capsForGeneration('classic_7g'));
         const tracks = adapter3.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -242,7 +256,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Add track WITH a sync tag
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Clear Tag Test',
           artist: 'Test Artist',
@@ -258,7 +272,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Reopen, verify tag exists, then clear it and save
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
         expect(tracks[0]!.syncTag).not.toBeNull();
@@ -272,7 +286,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Reopen and verify tag is gone
       const db3 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter3 = new IpodDeviceAdapter(db3, capsForLibgpodGeneration('classic_3'));
+        const adapter3 = new IpodDeviceAdapter(db3, capsForGeneration('classic_7g'));
         const tracks = adapter3.getTracks();
         expect(tracks).toHaveLength(1);
         expect(tracks[0]!.syncTag).toBeNull();
@@ -294,7 +308,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Write phase
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Artwork Hash Test',
           artist: 'Test Artist',
@@ -310,7 +324,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Read phase
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -337,7 +351,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Write phase: add track with a comment, then write a sync tag on top
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Comment Coexist Test',
           artist: 'Test Artist',
@@ -355,7 +369,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Read phase: verify both comment text and sync tag survive
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -383,7 +397,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Write phase
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Video Tag Test',
           artist: 'Test Artist',
@@ -399,7 +413,7 @@ describe('IpodDeviceAdapter sync tag round-trip', () => {
       // Read phase
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -453,7 +467,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       // Write phase: add track with normalization data
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Normalization Add Test',
           artist: 'Test Artist',
@@ -469,7 +483,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       // Read phase: verify soundcheck was written
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -494,7 +508,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       // Write phase: add track WITHOUT normalization
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'Normalization Update Test',
           artist: 'Test Artist',
@@ -515,7 +529,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
 
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
         // Should have no normalization initially (soundcheck defaults to 0)
@@ -530,7 +544,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       // Read phase: verify soundcheck was written
       const db3 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter3 = new IpodDeviceAdapter(db3, capsForLibgpodGeneration('classic_3'));
+        const adapter3 = new IpodDeviceAdapter(db3, capsForGeneration('classic_7g'));
         const tracks = adapter3.getTracks();
         expect(tracks).toHaveLength(1);
 
@@ -560,7 +574,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
 
       const db1 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter = new IpodDeviceAdapter(db1, capsForLibgpodGeneration('classic_3'));
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
         const track = adapter.addTrack({
           title: 'TrackGain Only Test',
           artist: 'Test Artist',
@@ -575,7 +589,7 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
 
       const db2 = await IpodDatabase.open(testIpod.path);
       try {
-        const adapter2 = new IpodDeviceAdapter(db2, capsForLibgpodGeneration('classic_3'));
+        const adapter2 = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
         const tracks = adapter2.getTracks();
         expect(tracks).toHaveLength(1);
         expect(tracks[0]!.soundcheck).toBe(expectedSoundcheck);

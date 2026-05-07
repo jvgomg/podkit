@@ -28,9 +28,12 @@
 import { describe, test, expect } from 'bun:test';
 
 import { resolveIpodModelCapabilities, resolveCapabilities } from './resolve-capabilities.js';
-import { modelFromLibgpodInfo } from './libgpod-bridge.js';
-
-import { GENERATION_ID_TO_LIBGPOD, GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
+import {
+  modelFromLibgpodInfo,
+  GENERATION_ID_TO_LIBGPOD,
+  GENERATIONS,
+  type IpodGenerationId,
+} from '@podkit/devices-ipod';
 import { IPOD_GENERATION_IDS } from '@podkit/device-types';
 import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 

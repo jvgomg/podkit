@@ -6,7 +6,12 @@ import {
   ensureSysInfoExtended,
   readSysInfoExtended,
   type ReadFromUsbFn,
-} from './sysinfo-extended.js';
+} from '@podkit/ipod-firmware';
+import { resolveIpodModel } from '@podkit/devices-ipod';
+
+/** Inject the model resolver so result.model is populated from serial suffix. */
+const resolveModel = (sn: string) =>
+  resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -98,7 +103,7 @@ describe('readSysInfoExtended', () => {
 
   it('parses existing SysInfoExtended and extracts device info', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML);
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
 
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
@@ -110,25 +115,25 @@ describe('readSysInfoExtended', () => {
 
   it('returns null when file does not exist', () => {
     createIpodStructure(tmpDir);
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
     expect(result).toBeNull();
   });
 
   it('returns null when file is empty', () => {
     writeSysInfoExtended(tmpDir, '');
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
     expect(result).toBeNull();
   });
 
   it('returns null when file is whitespace-only', () => {
     writeSysInfoExtended(tmpDir, '   \n  \n  ');
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
     expect(result).toBeNull();
   });
 
   it('returns result with no model when XML lacks required keys', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML_NO_GUID);
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
 
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
@@ -139,7 +144,7 @@ describe('readSysInfoExtended', () => {
 
   it('handles alternate FirewireGuid casing', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML_ALT_CASING);
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
 
     expect(result).not.toBeNull();
     expect(result!.firewireGuid).toBe('000A27001DCECFB5');
@@ -147,7 +152,7 @@ describe('readSysInfoExtended', () => {
 
   it('looks up model from serial suffix', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML);
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
 
     expect(result!.model).toBeDefined();
     // Serial "5U828GFNYXX" -> suffix "YXX" -> iPod nano 3rd Gen
@@ -162,7 +167,7 @@ describe('readSysInfoExtended', () => {
     const xml = FIXTURE_XML.replace('5U828GFNYXX', 'UNKNOWNZZZ');
     writeSysInfoExtended(tmpDir, xml);
 
-    const result = readSysInfoExtended(tmpDir);
+    const result = readSysInfoExtended(tmpDir, resolveModel);
 
     expect(result).not.toBeNull();
     expect(result!.firewireGuid).toBe('000A27001DCECFB5');
@@ -313,7 +318,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader, resolveModel);
 
     expect(result.model).toBeDefined();
     // Serial "5U828GFNYXX" -> suffix "YXX" -> nano 3G

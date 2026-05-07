@@ -68,6 +68,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
+import { resolveIpodModel } from '@podkit/devices-ipod';
 import {
   formatGeneration,
   validateDevice,
@@ -142,7 +143,9 @@ async function attemptSysInfoExtended(
   opts: { autoConfirm: boolean }
 ): Promise<SysInfoAttempt> {
   // 1. SysInfoExtended already present and parseable → done.
-  const existing = readSysInfoExtended(mountPoint);
+  const resolveModel = (sn: string) =>
+    resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+  const existing = readSysInfoExtended(mountPoint, resolveModel);
   if (existing?.present && (existing.model || existing.firewireGuid)) {
     return { result: existing, abort: false };
   }
@@ -255,10 +258,17 @@ async function readSysInfoExtendedFromUsb(
   out: OutputContext
 ): Promise<SysInfoAttempt> {
   try {
-    const result = await ensureSysInfoExtended(mountPoint, {
-      busNumber: usbInfo.busNumber,
-      deviceAddress: usbInfo.deviceAddress,
-    });
+    const resolveModel = (sn: string) =>
+      resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+    const result = await ensureSysInfoExtended(
+      mountPoint,
+      {
+        busNumber: usbInfo.busNumber,
+        deviceAddress: usbInfo.deviceAddress,
+      },
+      undefined,
+      resolveModel
+    );
 
     if (!result.present) {
       out.error(`Failed to read SysInfoExtended from USB: ${result.error ?? 'unknown error'}`);

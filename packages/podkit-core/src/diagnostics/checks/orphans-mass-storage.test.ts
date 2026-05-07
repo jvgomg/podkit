@@ -12,7 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { orphanFilesMassStorageCheck } from './orphans-mass-storage.js';
 import type { DiagnosticContext, RepairContext } from '../types.js';
-import type { ContentPaths, MassStorageManifest } from '../../device/mass-storage-utils.js';
+import type { MassStorageManifest } from '../../device/mass-storage-utils.js';
+import type { ContentPaths } from '@podkit/devices-mass-storage';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 

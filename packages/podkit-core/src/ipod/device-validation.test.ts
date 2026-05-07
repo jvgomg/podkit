@@ -220,7 +220,7 @@ describe('formatCapabilities', () => {
     });
     const result = validateDevice(device);
     const lines = formatCapabilities(result.capabilities, device);
-    expect(lines.some((l) => l.includes('- Video') && l.includes('Nano (2nd Generation)'))).toBe(
+    expect(lines.some((l) => l.includes('- Video') && l.includes('nano (2nd Generation)'))).toBe(
       true
     );
   });

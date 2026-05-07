@@ -64,9 +64,10 @@ export {
   validateContentPaths,
   PODKIT_DIR,
   MANIFEST_FILE,
-  DEFAULT_CONTENT_PATHS,
 } from './mass-storage-utils.js';
-export type { MassStorageManifest, ContentPaths } from './mass-storage-utils.js';
+export type { MassStorageManifest } from './mass-storage-utils.js';
+export { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
+export type { ContentPaths } from '@podkit/devices-mass-storage';
 
 // Device type identifiers (CLI-surface types; iPod is a built-in type id that
 // has no mass-storage preset, so these live here rather than in
@@ -97,16 +98,18 @@ export type { DeviceAssessment, IFlashAssessment, IFlashEvidence } from './asses
 
 export { detectIFlash } from './assessment.js';
 export {
-  lookupIpodModel,
-  lookupIpodModelByNumber,
-  lookupIpodModelBySerial,
+  lookupByUsbId,
+  lookupByModelNumber,
+  lookupBySerial,
+  lookupGenerationInfo,
   lookupGenerationByProductId,
-  getGenerationInfo,
   getChecksumType,
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
   toLibgpodGeneration,
   resolveIpodModel,
+  identify,
+  formatGeneration,
 } from '@podkit/devices-ipod';
 export type {
   IpodChecksumType,
@@ -118,8 +121,7 @@ export type {
   IpodModelInput,
 } from '@podkit/devices-ipod';
 
-export { modelFromLibgpodInfo } from './libgpod-bridge.js';
-export type { LibgpodDeviceInfo } from './libgpod-bridge.js';
+export { modelFromLibgpodInfo, type LibgpodDeviceInfo } from '@podkit/devices-ipod';
 
 // Unified capability resolver
 export { resolveCapabilities, resolveIpodModelCapabilities } from './resolve-capabilities.js';
@@ -142,9 +144,13 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 
-// SysInfoExtended orchestrator
-export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from './sysinfo-extended.js';
-export { ensureSysInfoExtended, readSysInfoExtended } from './sysinfo-extended.js';
+// SysInfoExtended orchestrator (imported directly from @podkit/ipod-firmware)
+export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from '@podkit/ipod-firmware';
+export {
+  ensureSysInfoExtended,
+  readSysInfoExtended,
+  writeSysInfoExtended,
+} from '@podkit/ipod-firmware';
 
 // USB discovery
 export type { UsbDiscoveredDevice } from './usb-discovery.js';

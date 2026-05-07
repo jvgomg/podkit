@@ -7,7 +7,7 @@
 
 import type { IpodGeneration } from '@podkit/libgpod-node';
 import type { IpodDeviceInfo } from './types.js';
-import { formatGeneration } from './generation.js';
+import { formatGeneration, getUnsupportedReasonByLibgpodName } from '@podkit/devices-ipod';
 
 // =============================================================================
 // Types
@@ -73,59 +73,24 @@ export interface DeviceValidationResult {
 const DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices';
 
 /**
- * iPod generations that are not supported by podkit.
- *
- * - iOS devices (Touch/iPhone/iPad) use Apple's proprietary sync protocol
- * - Buttonless Shuffles (3rd/4th gen) require iTunes authentication hash
- * - Nano 6th gen uses a different database format
- */
-const UNSUPPORTED_GENERATIONS: ReadonlySet<IpodGeneration> = new Set([
-  'touch_1',
-  'touch_2',
-  'touch_3',
-  'touch_4',
-  'iphone_1',
-  'iphone_2',
-  'iphone_3',
-  'iphone_4',
-  'ipad_1',
-  'shuffle_3',
-  'shuffle_4',
-  'nano_6',
-]);
-
-const IOS_GENERATIONS: ReadonlySet<IpodGeneration> = new Set([
-  'touch_1',
-  'touch_2',
-  'touch_3',
-  'touch_4',
-  'iphone_1',
-  'iphone_2',
-  'iphone_3',
-  'iphone_4',
-  'ipad_1',
-]);
-
-const BUTTONLESS_SHUFFLE_GENERATIONS: ReadonlySet<IpodGeneration> = new Set([
-  'shuffle_3',
-  'shuffle_4',
-]);
-
-/**
  * Check if a generation is unsupported.
+ *
+ * Delegates to `getUnsupportedReasonByLibgpodName` from `@podkit/devices-ipod`
+ * which owns the authoritative list of unsupported libgpod generation names.
  */
 export function isUnsupportedGeneration(generation: IpodGeneration): boolean {
-  return UNSUPPORTED_GENERATIONS.has(generation);
+  return getUnsupportedReasonByLibgpodName(generation) !== null;
 }
 
 /**
  * Get the reason a generation is unsupported.
+ *
+ * Maps the `UnsupportedGenerationKind` from devices-ipod to the legacy
+ * `UnsupportedReason` type used by the DeviceIssue pipeline.
  */
 function getUnsupportedReason(generation: IpodGeneration): UnsupportedReason | undefined {
-  if (IOS_GENERATIONS.has(generation)) return 'ios_device';
-  if (BUTTONLESS_SHUFFLE_GENERATIONS.has(generation)) return 'buttonless_shuffle';
-  if (generation === 'nano_6') return 'nano_6';
-  return undefined;
+  const kind = getUnsupportedReasonByLibgpodName(generation);
+  return kind ?? undefined;
 }
 
 /**

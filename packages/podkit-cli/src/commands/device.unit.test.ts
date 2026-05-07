@@ -87,42 +87,42 @@ describe('device utility functions', () => {
     });
 
     it('formats classic generations correctly', () => {
-      expect(formatGeneration('classic_1')).toBe('Classic (6th Generation)');
-      expect(formatGeneration('classic_2')).toBe('Classic (6.5th Generation)');
-      expect(formatGeneration('classic_3')).toBe('Classic (7th Generation)');
+      expect(formatGeneration('classic_1')).toBe('iPod Classic (6th Generation)');
+      expect(formatGeneration('classic_2')).toBe('iPod Classic (6.5th Generation)');
+      expect(formatGeneration('classic_3')).toBe('iPod Classic (7th Generation)');
     });
 
     it('formats nano generations correctly', () => {
-      expect(formatGeneration('nano_1')).toBe('Nano (1st Generation)');
-      expect(formatGeneration('nano_2')).toBe('Nano (2nd Generation)');
-      expect(formatGeneration('nano_3')).toBe('Nano (3rd Generation)');
-      expect(formatGeneration('nano_4')).toBe('Nano (4th Generation)');
-      expect(formatGeneration('nano_5')).toBe('Nano (5th Generation)');
-      expect(formatGeneration('nano_6')).toBe('Nano (6th Generation)');
+      expect(formatGeneration('nano_1')).toBe('iPod nano (1st Generation)');
+      expect(formatGeneration('nano_2')).toBe('iPod nano (2nd Generation)');
+      expect(formatGeneration('nano_3')).toBe('iPod nano (3rd Generation)');
+      expect(formatGeneration('nano_4')).toBe('iPod nano (4th Generation)');
+      expect(formatGeneration('nano_5')).toBe('iPod nano (5th Generation)');
+      expect(formatGeneration('nano_6')).toBe('iPod nano (6th Generation)');
     });
 
     it('formats video generations correctly', () => {
-      expect(formatGeneration('video_1')).toBe('Video (5th Generation)');
-      expect(formatGeneration('video_2')).toBe('Video (5.5th Generation)');
+      expect(formatGeneration('video_1')).toBe('iPod Video (5th Generation)');
+      expect(formatGeneration('video_2')).toBe('iPod Video (5.5th Generation)');
     });
 
     it('formats touch generations correctly', () => {
-      expect(formatGeneration('touch_1')).toBe('Touch (1st Generation)');
-      expect(formatGeneration('touch_2')).toBe('Touch (2nd Generation)');
-      expect(formatGeneration('touch_3')).toBe('Touch (3rd Generation)');
-      expect(formatGeneration('touch_4')).toBe('Touch (4th Generation)');
+      expect(formatGeneration('touch_1')).toBe('iPod touch (1st Generation)');
+      expect(formatGeneration('touch_2')).toBe('iPod touch (2nd Generation)');
+      expect(formatGeneration('touch_3')).toBe('iPod touch (3rd Generation)');
+      expect(formatGeneration('touch_4')).toBe('iPod touch (4th Generation)');
     });
 
     it('formats mini generations correctly', () => {
-      expect(formatGeneration('mini_1')).toBe('Mini (1st Generation)');
-      expect(formatGeneration('mini_2')).toBe('Mini (2nd Generation)');
+      expect(formatGeneration('mini_1')).toBe('iPod mini (1st Generation)');
+      expect(formatGeneration('mini_2')).toBe('iPod mini (2nd Generation)');
     });
 
     it('formats shuffle generations correctly', () => {
-      expect(formatGeneration('shuffle_1')).toBe('Shuffle (1st Generation)');
-      expect(formatGeneration('shuffle_2')).toBe('Shuffle (2nd Generation)');
-      expect(formatGeneration('shuffle_3')).toBe('Shuffle (3rd Generation)');
-      expect(formatGeneration('shuffle_4')).toBe('Shuffle (4th Generation)');
+      expect(formatGeneration('shuffle_1')).toBe('iPod shuffle (1st Generation)');
+      expect(formatGeneration('shuffle_2')).toBe('iPod shuffle (2nd Generation)');
+      expect(formatGeneration('shuffle_3')).toBe('iPod shuffle (3rd Generation)');
+      expect(formatGeneration('shuffle_4')).toBe('iPod shuffle (4th Generation)');
     });
 
     it('returns original string for unmapped generations', () => {
@@ -131,11 +131,11 @@ describe('device utility functions', () => {
     });
 
     it('formats early iPod generations correctly', () => {
-      expect(formatGeneration('first')).toBe('1st Generation');
-      expect(formatGeneration('second')).toBe('2nd Generation');
-      expect(formatGeneration('third')).toBe('3rd Generation');
-      expect(formatGeneration('fourth')).toBe('4th Generation');
-      expect(formatGeneration('photo')).toBe('Photo');
+      expect(formatGeneration('first')).toBe('iPod (1st Generation)');
+      expect(formatGeneration('second')).toBe('iPod (2nd Generation)');
+      expect(formatGeneration('third')).toBe('iPod (3rd Generation)');
+      expect(formatGeneration('fourth')).toBe('iPod (4th Generation)');
+      expect(formatGeneration('photo')).toBe('iPod Photo');
     });
 
     it('formats iPhone and iPad generations correctly', () => {

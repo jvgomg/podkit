@@ -88,7 +88,7 @@ export interface RunDiagnosticsInput {
   /** Device model name for the report */
   deviceModel?: string;
   /** Content paths for mass-storage devices */
-  contentPaths?: import('../device/mass-storage-utils.js').ContentPaths;
+  contentPaths?: import('@podkit/devices-mass-storage').ContentPaths;
 }
 
 /**

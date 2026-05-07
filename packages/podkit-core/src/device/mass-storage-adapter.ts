@@ -27,7 +27,6 @@ import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import {
-  DEFAULT_CONTENT_PATHS,
   DEFAULT_MUSIC_PATH_TEMPLATE,
   PODKIT_DIR,
   MANIFEST_FILE,
@@ -40,8 +39,9 @@ import {
   normalizeContentPaths,
   validateContentPaths,
   type MassStorageManifest,
-  type ContentPaths,
 } from './mass-storage-utils.js';
+import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
+import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';

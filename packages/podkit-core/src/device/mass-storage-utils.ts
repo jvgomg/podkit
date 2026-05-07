@@ -28,18 +28,7 @@ export const PODKIT_DIR = '.podkit';
 // Content Paths
 // =============================================================================
 
-/**
- * @deprecated Import from `@podkit/devices-mass-storage` instead.
- * This re-export exists for backward-compatibility and will be removed at m-8.
- */
-export type { ContentPaths } from '@podkit/devices-mass-storage';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
-
-/**
- * @deprecated Import from `@podkit/devices-mass-storage` instead.
- * This re-export exists for backward-compatibility and will be removed at m-8.
- */
-export { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 
 export function normalizeContentDir(dir: string): string {

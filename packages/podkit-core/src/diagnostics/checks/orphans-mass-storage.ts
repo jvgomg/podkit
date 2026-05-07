@@ -22,8 +22,8 @@ import {
   MANIFEST_FILE,
   isMediaExtension,
   type MassStorageManifest,
-  type ContentPaths,
 } from '../../device/mass-storage-utils.js';
+import type { ContentPaths } from '@podkit/devices-mass-storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 

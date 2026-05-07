@@ -205,26 +205,6 @@ export function lookupGenerationInfo(generationId: IpodGenerationId): IpodGenera
   return GENERATIONS[generationId];
 }
 
-// ── Backward-compatible named functions (mirrors core ipod-models.ts) ────────
-
-/**
- * Look up a human-readable model name from an Apple USB product ID.
- *
- * @deprecated Prefer `lookupByUsbId` which returns the full entry.
- */
-export function lookupIpodModel(productId: string): string | undefined {
-  return lookupByUsbId(productId)?.displayName;
-}
-
-/**
- * Look up a human-readable model name from an iPod SysInfo model number string.
- *
- * @deprecated Prefer `lookupByModelNumber` which returns the full entry.
- */
-export function lookupIpodModelByNumber(modelNumStr: string): string | undefined {
-  return lookupByModelNumber(modelNumStr)?.displayName;
-}
-
 /**
  * Get the checksum type required for a device identified by its ModelNumStr.
  */
@@ -239,27 +219,6 @@ export function getChecksumTypeByModelNumber(modelNumStr: string): IpodChecksumT
  */
 export function lookupGenerationByModelNumber(modelNumStr: string): IpodGenerationId | undefined {
   return lookupByModelNumber(modelNumStr)?.generation;
-}
-
-/**
- * Look up a specific iPod model variant from a serial number suffix.
- *
- * The last 3 characters of an iPod serial number identify the exact model
- * variant (color, capacity, generation).
- *
- * @deprecated Prefer `lookupBySerial`.
- */
-export function lookupIpodModelBySerial(serialSuffix: string): IpodModelVariant | undefined {
-  return lookupBySerial(serialSuffix);
-}
-
-/**
- * Get generation metadata for a generation identifier.
- *
- * @deprecated Prefer `lookupGenerationInfo`.
- */
-export function getGenerationInfo(generationId: IpodGenerationId): IpodGeneration {
-  return lookupGenerationInfo(generationId);
 }
 
 /**

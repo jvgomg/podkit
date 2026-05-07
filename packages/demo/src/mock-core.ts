@@ -174,7 +174,6 @@ export type {
   IpodErrorCode,
   MediaTypeValue,
   MediaContentType,
-  IpodGenerationMetadata,
 } from '@podkit/core';
 
 // Device validation types
@@ -1269,12 +1268,10 @@ export function buildSyncWarnings(_validation: any, _config: any): string[] {
 // iPod Generation (mock)
 // =============================================================================
 
-export const IPOD_GENERATIONS = {} as any;
-
 export function formatGeneration(generation: string): string {
-  if (generation === 'classic_3') return 'Classic (3rd Generation)';
-  if (generation === 'classic_2') return 'Classic (2nd Generation)';
-  if (generation === 'classic_1') return 'Classic (1st Generation)';
+  if (generation === 'classic_3') return 'iPod Classic (7th Generation)';
+  if (generation === 'classic_2') return 'iPod Classic (6.5th Generation)';
+  if (generation === 'classic_1') return 'iPod Classic (6th Generation)';
   return generation;
 }
 

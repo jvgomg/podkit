@@ -27,8 +27,8 @@ import {
   validateContentPaths,
   PODKIT_DIR,
   MANIFEST_FILE,
-  DEFAULT_CONTENT_PATHS,
 } from './mass-storage-utils.js';
+import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 
 // =============================================================================
 // Test helpers

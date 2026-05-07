@@ -327,14 +327,9 @@ export { MediaType, isMusicMediaType, CONTENT_TYPES } from './ipod/constants.js'
 export type { MediaTypeValue, ContentType as MediaContentType } from './ipod/constants.js';
 export { IpodDatabase } from './ipod/database.js';
 export { isVideoMediaType } from './ipod/video.js';
-export {
-  IPOD_GENERATIONS,
-  formatGeneration,
-  getVideoProfile,
-  supportsVideo,
-  supportsAlac,
-} from './ipod/generation.js';
-export type { IpodGenerationMetadata } from './ipod/generation.js';
+// formatGeneration moved to @podkit/devices-ipod at m-18; re-exported from
+// core for backward compatibility with the CLI import surface.
+export { formatGeneration } from '@podkit/devices-ipod';
 
 // Device validation
 export {

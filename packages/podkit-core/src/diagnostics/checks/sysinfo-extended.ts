@@ -7,7 +7,8 @@
  * accessible via `podkit doctor --repair sysinfo-extended`.
  */
 
-import { ensureSysInfoExtended } from '../../device/sysinfo-extended.js';
+import { ensureSysInfoExtended } from '@podkit/ipod-firmware';
+import { resolveIpodModel } from '@podkit/devices-ipod';
 import { resolveUsbDeviceFromPath } from '../../device/usb-discovery.js';
 import type {
   DiagnosticCheck,
@@ -72,10 +73,17 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
         message: `Reading SysInfoExtended from USB bus ${usbDevice.bus} device ${usbDevice.devnum}`,
       });
 
-      const result = await ensureSysInfoExtended(ctx.mountPoint, {
-        busNumber: usbDevice.bus,
-        deviceAddress: usbDevice.devnum,
-      });
+      const resolveModel = (sn: string) =>
+        resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+      const result = await ensureSysInfoExtended(
+        ctx.mountPoint,
+        {
+          busNumber: usbDevice.bus,
+          deviceAddress: usbDevice.devnum,
+        },
+        undefined,
+        resolveModel
+      );
 
       if (!result.present) {
         return {

@@ -1,15 +1,15 @@
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import {
-  lookupIpodModelByNumber,
+  lookupByModelNumber,
   lookupGenerationByModelNumber,
   lookupGenerationByProductId,
   getChecksumType,
-  getGenerationInfo,
+  lookupGenerationInfo,
   resolveIpodModel,
 } from '@podkit/devices-ipod';
 import type { IpodChecksumType, IpodGenerationId } from '@podkit/devices-ipod';
-import { readSysInfoExtended } from '../../sysinfo-extended.js';
+import { readSysInfoExtended } from '@podkit/ipod-firmware';
 import type { UsbFingerprint } from '@podkit/device-types';
 import type { SysInfoCheckResult, ReadinessStageResult } from '../types.js';
 
@@ -42,8 +42,8 @@ function detectGenerationMismatch(
   const usbGenId = lookupGenerationByProductId(usbConnection.productId);
   if (!usbGenId || sysInfoGenId === usbGenId) return undefined;
   return {
-    sysInfoGeneration: getGenerationInfo(sysInfoGenId).displayName,
-    usbGeneration: getGenerationInfo(usbGenId).displayName,
+    sysInfoGeneration: lookupGenerationInfo(sysInfoGenId).displayName,
+    usbGeneration: lookupGenerationInfo(usbGenId).displayName,
   };
 }
 
@@ -56,7 +56,9 @@ export async function checkSysInfo(
   const sysInfoExtendedPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfoExtended');
 
   // ── Step 1: Check SysInfoExtended ──────────────────────────────────────
-  const sysInfoExtended = readSysInfoExtended(mountPoint);
+  const resolveModel = (sn: string) =>
+    resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+  const sysInfoExtended = readSysInfoExtended(mountPoint, resolveModel);
   const sysInfoExtendedExists = sysInfoExtended !== null;
 
   // Determine checksum type from USB product ID or SysInfoExtended serial
@@ -236,7 +238,7 @@ export async function checkSysInfo(
   }
 
   const modelNumber = modelMatch[1]!;
-  const modelName = lookupIpodModelByNumber(modelNumber);
+  const modelName = lookupByModelNumber(modelNumber)?.displayName;
   const sysInfoModel = resolveIpodModel({ from: 'sysinfo', modelNumStr: modelNumber });
 
   if (!modelName) {

@@ -4,6 +4,7 @@ title: M-18 leftover dup cleanup
 status: Done
 assignee: []
 created_date: '2026-05-06 23:52'
+updated_date: '2026-05-07 21:01'
 labels:
   - device-capability-architecture
   - m-18-cleanup
@@ -56,4 +57,77 @@ Deleted 648-LOC test file. All tested functions (`lookupIpodModel`, `lookupIpodM
 - typecheck: clean
 - lint: 0 errors (14 pre-existing warnings)
 - build: clean
+
+## m-18 Final Scrub (follow-up pass)
+
+### Sweep 1: Delete @deprecated code
+
+**1A — `core/ipod/generation.ts` DELETED**
+- Added `formatGeneration(libgpodName)` to `packages/devices-ipod/src/tables/libgpod-mapping.ts`. Function uses reverse-index (libgpod name → IpodGenerationId → GENERATIONS[id].displayName) with a fallback table for libgpod-only names (unknown, mobile, iphone_*, ipad_*, classic_2). Exported from devices-ipod index.
+- Removed `IPOD_GENERATIONS`, `IpodGenerationMetadata`, `getVideoProfile`, `supportsVideo`, `supportsAlac` from core's public surface. Kept `formatGeneration` re-export in core index for back-compat.
+- Updated CLI test expectations to the longer 'iPod Classic (7th Generation)' form (was 'Classic (7th Generation)').
+- Deleted `packages/podkit-core/src/ipod/generation.ts` (~151 LOC)
+
+**1B — `core/device/sysinfo-extended.ts` DELETED**
+- Migrated 4 consumers to import `readSysInfoExtended`/`ensureSysInfoExtended` directly from `@podkit/ipod-firmware`.
+- Each call site now injects the `resolveModel` callback: `(sn) => resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined`.
+- `sysinfo-extended.test.ts` updated to import from `@podkit/ipod-firmware` and pass the resolver.
+- `device/index.ts` re-exports from `@podkit/ipod-firmware` directly.
+- Deleted `packages/podkit-core/src/device/sysinfo-extended.ts` (~61 LOC)
+
+**1C — `mass-storage-utils.ts` deprecated re-exports removed**
+- Removed `export type { ContentPaths }` and `export { DEFAULT_CONTENT_PATHS }` (both with @deprecated markers).
+- Migrated 6 consumers: `orphans-mass-storage.ts`, `orphans-mass-storage.test.ts`, `mass-storage-adapter.ts`, `mass-storage-adapter.test.ts`, `diagnostics/index.ts`, `diagnostics/types.ts`, `presets.test.ts` — all now import from `@podkit/devices-mass-storage` directly.
+- `device/index.ts` re-exports `DEFAULT_CONTENT_PATHS` and `ContentPaths` from `@podkit/devices-mass-storage`.
+
+**1D — devices-ipod deprecated aliases removed**
+- Deleted `lookupIpodModel`, `lookupIpodModelByNumber`, `lookupIpodModelBySerial`, `getGenerationInfo` from `lookups.ts`.
+- Kept `resolveIpodModel` alias (heavily used in CLI, readiness stages, and diagnostics — 8+ production call sites).
+- Updated `lookups.test.ts` to test canonical functions (`lookupByUsbId`, `lookupByModelNumber`, `lookupBySerial`, `lookupGenerationInfo`).
+- Updated `core/device/readiness/stages/sysinfo.ts` to use `lookupByModelNumber`, `lookupGenerationInfo`.
+- Updated `device/index.ts` to re-export canonical names instead of aliases.
+
+### Sweep 2: Move libgpod-coupled classification out of core
+
+**2A — `core/device/libgpod-bridge.ts` MOVED to `@podkit/devices-ipod`**
+- Created `packages/devices-ipod/src/libgpod-bridge.ts` with `modelFromLibgpodInfo` + `LibgpodDeviceInfo`.
+- Exported from devices-ipod index.
+- `device/index.ts` now re-exports from `@podkit/devices-ipod` instead of local file.
+- `resolve-capabilities.parity.test.ts` updated to import from `@podkit/devices-ipod`.
+- Deleted `packages/podkit-core/src/device/libgpod-bridge.ts` (~97 LOC).
+
+**2B — Unsupported-generation logic split**
+- Added `getUnsupportedReasonByLibgpodName(libgpodName): UnsupportedGenerationKind | null` and `UnsupportedGenerationKind` to `devices-ipod/src/libgpod-bridge.ts`.
+- `UNSUPPORTED_GENERATIONS`, `IOS_GENERATIONS`, `BUTTONLESS_SHUFFLE_GENERATIONS` sets DELETED from `core/ipod/device-validation.ts`.
+- `isUnsupportedGeneration` and `getUnsupportedReason` now delegate to `getUnsupportedReasonByLibgpodName`.
+
+**2C — `core/ipod/test-helpers.ts` DELETED**
+- Inlined `capsForGeneration(id: IpodGenerationId)` test helper into both integration test files.
+- Uses `IpodGenerationId` keys (`'classic_7g'`) instead of libgpod names (`'classic_3'`).
+- Deleted `packages/podkit-core/src/ipod/test-helpers.ts` (~49 LOC)
+
+### Sweep 3: @deprecated audit
+
+Remaining @deprecated markers (all pre-m18, out of scope):
+- `transcode/ffmpeg.ts` — `EncoderConfig` alias
+- `device/mass-storage-adapter.ts` — `musicDir` field
+- `sync/engine/types.ts` — ALAC capabilities check
+- `devices-ipod/src/identity.ts` — `resolveIpodModel = identify` (kept; 8+ production call sites)
+
+One residual libgpod-node import in non-database file: `core/ipod/device-validation.ts` imports `IpodGeneration` type (type-only; needed for `IpodDeviceInfo.generation` typing).
+
+### Final test counts
+- podkit-core unit: 2397 pass, 1 skip, 0 fail (75 files)
+- devices-ipod: 178 pass (4 files)
+- devices-mass-storage: 74 pass (5 files)
+- ipod-firmware: 205 pass (12 files)
+- podkit-cli: 1065 pass (34 files)
+- typecheck: clean
+- lint: 0 errors
+- build: clean
+
+### Net LOC delta
+- Deleted: generation.ts (~151), sysinfo-extended.ts (~61), libgpod-bridge.ts (~97), test-helpers.ts (~49) = ~358 LOC deleted
+- Added: libgpod-bridge.ts in devices-ipod (~145), formatGeneration + reverse-index in libgpod-mapping.ts (~70) = ~215 LOC added
+- Net: ~−143 LOC across packages
 <!-- SECTION:FINAL_SUMMARY:END -->

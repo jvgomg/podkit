@@ -31,7 +31,11 @@ export { GENERATIONS } from './tables/generations.js';
 export { IPOD_USB_IDS, type UsbProductIdEntry } from './tables/usb-ids.js';
 export { MODEL_NUMBERS, LEGACY_MODEL_OVERRIDES, type ModelEntry } from './tables/model-numbers.js';
 export { SERIAL_TO_MODEL } from './tables/serials.js';
-export { GENERATION_ID_TO_LIBGPOD, type LibgpodGenerationName } from './tables/libgpod-mapping.js';
+export {
+  GENERATION_ID_TO_LIBGPOD,
+  type LibgpodGenerationName,
+  formatGeneration,
+} from './tables/libgpod-mapping.js';
 export { ARTWORK_MAX_RESOLUTION, type ArtworkResolution } from './tables/artwork-formats.js';
 export {
   UNSUPPORTED_IPOD_PRODUCT_IDS,
@@ -49,13 +53,8 @@ export {
   lookupByFamilyId,
   lookupGenerationInfo,
   FAMILY_ID_TO_GENERATION,
-  // Backward-compatible aliases
-  lookupIpodModel,
-  lookupIpodModelByNumber,
-  lookupIpodModelBySerial,
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
-  getGenerationInfo,
   getChecksumType,
   lookupGenerationByProductId,
   toLibgpodGeneration,
@@ -72,3 +71,12 @@ export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js'
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export { ipodProvider } from './provider.js';
+
+// ── libgpod bridge (moved from @podkit/core at m-18) ─────────────────────────
+
+export {
+  modelFromLibgpodInfo,
+  getUnsupportedReasonByLibgpodName,
+  type LibgpodDeviceInfo,
+  type UnsupportedGenerationKind,
+} from './libgpod-bridge.js';
