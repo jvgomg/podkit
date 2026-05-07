@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { identify, resolveIpodModel } from './identity.js';
+import { identify } from './identity.js';
 
 // ── identify (multi-axis facade) ──────────────────────────────────────────
 
@@ -237,12 +237,12 @@ describe('identify', () => {
   });
 });
 
-// ── resolveIpodModel (backward-compatible alias) ──────────────────────────
+// ── identify (backward-compatible alias) ──────────────────────────
 
-describe('resolveIpodModel (alias for identify)', () => {
+describe('identify (alias for identify)', () => {
   test('is identical to identify', () => {
     const via_identify = identify({ from: 'usb', productId: '0x1261' });
-    const via_alias = resolveIpodModel({ from: 'usb', productId: '0x1261' });
+    const via_alias = identify({ from: 'usb', productId: '0x1261' });
     expect(via_identify).toEqual(via_alias);
   });
 });

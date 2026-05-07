@@ -1,5 +1,5 @@
 /**
- * Snapshot parity tests: resolveIpodModelCapabilities + resolveCapabilities
+ * Snapshot parity tests: identifyCapabilities + resolveCapabilities
  * vs BUILT_IN_PRESETS (mass-storage) and GENERATIONS table (iPod).
  *
  * ## Goal
@@ -12,7 +12,7 @@
  * ## iPod path
  *
  * Iterates over every `IpodGenerationId` that has a non-`unknown` libgpod
- * generation name. For each, verifies that `resolveIpodModelCapabilities`
+ * generation name. For each, verifies that `identifyCapabilities`
  * returns output consistent with the generation table (class-authoritative —
  * not runtime-flag-dependent).
  *
@@ -27,7 +27,7 @@
 
 import { describe, test, expect } from 'bun:test';
 
-import { resolveIpodModelCapabilities, resolveCapabilities } from './resolve-capabilities.js';
+import { identifyCapabilities, resolveCapabilities } from './resolve-capabilities.js';
 import {
   modelFromLibgpodInfo,
   GENERATION_ID_TO_LIBGPOD,
@@ -51,10 +51,10 @@ const PARITY_GENERATION_IDS: IpodGenerationId[] = (
 ).filter((id) => GENERATION_ID_TO_LIBGPOD[id] !== 'unknown');
 
 // =============================================================================
-// iPod parity — resolveIpodModelCapabilities vs GENERATIONS table
+// iPod parity — identifyCapabilities vs GENERATIONS table
 // =============================================================================
 
-describe('resolveIpodModelCapabilities — table-authoritative flags', () => {
+describe('identifyCapabilities — table-authoritative flags', () => {
   /**
    * For each libgpod-known generation, verify that the unified resolver produces
    * output consistent with the generation table. The new resolver is
@@ -74,7 +74,7 @@ describe('resolveIpodModelCapabilities — table-authoritative flags', () => {
       };
 
       const model = modelFromLibgpodInfo(libgpod);
-      const caps = resolveIpodModelCapabilities(model);
+      const caps = identifyCapabilities(model);
 
       // Verify key fields are class-authoritative (from table, not runtime flags).
       expect(caps.supportsVideo).toBe(gen.supportsVideo);

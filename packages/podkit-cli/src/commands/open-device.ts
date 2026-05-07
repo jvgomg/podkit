@@ -159,13 +159,13 @@ export async function openDevice(
   const isIpod = !deviceType || deviceType === 'ipod';
 
   if (isIpod) {
-    // iPod: open database, derive capabilities via resolveIpodModelCapabilities
+    // iPod: open database, derive capabilities via identifyCapabilities
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
     // Bridge libgpod device info → IpodModel → DeviceCapabilities
     const model = core.modelFromLibgpodInfo(ipodDeviceInfo);
-    const capabilities = core.resolveIpodModelCapabilities(model);
+    const capabilities = core.identifyCapabilities(model);
 
     const deviceSupportsAlac = capabilities.supportedAudioCodecs.includes('alac');
 

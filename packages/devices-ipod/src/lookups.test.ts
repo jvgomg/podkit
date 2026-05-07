@@ -20,7 +20,7 @@ describe('package re-exports', () => {
   test('all named exports are importable from index', async () => {
     const mod = await import('./index.js');
     expect(typeof mod.identify).toBe('function');
-    expect(typeof mod.resolveIpodModel).toBe('function');
+    expect(typeof mod.identify).toBe('function');
     expect(typeof mod.lookupByUsbId).toBe('function');
     expect(typeof mod.lookupBySerial).toBe('function');
     expect(typeof mod.lookupByModelNumber).toBe('function');

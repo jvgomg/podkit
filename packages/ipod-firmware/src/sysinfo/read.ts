@@ -127,7 +127,7 @@ export type ModelResolver = (serialNumber: string) => IpodModel | undefined;
  * @param mountPoint - iPod mount point (e.g., "/Volumes/iPod")
  * @param resolveModel - Optional callback to resolve an IpodModel from the serial number.
  *   Callers with access to `@podkit/devices-ipod` should pass
- *   `(sn) => resolveIpodModel({ from: 'serial', serialNumber: sn })`.
+ *   `(sn) => identify({ from: 'serial', serialNumber: sn })`.
  */
 export function readSysInfoExtended(
   mountPoint: string,

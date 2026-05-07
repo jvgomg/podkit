@@ -107,7 +107,6 @@ export {
   getChecksumTypeByModelNumber,
   lookupGenerationByModelNumber,
   toLibgpodGeneration,
-  resolveIpodModel,
   identify,
   formatGeneration,
 } from '@podkit/devices-ipod';
@@ -124,7 +123,7 @@ export type {
 export { modelFromLibgpodInfo, type LibgpodDeviceInfo } from '@podkit/devices-ipod';
 
 // Unified capability resolver
-export { resolveCapabilities, resolveIpodModelCapabilities } from './resolve-capabilities.js';
+export { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';
 export type { ResolveCapabilitiesOptions } from './resolve-capabilities.js';
 
 // Readiness pipeline

@@ -21,7 +21,7 @@ import { IpodDatabase } from '../ipod/database.js';
 import { IpodDeviceAdapter } from './ipod-adapter.js';
 import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
 import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
-import { resolveIpodModelCapabilities } from './resolve-capabilities.js';
+import { identifyCapabilities } from './resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
@@ -30,7 +30,7 @@ import type { AudioNormalization } from '../metadata/normalization.js';
 /** Test-local helper: build DeviceCapabilities from an IpodGenerationId. */
 function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
   const gen = GENERATIONS[id];
-  return resolveIpodModelCapabilities({
+  return identifyCapabilities({
     displayName: gen.displayName,
     generationId: id,
     checksumType: gen.checksumType,

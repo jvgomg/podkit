@@ -1,9 +1,8 @@
 /**
  * Multi-axis iPod identification facade.
  *
- * `identify()` replaces `resolveIpodModel()` from podkit-core's ipod-models.ts.
- * It accepts discriminated inputs from all identification axes (USB, SysInfo,
- * serial) and returns a rich `IpodModel` result.
+ * `identify()` accepts discriminated inputs from all identification axes
+ * (USB, SysInfo, serial) and returns a rich `IpodModel` result.
  *
  * Note on IpodIdentity alignment: The canonical `IpodIdentity` from
  * `@podkit/device-types` requires firmware fields (`firewireGuid`,
@@ -119,10 +118,3 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
     }
   }
 }
-
-// ── Backward-compatible alias ─────────────────────────────────────────────────
-
-/**
- * @deprecated Use `identify()` instead.
- */
-export const resolveIpodModel = identify;

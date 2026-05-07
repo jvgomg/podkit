@@ -8,7 +8,7 @@
  */
 
 import { ensureSysInfoExtended } from '@podkit/ipod-firmware';
-import { resolveIpodModel } from '@podkit/devices-ipod';
+import { identify } from '@podkit/devices-ipod';
 import { resolveUsbDeviceFromPath } from '../../device/usb-discovery.js';
 import type {
   DiagnosticCheck,
@@ -74,7 +74,7 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       });
 
       const resolveModel = (sn: string) =>
-        resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+        identify({ from: 'serial', serialNumber: sn }) ?? undefined;
       const result = await ensureSysInfoExtended(
         ctx.mountPoint,
         {

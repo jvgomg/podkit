@@ -2352,7 +2352,7 @@ export function getChecksumTypeByModelNumber(_modelNumStr: string): string | und
   return undefined;
 }
 
-export function resolveIpodModel(_input: any): any {
+export function identify(_input: any): any {
   return undefined;
 }
 
@@ -2465,6 +2465,6 @@ export function modelFromLibgpodInfo(_device: any): any {
 export function resolveCapabilities(_identity: any, _opts?: any): any {
   return {};
 }
-export function resolveIpodModelCapabilities(_model: any, _opts?: any): any {
+export function identifyCapabilities(_model: any, _opts?: any): any {
   return {};
 }

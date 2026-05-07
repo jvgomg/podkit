@@ -7,11 +7,10 @@ import {
   readSysInfoExtended,
   type ReadFromUsbFn,
 } from '@podkit/ipod-firmware';
-import { resolveIpodModel } from '@podkit/devices-ipod';
+import { identify } from '@podkit/devices-ipod';
 
 /** Inject the model resolver so result.model is populated from serial suffix. */
-const resolveModel = (sn: string) =>
-  resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 

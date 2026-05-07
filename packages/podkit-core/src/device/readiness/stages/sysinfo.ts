@@ -6,7 +6,7 @@ import {
   lookupGenerationByProductId,
   getChecksumType,
   lookupGenerationInfo,
-  resolveIpodModel,
+  identify,
 } from '@podkit/devices-ipod';
 import type { IpodChecksumType, IpodGenerationId } from '@podkit/devices-ipod';
 import { readSysInfoExtended } from '@podkit/ipod-firmware';
@@ -56,8 +56,7 @@ export async function checkSysInfo(
   const sysInfoExtendedPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfoExtended');
 
   // ── Step 1: Check SysInfoExtended ──────────────────────────────────────
-  const resolveModel = (sn: string) =>
-    resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+  const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
   const sysInfoExtended = readSysInfoExtended(mountPoint, resolveModel);
   const sysInfoExtendedExists = sysInfoExtended !== null;
 
@@ -239,7 +238,7 @@ export async function checkSysInfo(
 
   const modelNumber = modelMatch[1]!;
   const modelName = lookupByModelNumber(modelNumber)?.displayName;
-  const sysInfoModel = resolveIpodModel({ from: 'sysinfo', modelNumStr: modelNumber });
+  const sysInfoModel = identify({ from: 'sysinfo', modelNumStr: modelNumber });
 
   if (!modelName) {
     return stageOnly({

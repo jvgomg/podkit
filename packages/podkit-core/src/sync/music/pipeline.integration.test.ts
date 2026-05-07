@@ -31,7 +31,7 @@ import { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import { IpodDatabase } from '../../ipod/database.js';
 import { IpodDeviceAdapter } from '../../device/ipod-adapter.js';
 import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
-import { resolveIpodModelCapabilities } from '../../device/resolve-capabilities.js';
+import { identifyCapabilities } from '../../device/resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncPlan } from '../engine/types.js';
@@ -39,7 +39,7 @@ import type { SyncPlan } from '../engine/types.js';
 /** Test-local helper: build DeviceCapabilities from an IpodGenerationId. */
 function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {
   const gen = GENERATIONS[id];
-  return resolveIpodModelCapabilities({
+  return identifyCapabilities({
     displayName: gen.displayName,
     generationId: id,
     checksumType: gen.checksumType,

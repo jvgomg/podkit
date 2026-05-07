@@ -62,7 +62,7 @@ export {
 
 // ── Identity facade ───────────────────────────────────────────────────────────
 
-export { identify, resolveIpodModel, type IpodModelInput } from './identity.js';
+export { identify, type IpodModelInput } from './identity.js';
 
 // ── Capabilities ──────────────────────────────────────────────────────────────
 

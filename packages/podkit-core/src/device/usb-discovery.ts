@@ -19,7 +19,7 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { resolveIpodModel } from '@podkit/devices-ipod';
+import { identify } from '@podkit/devices-ipod';
 import type { IpodModel } from '@podkit/devices-ipod';
 import type { UsbFingerprint } from '@podkit/device-types';
 import {
@@ -130,7 +130,7 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
           // iPod-specific enrichment: model lookup and unsupported reasons.
           // Only populated for Apple devices with a recognised product ID.
           const isApple = isAppleVendorId(rawVendorId);
-          const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
+          const model = isApple ? identify({ from: 'usb', productId }) : undefined;
           // getUnsupportedReason applies to all Apple devices — even those not in
           // IPOD_USB_IDS — so that unrecognised iPhone/iPad PIDs in the iOS range
           // (0x1290–0x12af) produce an informative "not supported" message.
@@ -282,7 +282,7 @@ export function parseSysfsUsbDevices(deviceDirs: SysfsUsbDevice[]): UsbDiscovere
     // iPod-specific enrichment: model lookup and unsupported reasons.
     // Only populated when this is an Apple VID with a recognised product ID.
     const isApple = vendorId === APPLE_VENDOR_ID;
-    const model = isApple ? resolveIpodModel({ from: 'usb', productId }) : undefined;
+    const model = isApple ? identify({ from: 'usb', productId }) : undefined;
     // getUnsupportedReason applies to all Apple devices — even those not in
     // IPOD_USB_IDS — so that unrecognised iPhone/iPad PIDs in the iOS range
     // (0x1290–0x12af) produce an informative "not supported" message.

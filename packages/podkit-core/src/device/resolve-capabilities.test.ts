@@ -1,12 +1,12 @@
 /**
- * Unit tests for resolveCapabilities and resolveIpodModelCapabilities.
+ * Unit tests for resolveCapabilities and identifyCapabilities.
  *
  * Verifies dispatch, bridging, fallback, and override semantics.
  */
 
 import { describe, expect, it } from 'bun:test';
 
-import { resolveCapabilities, resolveIpodModelCapabilities } from './resolve-capabilities.js';
+import { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';
 import type { IpodIdentity, MassStorageIdentity, DeviceIdentity } from '@podkit/device-types';
 import type { FirmwareCapabilities } from '@podkit/device-types';
 
@@ -220,16 +220,16 @@ describe('resolveCapabilities — unknown kind', () => {
 });
 
 // =============================================================================
-// resolveIpodModelCapabilities
+// identifyCapabilities
 // =============================================================================
 
-describe('resolveIpodModelCapabilities', () => {
+describe('identifyCapabilities', () => {
   it('resolves capabilities from an IpodModel directly', async () => {
     const { identify } = await import('@podkit/devices-ipod');
     const model = identify({ from: 'sysinfo', modelNumStr: 'B754' }); // nano_4g 8GB Black
     expect(model).toBeDefined();
 
-    const caps = resolveIpodModelCapabilities(model!);
+    const caps = identifyCapabilities(model!);
     expect(caps.supportedAudioCodecs).toContain('alac');
     expect(caps.supportsVideo).toBe(true);
     expect(caps.artworkMaxResolution).toBe(240);
@@ -243,7 +243,7 @@ describe('resolveIpodModelCapabilities', () => {
       familyId: 15,
       audioCodecs: [{ codec: 'FLAC' }],
     };
-    const caps = resolveIpodModelCapabilities(model, { firmware });
+    const caps = identifyCapabilities(model, { firmware });
 
     expect(caps.supportedAudioCodecs).toContain('flac');
   });
@@ -262,7 +262,7 @@ describe('resolveIpodModelCapabilities', () => {
       checksumType: gen.checksumType,
       source: 'usb' as const,
     };
-    const caps = resolveIpodModelCapabilities(syntheticModel);
+    const caps = identifyCapabilities(syntheticModel);
 
     expect(caps.supportedAudioCodecs).not.toContain('alac');
     expect(caps.supportsVideo).toBe(false);

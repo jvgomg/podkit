@@ -13,7 +13,7 @@
  * an `IpodModel`, a synthetic minimal model is built from the generation table
  * so that capability resolution always succeeds for any plausible identity.
  *
- * `resolveIpodModelCapabilities(model, opts?)` is provided for call sites that
+ * `identifyCapabilities(model, opts?)` is provided for call sites that
  * already have an `IpodModel` (e.g. callers that came through `identify()`).
  * It calls `devices-ipod.getCapabilities` internally, keeping that call inside
  * this module as required by AC#7.
@@ -213,11 +213,11 @@ export function resolveCapabilities(
  * ```ts
  * const model = identify({ from: 'sysinfo', modelNumStr: 'B754' });
  * if (model) {
- *   const caps = resolveIpodModelCapabilities(model, { firmware });
+ *   const caps = identifyCapabilities(model, { firmware });
  * }
  * ```
  */
-export function resolveIpodModelCapabilities(
+export function identifyCapabilities(
   model: IpodModel,
   opts?: Pick<ResolveCapabilitiesOptions, 'firmware'>
 ): DeviceCapabilities {

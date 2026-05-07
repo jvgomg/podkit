@@ -68,7 +68,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import { resolveIpodModel } from '@podkit/devices-ipod';
+import { identify } from '@podkit/devices-ipod';
 import {
   formatGeneration,
   validateDevice,
@@ -143,8 +143,7 @@ async function attemptSysInfoExtended(
   opts: { autoConfirm: boolean }
 ): Promise<SysInfoAttempt> {
   // 1. SysInfoExtended already present and parseable → done.
-  const resolveModel = (sn: string) =>
-    resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+  const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
   const existing = readSysInfoExtended(mountPoint, resolveModel);
   if (existing?.present && (existing.model || existing.firewireGuid)) {
     return { result: existing, abort: false };
@@ -259,7 +258,7 @@ async function readSysInfoExtendedFromUsb(
 ): Promise<SysInfoAttempt> {
   try {
     const resolveModel = (sn: string) =>
-      resolveIpodModel({ from: 'serial', serialNumber: sn }) ?? undefined;
+      identify({ from: 'serial', serialNumber: sn }) ?? undefined;
     const result = await ensureSysInfoExtended(
       mountPoint,
       {
@@ -1409,7 +1408,7 @@ const listSubcommand = new Command('list')
     // Resolve capabilities and settings for each device
     const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
       await import('../config/resolve.js');
-    const { resolveCapabilities, resolveIpodModelCapabilities, modelFromLibgpodInfo } =
+    const { resolveCapabilities, identifyCapabilities, modelFromLibgpodInfo } =
       await import('@podkit/core');
 
     // Import Device class for lightweight capability queries (no database needed)
@@ -1447,7 +1446,7 @@ const listSubcommand = new Command('list')
             const dev = deviceFromMountPoint(connInfo.mountPoint);
             const libgpodCaps = dev.getCapabilities();
             const model = modelFromLibgpodInfo(libgpodCaps);
-            capabilities = resolveIpodModelCapabilities(model);
+            capabilities = identifyCapabilities(model);
             dev.close();
           } catch {
             // Fall through — capabilities remain null
@@ -2265,8 +2264,8 @@ const addSubcommand = new Command('add')
       out.newline();
       out.print(`Found iPod: ${ipod.volumeName} (${formatBytes(ipod.size)}) — not mounted`);
       if (assessment?.usb?.productId) {
-        const { resolveIpodModel } = await import('@podkit/core');
-        const assessModel = resolveIpodModel({ from: 'usb', productId: assessment.usb.productId });
+        const { identify } = await import('@podkit/core');
+        const assessModel = identify({ from: 'usb', productId: assessment.usb.productId });
         out.print(
           `  Model:   ${assessModel?.displayName ?? `iPod (USB ${assessment.usb.productId})`}`
         );

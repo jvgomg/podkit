@@ -69,7 +69,7 @@ async function inquireViaOrchestrator(
  *   the @podkit/ipod-firmware inquiry orchestrator.
  * @param resolveModel - Optional callback to resolve an IpodModel from a serial
  *   number. Callers with access to `@podkit/devices-ipod` should pass
- *   `(sn) => resolveIpodModel({ from: 'serial', serialNumber: sn })`.
+ *   `(sn) => identify({ from: 'serial', serialNumber: sn })`.
  *   When omitted, `result.model` is always undefined.
  */
 export async function ensureSysInfoExtended(

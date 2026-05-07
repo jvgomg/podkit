@@ -594,7 +594,7 @@ export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 export {
   getChecksumTypeByModelNumber,
   toLibgpodGeneration,
-  resolveIpodModel,
+  identify,
   modelFromLibgpodInfo,
 } from './device/index.js';
 export type {
@@ -605,7 +605,7 @@ export type {
 } from './device/index.js';
 
 // Unified capability resolver
-export { resolveCapabilities, resolveIpodModelCapabilities } from './device/index.js';
+export { resolveCapabilities, identifyCapabilities } from './device/index.js';
 export type { ResolveCapabilitiesOptions } from './device/index.js';
 
 // OS error code interpreter
