@@ -17,8 +17,7 @@
  *
  * When USB resolution fails (device not connected via USB, or unsupported
  * platform), the check skips rather than failing to avoid false positives on
- * network-mounted or snapshot volumes. A TODO exists to plumb the GUID through
- * DiagnosticContext directly (see TASK-292.09).
+ * network-mounted or snapshot volumes.
  */
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -139,7 +138,6 @@ export const sysinfoConsistencyCheck: DiagnosticCheck = {
   },
 
   // Re-use the existing sysinfo-extended repair, which fetches fresh data from
-  // USB and overwrites the file. AC #8: already wired through the orchestrator
-  // by TASK-292.08.
+  // USB and overwrites the file.
   repair: sysInfoExtendedCheck.repair,
 };

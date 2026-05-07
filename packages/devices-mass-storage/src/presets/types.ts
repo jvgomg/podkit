@@ -72,8 +72,8 @@ export type PresetId = BuiltInPresetId | (string & {});
  *
  * The optional `extends` field names another preset ID whose values are used
  * as the baseline before this preset's own fields are applied. Resolution
- * happens at construction time in `definePreset()` (TASK-294.05) — the stored
- * preset is always fully resolved; no chained lookups at runtime.
+ * happens at construction time in `definePreset()` — the stored preset is
+ * always fully resolved; no chained lookups at runtime.
  */
 export interface MassStoragePreset extends DeviceCapabilities {
   /** Default content directory paths on this device */

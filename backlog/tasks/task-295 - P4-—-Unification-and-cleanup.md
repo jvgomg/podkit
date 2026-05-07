@@ -4,7 +4,7 @@ title: P4 — Unification and cleanup
 status: In Progress
 assignee: []
 created_date: '2026-05-03 11:34'
-updated_date: '2026-05-06 23:27'
+updated_date: '2026-05-07 21:29'
 labels:
   - device-capability-architecture
   - phase-4
@@ -46,3 +46,9 @@ Blocked by: TASK-294 (P3 main).
 - [x] #10 AGENTS.md updated to reflect final package structure
 - [x] #11 CHANGELOG updated for podkit and all affected packages
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+DRY refactor (post-release): consolidated `bridgeIpodIdentityToModel` (core) and `modelFromLibgpodInfo` (devices-ipod) into a single `resolveIpodModel(ResolveModelInput)` in `packages/devices-ipod/src/resolve.ts`. Five-axis cascade: modelNumStr → serialNumber → productId → familyId → libgpodGeneration. Shared `synthesizeFromGeneration` helper replaces duplicate synthetic-model construction. `LIBGPOD_NAME_TO_GENERATION_ID` reverse-index unified in libgpod-mapping.ts (new `lookupByLibgpodName` export). `libgpod-bridge.ts` survives but slimmed to LibgpodDeviceInfo type + getUnsupportedReasonByLibgpodName. 28 new tests in resolve.test.ts; all gates green.
+<!-- SECTION:NOTES:END -->

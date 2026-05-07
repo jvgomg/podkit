@@ -2,11 +2,7 @@
  * Built-in mass-storage device presets
  *
  * Canonical preset data for all mass-storage DAPs that podkit knows about
- * out of the box. Values are verbatim from podkit-core/device/presets.ts and
- * must be kept in sync until the shim in core is replaced (TASK-294.12).
- *
- * Runtime functions (`definePreset`, `identify`, `getCapabilities`,
- * `createMassStorageProvider`) are deferred to TASK-294.05 / 294.06 / 294.07.
+ * out of the box.
  *
  * @module
  */

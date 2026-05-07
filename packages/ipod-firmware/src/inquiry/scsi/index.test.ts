@@ -7,8 +7,7 @@
  * re-read, sense parsing, errno-to-kind translation, timeout) without
  * touching koffi or any kernel.
  *
- * Hardware end-to-end validation lives outside the test suite —
- * see TASK-292.10.
+ * Hardware end-to-end validation requires a real connected device.
  */
 
 import { describe, expect, test } from 'bun:test';

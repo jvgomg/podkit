@@ -1,6 +1,5 @@
 /**
- * Unit tests for ScsiError and defaultMessage, including the EACCES
- * user-facing message required by TASK-292.12.
+ * Unit tests for ScsiError and defaultMessage.
  */
 
 import { describe, it, expect } from 'bun:test';

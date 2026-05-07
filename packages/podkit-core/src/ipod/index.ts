@@ -73,7 +73,6 @@ export {
 } from './video.js';
 export type { CreateVideoTrackOptions } from './video.js';
 
-// formatGeneration re-exported from @podkit/devices-ipod (moved at m-18)
 export { formatGeneration } from '@podkit/devices-ipod';
 
 // Device validation

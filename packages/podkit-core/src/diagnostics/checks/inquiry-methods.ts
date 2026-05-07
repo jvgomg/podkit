@@ -3,8 +3,7 @@
  *
  * System-scope check that reports which firmware inquiry transports
  * (SCSI and USB) are available on the current host. This is a read-only
- * probe — no repair action. The udev-rule repair (Linux SCSI permission
- * fix) is wired in TASK-292.12.
+ * probe — no repair action.
  */
 
 import {

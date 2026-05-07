@@ -3,8 +3,7 @@
  *
  * Public surface for the ipod-firmware package. The orchestrator
  * (`inquireFirmware`) is the deep entry point most callers want; the
- * transports, probe, and parser are exported for diagnostics, testing,
- * and downstream extraction in P3+.
+ * transports, probe, and parser are exported for diagnostics and testing.
  *
  * @module
  */
@@ -84,7 +83,7 @@ export { extractFromPlist, bigintToFireWireGuid } from './firmware/extract.js';
 
 // Diagnostic primitives — pure functions consumed by core's check registry.
 // Diagnostic check objects themselves live in @podkit/core because the
-// DiagnosticCheck type has deep core dependencies (see TASK-292.09).
+// DiagnosticCheck type has deep core dependencies.
 export {
   compareSysInfoConsistency,
   normaliseFireWireGuid,
@@ -92,7 +91,7 @@ export {
   type SysInfoConsistencyResult,
 } from './diagnostics/sysinfo-consistency.js';
 
-// SysInfoExtended file I/O — moved from @podkit/core in P4 (TASK-295.01)
+// SysInfoExtended file I/O
 export {
   readSysInfoExtended,
   writeSysInfoExtended,

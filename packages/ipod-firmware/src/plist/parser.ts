@@ -26,9 +26,8 @@ export type PlistString = { type: 'string'; value: string };
  * A plist integer element.
  *
  * Parsed as `bigint` to preserve 64-bit values (e.g., FireWireGUID).
- * Downstream consumers (e.g., TASK-292.07) format as hex strings and
- * should use `Number(v.value)` only when the value is known to fit in
- * a safe integer.
+ * Consumers that need a hex string should format it directly from bigint;
+ * use `Number(v.value)` only when the value is known to fit in a safe integer.
  */
 export type PlistInteger = { type: 'integer'; value: bigint };
 

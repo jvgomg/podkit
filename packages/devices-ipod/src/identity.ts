@@ -8,8 +8,8 @@
  * `@podkit/device-types` requires firmware fields (`firewireGuid`,
  * `serialNumber`, `familyId`) that are not available at USB-ID lookup time.
  * This module returns `IpodModel` instead — a richer "model lookup result"
- * type. TASK-294.02 / 294.03 will align the return type with the canonical
- * identity once firmware data is wired in.
+ * that captures capacity, color, and generation without requiring a live
+ * firmware inquiry.
  *
  * @module
  */

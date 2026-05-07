@@ -30,7 +30,6 @@ describe('package re-exports', () => {
     expect(typeof mod.MODEL_NUMBERS).toBe('object');
     expect(typeof mod.SERIAL_TO_MODEL).toBe('object');
     expect(typeof mod.GENERATION_ID_TO_LIBGPOD).toBe('object');
-    expect(typeof mod.ARTWORK_MAX_RESOLUTION).toBe('object');
     expect(Array.isArray(mod.IPOD_GENERATION_IDS)).toBe(true);
     expect(mod.IPOD_GENERATION_IDS.length).toBe(29);
   });

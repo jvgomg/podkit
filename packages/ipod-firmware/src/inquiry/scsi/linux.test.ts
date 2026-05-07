@@ -3,7 +3,7 @@
  *
  * Mocks the koffi `LinuxBinding` boundary so we can exercise the SG_IO
  * syscall factory without touching libc or `/dev/sg*`. Real-device
- * validation is covered by hardware E2E (TASK-292.10).
+ * validation requires a connected iPod.
  */
 
 import { describe, expect, test } from 'bun:test';

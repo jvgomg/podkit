@@ -120,7 +120,11 @@ export type {
   IpodModelInput,
 } from '@podkit/devices-ipod';
 
-export { modelFromLibgpodInfo, type LibgpodDeviceInfo } from '@podkit/devices-ipod';
+export {
+  resolveIpodModel,
+  type LibgpodDeviceInfo,
+  type ResolveModelInput,
+} from '@podkit/devices-ipod';
 
 // Unified capability resolver
 export { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';

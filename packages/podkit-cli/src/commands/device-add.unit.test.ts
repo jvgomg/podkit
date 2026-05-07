@@ -1,13 +1,12 @@
 /**
- * Unit tests for `device add` auto-detect flow (TASK-294.07)
+ * Unit tests for `device add` auto-detect flow
  *
  * Tests the enumerate-and-classify pre-step wired into `device add`.
  * Uses process-level CLI invocation (execSync) since the auto-detect path
  * runs a live USB walk — tests cover argument-validation paths and the
  * error-path behaviours that do not require hardware.
  *
- * Hardware and Echo Mini USB detection are exercised in TASK-294.14
- * (full hardware + Echo Mini validation).
+ * Hardware and Echo Mini USB detection require a real connected device.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';

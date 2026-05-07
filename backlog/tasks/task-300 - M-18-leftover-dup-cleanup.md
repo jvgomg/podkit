@@ -4,7 +4,7 @@ title: M-18 leftover dup cleanup
 status: Done
 assignee: []
 created_date: '2026-05-06 23:52'
-updated_date: '2026-05-07 21:01'
+updated_date: '2026-05-07 21:20'
 labels:
   - device-capability-architecture
   - m-18-cleanup
@@ -130,4 +130,12 @@ One residual libgpod-node import in non-database file: `core/ipod/device-validat
 - Deleted: generation.ts (~151), sysinfo-extended.ts (~61), libgpod-bridge.ts (~97), test-helpers.ts (~49) = ~358 LOC deleted
 - Added: libgpod-bridge.ts in devices-ipod (~145), formatGeneration + reverse-index in libgpod-mapping.ts (~70) = ~215 LOC added
 - Net: ~−143 LOC across packages
+
+Final cleanup pass (3 sweeps) completed:
+- Sweep 1: Deleted `packages/devices-ipod/src/tables/artwork-formats.ts` (0 runtime consumers). Removed its export from `index.ts`. Removed test assertion referencing the export from `lookups.test.ts`.
+- Sweep 2A: `modelFromLibgpodInfo` now returns `IpodModel | null`. The `video_5g` synthetic fallback is gone. `open-device.ts` throws with a user-facing message on null; `device.ts` leaves capabilities null and falls through.
+- Sweep 2B: `bridgeIpodIdentityToModel` returns `IpodModel | null`. `resolveCapabilities` throws `Error('Could not resolve iPod model from identity: ...')` instead of silently using video_5g. Tests updated: two `video_5g` fallback assertions replaced with `toThrow` assertions.
+- Sweep 3: 22 TASK-XXX / phase-history comments removed across 16 files in `@podkit/devices-ipod`, `@podkit/devices-mass-storage`, `@podkit/ipod-firmware`, `@podkit/core`, and `@podkit/cli`.
+- Final grep: zero hits for TASK-29x / in P[1-4] / moved at m-18 / m-8 will in source files.
+- All quality gates pass: typecheck, unit tests (podkit-core 2397, devices-ipod 178, devices-mass-storage 74, ipod-firmware 205, podkit-cli 1065), lint (0 errors), build (16/16 tasks).
 <!-- SECTION:FINAL_SUMMARY:END -->

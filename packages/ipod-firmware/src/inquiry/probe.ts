@@ -9,10 +9,9 @@
  * extensions and device nodes is stable within a single process lifetime.
  * Call `clearProbeCache()` in tests to reset between cases.
  *
- * USB availability is determined by attempting to load libusb-1.0 via koffi
- * directly (P2 — TASK-293.01). The probe shares the loader with `usb.ts` so
- * "probe says available" implies the inquiry path can run without further
- * setup.
+ * USB availability is determined by attempting to load libusb-1.0 via koffi.
+ * The probe shares the loader with `usb.ts` so "probe says available" implies
+ * the inquiry path can run without further setup.
  *
  * @module
  */

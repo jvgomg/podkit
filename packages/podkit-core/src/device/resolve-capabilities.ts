@@ -8,39 +8,26 @@
  * - `'ipod'`          → `@podkit/devices-ipod` `getCapabilities`
  * - `'mass-storage'`  → `@podkit/devices-mass-storage` `getCapabilities`
  *
- * The iPod path bridges `IpodIdentity` → `IpodModel` via serial-suffix lookup
- * (primary, exact) and FamilyID table lookup (fallback). When neither yields
- * an `IpodModel`, a synthetic minimal model is built from the generation table
- * so that capability resolution always succeeds for any plausible identity.
+ * The iPod path resolves `IpodIdentity` → `IpodModel` via `resolveIpodModel`
+ * from `@podkit/devices-ipod` (serial-suffix primary, FamilyID fallback). When
+ * neither yields an `IpodModel`, `resolveCapabilities` throws — callers receive
+ * a clear error rather than silently inheriting a default generation's capabilities.
  *
  * `identifyCapabilities(model, opts?)` is provided for call sites that
  * already have an `IpodModel` (e.g. callers that came through `identify()`).
  * It calls `devices-ipod.getCapabilities` internally, keeping that call inside
- * this module as required by AC#7.
- *
- * ## Migration note
- *
- * Call sites that previously used `createIpodCapabilities(libgpodDeviceInfo)`,
- * `resolveDeviceCapabilities(type, overrides)`, or `getDevicePreset(type)` for
- * capability queries are migrated to this module. The legacy functions remain
- * as shims until TASK-295.05 (P4) deletes them.
+ * this module.
  *
  * @module
  */
 
 import type {
   DeviceIdentity,
-  IpodIdentity,
   DeviceCapabilities,
   FirmwareCapabilities,
 } from '@podkit/device-types';
 
-import {
-  getCapabilities as getIpodCapabilities,
-  identify,
-  GENERATIONS,
-  lookupByFamilyId,
-} from '@podkit/devices-ipod';
+import { getCapabilities as getIpodCapabilities, resolveIpodModel } from '@podkit/devices-ipod';
 import type { IpodModel } from '@podkit/devices-ipod';
 
 import {
@@ -73,63 +60,6 @@ export interface ResolveCapabilitiesOptions {
    * a smaller artwork limit than the preset default.
    */
   overrides?: Partial<DeviceCapabilities>;
-}
-
-// =============================================================================
-// IpodIdentity → IpodModel bridge
-// =============================================================================
-
-/**
- * Bridge an `IpodIdentity` to an `IpodModel` for capability resolution.
- *
- * Resolution chain (first match wins):
- * 1. Serial-suffix lookup — uses last 3 chars of `identity.serialNumber`.
- *    Most reliable for post-2006 devices with populated serial tables.
- * 2. FamilyID lookup — maps the firmware FamilyID integer to a generation,
- *    then builds a synthetic `IpodModel` with table-derived metadata.
- * 3. Minimal synthetic fallback — when FamilyID is unknown (≤ 0 or unmapped),
- *    returns a `video_5g` generation model which gives correct codec/video
- *    defaults for the most common sync target and avoids a hard failure.
- *
- * The returned model is always suitable for `getCapabilities()`.
- */
-function bridgeIpodIdentityToModel(identity: IpodIdentity): IpodModel {
-  // 1. Serial suffix lookup — most specific
-  if (identity.serialNumber && identity.serialNumber.length >= 3) {
-    const suffix = identity.serialNumber.slice(-3);
-    const model = identify({ from: 'serial', serialNumber: identity.serialNumber });
-    if (model) return model;
-    // suffix present but not in table — continue to FamilyID
-    void suffix;
-  }
-
-  // 2. FamilyID → generationId → synthetic model
-  const generationId = identity.familyId > 0 ? lookupByFamilyId(identity.familyId) : undefined;
-
-  if (generationId) {
-    const gen = GENERATIONS[generationId];
-    return {
-      displayName: gen.displayName,
-      generationId,
-      checksumType: gen.checksumType,
-      source: 'usb', // closest approximation; source doesn't affect capabilities
-      ...(gen.supported
-        ? {}
-        : {
-            notSupportedReason: `${gen.displayName} is not supported by podkit (libgpod cannot sync this generation).`,
-          }),
-    };
-  }
-
-  // 3. Minimal synthetic fallback — video_5g is a safe default
-  //    (supports video, ALAC, artwork; represents a wide capability set)
-  const fallbackGen = GENERATIONS['video_5g'];
-  return {
-    displayName: fallbackGen.displayName,
-    generationId: 'video_5g',
-    checksumType: fallbackGen.checksumType,
-    source: 'usb',
-  };
 }
 
 // =============================================================================
@@ -171,7 +101,15 @@ export function resolveCapabilities(
 ): DeviceCapabilities {
   switch (identity.kind) {
     case 'ipod': {
-      const model = bridgeIpodIdentityToModel(identity);
+      const model = resolveIpodModel({
+        serialNumber: identity.serialNumber,
+        familyId: identity.familyId,
+      });
+      if (!model) {
+        throw new Error(
+          `Could not resolve iPod model from identity: serialNumber=${identity.serialNumber ?? 'none'}, familyId=${identity.familyId}`
+        );
+      }
       return getIpodCapabilities(model, { firmware: opts?.firmware });
     }
 

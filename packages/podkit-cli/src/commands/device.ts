@@ -1408,8 +1408,8 @@ const listSubcommand = new Command('list')
     // Resolve capabilities and settings for each device
     const { resolveGlobalConfig, resolveDeviceSettings, formatResolved, formatGlobalResolved } =
       await import('../config/resolve.js');
-    const { resolveCapabilities, identifyCapabilities, modelFromLibgpodInfo } =
-      await import('@podkit/core');
+    const { resolveCapabilities, identifyCapabilities } = await import('@podkit/core');
+    const { resolveIpodModel } = await import('@podkit/devices-ipod');
 
     // Import Device class for lightweight capability queries (no database needed)
     let deviceFromMountPoint:
@@ -1445,8 +1445,13 @@ const listSubcommand = new Command('list')
           try {
             const dev = deviceFromMountPoint(connInfo.mountPoint);
             const libgpodCaps = dev.getCapabilities();
-            const model = modelFromLibgpodInfo(libgpodCaps);
-            capabilities = identifyCapabilities(model);
+            const model = resolveIpodModel({
+              modelNumStr: libgpodCaps.modelNumber ?? undefined,
+              libgpodGeneration: libgpodCaps.generation,
+            });
+            if (model) {
+              capabilities = identifyCapabilities(model);
+            }
             dev.close();
           } catch {
             // Fall through — capabilities remain null

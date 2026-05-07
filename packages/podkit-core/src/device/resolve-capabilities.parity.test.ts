@@ -4,9 +4,9 @@
  *
  * ## Goal
  *
- * Verify that TASK-295.03's unified `resolveCapabilities` path produces
- * consistent output relative to the source-of-truth data: `BUILT_IN_PRESETS`
- * from `@podkit/devices-mass-storage` and the GENERATIONS table from
+ * Verify that the unified `resolveCapabilities` path produces consistent
+ * output relative to the source-of-truth data: `BUILT_IN_PRESETS` from
+ * `@podkit/devices-mass-storage` and the GENERATIONS table from
  * `@podkit/devices-ipod`.
  *
  * ## iPod path
@@ -29,7 +29,7 @@ import { describe, test, expect } from 'bun:test';
 
 import { identifyCapabilities, resolveCapabilities } from './resolve-capabilities.js';
 import {
-  modelFromLibgpodInfo,
+  resolveIpodModel,
   GENERATION_ID_TO_LIBGPOD,
   GENERATIONS,
   type IpodGenerationId,
@@ -44,7 +44,7 @@ import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 /**
  * IpodGenerationId values that have a real libgpod generation name (not 'unknown').
  * These are the only IDs for which table-driven parity can be asserted via
- * the modelFromLibgpodInfo bridge.
+ * the libgpod generation axis of resolveIpodModel.
  */
 const PARITY_GENERATION_IDS: IpodGenerationId[] = (
   IPOD_GENERATION_IDS as readonly IpodGenerationId[]
@@ -62,18 +62,17 @@ describe('identifyCapabilities — table-authoritative flags', () => {
    * libgpod runtime flags.
    */
   for (const generationId of PARITY_GENERATION_IDS) {
-    test(`${generationId} — resolves via modelFromLibgpodInfo bridge`, () => {
+    test(`${generationId} — resolves via libgpodGeneration axis`, () => {
       const gen = GENERATIONS[generationId];
       const libgpodGenName = GENERATION_ID_TO_LIBGPOD[generationId];
 
-      // Build a synthetic libgpod info with table-derived flags.
-      const libgpod = {
-        generation: libgpodGenName,
-        supportsArtwork: gen.artworkMaxResolution !== null && gen.artworkMaxResolution > 0,
-        supportsVideo: gen.supportsVideo,
-      };
-
-      const model = modelFromLibgpodInfo(libgpod);
+      const model = resolveIpodModel({ libgpodGeneration: libgpodGenName });
+      // PARITY_GENERATION_IDS only includes known libgpod generation names,
+      // so resolveIpodModel must always return a non-null model here.
+      if (!model)
+        throw new Error(
+          `resolveIpodModel returned null for known generation ${generationId} (libgpod name: ${libgpodGenName})`
+        );
       const caps = identifyCapabilities(model);
 
       // Verify key fields are class-authoritative (from table, not runtime flags).

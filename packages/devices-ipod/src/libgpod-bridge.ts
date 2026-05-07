@@ -1,24 +1,15 @@
 /**
- * libgpod bridge — converts libgpod's DeviceInfo shape to the canonical IpodModel.
+ * libgpod bridge — libgpod-specific types and unsupported-device classification.
  *
- * This thin adapter exists because `open-device.ts` and `device.ts` receive data
- * from `libgpod-node` (via `device.getCapabilities()`) in a shape that predates the
- * unified `IpodModel` type. Rather than duplicating the conversion at every call site
- * we centralise it here.
+ * Houses the `LibgpodDeviceInfo` input shape (used by callers that receive data
+ * from `@podkit/libgpod-node`) and `getUnsupportedReasonByLibgpodName` (used by
+ * device-validation to build structured `DeviceIssue` objects without embedding
+ * libgpod generation name tables in core).
  *
- * Moved from `@podkit/core/device/libgpod-bridge.ts` at m-18. All iPod-classification
- * logic that touches libgpod naming lives in `@podkit/devices-ipod`, not in core.
- *
- * Note: m-8 will eventually replace libgpod entirely; when that happens this bridge
- * disappears along with the last libgpod dependency in core.
+ * Model resolution from libgpod data is handled by `resolveIpodModel` in resolve.ts.
  *
  * @module
  */
-
-import { identify } from './identity.js';
-import { GENERATION_ID_TO_LIBGPOD } from './tables/libgpod-mapping.js';
-import { GENERATIONS } from './tables/generations.js';
-import type { IpodModel, IpodGenerationId } from './types.js';
 
 // =============================================================================
 // Unsupported reason by libgpod generation name
@@ -72,7 +63,7 @@ export function getUnsupportedReasonByLibgpodName(
 // =============================================================================
 
 /**
- * The subset of libgpod Device capabilities needed by the bridge.
+ * The subset of libgpod Device capabilities needed to resolve an iPod model.
  *
  * This mirrors the shape returned by `device.getCapabilities()` in
  * `@podkit/libgpod-node`. A local definition avoids importing the native
@@ -83,66 +74,4 @@ export interface LibgpodDeviceInfo {
   readonly supportsVideo: boolean;
   readonly generation: string;
   readonly modelNumber?: string | null;
-}
-
-// =============================================================================
-// Internal index: libgpod generation name → IpodGenerationId
-// =============================================================================
-
-// Built once at module load from the canonical forward mapping.
-const LIBGPOD_TO_GENERATION_ID = new Map<string, IpodGenerationId>();
-for (const [genId, libgpodName] of Object.entries(GENERATION_ID_TO_LIBGPOD)) {
-  LIBGPOD_TO_GENERATION_ID.set(libgpodName, genId as IpodGenerationId);
-}
-
-// =============================================================================
-// Bridge
-// =============================================================================
-
-/**
- * Build an `IpodModel` from libgpod device info.
- *
- * Resolution chain (first match wins):
- * 1. SysInfo model number — `identify({ from: 'sysinfo', modelNumStr })` when
- *    `device.modelNumber` is present. Most specific — identifies capacity, color.
- * 2. libgpod generation → IpodGenerationId reverse mapping — constructs a
- *    synthetic IpodModel from the generation table.
- * 3. Minimal synthetic fallback — `video_5g` for unrecognised generations.
- *
- * Used by core for callers that have libgpod's DeviceInfo shape rather than a
- * UsbFingerprint. m-8 will eventually replace libgpod entirely; this bridge
- * disappears then.
- */
-export function modelFromLibgpodInfo(device: LibgpodDeviceInfo): IpodModel {
-  // 1. SysInfo model number lookup
-  if (device.modelNumber) {
-    const model = identify({ from: 'sysinfo', modelNumStr: device.modelNumber });
-    if (model) return model;
-  }
-
-  // 2. Reverse libgpod generation → IpodGenerationId
-  const generationId = LIBGPOD_TO_GENERATION_ID.get(device.generation);
-  if (generationId) {
-    const gen = GENERATIONS[generationId];
-    return {
-      displayName: gen.displayName,
-      generationId,
-      checksumType: gen.checksumType,
-      source: 'usb',
-      ...(gen.supported
-        ? {}
-        : {
-            notSupportedReason: `${gen.displayName} is not supported by podkit (libgpod cannot sync this generation).`,
-          }),
-    };
-  }
-
-  // 3. Minimal synthetic fallback
-  const fallbackGen = GENERATIONS['video_5g'];
-  return {
-    displayName: fallbackGen.displayName,
-    generationId: 'video_5g',
-    checksumType: fallbackGen.checksumType,
-    source: 'usb',
-  };
 }

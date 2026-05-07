@@ -54,8 +54,7 @@ export interface ScsiReadOptions {
  *   byte-stability across calls; semantic content (FireWireGUID,
  *   SerialNumber, FamilyID, etc.) **is** stable.
  * - On Linux without the podkit udev rule the error surfaces as
- *   `ScsiError({ kind: 'eacces' })` — TASK-292.12 owns the user-facing
- *   message text.
+ *   `ScsiError({ kind: 'eacces' })`; the CLI renders the user-facing message.
  *
  * @param fp - USB fingerprint identifying the device. Uses bus/devnum on
  *             Linux, vendorId/productId/serialNumber on macOS.

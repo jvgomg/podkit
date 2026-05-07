@@ -2,7 +2,7 @@
  * Shared device opening logic
  *
  * Encapsulates the type-check → capability-resolution → adapter-opening
- * pattern that was previously duplicated across sync.ts and device.ts.
+ * pattern shared between sync.ts and device.ts.
  *
  * Callers pass the dynamically-imported `@podkit/core` module to avoid
  * triggering eager static imports of native bindings.
@@ -11,6 +11,7 @@
  */
 
 import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
+import { resolveIpodModel } from '@podkit/devices-ipod';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
 
 // =============================================================================
@@ -163,8 +164,17 @@ export async function openDevice(
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
-    // Bridge libgpod device info → IpodModel → DeviceCapabilities
-    const model = core.modelFromLibgpodInfo(ipodDeviceInfo);
+    // Resolve libgpod device info → IpodModel → DeviceCapabilities
+    const model = resolveIpodModel({
+      modelNumStr: ipodDeviceInfo.modelNumber ?? undefined,
+      libgpodGeneration: ipodDeviceInfo.generation,
+    });
+    if (!model) {
+      throw new Error(
+        `Could not identify iPod model from libgpod data (generation="${ipodDeviceInfo.generation}"). ` +
+          `Try specifying --type ipod or reconnecting the device.`
+      );
+    }
     const capabilities = core.identifyCapabilities(model);
 
     const deviceSupportsAlac = capabilities.supportedAudioCodecs.includes('alac');

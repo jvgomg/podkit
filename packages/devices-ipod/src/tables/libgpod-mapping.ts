@@ -103,6 +103,16 @@ for (const [genId, libgpodName] of Object.entries(GENERATION_ID_TO_LIBGPOD)) {
 }
 
 /**
+ * Look up an IpodGenerationId from a libgpod generation string.
+ *
+ * @param libgpodName - Generation string as returned by libgpod (e.g. 'nano_4', 'classic_3')
+ * @returns The matching IpodGenerationId, or undefined for unknown strings
+ */
+export function lookupByLibgpodName(libgpodName: string): IpodGenerationId | undefined {
+  return LIBGPOD_NAME_TO_GENERATION_ID.get(libgpodName);
+}
+
+/**
  * Fallback display names for libgpod strings that have no IpodGenerationId
  * equivalent (iPhone, iPad, and names not in GENERATION_ID_TO_LIBGPOD).
  */

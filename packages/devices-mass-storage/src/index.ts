@@ -19,7 +19,7 @@ export type {
 
 export { BUILT_IN_PRESET_IDS, DEFAULT_CONTENT_PATHS } from './presets/types.js';
 
-// Runtime functions (TASK-294.05)
+// Runtime functions
 export { definePreset } from './preset.js';
 export type { PresetDefinition, DefinePresetOptions } from './preset.js';
 
@@ -31,5 +31,5 @@ export type { GetCapabilitiesOptions } from './capabilities.js';
 export { USB_PRESET_HINTS } from './usb-hints.js';
 export type { UsbPresetHint } from './usb-hints.js';
 
-// Provider (TASK-294.06)
+// Provider
 export { createMassStorageProvider } from './provider.js';

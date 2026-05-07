@@ -2,8 +2,7 @@
  * Unit tests for the macOS SCSI transport.
  *
  * The IOKit / CoreFoundation binding is stubbed end-to-end so these tests
- * run on any platform. Real-device validation is covered by hardware E2E
- * (TASK-292.10).
+ * run on any platform. Real-device validation requires a connected iPod.
  *
  * Focus areas:
  * - vtable version mismatch surfaces as `ScsiError({ kind: "vtable-version-mismatch" })`

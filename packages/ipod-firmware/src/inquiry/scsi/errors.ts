@@ -2,13 +2,12 @@
  * SCSI transport — discriminated error type.
  *
  * Every failure path in the SCSI transport surfaces as a `ScsiError`
- * with a `kind` discriminator. Higher layers (TASK-292.12 permission UX,
- * the orchestrator's USB-fallback logic, doctor checks) inspect `kind`
- * to render actionable messages or decide whether to retry.
+ * with a `kind` discriminator. Higher layers (the orchestrator's USB-fallback
+ * logic and doctor checks) inspect `kind` to render actionable messages or
+ * decide whether to retry.
  *
- * The error itself carries minimal text — full human-readable messages
- * live in TASK-292.12. Here we only ensure the structured fields needed
- * to render those messages are present.
+ * The error itself carries minimal text — full human-readable messages are
+ * rendered by the CLI or diagnostic layer that catches the error.
  *
  * @module
  */

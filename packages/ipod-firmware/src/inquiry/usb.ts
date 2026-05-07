@@ -1,8 +1,5 @@
 /**
- * USB inquiry — TypeScript-native libusb-1.0 FFI implementation (P2).
- *
- * Replaces the P1 transitional shim that delegated to `@podkit/libgpod-node`.
- * After P2 the binding's USB code is removed entirely (TASK-293.04).
+ * USB inquiry — TypeScript-native libusb-1.0 FFI implementation.
  *
  * ## Protocol
  *

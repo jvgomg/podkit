@@ -327,8 +327,7 @@ export { MediaType, isMusicMediaType, CONTENT_TYPES } from './ipod/constants.js'
 export type { MediaTypeValue, ContentType as MediaContentType } from './ipod/constants.js';
 export { IpodDatabase } from './ipod/database.js';
 export { isVideoMediaType } from './ipod/video.js';
-// formatGeneration moved to @podkit/devices-ipod at m-18; re-exported from
-// core for backward compatibility with the CLI import surface.
+// formatGeneration lives in @podkit/devices-ipod; re-exported here for the CLI import surface.
 export { formatGeneration } from '@podkit/devices-ipod';
 
 // Device validation
@@ -590,15 +589,16 @@ export { enumerateConnectedDevices } from './device/index.js';
 export type { SysInfoExtendedResult } from './device/index.js';
 export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
-// iPod model lookup and libgpod bridge
+// iPod model lookup and resolver
 export {
   getChecksumTypeByModelNumber,
   toLibgpodGeneration,
   identify,
-  modelFromLibgpodInfo,
+  resolveIpodModel,
 } from './device/index.js';
 export type {
   LibgpodDeviceInfo,
+  ResolveModelInput,
   IpodModel,
   IpodModelSource,
   IpodModelInput,

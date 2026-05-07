@@ -2459,8 +2459,8 @@ export function toLibgpodGeneration(_id: string): string {
 export function createIpodCapabilities(_device: any): any {
   return {};
 }
-export function modelFromLibgpodInfo(_device: any): any {
-  return {};
+export function resolveIpodModel(_input: any): any {
+  return null;
 }
 export function resolveCapabilities(_identity: any, _opts?: any): any {
   return {};

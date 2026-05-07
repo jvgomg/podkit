@@ -7,9 +7,7 @@
  * `referenceCreateIpodCapabilities` so this package stays free of
  * `@podkit/core` (and transitively `@podkit/libgpod-node`). The reference
  * implementation must remain a faithful, line-for-line port of the original
- * — any divergence is a bug to investigate. TASK-294.12 turns the original
- * into a re-export shim that delegates here, at which point the inline
- * reference can be replaced with a direct import.
+ * — any divergence is a bug to investigate.
  *
  * The legacy adapter accepted only libgpod's generation enum values
  * (`nano_4`, `classic_1`, …). For each of our `IpodGenerationId`s that has
@@ -104,8 +102,9 @@ const LEGACY_IPOD_GENERATIONS: Record<LibgpodGenerationName, LegacyLibgpodMetada
   touch_4: { supportsAlac: true },
 };
 
-// Verbatim copy of `ARTWORK_MAX_RESOLUTION` from
-// packages/podkit-core/src/device/capability-adapter.ts (libgpod-keyed).
+// Reference artwork resolution table keyed by libgpod generation name,
+// used to verify parity between the new capabilities synthesis and the
+// original per-generation artwork limits.
 const LEGACY_ARTWORK_MAX_RESOLUTION: Partial<Record<LibgpodGenerationName, number>> = {
   classic_1: 320,
   classic_3: 320,

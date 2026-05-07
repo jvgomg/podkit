@@ -36,7 +36,6 @@ export {
   type LibgpodGenerationName,
   formatGeneration,
 } from './tables/libgpod-mapping.js';
-export { ARTWORK_MAX_RESOLUTION, type ArtworkResolution } from './tables/artwork-formats.js';
 export {
   UNSUPPORTED_IPOD_PRODUCT_IDS,
   lookupUnsupportedReason,
@@ -72,11 +71,14 @@ export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js'
 
 export { ipodProvider } from './provider.js';
 
-// ── libgpod bridge (moved from @podkit/core at m-18) ─────────────────────────
+// ── libgpod bridge ────────────────────────────────────────────────────────────
 
 export {
-  modelFromLibgpodInfo,
   getUnsupportedReasonByLibgpodName,
   type LibgpodDeviceInfo,
   type UnsupportedGenerationKind,
 } from './libgpod-bridge.js';
+
+// ── Model resolver ────────────────────────────────────────────────────────────
+
+export { resolveIpodModel, type ResolveModelInput } from './resolve.js';

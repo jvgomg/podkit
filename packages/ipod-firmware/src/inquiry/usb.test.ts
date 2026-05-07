@@ -1,5 +1,5 @@
 /**
- * Unit tests for the libusb FFI USB inquiry implementation (TASK-293.01).
+ * Unit tests for the libusb FFI USB inquiry implementation.
  *
  * Tests inject a fake `LibusbBinding` so they exercise the protocol logic
  * (page iteration, short-read termination, control-transfer parameters,

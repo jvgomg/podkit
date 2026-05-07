@@ -78,28 +78,24 @@ describe('resolveCapabilities — iPod identity', () => {
     expect(caps.artworkMaxResolution).toBe(176);
   });
 
-  it('uses video_5g synthetic fallback when familyId is unknown', () => {
+  it('throws when familyId is unknown and serial is not in table', () => {
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX', // suffix not in table
       familyId: 9999, // unknown familyId
     });
-    const caps = resolveCapabilities(identity);
-
-    // video_5g fallback: ALAC, video, artwork 320px
-    expect(caps.supportedAudioCodecs).toContain('alac');
-    expect(caps.supportsVideo).toBe(true);
-    expect(caps.artworkMaxResolution).toBe(320);
+    expect(() => resolveCapabilities(identity)).toThrow(
+      /Could not resolve iPod model from identity/
+    );
   });
 
-  it('uses video_5g synthetic fallback when familyId is -1 (not detected)', () => {
+  it('throws when familyId is -1 (not detected) and serial is not in table', () => {
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX',
       familyId: -1,
     });
-    const caps = resolveCapabilities(identity);
-
-    expect(caps.supportsVideo).toBe(true);
-    expect(caps.artworkMaxResolution).toBe(320);
+    expect(() => resolveCapabilities(identity)).toThrow(
+      /Could not resolve iPod model from identity/
+    );
   });
 
   it('merges firmware overlay when provided', () => {
