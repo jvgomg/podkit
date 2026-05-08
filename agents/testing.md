@@ -311,6 +311,114 @@ bun run generate-fixtures --replaygain -3.5  # Set specific ReplayGain value
 
 Output goes to `test/manual-collection/` (gitignored). Without flags, output is deterministic and turbo-cached. Each variance flag (`--artwork`, `--format`, `--replaygain`) picks a random different value if no specific value is given. Requires FFmpeg and metaflac.
 
+## Writing CLI Unit and Integration Tests
+
+**Hard rule: never spawn the podkit CLI as a subprocess from a unit or integration test.** Subprocess invocation lives only in `packages/e2e-tests/`. The rule is enforced by an oxlint check (`no-restricted-imports` for `node:child_process` in `packages/podkit-cli/src/**/*.test.ts`) — see `oxlint.json`.
+
+For tests that need to drive a CLI command, call its **runner function** in-process. Each runner is an exported `async function runX(options, out, deps?)` extracted from the Commander action callback. Examples:
+
+- `runDeviceAdd(options, out, deps?)` in `commands/device.ts`
+- `runCollectionMusic(options, out)` / `runCollectionVideo(options, out)` in `commands/collection.ts`
+
+### The four building blocks
+
+| Piece | Purpose | Where |
+|-------|---------|-------|
+| `runWithContext(ctx, fn)` | Scope a `CliContext` for the runner via AsyncLocalStorage. Concurrent-safe. | `src/context.ts` |
+| `OutputContext` + `BufferSink` | Capture stdout/stderr into a buffer instead of writing to the terminal. | `src/output/`, `src/test-utils/buffer-sink.ts` |
+| `runAction(out, fn)` | Wrap a runner so thrown `CliError`s become structured output + `process.exitCode`. Use this in tests AND production action callbacks. | `src/errors.ts` |
+| `<XDeps>` (e.g. `DeviceAddDeps`) | Inject fakes for `getDeviceManager`, `confirm`, `loadCore` so the runner doesn't perform real USB walks / prompts / dynamic imports. | per-runner |
+
+### Test pattern
+
+```typescript
+import { runWithContext, type CliContext } from '../context.js';
+import { runAction } from '../errors.js';
+import { OutputContext } from '../output/index.js';
+import { BufferSink } from '../test-utils/buffer-sink.js';
+import { runDeviceAdd, type DeviceAddDeps } from './device.js';
+
+function makeContext(/* ... */): CliContext { /* construct config + globalOpts + configResult */ }
+
+function makeOut(json = true) {
+  const stdout = new BufferSink();
+  const stderr = new BufferSink();
+  const out = new OutputContext({ mode: json ? 'json' : 'text', /* ... */, stdout, stderr });
+  return { out, stdout, stderr };
+}
+
+// Compose runWithContext + runAction so the test runs the same path production does.
+function runAdd(ctx: CliContext, opts: Parameters<typeof runDeviceAdd>[0], out: OutputContext, deps?: DeviceAddDeps) {
+  return runWithContext(ctx, () => runAction(out, () => runDeviceAdd(opts, out, deps)));
+}
+
+it('rejects an unknown --quality preset', async () => {
+  const ctx = makeContext({ device: 'd' });
+  const { out, stdout } = makeOut();
+  await runAdd(ctx, { type: 'echo-mini', quality: 'bogus' as never }, out);
+  expect(stdout.json<{ success: false; error: string; code: string }>()).toMatchObject({
+    success: false,
+    code: 'INVALID_QUALITY',
+  });
+});
+```
+
+### When to extract a runner
+
+If a Commander action callback grows beyond ~100 lines, or has any branch you'd like to unit-test, extract it. The pattern: pull the body into `export async function runX(opts, out, deps?)`, leave the `.action()` callback as a one-liner that builds `out` and calls `runAction(out, () => runX(...))`.
+
+For external dependencies the runner pulls in (`getDeviceManager`, `confirm`, dynamic `import('@podkit/core')`), put them behind a `XDeps` interface so tests can stub. See `DeviceAddDeps` in `commands/device.ts:1658` as the canonical example.
+
+### Throwing `CliError` instead of `process.exitCode = 1`
+
+Inside a runner, error paths should:
+
+```typescript
+throw new CliError({
+  message: 'Path not found: ' + path,
+  code: 'PATH_NOT_FOUND',           // machine-readable tag, optional but encouraged
+  details: { path },                // command-specific extras, merged into JSON output
+});
+```
+
+The wrapper translates this to:
+- text mode: `out.error(err.message)`
+- JSON mode: `{ success: false, error, code, ...details }` on stdout
+- `process.exitCode = err.exitCode` (default 1)
+
+Tests assert on the captured JSON shape. Don't write `expect(process.exitCode).toBe(1)` as the primary assertion — `process.exitCode` is process-global and prevents `it.concurrent` within a file. Asserting on the structured JSON is concurrent-safe.
+
+### `it.concurrent` caveat
+
+`process.exitCode` is process-global, so any test that *also* asserts on `process.exitCode` cannot be `it.concurrent` with peers in the same file. Tests that only inspect stdout/stderr buffers can be concurrent — `runWithContext` provides ALS isolation, and each test's `BufferSink` is per-test state.
+
+When in doubt, default to plain `it()`. Cross-file parallelism (bun test workers) gives you most of the speedup for free.
+
+### Output shape
+
+Every CLI command returning JSON on failure emits the same shape (or is being migrated to it — see `backlog/tasks/task-314`):
+
+```json
+{
+  "success": false,
+  "error": "<human-readable message>",
+  "code": "<machine-readable tag>",
+  "...command-specific details": "..."
+}
+```
+
+JSON consumers should branch on `success === false` and read `error` / `code`.
+
+### Where the patterns live
+
+| Pattern | Canonical file |
+|---------|----------------|
+| Runner extraction | `commands/device.ts` (`runDeviceAdd`), `commands/collection.ts` (`runCollectionMusic`) |
+| Deps injection seam | `commands/device.ts` (`DeviceAddDeps`) |
+| Test helper composition | `commands/collection.integration.test.ts` (`runMusic`, `runVideo`), `commands/device-add.unit.test.ts` (`runAdd`) |
+| ALS isolation test | `context.test.ts` (the `runWithContext isolation` describe block) |
+| Choices()-driven argv test (no runner) | `commands/doctor.test.ts` |
+
 ## Writing E2E Tests
 
 Use `@podkit/e2e-tests` helpers for CLI testing:
