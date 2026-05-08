@@ -56,14 +56,7 @@ describe('podkit collection music (e2e)', () => {
   it('exits 1 with an error when no music collection is configured', async () => {
     const { configPath, cleanup } = await makeConfig(`version = 1\n`);
     try {
-      const result = await runCli([
-        '--config',
-        configPath,
-        'collection',
-        'music',
-        '--tracks',
-        '-q',
-      ]);
+      const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks']);
       expect(result.exitCode).toBe(1);
       const combined = result.stdout + result.stderr;
       expect(combined.toLowerCase()).toMatch(/no.*collection|configured|add/);

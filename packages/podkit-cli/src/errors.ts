@@ -50,7 +50,7 @@ export async function runAction<T>(
       const payload: Record<string, unknown> = {
         success: false,
         error: err.message,
-        ...(err.details ?? {}),
+        ...err.details,
       };
       if (err.code !== undefined) {
         payload.code = err.code;
