@@ -1,589 +1,399 @@
 /**
- * Integration tests for collection music and collection video subcommands.
+ * Integration tests for `collection music` / `collection video` runners.
  *
- * These tests verify that the CLI correctly scans music and video directories
- * and returns properly formatted output.
+ * Calls runCollectionMusic / runCollectionVideo in-process with real fixture
+ * directories. No CLI subprocess. Each test scopes its own CliContext via
+ * runWithContext so the suite is concurrency-friendly across files.
  *
- * Prerequisites:
- * - FFmpeg (for video probing)
- * - Test fixtures in test/fixtures/audio/ and test/fixtures/video/
+ * For built-binary smoke coverage see `packages/e2e-tests/src/commands/collection.e2e.test.ts`.
  */
 
-import { describe, expect, it, beforeEach, afterEach, beforeAll } from 'bun:test';
-import { mkdir, rm, writeFile, access } from 'node:fs/promises';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
+import { mkdir, rm } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { spawn } from 'node:child_process';
+import { runCollectionMusic, runCollectionVideo } from './collection.js';
+import { OutputContext } from '../output/index.js';
+import { runWithContext, type CliContext } from '../context.js';
+import { BufferSink } from '../test-utils/buffer-sink.js';
+import {
+  DEFAULT_TRANSFORMS_CONFIG,
+  DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  type PodkitConfig,
+  type GlobalOptions,
+  type LoadConfigResult,
+} from '../config/index.js';
 
-// =============================================================================
-// Test Utilities
-// =============================================================================
-
-/**
- * Path to test audio fixtures
- */
 const AUDIO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/audio');
-
-/**
- * Path to test video fixtures
- */
 const VIDEO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/video');
 
-/**
- * Path to the built CLI
- */
-const CLI_PATH = resolve(__dirname, '../main.ts');
+// =============================================================================
+// Helpers
+// =============================================================================
 
-/**
- * Run the CLI and capture output
- */
-async function runCli(args: string[]): Promise<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-}> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('bun', ['run', CLI_PATH, ...args], {
-      env: {
-        ...process.env,
-        NO_COLOR: '1',
-        FORCE_COLOR: '0',
-      },
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+interface ContextOptions {
+  music?: PodkitConfig['music'];
+  video?: PodkitConfig['video'];
+  defaults?: PodkitConfig['defaults'];
+}
 
-    let stdout = '';
-    let stderr = '';
+function makeContext(opts: ContextOptions = {}): CliContext {
+  const config: PodkitConfig = {
+    quality: 'medium',
+    artwork: true,
+    tips: true,
+    transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+    music: opts.music ?? {},
+    video: opts.video ?? {},
+    devices: {},
+    defaults: opts.defaults,
+  };
+  const globalOpts: GlobalOptions = {
+    json: false,
+    quiet: true,
+    verbose: 0,
+    color: false,
+    tips: false,
+    tty: false,
+  };
+  const configResult: LoadConfigResult = {
+    config,
+    configPath: undefined,
+    configFileExists: false,
+  };
+  return { config, globalOpts, configResult };
+}
 
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString();
-    });
+interface CapturedOutput {
+  out: OutputContext;
+  stdout: BufferSink;
+  stderr: BufferSink;
+}
 
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-    });
-
-    child.stdin.end();
-
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL');
-      reject(new Error('CLI timed out after 60 seconds'));
-    }, 60000);
-
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      resolve({
-        exitCode: code ?? 1,
-        stdout,
-        stderr,
-      });
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
+function makeOut(json = false): CapturedOutput {
+  const stdout = new BufferSink();
+  const stderr = new BufferSink();
+  const out = new OutputContext({
+    mode: json ? 'json' : 'text',
+    quiet: false,
+    verbose: 0,
+    color: false,
+    tips: false,
+    tty: false,
+    stdout,
+    stderr,
   });
+  return { out, stdout, stderr };
 }
 
-/**
- * Run CLI and parse JSON output
- */
-async function runCliJson<T>(args: string[]): Promise<{
-  exitCode: number;
-  stdout: string;
-  stderr: string;
-  json: T | null;
-  parseError?: string;
-}> {
-  const result = await runCli(args);
-  let json: T | null = null;
-  let parseError: string | undefined;
+const musicConfig = (path: string): ContextOptions => ({
+  music: { test: { path } },
+  defaults: { music: 'test' },
+});
 
-  try {
-    const trimmed = result.stdout.trim();
-    if (trimmed) {
-      json = JSON.parse(trimmed);
-    }
-  } catch (err) {
-    parseError = err instanceof Error ? err.message : String(err);
-  }
-
-  return { ...result, json, parseError };
-}
-
-/**
- * Create a temporary config file with a music collection
- */
-async function createMusicConfig(musicPath: string): Promise<string> {
-  const tempDir = join(tmpdir(), `podkit-test-${Date.now()}`);
-  await mkdir(tempDir, { recursive: true });
-  const configPath = join(tempDir, 'config.toml');
-  await writeFile(
-    configPath,
-    `version = 1
-
-[music.test]
-path = "${musicPath}"
-
-[defaults]
-music = "test"
-`
-  );
-  return configPath;
-}
-
-/**
- * Create a temporary config file with a video collection
- */
-async function createVideoConfig(videoPath: string): Promise<string> {
-  const tempDir = join(tmpdir(), `podkit-test-${Date.now()}`);
-  await mkdir(tempDir, { recursive: true });
-  const configPath = join(tempDir, 'config.toml');
-  await writeFile(
-    configPath,
-    `version = 1
-
-[video.test]
-path = "${videoPath}"
-
-[defaults]
-video = "test"
-`
-  );
-  return configPath;
-}
-
-/**
- * Create an empty temporary config file (no collections)
- */
-async function createEmptyConfig(): Promise<string> {
-  const tempDir = join(tmpdir(), `podkit-test-${Date.now()}`);
-  await mkdir(tempDir, { recursive: true });
-  const configPath = join(tempDir, 'config.toml');
-  await writeFile(configPath, `version = 1\n# Empty config\n`);
-  return configPath;
-}
-
-/**
- * Clean up a temporary config file
- */
-async function cleanupConfig(configPath: string): Promise<void> {
-  try {
-    const dir = join(configPath, '..');
-    await rm(dir, { recursive: true, force: true });
-  } catch {
-    // Ignore cleanup errors
-  }
-}
-
-/**
- * Check if a path exists
- */
-async function pathExists(path: string): Promise<boolean> {
-  try {
-    await access(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
+const videoConfig = (path: string): ContextOptions => ({
+  video: { test: { path } },
+  defaults: { video: 'test' },
+});
 
 // =============================================================================
-// Tests: collection music
+// collection music
 // =============================================================================
 
-describe('collection music integration', () => {
-  let configPath: string;
+describe('runCollectionMusic', () => {
   let emptyDir: string;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(async () => {
-    // Create an empty directory for empty tests
-    emptyDir = join(tmpdir(), `podkit-empty-${Date.now()}`);
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    emptyDir = join(tmpdir(), `podkit-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(emptyDir, { recursive: true });
   });
 
   afterEach(async () => {
-    if (configPath) {
-      await cleanupConfig(configPath);
-    }
-    if (emptyDir) {
-      await rm(emptyDir, { recursive: true, force: true });
-    }
+    process.exitCode = originalExitCode;
+    await rm(emptyDir, { recursive: true, force: true });
   });
 
-  it('scans directory and returns tracks', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks', '-q']);
-
-    expect(result.exitCode).toBe(0);
-    // Should contain track data (table format by default)
-    expect(result.stdout).toContain('Title');
-    expect(result.stdout).toContain('Artist');
-    // Should find at least one of our test tracks
-    expect(
-      result.stdout.includes('Harmony') ||
-        result.stdout.includes('A440') ||
-        result.stdout.includes('Podkit')
-    ).toBe(true);
+  it('scans directory and prints a tracks table by default format', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'table' }, out));
+    expect(process.exitCode).toBe(0);
+    const text = stdout.text();
+    expect(text).toContain('Title');
+    expect(text).toContain('Artist');
   });
 
-  it('returns metadata (title, artist, album, duration)', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const { json, exitCode } = await runCliJson<
-      Array<{
-        title: string;
-        artist: string;
-        album: string;
-        duration: number;
-        durationFormatted: string;
-      }>
-    >(['--config', configPath, 'collection', 'music', '--tracks', '--format', 'json', '-q']);
-
-    expect(exitCode).toBe(0);
-    expect(json).toBeArray();
-    expect(json!.length).toBeGreaterThan(0);
-
-    // Check that all tracks have required metadata fields
-    for (const track of json!) {
+  it('returns track metadata in JSON format with required fields', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(0);
+    const tracks =
+      stdout.json<
+        Array<{
+          title: string;
+          artist: string;
+          album: string;
+          duration: number;
+          durationFormatted: string;
+        }>
+      >();
+    expect(Array.isArray(tracks)).toBe(true);
+    expect(tracks.length).toBeGreaterThan(0);
+    for (const track of tracks) {
       expect(track).toHaveProperty('title');
       expect(track).toHaveProperty('artist');
       expect(track).toHaveProperty('album');
-      expect(track).toHaveProperty('duration');
-      expect(track).toHaveProperty('durationFormatted');
-      // Duration should be a number (milliseconds)
       expect(typeof track.duration).toBe('number');
-      // Duration formatted should be a string like "0:20"
       expect(track.durationFormatted).toMatch(/^\d+:\d{2}$/);
     }
-
-    // Verify we can find a known track
-    const harmonyTrack = json!.find((t) => t.title === 'Harmony');
-    if (harmonyTrack) {
-      expect(harmonyTrack.artist).toBe('Podkit Test Generator');
-      expect(harmonyTrack.album).toBe('Synthetic Classics');
-    }
   });
 
-  it('handles empty directory', async () => {
-    configPath = await createMusicConfig(emptyDir);
-    const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks', '-q']);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('No tracks found');
+  it('finds the known Harmony fixture with expected metadata', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    const tracks = stdout.json<Array<{ title: string; artist: string; album: string }>>();
+    const harmony = tracks.find((t) => t.title === 'Harmony');
+    expect(harmony).toBeDefined();
+    expect(harmony!.artist).toBe('Podkit Test Generator');
+    expect(harmony!.album).toBe('Synthetic Classics');
   });
 
-  it('respects --format json option', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const { json, exitCode, parseError } = await runCliJson<unknown[]>([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '--tracks',
-      '--format',
-      'json',
-      '-q',
-    ]);
-
-    expect(exitCode).toBe(0);
-    expect(parseError).toBeUndefined();
-    expect(json).toBeArray();
+  it('handles an empty directory by reporting "No tracks found"', async () => {
+    const ctx = makeContext(musicConfig(emptyDir));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'table' }, out));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.text()).toContain('No tracks found');
   });
 
-  it('respects --format csv option', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '--tracks',
-      '--format',
-      'csv',
-      '-q',
-    ]);
-
-    expect(result.exitCode).toBe(0);
-    // CSV should have header row
-    const lines = result.stdout.trim().split('\n');
+  it('respects --format csv (header row + data rows)', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'csv' }, out));
+    expect(process.exitCode).toBe(0);
+    const lines = stdout.text().trim().split('\n');
     expect(lines.length).toBeGreaterThan(1);
-    // Check header contains expected fields
     expect(lines[0]).toContain('Title');
     expect(lines[0]).toContain('Artist');
     expect(lines[0]).toContain('Album');
   });
 
-  it('respects --fields option', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const { json, exitCode } = await runCliJson<Array<Record<string, unknown>>>([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '--tracks',
-      '--format',
-      'json',
-      '--fields',
-      'title,artist',
-      '-q',
-    ]);
+  it('respects --fields, returning only the requested keys', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () =>
+      runCollectionMusic({ tracks: true, format: 'json', fields: 'title,artist' }, out)
+    );
+    expect(process.exitCode).toBe(0);
+    const tracks = stdout.json<Array<Record<string, unknown>>>();
+    expect(tracks.length).toBeGreaterThan(0);
+    expect(tracks[0]).toHaveProperty('title');
+    expect(tracks[0]).toHaveProperty('artist');
+    expect(tracks[0]).not.toHaveProperty('album');
+  });
 
-    expect(exitCode).toBe(0);
-    expect(json).toBeArray();
-    expect(json!.length).toBeGreaterThan(0);
+  // -------------------------------------------------------------------------
+  // Coverage gaps from the audit (newly added)
+  // -------------------------------------------------------------------------
 
-    // Should only have the requested fields
-    const firstTrack = json![0]!;
-    expect(firstTrack).toHaveProperty('title');
-    expect(firstTrack).toHaveProperty('artist');
-    // Should NOT have album field
-    expect(firstTrack).not.toHaveProperty('album');
+  it('default mode is stats (no flag) and prints a stats heading', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ format: 'table' }, out));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.text()).toContain("Music in collection 'test'");
+  });
+
+  it('--albums aggregates by album and emits JSON in JSON mode', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ albums: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(0);
+    const albums = stdout.json<Array<{ album: string; tracks: number }>>();
+    expect(albums.length).toBeGreaterThan(0);
+    expect(albums[0]).toHaveProperty('album');
+    expect(typeof albums[0]!.tracks).toBe('number');
+  });
+
+  it('--artists aggregates by artist and emits JSON in JSON mode', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionMusic({ artists: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(0);
+    const artists = stdout.json<Array<{ artist: string; albums: number; tracks: number }>>();
+    expect(artists.length).toBeGreaterThan(0);
+    expect(artists[0]).toHaveProperty('artist');
+    expect(typeof artists[0]!.tracks).toBe('number');
+  });
+
+  it('rejects --fields when not in --tracks mode', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () =>
+      runCollectionMusic({ albums: true, fields: 'title', format: 'json' }, out)
+    );
+    expect(process.exitCode).toBe(1);
+    expect(stdout.json<{ error: boolean; message: string }>()).toEqual({
+      error: true,
+      message: '--fields can only be used with --tracks',
+    });
+  });
+
+  it('rejects an invalid field name', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () =>
+      runCollectionMusic({ tracks: true, fields: 'title,bogus', format: 'json' }, out)
+    );
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message.toLowerCase()).toContain('bogus');
   });
 });
 
 // =============================================================================
-// Tests: collection video
+// collection music — error paths (resolver, missing path)
 // =============================================================================
 
-describe('collection video integration', () => {
-  let configPath: string;
-  let emptyDir: string;
-  let videoFixturesExist: boolean;
+describe('runCollectionMusic error paths', () => {
+  let originalExitCode: typeof process.exitCode;
 
-  beforeAll(async () => {
-    // Check if video fixtures exist
-    videoFixturesExist = await pathExists(VIDEO_FIXTURES_PATH);
-    // Also check for at least one video file
-    if (videoFixturesExist) {
-      const compatibleVideo = join(VIDEO_FIXTURES_PATH, 'compatible-h264.mp4');
-      videoFixturesExist = await pathExists(compatibleVideo);
-    }
+  beforeEach(() => {
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
   });
 
+  afterEach(() => {
+    process.exitCode = originalExitCode;
+  });
+
+  it('reports an error when the collection path does not exist', async () => {
+    const ctx = makeContext(musicConfig('/this/path/does/not/exist/ever'));
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message).toContain('does not exist');
+    expect(err.message).toContain('/this/path/does/not/exist/ever');
+  });
+
+  it('reports an error for an unknown collection name', async () => {
+    const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () =>
+      runCollectionMusic({ collection: 'nonexistent', tracks: true, format: 'json' }, out)
+    );
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message.toLowerCase()).toContain('nonexistent');
+  });
+
+  it('reports an error when no default music collection is set', async () => {
+    const ctx = makeContext({ music: { mylib: { path: AUDIO_FIXTURES_PATH } } });
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message.toLowerCase()).toMatch(/default|specify|collection/);
+  });
+
+  it('reports an error when no music collections are configured', async () => {
+    const ctx = makeContext({});
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message.toLowerCase()).toMatch(/no.*collection|configured|add/);
+  });
+});
+
+// =============================================================================
+// collection video
+// =============================================================================
+
+// Resolve at module load so it.skipIf evaluates synchronously at registration.
+const videoFixturesExist =
+  existsSync(VIDEO_FIXTURES_PATH) && existsSync(join(VIDEO_FIXTURES_PATH, 'compatible-h264.mp4'));
+
+describe('runCollectionVideo', () => {
+  let emptyDir: string;
+  let originalExitCode: typeof process.exitCode;
+
   beforeEach(async () => {
-    // Create an empty directory for empty tests
-    emptyDir = join(tmpdir(), `podkit-empty-${Date.now()}`);
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    emptyDir = join(tmpdir(), `podkit-empty-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     await mkdir(emptyDir, { recursive: true });
   });
 
   afterEach(async () => {
-    if (configPath) {
-      await cleanupConfig(configPath);
-    }
-    if (emptyDir) {
-      await rm(emptyDir, { recursive: true, force: true });
+    process.exitCode = originalExitCode;
+    await rm(emptyDir, { recursive: true, force: true });
+  });
+
+  it.skipIf(!videoFixturesExist)('scans for video files and prints a Title column', async () => {
+    const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'table' }, out));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.text()).toContain('Title');
+  });
+
+  it.skipIf(!videoFixturesExist)('returns video metadata in JSON', async () => {
+    const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(0);
+    const videos =
+      stdout.json<Array<{ title: string; duration: number; durationFormatted: string }>>();
+    expect(videos.length).toBeGreaterThan(0);
+    for (const v of videos) {
+      expect(v).toHaveProperty('title');
+      expect(typeof v.duration).toBe('number');
+      expect(v.durationFormatted).toMatch(/^\d+:\d{2}$/);
     }
   });
 
-  it('scans directory for video files', async () => {
-    if (!videoFixturesExist) {
-      console.log('Skipping: video fixtures not available');
-      return;
-    }
-
-    configPath = await createVideoConfig(VIDEO_FIXTURES_PATH);
-    const result = await runCli(['--config', configPath, 'collection', 'video', '--tracks', '-q']);
-
-    expect(result.exitCode).toBe(0);
-    // Should contain video data (table format by default)
-    expect(result.stdout).toContain('Title');
-    // Should find at least one of our test videos
-    expect(
-      result.stdout.includes('compatible') ||
-        result.stdout.includes('movie') ||
-        result.stdout.includes('tvshow') ||
-        result.stdout.includes('Video')
-    ).toBe(true);
+  it('handles an empty directory by reporting "No tracks found"', async () => {
+    const ctx = makeContext(videoConfig(emptyDir));
+    const { out, stdout } = makeOut();
+    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'table' }, out));
+    expect(process.exitCode).toBe(0);
+    expect(stdout.text()).toContain('No tracks found');
   });
 
-  it('returns video metadata', async () => {
-    if (!videoFixturesExist) {
-      console.log('Skipping: video fixtures not available');
-      return;
-    }
-
-    configPath = await createVideoConfig(VIDEO_FIXTURES_PATH);
-    const { json, exitCode } = await runCliJson<
-      Array<{
-        title: string;
-        duration: number;
-        durationFormatted: string;
-        filePath?: string;
-        format?: string;
-      }>
-    >(['--config', configPath, 'collection', 'video', '--tracks', '--format', 'json', '-q']);
-
-    expect(exitCode).toBe(0);
-    expect(json).toBeArray();
-    expect(json!.length).toBeGreaterThan(0);
-
-    // Check that videos have expected fields
-    for (const video of json!) {
-      expect(video).toHaveProperty('title');
-      expect(video).toHaveProperty('duration');
-      expect(video).toHaveProperty('durationFormatted');
-      // Duration should be a number (milliseconds after conversion)
-      expect(typeof video.duration).toBe('number');
-    }
+  it('reports an error when no video collections are configured', async () => {
+    const ctx = makeContext({});
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'json' }, out));
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<{ error: boolean; message: string }>();
+    expect(err.error).toBe(true);
+    expect(err.message.toLowerCase()).toMatch(/no.*collection|configured|add/);
   });
 
-  it('handles empty directory', async () => {
-    configPath = await createVideoConfig(emptyDir);
-    const result = await runCli(['--config', configPath, 'collection', 'video', '--tracks', '-q']);
-
-    expect(result.exitCode).toBe(0);
-    expect(result.stdout).toContain('No tracks found');
-  });
-
-  it('JSON output format is correct', async () => {
-    if (!videoFixturesExist) {
-      console.log('Skipping: video fixtures not available');
-      return;
-    }
-
-    configPath = await createVideoConfig(VIDEO_FIXTURES_PATH);
-    const { json, exitCode, parseError } = await runCliJson<unknown[]>([
-      '--config',
-      configPath,
-      'collection',
-      'video',
-      '--tracks',
-      '--format',
-      'json',
-      '-q',
-    ]);
-
-    expect(exitCode).toBe(0);
-    expect(parseError).toBeUndefined();
-    expect(json).toBeArray();
-    expect(json!.length).toBeGreaterThan(0);
-
-    // Verify it's valid JSON that can be re-serialized
-    const serialized = JSON.stringify(json);
-    expect(JSON.parse(serialized)).toEqual(json);
-  });
-});
-
-// =============================================================================
-// Tests: Error handling
-// =============================================================================
-
-describe('collection subcommands error handling', () => {
-  let configPath: string;
-
-  afterEach(async () => {
-    if (configPath) {
-      await cleanupConfig(configPath);
-    }
-  });
-
-  it('non-existent path returns error', async () => {
-    const nonExistentPath = '/this/path/does/not/exist/ever';
-    const tempDir = join(tmpdir(), `podkit-test-${Date.now()}`);
-    await mkdir(tempDir, { recursive: true });
-    configPath = join(tempDir, 'config.toml');
-    await writeFile(
-      configPath,
-      `[music.test]
-path = "${nonExistentPath}"
-
-[defaults]
-music = "test"
-`
+  it('rejects --fields when not in --tracks mode', async () => {
+    const ctx = makeContext(videoConfig(emptyDir));
+    const { out, stdout } = makeOut(true);
+    await runWithContext(ctx, () =>
+      runCollectionVideo({ albums: true, fields: 'title', format: 'json' }, out)
     );
-
-    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
-
-    expect(result.exitCode).toBe(1);
-    expect(
-      result.stderr.includes('does not exist') ||
-        result.stdout.includes('does not exist') ||
-        result.stderr.includes('Error') ||
-        result.stdout.includes('error')
-    ).toBe(true);
-  });
-
-  it('invalid collection name returns error', async () => {
-    configPath = await createMusicConfig(AUDIO_FIXTURES_PATH);
-    const result = await runCli([
-      '--config',
-      configPath,
-      'collection',
-      'music',
-      '-c',
-      'nonexistent-collection',
-      '-q',
-    ]);
-
-    expect(result.exitCode).toBe(1);
-    // Should mention collection not found
-    expect(
-      result.stderr.includes('not found') ||
-        result.stdout.includes('not found') ||
-        result.stderr.includes('Error') ||
-        result.stdout.includes('error')
-    ).toBe(true);
-  });
-
-  it('no default collection returns helpful error', async () => {
-    // Create config without defaults
-    const tempDir = join(tmpdir(), `podkit-test-${Date.now()}`);
-    await mkdir(tempDir, { recursive: true });
-    configPath = join(tempDir, 'config.toml');
-    await writeFile(
-      configPath,
-      `version = 1
-
-[music.mylib]
-path = "${AUDIO_FIXTURES_PATH}"
-# No defaults section
-`
-    );
-
-    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
-
-    expect(result.exitCode).toBe(1);
-    // Should mention no default or ask to specify collection
-    expect(
-      result.stderr.includes('default') ||
-        result.stdout.includes('default') ||
-        result.stderr.includes('specify') ||
-        result.stdout.includes('specify') ||
-        result.stderr.includes('collection') ||
-        result.stdout.includes('collection')
-    ).toBe(true);
-  });
-
-  it('no music collections configured returns helpful error', async () => {
-    configPath = await createEmptyConfig();
-    const result = await runCli(['--config', configPath, 'collection', 'music', '-q']);
-
-    expect(result.exitCode).toBe(1);
-    // Should mention no collections configured
-    expect(
-      result.stderr.toLowerCase().includes('collection') ||
-        result.stdout.toLowerCase().includes('collection') ||
-        result.stderr.toLowerCase().includes('configured') ||
-        result.stdout.toLowerCase().includes('configured') ||
-        result.stderr.toLowerCase().includes('add') ||
-        result.stdout.toLowerCase().includes('add')
-    ).toBe(true);
-  });
-
-  it('no video collections configured returns helpful error', async () => {
-    configPath = await createEmptyConfig();
-    const result = await runCli(['--config', configPath, 'collection', 'video', '-q']);
-
-    expect(result.exitCode).toBe(1);
-    // Should mention no collections configured
-    expect(
-      result.stderr.toLowerCase().includes('collection') ||
-        result.stdout.toLowerCase().includes('collection') ||
-        result.stderr.toLowerCase().includes('configured') ||
-        result.stdout.toLowerCase().includes('configured') ||
-        result.stderr.toLowerCase().includes('add') ||
-        result.stdout.toLowerCase().includes('add')
-    ).toBe(true);
+    expect(process.exitCode).toBe(1);
+    expect(stdout.json<{ error: boolean; message: string }>()).toEqual({
+      error: true,
+      message: '--fields can only be used with --tracks',
+    });
   });
 });
