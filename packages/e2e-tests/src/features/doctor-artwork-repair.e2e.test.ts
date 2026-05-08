@@ -153,7 +153,9 @@ async function syncTracksToIpod(
 }
 
 async function runDoctor(devicePath: string) {
-  return runCliJson<DoctorOutput>(['doctor', '--device', devicePath, '--json']);
+  // E2E tests skip system-scope checks; see ../commands/doctor.e2e.test.ts
+  // for the full rationale.
+  return runCliJson<DoctorOutput>(['doctor', '--device', devicePath, '--no-system', '--json']);
 }
 
 async function runDoctorRepair(

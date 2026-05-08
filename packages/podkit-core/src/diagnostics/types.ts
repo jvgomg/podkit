@@ -9,10 +9,38 @@
 
 import type { IpodDatabase } from '../ipod/database.js';
 import type { CollectionAdapter } from '../adapters/interface.js';
+import type { IpodModel } from '@podkit/devices-ipod';
 
 // ── Device type ──────────────────────────────────────────────────────────────
 
 export type DiagnosticDeviceType = 'ipod' | 'mass-storage';
+
+// ── Live identity ────────────────────────────────────────────────────────────
+
+/**
+ * Live device identity resolved by the host platform layer.
+ *
+ * Populated by the CLI/diagnostic caller from whatever live transports are
+ * available (USB descriptor, SCSI inquiry, firmware probe). Checks should
+ * treat any absent field as "skip the axis that depends on it" rather than
+ * failing — absent live data means the host couldn't read it, not that the
+ * device is misconfigured.
+ */
+export interface LiveDeviceIdentity {
+  /**
+   * Live FireWireGUID. For classic iPods this is the USB descriptor's
+   * serial number. May also come from a SCSI inquiry on hosts where USB
+   * descriptors aren't reachable. Normalised to 16-char uppercase hex by
+   * the producer.
+   */
+  firewireGuid?: string;
+  /**
+   * Live model identification, typically derived from the USB product ID.
+   * Generation-only on classic iPods (USB descriptors don't reveal capacity
+   * or color).
+   */
+  model?: IpodModel;
+}
 
 // ── Check types ──────────────────────────────────────────────────────────────
 
@@ -25,6 +53,12 @@ export interface DiagnosticContext {
   db?: IpodDatabase;
   /** Content directory paths for mass-storage devices */
   contentPaths?: import('@podkit/devices-mass-storage').ContentPaths;
+  /**
+   * Live device identity (FireWireGUID, USB-derived model). Undefined when
+   * the caller couldn't resolve live data — checks that depend on live
+   * data must skip rather than fail in that case.
+   */
+  liveIdentity?: LiveDeviceIdentity;
 }
 
 export interface CheckResult {

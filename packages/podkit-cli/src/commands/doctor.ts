@@ -88,6 +88,12 @@ interface DoctorOptions {
   dryRun?: boolean;
   collection?: string;
   format?: 'csv';
+  /**
+   * commander's `--no-system` flag sets `system: false`. Default is `true`.
+   * Skips system-scope checks (FFmpeg encoders, libusb availability, etc.)
+   * when the user wants device-only diagnostics.
+   */
+  system?: boolean;
 }
 
 // ── Suggested actions ────────────────────────────────────────────────────────
@@ -180,6 +186,7 @@ export const doctorCommand = new Command('doctor')
   .option('-c, --collection <name>', 'music collection to use as artwork source')
   .option('--dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
+  .option('--no-system', 'skip system-scope checks (FFmpeg, libusb, udev rule, etc.)')
   .action(async (options: DoctorOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
@@ -310,6 +317,10 @@ async function runDoctorDiagnostics(
 
   const { config, globalOpts } = getContext();
   const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
+  const includeSystem = options.system !== false;
+  const scopes: ReadonlyArray<'system' | 'device'> = includeSystem
+    ? ['system', 'device']
+    : ['device'];
 
   // Mass-storage devices: resolve content paths and run applicable checks
   if (isMassStorage) {
@@ -322,6 +333,7 @@ async function runDoctorDiagnostics(
       deviceType: 'mass-storage',
       deviceModel: label,
       contentPaths,
+      scopes,
     });
 
     const checksOutput: DoctorCheckOutput[] = report.checks.map((c) => ({
@@ -456,11 +468,24 @@ async function runDoctorDiagnostics(
 
     if (opened) {
       try {
+        // Resolve a live FireWireGUID so device-scope checks (sysinfo
+        // consistency) can compare against the connected device. Falls back
+        // to undefined when the platform can't read USB descriptors —
+        // checks then skip the GUID axis rather than failing.
+        const usbDevice = await core.resolveUsbDeviceFromPath(devicePath).catch(() => null);
+
+        const liveIdentity = {
+          firewireGuid: usbDevice?.serialNumber ?? undefined,
+          model: readinessResult?.usbModel,
+        };
+
         report = await core.runDiagnostics({
           mountPoint: devicePath,
           deviceType: 'ipod',
           db: opened.ipod,
           deviceModel: opened.ipod?.getInfo().device.modelName ?? undefined,
+          liveIdentity,
+          scopes,
         });
       } catch {
         // Diagnostics failed — we'll show readiness results and skip DB checks

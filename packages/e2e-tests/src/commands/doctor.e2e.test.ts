@@ -128,7 +128,19 @@ async function syncTracksToIpod(
 }
 
 async function runDoctor(devicePath: string, extraArgs: string[] = []) {
-  return runCliJson<DoctorOutput>(['doctor', '--device', devicePath, '--json', ...extraArgs]);
+  // E2E doctor tests intentionally skip system-scope checks (FFmpeg encoders,
+  // libusb availability, udev rule). Those depend on the host environment and
+  // are exercised by their own unit tests with injected probes; asserting on
+  // them here couples the test result to whatever the dev box happens to have
+  // installed. See agents/testing.md for the system-check testing strategy.
+  return runCliJson<DoctorOutput>([
+    'doctor',
+    '--device',
+    devicePath,
+    '--no-system',
+    '--json',
+    ...extraArgs,
+  ]);
 }
 
 async function corruptIthmb(ipodPath: string): Promise<void> {

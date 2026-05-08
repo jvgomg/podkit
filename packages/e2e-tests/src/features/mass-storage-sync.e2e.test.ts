@@ -1053,13 +1053,16 @@ device = "echomini"
       await writeFile(orphanFile, Buffer.alloc(2048, 0xaa));
       expect(existsSync(orphanFile)).toBe(true);
 
-      // Step 3: Run podkit doctor — should detect the orphan
+      // Step 3: Run podkit doctor — should detect the orphan.
+      // --no-system: keep the test focused on device-scope behaviour; see
+      // packages/e2e-tests/src/commands/doctor.e2e.test.ts for rationale.
       const { result: doctorResult1, json: doctorJson1 } = await runCliJson<DoctorOutput>([
         '--config',
         configPath,
         'doctor',
         '--device',
         'echomini',
+        '--no-system',
         '--json',
       ]);
 
@@ -1114,6 +1117,7 @@ device = "echomini"
         'doctor',
         '--device',
         'echomini',
+        '--no-system',
         '--json',
       ]);
 

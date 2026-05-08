@@ -1,7 +1,8 @@
 /**
- * Unit tests for SysInfoExtended consistency diagnostic check
+ * Unit tests for SysInfoExtended consistency diagnostic check.
  *
- * Uses injected FS + USB helpers — no real filesystem or hardware required.
+ * Uses an injected filesystem reader and a synthetic `liveIdentity` on
+ * `DiagnosticContext` — no real filesystem, no hardware required.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -9,56 +10,70 @@ import {
   checkSysinfoConsistency,
   sysinfoConsistencyCheck,
   type SysinfFsReader,
-  type UsbResolver,
 } from './sysinfo-consistency.js';
-import type { DiagnosticContext } from '../types.js';
+import type { DiagnosticContext, LiveDeviceIdentity } from '../types.js';
+import type { IpodModel } from '@podkit/devices-ipod';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const MOUNT = '/Volumes/IPOD';
 const SYSINFO_PATH = `${MOUNT}/iPod_Control/Device/SysInfoExtended`;
 
-/** Build a valid minimal SysInfoExtended XML payload with the given GUID. */
-function makeSysinfoXml(guid: string): string {
+/**
+ * A SysInfoExtended XML with the given GUID and a model number that
+ * resolves to iPod nano 2nd gen (`MA477`). The serial-number suffix
+ * `RXX` resolves to nano 2nd gen too — so the on-disk model axis will
+ * always pick up "nano 2nd generation" unless the caller overrides.
+ */
+function makeSysinfoXml(
+  guid: string,
+  opts: { modelNumber?: string; serial?: string } = {}
+): string {
+  const modelLine = opts.modelNumber
+    ? `<key>ModelNumStr</key><string>${opts.modelNumber}</string>\n`
+    : '';
+  const serial = opts.serial ?? 'XY0123456RXX';
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN"
- "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-<key>FireWireGUID</key><string>${guid}</string>
-<key>SerialNumber</key><string>XY0123456789</string>
+${modelLine}<key>FireWireGUID</key><string>${guid}</string>
+<key>SerialNumber</key><string>${serial}</string>
 <key>FamilyID</key><integer>9</integer>
 </dict>
 </plist>`;
 }
 
-/** Build a minimal DiagnosticContext for testing. */
-function makeCtx(): DiagnosticContext {
-  return { mountPoint: MOUNT, deviceType: 'ipod' };
+function makeCtx(liveIdentity?: LiveDeviceIdentity): DiagnosticContext {
+  return { mountPoint: MOUNT, deviceType: 'ipod', liveIdentity };
 }
 
-/** FS reader that reports the file absent. */
 const absentFs: SysinfFsReader = {
   existsSync: () => false,
   readFileSync: () => {
-    throw new Error('should not be called');
+    throw new Error('readFileSync should not be called when file is absent');
   },
 };
 
-/** Build an FS reader that returns the given XML. */
 function presentFs(xml: string): SysinfFsReader {
   return {
     existsSync: (p) => p === SYSINFO_PATH,
-    readFileSync: (_p, _enc) => xml,
+    readFileSync: () => xml,
   };
 }
 
-/** Build a USB resolver returning the given serial (or null if omitted). */
-function usbReturns(serial: string | undefined): UsbResolver {
-  return async () => ({ serialNumber: serial });
-}
+const NANO_2G_MODEL: IpodModel = {
+  displayName: 'iPod nano 2nd generation',
+  generationId: 'nano_2g',
+  checksumType: 'none',
+  source: 'usb',
+};
 
-const usbFails: UsbResolver = async () => null;
+const NANO_3G_MODEL: IpodModel = {
+  displayName: 'iPod nano 3rd generation',
+  generationId: 'nano_3g',
+  checksumType: 'none',
+  source: 'usb',
+};
 
 // ── Check metadata ────────────────────────────────────────────────────────────
 
@@ -68,7 +83,6 @@ describe('sysinfoConsistencyCheck metadata', () => {
     expect(sysinfoConsistencyCheck.name).toBe('SysInfoExtended consistency with device');
     expect(sysinfoConsistencyCheck.scope).toBe('device');
     expect(sysinfoConsistencyCheck.applicableTo).toEqual(['ipod']);
-    // Repair is wired from sysinfo-extended check
     expect(sysinfoConsistencyCheck.repair).toBeDefined();
   });
 });
@@ -76,82 +90,30 @@ describe('sysinfoConsistencyCheck metadata', () => {
 // ── File absent ───────────────────────────────────────────────────────────────
 
 describe('checkSysinfoConsistency — file absent', () => {
-  it('returns fail + repairable when SysInfoExtended does not exist', async () => {
-    const result = await checkSysinfoConsistency(makeCtx(), absentFs, usbFails);
+  it('returns skip when SysInfoExtended does not exist (absence is not failure)', async () => {
+    const result = await checkSysinfoConsistency(makeCtx(), absentFs);
 
-    expect(result.status).toBe('fail');
-    expect(result.repairable).toBe(true);
+    expect(result.status).toBe('skip');
+    expect(result.repairable).toBe(false);
     expect(result.summary).toContain('not present');
   });
 });
 
-// ── Matching GUIDs ────────────────────────────────────────────────────────────
+// ── Malformed file (present but corrupt) ──────────────────────────────────────
 
-describe('checkSysinfoConsistency — matching GUIDs', () => {
-  it('returns pass when on-disk GUID matches live USB serial', async () => {
-    const guid = '000A27001DCECFB5';
-    const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(makeSysinfoXml(guid)),
-      usbReturns(guid)
-    );
-
-    expect(result.status).toBe('pass');
-    expect(result.repairable).toBe(false);
-    expect(result.summary).toContain(guid);
-  });
-
-  it('normalises to uppercase for comparison', async () => {
-    const guid = '000a27001dcecfb5';
-    const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(makeSysinfoXml(guid)),
-      usbReturns(guid.toUpperCase())
-    );
-
-    expect(result.status).toBe('pass');
-  });
-});
-
-// ── Mismatched GUIDs ──────────────────────────────────────────────────────────
-
-describe('checkSysinfoConsistency — mismatched GUIDs', () => {
-  it('returns fail + repairable when GUIDs differ', async () => {
-    const onDisk = '000A27001DCECFB5';
-    const live = 'DEADBEEF00001234';
-
-    const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(makeSysinfoXml(onDisk)),
-      usbReturns(live)
-    );
-
-    expect(result.status).toBe('fail');
-    expect(result.repairable).toBe(true);
-    expect(result.summary).toContain(onDisk);
-    expect(result.summary).toContain(live);
-    expect((result.details as Record<string, unknown>)['onDiskGuid']).toBe(onDisk);
-    expect((result.details as Record<string, unknown>)['liveGuid']).toBe(live);
-  });
-});
-
-// ── Malformed XML ─────────────────────────────────────────────────────────────
-
-describe('checkSysinfoConsistency — malformed XML', () => {
+describe('checkSysinfoConsistency — file present but malformed', () => {
   it('returns fail + repairable when XML is invalid', async () => {
-    const badXml = 'this is not xml at all';
     const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(badXml),
-      usbReturns('000A27001DCECFB5')
+      makeCtx({ firewireGuid: '000A27001DCECFB5' }),
+      presentFs('this is not xml at all')
     );
 
     expect(result.status).toBe('fail');
     expect(result.repairable).toBe(true);
-    expect(result.summary).toContain('malformed');
+    expect(result.summary).toContain('failed to parse');
   });
 
-  it('returns fail + repairable when FireWireGUID key is missing', async () => {
+  it('returns fail + repairable when required identity fields are missing', async () => {
     const noGuidXml = `<?xml version="1.0"?>
 <plist version="1.0">
 <dict>
@@ -159,44 +121,152 @@ describe('checkSysinfoConsistency — malformed XML', () => {
 <key>FamilyID</key><integer>9</integer>
 </dict>
 </plist>`;
-
     const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(noGuidXml),
-      usbReturns('000A27001DCECFB5')
+      makeCtx({ firewireGuid: '000A27001DCECFB5' }),
+      presentFs(noGuidXml)
     );
 
     expect(result.status).toBe('fail');
     expect(result.repairable).toBe(true);
-    expect(result.summary).toContain('malformed');
+    expect(result.summary).toContain('missing required identity fields');
   });
 });
 
-// ── USB unavailable (skip) ────────────────────────────────────────────────────
+// ── GUID axis ─────────────────────────────────────────────────────────────────
 
-describe('checkSysinfoConsistency — USB unavailable', () => {
-  it('skips rather than failing when USB resolution returns null', async () => {
-    const guid = '000A27001DCECFB5';
+describe('checkSysinfoConsistency — GUID axis', () => {
+  const guid = '000A27001DCECFB5';
+
+  it('passes the GUID axis when on-disk and live match (case-insensitive)', async () => {
     const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(makeSysinfoXml(guid)),
-      usbFails
+      makeCtx({ firewireGuid: guid.toLowerCase() }),
+      presentFs(makeSysinfoXml(guid))
     );
 
-    expect(result.status).toBe('skip');
-    expect(result.repairable).toBe(false);
-    expect(result.summary).toContain(guid);
+    expect(result.status).toBe('pass');
+    expect(result.summary).toContain('firewireGuid');
+    const axes = (result.details?.axes as Array<{ name: string; status: string }>) ?? [];
+    const guidAxis = axes.find((a) => a.name === 'firewireGuid');
+    expect(guidAxis?.status).toBe('pass');
   });
 
-  it('skips when USB resolver returns a record with no serialNumber', async () => {
-    const guid = '000A27001DCECFB5';
+  it('fails (repairable) when GUIDs differ', async () => {
+    const live = 'DEADBEEF00001234';
     const result = await checkSysinfoConsistency(
-      makeCtx(),
-      presentFs(makeSysinfoXml(guid)),
-      usbReturns(undefined)
+      makeCtx({ firewireGuid: live }),
+      presentFs(makeSysinfoXml(guid))
+    );
+
+    expect(result.status).toBe('fail');
+    expect(result.repairable).toBe(true);
+    expect(result.summary).toContain('FireWireGUID mismatch');
+    expect(result.summary).toContain(guid);
+    expect(result.summary).toContain(live);
+  });
+
+  it('skips the GUID axis when no live FireWireGUID is provided', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({
+        /* no firewireGuid */
+      }),
+      presentFs(makeSysinfoXml(guid))
+    );
+
+    // No live data on either axis → overall skip.
+    expect(result.status).toBe('skip');
+    expect(result.summary).toContain('no live data');
+  });
+});
+
+// ── Model axis ────────────────────────────────────────────────────────────────
+
+describe('checkSysinfoConsistency — model axis', () => {
+  const guid = '000A27001DCECFB5';
+
+  it('passes when on-disk and live model resolve to the same generation', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: guid, model: NANO_2G_MODEL }),
+      presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
+    );
+
+    expect(result.status).toBe('pass');
+    const axes = (result.details?.axes as Array<{ name: string; status: string }>) ?? [];
+    expect(axes.find((a) => a.name === 'model')?.status).toBe('pass');
+  });
+
+  it('fails (repairable) when on-disk and live model differ in generation', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: guid, model: NANO_3G_MODEL }),
+      presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
+    );
+
+    expect(result.status).toBe('fail');
+    expect(result.repairable).toBe(true);
+    expect(result.summary).toContain('model mismatch');
+  });
+
+  it('skips the model axis when no live model is provided', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: guid }),
+      presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
+    );
+
+    // GUID axis passes — overall pass — but model axis is skipped.
+    expect(result.status).toBe('pass');
+    const axes = (result.details?.axes as Array<{ name: string; status: string }>) ?? [];
+    const modelAxis = axes.find((a) => a.name === 'model');
+    expect(modelAxis?.status).toBe('skip');
+  });
+
+  it('skips the model axis when the on-disk file resolves to no known model', async () => {
+    const xml = makeSysinfoXml(guid, { modelNumber: 'XX999', serial: 'XXX0000000X' });
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: guid, model: NANO_2G_MODEL }),
+      presentFs(xml)
+    );
+
+    expect(result.status).toBe('pass');
+    const axes = (result.details?.axes as Array<{ name: string; status: string }>) ?? [];
+    expect(axes.find((a) => a.name === 'model')?.status).toBe('skip');
+  });
+});
+
+// ── Mixed axis outcomes ───────────────────────────────────────────────────────
+
+describe('checkSysinfoConsistency — mixed axes', () => {
+  const guid = '000A27001DCECFB5';
+
+  it('reports both failures when GUID and model both disagree', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: 'DEADBEEF00001234', model: NANO_3G_MODEL }),
+      presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
+    );
+
+    expect(result.status).toBe('fail');
+    expect(result.summary).toContain('FireWireGUID mismatch');
+    expect(result.summary).toContain('model mismatch');
+  });
+
+  it('fails overall if any single axis fails (model mismatch with GUID match)', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx({ firewireGuid: guid, model: NANO_3G_MODEL }),
+      presentFs(makeSysinfoXml(guid, { modelNumber: 'MA477' }))
+    );
+
+    expect(result.status).toBe('fail');
+  });
+});
+
+// ── No live data at all ───────────────────────────────────────────────────────
+
+describe('checkSysinfoConsistency — no live identity', () => {
+  it('returns skip when ctx.liveIdentity is undefined entirely', async () => {
+    const result = await checkSysinfoConsistency(
+      makeCtx(undefined),
+      presentFs(makeSysinfoXml('000A27001DCECFB5'))
     );
 
     expect(result.status).toBe('skip');
-    expect(result.repairable).toBe(false);
+    expect(result.summary).toContain('no live data');
   });
 });

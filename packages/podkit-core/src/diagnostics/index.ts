@@ -34,6 +34,7 @@ import type {
 export type {
   DiagnosticDeviceType,
   DiagnosticContext,
+  LiveDeviceIdentity,
   CheckResult,
   RepairRequirement,
   RepairContext,
@@ -89,6 +90,18 @@ export interface RunDiagnosticsInput {
   deviceModel?: string;
   /** Content paths for mass-storage devices */
   contentPaths?: import('@podkit/devices-mass-storage').ContentPaths;
+  /**
+   * Live device identity (FireWireGUID, USB-derived model). Forwarded to
+   * checks that compare on-disk state against the connected device.
+   */
+  liveIdentity?: import('./types.js').LiveDeviceIdentity;
+  /**
+   * Restrict to checks of these scopes. Default: both `'system'` and
+   * `'device'`. Pass `['device']` to skip host-environment checks (FFmpeg,
+   * libusb availability, etc.) — useful for tests and any caller that
+   * wants device-only diagnostics.
+   */
+  scopes?: ReadonlyArray<'system' | 'device'>;
 }
 
 /**
@@ -117,16 +130,25 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
   }
 
   try {
-    const ctx: DiagnosticContext = { mountPoint, deviceType, db, contentPaths: input.contentPaths };
+    const ctx: DiagnosticContext = {
+      mountPoint,
+      deviceType,
+      db,
+      contentPaths: input.contentPaths,
+      liveIdentity: input.liveIdentity,
+    };
 
     // Resolve device model
     const deviceModel =
       input.deviceModel ?? (db ? (db.getInfo().device.modelName ?? 'Unknown') : 'Unknown');
 
     // Filter checks by device type (default applicableTo is ['ipod'])
+    // and by scope (default: include both system and device).
+    const allowedScopes: ReadonlyArray<'system' | 'device'> = input.scopes ?? ['system', 'device'];
     const applicable = CHECKS.filter((c) => {
       const types = c.applicableTo ?? ['ipod'];
-      return types.includes(deviceType);
+      const scope = c.scope ?? 'device';
+      return types.includes(deviceType) && allowedScopes.includes(scope);
     });
 
     const checks: DiagnosticReport['checks'] = [];

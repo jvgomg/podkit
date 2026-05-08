@@ -652,7 +652,16 @@ describe('podkit doctor with readiness', () => {
   it('shows readiness checks before database checks on healthy device', async () => {
     await withTarget(async (target) => {
       await writeFile(configPath, 'version = 1\n');
-      const result = await runCli(['--config', configPath, '--device', target.path, 'doctor']);
+      // --no-system: focus on device-scope behaviour; system checks (FFmpeg,
+      // libusb) are environment-coupled and have their own unit coverage.
+      const result = await runCli([
+        '--config',
+        configPath,
+        '--device',
+        target.path,
+        'doctor',
+        '--no-system',
+      ]);
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Device Readiness');
       expect(result.stdout).toContain('Database Health');
@@ -674,7 +683,7 @@ describe('podkit doctor with readiness', () => {
           stages: Array<{ stage: string; status: string; summary: string }>;
         };
         checks: Array<{ id: string; status: string }>;
-      }>(['--config', configPath, '--json', '--device', target.path, 'doctor']);
+      }>(['--config', configPath, '--json', '--device', target.path, 'doctor', '--no-system']);
       expect(result.exitCode).toBe(0);
       expect(json).not.toBeNull();
       expect(json!.healthy).toBe(true);
@@ -805,7 +814,7 @@ describe('podkit doctor with readiness', () => {
           stages: Array<{ stage: string; status: string; summary: string }>;
         };
         checks: Array<{ id: string; status: string }>;
-      }>(['--config', configPath, '--json', '--device', target.path, 'doctor']);
+      }>(['--config', configPath, '--json', '--device', target.path, 'doctor', '--no-system']);
 
       expect(json).not.toBeNull();
       expect(json!.readiness).toBeDefined();
