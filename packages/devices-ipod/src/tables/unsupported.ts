@@ -1,8 +1,13 @@
 /**
  * USB product IDs of iPod/iOS devices that podkit cannot sync, with the reason.
  *
- * Authority source: libgpod 0.8.3 ipod_info_table (itdb_device.c) cross-referenced
- * with linux-usb.org usb.ids for Apple vendor 0x05ac.
+ * Authority sources (in descending priority):
+ *   1. linux-usb.org usb.ids (via usb-ids.gowdy.us mirror), Apple vendor 0x05ac.
+ *      Canonical USB ID registry — used as ground truth for per-PID attribution.
+ *   2. usbmuxd src/usb.h — confirms iOS PID range 0x1290–0x12af (PID_RANGE_LOW /
+ *      PID_RANGE_MAX), used by libimobiledevice project for iOS device detection.
+ *   3. libgpod 0.8.3 ipod_info_table (itdb_device.c) — cross-reference for
+ *      iPod-specific PIDs and checksum requirements.
  *
  * Unsupported categories:
  * - Shuffle 3G/4G: libgpod has table entries but requires iTunes authentication.
@@ -10,12 +15,15 @@
  * - Nano 7G: NOT in libgpod's ipod_info_table at all.
  * - iPod touch (all generations): Apple's proprietary sync protocol; no disk mode.
  * - iPhone / iPad: Apple's proprietary sync protocol; no disk mode.
+ * - Apple TV, Apple Watch, HomePod: non-iPod Apple USB devices; out of scope.
  *
- * Note on PID sharing: some PIDs in the 0x129x / 0x12ax range appear on more
- * than one Apple product line (e.g., 0x1292 maps to both iPhone 3G and iPod touch
- * 2G in different databases). In every case the sync constraint is identical —
- * Apple's proprietary protocol is used regardless — so the reason text is
- * "iOS device" to avoid confusion.
+ * PID sharing notes:
+ * - 0x1292: usb.ids lists "iPhone 3G" only; prior tables incorrectly listed this
+ *   as shared with iPod touch 2G (touch 2G = 0x1293).
+ * - 0x129a: usb.ids lists "iPad" (iPad 1G) only; prior tables incorrectly listed
+ *   this as shared with iPod touch 4G (touch 4G = 0x129e).
+ * - 0x12a8: shared across iPhone 5, 5c, 5s, 6, SE, 7, 8, X, XR per usb.ids.
+ *   Apple reused this PID across many iPhone generations; reason text is generic.
  *
  * Keys are bare hex without 0x prefix (matches IPOD_USB_IDS / UsbFingerprint format).
  *
@@ -31,19 +39,19 @@ const NANO_6G_REASON = 'iPod nano 6th gen uses an iTunesDB format incompatible w
 
 const NANO_7G_REASON = "iPod nano 7th gen is not in libgpod's device table; podkit cannot sync it.";
 
-const IOS_TOUCH_REASON = (gen: string) =>
+const itouch = (gen: string) =>
   `iPod touch (${gen}) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.`;
 
-const IOS_SHARED_REASON =
-  "iOS device (iPhone/iPad/iPod touch) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
+const iphone = (model: string) =>
+  `${model} uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.`;
 
-const IPHONE_REASON =
-  "iPhone uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
-
-const IPAD_REASON =
-  "iPad uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
+const ipad = (model: string) =>
+  `${model} uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.`;
 
 // ── Unsupported product ID table ──────────────────────────────────────────────
+//
+// Source for 0x129x / 0x12ax range: usb-ids.gowdy.us (linux-usb.org mirror),
+// Apple vendor 0x05ac, accessed 2026-05-06.
 
 export const UNSUPPORTED_IPOD_PRODUCT_IDS: Record<string, string> = {
   // ── iPod shuffle 3G / 4G ───────────────────────────────────────────────────
@@ -63,34 +71,47 @@ export const UNSUPPORTED_IPOD_PRODUCT_IDS: Record<string, string> = {
   // Apple's proprietary sync protocol; no disk mode on any touch generation.
   // libgpod has ipod_info_table entries for 1G–4G but they are unreachable
   // because the device never mounts as a mass-storage volume.
-  '1291': IOS_TOUCH_REASON('1st generation'), // touch 1G
-  '1293': IOS_TOUCH_REASON('3rd generation'), // touch 3G
-  '12a0': IOS_TOUCH_REASON('5th generation'), // touch 5G
-  '12ab': IOS_TOUCH_REASON('6th generation'), // touch 6G
-  '12a8': IOS_TOUCH_REASON('7th generation'), // touch 7G
-
-  // ── Shared PIDs (touch + iPhone / touch + iPad) ────────────────────────────
-  // These PIDs appear on more than one product line; reason is generic.
-  '1292': IOS_SHARED_REASON, // touch 2G / iPhone 3G
-  '129a': IOS_SHARED_REASON, // touch 4G / iPad 1G
-  '12a9': IOS_SHARED_REASON, // iPhone 5c / iPad mini 1G
+  //
+  // usb.ids source: 1291=iPod Touch 1.Gen, 1293=iPod Touch 2.Gen,
+  //   1296=iPod Touch 3.Gen (8GB), 1299=iPod Touch 3.Gen,
+  //   129e=iPod Touch 4.Gen, 12aa=iPod Touch 5.Gen [A1421]
+  '1291': itouch('1st generation'), // usb.ids: "iPod Touch 1.Gen"
+  '1293': itouch('2nd generation'), // usb.ids: "iPod Touch 2.Gen" (was "3rd gen" — corrected)
+  '1296': itouch('3rd generation (8 GB)'), // usb.ids: "iPod Touch 3.Gen (8GB)"
+  '1299': itouch('3rd generation'), // usb.ids: "iPod Touch 3.Gen"
+  '129e': itouch('4th generation'), // usb.ids: "iPod Touch 4.Gen"
+  '12aa': itouch('5th generation'), // usb.ids: "iPod Touch 5.Gen [A1421]" (was "iPhone 5s" — corrected)
 
   // ── iPhone ─────────────────────────────────────────────────────────────────
-  // Source: linux-usb.org usb.ids, Apple vendor 0x05ac
-  '1290': IPHONE_REASON, // iPhone (1st generation)
-  '1294': IPHONE_REASON, // iPhone 3GS
-  '1297': IPHONE_REASON, // iPhone 4
-  '129c': IPHONE_REASON, // iPhone 4 (CDMA / Verizon)
-  '12a2': IPHONE_REASON, // iPhone 4S / iPad 2 GSM (shared) — iPhone primary
-  '12a6': IPHONE_REASON, // iPhone 5
-  '12aa': IPHONE_REASON, // iPhone 5s
+  // Source: usb-ids.gowdy.us (linux-usb.org), Apple vendor 0x05ac
+  '1290': iphone('iPhone (1st generation)'), // usb.ids: "iPhone"
+  '1292': iphone('iPhone 3G'), // usb.ids: "iPhone 3G" (was listed as shared with touch 2G — corrected)
+  '1294': iphone('iPhone 3GS'), // usb.ids: "iPhone 3GS"
+  '1297': iphone('iPhone 4'), // usb.ids: "iPhone 4"
+  '129c': iphone('iPhone 4 (CDMA)'), // usb.ids: "iPhone 4(CDMA)"
+  '129d': iphone('iPhone 4 variant'), // usb.ids: "iPhone" (unspecified variant; likely OEM/regional)
+  '12a0': iphone('iPhone 4S'), // usb.ids: "iPhone 4S" (was "iPod touch 5G" — corrected)
+  '12a1': iphone('iPhone (variant)'), // usb.ids: "iPhone" (unspecified; likely regional variant)
+  '12a8': iphone('iPhone 5 / 5c / 5s / 6 / SE / 7 / 8 / X / XR'), // usb.ids: shared PID across many iPhone generations
+  '12ac': iphone('iPhone (variant)'), // usb.ids: "iPhone" (unspecified; likely regional variant)
 
   // ── iPad ───────────────────────────────────────────────────────────────────
-  // Source: linux-usb.org usb.ids, Apple vendor 0x05ac
-  '129f': IPAD_REASON, // iPad 2 (WiFi)
-  '12a3': IPAD_REASON, // iPad 2 (CDMA)
-  '12a4': IPAD_REASON, // iPad (3rd generation, WiFi)
-  '12a5': IPAD_REASON, // iPad (3rd generation, CDMA)
+  // Source: usb-ids.gowdy.us (linux-usb.org), Apple vendor 0x05ac
+  '129a': ipad('iPad (1st generation)'), // usb.ids: "iPad" (was listed as shared with touch 4G — corrected)
+  '129f': ipad('iPad 2 (Wi-Fi)'), // usb.ids: "iPad 2"
+  '12a2': ipad('iPad 2 (3G, 64 GB)'), // usb.ids: "iPad 2 (3G; 64GB)" (was "iPhone 4S" primary — corrected)
+  '12a3': ipad('iPad 2 (CDMA)'), // usb.ids: "iPad 2 (CDMA)"
+  '12a4': ipad('iPad (3rd generation, Wi-Fi)'), // usb.ids: "iPad 3 (wifi)"
+  '12a5': ipad('iPad (3rd generation, CDMA)'), // usb.ids: "iPad 3 (CDMA)"
+  '12a6': ipad('iPad (3rd generation, 3G 16 GB)'), // usb.ids: "iPad 3 (3G, 16 GB)" (was "iPhone 5" — corrected)
+  '12a9': ipad('iPad 2 (late 2012)'), // usb.ids: "iPad 2" (was "iPhone 5c / iPad mini 1G" — corrected)
+  '12ab': ipad('iPad (4th generation or later)'), // usb.ids: "iPad" (was "iPod touch 6G" — corrected)
+
+  // ── Apple Watch ────────────────────────────────────────────────────────────
+  // 0x12af falls within the iOS range catch (0x1290–0x12af); listed explicitly
+  // to give a more specific error message than the generic iOS fallback.
+  '12af':
+    "Apple Watch uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.",
 };
 
 /**
@@ -109,6 +130,17 @@ export function lookupUnsupportedReason(productId: string): string | null {
  * iOS device ranges (0x1290–0x12af) that are not explicitly listed in
  * UNSUPPORTED_IPOD_PRODUCT_IDS and not in IPOD_USB_IDS.
  *
+ * The range 0x1290–0x12af is the canonical iOS device PID range per
+ * usbmuxd (libimobiledevice project), which defines PID_RANGE_LOW=0x1290
+ * and PID_RANGE_MAX=0x12af in src/usb.h. All known iPhone, iPad, and iPod
+ * touch USB PIDs fall within this range.
+ *
+ * Disk-mode-capable iPod PIDs (0x1200–0x126f, 0x1300–0x1303) are outside
+ * this range, so no supported iPod will be accidentally caught here.
+ *
+ * The range is NOT extended to 0x12b0+ (HomePod=0x12b0) because those devices
+ * are not iOS sync targets and do not need an informative rejection message.
+ *
  * Use this as a range-catch fallback in the discovery layer when an unrecognised
  * Apple-vendor PID falls in a known iOS range, so that future iPhone/iPad
  * generations produce an informative "not supported" message rather than
@@ -117,7 +149,7 @@ export function lookupUnsupportedReason(productId: string): string | null {
 export function lookupIosRangeFallbackReason(productId: string): string | null {
   const normalized = productId.toLowerCase().replace(/^0x/, '');
   const pid = parseInt(normalized, 16);
-  // 0x1290–0x12af: iOS device PID range (iPhone, iPad, iPod touch)
+  // 0x1290–0x12af: iOS device PID range (iPhone, iPad, iPod touch, Apple Watch)
   if (pid >= 0x1290 && pid <= 0x12af) {
     return "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
   }

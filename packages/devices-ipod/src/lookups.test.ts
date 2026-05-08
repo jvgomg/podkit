@@ -9,6 +9,7 @@ import {
   lookupByUsbId,
   lookupByModelNumber,
   lookupBySerial,
+  lookupByFamilyId,
   toLibgpodGeneration,
 } from './lookups.js';
 
@@ -502,5 +503,78 @@ describe('toLibgpodGeneration', () => {
     expect(toLibgpodGeneration('touch_5g')).toBe('unknown');
     expect(toLibgpodGeneration('touch_6g')).toBe('unknown');
     expect(toLibgpodGeneration('touch_7g')).toBe('unknown');
+  });
+});
+
+// ── lookupByFamilyId ─────────────────────────────────────────────────────────
+
+describe('lookupByFamilyId', () => {
+  // Confirmed from real device SysInfoExtended captures in documents/sysinfo-captures/
+  test('FamilyID 3 → mini_2g (confirmed: mini-2g.xml)', () => {
+    expect(lookupByFamilyId(3)).toBe('mini_2g');
+  });
+
+  test('FamilyID 6 → video_5g (confirmed: ipod-5g-video-iflash-1tb.xml; covers 5.5G too)', () => {
+    expect(lookupByFamilyId(6)).toBe('video_5g');
+  });
+
+  test('FamilyID 9 → nano_2g (confirmed: nano-2g-4gb-green.xml)', () => {
+    expect(lookupByFamilyId(9)).toBe('nano_2g');
+  });
+
+  test('FamilyID 15 → nano_4g (confirmed: nano-4g-8gb-black.xml)', () => {
+    expect(lookupByFamilyId(15)).toBe('nano_4g');
+  });
+
+  test('FamilyID 18 → nano_7g (confirmed: nano-7g-16gb-scsi.xml + usb.xml)', () => {
+    expect(lookupByFamilyId(18)).toBe('nano_7g');
+  });
+
+  // Spot-checks on research-sourced entries (unconfirmed by real captures)
+  test('FamilyID 1 → classic_3g (research)', () => {
+    expect(lookupByFamilyId(1)).toBe('classic_3g');
+  });
+
+  test('FamilyID 5 → mini_1g (research)', () => {
+    expect(lookupByFamilyId(5)).toBe('mini_1g');
+  });
+
+  test('FamilyID 7 → classic_6g (research)', () => {
+    expect(lookupByFamilyId(7)).toBe('classic_6g');
+  });
+
+  test('FamilyID 14 → classic_6g (research; 120GB model shares generation with FamilyID 7)', () => {
+    expect(lookupByFamilyId(14)).toBe('classic_6g');
+  });
+
+  test('FamilyID 24 → nano_6g (research)', () => {
+    expect(lookupByFamilyId(24)).toBe('nano_6g');
+  });
+
+  // Sentinel / boundary cases
+  test('returns undefined for unknown FamilyID', () => {
+    expect(lookupByFamilyId(9999)).toBeUndefined();
+  });
+
+  test('returns undefined for FamilyID 0 (not-detected sentinel)', () => {
+    expect(lookupByFamilyId(0)).toBeUndefined();
+  });
+
+  test('returns undefined for negative FamilyID', () => {
+    expect(lookupByFamilyId(-1)).toBeUndefined();
+  });
+
+  // classic_1g and classic_2g are intentionally absent (pre-SysInfoExtended era)
+  test('no FamilyID entry resolves to classic_1g or classic_2g (pre-SysInfoExtended era)', () => {
+    const allMapped = Array.from({ length: 30 }, (_, i) => lookupByFamilyId(i)).filter(Boolean);
+    expect(allMapped).not.toContain('classic_1g');
+    expect(allMapped).not.toContain('classic_2g');
+  });
+
+  // video_5_5g has no separate FamilyID — it shares FamilyID 6 with video_5g
+  test('video_5_5g has no separate FamilyID entry (shares FamilyID 6 with video_5g)', () => {
+    const allMapped = Array.from({ length: 30 }, (_, i) => lookupByFamilyId(i)).filter(Boolean);
+    expect(allMapped).not.toContain('video_5_5g');
+    expect(allMapped).toContain('video_5g');
   });
 });

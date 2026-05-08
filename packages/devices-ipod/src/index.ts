@@ -71,13 +71,13 @@ export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js'
 
 export { ipodProvider } from './provider.js';
 
-// ── libgpod bridge ────────────────────────────────────────────────────────────
+// ── libgpod-naming surface ────────────────────────────────────────────────────
 
 export {
   getUnsupportedReasonByLibgpodName,
   type LibgpodDeviceInfo,
   type UnsupportedGenerationKind,
-} from './libgpod-bridge.js';
+} from './tables/libgpod-mapping.js';
 
 // ── Model resolver ────────────────────────────────────────────────────────────
 

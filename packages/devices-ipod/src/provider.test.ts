@@ -159,7 +159,7 @@ describe('ipodProvider', () => {
       }
     });
 
-    it('falls back to familyId -1 when capabilities is absent', async () => {
+    it('falls back to familyId null when capabilities is absent', async () => {
       firmwareMockReturnValue = {
         firewireGuid: '000A270024A23E9E',
         serialNumber: '7K74HBYZRP2',
@@ -168,7 +168,7 @@ describe('ipodProvider', () => {
       };
       try {
         const result = await ipodProvider.detect(VALID_FP);
-        expect(result!.familyId).toBe(-1);
+        expect(result!.familyId).toBeNull();
       } finally {
         firmwareMockReturnValue = MOCK_FIRMWARE;
       }

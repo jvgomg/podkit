@@ -88,10 +88,10 @@ describe('resolveCapabilities — iPod identity', () => {
     );
   });
 
-  it('throws when familyId is -1 (not detected) and serial is not in table', () => {
+  it('throws when familyId is null (not detected) and serial is not in table', () => {
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX',
-      familyId: -1,
+      familyId: null,
     });
     expect(() => resolveCapabilities(identity)).toThrow(
       /Could not resolve iPod model from identity/

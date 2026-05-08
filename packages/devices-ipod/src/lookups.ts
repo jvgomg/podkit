@@ -21,52 +21,70 @@ import type {
 
 // ── FamilyID → IpodGenerationId mapping ─────────────────────────────────────
 //
-// Apple's FamilyID is a small integer embedded in SysInfoExtended. It identifies
-// the iPod family/generation at the firmware level. Values are confirmed from
-// real device captures in documents/sysinfo-captures/ and documents/test-devices.md.
+// Apple's FamilyID is a small integer embedded in the SysInfoExtended plist.
+// It identifies the iPod family/generation at the firmware level.
 //
-// One generation can cover multiple FamilyID values (e.g. 5G and 5.5G share
-// FamilyID 6). When multiple FamilyIDs map to the same family, prefer the one
-// that gives the richer capability set (video_5_5g > video_5g is the same caps).
+// IMPORTANT — source of truth:
+//   libgpod's ipod_info_table is keyed by model number string, not by FamilyID.
+//   libgpod uses FamilyID only to detect iTunes-phone devices (value >= 10000).
+//   There is NO FamilyID-to-generation table in libgpod or gtkpod.
+//   All entries here come from real device SysInfoExtended plist captures or
+//   from community SysInfo dumps shared via the iPod Linux wiki and similar
+//   reverse-engineering efforts.
 //
-// Values from real captures:
-//   3  → mini_2g   (iPod mini 2G 4GB, SCSI inquiry)
-//   6  → video_5g  (iPod 5G Video iFlash, SCSI inquiry; covers 5.5G too)
-//   9  → nano_2g   (iPod nano 2G 4GB Green, SCSI inquiry)
-//  15  → nano_4g   (iPod nano 4G 8GB Black, SCSI inquiry)
-//  18  → nano_7g   (iPod nano 7G 16GB, SCSI+USB inquiry)
+// Values confirmed from real device captures in documents/sysinfo-captures/:
+//   3  → mini_2g   (iPod mini 2G 4GB Pink, SCSI inquiry — mini-2g.xml)
+//   6  → video_5g  (iPod 5G Video iFlash 1TB, SCSI inquiry — ipod-5g-video-iflash-1tb.xml)
+//              Note: the captured device is a 5.5G (A446) but reports FamilyID 6.
+//              video_5_5g has no separate FamilyID — both 5G and 5.5G use FamilyID 6.
+//   9  → nano_2g   (iPod nano 2G 4GB Green, SCSI inquiry — nano-2g-4gb-green.xml)
+//  15  → nano_4g   (iPod nano 4G 8GB Black, SCSI inquiry — nano-4g-8gb-black.xml)
+//  18  → nano_7g   (iPod nano 7G 16GB, SCSI + USB inquiry — nano-7g-16gb-{scsi,usb}.xml)
 //
-// Additional values sourced from community research (gtkpod, libgpod sources,
-// iPod Linux wiki) — marked with (research):
-//   1  → classic_3g  (iPod 3G, 10/15/20/30/40GB)
-//   2  → classic_4g  (iPod 4G, 20/40GB mono)
-//   4  → photo       (iPod Photo, 30/40/60GB)
-//   5  → mini_1g     (iPod mini 1G)
-//   7  → classic_6g  (iPod Classic 6G 80/160GB)
-//   8  → nano_1g     (iPod nano 1G)
-//  10  → shuffle_1g  (iPod shuffle 1G)
-//  11  → shuffle_2g  (iPod shuffle 2G)
-//  12  → touch_1g    (iPod touch 1G)
-//  13  → nano_3g     (iPod nano 3G)
-//  14  → classic_6g  (iPod Classic 6G 120GB — same gen, different FamilyID)
-//  16  → nano_5g     (iPod nano 5G)
+// Additional values sourced from community SysInfo dumps (iPod Linux wiki,
+// ipodhacks, device teardown records) — marked with (research). These are
+// unconfirmed by a real device capture in this project. Use with caution.
+//   1  → classic_3g  (iPod 3G, 10/15/20/30/40GB — research)
+//   2  → classic_4g  (iPod 4G, 20/40GB — research)
+//   4  → photo       (iPod Photo, 30/40/60GB — research)
+//   5  → mini_1g     (iPod mini 1G — research)
+//   7  → classic_6g  (iPod Classic 6G 80/160GB — research)
+//   8  → nano_1g     (iPod nano 1G — research)
+//  10  → shuffle_1g  (iPod shuffle 1G — research)
+//  11  → shuffle_2g  (iPod shuffle 2G — research)
+//  12  → touch_1g    (iPod touch 1G — research)
+//  13  → nano_3g     (iPod nano 3G — research)
+//  14  → classic_6g  (iPod Classic 6G 120GB — same generation as 7, different FamilyID; research)
+//  16  → nano_5g     (iPod nano 5G — research)
 //  17  → classic_7g  (iPod Classic 7G 160GB — research)
 //  19  → touch_4g    (iPod touch 4G — research)
 //  20  → shuffle_3g  (iPod shuffle 3G — research)
 //  21  → touch_3g    (iPod touch 3G — research)
 //  22  → shuffle_4g  (iPod shuffle 4G — research)
-//  23  → touch_5g    (iPod touch 5G — research)
+//  23  → touch_5g    (iPod touch 5G — research; post-libgpod, no iTunes sync)
 //  24  → nano_6g     (iPod nano 6G — research)
-//  25  → touch_6g    (iPod touch 6G — research)
-//  26  → touch_7g    (iPod touch 7G — research)
-//  27  → touch_2g    (iPod touch 2G — research)
+//  25  → touch_6g    (iPod touch 6G — research; post-libgpod, no iTunes sync)
+//  26  → touch_7g    (iPod touch 7G — research; post-libgpod, no iTunes sync)
+//  27  → touch_2g    (iPod touch 2G — research; note: non-sequential, higher than touch_3g=21)
+//
+// Deliberate omissions:
+//   classic_1g, classic_2g — pre-date SysInfoExtended; these devices have no
+//     FamilyID field (SysInfoExtended wasn't introduced until ~2005 on the Photo).
+//     Use USB product ID or SysInfo ModelNumStr to identify these generations.
 
 /**
  * Best-effort mapping from Apple FamilyID (firmware integer) to IpodGenerationId.
  *
- * Values confirmed from real device captures (documents/test-devices.md) are
- * authoritative. Values marked from community research may be approximate —
- * multiple FamilyIDs can map to the same generation.
+ * Five values are confirmed from real device captures in
+ * `documents/sysinfo-captures/` (FamilyIDs 3, 6, 9, 15, 18). All other values
+ * are sourced from community SysInfo dumps and are unconfirmed — they may be
+ * incorrect, especially for research-marked Touch and post-libgpod generations.
+ *
+ * Note: `video_5_5g` has no separate FamilyID entry because it shares FamilyID
+ * 6 with `video_5g`. Both generations have identical capabilities.
+ *
+ * `classic_1g` and `classic_2g` are intentionally absent — those devices
+ * pre-date SysInfoExtended and never expose a FamilyID.
  */
 export const FAMILY_ID_TO_GENERATION: Readonly<Record<number, IpodGenerationId>> = {
   1: 'classic_3g',

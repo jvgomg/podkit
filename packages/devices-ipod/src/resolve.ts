@@ -35,8 +35,8 @@ export interface ResolveModelInput {
   modelNumStr?: string;
   /** Full iPod serial number; uses last-3 suffix lookup. */
   serialNumber?: string;
-  /** Firmware FamilyID integer (e.g. 27 for touch 2G). */
-  familyId?: number;
+  /** Firmware FamilyID integer (e.g. 27 for touch 2G). `null` when unknown. */
+  familyId?: number | null;
   /** Raw libgpod generation string (e.g. 'classic_3'). */
   libgpodGeneration?: string;
 }
@@ -102,7 +102,7 @@ export function resolveIpodModel(input: ResolveModelInput): IpodModel | null {
   }
 
   // 4. familyId — generation-only firmware integer lookup
-  if (input.familyId !== undefined && input.familyId > 0) {
+  if (input.familyId !== null && input.familyId !== undefined && input.familyId > 0) {
     const genId = lookupByFamilyId(input.familyId);
     if (genId) return synthesizeFromGeneration(genId);
   }

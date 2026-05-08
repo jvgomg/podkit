@@ -131,6 +131,10 @@ describe('resolveIpodModel — familyId axis', () => {
   it('returns null for negative familyId', () => {
     expect(resolveIpodModel({ familyId: -1 })).toBeNull();
   });
+
+  it('returns null when familyId is null', () => {
+    expect(resolveIpodModel({ familyId: null })).toBeNull();
+  });
 });
 
 // =============================================================================

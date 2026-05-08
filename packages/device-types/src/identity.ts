@@ -42,7 +42,11 @@ export type UsbFingerprint = {
 /**
  * Identity for an iPod device identified via its USB descriptor and firmware.
  * The `firewireGuid` and `serialNumber` come from SysInfoExtended; `familyId`
- * identifies the iPod generation/model family.
+ * identifies the iPod generation/model family when available.
+ *
+ * `familyId` is `null` when the device was identified by USB / serial / model
+ * number alone but firmware data was not (yet) read — typical for unsupported
+ * devices where the inquiry is short-circuited, or for partial identifications.
  *
  * When `notSupportedReason` is set, the device was identified as an iPod but
  * is not supported by podkit (libgpod limitation, iTunes-only auth, etc.).
@@ -53,7 +57,7 @@ export type IpodIdentity = {
   kind: 'ipod';
   firewireGuid: string;
   serialNumber: string;
-  familyId: number;
+  familyId: number | null;
   /**
    * If set, the device is a known iPod but cannot be synced by podkit.
    * Callers should surface this reason to the user and abort the add flow.

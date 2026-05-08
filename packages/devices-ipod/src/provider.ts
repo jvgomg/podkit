@@ -99,7 +99,7 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
         kind: 'ipod',
         firewireGuid: '',
         serialNumber: fp.serialNumber ?? '',
-        familyId: -1,
+        familyId: null,
         notSupportedReason: unsupportedReason,
       };
     }
@@ -115,10 +115,10 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
       kind: 'ipod',
       firewireGuid: firmware.firewireGuid,
       serialNumber: firmware.serialNumber,
-      // familyId is in firmware.capabilities; extractFromPlist always sets it
-      // when FamilyID is present (required field). Guarded with ?? -1 for the
-      // edge case where capabilities is unexpectedly absent.
-      familyId: firmware.capabilities?.familyId ?? -1,
+      // extractFromPlist populates familyId when FamilyID is present in the
+      // SysInfoExtended plist; null when the field is absent or the firmware
+      // path returned a partial result.
+      familyId: firmware.capabilities?.familyId ?? null,
     };
   },
 };

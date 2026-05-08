@@ -37,7 +37,7 @@
       }
     },
     {
-      "files": ["**/scripts/*.cjs", "**/scripts/*.mjs", "**/scripts/*.js"],
+      "files": ["**/scripts/*.cjs", "**/scripts/*.mjs", "**/scripts/*.js", "**/scripts/*.ts"],
       "rules": {
         "no-console": "off"
       }

@@ -1,19 +1,18 @@
 /**
- * IpodGenerationId → libgpod IpodGeneration mapping.
+ * libgpod-naming surface — the only place in @podkit/devices-ipod that
+ * references libgpod concepts.
  *
- * Maps the detection-layer generation IDs (nano_4g, classic_6g) to the
- * libgpod-native generation IDs (nano_4, classic_1) used by the capability
- * and metadata systems. The naming differs because libgpod uses sequential
- * numbering within each family (classic_1 = first Classic model) while the
- * detection layer uses Apple's overall generation numbering (classic_6g = 6th gen iPod).
+ * Maps detection-layer generation IDs (nano_4g, classic_6g) to libgpod's
+ * sequential names (nano_4, classic_1) and back. Provides:
  *
- * This mapping is the only place in @podkit/devices-ipod that references
- * libgpod concepts. The type import is kept as a string alias to avoid a
- * hard dependency on @podkit/libgpod-node.
+ * - `GENERATION_ID_TO_LIBGPOD` — forward map.
+ * - `lookupByLibgpodName(name)` — reverse map.
+ * - `formatGeneration(libgpodName)` — canonical display-name formatter.
+ * - `LibgpodDeviceInfo` — input shape for callers that hold libgpod data.
+ * - `getUnsupportedReasonByLibgpodName(name)` — categorize unsupported devices.
  *
- * Also exports `formatGeneration(libgpodName)` — the canonical display-name
- * formatter for libgpod generation strings. Moved here from
- * `@podkit/core/ipod/generation.ts` at m-18.
+ * The libgpod type alias is a string union, not an import, to keep this
+ * package free of `@podkit/libgpod-node` at runtime.
  *
  * @module
  */
@@ -162,4 +161,64 @@ export function formatGeneration(libgpodName: string): string {
     return GENERATIONS[genId].displayName;
   }
   return libgpodName;
+}
+
+// =============================================================================
+// LibgpodDeviceInfo — input shape for callers that hold libgpod data
+// =============================================================================
+
+/**
+ * The subset of libgpod Device capabilities needed to resolve an iPod model.
+ *
+ * Mirrors the shape returned by `device.getCapabilities()` in
+ * `@podkit/libgpod-node`. Defined locally to avoid importing the native
+ * package at this layer.
+ */
+export interface LibgpodDeviceInfo {
+  readonly supportsArtwork: boolean;
+  readonly supportsVideo: boolean;
+  readonly generation: string;
+  readonly modelNumber?: string | null;
+}
+
+// =============================================================================
+// Unsupported-device classification by libgpod generation name
+// =============================================================================
+
+/**
+ * Category of unsupported device (keyed by libgpod generation string).
+ *
+ * - `'ios_device'`        — iPod Touch, iPhone, iPad (Apple proprietary protocol)
+ * - `'buttonless_shuffle'` — Shuffle 3G/4G (requires iTunes authentication)
+ * - `'nano_6'`            — Nano 6th gen (incompatible iTunesDB format)
+ */
+export type UnsupportedGenerationKind = 'ios_device' | 'buttonless_shuffle' | 'nano_6';
+
+const IOS_LIBGPOD_NAMES = new Set([
+  'touch_1',
+  'touch_2',
+  'touch_3',
+  'touch_4',
+  'iphone_1',
+  'iphone_2',
+  'iphone_3',
+  'iphone_4',
+  'ipad_1',
+]);
+
+const BUTTONLESS_SHUFFLE_LIBGPOD_NAMES = new Set(['shuffle_3', 'shuffle_4']);
+
+/**
+ * Returns the unsupported kind for a libgpod generation string, or null if
+ * the generation is supported by podkit.
+ *
+ * @param libgpodName - Generation string as returned by libgpod (e.g. 'touch_1', 'nano_6')
+ */
+export function getUnsupportedReasonByLibgpodName(
+  libgpodName: string
+): UnsupportedGenerationKind | null {
+  if (IOS_LIBGPOD_NAMES.has(libgpodName)) return 'ios_device';
+  if (BUTTONLESS_SHUFFLE_LIBGPOD_NAMES.has(libgpodName)) return 'buttonless_shuffle';
+  if (libgpodName === 'nano_6') return 'nano_6';
+  return null;
 }
