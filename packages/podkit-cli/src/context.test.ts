@@ -168,6 +168,7 @@ describe('runWithContext isolation against module-level setContext', () => {
     const { runDeviceAdd } = await import('./commands/device.js');
     const { OutputContext } = await import('./output/index.js');
     const { BufferSink } = await import('./test-utils/buffer-sink.js');
+    const { runAction } = await import('./errors.js');
 
     // Module-level says: "foo" is already configured (would trigger duplicate-name error)
     const polluted: CliContext = {
@@ -203,7 +204,9 @@ describe('runWithContext isolation against module-level setContext', () => {
     const originalExitCode = process.exitCode;
     process.exitCode = 0;
     try {
-      await runWithContext(clean, () => runDeviceAdd({ type: 'echo-mini' }, out));
+      await runWithContext(clean, () =>
+        runAction(out, () => runDeviceAdd({ type: 'echo-mini' }, out))
+      );
       // The runner should have hit the --path-required error (because echo-mini
       // requires --path), NOT the duplicate-name error from the leaked context.
       const err = stdout.json<{ success: false; error: string }>();

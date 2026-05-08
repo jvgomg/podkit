@@ -25,6 +25,7 @@ import { Command, Option } from 'commander';
 import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statSync, statfsSync } from '../utils/fs.js';
 import { getContext } from '../context.js';
+import { CliError, runAction } from '../errors.js';
 import {
   addDevice,
   updateDevice,
@@ -1647,7 +1648,7 @@ const addSubcommand = new Command('add')
   .action(async (options: AddOptions & { path?: string }) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-    await runDeviceAdd(options, out);
+    await runAction(out, () => runDeviceAdd(options, out));
   });
 
 /**
@@ -1683,59 +1684,59 @@ export async function runDeviceAdd(
 
   // Require --device flag
   if (!name) {
-    const error = 'Missing required --device flag. Usage: podkit device add -d <name>';
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: 'Missing required --device flag. Usage: podkit device add -d <name>',
+      code: 'DEVICE_REQUIRED',
+    });
   }
 
   // Validate device name
   if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(name)) {
-    const error =
-      'Invalid device name. Must start with a letter and contain only letters, numbers, hyphens, and underscores.';
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message:
+        'Invalid device name. Must start with a letter and contain only letters, numbers, hyphens, and underscores.',
+      code: 'INVALID_DEVICE_NAME',
+    });
   }
 
   const existingDevices = configResult.config.devices || {};
   if (name in existingDevices) {
-    const error = `Device "${name}" already exists in config. Use a different name or remove it first.`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Device "${name}" already exists in config. Use a different name or remove it first.`,
+      code: 'DEVICE_EXISTS',
+    });
   }
 
   // Validate quality options
   if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
-    const error = `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
+      code: 'INVALID_QUALITY',
+    });
   }
   if (
     options.audioQuality !== undefined &&
     !QUALITY_PRESETS.includes(options.audioQuality as any)
   ) {
-    const error = `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
+      code: 'INVALID_AUDIO_QUALITY',
+    });
   }
   if (
     options.videoQuality !== undefined &&
     !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)
   ) {
-    const error = `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`,
+      code: 'INVALID_VIDEO_QUALITY',
+    });
   }
   if (options.encoding !== undefined && options.encoding !== 'vbr' && options.encoding !== 'cbr') {
-    const error = `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`,
+      code: 'INVALID_ENCODING',
+    });
   }
 
   // =========================================================================
@@ -1746,49 +1747,49 @@ export async function runDeviceAdd(
   if (deviceType && isMassStorageDevice(deviceType)) {
     // Mass-storage devices require --path
     if (!explicitPath) {
-      const error = `--path is required for ${getDeviceTypeDisplayName(deviceType)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`;
-      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: `--path is required for ${getDeviceTypeDisplayName(deviceType)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
+        code: 'PATH_REQUIRED',
+      });
     }
 
     // Verify path exists and is a directory
     if (!existsSync(explicitPath) || !statSync(explicitPath).isDirectory()) {
-      const error = existsSync(explicitPath)
-        ? `Path is not a directory: ${explicitPath}`
-        : `Path not found: ${explicitPath}`;
-      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: existsSync(explicitPath)
+          ? `Path is not a directory: ${explicitPath}`
+          : `Path not found: ${explicitPath}`,
+        code: existsSync(explicitPath) ? 'PATH_NOT_DIRECTORY' : 'PATH_NOT_FOUND',
+      });
     }
 
     // Validate capability override options
     if (options.artworkMaxResolution !== undefined) {
       const parsed = parseInt(options.artworkMaxResolution, 10);
       if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
-        const error = `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`;
-        out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-        process.exitCode = 1;
-        return;
+        throw new CliError({
+          message: `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`,
+          code: 'INVALID_ARTWORK_RESOLUTION',
+        });
       }
     }
     if (options.artworkSources !== undefined) {
       for (const source of options.artworkSources) {
         if (!ARTWORK_SOURCES.includes(source as any)) {
-          const error = `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`;
-          out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-          process.exitCode = 1;
-          return;
+          throw new CliError({
+            message: `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`,
+            code: 'INVALID_ARTWORK_SOURCE',
+          });
         }
       }
     }
     if (options.supportedAudioCodecs !== undefined) {
       for (const codec of options.supportedAudioCodecs) {
         if (!AUDIO_CODECS.includes(codec as any)) {
-          const error = `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`;
-          out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-          process.exitCode = 1;
-          return;
+          throw new CliError({
+            message: `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`,
+            code: 'INVALID_AUDIO_CODEC',
+          });
         }
       }
     }
@@ -1848,11 +1849,11 @@ export async function runDeviceAdd(
     const result = addDevice(name, deviceConfig, { configPath });
 
     if (!result.success) {
-      out.result<DeviceAddOutput>({ success: false, device: deviceInfo, error: result.error }, () =>
-        out.error(`Failed to save config: ${result.error}`)
-      );
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: `Failed to save config: ${result.error}`,
+        code: 'CONFIG_SAVE_FAILED',
+        details: { device: deviceInfo },
+      });
     }
 
     if (isFirstDevice) {
@@ -1906,10 +1907,10 @@ export async function runDeviceAdd(
   ].filter(Boolean) as string[];
 
   if (massStorageOnlyOptions.length > 0) {
-    const error = `${massStorageOnlyOptions.join(', ')} ${massStorageOnlyOptions.length === 1 ? 'is' : 'are'} only valid for mass-storage devices (--type echo-mini|rockbox|generic).`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `${massStorageOnlyOptions.join(', ')} ${massStorageOnlyOptions.length === 1 ? 'is' : 'are'} only valid for mass-storage devices (--type echo-mini|rockbox|generic).`,
+      code: 'INVALID_OPTION_FOR_TYPE',
+    });
   }
 
   // Load core dependencies (overridable via deps.loadCore for tests)
@@ -1921,12 +1922,10 @@ export async function runDeviceAdd(
     IpodDatabase = core.IpodDatabase;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-    out.result<DeviceAddOutput>({ success: false, error: message }, () => {
-      out.error('Failed to load podkit-core.');
-      out.verbose1(`Details: ${message}`);
+    throw new CliError({
+      message: `Failed to load podkit-core: ${message}`,
+      code: 'CORE_LOAD_FAILED',
     });
-    process.exitCode = 1;
-    return;
   }
 
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
@@ -1934,10 +1933,10 @@ export async function runDeviceAdd(
   // If explicit path provided, use it directly
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
-      const error = `Path not found: ${explicitPath}`;
-      out.result<DeviceAddOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: `Path not found: ${explicitPath}`,
+        code: 'PATH_NOT_FOUND',
+      });
     }
 
     // Attempt SysInfoExtended read (before database init so it's available for checksums)
@@ -1975,12 +1974,10 @@ export async function runDeviceAdd(
         out.print(`Initialized as ${modelName}.`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        out.result<DeviceAddOutput>(
-          { success: false, error: `Failed to initialize: ${message}` },
-          () => out.error(`Failed to initialize iPod: ${message}`)
-        );
-        process.exitCode = 1;
-        return;
+        throw new CliError({
+          message: `Failed to initialize iPod: ${message}`,
+          code: 'INIT_FAILED',
+        });
       }
     } else {
       // Database exists, read info
@@ -2058,14 +2055,19 @@ export async function runDeviceAdd(
 
     if (addValidation && !addValidation.supported) {
       const messages = formatValidationMessages(addValidation);
-      out.result<DeviceAddOutput>({ success: false, error: messages[0] }, () => {
+      // Validation failures may have multiple messages; surface them all in
+      // text mode but use the first as the primary error message for JSON.
+      if (out.isText) {
         out.newline();
         for (const msg of messages) {
           out.print(msg);
         }
+      }
+      throw new CliError({
+        message: messages[0] ?? 'Device validation failed',
+        code: 'VALIDATION_FAILED',
+        details: { messages },
       });
-      process.exitCode = 1;
-      return;
     }
 
     // Interactive confirmation (skip if auto-confirm or JSON mode)
@@ -2122,11 +2124,11 @@ export async function runDeviceAdd(
     const result = addDevice(name, deviceConfig, { configPath });
 
     if (!result.success) {
-      out.result<DeviceAddOutput>({ success: false, device: deviceInfo, error: result.error }, () =>
-        out.error(`Failed to save config: ${result.error}`)
-      );
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: `Failed to save config: ${result.error}`,
+        code: 'CONFIG_SAVE_FAILED',
+        details: { device: deviceInfo },
+      });
     }
 
     if (isFirstDevice) {
@@ -2170,15 +2172,10 @@ export async function runDeviceAdd(
 
   // No explicit path - scan for devices
   if (!manager.isSupported) {
-    const error = `Device scanning is not supported on ${manager.platform}. Specify a path explicitly.`;
-    out.result<DeviceAddOutput>({ success: false, error }, () => {
-      out.error(error);
-      out.newline();
-      out.error('Usage: podkit device add -d <name> --path <path>');
-      out.error('Example: podkit device add -d myipod --path /Volumes/IPOD');
+    throw new CliError({
+      message: `Device scanning is not supported on ${manager.platform}. Specify a path explicitly: podkit device add -d <name> --path <path>`,
+      code: 'SCAN_UNSUPPORTED',
     });
-    process.exitCode = 1;
-    return;
   }
 
   out.print('Scanning for attached devices...');
@@ -2240,47 +2237,42 @@ export async function runDeviceAdd(
     }
 
     if (!massStorageHint) {
-      out.result<DeviceAddOutput>({ success: false, error: 'No iPod devices found' }, () => {
-        out.error('No iPod devices found.');
-        out.newline();
-        out.error('Make sure your iPod is connected.');
-        out.newline();
-        out.error('Or specify a path explicitly:');
-        out.error(`  podkit device add -d ${name} --path /path/to/ipod`);
+      throw new CliError({
+        message:
+          'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.',
+        code: 'NO_IPOD',
       });
-    } else {
-      out.result<DeviceAddOutput>(
-        {
-          success: false,
-          error: `Detected ${massStorageHint} device — add with --type and --path`,
-        },
-        () => {} // text output already printed above
-      );
     }
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Detected ${massStorageHint} device — add with --type ${massStorageHint} --path <mount-point>`,
+      code: 'DETECTED_MASS_STORAGE',
+      details: { presetId: massStorageHint },
+    });
   }
 
   // Multiple iPods found - error with guidance
   if (ipods.length > 1) {
-    out.result<DeviceAddOutput>(
-      {
-        success: false,
-        error: `Multiple iPod devices found (${ipods.length}). Specify a path explicitly.`,
-      },
-      () => {
-        out.error(`Found ${ipods.length} iPod devices. Specify which one to add:`);
+    if (out.isText) {
+      out.newline();
+      for (const ipod of ipods) {
+        const path = ipod.mountPoint ?? ipod.identifier;
+        out.error(`  podkit device add -d ${name} --path ${path}`);
+        out.error(`    ${ipod.volumeName || '(unnamed)'} - ${formatBytes(ipod.size)}`);
         out.newline();
-        for (const ipod of ipods) {
-          const path = ipod.mountPoint ?? ipod.identifier;
-          out.error(`  podkit device add -d ${name} --path ${path}`);
-          out.error(`    ${ipod.volumeName || '(unnamed)'} - ${formatBytes(ipod.size)}`);
-          out.newline();
-        }
       }
-    );
-    process.exitCode = 1;
-    return;
+    }
+    throw new CliError({
+      message: `Multiple iPod devices found (${ipods.length}). Specify a path explicitly.`,
+      code: 'MULTIPLE_IPODS',
+      details: {
+        ipods: ipods.map((d) => ({
+          identifier: d.identifier,
+          mountPoint: d.mountPoint,
+          volumeName: d.volumeName,
+          size: d.size,
+        })),
+      },
+    });
   }
 
   let ipod = ipods[0]!;
@@ -2317,26 +2309,23 @@ export async function runDeviceAdd(
       const explanationLines = assessment?.iFlash.confirmed
         ? formatIFlashMountExplanation(assessment)
         : ['Mounting requires elevated privileges.'];
-
-      out.result<DeviceAddOutput>(
-        { success: false, error: 'Elevated privileges required to mount device' },
-        () => {
-          for (const line of explanationLines) {
-            out.error(line);
-          }
-          out.newline();
-          out.error(`Run:  ${bold('sudo')} podkit device add -d ${name}`);
+      if (out.isText) {
+        for (const line of explanationLines) {
+          out.error(line);
         }
-      );
-      process.exitCode = 1;
-      return;
+        out.newline();
+        out.error(`Run:  ${bold('sudo')} podkit device add -d ${name}`);
+      }
+      throw new CliError({
+        message: 'Elevated privileges required to mount device',
+        code: 'MOUNT_REQUIRES_SUDO',
+        details: { explanation: explanationLines },
+      });
     } else {
-      out.result<DeviceAddOutput>(
-        { success: false, error: mountResult.error ?? 'Failed to mount device' },
-        () => out.error(`Failed to mount: ${mountResult.error}`)
-      );
-      process.exitCode = 1;
-      return;
+      throw new CliError({
+        message: `Failed to mount: ${mountResult.error ?? 'unknown error'}`,
+        code: 'MOUNT_FAILED',
+      });
     }
   }
 
@@ -2380,12 +2369,10 @@ export async function runDeviceAdd(
         out.print(`Initialized as ${modelName}.`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        out.result<DeviceAddOutput>(
-          { success: false, error: `Failed to initialize: ${message}` },
-          () => out.error(`Failed to initialize iPod: ${message}`)
-        );
-        process.exitCode = 1;
-        return;
+        throw new CliError({
+          message: `Failed to initialize iPod: ${message}`,
+          code: 'INIT_FAILED',
+        });
       }
     } else {
       // Database exists, read info
@@ -2450,14 +2437,17 @@ export async function runDeviceAdd(
 
   if (autoDetectValidation && !autoDetectValidation.supported) {
     const messages = formatValidationMessages(autoDetectValidation);
-    out.result<DeviceAddOutput>({ success: false, error: messages[0] }, () => {
+    if (out.isText) {
       out.newline();
       for (const msg of messages) {
         out.print(msg);
       }
+    }
+    throw new CliError({
+      message: messages[0] ?? 'Device validation failed',
+      code: 'VALIDATION_FAILED',
+      details: { messages },
     });
-    process.exitCode = 1;
-    return;
   }
 
   // Interactive mode (skip if auto-confirm or JSON mode)
@@ -2521,11 +2511,11 @@ export async function runDeviceAdd(
   const result = addDevice(name, deviceConfig, { configPath });
 
   if (!result.success) {
-    out.result<DeviceAddOutput>({ success: false, device: deviceInfo, error: result.error }, () =>
-      out.error(`Failed to save config: ${result.error}`)
-    );
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: `Failed to save config: ${result.error}`,
+      code: 'CONFIG_SAVE_FAILED',
+      details: { device: deviceInfo },
+    });
   }
 
   if (isFirstDevice) {

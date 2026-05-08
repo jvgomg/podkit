@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { runCollectionMusic, runCollectionVideo } from './collection.js';
 import { OutputContext } from '../output/index.js';
 import { runWithContext, type CliContext } from '../context.js';
+import { runAction } from '../errors.js';
 import { BufferSink } from '../test-utils/buffer-sink.js';
 import {
   DEFAULT_TRANSFORMS_CONFIG,
@@ -98,6 +99,27 @@ const videoConfig = (path: string): ContextOptions => ({
   defaults: { video: 'test' },
 });
 
+/**
+ * Run a collection runner the same way production does — through runAction so
+ * thrown CliErrors become structured output + process.exitCode mutation.
+ * Tests assert on the captured stdout/stderr just like a JSON consumer would.
+ */
+function runMusic(
+  ctx: CliContext,
+  options: Parameters<typeof runCollectionMusic>[0],
+  out: OutputContext
+): Promise<unknown> {
+  return runWithContext(ctx, () => runAction(out, () => runCollectionMusic(options, out)));
+}
+
+function runVideo(
+  ctx: CliContext,
+  options: Parameters<typeof runCollectionVideo>[0],
+  out: OutputContext
+): Promise<unknown> {
+  return runWithContext(ctx, () => runAction(out, () => runCollectionVideo(options, out)));
+}
+
 // =============================================================================
 // collection music
 // =============================================================================
@@ -121,7 +143,7 @@ describe('runCollectionMusic', () => {
   it('scans directory and prints a tracks table by default format', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'table' }, out));
+    await runMusic(ctx, { tracks: true, format: 'table' }, out);
     expect(process.exitCode).toBe(0);
     const text = stdout.text();
     expect(text).toContain('Title');
@@ -131,18 +153,17 @@ describe('runCollectionMusic', () => {
   it('returns track metadata in JSON format with required fields', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    await runMusic(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(0);
-    const tracks =
-      stdout.json<
-        Array<{
-          title: string;
-          artist: string;
-          album: string;
-          duration: number;
-          durationFormatted: string;
-        }>
-      >();
+    const tracks = stdout.json<
+      Array<{
+        title: string;
+        artist: string;
+        album: string;
+        duration: number;
+        durationFormatted: string;
+      }>
+    >();
     expect(Array.isArray(tracks)).toBe(true);
     expect(tracks.length).toBeGreaterThan(0);
     for (const track of tracks) {
@@ -157,7 +178,7 @@ describe('runCollectionMusic', () => {
   it('finds the known Harmony fixture with expected metadata', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    await runMusic(ctx, { tracks: true, format: 'json' }, out);
     const tracks = stdout.json<Array<{ title: string; artist: string; album: string }>>();
     const harmony = tracks.find((t) => t.title === 'Harmony');
     expect(harmony).toBeDefined();
@@ -168,7 +189,7 @@ describe('runCollectionMusic', () => {
   it('handles an empty directory by reporting "No tracks found"', async () => {
     const ctx = makeContext(musicConfig(emptyDir));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'table' }, out));
+    await runMusic(ctx, { tracks: true, format: 'table' }, out);
     expect(process.exitCode).toBe(0);
     expect(stdout.text()).toContain('No tracks found');
   });
@@ -176,7 +197,7 @@ describe('runCollectionMusic', () => {
   it('respects --format csv (header row + data rows)', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'csv' }, out));
+    await runMusic(ctx, { tracks: true, format: 'csv' }, out);
     expect(process.exitCode).toBe(0);
     const lines = stdout.text().trim().split('\n');
     expect(lines.length).toBeGreaterThan(1);
@@ -188,9 +209,7 @@ describe('runCollectionMusic', () => {
   it('respects --fields, returning only the requested keys', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runCollectionMusic({ tracks: true, format: 'json', fields: 'title,artist' }, out)
-    );
+    await runMusic(ctx, { tracks: true, format: 'json', fields: 'title,artist' }, out);
     expect(process.exitCode).toBe(0);
     const tracks = stdout.json<Array<Record<string, unknown>>>();
     expect(tracks.length).toBeGreaterThan(0);
@@ -206,7 +225,7 @@ describe('runCollectionMusic', () => {
   it('default mode is stats (no flag) and prints a stats heading', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ format: 'table' }, out));
+    await runMusic(ctx, { format: 'table' }, out);
     expect(process.exitCode).toBe(0);
     expect(stdout.text()).toContain("Music in collection 'test'");
   });
@@ -214,7 +233,7 @@ describe('runCollectionMusic', () => {
   it('--albums aggregates by album and emits JSON in JSON mode', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ albums: true, format: 'json' }, out));
+    await runMusic(ctx, { albums: true, format: 'json' }, out);
     expect(process.exitCode).toBe(0);
     const albums = stdout.json<Array<{ album: string; tracks: number }>>();
     expect(albums.length).toBeGreaterThan(0);
@@ -225,7 +244,7 @@ describe('runCollectionMusic', () => {
   it('--artists aggregates by artist and emits JSON in JSON mode', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionMusic({ artists: true, format: 'json' }, out));
+    await runMusic(ctx, { artists: true, format: 'json' }, out);
     expect(process.exitCode).toBe(0);
     const artists = stdout.json<Array<{ artist: string; albums: number; tracks: number }>>();
     expect(artists.length).toBeGreaterThan(0);
@@ -236,26 +255,23 @@ describe('runCollectionMusic', () => {
   it('rejects --fields when not in --tracks mode', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () =>
-      runCollectionMusic({ albums: true, fields: 'title', format: 'json' }, out)
-    );
+    await runMusic(ctx, { albums: true, fields: 'title', format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    expect(stdout.json<{ error: boolean; message: string }>()).toEqual({
-      error: true,
-      message: '--fields can only be used with --tracks',
+    expect(stdout.json<{ success: false; error: string; code: string }>()).toEqual({
+      success: false,
+      error: '--fields can only be used with --tracks',
+      code: 'INVALID_FIELDS_USAGE',
     });
   });
 
   it('rejects an invalid field name', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () =>
-      runCollectionMusic({ tracks: true, fields: 'title,bogus', format: 'json' }, out)
-    );
+    await runMusic(ctx, { tracks: true, fields: 'title,bogus', format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message.toLowerCase()).toContain('bogus');
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toContain('bogus');
   });
 });
 
@@ -278,44 +294,42 @@ describe('runCollectionMusic error paths', () => {
   it('reports an error when the collection path does not exist', async () => {
     const ctx = makeContext(musicConfig('/this/path/does/not/exist/ever'));
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    await runMusic(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message).toContain('does not exist');
-    expect(err.message).toContain('/this/path/does/not/exist/ever');
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error).toContain('does not exist');
+    expect(err.error).toContain('/this/path/does/not/exist/ever');
   });
 
   it('reports an error for an unknown collection name', async () => {
     const ctx = makeContext(musicConfig(AUDIO_FIXTURES_PATH));
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () =>
-      runCollectionMusic({ collection: 'nonexistent', tracks: true, format: 'json' }, out)
-    );
+    await runMusic(ctx, { collection: 'nonexistent', tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message.toLowerCase()).toContain('nonexistent');
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toContain('nonexistent');
   });
 
   it('reports an error when no default music collection is set', async () => {
     const ctx = makeContext({ music: { mylib: { path: AUDIO_FIXTURES_PATH } } });
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    await runMusic(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message.toLowerCase()).toMatch(/default|specify|collection/);
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toMatch(/default|specify|collection/);
   });
 
   it('reports an error when no music collections are configured', async () => {
     const ctx = makeContext({});
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () => runCollectionMusic({ tracks: true, format: 'json' }, out));
+    await runMusic(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message.toLowerCase()).toMatch(/no.*collection|configured|add/);
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toMatch(/no.*collection|configured|add/);
   });
 });
 
@@ -346,7 +360,7 @@ describe('runCollectionVideo', () => {
   it.skipIf(!videoFixturesExist)('scans for video files and prints a Title column', async () => {
     const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'table' }, out));
+    await runVideo(ctx, { tracks: true, format: 'table' }, out);
     expect(process.exitCode).toBe(0);
     expect(stdout.text()).toContain('Title');
   });
@@ -354,7 +368,7 @@ describe('runCollectionVideo', () => {
   it.skipIf(!videoFixturesExist)('returns video metadata in JSON', async () => {
     const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'json' }, out));
+    await runVideo(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(0);
     const videos =
       stdout.json<Array<{ title: string; duration: number; durationFormatted: string }>>();
@@ -369,7 +383,7 @@ describe('runCollectionVideo', () => {
   it('handles an empty directory by reporting "No tracks found"', async () => {
     const ctx = makeContext(videoConfig(emptyDir));
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'table' }, out));
+    await runVideo(ctx, { tracks: true, format: 'table' }, out);
     expect(process.exitCode).toBe(0);
     expect(stdout.text()).toContain('No tracks found');
   });
@@ -377,23 +391,22 @@ describe('runCollectionVideo', () => {
   it('reports an error when no video collections are configured', async () => {
     const ctx = makeContext({});
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () => runCollectionVideo({ tracks: true, format: 'json' }, out));
+    await runVideo(ctx, { tracks: true, format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    const err = stdout.json<{ error: boolean; message: string }>();
-    expect(err.error).toBe(true);
-    expect(err.message.toLowerCase()).toMatch(/no.*collection|configured|add/);
+    const err = stdout.json<{ success: false; error: string; code: string }>();
+    expect(err.success).toBe(false);
+    expect(err.error.toLowerCase()).toMatch(/no.*collection|configured|add/);
   });
 
   it('rejects --fields when not in --tracks mode', async () => {
     const ctx = makeContext(videoConfig(emptyDir));
     const { out, stdout } = makeOut(true);
-    await runWithContext(ctx, () =>
-      runCollectionVideo({ albums: true, fields: 'title', format: 'json' }, out)
-    );
+    await runVideo(ctx, { albums: true, fields: 'title', format: 'json' }, out);
     expect(process.exitCode).toBe(1);
-    expect(stdout.json<{ error: boolean; message: string }>()).toEqual({
-      error: true,
-      message: '--fields can only be used with --tracks',
+    expect(stdout.json<{ success: false; error: string; code: string }>()).toEqual({
+      success: false,
+      error: '--fields can only be used with --tracks',
+      code: 'INVALID_FIELDS_USAGE',
     });
   });
 });

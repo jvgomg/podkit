@@ -19,6 +19,7 @@ import type { UsbDiscoveredDevice, DeviceManager } from '@podkit/core';
 import { runDeviceAdd, type DeviceAddDeps } from './device.js';
 import { OutputContext } from '../output/index.js';
 import { runWithContext, type CliContext } from '../context.js';
+import { runAction } from '../errors.js';
 import { BufferSink } from '../test-utils/buffer-sink.js';
 import {
   DEFAULT_TRANSFORMS_CONFIG,
@@ -111,6 +112,21 @@ function fakeManager(overrides: Partial<DeviceManager> = {}): DeviceManager {
 interface AddOutputError {
   success: false;
   error: string;
+  code?: string;
+}
+
+/**
+ * Run the device-add runner exactly as production does — through runAction so
+ * thrown CliErrors become structured output + process.exitCode mutation.
+ * Tests assert on the captured stdout/stderr just like a JSON consumer would.
+ */
+function runAdd(
+  ctx: CliContext,
+  options: Parameters<typeof runDeviceAdd>[0],
+  out: OutputContext,
+  deps?: DeviceAddDeps
+): Promise<unknown> {
+  return runWithContext(ctx, () => runAction(out, () => runDeviceAdd(options, out, deps)));
 }
 
 // =============================================================================
@@ -132,7 +148,7 @@ describe('runDeviceAdd: device flag + name validation', () => {
   it('rejects when --device is missing', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({}, out));
+    await runAdd(ctx, {}, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.success).toBe(false);
@@ -142,7 +158,7 @@ describe('runDeviceAdd: device flag + name validation', () => {
   it('rejects an invalid device name (must start with a letter)', async () => {
     const ctx = makeContext({ device: '1bad' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'echo-mini' }, out));
+    await runAdd(ctx, { type: 'echo-mini' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error.toLowerCase()).toContain('invalid device name');
@@ -154,7 +170,7 @@ describe('runDeviceAdd: device flag + name validation', () => {
       devices: { foo: { volumeUuid: 'x', volumeName: 'foo' } },
     });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'echo-mini' }, out));
+    await runAdd(ctx, { type: 'echo-mini' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('"foo"');
@@ -181,9 +197,7 @@ describe('runDeviceAdd: quality + encoding option validation', () => {
   it('rejects an unknown --quality preset', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', quality: 'bogus' as never }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', quality: 'bogus' as never }, out);
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('quality preset');
   });
@@ -191,9 +205,7 @@ describe('runDeviceAdd: quality + encoding option validation', () => {
   it('rejects an unknown --audio-quality preset', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', audioQuality: 'bogus' as never }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', audioQuality: 'bogus' as never }, out);
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('audio quality preset');
   });
@@ -201,9 +213,7 @@ describe('runDeviceAdd: quality + encoding option validation', () => {
   it('rejects an unknown --video-quality preset', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', videoQuality: 'bogus' as never }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', videoQuality: 'bogus' as never }, out);
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('video quality preset');
   });
@@ -211,9 +221,7 @@ describe('runDeviceAdd: quality + encoding option validation', () => {
   it('rejects an unknown --encoding mode', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', encoding: 'lossy' as never }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', encoding: 'lossy' as never }, out);
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('encoding mode');
   });
@@ -238,7 +246,7 @@ describe('runDeviceAdd: mass-storage --path validation', () => {
   it('requires --path when --type echo-mini is given', async () => {
     const ctx = makeContext({ device: 'myecho' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'echo-mini' }, out));
+    await runAdd(ctx, { type: 'echo-mini' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('--path is required');
@@ -248,7 +256,7 @@ describe('runDeviceAdd: mass-storage --path validation', () => {
   it('requires --path when --type rockbox is given', async () => {
     const ctx = makeContext({ device: 'myrock' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'rockbox' }, out));
+    await runAdd(ctx, { type: 'rockbox' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('--path is required');
@@ -258,9 +266,7 @@ describe('runDeviceAdd: mass-storage --path validation', () => {
   it('reports path-not-found when --path does not exist', async () => {
     const ctx = makeContext({ device: 'myecho' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', path: '/does/not/exist/ever' }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', path: '/does/not/exist/ever' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('Path not found');
@@ -274,7 +280,7 @@ describe('runDeviceAdd: mass-storage --path validation', () => {
     try {
       const ctx = makeContext({ device: 'myecho' });
       const { out, stdout } = makeOut();
-      await runWithContext(ctx, () => runDeviceAdd({ type: 'echo-mini', path: filePath }, out));
+      await runAdd(ctx, { type: 'echo-mini', path: filePath }, out);
       expect(process.exitCode).toBe(1);
       const err = stdout.json<AddOutputError>();
       expect(err.error).toContain('not a directory');
@@ -307,11 +313,10 @@ describe('runDeviceAdd: mass-storage capability overrides', () => {
   it('rejects --artwork-max-resolution when not a positive integer', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd(
-        { type: 'echo-mini', path: dir, artworkMaxResolution: 'not-a-number' as never },
-        out
-      )
+    await runAdd(
+      ctx,
+      { type: 'echo-mini', path: dir, artworkMaxResolution: 'not-a-number' as never },
+      out
     );
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('artwork-max-resolution');
@@ -320,8 +325,10 @@ describe('runDeviceAdd: mass-storage capability overrides', () => {
   it('rejects --artwork-max-resolution outside the 1..10000 range', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', path: dir, artworkMaxResolution: '99999' as never }, out)
+    await runAdd(
+      ctx,
+      { type: 'echo-mini', path: dir, artworkMaxResolution: '99999' as never },
+      out
     );
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('1 and 10000');
@@ -330,9 +337,7 @@ describe('runDeviceAdd: mass-storage capability overrides', () => {
   it('rejects an invalid --artwork-sources value', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', path: dir, artworkSources: ['bogus'] as never }, out)
-    );
+    await runAdd(ctx, { type: 'echo-mini', path: dir, artworkSources: ['bogus'] as never }, out);
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('bogus');
     expect(stdout.json<AddOutputError>().error.toLowerCase()).toContain('artwork source');
@@ -341,8 +346,10 @@ describe('runDeviceAdd: mass-storage capability overrides', () => {
   it('rejects an invalid --supported-audio-codecs value', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () =>
-      runDeviceAdd({ type: 'echo-mini', path: dir, supportedAudioCodecs: ['zzz'] as never }, out)
+    await runAdd(
+      ctx,
+      { type: 'echo-mini', path: dir, supportedAudioCodecs: ['zzz'] as never },
+      out
     );
     expect(process.exitCode).toBe(1);
     expect(stdout.json<AddOutputError>().error).toContain('zzz');
@@ -369,7 +376,7 @@ describe('runDeviceAdd: iPod flow', () => {
   it('rejects mass-storage-only options on iPod type', async () => {
     const ctx = makeContext({ device: 'd' });
     const { out, stdout } = makeOut();
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'ipod', musicDir: 'Music' }, out));
+    await runAdd(ctx, { type: 'ipod', musicDir: 'Music' }, out);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('--music-dir');
@@ -382,7 +389,7 @@ describe('runDeviceAdd: iPod flow', () => {
     const deps: DeviceAddDeps = {
       getDeviceManager: () => fakeManager({ isSupported: false, platform: 'unsupported' }),
     };
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'ipod' }, out, deps));
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error).toContain('Device scanning is not supported');
@@ -416,7 +423,7 @@ describe('runDeviceAdd: iPod flow', () => {
           ],
         }),
     };
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'ipod' }, out, deps));
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.error.toLowerCase()).toContain('multiple ipod');
@@ -428,7 +435,7 @@ describe('runDeviceAdd: iPod flow', () => {
     const deps: DeviceAddDeps = {
       getDeviceManager: () => fakeManager({ isSupported: true }),
     };
-    await runWithContext(ctx, () => runDeviceAdd({ type: 'ipod' }, out, deps));
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
     expect(process.exitCode).toBe(1);
     const err = stdout.json<AddOutputError>();
     // The runner may also report a mass-storage hint here; either path is "not found".

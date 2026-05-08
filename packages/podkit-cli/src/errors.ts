@@ -20,14 +20,14 @@ export interface CliErrorPayload {
 }
 
 export class CliError extends Error {
-  readonly code: string;
+  readonly code?: string;
   readonly exitCode: number;
   readonly details?: Record<string, unknown>;
 
   constructor(payload: CliErrorPayload) {
     super(payload.message);
     this.name = 'CliError';
-    this.code = payload.code ?? 'UNKNOWN';
+    this.code = payload.code;
     this.exitCode = payload.exitCode ?? 1;
     this.details = payload.details;
   }
@@ -47,12 +47,14 @@ export async function runAction<T>(
     return await fn();
   } catch (err) {
     if (err instanceof CliError) {
-      const payload = {
-        success: false as const,
+      const payload: Record<string, unknown> = {
+        success: false,
         error: err.message,
-        code: err.code,
         ...(err.details ?? {}),
       };
+      if (err.code !== undefined) {
+        payload.code = err.code;
+      }
       out.result(payload, () => out.error(err.message));
       process.exitCode = err.exitCode;
       return undefined;

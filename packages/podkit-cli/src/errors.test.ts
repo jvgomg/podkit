@@ -37,9 +37,9 @@ describe('CliError', () => {
     expect(err).toBeInstanceOf(Error);
   });
 
-  it('defaults code to UNKNOWN and exitCode to 1', () => {
+  it('leaves code undefined and defaults exitCode to 1 when omitted', () => {
     const err = new CliError({ message: 'oops' });
-    expect(err.code).toBe('UNKNOWN');
+    expect(err.code).toBeUndefined();
     expect(err.exitCode).toBe(1);
   });
 });

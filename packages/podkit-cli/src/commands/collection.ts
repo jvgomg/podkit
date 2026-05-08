@@ -24,6 +24,7 @@ import * as path from 'node:path';
 import { existsSync, statSync } from '../utils/fs.js';
 import { confirmNo } from '../utils/confirm.js';
 import { getContext } from '../context.js';
+import { CliError, runAction } from '../errors.js';
 import {
   addMusicCollection,
   addVideoCollection,
@@ -620,7 +621,7 @@ const musicSubcommand = new Command('music')
   .action(async (options: ContentListOptions & { collection?: string }) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    await runCollectionMusic(options, out);
+    await runAction(out, () => runCollectionMusic(options, out));
   });
 
 /**
@@ -644,32 +645,26 @@ export async function runCollectionMusic(
         ? 'artists'
         : 'stats';
 
-  const outputError = (error: string) => {
-    if (format === 'json') {
-      out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-    } else {
-      out.error(`Error: ${error}`);
-    }
-    process.exitCode = 1;
-  };
-
   if (options.fields && mode !== 'tracks') {
-    outputError('--fields can only be used with --tracks');
-    return;
+    throw new CliError({
+      message: '--fields can only be used with --tracks',
+      code: 'INVALID_FIELDS_USAGE',
+    });
   }
 
   let fields;
   try {
     fields = parseFields(options.fields);
   } catch (err) {
-    outputError(err instanceof Error ? err.message : String(err));
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : String(err),
+      code: 'INVALID_FIELDS',
+    });
   }
 
   const resolved = resolveMusicCollectionArg(name);
   if ('error' in resolved) {
-    outputError(resolved.error);
-    return;
+    throw new CliError({ message: resolved.error, code: 'COLLECTION_NOT_RESOLVED' });
   }
 
   const { collection } = resolved;
@@ -678,8 +673,10 @@ export async function runCollectionMusic(
 
   // Check if path exists (only for directory collections)
   if (!isSubsonic && !existsSync(collectionConfig.path)) {
-    outputError(`Collection path does not exist: ${collectionConfig.path}`);
-    return;
+    throw new CliError({
+      message: `Collection path does not exist: ${collectionConfig.path}`,
+      code: 'COLLECTION_PATH_NOT_FOUND',
+    });
   }
 
   try {
@@ -781,8 +778,9 @@ export async function runCollectionMusic(
       out.stdout(output);
     }
   } catch (error) {
+    if (error instanceof CliError) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    outputError(message);
+    throw new CliError({ message, code: 'COLLECTION_SCAN_FAILED' });
   }
 }
 
@@ -806,7 +804,7 @@ const videoSubcommand = new Command('video')
   .action(async (options: ContentListOptions & { collection?: string }) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    await runCollectionVideo(options, out);
+    await runAction(out, () => runCollectionVideo(options, out));
   });
 
 /**
@@ -826,40 +824,36 @@ export async function runCollectionVideo(
         ? 'artists'
         : 'stats';
 
-  const outputError = (error: string) => {
-    if (format === 'json') {
-      out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-    } else {
-      out.error(`Error: ${error}`);
-    }
-    process.exitCode = 1;
-  };
-
   if (options.fields && mode !== 'tracks') {
-    outputError('--fields can only be used with --tracks');
-    return;
+    throw new CliError({
+      message: '--fields can only be used with --tracks',
+      code: 'INVALID_FIELDS_USAGE',
+    });
   }
 
   let fields;
   try {
     fields = parseFields(options.fields);
   } catch (err) {
-    outputError(err instanceof Error ? err.message : String(err));
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : String(err),
+      code: 'INVALID_FIELDS',
+    });
   }
 
   const resolved = resolveVideoCollectionArg(name);
   if ('error' in resolved) {
-    outputError(resolved.error);
-    return;
+    throw new CliError({ message: resolved.error, code: 'COLLECTION_NOT_RESOLVED' });
   }
 
   const { collection } = resolved;
 
   // Check if path exists
   if (!existsSync(collection.path)) {
-    outputError(`Collection path does not exist: ${collection.path}`);
-    return;
+    throw new CliError({
+      message: `Collection path does not exist: ${collection.path}`,
+      code: 'COLLECTION_PATH_NOT_FOUND',
+    });
   }
 
   try {
@@ -940,8 +934,9 @@ export async function runCollectionVideo(
       out.stdout(output);
     }
   } catch (error) {
+    if (error instanceof CliError) throw error;
     const message = error instanceof Error ? error.message : String(error);
-    outputError(message);
+    throw new CliError({ message, code: 'COLLECTION_SCAN_FAILED' });
   }
 }
 
