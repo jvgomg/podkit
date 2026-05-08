@@ -22,7 +22,7 @@
  * ```
  */
 
-import type { OutputContextConfig, SpinnerControl, TableOptions } from './types.js';
+import type { OutputContextConfig, OutputSink, SpinnerControl, TableOptions } from './types.js';
 import { nullSpinner } from './types.js';
 import type { TipContext } from './tips.js';
 import { collectTips, formatTips } from './tips.js';
@@ -74,6 +74,8 @@ export class OutputContext {
   private readonly useColor: boolean;
   private readonly showTips: boolean;
   private readonly tty: boolean;
+  private readonly out: OutputSink;
+  private readonly err: OutputSink;
 
   constructor(config: OutputContextConfig) {
     this.mode = config.mode;
@@ -82,6 +84,8 @@ export class OutputContext {
     this.useColor = config.color;
     this.showTips = config.tips;
     this.tty = config.tty;
+    this.out = config.stdout ?? process.stdout;
+    this.err = config.stderr ?? process.stderr;
   }
 
   /**
@@ -96,7 +100,8 @@ export class OutputContext {
       tips?: boolean;
       tty?: boolean;
     },
-    config?: { tips?: boolean }
+    config?: { tips?: boolean },
+    streams?: { stdout?: OutputSink; stderr?: OutputSink }
   ): OutputContext {
     // Tips are enabled only if both CLI (--no-tips) and config (tips = false) allow them
     const tips = (opts.tips ?? true) && (config?.tips ?? true);
@@ -109,6 +114,8 @@ export class OutputContext {
       color: opts.color,
       tips,
       tty,
+      stdout: streams?.stdout,
+      stderr: streams?.stderr,
     });
   }
 
@@ -160,7 +167,7 @@ export class OutputContext {
    */
   print(message: string): void {
     if (this.isText && !this.quiet) {
-      console.log(message);
+      this.out.write(message + '\n');
     }
   }
 
@@ -169,7 +176,7 @@ export class OutputContext {
    */
   newline(): void {
     if (this.isText && !this.quiet) {
-      console.log('');
+      this.out.write('\n');
     }
   }
 
@@ -178,7 +185,7 @@ export class OutputContext {
    */
   verbose1(message: string): void {
     if (this.isText && !this.quiet && this.verbose >= 1) {
-      console.log(message);
+      this.out.write(message + '\n');
     }
   }
 
@@ -187,7 +194,7 @@ export class OutputContext {
    */
   verbose2(message: string): void {
     if (this.isText && !this.quiet && this.verbose >= 2) {
-      console.log(message);
+      this.out.write(message + '\n');
     }
   }
 
@@ -196,7 +203,7 @@ export class OutputContext {
    */
   error(message: string): void {
     if (this.isText) {
-      console.error(message);
+      this.err.write(message + '\n');
     }
     // In JSON mode, errors should be included in the JSON output instead
   }
@@ -206,7 +213,7 @@ export class OutputContext {
    */
   warn(message: string): void {
     if (this.isText && !this.quiet) {
-      console.error(`Warning: ${message}`);
+      this.err.write(`Warning: ${message}\n`);
     }
   }
 
@@ -215,7 +222,7 @@ export class OutputContext {
    */
   success(message: string): void {
     if (this.isText && !this.quiet) {
-      console.log(message);
+      this.out.write(message + '\n');
     }
   }
 
@@ -231,9 +238,9 @@ export class OutputContext {
    */
   tip(message: string, url?: string): void {
     if (this.isText && !this.quiet && this.showTips) {
-      console.log(`Tip: ${message}`);
+      this.out.write(`Tip: ${message}\n`);
       if (url) {
-        console.log(`  See: ${url}`);
+        this.out.write(`  See: ${url}\n`);
       }
     }
   }
@@ -263,7 +270,7 @@ export class OutputContext {
    */
   json<T>(data: T): void {
     if (this.isJson) {
-      console.log(JSON.stringify(data, null, 2));
+      this.out.write(JSON.stringify(data, null, 2) + '\n');
     }
   }
 
@@ -275,7 +282,7 @@ export class OutputContext {
    */
   result<T>(data: T, textFormatter?: (data: T) => void): void {
     if (this.isJson) {
-      console.log(JSON.stringify(data, null, 2));
+      this.out.write(JSON.stringify(data, null, 2) + '\n');
     } else if (textFormatter && !this.quiet) {
       textFormatter(data);
     }
@@ -303,7 +310,7 @@ export class OutputContext {
     options?: TableOptions & { jsonKey?: keyof T }
   ): void {
     if (this.isJson) {
-      console.log(JSON.stringify(rows, null, 2));
+      this.out.write(JSON.stringify(rows, null, 2) + '\n');
       return;
     }
 
@@ -326,8 +333,8 @@ export class OutputContext {
 
     // Header
     const headerLine = headers.map((h, i) => h.padEnd(widths[i] ?? 10)).join('  ');
-    console.log(headerLine);
-    console.log('\u2500'.repeat(headerLine.length));
+    this.out.write(headerLine + '\n');
+    this.out.write('\u2500'.repeat(headerLine.length) + '\n');
 
     // Rows
     for (const row of rows) {
@@ -338,7 +345,7 @@ export class OutputContext {
           return val.length > width ? val.slice(0, width - 3) + '...' : val.padEnd(width);
         })
         .join('  ');
-      console.log(line);
+      this.out.write(line + '\n');
     }
   }
 
@@ -348,7 +355,7 @@ export class OutputContext {
    */
   raw(content: string): void {
     if (!this.isJson && !this.quiet && this.tty) {
-      process.stderr.write(content);
+      this.err.write(content);
     }
   }
 
@@ -357,7 +364,7 @@ export class OutputContext {
    * Use for commands that handle their own formatting (e.g., --format table|json|csv).
    */
   stdout(content: string): void {
-    console.log(content);
+    this.out.write(content + '\n');
   }
 
   /**
@@ -365,7 +372,7 @@ export class OutputContext {
    */
   clearLine(): void {
     if (!this.isJson && !this.quiet && this.tty) {
-      process.stderr.write('\x1b[2K\r');
+      this.err.write('\x1b[2K\r');
     }
   }
 }

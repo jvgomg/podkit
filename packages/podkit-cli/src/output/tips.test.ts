@@ -1,6 +1,7 @@
-import { describe, expect, it, jest, beforeEach, afterEach } from 'bun:test';
+import { describe, expect, it } from 'bun:test';
 import { collectTips, formatTips, printTips } from './tips.js';
 import { OutputContext } from './context.js';
+import { BufferSink } from '../test-utils/buffer-sink.js';
 
 // =============================================================================
 // collectTips
@@ -237,93 +238,85 @@ describe('printTips', () => {
 // =============================================================================
 
 describe('OutputContext tip methods', () => {
-  let logSpy: ReturnType<typeof jest.fn>;
-  let originalLog: typeof console.log;
-
-  beforeEach(() => {
-    originalLog = console.log;
-    logSpy = jest.fn();
-    console.log = logSpy;
-  });
-
-  afterEach(() => {
-    console.log = originalLog;
-  });
-
   function makeOut(opts: { tips?: boolean; quiet?: boolean; json?: boolean } = {}) {
-    return OutputContext.fromGlobalOpts({
-      json: opts.json ?? false,
+    const stdout = new BufferSink();
+    const stderr = new BufferSink();
+    const out = new OutputContext({
+      mode: opts.json ? 'json' : 'text',
       quiet: opts.quiet ?? false,
       verbose: 0,
       color: true,
       tips: opts.tips ?? true,
+      tty: false,
+      stdout,
+      stderr,
     });
+    return { out, stdout, stderr };
   }
 
   describe('tip()', () => {
     it('prints tip in text mode with tips enabled', () => {
-      const out = makeOut();
+      const { out, stdout } = makeOut();
       out.tip('Use --eject next time.');
-      expect(logSpy).toHaveBeenCalledWith('Tip: Use --eject next time.');
+      expect(stdout.lines()).toEqual(['Tip: Use --eject next time.']);
     });
 
     it('prints tip with url', () => {
-      const out = makeOut();
+      const { out, stdout } = makeOut();
       out.tip('Learn more.', 'https://example.com');
-      expect(logSpy).toHaveBeenCalledWith('Tip: Learn more.');
-      expect(logSpy).toHaveBeenCalledWith('  See: https://example.com');
+      expect(stdout.lines()).toEqual(['Tip: Learn more.', '  See: https://example.com']);
     });
 
     it('suppresses tip when tips disabled', () => {
-      const out = makeOut({ tips: false });
+      const { out, stdout } = makeOut({ tips: false });
       out.tip('Use --eject next time.');
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdout.text()).toBe('');
     });
 
     it('suppresses tip in quiet mode', () => {
-      const out = makeOut({ quiet: true });
+      const { out, stdout } = makeOut({ quiet: true });
       out.tip('Use --eject next time.');
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdout.text()).toBe('');
     });
 
     it('suppresses tip in json mode', () => {
-      const out = makeOut({ json: true });
+      const { out, stdout } = makeOut({ json: true });
       out.tip('Use --eject next time.');
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdout.text()).toBe('');
     });
   });
 
   describe('printTips()', () => {
     it('prints matching tips with leading newline', () => {
-      const out = makeOut();
+      const { out, stdout } = makeOut();
       out.printTips({ mountRequiresSudo: true });
-      // First call is newline, then at least one tip line
-      expect(logSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
-      expect(logSpy.mock.calls[0]![0]).toBe('');
-      expect(logSpy.mock.calls[1]![0]).toMatch(/^Tip:/);
+      const lines = stdout.lines();
+      expect(lines.length).toBeGreaterThanOrEqual(2);
+      expect(lines[0]).toBe('');
+      expect(lines[1]).toMatch(/^Tip:/);
     });
 
     it('suppresses tips when tips disabled', () => {
-      const out = makeOut({ tips: false });
+      const { out, stdout } = makeOut({ tips: false });
       out.printTips({ mountRequiresSudo: true });
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdout.text()).toBe('');
     });
 
     it('prints nothing when no tips match', () => {
-      const out = makeOut();
+      const { out, stdout } = makeOut();
       out.printTips({});
-      expect(logSpy).not.toHaveBeenCalled();
+      expect(stdout.text()).toBe('');
     });
   });
 
   describe('tipsEnabled', () => {
     it('returns true by default', () => {
-      const out = makeOut();
+      const { out } = makeOut();
       expect(out.tipsEnabled).toBe(true);
     });
 
     it('returns false when tips disabled via CLI', () => {
-      const out = makeOut({ tips: false });
+      const { out } = makeOut({ tips: false });
       expect(out.tipsEnabled).toBe(false);
     });
 

@@ -1,16 +1,26 @@
-import { describe, expect, it, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { CliError, runAction } from './errors.js';
 import { OutputContext } from './output/index.js';
+import { BufferSink } from './test-utils/buffer-sink.js';
 
-const makeOut = (mode: 'json' | 'text' = 'text') =>
-  new OutputContext({
+const makeOut = (
+  mode: 'json' | 'text' = 'text',
+  stdout = new BufferSink(),
+  stderr = new BufferSink()
+) => ({
+  out: new OutputContext({
     mode,
     quiet: false,
     verbose: 0,
     color: false,
     tips: false,
     tty: false,
-  });
+    stdout,
+    stderr,
+  }),
+  stdout,
+  stderr,
+});
 
 describe('CliError', () => {
   it('captures message, code, exitCode, details', () => {
@@ -47,44 +57,32 @@ describe('runAction', () => {
   });
 
   it('returns the runner result on success', async () => {
-    const result = await runAction(makeOut(), async () => 42);
+    const { out } = makeOut();
+    const result = await runAction(out, async () => 42);
     expect(result).toBe(42);
     expect(process.exitCode).toBe(0);
   });
 
   it('translates CliError to exit code + stderr text', async () => {
-    const errSpy = mock(() => {});
-    const origErr = console.error;
-    console.error = errSpy;
-    try {
-      await runAction(makeOut(), async () => {
-        throw new CliError({ message: 'bad path', code: 'PATH_REQUIRED' });
-      });
-    } finally {
-      console.error = origErr;
-    }
+    const { out, stderr } = makeOut('text');
+    await runAction(out, async () => {
+      throw new CliError({ message: 'bad path', code: 'PATH_REQUIRED' });
+    });
     expect(process.exitCode).toBe(1);
-    expect(errSpy).toHaveBeenCalledWith('bad path');
+    expect(stderr.text()).toBe('bad path\n');
   });
 
   it('translates CliError to JSON payload in JSON mode', async () => {
-    const logSpy = mock(() => {});
-    const origLog = console.log;
-    console.log = logSpy;
-    try {
-      await runAction(makeOut('json'), async () => {
-        throw new CliError({
-          message: 'no device',
-          code: 'NO_DEVICE',
-          details: { searched: '/Volumes' },
-        });
+    const { out, stdout } = makeOut('json');
+    await runAction(out, async () => {
+      throw new CliError({
+        message: 'no device',
+        code: 'NO_DEVICE',
+        details: { searched: '/Volumes' },
       });
-    } finally {
-      console.log = origLog;
-    }
+    });
     expect(process.exitCode).toBe(1);
-    const payload = JSON.parse(logSpy.mock.calls[0]![0] as string);
-    expect(payload).toEqual({
+    expect(stdout.json()).toEqual({
       success: false,
       error: 'no device',
       code: 'NO_DEVICE',
@@ -93,15 +91,17 @@ describe('runAction', () => {
   });
 
   it('uses custom exitCode from CliError', async () => {
-    await runAction(makeOut(), async () => {
+    const { out } = makeOut();
+    await runAction(out, async () => {
       throw new CliError({ message: 'x', exitCode: 7 });
     });
     expect(process.exitCode).toBe(7);
   });
 
   it('rethrows non-CliError exceptions', async () => {
+    const { out } = makeOut();
     await expect(
-      runAction(makeOut(), async () => {
+      runAction(out, async () => {
         throw new TypeError('not a CliError');
       })
     ).rejects.toThrow(TypeError);

@@ -23,6 +23,14 @@ export interface OutputOptions {
 }
 
 /**
+ * Minimal sink contract for output streams. `process.stdout` and
+ * `process.stderr` satisfy this; tests can pass any object with `write`.
+ */
+export interface OutputSink {
+  write(chunk: string): boolean | void;
+}
+
+/**
  * Configuration for creating an OutputContext
  */
 export interface OutputContextConfig extends OutputOptions {
@@ -35,6 +43,10 @@ export interface OutputContextConfig extends OutputOptions {
    * False when --no-tty is passed or stdout is not a TTY.
    */
   tty: boolean;
+  /** stdout sink. Defaults to process.stdout. Tests inject a buffer. */
+  stdout?: OutputSink;
+  /** stderr sink. Defaults to process.stderr. */
+  stderr?: OutputSink;
 }
 
 /**
