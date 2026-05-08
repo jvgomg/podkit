@@ -618,159 +618,173 @@ const musicSubcommand = new Command('music')
     `fields to show (comma-separated, for --tracks). Valid: ${[...AVAILABLE_FIELDS].join(', ')}`
   )
   .action(async (options: ContentListOptions & { collection?: string }) => {
-    const name = options.collection;
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    const format = out.isJson ? 'json' : options.format;
-    const mode = options.tracks
-      ? 'tracks'
-      : options.albums
-        ? 'albums'
-        : options.artists
-          ? 'artists'
-          : 'stats';
-
-    const outputError = (error: string) => {
-      if (format === 'json') {
-        out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-      } else {
-        out.error(`Error: ${error}`);
-      }
-      process.exitCode = 1;
-    };
-
-    if (options.fields && mode !== 'tracks') {
-      outputError('--fields can only be used with --tracks');
-      return;
-    }
-
-    let fields;
-    try {
-      fields = parseFields(options.fields);
-    } catch (err) {
-      outputError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const resolved = resolveMusicCollectionArg(name);
-    if ('error' in resolved) {
-      outputError(resolved.error);
-      return;
-    }
-
-    const { collection } = resolved;
-    const collectionConfig = collection as MusicCollectionConfig;
-    const isSubsonic = collectionConfig.type === 'subsonic';
-
-    // Check if path exists (only for directory collections)
-    if (!isSubsonic && !existsSync(collectionConfig.path)) {
-      outputError(`Collection path does not exist: ${collectionConfig.path}`);
-      return;
-    }
-
-    try {
-      const adapter = createMusicAdapter({
-        config: collectionConfig,
-        name: resolved.name,
-      });
-
-      const scanMessage = isSubsonic
-        ? `Fetching from ${collectionConfig.url}...`
-        : `Scanning ${collectionConfig.path}...`;
-      const spinner = out.spinner(scanMessage);
-
-      await adapter.connect();
-      const tracks = await adapter.getItems();
-      spinner.stop();
-
-      const heading = `Music in collection '${resolved.name}':`;
-
-      const displayTracks: DisplayTrack[] = tracks.map((t: CollectionTrack) => ({
-        title: t.title || 'Unknown Title',
-        artist: t.artist || 'Unknown Artist',
-        album: t.album || 'Unknown Album',
-        duration: t.duration,
-        albumArtist: t.albumArtist || undefined,
-        genre: t.genre || undefined,
-        year: t.year && t.year > 0 ? t.year : undefined,
-        trackNumber: t.trackNumber && t.trackNumber > 0 ? t.trackNumber : undefined,
-        discNumber: t.discNumber && t.discNumber > 0 ? t.discNumber : undefined,
-        filePath: t.filePath || undefined,
-        artwork: t.hasArtwork,
-        hasArtwork: t.hasArtwork,
-        compilation: t.compilation,
-        format: t.fileType || undefined,
-        codec: t.codec || undefined,
-        lossless: t.lossless,
-        bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
-        normalization: t.normalization,
-      }));
-
-      if (mode === 'stats') {
-        const stats = computeStats(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(stats, null, 2));
-        } else {
-          const sourceInfo =
-            collectionConfig.type === 'subsonic'
-              ? { adapterType: 'subsonic', location: collectionConfig.url! }
-              : { adapterType: 'directory', location: collectionConfig.path };
-          out.stdout(
-            formatStatsText(stats, heading, {
-              verbose: out.isVerbose,
-              tips: out.tipsEnabled,
-              source: sourceInfo,
-            })
-          );
-        }
-      } else if (mode === 'albums') {
-        const albums = aggregateAlbums(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(albums, null, 2));
-        } else if (format === 'csv') {
-          const lines = ['Album,Artist,Tracks'];
-          for (const a of albums) {
-            lines.push(`${escapeCsv(a.album)},${escapeCsv(a.artist)},${a.tracks}`);
-          }
-          out.stdout(lines.join('\n'));
-        } else {
-          out.stdout(formatAlbumsTable(albums, heading));
-        }
-      } else if (mode === 'artists') {
-        const artists = aggregateArtists(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(artists, null, 2));
-        } else if (format === 'csv') {
-          const lines = ['Artist,Albums,Tracks'];
-          for (const a of artists) {
-            lines.push(`${escapeCsv(a.artist)},${a.albums},${a.tracks}`);
-          }
-          out.stdout(lines.join('\n'));
-        } else {
-          out.stdout(formatArtistsTable(artists, heading));
-        }
-      } else {
-        // tracks mode
-        let output: string;
-        switch (format) {
-          case 'json':
-            output = formatJson(displayTracks, fields);
-            break;
-          case 'csv':
-            output = formatCsv(displayTracks, fields);
-            break;
-          case 'table':
-          default:
-            output = formatTable(displayTracks, fields);
-            break;
-        }
-        out.stdout(output);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      outputError(message);
-    }
+    await runCollectionMusic(options, out);
   });
+
+/**
+ * `collection music` runner — testable in-process.
+ *
+ * Extracted from the action callback so unit/integration tests can call it
+ * directly with a captured OutputContext (BufferSink) instead of spawning
+ * the CLI as a subprocess.
+ */
+export async function runCollectionMusic(
+  options: ContentListOptions & { collection?: string },
+  out: OutputContext
+): Promise<void> {
+  const name = options.collection;
+  const format = out.isJson ? 'json' : options.format;
+  const mode = options.tracks
+    ? 'tracks'
+    : options.albums
+      ? 'albums'
+      : options.artists
+        ? 'artists'
+        : 'stats';
+
+  const outputError = (error: string) => {
+    if (format === 'json') {
+      out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
+    } else {
+      out.error(`Error: ${error}`);
+    }
+    process.exitCode = 1;
+  };
+
+  if (options.fields && mode !== 'tracks') {
+    outputError('--fields can only be used with --tracks');
+    return;
+  }
+
+  let fields;
+  try {
+    fields = parseFields(options.fields);
+  } catch (err) {
+    outputError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  const resolved = resolveMusicCollectionArg(name);
+  if ('error' in resolved) {
+    outputError(resolved.error);
+    return;
+  }
+
+  const { collection } = resolved;
+  const collectionConfig = collection as MusicCollectionConfig;
+  const isSubsonic = collectionConfig.type === 'subsonic';
+
+  // Check if path exists (only for directory collections)
+  if (!isSubsonic && !existsSync(collectionConfig.path)) {
+    outputError(`Collection path does not exist: ${collectionConfig.path}`);
+    return;
+  }
+
+  try {
+    const adapter = createMusicAdapter({
+      config: collectionConfig,
+      name: resolved.name,
+    });
+
+    const scanMessage = isSubsonic
+      ? `Fetching from ${collectionConfig.url}...`
+      : `Scanning ${collectionConfig.path}...`;
+    const spinner = out.spinner(scanMessage);
+
+    await adapter.connect();
+    const tracks = await adapter.getItems();
+    spinner.stop();
+
+    const heading = `Music in collection '${resolved.name}':`;
+
+    const displayTracks: DisplayTrack[] = tracks.map((t: CollectionTrack) => ({
+      title: t.title || 'Unknown Title',
+      artist: t.artist || 'Unknown Artist',
+      album: t.album || 'Unknown Album',
+      duration: t.duration,
+      albumArtist: t.albumArtist || undefined,
+      genre: t.genre || undefined,
+      year: t.year && t.year > 0 ? t.year : undefined,
+      trackNumber: t.trackNumber && t.trackNumber > 0 ? t.trackNumber : undefined,
+      discNumber: t.discNumber && t.discNumber > 0 ? t.discNumber : undefined,
+      filePath: t.filePath || undefined,
+      artwork: t.hasArtwork,
+      hasArtwork: t.hasArtwork,
+      compilation: t.compilation,
+      format: t.fileType || undefined,
+      codec: t.codec || undefined,
+      lossless: t.lossless,
+      bitrate: t.bitrate && t.bitrate > 0 ? t.bitrate : undefined,
+      normalization: t.normalization,
+    }));
+
+    if (mode === 'stats') {
+      const stats = computeStats(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(stats, null, 2));
+      } else {
+        const sourceInfo =
+          collectionConfig.type === 'subsonic'
+            ? { adapterType: 'subsonic', location: collectionConfig.url! }
+            : { adapterType: 'directory', location: collectionConfig.path };
+        out.stdout(
+          formatStatsText(stats, heading, {
+            verbose: out.isVerbose,
+            tips: out.tipsEnabled,
+            source: sourceInfo,
+          })
+        );
+      }
+    } else if (mode === 'albums') {
+      const albums = aggregateAlbums(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(albums, null, 2));
+      } else if (format === 'csv') {
+        const lines = ['Album,Artist,Tracks'];
+        for (const a of albums) {
+          lines.push(`${escapeCsv(a.album)},${escapeCsv(a.artist)},${a.tracks}`);
+        }
+        out.stdout(lines.join('\n'));
+      } else {
+        out.stdout(formatAlbumsTable(albums, heading));
+      }
+    } else if (mode === 'artists') {
+      const artists = aggregateArtists(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(artists, null, 2));
+      } else if (format === 'csv') {
+        const lines = ['Artist,Albums,Tracks'];
+        for (const a of artists) {
+          lines.push(`${escapeCsv(a.artist)},${a.albums},${a.tracks}`);
+        }
+        out.stdout(lines.join('\n'));
+      } else {
+        out.stdout(formatArtistsTable(artists, heading));
+      }
+    } else {
+      // tracks mode
+      let output: string;
+      switch (format) {
+        case 'json':
+          output = formatJson(displayTracks, fields);
+          break;
+        case 'csv':
+          output = formatCsv(displayTracks, fields);
+          break;
+        case 'table':
+        default:
+          output = formatTable(displayTracks, fields);
+          break;
+      }
+      out.stdout(output);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    outputError(message);
+  }
+}
 
 // =============================================================================
 // Video subcommand (list videos in a video collection)
@@ -790,136 +804,146 @@ const videoSubcommand = new Command('video')
     `fields to show (comma-separated, for --tracks). Valid: ${[...AVAILABLE_FIELDS].join(', ')}`
   )
   .action(async (options: ContentListOptions & { collection?: string }) => {
-    const name = options.collection;
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    const format = out.isJson ? 'json' : options.format;
-    const mode = options.tracks
-      ? 'tracks'
-      : options.albums
-        ? 'albums'
-        : options.artists
-          ? 'artists'
-          : 'stats';
-
-    const outputError = (error: string) => {
-      if (format === 'json') {
-        out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-      } else {
-        out.error(`Error: ${error}`);
-      }
-      process.exitCode = 1;
-    };
-
-    if (options.fields && mode !== 'tracks') {
-      outputError('--fields can only be used with --tracks');
-      return;
-    }
-
-    let fields;
-    try {
-      fields = parseFields(options.fields);
-    } catch (err) {
-      outputError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const resolved = resolveVideoCollectionArg(name);
-    if ('error' in resolved) {
-      outputError(resolved.error);
-      return;
-    }
-
-    const { collection } = resolved;
-
-    // Check if path exists
-    if (!existsSync(collection.path)) {
-      outputError(`Collection path does not exist: ${collection.path}`);
-      return;
-    }
-
-    try {
-      // Dynamically import podkit-core to scan the collection
-      const core = await import('@podkit/core');
-
-      // For video collections, we scan for video files
-      const adapter = core.createVideoDirectoryAdapter({
-        path: collection.path,
-      });
-
-      const spinner = out.spinner(`Scanning ${collection.path}...`);
-
-      const videos = await adapter.getItems();
-      spinner.stop();
-
-      const heading = `Video in collection '${resolved.name}':`;
-
-      const displayTracks: DisplayTrack[] = videos.map((v: CollectionVideo) => ({
-        title: v.title || 'Unknown Title',
-        artist: v.seriesTitle || '', // Use series title for TV shows
-        album: '',
-        duration: v.duration * 1000, // Convert seconds to milliseconds
-        year: v.year && v.year > 0 ? v.year : undefined,
-        filePath: v.filePath || undefined,
-        format: v.container || undefined,
-        bitrate: undefined,
-      }));
-
-      if (mode === 'stats') {
-        const stats = computeStats(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(stats, null, 2));
-        } else {
-          out.stdout(formatStatsText(stats, heading, { tips: out.tipsEnabled }));
-        }
-      } else if (mode === 'albums') {
-        const albums = aggregateAlbums(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(albums, null, 2));
-        } else if (format === 'csv') {
-          const lines = ['Album,Artist,Tracks'];
-          for (const a of albums) {
-            lines.push(`${escapeCsv(a.album)},${escapeCsv(a.artist)},${a.tracks}`);
-          }
-          out.stdout(lines.join('\n'));
-        } else {
-          out.stdout(formatAlbumsTable(albums, heading));
-        }
-      } else if (mode === 'artists') {
-        const artists = aggregateArtists(displayTracks);
-        if (format === 'json') {
-          out.stdout(JSON.stringify(artists, null, 2));
-        } else if (format === 'csv') {
-          const lines = ['Artist,Albums,Tracks'];
-          for (const a of artists) {
-            lines.push(`${escapeCsv(a.artist)},${a.albums},${a.tracks}`);
-          }
-          out.stdout(lines.join('\n'));
-        } else {
-          out.stdout(formatArtistsTable(artists, heading));
-        }
-      } else {
-        // tracks mode
-        let output: string;
-        switch (format) {
-          case 'json':
-            output = formatJson(displayTracks, fields);
-            break;
-          case 'csv':
-            output = formatCsv(displayTracks, fields);
-            break;
-          case 'table':
-          default:
-            output = formatTable(displayTracks, fields);
-            break;
-        }
-        out.stdout(output);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      outputError(message);
-    }
+    await runCollectionVideo(options, out);
   });
+
+/**
+ * `collection video` runner — testable in-process. See `runCollectionMusic`.
+ */
+export async function runCollectionVideo(
+  options: ContentListOptions & { collection?: string },
+  out: OutputContext
+): Promise<void> {
+  const name = options.collection;
+  const format = out.isJson ? 'json' : options.format;
+  const mode = options.tracks
+    ? 'tracks'
+    : options.albums
+      ? 'albums'
+      : options.artists
+        ? 'artists'
+        : 'stats';
+
+  const outputError = (error: string) => {
+    if (format === 'json') {
+      out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
+    } else {
+      out.error(`Error: ${error}`);
+    }
+    process.exitCode = 1;
+  };
+
+  if (options.fields && mode !== 'tracks') {
+    outputError('--fields can only be used with --tracks');
+    return;
+  }
+
+  let fields;
+  try {
+    fields = parseFields(options.fields);
+  } catch (err) {
+    outputError(err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  const resolved = resolveVideoCollectionArg(name);
+  if ('error' in resolved) {
+    outputError(resolved.error);
+    return;
+  }
+
+  const { collection } = resolved;
+
+  // Check if path exists
+  if (!existsSync(collection.path)) {
+    outputError(`Collection path does not exist: ${collection.path}`);
+    return;
+  }
+
+  try {
+    // Dynamically import podkit-core to scan the collection
+    const core = await import('@podkit/core');
+
+    // For video collections, we scan for video files
+    const adapter = core.createVideoDirectoryAdapter({
+      path: collection.path,
+    });
+
+    const spinner = out.spinner(`Scanning ${collection.path}...`);
+
+    const videos = await adapter.getItems();
+    spinner.stop();
+
+    const heading = `Video in collection '${resolved.name}':`;
+
+    const displayTracks: DisplayTrack[] = videos.map((v: CollectionVideo) => ({
+      title: v.title || 'Unknown Title',
+      artist: v.seriesTitle || '', // Use series title for TV shows
+      album: '',
+      duration: v.duration * 1000, // Convert seconds to milliseconds
+      year: v.year && v.year > 0 ? v.year : undefined,
+      filePath: v.filePath || undefined,
+      format: v.container || undefined,
+      bitrate: undefined,
+    }));
+
+    if (mode === 'stats') {
+      const stats = computeStats(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(stats, null, 2));
+      } else {
+        out.stdout(formatStatsText(stats, heading, { tips: out.tipsEnabled }));
+      }
+    } else if (mode === 'albums') {
+      const albums = aggregateAlbums(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(albums, null, 2));
+      } else if (format === 'csv') {
+        const lines = ['Album,Artist,Tracks'];
+        for (const a of albums) {
+          lines.push(`${escapeCsv(a.album)},${escapeCsv(a.artist)},${a.tracks}`);
+        }
+        out.stdout(lines.join('\n'));
+      } else {
+        out.stdout(formatAlbumsTable(albums, heading));
+      }
+    } else if (mode === 'artists') {
+      const artists = aggregateArtists(displayTracks);
+      if (format === 'json') {
+        out.stdout(JSON.stringify(artists, null, 2));
+      } else if (format === 'csv') {
+        const lines = ['Artist,Albums,Tracks'];
+        for (const a of artists) {
+          lines.push(`${escapeCsv(a.artist)},${a.albums},${a.tracks}`);
+        }
+        out.stdout(lines.join('\n'));
+      } else {
+        out.stdout(formatArtistsTable(artists, heading));
+      }
+    } else {
+      // tracks mode
+      let output: string;
+      switch (format) {
+        case 'json':
+          output = formatJson(displayTracks, fields);
+          break;
+        case 'csv':
+          output = formatCsv(displayTracks, fields);
+          break;
+        case 'table':
+        default:
+          output = formatTable(displayTracks, fields);
+          break;
+      }
+      out.stdout(output);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    outputError(message);
+  }
+}
 
 // =============================================================================
 // Default subcommand

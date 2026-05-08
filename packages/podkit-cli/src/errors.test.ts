@@ -45,7 +45,7 @@ describe('CliError', () => {
 });
 
 describe('runAction', () => {
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
     originalExitCode = process.exitCode;
@@ -82,7 +82,7 @@ describe('runAction', () => {
       });
     });
     expect(process.exitCode).toBe(1);
-    expect(stdout.json()).toEqual({
+    expect(stdout.json<Record<string, unknown>>()).toEqual({
       success: false,
       error: 'no device',
       code: 'NO_DEVICE',
