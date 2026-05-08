@@ -149,3 +149,68 @@ describe('runWithContext (AsyncLocalStorage scope)', () => {
     });
   });
 });
+
+// =============================================================================
+// End-to-end isolation: a real runner inside runWithContext must observe the
+// scoped context, never the module-level one a different test happened to set.
+// This guards against future getContext() callers accidentally caching the
+// fallback value or bypassing ALS.
+// =============================================================================
+
+describe('runWithContext isolation against module-level setContext', () => {
+  beforeEach(() => {
+    clearContext();
+  });
+
+  it('runDeviceAdd inside scope sees the scope, not the leaked module-level config', async () => {
+    // Lazy import to avoid pulling all of device.ts when this test file loads
+    // alone; mirrors the production lazy-import pattern.
+    const { runDeviceAdd } = await import('./commands/device.js');
+    const { OutputContext } = await import('./output/index.js');
+    const { BufferSink } = await import('./test-utils/buffer-sink.js');
+
+    // Module-level says: "foo" is already configured (would trigger duplicate-name error)
+    const polluted: CliContext = {
+      ...mockContext,
+      config: {
+        ...mockConfig,
+        devices: { foo: { volumeUuid: 'leaked', volumeName: 'leaked' } },
+      },
+      globalOpts: { ...mockGlobalOpts, device: 'foo', json: true },
+    };
+    setContext(polluted);
+
+    // Scoped context: clean slate, no "foo" device. runDeviceAdd should see this.
+    const clean: CliContext = {
+      ...mockContext,
+      config: { ...mockConfig, devices: {} },
+      globalOpts: { ...mockGlobalOpts, device: 'foo', json: true },
+    };
+
+    const stdout = new BufferSink();
+    const stderr = new BufferSink();
+    const out = new OutputContext({
+      mode: 'json',
+      quiet: false,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr,
+    });
+
+    const originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    try {
+      await runWithContext(clean, () => runDeviceAdd({ type: 'echo-mini' }, out));
+      // The runner should have hit the --path-required error (because echo-mini
+      // requires --path), NOT the duplicate-name error from the leaked context.
+      const err = stdout.json<{ success: false; error: string }>();
+      expect(err.error).toContain('--path is required');
+      expect(err.error).not.toContain('already exists');
+    } finally {
+      process.exitCode = originalExitCode;
+    }
+  });
+});
