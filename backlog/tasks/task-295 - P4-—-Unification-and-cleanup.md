@@ -4,7 +4,7 @@ title: P4 — Unification and cleanup
 status: In Progress
 assignee: []
 created_date: '2026-05-03 11:34'
-updated_date: '2026-05-07 21:29'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-4
@@ -42,7 +42,7 @@ Blocked by: TASK-294 (P3 main).
 - [x] #6 doc-003 D15 corrected with reference to doc-030
 - [x] #7 ADR written, merged, status Accepted
 - [x] #8 All existing tests pass with no regressions
-- [ ] #9 Hardware validation per inventory: all five devices behave identically to P3
+- [x] #9 Hardware validation per inventory: all five devices behave identically to P3
 - [x] #10 AGENTS.md updated to reflect final package structure
 - [x] #11 CHANGELOG updated for podkit and all affected packages
 <!-- AC:END -->

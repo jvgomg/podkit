@@ -1,9 +1,10 @@
 ---
 id: TASK-292.10
 title: P1.10 — Hardware validation across 5 inventory devices
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:30'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-1
@@ -37,3 +38,9 @@ This is the user-visible validation gate before P1 release. HITL: requires conne
 - [ ] #7 documents/test-devices.md updated with podkit-side inquiry results for each device
 - [ ] #8 podkit doctor system check passes appropriately for the running system
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Folded into m-18 manual hardware sweep tasks: TASK-S-A (macOS) and TASK-S-B (linka Linux). Hardware validation re-runs against the full inventory there, post-m18 changes baked in.
+<!-- SECTION:NOTES:END -->

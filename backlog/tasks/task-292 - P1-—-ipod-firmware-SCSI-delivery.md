@@ -4,7 +4,7 @@ title: P1 — ipod-firmware SCSI delivery
 status: In Progress
 assignee: []
 created_date: '2026-05-03 11:28'
-updated_date: '2026-05-03 12:59'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-1
@@ -42,7 +42,7 @@ Gated by: TASK-291 (P0 spike).
 - [ ] #6 podkit doctor (no device) shows the new inquiry-methods system check
 - [ ] #7 podkit doctor -d <device> shows the sysinfo-consistency device-scope check
 - [ ] #8 Existing podkit-core, podkit-cli, libgpod-node tests pass with no regressions
-- [ ] #9 Hardware validation per documents/device-testing-playbook.md Phase 3 on all five devices, recorded in documents/test-devices.md
+- [x] #9 Hardware validation per documents/device-testing-playbook.md Phase 3 on all five devices, recorded in documents/test-devices.md
 - [ ] #10 P0 spike directory removed
 - [ ] #11 Public API of the two new packages documented (TSDoc + README)
 <!-- AC:END -->

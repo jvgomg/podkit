@@ -1,9 +1,10 @@
 ---
 id: TASK-295.08
 title: P4.8 — Hardware validation final pass
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:35'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-4
@@ -34,3 +35,9 @@ See spec doc-035, Hardware validation.
 - [ ] #3 podkit sync --dry-run completes successfully on all devices
 - [ ] #4 documents/test-devices.md updated to reflect post-P4 (final) state
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Folded into TASK-S-A + TASK-S-B. The "final pass" is the consolidated post-m18 sweep — running it once at this point validates all of P0–P4 cumulatively.
+<!-- SECTION:NOTES:END -->

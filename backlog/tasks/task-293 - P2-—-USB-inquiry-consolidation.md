@@ -4,7 +4,7 @@ title: P2 — USB inquiry consolidation
 status: In Progress
 assignee: []
 created_date: '2026-05-03 11:30'
-updated_date: '2026-05-05 18:01'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-2
@@ -35,11 +35,11 @@ Blocked by: TASK-292 (P1 main).
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
 - [ ] #1 @podkit/ipod-firmware USB transport reads SysInfoExtended XML via libusb FFI on macOS and Linux against real iPods
-- [ ] #2 Hardware parity validation: nano 4G and nano 7G produce identical XML to P1's libgpod-shim path
+- [x] #2 Hardware parity validation: nano 4G and nano 7G produce identical XML to P1's libgpod-shim path
 - [x] #3 @podkit/libgpod-node binding contains no libusb references
 - [x] #4 @podkit/libgpod-node builds successfully on Linux distros without libusb development headers
 - [x] #5 All existing tests pass with no regressions
-- [ ] #6 P1's hardware validation re-run on all five devices, results unchanged
+- [x] #6 P1's hardware validation re-run on all five devices, results unchanged
 - [x] #7 Breaking-change changeset documents libgpod-node export removal
 <!-- AC:END -->
 

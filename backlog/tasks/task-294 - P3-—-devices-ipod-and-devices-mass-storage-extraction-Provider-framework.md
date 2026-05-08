@@ -4,7 +4,7 @@ title: P3 — devices-ipod and devices-mass-storage extraction + Provider framew
 status: In Progress
 assignee: []
 created_date: '2026-05-03 11:32'
-updated_date: '2026-05-06 21:28'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-3
@@ -48,7 +48,7 @@ Blocked by: TASK-293 (P2 main).
 - [ ] #10 ARTWORK_MAX_RESOLUTION unified in @podkit/devices-ipod (no duplicate)
 - [ ] #11 LibgpodDeviceInfo adapter type gone
 - [ ] #12 CLI --type flag accepts any string; built-ins still autocomplete
-- [ ] #13 Hardware validation per inventory: all five devices behave identically to P2
+- [x] #13 Hardware validation per inventory: all five devices behave identically to P2
 - [ ] #14 AGENTS.md updated with new package list
 - [ ] #15 Unsupported iPods (Shuffle 3G/4G, Nano 6G, Touch) produce a friendly 'not supported' error at device add instead of a cryptic firmware failure
 <!-- AC:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-294.14
 title: P3.14 — Hardware + Echo Mini validation
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:33'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-3
@@ -36,3 +37,9 @@ See spec doc-034, Hardware validation.
 - [ ] #3 Echo Mini sync planning produces capabilities matching pre-P3 preset-derived values
 - [ ] #4 documents/test-devices.md updated
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Folded into TASK-S-A (macOS sweep). Echo Mini auto-detect + 5-iPod re-validation lives in the consolidated macOS session.
+<!-- SECTION:NOTES:END -->

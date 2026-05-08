@@ -1,10 +1,10 @@
 ---
 id: TASK-293.03
 title: P2.3 — Hardware parity validation against P1
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 11:31'
-updated_date: '2026-05-05 18:01'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - phase-2
@@ -40,5 +40,5 @@ See spec doc-033, Hardware validation.
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-HITL deferred — requires physical hardware (nano 4G, nano 7G, mini 2G, nano 2G, iPod 5G Video). Status remains To Do pending hardware sweep after P2 merge. All software-side gates pass.
+Folded into TASK-S-A (macOS sweep) + TASK-S-B (linka sweep). USB FFI parity vs P1 covered there alongside the rest of the hardware re-validation.
 <!-- SECTION:NOTES:END -->

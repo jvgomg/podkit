@@ -3,10 +3,10 @@ id: TASK-292.13
 title: >-
   Linux SCSI permission UX: full hardware review on linka (deferred until all
   discovery code lands)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-03 15:53'
-updated_date: '2026-05-05 17:24'
+updated_date: '2026-05-08 08:12'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -74,5 +74,5 @@ This task: set up the podkit repo on the linka Linux box, run the full UX flow a
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Deferred per user direction: don't run the full Linux UX review until all SCSI + USB discovery code has moved (P2 — libgpod-node USB inquiry replacement, plus any P3 USB-discovery extraction). At that point the final UX is known, so a single comprehensive Linux review pass covers all the device-capability strategy permutations. Until then, the udev-rule repair is shipped, unit-tested, but real-hardware install verification waits.
+Folded into TASK-S-B (linka full sweep). The udev-rule install + EACCES UX + sudo-first flow is exercised end-to-end as part of the consolidated linka session, not as its own out-of-band task.
 <!-- SECTION:NOTES:END -->
