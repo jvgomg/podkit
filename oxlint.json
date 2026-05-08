@@ -77,6 +77,30 @@
       "rules": {
         "no-console": "off"
       }
+    },
+    {
+      "files": [
+        "**/podkit-cli/src/**/*.test.ts",
+        "**/podkit-cli/src/**/*.unit.test.ts",
+        "**/podkit-cli/src/**/*.integration.test.ts"
+      ],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "node:child_process",
+                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in packages/e2e-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
+              },
+              {
+                "name": "child_process",
+                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in packages/e2e-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
+              }
+            ]
+          }
+        ]
+      }
     }
   ],
   "ignorePatterns": ["node_modules", "dist", "*.d.ts", "backlog", "docs"]
