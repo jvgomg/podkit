@@ -5,52 +5,53 @@ import {
   getConfig,
   getGlobalOpts,
   clearContext,
+  runWithContext,
   type CliContext,
 } from './context.js';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from './config/index.js';
 import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from './config/index.js';
 
+const mockConfig: PodkitConfig = {
+  quality: 'high',
+  artwork: true,
+  tips: true,
+  transforms: DEFAULT_TRANSFORMS_CONFIG,
+  videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  music: {
+    main: { path: '/test/music' },
+  },
+  devices: {
+    ipod: { volumeUuid: 'ABC-123', volumeName: 'iPod' },
+  },
+  defaults: {
+    music: 'main',
+    device: 'ipod',
+  },
+};
+
+const mockGlobalOpts: GlobalOptions = {
+  verbose: 1,
+  quiet: false,
+  json: false,
+  color: true,
+  tips: true,
+  tty: false,
+  config: '/test/config.toml',
+};
+
+const mockConfigResult: LoadConfigResult = {
+  config: mockConfig,
+  configPath: '/test/config.toml',
+  configFileExists: true,
+};
+
+const mockContext: CliContext = {
+  config: mockConfig,
+  globalOpts: mockGlobalOpts,
+  configResult: mockConfigResult,
+};
+
 describe('CLI context', () => {
-  const mockConfig: PodkitConfig = {
-    quality: 'high',
-    artwork: true,
-    tips: true,
-    transforms: DEFAULT_TRANSFORMS_CONFIG,
-    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
-    music: {
-      main: { path: '/test/music' },
-    },
-    devices: {
-      ipod: { volumeUuid: 'ABC-123', volumeName: 'iPod' },
-    },
-    defaults: {
-      music: 'main',
-      device: 'ipod',
-    },
-  };
-
-  const mockGlobalOpts: GlobalOptions = {
-    verbose: 1,
-    quiet: false,
-    json: false,
-    color: true,
-    tips: true,
-    tty: false,
-    config: '/test/config.toml',
-  };
-
-  const mockConfigResult: LoadConfigResult = {
-    config: mockConfig,
-    configPath: '/test/config.toml',
-    configFileExists: true,
-  };
-
-  const mockContext: CliContext = {
-    config: mockConfig,
-    globalOpts: mockGlobalOpts,
-    configResult: mockConfigResult,
-  };
-
   beforeEach(() => {
     clearContext();
   });
@@ -62,60 +63,35 @@ describe('CLI context', () => {
 
     it('returns context after setContext', () => {
       setContext(mockContext);
-      const ctx = getContext();
-      expect(ctx).toBe(mockContext);
+      expect(getContext()).toBe(mockContext);
     });
   });
 
   describe('setContext', () => {
-    it('sets the context', () => {
-      setContext(mockContext);
-      expect(getContext()).toBe(mockContext);
-    });
-
     it('overwrites previous context', () => {
-      const firstContext: CliContext = {
-        ...mockContext,
-        config: { ...mockConfig, quality: 'low' },
-      };
-      const secondContext: CliContext = {
-        ...mockContext,
-        config: { ...mockConfig, quality: 'medium' },
-      };
-
-      setContext(firstContext);
-      setContext(secondContext);
-
+      const a: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'low' } };
+      const b: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'medium' } };
+      setContext(a);
+      setContext(b);
       expect(getContext().config.quality).toBe('medium');
     });
   });
 
-  describe('getConfig', () => {
+  describe('getConfig / getGlobalOpts', () => {
     it('throws when context not set', () => {
       expect(() => getConfig()).toThrow(/CLI context not initialized/);
-    });
-
-    it('returns config from context', () => {
-      setContext(mockContext);
-      const config = getConfig();
-      expect(config).toBe(mockConfig);
-    });
-  });
-
-  describe('getGlobalOpts', () => {
-    it('throws when context not set', () => {
       expect(() => getGlobalOpts()).toThrow(/CLI context not initialized/);
     });
 
-    it('returns globalOpts from context', () => {
+    it('returns values from current context', () => {
       setContext(mockContext);
-      const opts = getGlobalOpts();
-      expect(opts).toBe(mockGlobalOpts);
+      expect(getConfig()).toBe(mockConfig);
+      expect(getGlobalOpts()).toBe(mockGlobalOpts);
     });
   });
 
   describe('clearContext', () => {
-    it('clears the context', () => {
+    it('clears the module-level context', () => {
       setContext(mockContext);
       clearContext();
       expect(() => getContext()).toThrow(/CLI context not initialized/);
@@ -123,6 +99,53 @@ describe('CLI context', () => {
 
     it('does not throw when context already clear', () => {
       expect(() => clearContext()).not.toThrow();
+    });
+  });
+});
+
+describe('runWithContext (AsyncLocalStorage scope)', () => {
+  beforeEach(() => {
+    clearContext();
+  });
+
+  it('exposes context inside the scope only', () => {
+    runWithContext(mockContext, () => {
+      expect(getContext()).toBe(mockContext);
+    });
+    expect(() => getContext()).toThrow(/CLI context not initialized/);
+  });
+
+  it('overrides the module-level context inside the scope', () => {
+    const outer = mockContext;
+    const inner: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'low' } };
+    setContext(outer);
+    runWithContext(inner, () => {
+      expect(getContext()).toBe(inner);
+    });
+    expect(getContext()).toBe(outer);
+  });
+
+  it('isolates concurrent async scopes', async () => {
+    const ctxA: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'low' } };
+    const ctxB: CliContext = { ...mockContext, config: { ...mockConfig, quality: 'high' } };
+
+    const observe = (ctx: CliContext, delay: number) =>
+      new Promise<string>((resolve) => {
+        runWithContext(ctx, () => {
+          setTimeout(() => resolve(getContext().config.quality!), delay);
+        });
+      });
+
+    const [a, b] = await Promise.all([observe(ctxA, 10), observe(ctxB, 5)]);
+    expect(a).toBe('low');
+    expect(b).toBe('high');
+  });
+
+  it('propagates context across awaits', async () => {
+    await runWithContext(mockContext, async () => {
+      await Promise.resolve();
+      await new Promise((r) => setTimeout(r, 1));
+      expect(getContext()).toBe(mockContext);
     });
   });
 });

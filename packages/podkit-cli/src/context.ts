@@ -1,69 +1,54 @@
 /**
- * CLI context - holds configuration and global state for commands
+ * CLI context — holds configuration and global state for commands.
  *
- * This module provides a way for commands to access the loaded configuration
- * without needing to pass it through every function call.
+ * Two layers:
+ *  - Module-level fallback (`setContext` / `clearContext`) used by `main.ts` for
+ *    the production CLI process where a single context spans the whole run.
+ *  - AsyncLocalStorage scope (`runWithContext`) used by tests so concurrent
+ *    invocations each see their own context with no cross-talk.
+ *
+ * `getContext()` prefers the ALS scope and falls back to the module-level value,
+ * so production call sites are unchanged.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from './config/index.js';
 
-/**
- * CLI execution context
- */
 export interface CliContext {
-  /** Merged configuration from all sources */
   config: PodkitConfig;
-  /** Global CLI options */
   globalOpts: GlobalOptions;
-  /** Config loading metadata */
   configResult: LoadConfigResult;
 }
 
-/**
- * Current CLI context (set during command execution)
- */
-let currentContext: CliContext | undefined;
+const als = new AsyncLocalStorage<CliContext>();
+let moduleContext: CliContext | undefined;
 
-/**
- * Set the current CLI context
- *
- * Called by main.ts before command actions run
- */
 export function setContext(ctx: CliContext): void {
-  currentContext = ctx;
+  moduleContext = ctx;
 }
 
-/**
- * Get the current CLI context
- *
- * @throws Error if called before context is set
- */
+export function runWithContext<T>(ctx: CliContext, fn: () => T): T {
+  return als.run(ctx, fn);
+}
+
 export function getContext(): CliContext {
-  if (!currentContext) {
+  const ctx = als.getStore() ?? moduleContext;
+  if (!ctx) {
     throw new Error(
-      'CLI context not initialized. This is a bug - context should be set before commands run.'
+      'CLI context not initialized. This is a bug — context should be set before commands run.'
     );
   }
-  return currentContext;
+  return ctx;
 }
 
-/**
- * Get the current config (convenience wrapper)
- */
 export function getConfig(): PodkitConfig {
   return getContext().config;
 }
 
-/**
- * Get global options (convenience wrapper)
- */
 export function getGlobalOpts(): GlobalOptions {
   return getContext().globalOpts;
 }
 
-/**
- * Clear the context (for testing)
- */
 export function clearContext(): void {
-  currentContext = undefined;
+  moduleContext = undefined;
 }
