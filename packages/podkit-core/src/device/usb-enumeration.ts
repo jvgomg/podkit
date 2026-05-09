@@ -226,10 +226,36 @@ async function enumerateMacOS(): Promise<EnumeratedUsbDevice[]> {
     });
 
     const data: unknown = JSON.parse(stdout);
-    return parseSystemProfilerUsbData(data);
+    const parsed = parseSystemProfilerUsbData(data);
+    return dropStaleDiskReferences(parsed);
   } catch {
     return [];
   }
+}
+
+/**
+ * Drop entries whose `diskIdentifier` references a `/dev/<name>` that does not
+ * exist on the system. macOS (via system_profiler / IOKit) can hold ghost USB
+ * references after a device is unplugged, sometimes splitting one ghost device
+ * into multiple entries pointing at stale `bsd_name`s like `disk6` / `disk7`.
+ * Real plugged-in devices that expose a volume always have a corresponding
+ * `/dev/<name>`; entries that don't are stale and would surface as phantoms in
+ * downstream classification.
+ *
+ * Entries with no `diskIdentifier` are not affected — they're USB-only (e.g.,
+ * iOS devices or iPods that aren't in disk mode) and disk-presence isn't a
+ * meaningful check for them.
+ *
+ * Exported for testing.
+ */
+export function dropStaleDiskReferences(
+  devices: EnumeratedUsbDevice[],
+  existsSync: (path: string) => boolean = fs.existsSync
+): EnumeratedUsbDevice[] {
+  return devices.filter((d) => {
+    if (!d.diskIdentifier) return true;
+    return existsSync(`/dev/${d.diskIdentifier}`);
+  });
 }
 
 // ── Linux implementation ─────────────────────────────────────────────────────

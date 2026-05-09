@@ -9,6 +9,7 @@ import {
   enumerateUsb,
   extractProductId,
   extractVendorId,
+  dropStaleDiskReferences,
 } from './usb-enumeration.js';
 
 // ── parseSystemProfilerUsbData ───────────────────────────────────────────────
@@ -313,6 +314,60 @@ describe('parseLocationId', () => {
 
   it('handles no spaces around slash', () => {
     expect(parseLocationId('0x02100000/7')).toEqual({ busNumber: 2, deviceAddress: 7 });
+  });
+});
+
+// ── dropStaleDiskReferences ─────────────────────────────────────────────────
+
+describe('dropStaleDiskReferences', () => {
+  it('drops entries whose diskIdentifier references a non-existent /dev node', () => {
+    // Reproduces the macOS ghost-USB scenario: system_profiler reports a
+    // device with bsd_name `disk6` even though the device was unplugged and
+    // /dev/disk6 no longer exists. Without this filter the entry surfaces as
+    // a phantom in `device scan`.
+    const devices = [
+      { vendorId: '05ac', productId: '1262', diskIdentifier: 'disk6' },
+      { vendorId: '05ac', productId: '1262', diskIdentifier: 'disk7' },
+    ];
+    const existsSync = (p: string): boolean => p === '/dev/disk4'; // only disk4 exists
+    expect(dropStaleDiskReferences(devices, existsSync)).toEqual([]);
+  });
+
+  it('keeps entries whose diskIdentifier references an existing /dev node', () => {
+    const devices = [
+      { vendorId: '05ac', productId: '1263', diskIdentifier: 'disk4' },
+      { vendorId: '05ac', productId: '1262', diskIdentifier: 'disk7' },
+    ];
+    const existsSync = (p: string): boolean => p === '/dev/disk4';
+    expect(dropStaleDiskReferences(devices, existsSync)).toEqual([
+      { vendorId: '05ac', productId: '1263', diskIdentifier: 'disk4' },
+    ]);
+  });
+
+  it('keeps entries with no diskIdentifier (USB-only) regardless of fs state', () => {
+    // iOS devices and unmounted iPods don't claim a disk; disk-presence isn't
+    // a meaningful check for them. They must pass through.
+    const devices = [
+      { vendorId: '05ac', productId: '12aa' }, // iPod touch — no disk
+      { vendorId: '05ac', productId: '1261' }, // iPod classic, hypothetically un-mounted
+    ];
+    const existsSync = (): boolean => false;
+    expect(dropStaleDiskReferences(devices, existsSync)).toEqual(devices);
+  });
+
+  it('preserves order', () => {
+    const devices = [
+      { vendorId: '05ac', productId: '1263', diskIdentifier: 'disk4' },
+      { vendorId: '0bda', productId: '8153' }, // no disk — kept
+      { vendorId: '05ac', productId: '1262', diskIdentifier: 'disk6' }, // ghost — dropped
+      { vendorId: '071b', productId: '3203', diskIdentifier: 'disk5' },
+    ];
+    const existsSync = (p: string): boolean => p === '/dev/disk4' || p === '/dev/disk5';
+    expect(dropStaleDiskReferences(devices, existsSync)).toEqual([
+      { vendorId: '05ac', productId: '1263', diskIdentifier: 'disk4' },
+      { vendorId: '0bda', productId: '8153' },
+      { vendorId: '071b', productId: '3203', diskIdentifier: 'disk5' },
+    ]);
   });
 });
 
