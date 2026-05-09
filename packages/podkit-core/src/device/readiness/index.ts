@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import { interpretError } from '../error-codes.js';
-import type { UsbDiscoveredDevice } from '../usb-discovery.js';
+import type { IpodClassification } from '@podkit/devices-ipod';
+import type { EnumeratedUsbDevice } from '../usb-enumeration.js';
 import { checkIpodStructure } from './stages/mount.js';
 import { checkSysInfo } from './stages/sysinfo.js';
 import { checkDatabase } from './stages/database.js';
@@ -174,20 +175,26 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
 // ── USB-only readiness result ─────────────────────────────────────────────────
 
 /**
- * Create a ReadinessResult for a USB-discovered device that has no disk
- * representation. USB stage passes, partition stage fails, remaining stages
- * are skipped.
+ * Create a ReadinessResult for an iPod that the OS sees on the USB bus but
+ * has not surfaced as a mounted disk yet. USB stage passes, partition stage
+ * fails, remaining stages are skipped.
+ *
+ * Accepts an `IpodClassification` (the typed output of the iPod classifier)
+ * so the caller does not duplicate vendor/product extraction logic.
  */
-export function createUsbOnlyReadinessResult(usbDevice: UsbDiscoveredDevice): ReadinessResult {
+export function createUsbOnlyReadinessResult(
+  classification: IpodClassification<EnumeratedUsbDevice>
+): ReadinessResult {
+  const { device, model } = classification;
   const stages: ReadinessStageResult[] = [
     {
       stage: 'usb',
       status: 'pass',
-      summary: `${usbDevice.model?.displayName ?? 'Unknown iPod'} (Apple ${usbDevice.usb.vendorId})`,
+      summary: `${model?.displayName ?? 'Unknown iPod'} (Apple ${device.vendorId})`,
       details: {
-        vendorId: usbDevice.usb.vendorId,
-        productId: usbDevice.usb.productId,
-        modelName: usbDevice.model?.displayName,
+        vendorId: device.vendorId,
+        productId: device.productId,
+        modelName: model?.displayName,
       },
     },
     {
@@ -203,6 +210,6 @@ export function createUsbOnlyReadinessResult(usbDevice: UsbDiscoveredDevice): Re
   return {
     level: 'needs-partition',
     stages,
-    usbModel: usbDevice.model,
+    usbModel: model,
   };
 }

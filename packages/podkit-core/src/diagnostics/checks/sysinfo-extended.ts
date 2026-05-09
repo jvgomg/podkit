@@ -9,7 +9,10 @@
 
 import { ensureSysInfoExtended } from '@podkit/ipod-firmware';
 import { resolveIpodModel } from '@podkit/devices-ipod';
-import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from '../../device/usb-discovery.js';
+import {
+  resolveUsbDeviceFromPath,
+  hasCompleteUsbFingerprint,
+} from '../../device/usb-path-resolution.js';
 import type {
   DiagnosticCheck,
   CheckResult,

@@ -6,7 +6,7 @@ import type {
   UsbFingerprint,
 } from '@podkit/device-types';
 import { enumerateConnectedDevices } from './enumeration.js';
-import type { UsbDiscoveredDevice } from './usb-discovery.js';
+import type { EnumeratedUsbDevice } from './usb-enumeration.js';
 
 // =============================================================================
 // Test fixtures
@@ -15,26 +15,17 @@ import type { UsbDiscoveredDevice } from './usb-discovery.js';
 function makeDiscovered(
   vendorId: string,
   productId: string,
-  overrides: Partial<UsbDiscoveredDevice> = {}
-): UsbDiscoveredDevice {
+  overrides: Partial<EnumeratedUsbDevice> = {}
+): EnumeratedUsbDevice {
   return {
-    usb: { vendorId, productId },
-    supported: true,
+    vendorId,
+    productId,
     ...overrides,
   };
 }
 
-const iPodDiscovered = makeDiscovered('05ac', '1263', {
-  model: {
-    displayName: 'iPod Classic 6th generation',
-    generationId: 'classic_6g',
-    checksumType: 'hash58',
-    source: 'usb',
-  },
-});
-
+const iPodDiscovered = makeDiscovered('05ac', '1263');
 const echoMiniDiscovered = makeDiscovered('071b', '3203');
-
 const unknownDiscovered = makeDiscovered('1234', 'abcd');
 
 // =============================================================================
@@ -94,7 +85,7 @@ const throwingProvider: DeviceProvider = {
 // Helpers
 // =============================================================================
 
-function walk(devices: UsbDiscoveredDevice[]) {
+function walk(devices: EnumeratedUsbDevice[]) {
   return () => Promise.resolve(devices);
 }
 
@@ -162,7 +153,6 @@ describe('enumerateConnectedDevices', () => {
   });
 
   it('respects provider priority order — first non-null match wins', async () => {
-    // Put greedy provider first: it should win over fakeIpodProvider.
     const result = await enumerateConnectedDevices({
       providers: [greedyProvider, fakeIpodProvider],
       walk: walk([iPodDiscovered]),
@@ -172,7 +162,6 @@ describe('enumerateConnectedDevices', () => {
   });
 
   it('skips to the next provider when the first does not match', async () => {
-    // echoMiniProvider first, then iPod — iPod should be matched by the second.
     const result = await enumerateConnectedDevices({
       providers: [fakeEchoMiniProvider, fakeIpodProvider],
       walk: walk([iPodDiscovered]),
@@ -187,7 +176,6 @@ describe('enumerateConnectedDevices', () => {
       walk: walk([iPodDiscovered]),
     });
     expect(result).toHaveLength(1);
-    // throwingProvider threw — should fall through to fakeIpodProvider.
     expect(result[0]!.matchedProviderId).toBe('fake-ipod');
     expect(result[0]!.identity).toEqual(iPodIdentity);
   });
@@ -214,7 +202,7 @@ describe('enumerateConnectedDevices', () => {
     }
   });
 
-  it('exposes the original discovered device on each result', async () => {
+  it('exposes the original enumerated device on each result', async () => {
     const result = await enumerateConnectedDevices({
       providers: [fakeIpodProvider],
       walk: walk([iPodDiscovered]),
@@ -223,7 +211,6 @@ describe('enumerateConnectedDevices', () => {
   });
 
   it('passes bare-hex VIDs/PIDs through to providers', async () => {
-    // Capture the fingerprint the provider receives.
     const seen: UsbFingerprint[] = [];
     const recordingProvider: DeviceProvider = {
       id: 'recording',
@@ -239,7 +226,6 @@ describe('enumerateConnectedDevices', () => {
     });
 
     expect(seen).toHaveLength(1);
-    // Providers receive bare hex (UsbFingerprint canonical form).
     expect(seen[0]!.vendorId).toBe('05ac');
     expect(seen[0]!.productId).toBe('1261');
   });

@@ -40,8 +40,8 @@ import {
 import type { DeviceCapabilities } from '@podkit/device-types';
 
 import { existsSync } from 'node:fs';
-import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-discovery.js';
-import type { CompleteUsbDevice } from './usb-discovery.js';
+import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-path-resolution.js';
+import type { CompleteUsbDevice } from './usb-path-resolution.js';
 import { identifyCapabilities } from './resolve-capabilities.js';
 
 // =============================================================================

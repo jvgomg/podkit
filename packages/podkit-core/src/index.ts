@@ -577,13 +577,22 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './device/index.js';
 
-// USB discovery
-export type { UsbDiscoveredDevice, ResolvedUsbDevice, CompleteUsbDevice } from './device/index.js';
-export {
-  discoverUsbIpods,
-  resolveUsbDeviceFromPath,
-  hasCompleteUsbFingerprint,
+// USB enumeration
+export type { EnumeratedUsbDevice } from './device/index.js';
+export { enumerateUsb } from './device/index.js';
+
+// USB path-mode resolution
+export type { ResolvedUsbDevice, CompleteUsbDevice } from './device/index.js';
+export { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './device/index.js';
+
+// USB device classification
+export type {
+  RecognizedDevice,
+  ClassifyUsbDevicesOptions,
+  IpodClassification,
+  MassStorageClassification,
 } from './device/index.js';
+export { classifyUsbDevices } from './device/index.js';
 
 // Device enumeration framework
 export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';

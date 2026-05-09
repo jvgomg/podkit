@@ -19,7 +19,7 @@ import type {
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
 import type { UsbFingerprint } from '@podkit/device-types';
-import { parseLocationId } from '../usb-discovery.js';
+import { parseLocationId } from '../usb-enumeration.js';
 
 /**
  * Execute a command and return stdout

@@ -2328,7 +2328,11 @@ export async function checkReadiness(_input: any): Promise<any> {
   return { level: 'ready', stages: [], summary: { trackCount: 0 } };
 }
 
-export async function discoverUsbIpods(): Promise<any[]> {
+export async function enumerateUsb(): Promise<any[]> {
+  return [];
+}
+
+export function classifyUsbDevices(_devices: any[]): any[] {
   return [];
 }
 

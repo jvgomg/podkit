@@ -166,15 +166,21 @@ export {
   SYSINFO_DEVICE_DIR,
 } from '@podkit/ipod-firmware';
 
-// USB discovery
-export type { UsbDiscoveredDevice, ResolvedUsbDevice, CompleteUsbDevice } from './usb-discovery.js';
-export {
-  discoverUsbIpods,
-  resolveUsbDeviceFromPath,
-  hasCompleteUsbFingerprint,
-} from './usb-discovery.js';
+// USB enumeration
+export type { EnumeratedUsbDevice } from './usb-enumeration.js';
+export { enumerateUsb } from './usb-enumeration.js';
 
-// Device enumeration framework
+// USB path-mode resolution (mount path → USB fingerprint)
+export type { ResolvedUsbDevice, CompleteUsbDevice } from './usb-path-resolution.js';
+export { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-path-resolution.js';
+
+// USB device classification (composes per-domain classifiers)
+export type { RecognizedDevice, ClassifyUsbDevicesOptions } from './classify.js';
+export { classifyUsbDevices } from './classify.js';
+export type { IpodClassification } from '@podkit/devices-ipod';
+export type { MassStorageClassification } from '@podkit/devices-mass-storage';
+
+// Device enumeration framework (provider-based)
 export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';
 export { enumerateConnectedDevices } from './enumeration.js';
 

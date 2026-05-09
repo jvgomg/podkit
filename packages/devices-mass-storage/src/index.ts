@@ -31,5 +31,12 @@ export type { GetCapabilitiesOptions } from './capabilities.js';
 export { USB_PRESET_HINTS } from './usb-hints.js';
 export type { UsbPresetHint } from './usb-hints.js';
 
+// Classifier
+export {
+  classifyAsMassStorage,
+  type MassStorageClassification,
+  type ClassifiableUsbDevice as MassStorageClassifiableUsbDevice,
+} from './classify.js';
+
 // Provider
 export { createMassStorageProvider } from './provider.js';

@@ -63,6 +63,14 @@ export {
 
 export { identify, type IpodModelInput } from './identity.js';
 
+// ── Classifier ────────────────────────────────────────────────────────────────
+
+export {
+  classifyAsIpod,
+  type IpodClassification,
+  type ClassifiableUsbDevice as IpodClassifiableUsbDevice,
+} from './classify.js';
+
 // ── Capabilities ──────────────────────────────────────────────────────────────
 
 export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js';

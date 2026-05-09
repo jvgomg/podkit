@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMassStorageProvider, BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import { enumerateConnectedDevices } from '@podkit/core';
-import type { UsbDiscoveredDevice, DeviceManager } from '@podkit/core';
+import type { EnumeratedUsbDevice, DeviceManager } from '@podkit/core';
 import { runDeviceAdd, type DeviceAddDeps } from './device.js';
 import { OutputContext } from '../output/index.js';
 import type {
@@ -455,9 +455,10 @@ describe('runDeviceAdd: iPod flow', () => {
 // =============================================================================
 
 describe('enumerateConnectedDevices with real providers and mocked USB walk (AC #1, #5)', () => {
-  const echoMiniDiscovered: UsbDiscoveredDevice = {
-    usb: { vendorId: '0x071b', productId: '0x3203', serialNumber: 'EM-SERIAL-001' },
-    supported: true,
+  const echoMiniDiscovered: EnumeratedUsbDevice = {
+    vendorId: '0x071b',
+    productId: '0x3203',
+    serialNumber: 'EM-SERIAL-001',
   };
 
   it('detects Echo Mini via VID/PID 0x071b/0x3203 using built-in presets', async () => {
@@ -478,9 +479,9 @@ describe('enumerateConnectedDevices with real providers and mocked USB walk (AC 
 
   it('reports no identity for an unrecognised VID/PID with mass-storage provider only', async () => {
     const massStorageProvider = createMassStorageProvider(BUILT_IN_PRESETS);
-    const unknownDevice: UsbDiscoveredDevice = {
-      usb: { vendorId: '0xdead', productId: '0xbeef' },
-      supported: true,
+    const unknownDevice: EnumeratedUsbDevice = {
+      vendorId: '0xdead',
+      productId: '0xbeef',
     };
 
     const result = await enumerateConnectedDevices({
@@ -501,9 +502,10 @@ describe('enumerateConnectedDevices with real providers and mocked USB walk (AC 
       walk: () =>
         Promise.resolve([
           {
-            usb: { vendorId: '0x071b', productId: '0x3203', serialNumber: 'MY-ECHO-123' },
-            supported: true,
-          } as UsbDiscoveredDevice,
+            vendorId: '0x071b',
+            productId: '0x3203',
+            serialNumber: 'MY-ECHO-123',
+          } as EnumeratedUsbDevice,
         ]),
     });
 

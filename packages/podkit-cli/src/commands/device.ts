@@ -838,7 +838,8 @@ async function generateDiagnosticReport(
     mountPoint?: string;
   }>,
   readinessResults: ReadinessResult[],
-  usbOnlyDevices: Array<{ modelName?: string; supported?: boolean; notSupportedReason?: string }>,
+  usbOnlyIpods: Array<{ modelName?: string; supported?: boolean; notSupportedReason?: string }>,
+  recognisedMassStorage: Array<{ presetId: string; diskIdentifier?: string }>,
   configuredDevices: Array<{ name: string; type: string; path?: string }>,
   config: { devices?: Record<string, DeviceConfig> },
   version: string
@@ -862,7 +863,10 @@ async function generateDiagnosticReport(
   lines.push('');
 
   const hasAnyDevices =
-    ipods.length > 0 || usbOnlyDevices.length > 0 || configuredDevices.length > 0;
+    ipods.length > 0 ||
+    usbOnlyIpods.length > 0 ||
+    recognisedMassStorage.length > 0 ||
+    configuredDevices.length > 0;
 
   if (!hasAnyDevices) {
     lines.push('No devices found.');
@@ -929,13 +933,24 @@ async function generateDiagnosticReport(
     lines.push('');
   }
 
-  // USB-only devices
-  for (const usbDevice of usbOnlyDevices) {
+  // USB-only iPods (recognised as iPods but with no mounted disk).
+  for (const usbDevice of usbOnlyIpods) {
     lines.push('---');
     const label = usbDevice.modelName ?? 'Unknown iPod';
     lines.push(`  iPod: ${label} (USB only)`);
     if (!usbDevice.supported && usbDevice.notSupportedReason) {
       lines.push(`  ${usbDevice.notSupportedReason}`);
+    }
+    lines.push('');
+  }
+
+  // Recognised mass-storage devices (Echo Mini etc.).
+  for (const recognised of recognisedMassStorage) {
+    lines.push('---');
+    if (recognised.diskIdentifier) {
+      lines.push(`  Mass-storage: ${recognised.presetId} — disk: ${recognised.diskIdentifier}`);
+    } else {
+      lines.push(`  Mass-storage: ${recognised.presetId} — no volume mounted`);
     }
     lines.push('');
   }
@@ -966,13 +981,15 @@ const scanSubcommand = new Command('scan')
     // Load core dependencies
     let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
     let checkReadiness: typeof import('@podkit/core').checkReadiness;
-    let discoverUsbIpods: typeof import('@podkit/core').discoverUsbIpods;
+    let enumerateUsb: typeof import('@podkit/core').enumerateUsb;
+    let classifyUsbDevices: typeof import('@podkit/core').classifyUsbDevices;
     let createUsbOnlyReadinessResult: typeof import('@podkit/core').createUsbOnlyReadinessResult;
     try {
       const core = await import('@podkit/core');
       getDeviceManager = core.getDeviceManager;
       checkReadiness = core.checkReadiness;
-      discoverUsbIpods = core.discoverUsbIpods;
+      enumerateUsb = core.enumerateUsb;
+      classifyUsbDevices = core.classifyUsbDevices;
       createUsbOnlyReadinessResult = core.createUsbOnlyReadinessResult;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
@@ -986,37 +1003,57 @@ const scanSubcommand = new Command('scan')
 
     const manager = getDeviceManager();
 
-    // Scan for iPods and USB devices in parallel (only on supported platforms)
-    type UsbDiscoveredDevice = Awaited<ReturnType<typeof discoverUsbIpods>>[number];
+    // Enumerate the USB bus and classify the result. `enumerateUsb` returns
+    // EVERY USB device on the bus (mice, hubs, docks, …); `classifyUsbDevices`
+    // drops everything that is not a recognised iPod or mass-storage DAP, so
+    // the rest of `device scan` only ever sees real music players.
+    type RecognizedDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
+    type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
+    type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
+
     let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
-    let allUsbDevices: UsbDiscoveredDevice[] = [];
+    let recognizedDevices: RecognizedDevice[] = [];
     if (manager.isSupported) {
-      [ipods, allUsbDevices] = await Promise.all([manager.findIpodDevices(), discoverUsbIpods()]);
+      const [foundIpods, enumerated] = await Promise.all([
+        manager.findIpodDevices(),
+        enumerateUsb(),
+      ]);
+      ipods = foundIpods;
+      recognizedDevices = classifyUsbDevices(enumerated);
     }
 
-    // Correlate USB devices with disk iPods by diskIdentifier ↔ identifier.
-    // USB diskIdentifier is the whole-disk BSD name (e.g., "disk5"),
-    // PlatformDeviceInfo.identifier is the partition (e.g., "disk5s2").
-    const usbByDisk = new Map<string, UsbDiscoveredDevice>();
-    for (const usb of allUsbDevices) {
-      if (usb.diskIdentifier) {
-        usbByDisk.set(usb.diskIdentifier, usb);
+    // Correlate recognised USB devices with disk iPods by
+    // diskIdentifier ↔ identifier. USB diskIdentifier is the whole-disk BSD name
+    // (e.g., "disk5"); PlatformDeviceInfo.identifier is the partition (e.g.,
+    // "disk5s2"). Only iPod-classified entries can correlate to a disk iPod —
+    // mass-storage entries render as their own scan group.
+    const ipodRecognizedList = recognizedDevices.filter(
+      (d): d is IpodRecognized => d.kind === 'ipod'
+    );
+    const massStorageList = recognizedDevices.filter(
+      (d): d is MassStorageRecognized => d.kind === 'mass-storage'
+    );
+
+    const ipodUsbByDisk = new Map<string, IpodRecognized>();
+    for (const r of ipodRecognizedList) {
+      if (r.device.diskIdentifier) {
+        ipodUsbByDisk.set(r.device.diskIdentifier, r);
       }
     }
 
-    function findMatchingUsb(identifier: string): UsbDiscoveredDevice | undefined {
+    function findMatchingUsbIpod(identifier: string): IpodRecognized | undefined {
       const wholeDisk = identifier.replace(/s\d+$/, '');
-      return usbByDisk.get(wholeDisk);
+      return ipodUsbByDisk.get(wholeDisk);
     }
 
-    // USB-only = USB devices that didn't match any disk iPod
-    const matchedDiskIds = new Set<string>();
+    // USB-only iPods = iPod-classified devices without a matched disk
+    const matchedIpodDiskIds = new Set<string>();
     for (const ipod of ipods) {
       const wholeDisk = ipod.identifier.replace(/s\d+$/, '');
-      if (usbByDisk.has(wholeDisk)) matchedDiskIds.add(wholeDisk);
+      if (ipodUsbByDisk.has(wholeDisk)) matchedIpodDiskIds.add(wholeDisk);
     }
-    const usbOnlyDevices = allUsbDevices.filter(
-      (usb) => !usb.diskIdentifier || !matchedDiskIds.has(usb.diskIdentifier)
+    const usbOnlyIpods = ipodRecognizedList.filter(
+      (r) => !r.device.diskIdentifier || !matchedIpodDiskIds.has(r.device.diskIdentifier)
     );
 
     // Gather configured devices not found in the scan
@@ -1027,11 +1064,11 @@ const scanSubcommand = new Command('scan')
     const readinessResults: ReadinessResult[] = [];
     if (manager.isSupported) {
       for (const ipod of ipods) {
-        const matchedUsb = findMatchingUsb(ipod.identifier);
+        const matchedUsb = findMatchingUsbIpod(ipod.identifier);
         readinessResults.push(
           await checkReadiness({
             device: ipod,
-            usbConnection: matchedUsb?.usb,
+            usbConnection: matchedUsb?.device,
             usbModel: matchedUsb?.model,
           })
         );
@@ -1127,7 +1164,10 @@ const scanSubcommand = new Command('scan')
     });
 
     const hasAnyDevices =
-      ipods.length > 0 || usbOnlyDevices.length > 0 || configuredDevices.length > 0;
+      ipods.length > 0 ||
+      usbOnlyIpods.length > 0 ||
+      massStorageList.length > 0 ||
+      configuredDevices.length > 0;
 
     // Handle --report flag: generate diagnostic report instead of normal output
     if (scanOptions.report) {
@@ -1135,7 +1175,15 @@ const scanSubcommand = new Command('scan')
       const report = await generateDiagnosticReport(
         ipods,
         readinessResults,
-        usbOnlyDevices,
+        usbOnlyIpods.map((r) => ({
+          modelName: r.model?.displayName,
+          supported: r.supported,
+          notSupportedReason: r.notSupportedReason,
+        })),
+        massStorageList.map((r) => ({
+          presetId: r.presetId,
+          diskIdentifier: r.device.diskIdentifier,
+        })),
         configuredDevices,
         config,
         cliVersion
@@ -1166,7 +1214,7 @@ const scanSubcommand = new Command('scan')
 
           // Use richest available model: deviceModel (from SysInfo) > usbModel (from USB product ID)
           const displayModel = readiness?.deviceModel ?? readiness?.usbModel;
-          const matchedUsb = findMatchingUsb(device.identifier);
+          const matchedUsb = findMatchingUsbIpod(device.identifier);
           const modelLabel = displayModel?.displayName ?? matchedUsb?.model?.displayName;
           const modelSource = displayModel?.source === 'usb' ? ' (USB)' : '';
           if (modelLabel) {
@@ -1204,27 +1252,49 @@ const scanSubcommand = new Command('scan')
         }
       }
 
-      // Show USB-only devices (no disk representation)
-      if (usbOnlyDevices.length > 0) {
-        for (const usbDevice of usbOnlyDevices) {
-          const label = usbDevice.model?.displayName ?? 'Unknown iPod';
+      // Show USB-only iPods (no disk representation)
+      if (usbOnlyIpods.length > 0) {
+        for (const recognised of usbOnlyIpods) {
+          const label = recognised.model?.displayName ?? 'Unknown iPod';
           out.print(`  ${bold(label)} (USB only)`);
           out.newline();
 
-          if (!usbDevice.supported) {
+          if (!recognised.supported) {
             // Unsupported device — show reason and move on
             out.print('  This device is not supported by podkit.');
-            if (usbDevice.notSupportedReason) {
-              out.print(`  ${usbDevice.notSupportedReason}`);
+            if (recognised.notSupportedReason) {
+              out.print(`  ${recognised.notSupportedReason}`);
             }
           } else {
             // Supported but needs partitioning — show readiness stages
-            const readiness = createUsbOnlyReadinessResult(usbDevice);
+            const readiness = createUsbOnlyReadinessResult(recognised);
             printReadinessStages(out, readiness.stages, readiness, label);
           }
           out.newline();
         }
-      } else if (ipods.length === 0 && manager.isSupported) {
+      }
+
+      // Show recognised mass-storage devices (Echo Mini etc.) found on the bus.
+      if (massStorageList.length > 0) {
+        for (const recognised of massStorageList) {
+          const presetDisplayName = getDeviceTypeDisplayName(recognised.presetId);
+          if (recognised.device.diskIdentifier) {
+            out.print(
+              `  ${bold(presetDisplayName)} (${recognised.presetId}) — disk: ${recognised.device.diskIdentifier}`
+            );
+          } else {
+            out.print(`  ${bold(presetDisplayName)} (${recognised.presetId}) — no volume mounted`);
+          }
+          out.newline();
+        }
+      }
+
+      if (
+        ipods.length === 0 &&
+        usbOnlyIpods.length === 0 &&
+        massStorageList.length === 0 &&
+        manager.isSupported
+      ) {
         out.print('No iPod devices found.');
         out.newline();
       }

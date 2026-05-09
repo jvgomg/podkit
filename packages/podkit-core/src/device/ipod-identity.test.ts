@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { assessIpodIdentity } from './ipod-identity.js';
-import type { CompleteUsbDevice } from './usb-discovery.js';
+import type { CompleteUsbDevice } from './usb-path-resolution.js';
 
 const NANO_2G_USB: CompleteUsbDevice = {
   vendorId: '05ac',
