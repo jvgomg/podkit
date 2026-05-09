@@ -240,8 +240,10 @@ describe('graceful shutdown during sync', () => {
       clearTimeout(fallbackTimer);
 
       if (signalledByFallback) {
-        console.warn('Warning: SIGINT sent by fallback timer, not progress detection. ' +
-          'The progress regex may no longer match CLI output.');
+        console.warn(
+          'Warning: SIGINT sent by fallback timer, not progress detection. ' +
+            'The progress regex may no longer match CLI output.'
+        );
       }
 
       // --- Assertions ---

@@ -35,16 +35,7 @@ export function pickRandomColor(current: string): Color {
 export function generateArtwork(outputPath: string, color: string): void {
   execFileSync(
     'ffmpeg',
-    [
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      `color=c=${color}:s=500x500:d=1`,
-      '-frames:v',
-      '1',
-      outputPath,
-    ],
+    ['-y', '-f', 'lavfi', '-i', `color=c=${color}:s=500x500:d=1`, '-frames:v', '1', outputPath],
     { stdio: 'pipe' }
   );
 }

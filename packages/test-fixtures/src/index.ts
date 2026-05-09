@@ -153,7 +153,9 @@ function parseArgv(argv: string[]): ParsedArgs {
         process.exit(1);
       }
       if (!isValidFormat(value)) {
-        console.error(`Error: Invalid format '${value}'. Valid formats: ${VALID_FORMATS.join(', ')}`);
+        console.error(
+          `Error: Invalid format '${value}'. Valid formats: ${VALID_FORMATS.join(', ')}`
+        );
         process.exit(1);
       }
       parsed.format = value;

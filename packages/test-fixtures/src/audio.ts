@@ -7,11 +7,7 @@ const DURATION_SECONDS = 5;
 /**
  * Generate a FLAC file with a sine tone and embedded metadata.
  */
-export function generateFlacTrack(
-  dir: string,
-  trackNumber: number,
-  coverPath: string
-): string {
+export function generateFlacTrack(dir: string, trackNumber: number, coverPath: string): string {
   const def = getTrackDef(trackNumber);
   const filename = `${String(trackNumber).padStart(2, '0')}-${slugify(def.title)}.flac`;
   const outFile = join(dir, filename);

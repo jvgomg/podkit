@@ -1,3 +1,5 @@
 *.md
 *.mdx
 backlog/
+packages/virtual-ipod-app/src-tauri/target/
+packages/virtual-ipod-app/src-tauri/gen/
