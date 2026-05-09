@@ -17,7 +17,7 @@
     "share"
   ],
   "scripts": {
-    "build": "bun build src/main.ts --outdir dist --target node --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\" && bun run build:types",
+    "build": "bun build src/main.ts --outdir dist --target node --external koffi --external usb --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\" && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "dev": "bun run src/main.ts",
     "test": "true",
@@ -35,7 +35,9 @@
     "@podkit/ipod-firmware": "workspace:*",
     "@podkit/libgpod-node": "workspace:*",
     "commander": "^14.0.3",
-    "smol-toml": "^1.6.0"
+    "koffi": "^2.13.0",
+    "smol-toml": "^1.6.0",
+    "usb": "^2.17.0"
   },
   "devDependencies": {
     "@podkit/gpod-testing": "workspace:*",

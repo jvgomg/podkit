@@ -35,10 +35,9 @@ Detect the build host's platform/arch and copy the matching file out of `node_mo
 | darwin (any arch) | `prebuilds/darwin-x64+arm64/node.napi.node` |
 | linux x64 (glibc) | `prebuilds/linux-x64/node.napi.glibc.node` |
 | linux x64 (musl)  | `prebuilds/linux-x64/node.napi.musl.node` |
-| linux arm64 (glibc) | `prebuilds/linux-arm64/node.napi.glibc.node` |
-| linux arm64 (musl)  | `prebuilds/linux-arm64/node.napi.musl.node` |
+| linux arm64 (any libc) | `prebuilds/linux-arm64/node.napi.armv8.node` |
 
-See `packages/podkit-cli/scripts/compile.sh` for a working example. musl detection on Linux uses `ldd /bin/sh | grep -q musl`.
+Only `linux-x64` ships separate glibc/musl prebuilds. `linux-arm64` ships a single ABI-tagged file (`node.napi.armv8.node`) that works on both glibc and musl — so don't try to detect libc on arm64. See `packages/podkit-cli/scripts/compile.sh` for a working example. musl detection on Linux x64 uses `ldd /bin/sh | grep -q musl`.
 
 ### 2. Runtime: hand the prebuild to `bundleUsbNative`
 

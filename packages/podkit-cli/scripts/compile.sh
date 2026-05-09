@@ -61,8 +61,14 @@ case "$PLATFORM" in
     USB_PREBUILD="$USB_PKG_DIR/prebuilds/darwin-x64+arm64/node.napi.node"
     ;;
   linux)
-    if ldd /bin/sh 2>/dev/null | grep -q musl; then USB_VARIANT=musl; else USB_VARIANT=glibc; fi
-    USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-${ARCH}/node.napi.${USB_VARIANT}.node"
+    # arm64 ships a single ABI-tagged prebuild (node.napi.armv8.node) — no
+    # glibc/musl split. Only linux-x64 has the libc-variant filenames.
+    if [ "$ARCH" = "arm64" ]; then
+      USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-arm64/node.napi.armv8.node"
+    else
+      if ldd /bin/sh 2>/dev/null | grep -q musl; then USB_VARIANT=musl; else USB_VARIANT=glibc; fi
+      USB_PREBUILD="$USB_PKG_DIR/prebuilds/linux-${ARCH}/node.napi.${USB_VARIANT}.node"
+    fi
     ;;
   *)
     echo "ERROR: unsupported platform for usb prebuild: $PLATFORM"

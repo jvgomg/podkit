@@ -19,7 +19,7 @@
     "bundle.cjs"
   ],
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
+    "build": "bun build src/index.ts --outdir dist --target node --external koffi --external usb && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "test": "bun test",
     "test:unit": "bun test --pass-with-no-tests",

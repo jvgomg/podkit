@@ -173,7 +173,9 @@
         "@podkit/ipod-firmware": "workspace:*",
         "@podkit/libgpod-node": "workspace:*",
         "commander": "^14.0.3",
+        "koffi": "^2.13.0",
         "smol-toml": "^1.6.0",
+        "usb": "^2.17.0",
       },
       "devDependencies": {
         "@podkit/gpod-testing": "workspace:*",
