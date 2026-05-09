@@ -85,7 +85,13 @@ function writeSysInfoExtended(mountPoint: string, content: string): void {
   fs.writeFileSync(path.join(deviceDir, 'SysInfoExtended'), content, 'utf-8');
 }
 
-const USB_ADDRESS = { busNumber: 1, deviceAddress: 4 };
+const USB_ADDRESS = {
+  vendorId: '05ac',
+  productId: '1261',
+  serialNumber: '000A27001DCECFB5',
+  bus: 1,
+  devnum: 4,
+};
 
 // ── readSysInfoExtended ─────────────────────────────────────────────────────
 
@@ -197,7 +203,7 @@ describe('ensureSysInfoExtended', () => {
       return FIXTURE_XML;
     };
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('existing');
@@ -209,7 +215,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
@@ -227,7 +233,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => null;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
@@ -242,7 +248,7 @@ describe('ensureSysInfoExtended', () => {
       );
     };
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
@@ -263,7 +269,7 @@ describe('ensureSysInfoExtended', () => {
     // a null-returning reader exercises the same "unavailable" code path
     // independent of host hardware.
     const mockReader: ReadFromUsbFn = () => null;
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
@@ -273,7 +279,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML_NO_GUID;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
@@ -288,7 +294,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML_NO_SERIAL;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(false);
     expect(result.source).toBe('unavailable');
@@ -303,7 +309,7 @@ describe('ensureSysInfoExtended', () => {
     expect(fs.existsSync(deviceDir)).toBe(false);
 
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML;
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');
@@ -317,7 +323,10 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader, resolveModel);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, {
+      readFromUsb: mockReader,
+      resolveModel,
+    });
 
     expect(result.model).toBeDefined();
     // Serial "5U828GFNYXX" -> suffix "YXX" -> nano 3G
@@ -332,7 +341,7 @@ describe('ensureSysInfoExtended', () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML_ALT_CASING;
 
-    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, mockReader);
+    const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, { readFromUsb: mockReader });
 
     expect(result.present).toBe(true);
     expect(result.source).toBe('usb-read');

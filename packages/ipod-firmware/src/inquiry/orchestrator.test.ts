@@ -9,7 +9,12 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { inquireFirmware, type ScsiTransport, type UsbTransport } from './orchestrator';
+import {
+  inquireFirmware,
+  inquireFirmwareDetailed,
+  type ScsiTransport,
+  type UsbTransport,
+} from './orchestrator';
 import type { InquiryMethodsAvailability } from './probe';
 import type { UsbFingerprint } from '@podkit/device-types';
 
@@ -161,6 +166,42 @@ describe('inquireFirmware', () => {
     expect(scsi).toHaveBeenCalledTimes(1);
   });
 
+  it('forwards the full UsbFingerprint to the SCSI transport on USB failure (SCSI-fallback fingerprint propagation)', async () => {
+    // Regression: ensureSysInfoExtended used to construct a fingerprint with
+    // empty vendorId/productId so macOS SCSI dispatch could not locate the
+    // IOService. With the fix in place, the orchestrator must hand the SCSI
+    // transport the same identifiers it received. This guards against any
+    // future change that strips fields between orchestrator entry and SCSI
+    // dispatch.
+    const fullFp: UsbFingerprint = {
+      vendorId: '05ac',
+      productId: '1226',
+      serialNumber: 'YM5180A4S31',
+      bus: 3,
+      devnum: 7,
+    };
+
+    let scsiFp: UsbFingerprint | undefined;
+    const usb = mock<UsbTransport>(async () => {
+      throw new Error('usb dead — pre-5G iPod, fall back to SCSI');
+    });
+    const scsi: ScsiTransport = async (fp) => {
+      scsiFp = fp;
+      return validBytes;
+    };
+
+    const result = await inquireFirmware(fullFp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(result).not.toBeNull();
+    expect(scsiFp).toEqual(fullFp);
+    expect(scsiFp?.vendorId).toBe('05ac');
+    expect(scsiFp?.productId).toBe('1226');
+    expect(scsiFp?.serialNumber).toBe('YM5180A4S31');
+  });
+
   it('forwards timeoutMs to both transports', async () => {
     let usbTimeout: number | undefined;
     let scsiTimeout: number | undefined;
@@ -182,5 +223,113 @@ describe('inquireFirmware', () => {
 
     expect(usbTimeout).toBe(1234);
     expect(scsiTimeout).toBe(1234);
+  });
+});
+
+describe('inquireFirmwareDetailed', () => {
+  it('reports plan="usb-then-scsi" with a single usb-success attempt when USB works', async () => {
+    const usb = mock<UsbTransport>(async () => validBytes);
+    const scsi = mock<ScsiTransport>(async () => {
+      throw new Error('scsi should not be called');
+    });
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(detailed.firmware).not.toBeNull();
+    expect(detailed.plan).toBe('usb-then-scsi');
+    expect(detailed.attempts).toEqual([{ transport: 'usb', outcome: 'success' }]);
+  });
+
+  it('reports usb transport-error followed by scsi success on fallback (SCSI-only iPod scenario)', async () => {
+    // Mirrors the production behaviour for pre-5G iPods like the mini 2G:
+    // USB inquiry throws (the device does not implement the firmware control
+    // transfer), the orchestrator falls through to SCSI, SCSI succeeds. The
+    // detailed result must capture both attempts so callers can render an
+    // accurate "tried USB and SCSI" diagnostic.
+    const usb = mock<UsbTransport>(async () => {
+      throw new Error('usb transport boom');
+    });
+    const scsi = mock<ScsiTransport>(async () => validBytes);
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(detailed.firmware).not.toBeNull();
+    expect(detailed.plan).toBe('usb-then-scsi');
+    expect(detailed.attempts).toHaveLength(2);
+    expect(detailed.attempts[0]).toMatchObject({ transport: 'usb', outcome: 'transport-error' });
+    expect(detailed.attempts[1]).toEqual({ transport: 'scsi', outcome: 'success' });
+  });
+
+  it('reports both transports failing when USB throws and SCSI throws', async () => {
+    const usb = mock<UsbTransport>(async () => {
+      throw new Error('usb dead');
+    });
+    const scsi = mock<ScsiTransport>(async () => {
+      throw new Error('scsi dead');
+    });
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(detailed.firmware).toBeNull();
+    expect(detailed.plan).toBe('usb-then-scsi');
+    expect(detailed.attempts).toHaveLength(2);
+    expect(detailed.attempts[0]).toMatchObject({ transport: 'usb', outcome: 'transport-error' });
+    expect(detailed.attempts[1]).toMatchObject({ transport: 'scsi', outcome: 'transport-error' });
+  });
+
+  it('reports plan="none" with no attempts when no transport is available', async () => {
+    const usb = mock<UsbTransport>(async () => validBytes);
+    const scsi = mock<ScsiTransport>(async () => validBytes);
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(false, false),
+    });
+
+    expect(detailed.firmware).toBeNull();
+    expect(detailed.plan).toBe('none');
+    expect(detailed.attempts).toEqual([]);
+    expect(usb).toHaveBeenCalledTimes(0);
+    expect(scsi).toHaveBeenCalledTimes(0);
+  });
+
+  it('reports a parse-error attempt (and does NOT fall back to SCSI) when USB returns malformed bytes', async () => {
+    const usb = mock<UsbTransport>(async () => new TextEncoder().encode('not a plist <<<'));
+    const scsi = mock<ScsiTransport>(async () => validBytes);
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(detailed.firmware).toBeNull();
+    expect(detailed.plan).toBe('usb-then-scsi');
+    expect(detailed.attempts).toEqual([{ transport: 'usb', outcome: 'parse-error' }]);
+    expect(scsi).toHaveBeenCalledTimes(0);
+  });
+
+  it('reports a single SCSI attempt when probe says SCSI-only', async () => {
+    const usb = mock<UsbTransport>(async () => {
+      throw new Error('usb should not be called');
+    });
+    const scsi = mock<ScsiTransport>(async () => validBytes);
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(false, true),
+    });
+
+    expect(detailed.firmware).not.toBeNull();
+    expect(detailed.plan).toBe('scsi-only');
+    expect(detailed.attempts).toEqual([{ transport: 'scsi', outcome: 'success' }]);
   });
 });

@@ -578,15 +578,19 @@ export {
 } from './device/index.js';
 
 // USB discovery
-export type { UsbDiscoveredDevice } from './device/index.js';
-export { discoverUsbIpods, resolveUsbDeviceFromPath } from './device/index.js';
+export type { UsbDiscoveredDevice, ResolvedUsbDevice, CompleteUsbDevice } from './device/index.js';
+export {
+  discoverUsbIpods,
+  resolveUsbDeviceFromPath,
+  hasCompleteUsbFingerprint,
+} from './device/index.js';
 
 // Device enumeration framework
 export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';
 export { enumerateConnectedDevices } from './device/index.js';
 
 // SysInfoExtended (device identity from USB firmware)
-export type { SysInfoExtendedResult } from './device/index.js';
+export type { SysInfoExtendedResult, EnsureSysInfoExtendedOptions } from './device/index.js';
 export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
 
 // iPod model lookup and resolver

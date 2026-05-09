@@ -9,7 +9,7 @@
 
 import { ensureSysInfoExtended } from '@podkit/ipod-firmware';
 import { identify } from '@podkit/devices-ipod';
-import { resolveUsbDeviceFromPath } from '../../device/usb-discovery.js';
+import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from '../../device/usb-discovery.js';
 import type {
   DiagnosticCheck,
   CheckResult,
@@ -45,7 +45,7 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       });
 
       const usbDevice = await resolveUsbDeviceFromPath(ctx.mountPoint);
-      if (!usbDevice || usbDevice.bus === undefined || usbDevice.devnum === undefined) {
+      if (!hasCompleteUsbFingerprint(usbDevice)) {
         return {
           success: false,
           summary: 'Could not find USB device for this iPod',
@@ -78,11 +78,13 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
       const result = await ensureSysInfoExtended(
         ctx.mountPoint,
         {
-          busNumber: usbDevice.bus,
-          deviceAddress: usbDevice.devnum,
+          vendorId: usbDevice.vendorId,
+          productId: usbDevice.productId,
+          ...(usbDevice.serialNumber ? { serialNumber: usbDevice.serialNumber } : {}),
+          bus: usbDevice.bus,
+          devnum: usbDevice.devnum,
         },
-        undefined,
-        resolveModel
+        { resolveModel }
       );
 
       if (!result.present) {

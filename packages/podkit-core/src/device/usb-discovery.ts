@@ -110,23 +110,10 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
       // Collect all USB devices — vendor filtering is the provider layer's job.
       if (item.vendor_id) {
         const rawVendorId = item.vendor_id;
-        const productIdRaw = extractProductId(item.product_id);
-        if (productIdRaw) {
-          // Strip "0x" prefix for bare-hex UsbFingerprint convention.
-          const stripPrefix = (id: string): string =>
-            id.toLowerCase().startsWith('0x') ? id.slice(2).toLowerCase() : id.toLowerCase();
+        const productId = extractProductId(item.product_id);
+        if (productId) {
+          const normalisedVendorId = extractVendorId(rawVendorId);
 
-          // Normalise vendor ID: extract hex digits, strip prefix.
-          const vendorIdMatch = rawVendorId.match(/0x([\da-fA-F]+)/i);
-          const normalisedVendorId = vendorIdMatch
-            ? vendorIdMatch[1]!.toLowerCase()
-            : isAppleVendorId(rawVendorId)
-              ? APPLE_VENDOR_ID
-              : rawVendorId.toLowerCase();
-
-          const productId = stripPrefix(productIdRaw);
-
-          // iPod-specific enrichment: model lookup and unsupported reasons.
           // iPod-specific enrichment: model lookup and unsupported reasons.
           // Only populated for Apple devices with a recognised product ID.
           const isApple = isAppleVendorId(rawVendorId);
@@ -134,7 +121,7 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
           // getUnsupportedReason applies to all Apple devices — even those not in
           // IPOD_USB_IDS — so that unrecognised iPhone/iPad PIDs in the iOS range
           // (0x1290–0x12af) produce an informative "not supported" message.
-          const unsupportedReason = isApple ? getUnsupportedReason(productIdRaw) : undefined;
+          const unsupportedReason = isApple ? getUnsupportedReason(productId) : undefined;
 
           const diskIdentifier = extractBsdName(item);
           const serialNumber = extractSerialNumber(item);
@@ -175,12 +162,35 @@ export function parseSystemProfilerUsbData(data: unknown): UsbDiscoveredDevice[]
   return results;
 }
 
-/** Extract a normalised product ID like "0x1209" from system_profiler strings */
-function extractProductId(raw: string | undefined): string | undefined {
+/**
+ * Extract a bare-hex product ID (e.g. `"1209"`) from a system_profiler
+ * `product_id` string. Returns the hex digits only — no `0x` prefix —
+ * matching the {@link UsbFingerprint} canonical form. system_profiler may
+ * return `"0x1209"` or `"0x1209 (some text)"`; either form is accepted.
+ *
+ * Exported for testing.
+ */
+export function extractProductId(raw: string | undefined): string | undefined {
   if (!raw) return undefined;
-  // system_profiler may return "0x1209" or "0x1209 (some text)"
-  const match = raw.match(/0x[\da-fA-F]+/);
-  return match ? match[0].toLowerCase() : undefined;
+  const match = raw.match(/0x([\da-fA-F]+)/);
+  if (!match) return undefined;
+  return match[1]!.toLowerCase();
+}
+
+/**
+ * Extract a bare-hex vendor ID from a system_profiler `vendor_id` string,
+ * which may be prefixed (`"0x05ac"`), suffixed with text (`"0x05ac (Apple)"`),
+ * or the literal sentinel `"apple_vendor_id"`. Returns the bare-hex digits;
+ * falls back to {@link APPLE_VENDOR_ID} for the Apple sentinel and to a
+ * lowercased copy of the raw string when the input matches no known shape.
+ *
+ * Exported for testing.
+ */
+export function extractVendorId(raw: string): string {
+  const match = raw.match(/0x([\da-fA-F]+)/);
+  if (match) return match[1]!.toLowerCase();
+  if (isAppleVendorId(raw)) return APPLE_VENDOR_ID;
+  return raw.toLowerCase();
 }
 
 /** Extract bsd_name from the Media subtree of a system_profiler item */
@@ -363,18 +373,62 @@ async function discoverLinux(): Promise<UsbDiscoveredDevice[]> {
 
 // ── Path-to-USB correlation ─────────────────────────────────────────────────
 
+/** Subset of {@link UsbFingerprint} returned by `resolveUsbDeviceFromPath`. */
+export type ResolvedUsbDevice = Pick<
+  UsbFingerprint,
+  'vendorId' | 'productId' | 'serialNumber' | 'bus' | 'devnum'
+>;
+
 /**
- * Resolve USB device info (bus number, device address, serial) from a mount path.
+ * A {@link ResolvedUsbDevice} narrowed to the shape required by the firmware
+ * inquiry orchestrator: vendorId, productId, bus, and devnum all present.
+ * macOS SCSI matches on vendorId+productId+serialNumber and Linux SCSI matches
+ * on bus+devnum, so a partial fingerprint blocks one platform's transport.
+ * `serialNumber` remains optional — macOS SCSI dispatch tolerates its absence,
+ * just less precisely.
+ */
+export type CompleteUsbDevice = ResolvedUsbDevice & {
+  vendorId: string;
+  productId: string;
+  bus: number;
+  devnum: number;
+};
+
+/**
+ * Type guard: does this {@link ResolvedUsbDevice} have a complete enough
+ * fingerprint to drive the firmware inquiry orchestrator? Both platforms'
+ * SCSI dispatch require the union of their match fields to be present —
+ * see {@link CompleteUsbDevice}.
+ */
+export function hasCompleteUsbFingerprint(
+  info: ResolvedUsbDevice | null
+): info is CompleteUsbDevice {
+  return (
+    info !== null &&
+    typeof info.vendorId === 'string' &&
+    info.vendorId.length > 0 &&
+    typeof info.productId === 'string' &&
+    info.productId.length > 0 &&
+    typeof info.bus === 'number' &&
+    typeof info.devnum === 'number'
+  );
+}
+
+/**
+ * Resolve USB device info (vendorId, productId, serial, bus, devnum) from a mount path.
  *
  * macOS: Runs diskutil + system_profiler to correlate mount path → bsd_name → USB device.
- * Linux: Parses /proc/mounts → sysfs block device → walks up to USB ancestor for bus/address/serial.
+ * Linux: Parses /proc/mounts → sysfs block device → walks up to USB ancestor for VID/PID/serial/bus/devnum.
  *
- * Never throws — returns null on any failure.
+ * vendorId and productId are returned as bare lowercase hex (UsbFingerprint
+ * canonical form) when discovery succeeds. Bus/devnum/serialNumber may still
+ * be absent when the platform layer cannot extract them. Never throws —
+ * returns null on any failure.
  */
 export async function resolveUsbDeviceFromPath(
   mountPath: string,
   options?: { platform?: string }
-): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
+): Promise<ResolvedUsbDevice | null> {
   const platform = options?.platform ?? process.platform;
 
   try {
@@ -455,9 +509,7 @@ export function findUsbAncestor(
   return null;
 }
 
-async function resolveUsbDeviceFromPathLinux(
-  mountPath: string
-): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
+async function resolveUsbDeviceFromPathLinux(mountPath: string): Promise<ResolvedUsbDevice | null> {
   // Step 1: Find block device from /proc/mounts
   let procMounts: string;
   try {
@@ -478,7 +530,21 @@ async function resolveUsbDeviceFromPathLinux(
   if (!usbDevicePath) return null;
 
   // Step 3: Read USB device attributes
-  const result: Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> = {};
+  const result: Partial<ResolvedUsbDevice> = {};
+
+  try {
+    const idVendor = fs.readFileSync(path.join(usbDevicePath, 'idVendor'), 'utf-8').trim();
+    if (idVendor.length > 0) result.vendorId = idVendor.toLowerCase();
+  } catch {
+    /* not available */
+  }
+
+  try {
+    const idProduct = fs.readFileSync(path.join(usbDevicePath, 'idProduct'), 'utf-8').trim();
+    if (idProduct.length > 0) result.productId = idProduct.toLowerCase();
+  } catch {
+    /* not available */
+  }
 
   try {
     const busnum = parseInt(
@@ -507,12 +573,10 @@ async function resolveUsbDeviceFromPathLinux(
     /* not available */
   }
 
-  return Object.keys(result).length > 0 ? result : null;
+  return Object.keys(result).length > 0 ? (result as ResolvedUsbDevice) : null;
 }
 
-async function resolveUsbDeviceFromPathMacOS(
-  mountPath: string
-): Promise<Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> | null> {
+async function resolveUsbDeviceFromPathMacOS(mountPath: string): Promise<ResolvedUsbDevice | null> {
   // Step 1: Get BSD name from diskutil info
   const diskutilOutput = await new Promise<string>((resolve, reject) => {
     execFile('diskutil', ['info', mountPath], { timeout: 10_000 }, (error, stdout) => {
@@ -573,12 +637,23 @@ async function resolveUsbDeviceFromPathMacOS(
   const serialNumber = extractSerialNumber(matchedItem);
   const { busNumber, deviceAddress } = parseLocationId(matchedItem.location_id);
 
-  const result: Pick<UsbFingerprint, 'bus' | 'devnum' | 'serialNumber'> = {};
+  const result: Partial<ResolvedUsbDevice> = {};
+
+  // Normalise vendorId/productId from system_profiler's prefixed-hex format
+  // ("0x05ac", possibly with trailing text) into the bare-hex UsbFingerprint
+  // canonical form used by macOS SCSI dispatch.
+  if (typeof matchedItem.vendor_id === 'string') {
+    result.vendorId = extractVendorId(matchedItem.vendor_id);
+  }
+
+  const productId = extractProductId(matchedItem.product_id);
+  if (productId) result.productId = productId;
+
   if (serialNumber) result.serialNumber = serialNumber;
   if (busNumber !== undefined) result.bus = busNumber;
   if (deviceAddress !== undefined) result.devnum = deviceAddress;
 
-  return Object.keys(result).length > 0 ? result : null;
+  return Object.keys(result).length > 0 ? (result as ResolvedUsbDevice) : null;
 }
 
 // ── Main entry point ─────────────────────────────────────────────────────────

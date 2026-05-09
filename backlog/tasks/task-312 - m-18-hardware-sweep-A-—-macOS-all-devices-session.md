@@ -1,9 +1,11 @@
 ---
 id: TASK-312
 title: 'm-18 hardware sweep A — macOS, all-devices session'
-status: To Do
-assignee: []
+status: In Progress
+assignee:
+  - james
 created_date: '2026-05-08 08:13'
+updated_date: '2026-05-09 10:44'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -131,21 +133,78 @@ Update `documents/test-devices.md` for each device row:
 - doctor output: copy the human-readable status block verbatim
 - Notable issues: anything surprising
 
-## Acceptance criteria
-
-- [ ] All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
-- [ ] `device add` auto-detect picks iPod path correctly for each.
-- [ ] `doctor --repair sysinfo-extended` succeeds on all 5.
-- [ ] `sync --dry-run` produces a coherent plan on all 5.
-- [ ] §2 performance numbers recorded; no >2x regression vs P1 baseline.
-- [ ] §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
-- [ ] §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
-- [ ] §5 unsupported-device message verified on real iOS hardware (or flagged).
-- [ ] §6 multi-device enumeration deterministic.
-- [ ] §7 standalone binary works.
-- [ ] `documents/test-devices.md` updated with results.
+## Acceptance Criteria
+<!-- AC:BEGIN -->
+- [ ] #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
+- [ ] #2 `device add` auto-detect picks iPod path correctly for each.
+- [ ] #3 `doctor --repair sysinfo-extended` succeeds on all 5.
+- [ ] #4 `sync --dry-run` produces a coherent plan on all 5.
+- [ ] #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
+- [ ] #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
+- [ ] #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
+- [ ] #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
+- [ ] #9 §6 multi-device enumeration deterministic.
+- [ ] #10 §7 standalone binary works.
+- [ ] #11 `documents/test-devices.md` updated with results.
 
 ## Time estimate
 
 ~90 min if everything works; +30 min if anything surfaces UX issues that need wording fixes.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Plan
+
+<!-- SECTION:PLAN:BEGIN -->
+## Session plan
+
+Conducted interactively with the user, step by step. After each device routine the user pastes output; we diff vs fixture, flag surprises, then continue / pause-to-fix / abandon as needed.
+
+### Hardware confirmed for this session
+
+- iPod mini 2G (PARTY/SALLYS — verify)
+- iPod nano 2G 4GB Green
+- **iPod nano 3G** (NEW — adds inventory entry; will reveal whether USB inquiry boundary moves earlier than nano 4G)
+- iPod 5G Video / TERAPOD (iFlash 1TB)
+- iPod nano 4G 8GB Black
+- iPod nano 7G 16GB (existing capture: nano-7g-16gb-{scsi,usb}.xml)
+- **iPod nano 7G #2** (NEW — different colour; fills serial-suffix gap left by FJQ1)
+- **Echo Mini** (USB mass storage)
+- **iPod touch (NEW model)** — substitute for the iPhone/iPad in §5; new inventory entry. Confirms iOS rejection path on actual current-gen hardware.
+
+### Steps
+
+1. Pre-flight (`git pull`, `mise install`, `bun install`, `bun run build --filter podkit`, alias podkit). Verify `--version`.
+2. §1 per-iPod routine (steps A–H) for **7 iPods** in this order: mini 2G → nano 2G → nano 3G → iPod 5G → nano 4G → nano 7G #1 → nano 7G #2. Pause after each device.
+3. §2 perf baseline (3 runs each) on nano 4G (USB FFI) + nano 2G (SCSI). Record averages.
+4. §3 edge cases on mini 2G: stale SysInfoExtended, corrupted/truncated, eject-mid-inquiry.
+5. §4 Echo Mini auto-detect + add + doctor + sync --dry-run.
+6. §5 iPod touch unsupported-device messaging — capture exact wording verbatim.
+7. §6 multi-device enumeration via USB hub (2 iPods).
+8. §7 standalone binary smoke (`bun run compile`).
+9. Doc updates:
+   - `documents/test-devices.md` — new rows for nano 3G, nano 7G #2, iPod touch; updated rows for the rest with timing + new doctor output.
+   - `documents/sysinfo-captures/` — add `nano-3g.xml`, `nano-7g-<colour-2>.xml`, plus any new captures we want to lock in.
+   - Generation Coverage Analysis: refresh checksum + inquiry tables.
+   - Update USB PID bug list if nano 3G surfaces another shared/wrong PID.
+   - If wording in §3/§5 is rough, capture verbatim quotes for follow-up — do NOT silently rewrite during the sweep.
+
+### Deliverables / handoff
+
+- Test-devices.md fully updated.
+- Acceptance criteria ticked or explicitly flagged with reason.
+- Notes appended for any UX issues that warrant follow-up tasks (created with user approval, not silently).
+- Final summary written when sweep complete.
+<!-- SECTION:PLAN:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+UX issue (§1B): `doctor --no-device` does not exist. Without `-d` the CLI resolves to the default device (terapod) and fails with 'Device with UUID ... not found' if not plugged. There's no `--system-only` / `--no-device` flag — only `--no-system` (the inverse). Task description assumed `--no-device` was real. Two options: add a `--system-only` (or `--no-device`) flag, or change the default behaviour so that `podkit doctor` with no args runs system checks only when no default device is reachable. Captured stderr: `Device with UUID 2ADFFE6C-49BF-3F3A-8AF8-2787C0AD048B not found. Is it connected?`
+
+UX issue (§1C): `podkit device remove <name>` fails with 'too many arguments for remove. Expected 0 arguments but got 1.' — the command takes the device via the program-level `-d` flag, not as a positional. Same applies to `device add -d <name>`. Error message does not suggest the `-d` flag. Either accept positional `<name>` for add/remove (more idiomatic) or rewrite the error to point at `-d`.
+<!-- SECTION:NOTES:END -->
+
+- [ ] #12 nano 3G inventory entry added to documents/test-devices.md; full §1 routine completed; SysInfoExtended captured.
+- [ ] #13 nano 7G #2 (different colour) inventory entry added; full §1 routine completed; serial suffix recorded against the lookup table gap.
+- [ ] #14 iPod touch inventory entry added; §5 unsupported-device messaging verified verbatim against source-of-truth code.
+<!-- AC:END -->

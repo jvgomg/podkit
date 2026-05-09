@@ -10,4 +10,8 @@ export { readSysInfoExtended, type SysInfoExtendedResult, type ModelResolver } f
 
 export { writeSysInfoExtended } from './write.js';
 
-export { ensureSysInfoExtended, type UsbDeviceAddress, type ReadFromUsbFn } from './ensure.js';
+export {
+  ensureSysInfoExtended,
+  type ReadFromUsbFn,
+  type EnsureSysInfoExtendedOptions,
+} from './ensure.js';

@@ -11,10 +11,13 @@
 // Inquiry orchestrator
 export {
   inquireFirmware,
+  inquireFirmwareDetailed,
   type ScsiTransport,
   type UsbTransport,
   type InquireOptions,
   type TransportOptions,
+  type InquiryAttempt,
+  type InquiryDetailedResult,
 } from './inquiry/orchestrator.js';
 
 // Transport selection (pure planning function)
@@ -102,7 +105,7 @@ export {
   SYSINFO_EXTENDED_PATH,
   SYSINFO_DEVICE_DIR,
   type SysInfoExtendedResult,
-  type UsbDeviceAddress,
   type ReadFromUsbFn,
+  type EnsureSysInfoExtendedOptions,
   type ModelResolver,
 } from './sysinfo/index.js';

@@ -10,6 +10,8 @@ import {
   resolveUsbDeviceFromPath,
   findBlockDeviceForMount,
   findUsbAncestor,
+  extractProductId,
+  extractVendorId,
 } from './usb-discovery.js';
 import { createUsbOnlyReadinessResult } from './readiness.js';
 
@@ -383,6 +385,62 @@ describe('parseSystemProfilerUsbData', () => {
     const result = parseSystemProfilerUsbData(data);
     expect(result).toHaveLength(1);
     expect(result[0]!.usb.vendorId).toBe('05ac');
+  });
+});
+
+// ── extractProductId ────────────────────────────────────────────────────────
+
+describe('extractProductId', () => {
+  it('extracts bare hex from prefixed form "0x1261"', () => {
+    expect(extractProductId('0x1261')).toBe('1261');
+  });
+
+  it('extracts bare hex from prefixed-with-trailing-text form "0x1209 (some text)"', () => {
+    expect(extractProductId('0x1209 (some text)')).toBe('1209');
+  });
+
+  it('lowercases mixed-case hex input', () => {
+    expect(extractProductId('0x1AbC')).toBe('1abc');
+  });
+
+  it('returns undefined for undefined input', () => {
+    expect(extractProductId(undefined)).toBeUndefined();
+  });
+
+  it('returns undefined for empty string', () => {
+    expect(extractProductId('')).toBeUndefined();
+  });
+
+  it('returns undefined for input without a 0x-prefixed hex match', () => {
+    expect(extractProductId('not-hex')).toBeUndefined();
+  });
+});
+
+// ── extractVendorId ─────────────────────────────────────────────────────────
+
+describe('extractVendorId', () => {
+  it('returns bare-hex Apple vendor ID for the "apple_vendor_id" sentinel', () => {
+    expect(extractVendorId('apple_vendor_id')).toBe('05ac');
+  });
+
+  it('extracts bare hex from prefixed-with-trailing-text form "0x05ac (Apple Inc.)"', () => {
+    expect(extractVendorId('0x05ac (Apple Inc.)')).toBe('05ac');
+  });
+
+  it('extracts bare hex from bare prefixed form "0x05ac"', () => {
+    expect(extractVendorId('0x05ac')).toBe('05ac');
+  });
+
+  it('returns the input lowercased when it is already bare-hex "05ac"', () => {
+    expect(extractVendorId('05ac')).toBe('05ac');
+  });
+
+  it('lowercases mixed-case prefixed input', () => {
+    expect(extractVendorId('0x05AC')).toBe('05ac');
+  });
+
+  it('lowercases unrecognised non-hex input rather than dropping it', () => {
+    expect(extractVendorId('Vendor Name')).toBe('vendor name');
   });
 });
 

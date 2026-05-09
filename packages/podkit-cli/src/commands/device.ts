@@ -79,9 +79,10 @@ import {
   readSysInfoExtended,
   ensureSysInfoExtended,
   resolveUsbDeviceFromPath,
+  hasCompleteUsbFingerprint,
   getChecksumTypeByModelNumber,
 } from '@podkit/core';
-import type { SysInfoExtendedResult } from '@podkit/core';
+import type { SysInfoExtendedResult, CompleteUsbDevice } from '@podkit/core';
 import {
   openDevice,
   isMassStorageDevice,
@@ -177,7 +178,7 @@ async function attemptSysInfoExtended(
     // Checksum device with only SysInfo — SysInfoExtended is required.
     // Try to read it from USB.
     const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-    if (!usbInfo?.bus || !usbInfo?.devnum) {
+    if (!hasCompleteUsbFingerprint(usbInfo)) {
       out.newline();
       out.print(
         `Warning: This iPod (${modelNumber ?? 'unknown model'}) requires SysInfoExtended for database checksums,` +
@@ -208,11 +209,7 @@ async function attemptSysInfoExtended(
       }
     }
 
-    return readSysInfoExtendedFromUsb(
-      mountPoint,
-      { busNumber: usbInfo.bus!, deviceAddress: usbInfo.devnum! },
-      out
-    );
+    return readSysInfoExtendedFromUsb(mountPoint, usbInfo, out);
   }
 
   // 3. Neither file present. Resolve USB before prompting — without it we
@@ -220,7 +217,7 @@ async function attemptSysInfoExtended(
   //    offline reattach), silently skip: the downstream init step will
   //    create classic SysInfo if the database is also missing.
   const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-  if (!usbInfo?.bus || !usbInfo?.devnum) {
+  if (!hasCompleteUsbFingerprint(usbInfo)) {
     out.verbose1('No SysInfo or SysInfoExtended on device, and USB device could not be located.');
     return { result: null, abort: false };
   }
@@ -244,17 +241,13 @@ async function attemptSysInfoExtended(
   }
 
   // 5. Read from USB and write the file.
-  return readSysInfoExtendedFromUsb(
-    mountPoint,
-    { busNumber: usbInfo.bus, deviceAddress: usbInfo.devnum },
-    out
-  );
+  return readSysInfoExtendedFromUsb(mountPoint, usbInfo, out);
 }
 
 /** Shared helper: read SysInfoExtended from USB and write to device. */
 async function readSysInfoExtendedFromUsb(
   mountPoint: string,
-  usbInfo: { busNumber: number; deviceAddress: number },
+  usbInfo: CompleteUsbDevice,
   out: OutputContext
 ): Promise<SysInfoAttempt> {
   try {
@@ -263,11 +256,13 @@ async function readSysInfoExtendedFromUsb(
     const result = await ensureSysInfoExtended(
       mountPoint,
       {
-        busNumber: usbInfo.busNumber,
-        deviceAddress: usbInfo.deviceAddress,
+        vendorId: usbInfo.vendorId,
+        productId: usbInfo.productId,
+        ...(usbInfo.serialNumber ? { serialNumber: usbInfo.serialNumber } : {}),
+        bus: usbInfo.bus,
+        devnum: usbInfo.devnum,
       },
-      undefined,
-      resolveModel
+      { resolveModel }
     );
 
     if (!result.present) {

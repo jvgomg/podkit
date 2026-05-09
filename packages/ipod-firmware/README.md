@@ -103,7 +103,14 @@ if (result) {
 }
 
 // Ensure SysInfoExtended is present (read from file or fetch via USB)
-const ensured = await ensureSysInfoExtended('/Volumes/iPod', { bus: 3, devnum: 4 });
+const fp: UsbFingerprint = {
+  vendorId: '05ac',
+  productId: '1261',
+  serialNumber: '7K74HBYZRP2',
+  bus: 3,
+  devnum: 4,
+};
+const ensured = await ensureSysInfoExtended('/Volumes/iPod', fp);
 ```
 
 Moved from `@podkit/core` in P4 (TASK-295.01). The old `core/device/sysinfo-extended.ts` shim was removed in TASK-295.05.
@@ -124,7 +131,7 @@ Moved from `@podkit/core` in P4 (TASK-295.01). The old `core/device/sysinfo-exte
 | `clearProbeCache()` | function | Reset the probe cache. Use in tests between cases. |
 | `readSysInfoExtended(mountPoint, resolver?)` | function | Read SysInfoExtended plist from iPod filesystem. Returns `SysInfoExtendedResult \| null`. |
 | `writeSysInfoExtended(mountPoint, xml)` | function | Write raw SysInfoExtended XML to the canonical path on the iPod filesystem. |
-| `ensureSysInfoExtended(mountPoint, addr, readFromUsb?, resolver?)` | function | Read from file or fetch via USB if absent. Returns `SysInfoExtendedResult`. |
+| `ensureSysInfoExtended(mountPoint, fp, options?)` | function | Read SysInfoExtended from file or fetch via the USB+SCSI inquiry orchestrator if absent. Returns `SysInfoExtendedResult`. `options` accepts a `resolveModel` callback, a `readFromUsb` synchronous override, and `inquireOptions` (forwarded to `inquireFirmwareDetailed`). |
 | `SYSINFO_EXTENDED_PATH` | constant | Relative path of the SysInfoExtended file within an iPod filesystem. |
 | `compareSysInfoConsistency(file, usb)` | function | Compare file-resident vs USB-read SysInfoExtended; returns a consistency status. |
 | `normaliseFireWireGuid(guid)` | function | Normalise a FireWire GUID string to 16-char uppercase hex (strips separators). |

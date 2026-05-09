@@ -2340,11 +2340,19 @@ export async function resolveUsbDeviceFromPath(_mountPath: string): Promise<any>
   return null;
 }
 
+export function hasCompleteUsbFingerprint(_info: any): _info is any {
+  return false;
+}
+
 export function readSysInfoExtended(_mountPoint: string): any {
   return null;
 }
 
-export async function ensureSysInfoExtended(_mountPoint: string, _usbAddress: any): Promise<any> {
+export async function ensureSysInfoExtended(
+  _mountPoint: string,
+  _fp: any,
+  _options?: any
+): Promise<any> {
   return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
 }
 

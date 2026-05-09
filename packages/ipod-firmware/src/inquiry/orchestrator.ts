@@ -37,7 +37,7 @@ import {
 } from './probe.js';
 import { scsiReadVpdPages } from './scsi/index.js';
 import { readUsbInquiry } from './usb.js';
-import { chooseTransports } from './selection.js';
+import { chooseTransports, type SelectionPlan } from './selection.js';
 
 /** Options forwarded to a transport invocation. */
 export interface TransportOptions {
@@ -115,6 +115,32 @@ function parseAndExtract(bytes: Uint8Array): ParsedFirmware | null {
 }
 
 /**
+ * Outcome of a single transport attempt within an orchestrated inquiry.
+ *
+ * - `success`: transport returned bytes that parsed into a `ParsedFirmware`.
+ * - `transport-error`: transport itself threw (libusb error, SCSI vtable
+ *   failure, ENOENT for /dev/sgN, etc.).
+ * - `parse-error`: transport returned bytes but `parseAndExtract` could not
+ *   produce a `ParsedFirmware` (decode/plist/extract failure).
+ */
+export type InquiryAttempt =
+  | { transport: 'usb' | 'scsi'; outcome: 'success' }
+  | { transport: 'usb' | 'scsi'; outcome: 'transport-error'; error: Error }
+  | { transport: 'usb' | 'scsi'; outcome: 'parse-error' };
+
+/**
+ * Detailed inquiry result. `firmware` is `null` whenever no attempt produced
+ * usable bytes; `plan` reports the plan the orchestrator dispatched (callers
+ * use it to know which transports were even available); `attempts` lists the
+ * transports actually invoked, in order, with per-attempt outcomes.
+ */
+export interface InquiryDetailedResult {
+  firmware: ParsedFirmware | null;
+  plan: SelectionPlan;
+  attempts: InquiryAttempt[];
+}
+
+/**
  * Inquire the connected iPod's firmware capabilities via USB or SCSI.
  *
  * Probes which transports are available, then dispatches:
@@ -150,6 +176,21 @@ export async function inquireFirmware(
   fp: UsbFingerprint,
   opts?: InquireOptions
 ): Promise<ParsedFirmware | null> {
+  const detailed = await inquireFirmwareDetailed(fp, opts);
+  return detailed.firmware;
+}
+
+/**
+ * Same orchestration as {@link inquireFirmware} but returns plan + per-attempt
+ * outcomes alongside the parsed firmware. Callers that need to surface
+ * actionable diagnostics (e.g. "both USB and SCSI failed" vs "no transport
+ * available") use this entry point. The simple `null`/`ParsedFirmware` callers
+ * stay on {@link inquireFirmware}.
+ */
+export async function inquireFirmwareDetailed(
+  fp: UsbFingerprint,
+  opts?: InquireOptions
+): Promise<InquiryDetailedResult> {
   const usbTransport = opts?.transports?.usb ?? defaultUsbTransport;
   const scsiTransport = opts?.transports?.scsi ?? defaultScsiTransport;
   const transportOpts: TransportOptions | undefined =
@@ -157,49 +198,56 @@ export async function inquireFirmware(
 
   const availability = opts?.availability ?? (await probeInquiryMethods(opts?.probeOptions));
   const plan = chooseTransports(availability);
+  const attempts: InquiryAttempt[] = [];
+
+  const runTransport = async (
+    transport: 'usb' | 'scsi',
+    fn: UsbTransport | ScsiTransport
+  ): Promise<ParsedFirmware | null> => {
+    let bytes: Uint8Array;
+    try {
+      bytes = await fn(fp, transportOpts);
+    } catch (err) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      attempts.push({ transport, outcome: 'transport-error', error });
+      return null;
+    }
+    const parsed = parseAndExtract(bytes);
+    attempts.push(
+      parsed ? { transport, outcome: 'success' } : { transport, outcome: 'parse-error' }
+    );
+    return parsed;
+  };
 
   switch (plan) {
     case 'none':
-      return null;
+      return { firmware: null, plan, attempts };
 
     case 'usb-only': {
-      try {
-        const bytes = await usbTransport(fp, transportOpts);
-        return parseAndExtract(bytes);
-      } catch {
-        return null;
-      }
+      const firmware = await runTransport('usb', usbTransport);
+      return { firmware, plan, attempts };
     }
 
     case 'scsi-only': {
-      try {
-        const bytes = await scsiTransport(fp, transportOpts);
-        return parseAndExtract(bytes);
-      } catch {
-        return null;
-      }
+      const firmware = await runTransport('scsi', scsiTransport);
+      return { firmware, plan, attempts };
     }
 
     case 'usb-then-scsi': {
-      // USB success path: parse and return immediately. Bytes that fail to
-      // parse do NOT trigger SCSI fallback (see module TSDoc rule 3).
-      try {
-        const bytes = await usbTransport(fp, transportOpts);
-        return parseAndExtract(bytes);
-      } catch (err) {
+      const usbResult = await runTransport('usb', usbTransport);
+      const lastUsb = attempts[attempts.length - 1]!;
+      // SCSI fallback only when USB threw at the transport layer. A successful
+      // USB transport returning unparseable bytes does not trigger SCSI (see
+      // module TSDoc rule 3).
+      if (lastUsb.outcome === 'transport-error') {
         emit({
           level: 'debug',
-          message: `USB inquiry failed, falling back to SCSI: ${
-            err instanceof Error ? `${err.name}: ${err.message}` : String(err)
-          }`,
+          message: `USB inquiry failed, falling back to SCSI: ${lastUsb.error.name}: ${lastUsb.error.message}`,
         });
+        const scsiResult = await runTransport('scsi', scsiTransport);
+        return { firmware: scsiResult, plan, attempts };
       }
-      try {
-        const bytes = await scsiTransport(fp, transportOpts);
-        return parseAndExtract(bytes);
-      } catch {
-        return null;
-      }
+      return { firmware: usbResult, plan, attempts };
     }
   }
 }

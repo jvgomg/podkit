@@ -13,46 +13,128 @@
  */
 
 import type { UsbFingerprint } from '@podkit/device-types';
-import { inquireFirmware } from '../inquiry/orchestrator.js';
+import {
+  inquireFirmwareDetailed,
+  type InquireOptions,
+  type InquiryAttempt,
+} from '../inquiry/orchestrator.js';
 import { readSysInfoExtended, validateXml, extractIdentity } from './read.js';
 import { writeSysInfoExtended } from './write.js';
 import type { SysInfoExtendedResult, ModelResolver } from './read.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-/** USB device addressing for SysInfoExtended reads */
-export interface UsbDeviceAddress {
-  busNumber: number;
-  deviceAddress: number;
-}
+/**
+ * Function signature for reading SysInfoExtended from USB (for dependency
+ * injection in tests). Receives the full {@link UsbFingerprint} so test
+ * doubles can assert on every identifier — vendorId, productId, serialNumber,
+ * bus, devnum — that the production path threads through to the inquiry
+ * orchestrator.
+ *
+ * Contract: the callback is **synchronous**. A `Promise` return value is not
+ * awaited and will be coerced to truthy regardless of resolution. Callers
+ * that need async reads should use {@link EnsureSysInfoExtendedOptions.inquireOptions}
+ * to inject async transports into the orchestrator instead.
+ */
+export type ReadFromUsbFn = (fp: UsbFingerprint) => string | null;
 
-/** Function signature for reading SysInfoExtended from USB (for dependency injection in tests) */
-export type ReadFromUsbFn = (busNumber: number, deviceAddress: number) => string | null;
+/**
+ * Optional knobs for {@link ensureSysInfoExtended}. Lets callers inject
+ * a model resolver (so `result.model` gets populated from the serial-number
+ * suffix) and, for tests, override the inquiry orchestrator's transports
+ * and probe without bypassing the orchestrator entirely.
+ */
+export interface EnsureSysInfoExtendedOptions {
+  /**
+   * Callback to look up an `IpodModel` from a serial number. Callers with
+   * access to `@podkit/devices-ipod` should pass
+   * `(sn) => identify({ from: 'serial', serialNumber: sn })`. When omitted,
+   * `result.model` is always undefined.
+   */
+  resolveModel?: ModelResolver;
+  /**
+   * Synchronous override for the USB-read step. When supplied, the inquiry
+   * orchestrator is **bypassed** — useful for unit tests that exercise the
+   * file-write / validation seams without touching the orchestrator.
+   * Integration tests covering the orchestrator's transport selection should
+   * leave this unset and pass {@link inquireOptions} instead.
+   */
+  readFromUsb?: ReadFromUsbFn;
+  /**
+   * Forwarded to {@link inquireFirmwareDetailed}. Lets integration tests
+   * inject mock transports + an availability snapshot so the orchestrator's
+   * plan selection (`usb-then-scsi`, `scsi-only`, etc.) and per-attempt
+   * outcomes get exercised end-to-end without hardware. Has no effect when
+   * {@link readFromUsb} is also supplied.
+   */
+  inquireOptions?: InquireOptions;
+}
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
- * Run the inquiry orchestrator against a USB device address.
+ * Run the inquiry orchestrator against a USB fingerprint and return both the
+ * raw XML and the per-transport attempt outcomes. The XML is `null` whenever
+ * the orchestrator could not produce parseable bytes; the attempts let the
+ * caller assemble an error message that names the actual transports tried.
  *
- * Only `bus` and `devnum` are populated on the {@link UsbFingerprint} here —
- * those are the fields the Linux SCSI path needs to derive `/dev/sgN`. macOS
- * SCSI also benefits from `vendorId`/`productId`, but the libgpod USB shim
- * does not require them, and `ensureSysInfoExtended`'s caller does not
- * currently provide them. TODO(P2): thread vendorId/productId/serialNumber
- * through the call sites to enable cross-platform SCSI fingerprinting.
+ * `opts` is forwarded verbatim to {@link inquireFirmwareDetailed} so tests
+ * can inject mock transports + an availability snapshot.
  */
 async function inquireViaOrchestrator(
-  busNumber: number,
-  deviceAddress: number
-): Promise<string | null> {
-  const fp: UsbFingerprint = {
-    vendorId: '',
-    productId: '',
-    bus: busNumber,
-    devnum: deviceAddress,
-  };
-  const result = await inquireFirmware(fp);
-  return result?.rawXml ?? null;
+  fp: UsbFingerprint,
+  opts?: InquireOptions
+): Promise<{ rawXml: string | null; attempts: InquiryAttempt[] }> {
+  const detailed = await inquireFirmwareDetailed(fp, opts);
+  return { rawXml: detailed.firmware?.rawXml ?? null, attempts: detailed.attempts };
+}
+
+/**
+ * Build a user-facing error message describing exactly which transports were
+ * attempted. The orchestrator returns `null` for several distinct reasons —
+ * "no transport available", "USB threw", "SCSI threw", "both threw",
+ * "transport returned unparseable bytes", and combinations of the above —
+ * and the historical error string misleadingly always blamed USB even when
+ * SCSI was the only path tried.
+ *
+ * The returned message names which transports threw and which returned
+ * unparseable data, so the user can tell whether the device responded at all.
+ *
+ * Note on the mixed-outcome branch: the only mixed shape that arises in
+ * practice is `[usb: transport-error, scsi: parse-error]`. Per orchestrator
+ * rule 3 (see `inquiry/orchestrator.ts`), a USB success with bytes that fail
+ * to parse short-circuits SCSI fallback, so the symmetric
+ * `[usb: parse-error, scsi: transport-error]` shape is unreachable from the
+ * `usb-then-scsi` plan. Single-transport plans (`usb-only`, `scsi-only`)
+ * cannot produce mixed shapes by definition.
+ */
+function buildTransportErrorMessage(attempts: InquiryAttempt[]): string {
+  if (attempts.length === 0) {
+    return 'Could not read device identity: no firmware inquiry transport is available on this system';
+  }
+
+  const transportErrored = unique(
+    attempts.filter((a) => a.outcome === 'transport-error').map((a) => a.transport.toUpperCase())
+  );
+  const parseFailed = unique(
+    attempts.filter((a) => a.outcome === 'parse-error').map((a) => a.transport.toUpperCase())
+  );
+
+  if (transportErrored.length === 0 && parseFailed.length > 0) {
+    return `Could not read device identity: ${joinAnd(parseFailed)} returned data but it could not be parsed`;
+  }
+  if (parseFailed.length === 0) {
+    return `Could not read device identity from ${joinAnd(transportErrored)}`;
+  }
+  return `Could not read device identity: ${joinAnd(transportErrored)} failed and ${joinAnd(parseFailed)} returned data that could not be parsed`;
+}
+
+function unique(xs: string[]): string[] {
+  return Array.from(new Set(xs));
+}
+
+function joinAnd(xs: string[]): string {
+  return xs.join(' and ');
 }
 
 // ── Public API ───────────────────────────────────────────────────────────────
@@ -61,23 +143,30 @@ async function inquireViaOrchestrator(
  * Ensure SysInfoExtended is present on an iPod's filesystem.
  *
  * If already present, reads and parses it. If missing, reads from USB
- * firmware and writes to disk. Returns extracted device identity info.
+ * firmware via the `@podkit/ipod-firmware` inquiry orchestrator and writes
+ * to disk. Returns extracted device identity info.
+ *
+ * The orchestrator never throws — on any transport or parse failure it
+ * returns `null` and a list of per-transport attempts that this function
+ * folds into a precise user-facing error message naming exactly which
+ * transports threw vs returned unparseable bytes.
  *
  * @param mountPoint - iPod mount point (e.g., "/Volumes/iPod")
- * @param usbAddress - USB bus number and device address
- * @param readFromUsb - Optional USB reader function (for testing). Defaults to
- *   the @podkit/ipod-firmware inquiry orchestrator.
- * @param resolveModel - Optional callback to resolve an IpodModel from a serial
- *   number. Callers with access to `@podkit/devices-ipod` should pass
- *   `(sn) => identify({ from: 'serial', serialNumber: sn })`.
- *   When omitted, `result.model` is always undefined.
+ * @param fp - Full USB fingerprint (vendorId, productId, serialNumber, bus,
+ *   devnum). All five fields should be populated when the caller has them
+ *   from USB enumeration — Linux SCSI matches on bus/devnum and macOS SCSI
+ *   matches on vendorId/productId/serialNumber, so a partial fingerprint can
+ *   block one platform's transport.
+ * @param options - Optional knobs (model resolver, USB-read override, inquiry
+ *   transport overrides). See {@link EnsureSysInfoExtendedOptions}.
  */
 export async function ensureSysInfoExtended(
   mountPoint: string,
-  usbAddress: UsbDeviceAddress,
-  readFromUsb?: ReadFromUsbFn,
-  resolveModel?: ModelResolver
+  fp: UsbFingerprint,
+  options?: EnsureSysInfoExtendedOptions
 ): Promise<SysInfoExtendedResult> {
+  const { readFromUsb, resolveModel, inquireOptions } = options ?? {};
+
   // Step 1: Check if file already exists
   const existing = readSysInfoExtended(mountPoint, resolveModel);
   if (existing) {
@@ -87,19 +176,22 @@ export async function ensureSysInfoExtended(
   // Step 2: Read SysInfoExtended XML.
   //
   // When `readFromUsb` is supplied, use it directly — this preserves the
-  // existing test injection point (tests pass a mock that returns/throws
+  // synchronous test injection point (tests pass a mock that returns/throws
   // synthetic XML and assert on the surfaced error path).
   //
-  // When `readFromUsb` is omitted (production), delegate to the
-  // @podkit/ipod-firmware orchestrator, which probes USB and SCSI transports
-  // and falls back transparently. The orchestrator never throws — it returns
-  // null on any transport or parse failure.
+  // When `readFromUsb` is omitted, delegate to the `@podkit/ipod-firmware`
+  // orchestrator, which probes USB and SCSI transports and falls back
+  // transparently. `inquireOptions` (when supplied) lets integration tests
+  // mock the transports without bypassing the orchestrator's plan selection.
   let xml: string | null;
+  let attempts: InquiryAttempt[] = [];
   try {
     if (readFromUsb) {
-      xml = readFromUsb(usbAddress.busNumber, usbAddress.deviceAddress);
+      xml = readFromUsb(fp);
     } else {
-      xml = await inquireViaOrchestrator(usbAddress.busNumber, usbAddress.deviceAddress);
+      const orchestrated = await inquireViaOrchestrator(fp, inquireOptions);
+      xml = orchestrated.rawXml;
+      attempts = orchestrated.attempts;
     }
   } catch (err) {
     return {
@@ -112,7 +204,9 @@ export async function ensureSysInfoExtended(
     return {
       present: false,
       source: 'unavailable',
-      error: 'Could not read device identity from USB',
+      error: readFromUsb
+        ? 'Could not read device identity from USB'
+        : buildTransportErrorMessage(attempts),
     };
   }
 

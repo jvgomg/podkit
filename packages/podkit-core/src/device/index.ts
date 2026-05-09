@@ -148,7 +148,11 @@ export {
 } from './readiness.js';
 
 // SysInfoExtended orchestrator (imported directly from @podkit/ipod-firmware)
-export type { SysInfoExtendedResult, UsbDeviceAddress, ReadFromUsbFn } from '@podkit/ipod-firmware';
+export type {
+  SysInfoExtendedResult,
+  ReadFromUsbFn,
+  EnsureSysInfoExtendedOptions,
+} from '@podkit/ipod-firmware';
 export {
   ensureSysInfoExtended,
   readSysInfoExtended,
@@ -156,8 +160,12 @@ export {
 } from '@podkit/ipod-firmware';
 
 // USB discovery
-export type { UsbDiscoveredDevice } from './usb-discovery.js';
-export { discoverUsbIpods, resolveUsbDeviceFromPath } from './usb-discovery.js';
+export type { UsbDiscoveredDevice, ResolvedUsbDevice, CompleteUsbDevice } from './usb-discovery.js';
+export {
+  discoverUsbIpods,
+  resolveUsbDeviceFromPath,
+  hasCompleteUsbFingerprint,
+} from './usb-discovery.js';
 
 // Device enumeration framework
 export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';
