@@ -1,11 +1,11 @@
 ---
 id: TASK-312
 title: 'm-18 hardware sweep A — macOS, all-devices session'
-status: In Progress
+status: Done
 assignee:
   - james
 created_date: '2026-05-08 08:13'
-updated_date: '2026-05-09 14:52'
+updated_date: '2026-05-09 16:39'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -135,17 +135,17 @@ Update `documents/test-devices.md` for each device row:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 #1 #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
-- [x] #2 #2 #2 #2 `device add` auto-detect picks iPod path correctly for each.
-- [x] #3 #3 #3 #3 `doctor --repair sysinfo-extended` succeeds on all 5.
-- [x] #4 #4 #4 #4 `sync --dry-run` produces a coherent plan on all 5.
-- [x] #5 #5 #5 #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
-- [x] #6 #6 #6 #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
-- [ ] #7 #7 #7 #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
-- [ ] #8 #8 #8 #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
-- [ ] #9 #9 #9 #9 §6 multi-device enumeration deterministic.
-- [ ] #10 #10 #10 #10 §7 standalone binary works.
-- [ ] #11 #11 #11 #11 `documents/test-devices.md` updated with results.
+- [x] #1 #1 #1 #1 #1 #1 #1 #1 #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
+- [x] #2 #2 #2 #2 #2 #2 #2 #2 #2 `device add` auto-detect picks iPod path correctly for each.
+- [x] #3 #3 #3 #3 #3 #3 #3 #3 #3 `doctor --repair sysinfo-extended` succeeds on all 5.
+- [x] #4 #4 #4 #4 #4 #4 #4 #4 #4 `sync --dry-run` produces a coherent plan on all 5.
+- [x] #5 #5 #5 #5 #5 #5 #5 #5 #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
+- [x] #6 #6 #6 #6 #6 #6 #6 #6 #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
+- [x] #7 #7 #7 #7 #7 #7 #7 #7 #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
+- [x] #8 #8 #8 #8 #8 #8 #8 #8 #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
+- [x] #9 #9 #9 #9 #9 #9 #9 #9 #9 §6 multi-device enumeration deterministic.
+- [x] #10 #10 #10 #10 #10 #10 #10 #10 #10 §7 standalone binary works.
+- [x] #11 #11 #11 #11 #11 #11 #11 #11 #11 `documents/test-devices.md` updated with results.
 
 ## Time estimate
 
@@ -232,7 +232,74 @@ UX/Safety bug (device scan): With NO iPod plugged in (system_profiler confirms z
 Follow-up data: serial suffix `0GP` observed on blue 16GB nano 7G — needs Apple-model-ID research before adding to `tables/serials.ts`. Without it, `0GP` falls through cascade to USB PID lookup (→ 'iPod nano (7th Generation)' generic) instead of the variant 'iPod nano 16GB Blue (7th Generation)'. nano 7G #1's `JQ1: 'E971'` mapping suggests E97x range; blue is likely E978 (Apple part MD477LL/A) but unverified — do not add without authoritative source.
 
 Backlog task to create (per user request): Make podkit work safely + clearly with unsupported devices. Specifically: (1) `device add` should warn the user that the device is not supported but still offer to add it to config (the safety+choice flow). (2) `doctor` should detect unsupported generations and refuse to suggest mutating repairs (`device init`, `repair sysinfo-consistency`, etc.) for them. (3) `sync` should refuse to generate or execute a plan against an unsupported device. (4) Wording: don't name libgpod in user-facing copy — just say 'this generation is not yet supported by podkit'. (5) The `doctor --repair sysinfo-extended` chicken-and-egg gate (requires iTunesDB to exist before allowing the repair that populates identity) should also be fixed — repair must work on a fresh device with no database yet.
+
+§5 iPod touch 5th gen unsupported-device messaging — NEW INVENTORY ENTRY. USB PID 0x12aa, UDID-style serial `637fea3cca37ff292e9cd4b26b1d411dfce06fd8` (40 char hex). No mass-storage mount (iOS uses proprietary protocol). **`device add` fails GENERICALLY**: 'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.' — the unsupported-device gate is NOT reached because device-add scans for disk-mounted volumes, not USB. iOS devices are invisible to that scan. **`device scan` DOES surface the friendly message**: 'This device is not supported by podkit. iPod touch (5th generation) uses Apple’s proprietary sync protocol; podkit only supports iPod disk mode.' Wording is good (no libgpod jargon, explains the why, names what podkit DOES support). But: (1) the message header still says 'Unknown iPod (USB only)' instead of 'iPod touch (5th generation)' — podkit has the data to label correctly. (2) The friendly message is only visible via `device scan`, not `device add` — most users will run `add` first and hit the generic error. Both issues fold into the unsupported-device backlog task.
+
+§4 Echo Mini routine complete. Hardware: USB PID 0x071b:0x3203, generic serial USBV1.00, manufacturer 'ECHO MINI'. Two mountable volumes: `/Volumes/ECHO MINI` (firmware partition, empty) + `/Volumes/Echo SD` (126 GB ExFAT, the actual sync target). User wiped the existing config + re-added freshly during this routine. (Auto-detect) `device add` with no args fails with 'Missing required --device flag' — the auto-detect-suggest path requires `-d` even though it doesn't use the name yet. With `-d`, output suggests `--type echo-mini --path <mount-point>` (placeholder, not actual paths) and exits with code 1. Doesn't notice existing config entry; doesn't acknowledge two volumes. Wizard-shaped feedback folded into TASK-262; small-bug feedback into TASK-317.03. (Explicit add) `device add -d echomini --type echo-mini --path '/Volumes/Echo SD'` works cleanly: `Type: Echo Mini` (could be richer per TASK-317.07 — 'FiiO Snowsky Echo Mini (echo-mini)'). (D) Doctor output reveals architectural smell — system checks (Codec Encoders, iPod Firmware Inquiry Methods, Video Encoder H.264) are mis-labeled under 'Device Health' instead of 'System'; iPod-specific 'iPod Firmware Inquiry Methods' check runs on a non-iPod device. Captured as TASK-317.08. (E/F) N/A — no SysInfoExtended for mass-storage. (G) sync --dry-run works perfectly: 4,360 tracks to AAC, 117.7 GB available, 'Clean artists: skipped (device supports Album Artist browsing)' (respects preset), 'Skipping video' (respects supportsVideo:false). Cleanest sync output of any device tested. (H) Eject clean.
+
+§7 standalone binary smoke complete. `bash packages/podkit-cli/scripts/compile.sh` produced `packages/podkit-cli/bin/podkit` (93.9 MB single-file binary). Tests: `./bin/podkit --version` → `0.6.0` ✓. `./bin/podkit device add -d smoketest --type echo-mini --path /tmp/fake -y` → device added successfully ('Updated config file' + 'Device smoketest added to config (Echo Mini)' + 'Next steps' guidance) – binary self-contained, no dev deps required at runtime. Cleanup: device removed, /tmp/fake removed. Validates the bundling fix (commit bb2e637 — koffi/usb externalized + arm64 prebuild path) on the actual standalone-binary build path.
+
+§6 multi-device enumeration: PASS. Plugged nano 2G (PARTY IPOD, PID 0x1260, disk4s2) + nano 4G (James' iPod, PID 0x1263, disk5s2) simultaneously. `device scan` correctly identifies both: (1) nano 2G → 'iPod nano 4GB Green (2nd Generation)', mapped to existing `nano2g` config via Volume UUID; full readiness checks pass, 63 tracks, 3.3 GB free. (2) nano 4G → 'iPod nano 8GB Black (4th Generation)', mapped to existing `ipod-nano-slim` config via Volume UUID; full readiness checks pass, 924 tracks, 481 MB free. Order is deterministic across 3 consecutive runs (PARTY IPOD always first — sorts by disk identifier, disk4 < disk5). However: 5 PHANTOM 'Unknown iPod (USB only)' entries follow the real two (already logged as TASK-317.01 — stale-handle bug, not a regression of this AC). Volume-UUID-based config matching works correctly across multiple devices.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Outcome
+
+Hardware sweep complete across **7 iPods + iPod touch + Echo Mini** on macOS. All 11 acceptance criteria satisfied. Surfaced multiple safety, UX, and architectural issues — fixed the urgent ones inline (6 commits today) and captured the rest in a structured backlog (TASK-317 parent + 9 sub-tasks; plus TASK-318 standalone).
+
+## Commits landed today
+
+1. **80fe65a** — `ipod-firmware: thread USB fingerprint through SysInfoExtended SCSI fallback`. Fixed P3 regression where SCSI fallback failed silently for SCSI-only iPods (mini 2G, nano 2G, iPod 5G) because `ensureSysInfoExtended` invoked the orchestrator with empty vendorId/productId. macOS SCSI dispatch needs those to locate the IOService.
+2. **bb2e637** — `build: externalize koffi + usb; fix arm64 prebuild path`. Fixed `ReferenceError: require is not defined` from koffi's eval-based native loader being inlined into the bundled CLI. Also fixed an arm64 prebuild path bug that would have broken the linux-arm64 CI standalone-binary job on first run.
+3. **3e95baf** — `identity: drop ModelResolver callback; consumers compose via resolveIpodModel`. Architectural cleanup: deleted the leaky `resolveModel` callback from `@podkit/ipod-firmware`, replaced with a flat `SysInfoIdentity` bag. Callers now compose identity via `resolveIpodModel(bag)` cascade. Fixed the regression where mini 2G's display went from `iPod mini 4GB Pink (2nd Generation)` to `Unknown iPod` after writing SysInfoExtended.
+4. **348f2c5** — `device-add: cascade-resolved identity + combined firmware-fetch prompt`. Redesigned `device add` UX: post-2006 iPods no longer show as `Model: Invalid`. Combined two-step UX (add to config; separately repair sysinfo-extended) into one prompt: `Add this iPod as X and write SysInfoExtended? [Y/n]`.
+5. **d16cf88** — `device-add: shorten missing-SysInfo prompt + add docs link`. Wording cleanup per user direction: removed implementation-detail jargon, named both files, added docs link.
+6. **c20b7f3** — `inventory: add nano 3G + nano 7G Blue; serial 0GP → D477`. Inventory updates from sweep findings.
+
+## Key findings
+
+- **USB inquiry boundary refined**: nano 3G supports USB inquiry. Boundary sits between iPod 5.5G (USB fails) and nano 3G (USB works), not between iPod 5.5G and nano 4G as the prior research assumed. Documented in `documents/test-devices.md`.
+- **Path-mode is ~7x faster than name-mode** for `doctor --repair sysinfo-extended` (0.33s vs 2.3s on nano 4G). Wall-clock is dominated by `findIpodDevices` discovery overhead in name-mode, not by the firmware transport. Both well under the 500ms warning threshold for the actual work.
+- **TERAPOD identity discrepancy**: SysInfo's manually-edited `MA147` says 5G; firmware serial says 5.5G. Cascade trusts ModelNumStr per general priority (correct for normal devices). Captured as new diagnostic + repair (TASK-317.04).
+- **Phantom-handle bug** in `device scan`: stale USB handles accumulate across plug/eject cycles, surfacing as fake "Unknown iPod (USB only)" entries with destructive `device init` suggestions. Captured (TASK-317.01).
+- **Sync command's identity divergent from doctor's**: emits "Could not identify iPod model" even when SIE is present. Sync bypasses the cascade primitive. Captured (TASK-317.03).
+- **Doctor output sectioning inconsistent across device types**: iPods get `System / Device Readiness / Database Health` sections; mass-storage collapses everything into `Device Health` and mis-categorizes system checks. Captured (TASK-317.08).
+
+## Backlog tasks created
+
+- **TASK-317** parent + 9 sub-tasks for the m-18 hygiene follow-ups (.01 native-handle hygiene, .02 doctor repair correctness, .03 unsupported-device UX + cascade through sync/info, .04 SysInfo-vs-Serial diagnostic, .05 CLI flag UX nits, .06 docs refresh, .07 preset display metadata, .08 doctor section consistency, .09 device info redesign).
+- **TASK-318** Config CLI UX review (per-device default collections + broader audit). Standalone task, depends on existing TASK-260.
+- Echo Mini wizard observations folded into existing **TASK-262** (Interactive Device Add Wizard).
+
+## Inventory deltas
+
+- New rows in `documents/test-devices.md`: iPod nano 3G, iPod nano 7G #2 (Blue), iPod touch 5th gen, FiiO Snowsky Echo Mini.
+- New SysInfoExtended fixtures: `documents/sysinfo-captures/nano-3g-8gb-black.xml` (12,131 bytes), `documents/sysinfo-captures/nano-7g-16gb-blue-usb.xml` (47,000 bytes).
+- New serial-suffix entries: `S4G → 9804` (mini 2G 4GB Pink); `0GP → D477` (nano 7G 16GB Blue).
+- Generation Coverage Analysis refreshed: USB inquiry boundary moved from "5G+" to "post-iPod-5G".
+
+## Acceptance criteria status
+
+All 11 ACs satisfied. AC #1 (XML matches fixtures) confirmed for the 5 supported iPods byte-for-byte modulo trailing newline / per-read crypto blob. AC #11 (test-devices.md updated) reflected via the new device entries + refreshed coverage tables.
+
+## What was deliberately deferred
+
+- `--no-device` flag for `doctor` — captured as TASK-317.05.
+- `device add` warn-but-allow for unsupported devices — captured as TASK-317.03.
+- All other UX bugs surfaced during the sweep are tracked in TASK-317 sub-tasks with explicit hardware test plans.
+<!-- SECTION:FINAL_SUMMARY:END -->
+
+<!-- AC:END -->
+
+<!-- AC:END -->
+
+<!-- AC:END -->
+
+<!-- AC:END -->
+
+<!-- AC:END -->
 
 <!-- AC:END -->
 

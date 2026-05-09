@@ -183,6 +183,92 @@ Last updated: 2026-05-09 (TASK-312 sweep — 7 iPod inventory; nano 3G + nano 7G
 
 ---
 
+### FiiO Snowsky Echo Mini (mass-storage DAP)
+
+Not an iPod, but in the inventory because it exercises podkit's mass-storage preset framework — the user-extensible device-type path alongside iPod.
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name(s) | `ECHO MINI` (firmware partition, empty) + `Echo SD` (126 GB SD card) | Filesystem |
+| USB Product ID | `0x3203` | USB enumeration |
+| USB Vendor ID | `0x071b` | USB enumeration |
+| USB Manufacturer | `ECHO MINI` | USB descriptor |
+| USB Serial | `USBV1.00` (generic — shared across all units) | USB descriptor |
+| Preset id | `echo-mini` | `packages/devices-mass-storage/src/presets/built-in.ts` |
+| Capacity | 126.42 GB SD card (varies by inserted card) | Filesystem |
+| Volume format | ExFAT (SD card) | Filesystem |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-09):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Vendor + product matches `usb-hints.ts` entry → preset auto-detect resolves to `echo-mini`. |
+| Filesystem identity | n/a | Mass-storage devices have no SysInfo / SysInfoExtended files. |
+| SCSI / USB inquiry | n/a | Identity comes from the preset, not firmware. |
+| `device add` (auto-detect) | Partial | `device add -d <name>` (no `--type`) detects the device and SUGGESTS the explicit form — does not auto-fill. Has small UX bugs (see TASK-317.03 follow-up notes). |
+| `device add --type echo-mini --path` | Works | Adds device cleanly with preset capabilities. |
+| `doctor` | Works (with caveats) | All checks pass, but the output structure miscategorizes system-scope checks as device-scope (TASK-317.08). |
+| `sync --dry-run` | Works | Cleanest sync output of any device tested — respects preset (`Clean artists: skipped (device supports Album Artist browsing)`, `Skipping video: device does not support video playback`). |
+
+**Preset capabilities (built-in `echo-mini`):**
+
+```ts
+{
+  artworkSources: ['embedded'],
+  artworkMaxResolution: 127,
+  supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
+  supportsVideo: false,
+  audioNormalization: 'none',
+  supportsAlbumArtistBrowsing: true,
+  contentPaths: { musicDir: '', moviesDir: 'Video/Movies', tvShowsDir: 'Video/Shows' },
+}
+```
+
+**Notable observations:**
+
+- Two mountable volumes from a single physical device. Only `/Volumes/Echo SD` is the sync target; `/Volumes/ECHO MINI` is the firmware partition. The wizard work in TASK-262 should surface both volumes to the user.
+- USB serial is generic (`USBV1.00`) — cannot be used to disambiguate between physically distinct Echo Mini units. Volume UUID per filesystem must be the matching key for "is this the same device I added before?".
+- The `Type: Echo Mini` line in `device info` will become `FiiO Snowsky Echo Mini (echo-mini)` once TASK-317.07 lands.
+
+**No XML capture** — mass-storage devices have no SysInfoExtended.
+
+---
+
+### iPod touch 5th Generation (iOS)
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | (none — iOS does not expose mass storage) | n/a |
+| USB Product ID | `0x12aa` | USB enumeration |
+| Generation | iPod touch 5th generation | unsupported.ts lookup |
+| Apple serial | `637fea3cca37ff292e9cd4b26b1d411dfce06fd8` | USB serial descriptor (iOS UDID format, 40-char hex) |
+| Capacity | (not reported via mass storage) | |
+| Volume format | n/a | |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-09):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Product ID, vendor, UDID-style serial |
+| Filesystem identity | n/a | iOS does not expose mass storage; no `/Volumes/` mount |
+| SCSI inquiry | n/a | |
+| USB inquiry | n/a — device is iOS, not classic iPod | |
+| `device scan` | Detects + correctly labels as unsupported | Reason: "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode." |
+| `device add` | **Fails generically** | Output: "No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path." `device add` is disk-scan-based; iOS device never reaches the unsupported-PID gate. The friendly explanation visible in `device scan` never surfaces here. |
+
+**UX observations:**
+
+- Unsupported-device messaging itself is well-worded (avoids implementation jargon).
+- BUT the message only appears via `device scan`, not `device add` — most users running `device add` first get a confusing generic error.
+- Even in `device scan`, the entry is headed "Unknown iPod (USB only)" despite podkit having the data to display "iPod touch (5th generation)" in the header.
+- These reinforce the planned unsupported-device UX redesign (backlog).
+
+**No XML capture** — iOS does not expose SysInfoExtended.
+
+---
+
 ### iPod mini 2nd Generation (4GB Pink)
 
 | Field | Value | Source |
