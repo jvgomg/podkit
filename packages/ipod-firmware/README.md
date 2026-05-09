@@ -129,9 +129,9 @@ Moved from `@podkit/core` in P4 (TASK-295.01). The old `core/device/sysinfo-exte
 | `ScsiError` | class | Discriminated error from the SCSI transport. Inspect `.kind` for branching. |
 | `chooseTransports(avail)` | function | Pure transport-selection planner: returns `'usb-only' \| 'scsi-only' \| 'usb-then-scsi' \| 'none'`. |
 | `clearProbeCache()` | function | Reset the probe cache. Use in tests between cases. |
-| `readSysInfoExtended(mountPoint, resolver?)` | function | Read SysInfoExtended plist from iPod filesystem. Returns `SysInfoExtendedResult \| null`. |
+| `readSysInfoExtended(mountPoint)` | function | Read SysInfoExtended plist (and the classic SysInfo neighbour) from the iPod filesystem. Returns `SysInfoExtendedResult \| null` whose `identity` bag carries every identifier we could glean — pass it to `resolveIpodModel()` from `@podkit/devices-ipod`. |
 | `writeSysInfoExtended(mountPoint, xml)` | function | Write raw SysInfoExtended XML to the canonical path on the iPod filesystem. |
-| `ensureSysInfoExtended(mountPoint, fp, options?)` | function | Read SysInfoExtended from file or fetch via the USB+SCSI inquiry orchestrator if absent. Returns `SysInfoExtendedResult`. `options` accepts a `resolveModel` callback, a `readFromUsb` synchronous override, and `inquireOptions` (forwarded to `inquireFirmwareDetailed`). |
+| `ensureSysInfoExtended(mountPoint, fp, options?)` | function | Read SysInfoExtended from file or fetch via the USB+SCSI inquiry orchestrator if absent. Returns `SysInfoExtendedResult` with an `identity` bag (`firewireGuid`, `serialNumber`, `modelNumStr`, `familyId`). `options` accepts a `readFromUsb` synchronous override and `inquireOptions` (forwarded to `inquireFirmwareDetailed`). |
 | `SYSINFO_EXTENDED_PATH` | constant | Relative path of the SysInfoExtended file within an iPod filesystem. |
 | `compareSysInfoConsistency(file, usb)` | function | Compare file-resident vs USB-read SysInfoExtended; returns a consistency status. |
 | `normaliseFireWireGuid(guid)` | function | Normalise a FireWire GUID string to 16-char uppercase hex (strips separators). |

@@ -8,7 +8,7 @@
  */
 
 import { ensureSysInfoExtended } from '@podkit/ipod-firmware';
-import { identify } from '@podkit/devices-ipod';
+import { resolveIpodModel } from '@podkit/devices-ipod';
 import { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from '../../device/usb-discovery.js';
 import type {
   DiagnosticCheck,
@@ -73,19 +73,13 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
         message: `Reading SysInfoExtended from USB bus ${usbDevice.bus} device ${usbDevice.devnum}`,
       });
 
-      const resolveModel = (sn: string) =>
-        identify({ from: 'serial', serialNumber: sn }) ?? undefined;
-      const result = await ensureSysInfoExtended(
-        ctx.mountPoint,
-        {
-          vendorId: usbDevice.vendorId,
-          productId: usbDevice.productId,
-          ...(usbDevice.serialNumber ? { serialNumber: usbDevice.serialNumber } : {}),
-          bus: usbDevice.bus,
-          devnum: usbDevice.devnum,
-        },
-        { resolveModel }
-      );
+      const result = await ensureSysInfoExtended(ctx.mountPoint, {
+        vendorId: usbDevice.vendorId,
+        productId: usbDevice.productId,
+        ...(usbDevice.serialNumber ? { serialNumber: usbDevice.serialNumber } : {}),
+        bus: usbDevice.bus,
+        devnum: usbDevice.devnum,
+      });
 
       if (!result.present) {
         return {
@@ -98,7 +92,16 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
         };
       }
 
-      const modelName = result.model?.displayName ?? 'Unknown iPod';
+      // Resolve the richest model from every identifier on disk + USB.
+      const model =
+        resolveIpodModel({
+          modelNumStr: result.identity.modelNumStr,
+          serialNumber: result.identity.serialNumber,
+          familyId: result.identity.familyId ?? null,
+          productId: usbDevice.productId,
+        }) ?? undefined;
+
+      const modelName = model?.displayName ?? 'Unknown iPod';
       return {
         success: true,
         summary: `SysInfoExtended ${result.source === 'existing' ? 'already present' : 'written'} — ${modelName}`,
@@ -106,9 +109,9 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
           source: result.source,
           firewireGuid: result.firewireGuid,
           serialNumber: result.serialNumber,
-          modelName: result.model?.displayName,
-          generationId: result.model?.generationId,
-          checksumType: result.model?.checksumType,
+          modelName: model?.displayName,
+          generationId: model?.generationId,
+          checksumType: model?.checksumType,
         },
       };
     },

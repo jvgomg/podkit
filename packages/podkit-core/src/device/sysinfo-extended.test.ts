@@ -7,10 +7,7 @@ import {
   readSysInfoExtended,
   type ReadFromUsbFn,
 } from '@podkit/ipod-firmware';
-import { identify } from '@podkit/devices-ipod';
-
-/** Inject the model resolver so result.model is populated from serial suffix. */
-const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
+import { resolveIpodModel } from '@podkit/devices-ipod';
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -24,13 +21,13 @@ const FIXTURE_XML = `<?xml version="1.0" encoding="UTF-8"?>
 	<key>SerialNumber</key>
 	<string>5U828GFNYXX</string>
 	<key>FamilyID</key>
-	<integer>10</integer>
+	<integer>13</integer>
 	<key>DBVersion</key>
 	<integer>3</integer>
 	<key>ModelNumber</key>
 	<string>B261</string>
 	<key>UpdaterFamilyID</key>
-	<integer>10</integer>
+	<integer>13</integer>
 	<key>BoardHwSwInterfaceRev</key>
 	<integer>65536</integer>
 	<key>VisibleBuildID</key>
@@ -108,76 +105,102 @@ describe('readSysInfoExtended', () => {
 
   it('parses existing SysInfoExtended and extracts device info', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML);
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
     expect(result!.source).toBe('existing');
     expect(result!.firewireGuid).toBe('000A27001DCECFB5');
     expect(result!.serialNumber).toBe('5U828GFNYXX');
-    expect(result!.model).toBeDefined();
+    expect(result!.identity.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.identity.serialNumber).toBe('5U828GFNYXX');
+    // ModelNumber from XML lands on identity.modelNumStr
+    expect(result!.identity.modelNumStr).toBe('B261');
+    expect(result!.identity.familyId).toBe(13);
   });
 
   it('returns null when file does not exist', () => {
     createIpodStructure(tmpDir);
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
     expect(result).toBeNull();
   });
 
   it('returns null when file is empty', () => {
     writeSysInfoExtended(tmpDir, '');
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
     expect(result).toBeNull();
   });
 
   it('returns null when file is whitespace-only', () => {
     writeSysInfoExtended(tmpDir, '   \n  \n  ');
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
     expect(result).toBeNull();
   });
 
-  it('returns result with no model when XML lacks required keys', () => {
+  it('returns result with empty identity when XML lacks required keys', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML_NO_GUID);
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
     expect(result!.present).toBe(true);
     expect(result!.source).toBe('existing');
-    // model is undefined because FireWireGUID is missing (identity extraction fails)
-    expect(result!.model).toBeUndefined();
+    // FireWireGUID missing → identity extraction fails → empty bag
+    expect(result!.identity.firewireGuid).toBeUndefined();
+    expect(result!.identity.serialNumber).toBeUndefined();
   });
 
   it('handles alternate FirewireGuid casing', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML_ALT_CASING);
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
     expect(result!.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result!.identity.firewireGuid).toBe('000A27001DCECFB5');
   });
 
-  it('looks up model from serial suffix', () => {
+  it('caller can resolve model from identity bag (serial suffix)', () => {
     writeSysInfoExtended(tmpDir, FIXTURE_XML);
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
+    const model = resolveIpodModel({
+      modelNumStr: result!.identity.modelNumStr,
+      serialNumber: result!.identity.serialNumber,
+      familyId: result!.identity.familyId ?? null,
+    });
 
-    expect(result!.model).toBeDefined();
-    // Serial "5U828GFNYXX" -> suffix "YXX" -> iPod nano 3rd Gen
-    expect(result!.model!.displayName).toContain('nano');
-    expect(result!.model!.displayName).toContain('3rd Generation');
-    expect(result!.model!.generationId).toBe('nano_3g');
-    expect(result!.model!.checksumType).toBeDefined();
-    expect(result!.model!.source).toBe('serial');
+    expect(model).not.toBeNull();
+    // ModelNumber B261 → nano 3G; ModelNumStr cascade wins over serial.
+    expect(model!.displayName).toContain('nano');
+    expect(model!.displayName).toContain('3rd Generation');
+    expect(model!.generationId).toBe('nano_3g');
+    expect(model!.checksumType).toBeDefined();
   });
 
-  it('returns identity without model for unknown serial suffix', () => {
-    const xml = FIXTURE_XML.replace('5U828GFNYXX', 'UNKNOWNZZZ');
+  it('falls through to FamilyID when serial and ModelNumber miss', () => {
+    // Strip ModelNumber and use a bogus serial so the cascade has to fall
+    // through to FamilyID — this is the deepest cascade branch and the only
+    // way to verify FamilyID is consulted at all.
+    const xml = FIXTURE_XML.replace('5U828GFNYXX', 'UNKNOWNZZZ').replace(
+      /<key>ModelNumber<\/key>\s*<string>[^<]*<\/string>/,
+      ''
+    );
     writeSysInfoExtended(tmpDir, xml);
 
-    const result = readSysInfoExtended(tmpDir, resolveModel);
+    const result = readSysInfoExtended(tmpDir);
 
     expect(result).not.toBeNull();
     expect(result!.firewireGuid).toBe('000A27001DCECFB5');
     expect(result!.serialNumber).toBe('UNKNOWNZZZ');
-    expect(result!.model).toBeUndefined();
+    expect(result!.identity.modelNumStr).toBeUndefined();
+
+    const model = resolveIpodModel({
+      modelNumStr: result!.identity.modelNumStr,
+      serialNumber: result!.identity.serialNumber,
+      familyId: result!.identity.familyId ?? null,
+    });
+    // ModelNumStr absent + serial UNKNOWNZZZ has no suffix match → cascade
+    // resolves via FamilyID 13 → nano_3g (matching the rest of the fixture).
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('nano_3g');
   });
 });
 
@@ -319,22 +342,28 @@ describe('ensureSysInfoExtended', () => {
     expect(fs.existsSync(filePath)).toBe(true);
   });
 
-  it('extracts model info from serial suffix', async () => {
+  it('exposes identity bag suitable for resolveIpodModel', async () => {
     createIpodStructure(tmpDir);
     const mockReader: ReadFromUsbFn = () => FIXTURE_XML;
 
     const result = await ensureSysInfoExtended(tmpDir, USB_ADDRESS, {
       readFromUsb: mockReader,
-      resolveModel,
     });
 
-    expect(result.model).toBeDefined();
-    // Serial "5U828GFNYXX" -> suffix "YXX" -> nano 3G
-    expect(result.model!.displayName).toContain('nano');
-    expect(result.model!.displayName).toContain('3rd Generation');
-    expect(result.model!.generationId).toBe('nano_3g');
-    expect(result.model!.checksumType).toBeDefined();
-    expect(result.model!.source).toBe('serial');
+    // Identity bag exposes every identifier extracted from the XML.
+    expect(result.identity.firewireGuid).toBe('000A27001DCECFB5');
+    expect(result.identity.serialNumber).toBe('5U828GFNYXX');
+    expect(result.identity.modelNumStr).toBe('B261');
+    expect(result.identity.familyId).toBe(13);
+
+    const model = resolveIpodModel({
+      modelNumStr: result.identity.modelNumStr,
+      serialNumber: result.identity.serialNumber,
+      familyId: result.identity.familyId ?? null,
+    });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('nano_3g');
+    expect(model!.displayName).toContain('nano');
   });
 
   it('handles alternate FirewireGuid casing in USB-read XML', async () => {

@@ -157,6 +157,9 @@ export {
   ensureSysInfoExtended,
   readSysInfoExtended,
   writeSysInfoExtended,
+  SYSINFO_PATH,
+  SYSINFO_EXTENDED_PATH,
+  SYSINFO_DEVICE_DIR,
 } from '@podkit/ipod-firmware';
 
 // USB discovery

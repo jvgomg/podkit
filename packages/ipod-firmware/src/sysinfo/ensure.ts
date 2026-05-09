@@ -18,9 +18,9 @@ import {
   type InquireOptions,
   type InquiryAttempt,
 } from '../inquiry/orchestrator.js';
-import { readSysInfoExtended, validateXml, extractIdentity } from './read.js';
+import { readSysInfoExtended, validateXml } from './read.js';
 import { writeSysInfoExtended } from './write.js';
-import type { SysInfoExtendedResult, ModelResolver } from './read.js';
+import type { SysInfoExtendedResult, SysInfoIdentity } from './read.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,19 +39,12 @@ import type { SysInfoExtendedResult, ModelResolver } from './read.js';
 export type ReadFromUsbFn = (fp: UsbFingerprint) => string | null;
 
 /**
- * Optional knobs for {@link ensureSysInfoExtended}. Lets callers inject
- * a model resolver (so `result.model` gets populated from the serial-number
- * suffix) and, for tests, override the inquiry orchestrator's transports
- * and probe without bypassing the orchestrator entirely.
+ * Optional knobs for {@link ensureSysInfoExtended}. Lets tests override the
+ * inquiry orchestrator's transports without bypassing the orchestrator
+ * entirely. The result carries an {@link SysInfoIdentity} bag — pass it to
+ * `resolveIpodModel()` from `@podkit/devices-ipod` to get an `IpodModel`.
  */
 export interface EnsureSysInfoExtendedOptions {
-  /**
-   * Callback to look up an `IpodModel` from a serial number. Callers with
-   * access to `@podkit/devices-ipod` should pass
-   * `(sn) => identify({ from: 'serial', serialNumber: sn })`. When omitted,
-   * `result.model` is always undefined.
-   */
-  resolveModel?: ModelResolver;
   /**
    * Synchronous override for the USB-read step. When supplied, the inquiry
    * orchestrator is **bypassed** — useful for unit tests that exercise the
@@ -165,10 +158,10 @@ export async function ensureSysInfoExtended(
   fp: UsbFingerprint,
   options?: EnsureSysInfoExtendedOptions
 ): Promise<SysInfoExtendedResult> {
-  const { readFromUsb, resolveModel, inquireOptions } = options ?? {};
+  const { readFromUsb, inquireOptions } = options ?? {};
 
   // Step 1: Check if file already exists
-  const existing = readSysInfoExtended(mountPoint, resolveModel);
+  const existing = readSysInfoExtended(mountPoint);
   if (existing) {
     return existing;
   }
@@ -197,6 +190,7 @@ export async function ensureSysInfoExtended(
     return {
       present: false,
       source: 'unavailable',
+      identity: {},
       error: err instanceof Error ? err.message : 'Could not read device identity from USB',
     };
   }
@@ -204,6 +198,7 @@ export async function ensureSysInfoExtended(
     return {
       present: false,
       source: 'unavailable',
+      identity: {},
       error: readFromUsb
         ? 'Could not read device identity from USB'
         : buildTransportErrorMessage(attempts),
@@ -216,6 +211,7 @@ export async function ensureSysInfoExtended(
     return {
       present: false,
       source: 'unavailable',
+      identity: {},
       error: validation.error,
     };
   }
@@ -223,17 +219,21 @@ export async function ensureSysInfoExtended(
   // Step 4: Write to disk
   writeSysInfoExtended(mountPoint, xml);
 
-  // Step 5: Extract device info and return
-  const identity = extractIdentity(xml);
-  const model = identity && resolveModel ? resolveModel(identity.serialNumber) : undefined;
+  // Step 5: Read the just-written file via readSysInfoExtended so the returned
+  // identity bag reflects the classic SysInfo neighbour too — older devices
+  // (mini 2G, nano 2G) carry their variant ModelNumStr only in classic SysInfo.
+  // Without this, the post-write success message names a less-specific model
+  // than a subsequent run that hits the "existing" branch.
+  const reread = readSysInfoExtended(mountPoint);
+  const identity: SysInfoIdentity = reread?.identity ?? {};
 
   return {
     present: true,
     source: 'usb-read',
-    model,
-    firewireGuid: identity?.firewireGuid,
-    serialNumber: identity?.serialNumber,
+    identity,
+    ...(identity.firewireGuid !== undefined ? { firewireGuid: identity.firewireGuid } : {}),
+    ...(identity.serialNumber !== undefined ? { serialNumber: identity.serialNumber } : {}),
   };
 }
 
-export type { SysInfoExtendedResult, ModelResolver } from './read.js';
+export type { SysInfoExtendedResult, SysInfoIdentity } from './read.js';

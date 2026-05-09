@@ -214,6 +214,16 @@ describe('lookupBySerial', () => {
     expect(variant!.modelNumber).toBe('A623');
   });
 
+  test('returns variant for mini 2G 4GB Pink (real hardware: serial JQ5141TFS4G)', () => {
+    const variant = lookupBySerial('S4G');
+    expect(variant).toBeDefined();
+    expect(variant!.modelNumber).toBe('9804');
+    expect(variant!.generation).toBe('mini_2g');
+    expect(variant!.capacityGb).toBe(4);
+    expect(variant!.color).toBe('Pink');
+    expect(variant!.displayName).toBe('iPod mini 4GB Pink (2nd Generation)');
+  });
+
   test('is case-insensitive', () => {
     const upper = lookupBySerial('YXX');
     const lower = lookupBySerial('yxx');

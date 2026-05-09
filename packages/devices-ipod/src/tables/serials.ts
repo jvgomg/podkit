@@ -89,6 +89,10 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   S4C: '9800',
   S43: '9802',
   S45: '9804',
+  // S4G: real-hardware capture, serial JQ5141TFS4G, ModelNumStr P9804 → mini 2G 4GB Pink.
+  // Same model number as S45 — Apple appears to have used multiple serial-suffix
+  // ranges for the 4GB Pink variant.
+  S4G: '9804',
   S47: '9806',
   S4J: '9806',
   S42: '9801',

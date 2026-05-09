@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - james
 created_date: '2026-05-08 08:13'
-updated_date: '2026-05-09 10:44'
+updated_date: '2026-05-09 12:34'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -135,17 +135,17 @@ Update `documents/test-devices.md` for each device row:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
-- [ ] #2 `device add` auto-detect picks iPod path correctly for each.
-- [ ] #3 `doctor --repair sysinfo-extended` succeeds on all 5.
-- [ ] #4 `sync --dry-run` produces a coherent plan on all 5.
-- [ ] #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
-- [ ] #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
-- [ ] #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
-- [ ] #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
-- [ ] #9 §6 multi-device enumeration deterministic.
-- [ ] #10 §7 standalone binary works.
-- [ ] #11 `documents/test-devices.md` updated with results.
+- [ ] #1 #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
+- [x] #2 #2 `device add` auto-detect picks iPod path correctly for each.
+- [x] #3 #3 `doctor --repair sysinfo-extended` succeeds on all 5.
+- [x] #4 #4 `sync --dry-run` produces a coherent plan on all 5.
+- [ ] #5 #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
+- [ ] #6 #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
+- [ ] #7 #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
+- [ ] #8 #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
+- [ ] #9 #9 §6 multi-device enumeration deterministic.
+- [ ] #10 #10 §7 standalone binary works.
+- [ ] #11 #11 `documents/test-devices.md` updated with results.
 
 ## Time estimate
 
@@ -202,7 +202,13 @@ Conducted interactively with the user, step by step. After each device routine t
 UX issue (§1B): `doctor --no-device` does not exist. Without `-d` the CLI resolves to the default device (terapod) and fails with 'Device with UUID ... not found' if not plugged. There's no `--system-only` / `--no-device` flag — only `--no-system` (the inverse). Task description assumed `--no-device` was real. Two options: add a `--system-only` (or `--no-device`) flag, or change the default behaviour so that `podkit doctor` with no args runs system checks only when no default device is reachable. Captured stderr: `Device with UUID 2ADFFE6C-49BF-3F3A-8AF8-2787C0AD048B not found. Is it connected?`
 
 UX issue (§1C): `podkit device remove <name>` fails with 'too many arguments for remove. Expected 0 arguments but got 1.' — the command takes the device via the program-level `-d` flag, not as a positional. Same applies to `device add -d <name>`. Error message does not suggest the `-d` flag. Either accept positional `<name>` for add/remove (more idiomatic) or rewrite the error to point at `-d`.
+
+UX issue (§1D, post-fix): SysInfo identity display regresses when SysInfoExtended is written. Pre-write: `✓ SysInfo    iPod mini 4GB Pink (2nd Generation) (P9804)`. Post-write: `✓ SysInfo    Unknown iPod`. The model resolver appears to prefer the SysInfoExtended-derived serial suffix (`S4G` — not in lookup table; mini 2G predates Apple's serial-to-model mapping) over the SysInfo-derived ModelNumStr (`P9804` — present in the lookup table). For pre-2006 iPods that have a populated SysInfo, the resolver should prefer (or fall back to) the ModelNumStr path. Doesn't affect functionality, only display. Captured on iPod mini 2G with serial JQ5141TFS4G.
+
+§1 mini 2G routine complete. All steps A–H executed. Highlights: (E) doctor --repair sysinfo-extended succeeded post-fix in ~2.7s wall — mostly USB stall timeout before SCSI fallback fires. (F) Written XML matches `documents/sysinfo-captures/mini-2g.xml` byte-for-byte (only trailing-newline diff). (G) sync --dry-run correctly applies mini 2G constraints: 4,360 tracks transcoding to AAC, video skipped, space warning surfaced. (H) Eject clean.
 <!-- SECTION:NOTES:END -->
+
+<!-- AC:END -->
 
 - [ ] #12 nano 3G inventory entry added to documents/test-devices.md; full §1 routine completed; SysInfoExtended captured.
 - [ ] #13 nano 7G #2 (different colour) inventory entry added; full §1 routine completed; serial suffix recorded against the lookup table gap.

@@ -591,7 +591,13 @@ export { enumerateConnectedDevices } from './device/index.js';
 
 // SysInfoExtended (device identity from USB firmware)
 export type { SysInfoExtendedResult, EnsureSysInfoExtendedOptions } from './device/index.js';
-export { readSysInfoExtended, ensureSysInfoExtended } from './device/index.js';
+export {
+  readSysInfoExtended,
+  ensureSysInfoExtended,
+  SYSINFO_PATH,
+  SYSINFO_EXTENDED_PATH,
+  SYSINFO_DEVICE_DIR,
+} from './device/index.js';
 
 // iPod model lookup and resolver
 export {

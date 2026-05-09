@@ -69,7 +69,7 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import { identify } from '@podkit/devices-ipod';
+import { resolveIpodModel } from '@podkit/devices-ipod';
 import {
   formatGeneration,
   validateDevice,
@@ -81,6 +81,7 @@ import {
   resolveUsbDeviceFromPath,
   hasCompleteUsbFingerprint,
   getChecksumTypeByModelNumber,
+  SYSINFO_PATH,
 } from '@podkit/core';
 import type { SysInfoExtendedResult, CompleteUsbDevice } from '@podkit/core';
 import {
@@ -118,10 +119,15 @@ export { formatGeneration } from '@podkit/core';
  * - `abort`: true if the device-add flow should stop. Set when the iPod has
  *   no identity files, USB is unreachable or the user declined the prompt.
  *   Caller is responsible for printing nothing further and returning early.
+ * - `productId`: USB product ID if the flow resolved the USB device while
+ *   ensuring identity data — fed to `resolveIpodModel` for richer model
+ *   resolution downstream. Undefined when the existing-file branch ran
+ *   without touching USB.
  */
 interface SysInfoAttempt {
   result: SysInfoExtendedResult | null;
   abort: boolean;
+  productId?: string;
 }
 
 /**
@@ -145,14 +151,13 @@ async function attemptSysInfoExtended(
   opts: { autoConfirm: boolean }
 ): Promise<SysInfoAttempt> {
   // 1. SysInfoExtended already present and parseable → done.
-  const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
-  const existing = readSysInfoExtended(mountPoint, resolveModel);
-  if (existing?.present && (existing.model || existing.firewireGuid)) {
+  const existing = readSysInfoExtended(mountPoint);
+  if (existing?.present && existing.firewireGuid) {
     return { result: existing, abort: false };
   }
 
   // 2. Classic SysInfo present — check if SysInfoExtended is needed.
-  const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
+  const sysInfoPath = join(mountPoint, SYSINFO_PATH);
   if (existsSync(sysInfoPath)) {
     // Read the ModelNumStr to determine if this device needs checksums
     let needsChecksum = false;
@@ -251,32 +256,31 @@ async function readSysInfoExtendedFromUsb(
   out: OutputContext
 ): Promise<SysInfoAttempt> {
   try {
-    const resolveModel = (sn: string) =>
-      identify({ from: 'serial', serialNumber: sn }) ?? undefined;
-    const result = await ensureSysInfoExtended(
-      mountPoint,
-      {
-        vendorId: usbInfo.vendorId,
-        productId: usbInfo.productId,
-        ...(usbInfo.serialNumber ? { serialNumber: usbInfo.serialNumber } : {}),
-        bus: usbInfo.bus,
-        devnum: usbInfo.devnum,
-      },
-      { resolveModel }
-    );
+    const result = await ensureSysInfoExtended(mountPoint, {
+      vendorId: usbInfo.vendorId,
+      productId: usbInfo.productId,
+      ...(usbInfo.serialNumber ? { serialNumber: usbInfo.serialNumber } : {}),
+      bus: usbInfo.bus,
+      devnum: usbInfo.devnum,
+    });
 
     if (!result.present) {
       out.error(`Failed to read SysInfoExtended from USB: ${result.error ?? 'unknown error'}`);
-      return { result: null, abort: true };
+      return { result: null, abort: true, productId: usbInfo.productId };
     }
 
-    const model = result.model?.displayName ?? 'Unknown iPod';
-    out.print(`Device identified via USB: ${model}`);
-    return { result, abort: false };
+    const model = resolveIpodModel({
+      modelNumStr: result.identity.modelNumStr,
+      serialNumber: result.identity.serialNumber,
+      familyId: result.identity.familyId ?? null,
+      productId: usbInfo.productId,
+    });
+    out.print(`Device identified via USB: ${model?.displayName ?? 'Unknown iPod'}`);
+    return { result, abort: false, productId: usbInfo.productId };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     out.error(`SysInfoExtended read failed: ${message}`);
-    return { result: null, abort: true };
+    return { result: null, abort: true, productId: usbInfo.productId };
   }
 }
 
@@ -2017,8 +2021,14 @@ export async function runDeviceAdd(
     }
 
     // Enrich model name from SysInfoExtended if available (more specific than database model)
-    if (sysInfoResult?.model?.displayName) {
-      modelName = sysInfoResult.model.displayName;
+    if (sysInfoResult) {
+      const resolved = resolveIpodModel({
+        modelNumStr: sysInfoResult.identity.modelNumStr,
+        serialNumber: sysInfoResult.identity.serialNumber,
+        familyId: sysInfoResult.identity.familyId ?? null,
+        ...(sysInfoAttempt.productId ? { productId: sysInfoAttempt.productId } : {}),
+      });
+      if (resolved) modelName = resolved.displayName;
     }
 
     // Get volume UUID if possible (for macOS)
@@ -2352,6 +2362,7 @@ export async function runDeviceAdd(
 
   // Attempt SysInfoExtended read (before database init so it's available for checksums)
   let autoSysInfoResult: SysInfoExtendedResult | null = null;
+  let autoProductId: string | undefined;
   if (ipod.mountPoint) {
     const attempt = await attemptSysInfoExtended(ipod.mountPoint, out, { autoConfirm });
     if (attempt.abort) {
@@ -2359,6 +2370,7 @@ export async function runDeviceAdd(
       return;
     }
     autoSysInfoResult = attempt.result;
+    autoProductId = attempt.productId;
   }
 
   // Check if the iPod has a database
@@ -2412,8 +2424,14 @@ export async function runDeviceAdd(
   }
 
   // Enrich model name from SysInfoExtended if available (more specific than database model)
-  if (autoSysInfoResult?.model?.displayName) {
-    modelName = autoSysInfoResult.model.displayName;
+  if (autoSysInfoResult) {
+    const resolved = resolveIpodModel({
+      modelNumStr: autoSysInfoResult.identity.modelNumStr,
+      serialNumber: autoSysInfoResult.identity.serialNumber,
+      familyId: autoSysInfoResult.identity.familyId ?? null,
+      ...(autoProductId ? { productId: autoProductId } : {}),
+    });
+    if (resolved) modelName = resolved.displayName;
   }
 
   const deviceInfo = {

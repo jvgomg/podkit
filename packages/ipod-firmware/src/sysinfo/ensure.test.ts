@@ -104,4 +104,33 @@ describe('ensureSysInfoExtended — fingerprint propagation', () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('post-write identity includes ModelNumStr from the classic SysInfo neighbour', async () => {
+    // Regression: mini 2G SysInfoExtended lacks ModelNumStr — the variant
+    // identifier (capacity + colour) lives in classic SysInfo. Without
+    // re-reading after write, the repair-success message would name a less
+    // specific model than a subsequent doctor run.
+    const dir = tmpdir();
+    try {
+      const deviceDir = path.join(dir, 'iPod_Control', 'Device');
+      fs.mkdirSync(deviceDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(deviceDir, 'SysInfo'),
+        'ModelNumStr: M9806\nBuildID: 1.4 (1.4)\n',
+        'utf-8'
+      );
+
+      const reader: ReadFromUsbFn = () => VALID_XML;
+      const result = await ensureSysInfoExtended(dir, FINGERPRINT, { readFromUsb: reader });
+
+      expect(result.present).toBe(true);
+      expect(result.source).toBe('usb-read');
+      expect(result.identity.modelNumStr).toBe('M9806');
+      expect(result.identity.firewireGuid).toBe('000A270000ABCDEF');
+      expect(result.identity.serialNumber).toBe('YM5180A4S31');
+      expect(result.identity.familyId).toBe(3);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });

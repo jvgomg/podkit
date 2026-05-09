@@ -7,9 +7,10 @@ import {
   getChecksumType,
   lookupGenerationInfo,
   identify,
+  resolveIpodModel,
 } from '@podkit/devices-ipod';
-import type { IpodChecksumType, IpodGenerationId } from '@podkit/devices-ipod';
-import { readSysInfoExtended } from '@podkit/ipod-firmware';
+import type { IpodChecksumType, IpodGenerationId, IpodModel } from '@podkit/devices-ipod';
+import { readSysInfoExtended, SYSINFO_PATH, SYSINFO_EXTENDED_PATH } from '@podkit/ipod-firmware';
 import type { UsbFingerprint } from '@podkit/device-types';
 import type { SysInfoCheckResult, ReadinessStageResult } from '../types.js';
 
@@ -52,22 +53,33 @@ export async function checkSysInfo(
   usbConnection?: UsbFingerprint,
   usbModelName?: string
 ): Promise<SysInfoCheckResult> {
-  const sysInfoPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfo');
-  const sysInfoExtendedPath = join(mountPoint, 'iPod_Control', 'Device', 'SysInfoExtended');
+  const sysInfoPath = join(mountPoint, SYSINFO_PATH);
+  const sysInfoExtendedPath = join(mountPoint, SYSINFO_EXTENDED_PATH);
 
   // ── Step 1: Check SysInfoExtended ──────────────────────────────────────
-  const resolveModel = (sn: string) => identify({ from: 'serial', serialNumber: sn }) ?? undefined;
-  const sysInfoExtended = readSysInfoExtended(mountPoint, resolveModel);
+  const sysInfoExtended = readSysInfoExtended(mountPoint);
   const sysInfoExtendedExists = sysInfoExtended !== null;
 
-  // Determine checksum type from USB product ID or SysInfoExtended serial
+  // Resolve the model from every identifier we got off disk — SysInfo
+  // ModelNumStr (most variant-specific), serial-suffix, and FamilyID.
+  // `resolveIpodModel` cascades and picks the richest match.
+  const sysInfoExtendedModel: IpodModel | undefined = sysInfoExtended
+    ? (resolveIpodModel({
+        modelNumStr: sysInfoExtended.identity.modelNumStr,
+        serialNumber: sysInfoExtended.identity.serialNumber,
+        familyId: sysInfoExtended.identity.familyId ?? null,
+        productId: usbConnection?.productId,
+      }) ?? undefined)
+    : undefined;
+
+  // Determine checksum type from USB product ID or resolved model
   let checksumType: IpodChecksumType | undefined;
   if (usbConnection?.productId) {
     const gen = lookupGenerationByProductId(usbConnection.productId);
     if (gen) checksumType = getChecksumType(gen);
   }
-  if (!checksumType && sysInfoExtended?.model?.checksumType) {
-    checksumType = sysInfoExtended.model.checksumType;
+  if (!checksumType && sysInfoExtendedModel?.checksumType) {
+    checksumType = sysInfoExtendedModel.checksumType;
   }
 
   // Build limitation note for hash72/hashAB devices
@@ -80,10 +92,17 @@ export async function checkSysInfo(
 
   // ── Step 2: If SysInfoExtended is present, use it ────────────────────
   if (sysInfoExtendedExists && sysInfoExtended.firewireGuid) {
-    const displayName = sysInfoExtended.model?.displayName ?? 'Unknown iPod';
+    // The summary line for an SysInfoExtended-present device. When we have a
+    // ModelNumStr (from SysInfo or from the XML itself), prefer the
+    // "Display Name (P9804)" shape so users see the variant identifier.
+    const baseDisplay = sysInfoExtendedModel?.displayName ?? 'Unknown iPod';
+    const variantTag = sysInfoExtended.identity.modelNumStr
+      ? ` (${sysInfoExtended.identity.modelNumStr.toUpperCase()})`
+      : '';
+    const displayName = `${baseDisplay}${variantTag}`;
 
-    // Check for generation mismatch between SysInfoExtended and USB
-    const mismatch = detectGenerationMismatch(sysInfoExtended.model?.generationId, usbConnection);
+    // Check for generation mismatch between resolved model and USB
+    const mismatch = detectGenerationMismatch(sysInfoExtendedModel?.generationId, usbConnection);
 
     return {
       stage: {
@@ -96,10 +115,10 @@ export async function checkSysInfo(
           exists: true,
           sysInfoExtendedExists: true,
           hasModelNum: true,
-          modelName: sysInfoExtended.model?.displayName,
+          modelName: sysInfoExtendedModel?.displayName,
           firewireGuid: sysInfoExtended.firewireGuid,
           serialNumber: sysInfoExtended.serialNumber,
-          checksumType: sysInfoExtended.model?.checksumType ?? checksumType,
+          checksumType: sysInfoExtendedModel?.checksumType ?? checksumType,
           ...(checksumNote ? { checksumNote } : {}),
           ...(usbModelName ? { usbModelName } : {}),
           ...(mismatch
@@ -111,7 +130,7 @@ export async function checkSysInfo(
             : {}),
         },
       },
-      deviceModel: sysInfoExtended.model,
+      deviceModel: sysInfoExtendedModel,
     };
   }
 

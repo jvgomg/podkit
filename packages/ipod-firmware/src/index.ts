@@ -103,9 +103,10 @@ export {
   writeSysInfoExtended,
   ensureSysInfoExtended,
   SYSINFO_EXTENDED_PATH,
+  SYSINFO_PATH,
   SYSINFO_DEVICE_DIR,
   type SysInfoExtendedResult,
+  type SysInfoIdentity,
   type ReadFromUsbFn,
   type EnsureSysInfoExtendedOptions,
-  type ModelResolver,
 } from './sysinfo/index.js';

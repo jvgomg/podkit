@@ -2356,6 +2356,10 @@ export async function ensureSysInfoExtended(
   return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
 }
 
+export const SYSINFO_PATH = 'iPod_Control/Device/SysInfo';
+export const SYSINFO_EXTENDED_PATH = 'iPod_Control/Device/SysInfoExtended';
+export const SYSINFO_DEVICE_DIR = 'iPod_Control/Device';
+
 export function getChecksumTypeByModelNumber(_modelNumStr: string): string | undefined {
   return undefined;
 }

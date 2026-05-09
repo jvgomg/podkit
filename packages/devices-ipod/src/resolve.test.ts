@@ -177,6 +177,48 @@ describe('resolveIpodModel — libgpodGeneration axis', () => {
 });
 
 // =============================================================================
+// Cascade fallback: serial misses, modelNumStr hits
+// =============================================================================
+
+describe('resolveIpodModel — cascade with mixed identifiers', () => {
+  it('resolves via modelNumStr when serial suffix is missing from the table', () => {
+    // Real-hardware case: mini 2G 4GB Pink, serial JQ5141TFS4G, ModelNumStr P9804.
+    // Suffix S4G is now in the table (regression-tested separately) but the bug
+    // this test guards against is the cascade falling through ModelNumStr when
+    // serial lookup misses entirely.
+    const model = resolveIpodModel({
+      modelNumStr: 'P9804',
+      serialNumber: 'JQ5141TFXXX', // suffix XXX — definitely not in table
+      familyId: 3,
+    });
+    expect(model).not.toBeNull();
+    expect(model!.displayName).toBe('iPod mini 4GB Pink (2nd Generation)');
+    expect(model!.generationId).toBe('mini_2g');
+    expect(model!.source).toBe('sysinfo');
+  });
+
+  it('resolves via serial suffix when modelNumStr is absent', () => {
+    // No modelNumStr — fall through to serial-suffix axis.
+    const model = resolveIpodModel({
+      serialNumber: 'JQ5141TFS4G',
+      familyId: 3,
+    });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('mini_2g');
+    expect(model!.source).toBe('serial');
+  });
+
+  it('resolves via familyId when serial and modelNumStr both miss', () => {
+    const model = resolveIpodModel({
+      serialNumber: 'XXXXXXXXX',
+      familyId: 3,
+    });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('mini_2g');
+  });
+});
+
+// =============================================================================
 // Cascade priority
 // =============================================================================
 
