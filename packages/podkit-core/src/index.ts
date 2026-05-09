@@ -599,6 +599,10 @@ export {
   SYSINFO_DEVICE_DIR,
 } from './device/index.js';
 
+// iPod identity assessment (cascade-resolved model + capabilities + inquiry state)
+export type { IpodIdentityAssessment, IpodFirmwareInquiryState } from './device/index.js';
+export { assessIpodIdentity } from './device/index.js';
+
 // iPod model lookup and resolver
 export {
   getChecksumTypeByModelNumber,

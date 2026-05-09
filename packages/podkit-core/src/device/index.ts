@@ -147,6 +147,10 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 
+// iPod identity assessment (cascade-resolved model + capabilities + inquiry state)
+export type { IpodIdentityAssessment, IpodFirmwareInquiryState } from './ipod-identity.js';
+export { assessIpodIdentity } from './ipod-identity.js';
+
 // SysInfoExtended orchestrator (imported directly from @podkit/ipod-firmware)
 export type {
   SysInfoExtendedResult,

@@ -19,8 +19,6 @@
  * podkit device init [-d name]        # initialize iPod database
  * ```
  */
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { Command, Option } from 'commander';
 import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statSync, statfsSync } from '../utils/fs.js';
@@ -69,21 +67,15 @@ import {
   escapeCsv,
 } from './display-utils.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../output/index.js';
-import { resolveIpodModel } from '@podkit/devices-ipod';
 import {
   formatGeneration,
   validateDevice,
-  formatValidationMessages,
   DEFAULT_LOSSY_STACK,
   DEFAULT_LOSSLESS_STACK,
-  readSysInfoExtended,
   ensureSysInfoExtended,
-  resolveUsbDeviceFromPath,
-  hasCompleteUsbFingerprint,
-  getChecksumTypeByModelNumber,
-  SYSINFO_PATH,
+  assessIpodIdentity,
 } from '@podkit/core';
-import type { SysInfoExtendedResult, CompleteUsbDevice } from '@podkit/core';
+import type { IpodIdentityAssessment, DeviceCapabilities } from '@podkit/core';
 import {
   openDevice,
   isMassStorageDevice,
@@ -91,7 +83,6 @@ import {
   getDeviceLabel,
 } from './open-device.js';
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
-import type { DeviceValidationResult } from '@podkit/core';
 import type { DeviceTrack, IpodTrack } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
 import type { ReadinessResult, ReadinessStageResult, ReadinessLevel } from '@podkit/core';
@@ -112,176 +103,41 @@ export { formatBytes, formatNumber } from '../output/index.js';
 export { formatGeneration } from '@podkit/core';
 
 /**
- * Outcome of attempting to ensure the iPod has identity data.
- *
- * - `result`: parsed SysInfoExtended (existing or freshly read), or null if
- *   the device only has classic SysInfo and we didn't need to write anything.
- * - `abort`: true if the device-add flow should stop. Set when the iPod has
- *   no identity files, USB is unreachable or the user declined the prompt.
- *   Caller is responsible for printing nothing further and returning early.
- * - `productId`: USB product ID if the flow resolved the USB device while
- *   ensuring identity data — fed to `resolveIpodModel` for richer model
- *   resolution downstream. Undefined when the existing-file branch ran
- *   without touching USB.
+ * Format a generation display name for the "not supported on …" tail of a
+ * negative capability bullet. Strips parenthesised disambiguators for compactness.
  */
-interface SysInfoAttempt {
-  result: SysInfoExtendedResult | null;
-  abort: boolean;
-  productId?: string;
+function generationLabel(displayName: string): string {
+  // "iPod nano (2nd Generation)" → "iPod nano (2nd Generation)"
+  // (keep as-is for now — the parenthetical is the variant disambiguator)
+  return displayName;
 }
 
 /**
- * Ensure an iPod has SysInfoExtended when required, or at least SysInfo.
+ * Render the cascade-derived capability summary for a confirmed device.
  *
- * Skip path: if SysInfoExtended already exists, return it. If only SysInfo
- * exists and the device doesn't require checksums, that's sufficient.
- *
- * Upgrade path: if only SysInfo exists but the device requires checksums
- * (hash58+), SysInfoExtended is mandatory — prompt the user to read it
- * from USB firmware.
- *
- * Gate path: if neither file is present, prompt the user (default no) before
- * reading SysInfoExtended from USB firmware and writing it to the device.
- * `--yes` and JSON output bypass the prompt. If the user declines or USB
- * cannot be reached, signal abort so the caller stops the device-add flow.
+ * Negative bullets carry a reason ("not supported on iPod nano (2nd Generation)")
+ * rather than a bare dash. Artwork bullet includes the max resolution when known.
  */
-async function attemptSysInfoExtended(
-  mountPoint: string,
+function printCapabilitySummary(
   out: OutputContext,
-  opts: { autoConfirm: boolean }
-): Promise<SysInfoAttempt> {
-  // 1. SysInfoExtended already present and parseable → done.
-  const existing = readSysInfoExtended(mountPoint);
-  if (existing?.present && existing.firewireGuid) {
-    return { result: existing, abort: false };
+  capabilities: DeviceCapabilities,
+  modelDisplay: string
+): void {
+  const gen = generationLabel(modelDisplay);
+  out.print('Capabilities:');
+  out.print('  + Music');
+  if (capabilities.artworkSources.length > 0 && capabilities.artworkMaxResolution) {
+    out.print(`  + Artwork (max ${capabilities.artworkMaxResolution}px)`);
+  } else {
+    out.print(`  - Artwork (not supported on ${gen})`);
   }
-
-  // 2. Classic SysInfo present — check if SysInfoExtended is needed.
-  const sysInfoPath = join(mountPoint, SYSINFO_PATH);
-  if (existsSync(sysInfoPath)) {
-    // Read the ModelNumStr to determine if this device needs checksums
-    let needsChecksum = false;
-    let modelNumber: string | undefined;
-    try {
-      const content = readFileSync(sysInfoPath, 'utf-8');
-      const match = content.match(/ModelNumStr:\s*(\S+)/);
-      if (match?.[1]) {
-        modelNumber = match[1];
-        const checksumType = getChecksumTypeByModelNumber(modelNumber);
-        needsChecksum =
-          checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
-      }
-    } catch {
-      // Can't read SysInfo — fall through to USB read
-    }
-
-    if (!needsChecksum) {
-      // Non-checksum device: SysInfo alone is sufficient.
-      return { result: null, abort: false };
-    }
-
-    // Checksum device with only SysInfo — SysInfoExtended is required.
-    // Try to read it from USB.
-    const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-    if (!hasCompleteUsbFingerprint(usbInfo)) {
-      out.newline();
-      out.print(
-        `Warning: This iPod (${modelNumber ?? 'unknown model'}) requires SysInfoExtended for database checksums,` +
-          ' but USB device could not be located to read it.'
-      );
-      out.print(
-        '  Run `podkit doctor --repair sysinfo-extended` when the device is connected via USB.'
-      );
-      return { result: null, abort: false };
-    }
-
-    const skipPrompt = opts.autoConfirm || out.isJson;
-    if (!skipPrompt) {
-      out.newline();
-      out.print(
-        `This iPod (${modelNumber ?? 'unknown'}) requires SysInfoExtended for database checksums.`
-      );
-      out.print('Without it, the iPod will reject the database and show "No Music" after syncing.');
-      out.print(
-        'podkit can read this from the iPod firmware via USB and save\n' +
-          'iPod_Control/Device/SysInfoExtended to the device.'
-      );
-      out.newline();
-      const proceed = await confirmNo('Read SysInfoExtended from USB?');
-      if (!proceed) {
-        out.print('Skipped. You can run `podkit doctor --repair sysinfo-extended` later.');
-        return { result: null, abort: false };
-      }
-    }
-
-    return readSysInfoExtendedFromUsb(mountPoint, usbInfo, out);
+  if (capabilities.supportsVideo) {
+    out.print('  + Video');
+  } else {
+    out.print(`  - Video (not supported on ${gen})`);
   }
-
-  // 3. Neither file present. Resolve USB before prompting — without it we
-  //    can't perform the read. If USB is unreachable (e.g. --path fixture,
-  //    offline reattach), silently skip: the downstream init step will
-  //    create classic SysInfo if the database is also missing.
-  const usbInfo = await resolveUsbDeviceFromPath(mountPoint);
-  if (!hasCompleteUsbFingerprint(usbInfo)) {
-    out.verbose1('No SysInfo or SysInfoExtended on device, and USB device could not be located.');
-    return { result: null, abort: false };
-  }
-
-  // 4. Prompt the user.
-  const skipPrompt = opts.autoConfirm || out.isJson;
-  if (!skipPrompt) {
-    out.newline();
-    out.print('This iPod has no identity files (SysInfo / SysInfoExtended).');
-    out.print("podkit needs one to recognize the device's model, serial, and FireWireGUID.");
-    out.print(
-      'It will read this from the iPod firmware via USB and save\n' +
-        'iPod_Control/Device/SysInfoExtended to the device.'
-    );
-    out.newline();
-    const proceed = await confirmNo('Continue?');
-    if (!proceed) {
-      out.print('Cancelled. Device not added.');
-      return { result: null, abort: true };
-    }
-  }
-
-  // 5. Read from USB and write the file.
-  return readSysInfoExtendedFromUsb(mountPoint, usbInfo, out);
-}
-
-/** Shared helper: read SysInfoExtended from USB and write to device. */
-async function readSysInfoExtendedFromUsb(
-  mountPoint: string,
-  usbInfo: CompleteUsbDevice,
-  out: OutputContext
-): Promise<SysInfoAttempt> {
-  try {
-    const result = await ensureSysInfoExtended(mountPoint, {
-      vendorId: usbInfo.vendorId,
-      productId: usbInfo.productId,
-      ...(usbInfo.serialNumber ? { serialNumber: usbInfo.serialNumber } : {}),
-      bus: usbInfo.bus,
-      devnum: usbInfo.devnum,
-    });
-
-    if (!result.present) {
-      out.error(`Failed to read SysInfoExtended from USB: ${result.error ?? 'unknown error'}`);
-      return { result: null, abort: true, productId: usbInfo.productId };
-    }
-
-    const model = resolveIpodModel({
-      modelNumStr: result.identity.modelNumStr,
-      serialNumber: result.identity.serialNumber,
-      familyId: result.identity.familyId ?? null,
-      productId: usbInfo.productId,
-    });
-    out.print(`Device identified via USB: ${model?.displayName ?? 'Unknown iPod'}`);
-    return { result, abort: false, productId: usbInfo.productId };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    out.error(`SysInfoExtended read failed: ${message}`);
-    return { result: null, abort: true, productId: usbInfo.productId };
-  }
+  // Podcast is a class capability — all generations supporting artwork can do
+  // podcasts, but the generation table doesn't model it explicitly. Keep silent.
 }
 
 /**
@@ -1621,6 +1477,14 @@ interface AddOptions {
   musicDir?: string;
   moviesDir?: string;
   tvShowsDir?: string;
+  /**
+   * Skip the firmware inquiry that would write SysInfoExtended. Identity
+   * still cascades through any classic SysInfo on disk and the USB product
+   * ID, so for non-checksum devices this is a viable shortcut. Hash-based
+   * generations still need SysInfoExtended for sync to succeed — the flag
+   * is a "configure now, repair later" affordance.
+   */
+  firmwareInquiry?: boolean;
 }
 
 const addSubcommand = new Command('add')
@@ -1628,6 +1492,10 @@ const addSubcommand = new Command('add')
   .addOption(new Option('--type <type>', 'device type').choices([...DEVICE_TYPES]))
   .option('--path <path>', 'path to device mount point')
   .option('-y, --yes', 'skip confirmation prompts')
+  .option(
+    '--no-firmware-inquiry',
+    'skip writing SysInfoExtended via USB firmware inquiry (iPod only)'
+  )
   .addOption(
     new Option('--quality <preset>', 'transcoding quality preset').choices([...QUALITY_PRESETS])
   )
@@ -1685,6 +1553,28 @@ export interface DeviceAddDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
   confirm?: (msg: string) => Promise<boolean>;
   loadCore?: () => Promise<typeof import('@podkit/core')>;
+  /**
+   * Override the cascade-driven identity assessment — tests inject the
+   * model + capabilities + firmware-inquiry state without writing a synthetic
+   * mount-point fixture. Production uses `assessIpodIdentity` from
+   * `@podkit/core`.
+   */
+  assessIdentity?: (mountPoint: string) => Promise<import('@podkit/core').IpodIdentityAssessment>;
+  /**
+   * Override the SysInfoExtended write step. Tests assert that this fires
+   * (or doesn't, under `--no-firmware-inquiry`) without performing real
+   * USB I/O. Production uses `ensureSysInfoExtended` from `@podkit/core`.
+   */
+  ensureSysInfoExtended?: typeof import('@podkit/core').ensureSysInfoExtended;
+  /**
+   * Override the iPod database adapter. Tests stub `hasDatabase` / `open` /
+   * `initializeIpod` so the runner doesn't load native libgpod bindings.
+   */
+  ipodDatabase?: {
+    hasDatabase: (path: string) => Promise<boolean>;
+    open: (path: string) => Promise<{ trackCount: number; close: () => void }>;
+    initializeIpod: (path: string) => Promise<{ close: () => void }>;
+  };
 }
 
 /**
@@ -1706,6 +1596,8 @@ export async function runDeviceAdd(
   const autoConfirm = options.yes ?? false;
   const confirmFn = deps.confirm ?? confirm;
   const loadCore = deps.loadCore ?? (() => import('@podkit/core'));
+  const assessIdentity = deps.assessIdentity ?? assessIpodIdentity;
+  const writeSysInfoExtended = deps.ensureSysInfoExtended ?? ensureSysInfoExtended;
 
   // Require --device flag
   if (!name) {
@@ -1940,11 +1832,11 @@ export async function runDeviceAdd(
 
   // Load core dependencies (overridable via deps.loadCore for tests)
   let core: typeof import('@podkit/core');
-  let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+  let IpodDatabase: typeof import('@podkit/core').IpodDatabase | DeviceAddDeps['ipodDatabase'];
 
   try {
     core = await loadCore();
-    IpodDatabase = core.IpodDatabase;
+    IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
     throw new CliError({
@@ -1964,18 +1856,35 @@ export async function runDeviceAdd(
       });
     }
 
-    // Attempt SysInfoExtended read (before database init so it's available for checksums)
-    const sysInfoAttempt = await attemptSysInfoExtended(explicitPath, out, { autoConfirm });
-    if (sysInfoAttempt.abort) {
-      process.exitCode = 1;
-      return;
-    }
-    const sysInfoResult = sysInfoAttempt.result;
+    // Cascade-driven identity assessment (no writes, no prompts).
+    let assessment: IpodIdentityAssessment = await assessIdentity(explicitPath);
 
-    // Check if database exists
+    // Block known-unsupported generations early.
+    if (assessment.model?.notSupportedReason) {
+      const message = assessment.model.notSupportedReason;
+      if (out.isText) {
+        out.newline();
+        out.error(`Error: ${message}`);
+        out.print('  See: https://jvgomg.github.io/podkit/devices/supported-devices');
+      }
+      throw new CliError({
+        message,
+        code: 'UNSUPPORTED_DEVICE',
+        details: { generation: assessment.model.generationId },
+      });
+    }
+
+    const identityDisplayName = assessment.model?.displayName ?? 'Unknown iPod';
+
+    if (!autoConfirm && out.isText) {
+      out.newline();
+      out.print(`iPod at path: ${identityDisplayName}`);
+      out.print(`  Path:        ${explicitPath}`);
+    }
+
+    // Database init / track-count read.
     const hasDb = await IpodDatabase.hasDatabase(explicitPath);
     let trackCount = 0;
-    let modelName = 'Unknown';
     let initialized = false;
 
     if (!hasDb) {
@@ -1993,10 +1902,9 @@ export async function runDeviceAdd(
       try {
         out.print('Initializing iPod database...');
         const ipod = await IpodDatabase.initializeIpod(explicitPath);
-        modelName = ipod.device.modelName;
         ipod.close();
         initialized = true;
-        out.print(`Initialized as ${modelName}.`);
+        out.print(`Initialized as ${identityDisplayName}.`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new CliError({
@@ -2005,12 +1913,10 @@ export async function runDeviceAdd(
         });
       }
     } else {
-      // Database exists, read info
       try {
         const ipod = await IpodDatabase.open(explicitPath);
         try {
           trackCount = ipod.trackCount;
-          modelName = ipod.device.modelName;
         } finally {
           ipod.close();
         }
@@ -2020,15 +1926,8 @@ export async function runDeviceAdd(
       }
     }
 
-    // Enrich model name from SysInfoExtended if available (more specific than database model)
-    if (sysInfoResult) {
-      const resolved = resolveIpodModel({
-        modelNumStr: sysInfoResult.identity.modelNumStr,
-        serialNumber: sysInfoResult.identity.serialNumber,
-        familyId: sysInfoResult.identity.familyId ?? null,
-        ...(sysInfoAttempt.productId ? { productId: sysInfoAttempt.productId } : {}),
-      });
-      if (resolved) modelName = resolved.displayName;
+    if (!autoConfirm && out.isText) {
+      out.print(`  Tracks:      ${formatNumber(trackCount)}`);
     }
 
     // Get volume UUID if possible (for macOS)
@@ -2044,7 +1943,6 @@ export async function runDeviceAdd(
       }
     }
 
-    // If no UUID found, generate a stable one from the path
     if (!volumeUuid) {
       volumeUuid = `manual-${Buffer.from(explicitPath).toString('base64').replace(/[/+=]/g, '').slice(0, 16)}`;
     }
@@ -2058,7 +1956,7 @@ export async function runDeviceAdd(
       isMounted: true,
       mountPoint: explicitPath,
       trackCount,
-      modelName,
+      modelName: identityDisplayName,
     };
 
     const deviceCount = Object.keys(existingDevices).length;
@@ -2071,87 +1969,67 @@ export async function runDeviceAdd(
     if (options.encoding) deviceConfig.encoding = options.encoding as any;
     if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
-    // Validate device if database is available
-    let addValidation: DeviceValidationResult | undefined;
-    try {
-      const ipodForValidation = await IpodDatabase.open(explicitPath);
-      try {
-        addValidation = validateDevice(ipodForValidation.device, explicitPath);
-      } finally {
-        ipodForValidation.close();
-      }
-    } catch {
-      // Database may not be readable yet (e.g., just initialized)
-    }
+    // Single combined prompt: config persistence + (optional) firmware inquiry.
+    const offerFirmwareInquiry =
+      assessment.firmwareInquiry === 'missing' && options.firmwareInquiry !== false;
 
-    if (addValidation && !addValidation.supported) {
-      const messages = formatValidationMessages(addValidation);
-      // Validation failures may have multiple messages; surface them all in
-      // text mode but use the first as the primary error message for JSON.
-      if (out.isText) {
-        out.newline();
-        for (const msg of messages) {
-          out.print(msg);
-        }
-      }
-      throw new CliError({
-        message: messages[0] ?? 'Device validation failed',
-        code: 'VALIDATION_FAILED',
-        details: { messages },
-      });
-    }
-
-    // Interactive confirmation (skip if auto-confirm or JSON mode)
     if (!autoConfirm && out.isText) {
-      out.newline();
-      out.print('iPod at path:');
-      out.print(`  Path:        ${explicitPath}`);
-      out.print(`  Model:       ${modelName}`);
-      out.print(`  Tracks:      ${formatNumber(trackCount)}`);
-
-      // Show validation warnings during add
-      if (addValidation) {
-        if (addValidation.issues.length > 0) {
-          out.newline();
-          for (const issue of addValidation.issues) {
-            out.warn(issue.message);
-            if (issue.suggestion) {
-              out.print(`  ${issue.suggestion}`);
-            }
-          }
-        }
-
-        // Show capability summary
-        if (addValidation.capabilities) {
-          out.print('  Capabilities:');
-          const caps = addValidation.capabilities;
-          const capEntries: Array<[string, boolean]> = [
-            ['Music', caps.music],
-            ['Artwork', caps.artwork],
-            ['Video', caps.video],
-            ['Podcasts', caps.podcast],
-          ];
-          for (const [capName, supported] of capEntries) {
-            if (supported) {
-              out.print(`    + ${capName}`);
-            } else {
-              out.print(`    - ${capName}`);
-            }
-          }
-        }
+      if (offerFirmwareInquiry) {
+        out.newline();
+        out.print(`This iPod's identity file (SysInfoExtended) is missing.`);
+        out.print('podkit can read it from the device firmware over USB.');
+        out.print('Writing SysInfoExtended confirms the exact device variant');
+        out.print('and is required for the database checksum on hash-based generations.');
+        out.newline();
+      } else {
+        out.newline();
       }
-
-      out.newline();
-
-      const shouldSave = await confirmFn(`Add this iPod as "${name}"?`);
-
+      const promptText = offerFirmwareInquiry
+        ? `Add this iPod as "${name}" and write SysInfoExtended?`
+        : `Add this iPod as "${name}"?`;
+      const shouldSave = await confirmFn(promptText);
       if (!shouldSave) {
         out.print('Cancelled. No changes made.');
         return;
       }
+    } else if (
+      assessment.needsChecksum &&
+      !offerFirmwareInquiry &&
+      options.firmwareInquiry === false
+    ) {
+      if (out.isText) {
+        out.warn(
+          `This iPod's generation requires SysInfoExtended for the iTunesDB checksum. ` +
+            'Skipping firmware inquiry will leave it unsynced. ' +
+            'Run `podkit doctor --repair sysinfo-extended` later.'
+        );
+      }
     }
 
-    // Save device to config
+    // Perform the firmware inquiry now if opted in.
+    let firmwareWritten = false;
+    if (offerFirmwareInquiry && assessment.usbFingerprint) {
+      const writeResult = await writeSysInfoExtended(explicitPath, {
+        vendorId: assessment.usbFingerprint.vendorId,
+        productId: assessment.usbFingerprint.productId,
+        ...(assessment.usbFingerprint.serialNumber
+          ? { serialNumber: assessment.usbFingerprint.serialNumber }
+          : {}),
+        bus: assessment.usbFingerprint.bus,
+        devnum: assessment.usbFingerprint.devnum,
+      });
+      if (!writeResult.present) {
+        const reason = writeResult.error ?? 'unknown error';
+        if (out.isText) {
+          out.warn(`Failed to read SysInfoExtended from USB: ${reason}`);
+          out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
+        }
+      } else {
+        firmwareWritten = true;
+        assessment = await assessIdentity(explicitPath);
+      }
+    }
+
     const result = addDevice(name, deviceConfig, { configPath });
 
     if (!result.success) {
@@ -2166,6 +2044,9 @@ export async function runDeviceAdd(
       setDefaultDevice(name, { configPath });
     }
 
+    const finalDisplayName = assessment.model?.displayName ?? identityDisplayName;
+    deviceInfo.modelName = finalDisplayName;
+
     out.result<DeviceAddOutput>(
       {
         success: true,
@@ -2177,25 +2058,22 @@ export async function runDeviceAdd(
       },
       () => {
         out.newline();
-        out.print(
-          result.created
-            ? `Created config file: ${result.configPath}`
-            : `Updated config file: ${result.configPath}`
-        );
-        out.newline();
-        out.print(`Device "${name}" added to config.`);
+        if (firmwareWritten) {
+          out.print('  ✓ SysInfoExtended written');
+        }
+        out.print('  ✓ Added to config');
         if (isFirstDevice) {
-          out.print(`Set as default device.`);
+          out.print('  ✓ Set as default device');
         }
         if (initialized) {
-          out.print(`Database initialized (${modelName}).`);
+          out.print(`  ✓ Database initialized (${finalDisplayName})`);
+        }
+        if (assessment.capabilities) {
+          out.newline();
+          printCapabilitySummary(out, assessment.capabilities, finalDisplayName);
         }
         out.newline();
-        out.print('Next steps:');
-        out.print(
-          '  podkit collection add -t music -c <name> --path <path>   # Add your music library'
-        );
-        out.print(`  podkit sync                    # Sync to this device`);
+        out.print(`Done. Try: podkit sync -d ${name} --dry-run`);
       }
     );
     return;
@@ -2360,22 +2238,47 @@ export async function runDeviceAdd(
     }
   }
 
-  // Attempt SysInfoExtended read (before database init so it's available for checksums)
-  let autoSysInfoResult: SysInfoExtendedResult | null = null;
-  let autoProductId: string | undefined;
+  // Assess identity from disk + USB without writing anything. The cascade
+  // resolves model + capabilities from the most specific signal we have:
+  // SysInfoExtended → classic SysInfo ModelNumStr → USB product ID.
+  // This runs before database init so SysInfoExtended is available for the
+  // hash58/72/AB checksum stack when we eventually write it.
+  let assessment: IpodIdentityAssessment | null = null;
   if (ipod.mountPoint) {
-    const attempt = await attemptSysInfoExtended(ipod.mountPoint, out, { autoConfirm });
-    if (attempt.abort) {
-      process.exitCode = 1;
-      return;
-    }
-    autoSysInfoResult = attempt.result;
-    autoProductId = attempt.productId;
+    assessment = await assessIdentity(ipod.mountPoint);
   }
 
-  // Check if the iPod has a database
+  // Block known-unsupported generations early — touch_*, nano_6, shuffle_3g/4g.
+  // The cascade-resolved model carries `notSupportedReason` for these.
+  if (assessment?.model?.notSupportedReason) {
+    const message = assessment.model.notSupportedReason;
+    if (out.isText) {
+      out.newline();
+      out.error(`Error: ${message}`);
+      out.print('  See: https://jvgomg.github.io/podkit/devices/supported-devices');
+    }
+    throw new CliError({
+      message,
+      code: 'UNSUPPORTED_DEVICE',
+      details: { generation: assessment.model.generationId },
+    });
+  }
+
+  // Render identity to the user before any prompts. Cascade-derived display
+  // name; USB product ID is enough for the nano 2G "empty SysInfo" case.
+  const identityDisplayName = assessment?.model?.displayName ?? 'Unknown iPod';
+  if (!autoConfirm && out.isText) {
+    out.newline();
+    out.print(`Found ${identityDisplayName}:`);
+    out.print(`  Name:        ${ipod.volumeName || '(unnamed)'}`);
+    out.print(`  Mount:       ${ipod.mountPoint ?? '(not mounted)'}`);
+    out.print(`  Capacity:    ${formatBytes(ipod.size)}`);
+    out.print(`  Volume UUID: ${ipod.volumeUuid}`);
+    out.print(`  Device:      /dev/${ipod.identifier}`);
+  }
+
+  // Database init / track-count read (model name comes from cascade, not libgpod).
   let trackCount = 0;
-  let modelName = 'Unknown';
   let initialized = false;
 
   if (ipod.mountPoint) {
@@ -2396,10 +2299,9 @@ export async function runDeviceAdd(
       try {
         out.print('Initializing iPod database...');
         const db = await IpodDatabase.initializeIpod(ipod.mountPoint);
-        modelName = db.device.modelName;
         db.close();
         initialized = true;
-        out.print(`Initialized as ${modelName}.`);
+        out.print(`Initialized as ${identityDisplayName}.`);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         throw new CliError({
@@ -2408,12 +2310,10 @@ export async function runDeviceAdd(
         });
       }
     } else {
-      // Database exists, read info
       try {
         const db = await IpodDatabase.open(ipod.mountPoint);
         try {
           trackCount = db.trackCount;
-          modelName = db.device.modelName;
         } finally {
           db.close();
         }
@@ -2423,15 +2323,8 @@ export async function runDeviceAdd(
     }
   }
 
-  // Enrich model name from SysInfoExtended if available (more specific than database model)
-  if (autoSysInfoResult) {
-    const resolved = resolveIpodModel({
-      modelNumStr: autoSysInfoResult.identity.modelNumStr,
-      serialNumber: autoSysInfoResult.identity.serialNumber,
-      familyId: autoSysInfoResult.identity.familyId ?? null,
-      ...(autoProductId ? { productId: autoProductId } : {}),
-    });
-    if (resolved) modelName = resolved.displayName;
+  if (!autoConfirm && out.isText) {
+    out.print(`  Tracks:      ${formatNumber(trackCount)}`);
   }
 
   const deviceInfo = {
@@ -2443,7 +2336,7 @@ export async function runDeviceAdd(
     isMounted: ipod.isMounted,
     mountPoint: ipod.mountPoint,
     trackCount,
-    modelName,
+    modelName: identityDisplayName,
   };
 
   const deviceCount = Object.keys(existingDevices).length;
@@ -2459,90 +2352,74 @@ export async function runDeviceAdd(
   if (options.encoding) deviceConfig.encoding = options.encoding as any;
   if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
-  // Validate detected device
-  let autoDetectValidation: DeviceValidationResult | undefined;
-  if (ipod.mountPoint) {
-    try {
-      const db = await IpodDatabase.open(ipod.mountPoint);
-      try {
-        autoDetectValidation = validateDevice(db.device, ipod.mountPoint);
-      } finally {
-        db.close();
-      }
-    } catch {
-      // Couldn't validate, continue anyway
-    }
-  }
+  // Single combined prompt: config persistence + (optional) firmware inquiry.
+  // The firmware inquiry is offered when SysInfoExtended is missing and a
+  // complete USB fingerprint was resolved — see assessIpodIdentity for state.
+  // `--no-firmware-inquiry` opts out of the write while keeping the cascade-derived
+  // identity. `--yes` defaults to the slick path (writes when offered).
+  const offerFirmwareInquiry =
+    !!assessment && assessment.firmwareInquiry === 'missing' && options.firmwareInquiry !== false;
 
-  if (autoDetectValidation && !autoDetectValidation.supported) {
-    const messages = formatValidationMessages(autoDetectValidation);
-    if (out.isText) {
-      out.newline();
-      for (const msg of messages) {
-        out.print(msg);
-      }
-    }
-    throw new CliError({
-      message: messages[0] ?? 'Device validation failed',
-      code: 'VALIDATION_FAILED',
-      details: { messages },
-    });
-  }
-
-  // Interactive mode (skip if auto-confirm or JSON mode)
   if (!autoConfirm && out.isText) {
-    out.newline();
-    out.print('Found attached iPod:');
-    out.print(`  Name:        ${ipod.volumeName || '(unnamed)'}`);
-    out.print(`  Model:       ${modelName}`);
-    out.print(`  Size:        ${formatBytes(ipod.size)}`);
-    out.print(`  Tracks:      ${formatNumber(trackCount)}`);
-    out.print(`  Volume UUID: ${ipod.volumeUuid}`);
-    out.print(`  Mounted:     ${ipod.isMounted ? 'Yes' : 'No'}`);
-    if (ipod.mountPoint) {
-      out.print(`  Mount point: ${ipod.mountPoint}`);
+    if (offerFirmwareInquiry) {
+      out.newline();
+      out.print(`This iPod's identity file (SysInfoExtended) is missing.`);
+      out.print('podkit can read it from the device firmware over USB.');
+      out.print('Writing SysInfoExtended confirms the exact device variant');
+      out.print('and is required for the database checksum on hash-based generations.');
+      out.newline();
+    } else {
+      out.newline();
     }
-    out.print(`  Device:      /dev/${ipod.identifier}`);
-
-    // Show validation warnings during add
-    if (autoDetectValidation) {
-      if (autoDetectValidation.issues.length > 0) {
-        out.newline();
-        for (const issue of autoDetectValidation.issues) {
-          out.warn(issue.message);
-          if (issue.suggestion) {
-            out.print(`  ${issue.suggestion}`);
-          }
-        }
-      }
-
-      // Show capability summary
-      if (autoDetectValidation.capabilities) {
-        out.print('  Capabilities:');
-        const caps = autoDetectValidation.capabilities;
-        const capEntries: Array<[string, boolean]> = [
-          ['Music', caps.music],
-          ['Artwork', caps.artwork],
-          ['Video', caps.video],
-          ['Podcasts', caps.podcast],
-        ];
-        for (const [capName, supported] of capEntries) {
-          if (supported) {
-            out.print(`    + ${capName}`);
-          } else {
-            out.print(`    - ${capName}`);
-          }
-        }
-      }
-    }
-
-    out.newline();
-
-    const shouldSave = await confirmFn(`Add this iPod as "${name}"?`);
-
+    const promptText = offerFirmwareInquiry
+      ? `Add this iPod as "${name}" and write SysInfoExtended?`
+      : `Add this iPod as "${name}"?`;
+    const shouldSave = await confirmFn(promptText);
     if (!shouldSave) {
       out.print('Cancelled. No changes made.');
       return;
+    }
+  } else if (
+    assessment?.needsChecksum &&
+    !offerFirmwareInquiry &&
+    options.firmwareInquiry === false
+  ) {
+    // Hard requirement: hash-based devices won't sync without SysInfoExtended.
+    // Don't silently strand the user — surface this even in non-interactive modes.
+    if (out.isText) {
+      out.warn(
+        `This iPod's generation requires SysInfoExtended for the iTunesDB checksum. ` +
+          'Skipping firmware inquiry will leave it unsynced. ' +
+          'Run `podkit doctor --repair sysinfo-extended` later.'
+      );
+    }
+  }
+
+  // Perform the firmware inquiry now if opted in (or auto-confirmed).
+  let firmwareWritten = false;
+  if (offerFirmwareInquiry && assessment?.usbFingerprint && ipod.mountPoint) {
+    const writeResult = await writeSysInfoExtended(ipod.mountPoint, {
+      vendorId: assessment.usbFingerprint.vendorId,
+      productId: assessment.usbFingerprint.productId,
+      ...(assessment.usbFingerprint.serialNumber
+        ? { serialNumber: assessment.usbFingerprint.serialNumber }
+        : {}),
+      bus: assessment.usbFingerprint.bus,
+      devnum: assessment.usbFingerprint.devnum,
+    });
+    if (!writeResult.present) {
+      // Inquiry failed — surface and continue (config still saves; user can
+      // re-run `podkit doctor --repair sysinfo-extended` later).
+      const reason = writeResult.error ?? 'unknown error';
+      if (out.isText) {
+        out.warn(`Failed to read SysInfoExtended from USB: ${reason}`);
+        out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
+      }
+    } else {
+      firmwareWritten = true;
+      // Re-assess so the capability summary reflects post-write identity (the
+      // model resolution may now be more specific via SysInfoExtended ModelNumStr).
+      assessment = await assessIdentity(ipod.mountPoint);
     }
   }
 
@@ -2561,6 +2438,13 @@ export async function runDeviceAdd(
     setDefaultDevice(name, { configPath });
   }
 
+  const finalModel = assessment?.model;
+  const finalCapabilities = assessment?.capabilities;
+  const finalDisplayName = finalModel?.displayName ?? identityDisplayName;
+  // Refresh deviceInfo's modelName for JSON consumers — post-write cascade
+  // may resolve a more specific variant.
+  deviceInfo.modelName = finalDisplayName;
+
   out.result<DeviceAddOutput>(
     {
       success: true,
@@ -2572,25 +2456,22 @@ export async function runDeviceAdd(
     },
     () => {
       out.newline();
-      out.print(
-        result.created
-          ? `Created config file: ${result.configPath}`
-          : `Updated config file: ${result.configPath}`
-      );
-      out.newline();
-      out.print(`Device "${name}" added to config.`);
+      if (firmwareWritten) {
+        out.print('  ✓ SysInfoExtended written');
+      }
+      out.print('  ✓ Added to config');
       if (isFirstDevice) {
-        out.print(`Set as default device.`);
+        out.print('  ✓ Set as default device');
       }
       if (initialized) {
-        out.print(`Database initialized (${modelName}).`);
+        out.print(`  ✓ Database initialized (${finalDisplayName})`);
+      }
+      if (finalCapabilities) {
+        out.newline();
+        printCapabilitySummary(out, finalCapabilities, finalDisplayName);
       }
       out.newline();
-      out.print('Next steps:');
-      out.print(
-        '  podkit collection add -t music -c <name> --path <path>   # Add your music library'
-      );
-      out.print(`  podkit sync                    # Sync to this device`);
+      out.print(`Done. Try: podkit sync -d ${name} --dry-run`);
     }
   );
 }

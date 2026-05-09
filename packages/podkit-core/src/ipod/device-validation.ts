@@ -136,17 +136,18 @@ function buildUnsupportedIssue(generation: IpodGeneration): DeviceIssue {
 
 /**
  * Build an issue for an unknown model.
+ *
+ * The remediation steers users at the canonical repair command rather than at
+ * hand-editing SysInfo: `podkit doctor --repair sysinfo-extended` reads the
+ * device's identity from firmware via SCSI/USB inquiry and writes the
+ * authoritative SysInfoExtended file, which libgpod prefers over SysInfo.
  */
-function buildUnknownModelIssue(mountPoint?: string): DeviceIssue {
-  const sysInfoPath = mountPoint
-    ? `${mountPoint}/iPod_Control/Device/SysInfo`
-    : 'iPod_Control/Device/SysInfo';
-
+function buildUnknownModelIssue(_mountPoint?: string): DeviceIssue {
   return {
     type: 'unknown_model',
     message:
-      'Could not identify iPod model. The device will be treated as a generic iPod, which may cause issues with artwork format or database compatibility.',
-    suggestion: `Ensure ${sysInfoPath} exists with your model number (e.g., "ModelNumStr: MA147"). See: ${DOCS_URL}`,
+      'Could not identify iPod model from the on-disk identity files. The device will be treated as a generic iPod, which may affect artwork format or database compatibility.',
+    suggestion: `Run \`podkit doctor --repair sysinfo-extended\` to read the device identity from firmware. See: ${DOCS_URL}`,
   };
 }
 

@@ -5,7 +5,7 @@ status: In Progress
 assignee:
   - james
 created_date: '2026-05-08 08:13'
-updated_date: '2026-05-09 12:34'
+updated_date: '2026-05-09 13:39'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -135,17 +135,17 @@ Update `documents/test-devices.md` for each device row:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
-- [x] #2 #2 `device add` auto-detect picks iPod path correctly for each.
-- [x] #3 #3 `doctor --repair sysinfo-extended` succeeds on all 5.
-- [x] #4 #4 `sync --dry-run` produces a coherent plan on all 5.
-- [ ] #5 #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
-- [ ] #6 #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
-- [ ] #7 #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
-- [ ] #8 #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
-- [ ] #9 #9 §6 multi-device enumeration deterministic.
-- [ ] #10 #10 §7 standalone binary works.
-- [ ] #11 #11 `documents/test-devices.md` updated with results.
+- [ ] #1 #1 #1 All 5 iPod routines (§1) completed; XML matches fixtures modulo crypto blob.
+- [x] #2 #2 #2 `device add` auto-detect picks iPod path correctly for each.
+- [x] #3 #3 #3 `doctor --repair sysinfo-extended` succeeds on all 5.
+- [x] #4 #4 #4 `sync --dry-run` produces a coherent plan on all 5.
+- [ ] #5 #5 #5 §2 performance numbers recorded; no >2x regression vs P1 baseline.
+- [x] #6 #6 #6 §3 edge cases: stale + corrupted + eject-mid-inquiry all handled gracefully (no crashes; clear messages).
+- [ ] #7 #7 #7 §4 Echo Mini auto-detect verified (or flagged as "no hardware available").
+- [ ] #8 #8 #8 §5 unsupported-device message verified on real iOS hardware (or flagged).
+- [ ] #9 #9 #9 §6 multi-device enumeration deterministic.
+- [ ] #10 #10 #10 §7 standalone binary works.
+- [ ] #11 #11 #11 `documents/test-devices.md` updated with results.
 
 ## Time estimate
 
@@ -206,7 +206,15 @@ UX issue (§1C): `podkit device remove <name>` fails with 'too many arguments fo
 UX issue (§1D, post-fix): SysInfo identity display regresses when SysInfoExtended is written. Pre-write: `✓ SysInfo    iPod mini 4GB Pink (2nd Generation) (P9804)`. Post-write: `✓ SysInfo    Unknown iPod`. The model resolver appears to prefer the SysInfoExtended-derived serial suffix (`S4G` — not in lookup table; mini 2G predates Apple's serial-to-model mapping) over the SysInfo-derived ModelNumStr (`P9804` — present in the lookup table). For pre-2006 iPods that have a populated SysInfo, the resolver should prefer (or fall back to) the ModelNumStr path. Doesn't affect functionality, only display. Captured on iPod mini 2G with serial JQ5141TFS4G.
 
 §1 mini 2G routine complete. All steps A–H executed. Highlights: (E) doctor --repair sysinfo-extended succeeded post-fix in ~2.7s wall — mostly USB stall timeout before SCSI fallback fires. (F) Written XML matches `documents/sysinfo-captures/mini-2g.xml` byte-for-byte (only trailing-newline diff). (G) sync --dry-run correctly applies mini 2G constraints: 4,360 tracks transcoding to AAC, video skipped, space warning surfaced. (H) Eject clean.
+
+UX issue (§3a): `doctor` correctly detects FireWireGUID mismatch via `sysinfo-consistency` check ('SysInfoExtended disagrees with live device: FireWireGUID mismatch (on-disk DEADBEEFDEADBEEF, live 000A270014198517)'). However: (1) The user-facing explanation text under the failure is wrong — it reads 'The artwork database is out of sync with the thumbnail files. Affected tracks display wrong or missing artwork on the iPod.' That belongs to the artwork-integrity check, not sysinfo-consistency. Wires crossed in the description map. (2) The suggested repair `podkit doctor --repair sysinfo-consistency -d <name>` reports success ('SysInfoExtended already present — iPod mini 4GB Pink (2nd Generation)'; 'Repair complete') but the on-disk file is unchanged — still contains the stale `DEADBEEFDEADBEEF`. The repair short-circuits on `ensureSysInfoExtended`'s file-already-present early return without re-validating consistency. Either `ensureSysInfoExtended` must re-check FireWireGUID against the live device when the file is already present, OR the consistency repair must explicitly delete the file before invoking ensureSysInfoExtended. The user lands on a false 'fix-complete' state with a still-broken file.
+
+UX issue (§3b): doctor handles a truncated/corrupted SysInfoExtended gracefully — no crash, falls back to classic SysInfo for identity, reports `✗ SysInfoExtended consistency with device — SysInfoExtended present but XML failed to parse`. However: (1) libxml2 parser errors leak to stderr TWICE before the doctor output: `parser error : Premature end of data in tag key line 24 / <key>Max / ^`. The native parser is being called twice (probably once per consumer of the XML — readSysInfoExtended + sysinfo-consistency check), and each call writes to stderr directly, bypassing podkit's output sinks. Should suppress or capture the libxml2 stderr at the call boundary. (2) The status line says `SysInfoExtended: not present` even though the file IS on disk — it's the parse that failed. More accurate: `SysInfoExtended: present but unparseable`. (3) Same misleading `The artwork database is out of sync...` follow-up explanation as §3a.
+
+§3c (eject mid-inquiry): partial coverage on mini 2G. Early yank (cable out before inquiry begins) → clean error 'Device with UUID ... not found. Is it connected?' — informative, no zombie. Late yank (after inquiry completes) → repair succeeds normally. Exact mid-inquiry yank window on mini 2G is too tight (≤2s combined USB stall + SCSI read) to reliably hit. Defer the precise mid-inquiry timing test to iPod 5G (TERAPOD) which has 9693 bytes of SysInfoExtended — longer SCSI read, larger yank window.
 <!-- SECTION:NOTES:END -->
+
+<!-- AC:END -->
 
 <!-- AC:END -->
 

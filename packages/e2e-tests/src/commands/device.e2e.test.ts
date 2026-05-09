@@ -43,7 +43,7 @@ describe('podkit device add', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('added to config');
+        expect(result.stdout).toContain('Added to config');
 
         // Verify config was updated
         const config = await readFile(configPath, 'utf-8');
@@ -156,10 +156,12 @@ volumeName = "test"
   });
 
   describe('SysInfoExtended', () => {
-    it('attempts SysInfoExtended read when neither identity file is present', async () => {
+    it('persists the device even when both identity files are absent and USB is unreachable', async () => {
       await withTarget(async (target) => {
-        // Remove BOTH identity files so the SysInfoExtended attempt fires.
-        // If either file is present, the device-add flow correctly skips.
+        // Remove BOTH identity files so cascade has nothing on disk.
+        // The test target has no real USB connection, so the firmware-inquiry
+        // assessment lands in `unwritable` state — device-add proceeds anyway
+        // with cascade-derived (empty) identity rather than blocking.
         const deviceDir = join(target.path, 'iPod_Control', 'Device');
         for (const file of ['SysInfo', 'SysInfoExtended']) {
           try {
@@ -176,7 +178,6 @@ volumeName = "test"
           configPath,
           '--device',
           'testipod',
-          '-vv',
           'device',
           'add',
           '--path',
@@ -185,12 +186,7 @@ volumeName = "test"
         ]);
 
         expect(result.exitCode).toBe(0);
-        expect(result.stdout).toContain('added to config');
-
-        // Verify the SysInfoExtended code path was entered — verbose output
-        // should mention SysInfoExtended (USB resolution fails gracefully on
-        // the test target since there's no real USB device).
-        expect(result.stdout).toContain('SysInfoExtended');
+        expect(result.stdout).toContain('Added to config');
       });
     });
   });
@@ -221,7 +217,7 @@ volumeName = "test"
 
       expect(result.exitCode).toBe(0);
       expect(result.stdout).toContain('Initializing iPod database');
-      expect(result.stdout).toContain('added to config');
+      expect(result.stdout).toContain('Added to config');
 
       // Verify database was created
       await access(join(uninitDir, 'iPod_Control', 'iTunes', 'iTunesDB'));

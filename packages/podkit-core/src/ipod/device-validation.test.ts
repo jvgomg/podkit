@@ -116,12 +116,7 @@ describe('validateDevice', () => {
     const issue = firstIssue({ generation: 'unknown' });
     expect(issue.type).toBe('unknown_model');
     expect(issue.message).toContain('Could not identify');
-    expect(issue.suggestion).toContain('SysInfo');
-  });
-
-  it('includes mount point in unknown model suggestion', () => {
-    const issue = firstIssue({ generation: 'unknown' }, '/Volumes/IPOD');
-    expect(issue.suggestion).toContain('/Volumes/IPOD/iPod_Control/Device/SysInfo');
+    expect(issue.suggestion).toContain('podkit doctor --repair sysinfo-extended');
   });
 
   it('builds capability summary', () => {

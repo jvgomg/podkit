@@ -2356,6 +2356,19 @@ export async function ensureSysInfoExtended(
   return { present: false, source: 'unavailable', error: 'Not available in demo mode' };
 }
 
+export async function assessIpodIdentity(_mountPoint: string, _opts?: any): Promise<any> {
+  return {
+    model: null,
+    capabilities: null,
+    needsChecksum: false,
+    checksumType: undefined,
+    firmwareInquiry: 'unwritable',
+    existing: null,
+    usbFingerprint: null,
+    sysInfoModelNumber: undefined,
+  };
+}
+
 export const SYSINFO_PATH = 'iPod_Control/Device/SysInfo';
 export const SYSINFO_EXTENDED_PATH = 'iPod_Control/Device/SysInfoExtended';
 export const SYSINFO_DEVICE_DIR = 'iPod_Control/Device';

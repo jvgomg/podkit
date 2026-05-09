@@ -18,6 +18,13 @@ import { enumerateConnectedDevices } from '@podkit/core';
 import type { UsbDiscoveredDevice, DeviceManager } from '@podkit/core';
 import { runDeviceAdd, type DeviceAddDeps } from './device.js';
 import { OutputContext } from '../output/index.js';
+import type {
+  IpodIdentityAssessment,
+  IpodModel,
+  DeviceCapabilities,
+  SysInfoExtendedResult,
+  CompleteUsbDevice,
+} from '@podkit/core';
 import { runWithContext, type CliContext } from '../context.js';
 import { runAction } from '../errors.js';
 import { BufferSink } from '../test-utils/buffer-sink.js';
@@ -507,5 +514,302 @@ describe('enumerateConnectedDevices with real providers and mocked USB walk (AC 
       expect(identity.presetId).toBe('echo-mini');
       expect(identity.serialNumber).toBe('MY-ECHO-123');
     }
+  });
+});
+
+// =============================================================================
+// runDeviceAdd: cascade-resolved identity + single combined prompt (nano 2G case)
+// =============================================================================
+
+const NANO_2G_USB: CompleteUsbDevice = {
+  vendorId: '05ac',
+  productId: '1260',
+  serialNumber: 'YM7275YSVQH',
+  bus: 20,
+  devnum: 5,
+};
+
+const NANO_2G_MODEL: IpodModel = {
+  displayName: 'iPod nano (2nd Generation)',
+  generationId: 'nano_2g',
+  checksumType: 'none',
+  source: 'usb',
+};
+
+const NANO_2G_CAPS: DeviceCapabilities = {
+  artworkSources: ['database'],
+  artworkMaxResolution: 176,
+  supportedAudioCodecs: ['aac', 'mp3'],
+  supportsVideo: false,
+  audioNormalization: 'soundcheck',
+  supportsAlbumArtistBrowsing: false,
+};
+
+function makeNano2GAssessment(
+  opts: {
+    firmwareInquiry?: 'present' | 'missing' | 'unwritable';
+  } = {}
+): IpodIdentityAssessment {
+  return {
+    model: NANO_2G_MODEL,
+    capabilities: NANO_2G_CAPS,
+    needsChecksum: false,
+    checksumType: 'none',
+    firmwareInquiry: opts.firmwareInquiry ?? 'missing',
+    existing: null,
+    usbFingerprint: opts.firmwareInquiry === 'unwritable' ? null : NANO_2G_USB,
+    sysInfoModelNumber: undefined,
+  };
+}
+
+const FAKE_IPOD_DB: NonNullable<DeviceAddDeps['ipodDatabase']> = {
+  hasDatabase: async () => true,
+  open: async () => ({ trackCount: 63, close: () => {} }),
+  initializeIpod: async () => ({ close: () => {} }),
+};
+
+interface AddOutputSuccess {
+  success: true;
+  device: { name: string; modelName: string; trackCount: number };
+  saved: boolean;
+  initialized?: boolean;
+  isDefault: boolean;
+}
+
+describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
+  let originalExitCode: typeof process.exitCode;
+  let tempDir: string;
+  let tempConfig: string;
+
+  beforeEach(async () => {
+    originalExitCode = process.exitCode;
+    process.exitCode = 0;
+    tempDir = await mkdtemp(join(tmpdir(), 'device-add-slick-'));
+    tempConfig = join(tempDir, 'config.toml');
+  });
+
+  afterEach(async () => {
+    process.exitCode = originalExitCode;
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  it('cascade-resolves nano 2G via USB and offers a single combined prompt', async () => {
+    const ctx = makeContext({ device: 'nano2g', json: true, configPath: tempConfig });
+    const { out, stdout } = makeOut(true);
+
+    let writeCalled = false;
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'disk6s2',
+              volumeName: 'PARTY IPOD',
+              volumeUuid: 'NANO-2G-UUID',
+              size: 4_000_000_000,
+              isMounted: true,
+              mountPoint: '/Volumes/PARTY IPOD',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
+      ensureSysInfoExtended: async () => {
+        writeCalled = true;
+        return {
+          present: true,
+          source: 'usb-read',
+          identity: {
+            firewireGuid: '000A27001A0647CB',
+            serialNumber: 'YM7275YSVQH',
+          },
+          firewireGuid: '000A27001A0647CB',
+          serialNumber: 'YM7275YSVQH',
+        } as SysInfoExtendedResult;
+      },
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    // --yes triggers the slick path automatically (write SysInfoExtended + save).
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+
+    expect(process.exitCode).toBe(0);
+    const result = stdout.json<AddOutputSuccess>();
+    expect(result.success).toBe(true);
+    // Cascade-resolved display name (not libgpod's "Invalid").
+    expect(result.device.modelName).toContain('nano (2nd Generation)');
+    expect(result.device.trackCount).toBe(63);
+    // SysInfoExtended write fired in --yes mode.
+    expect(writeCalled).toBe(true);
+  });
+
+  it('writes SysInfoExtended under --yes (default slick-path behaviour)', async () => {
+    const ctx = makeContext({ device: 'nano2g', json: true, configPath: tempConfig });
+    const { out } = makeOut(true);
+
+    let writeCalled = false;
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'disk6s2',
+              volumeName: 'PARTY IPOD',
+              volumeUuid: 'NANO-2G-UUID',
+              size: 4_000_000_000,
+              isMounted: true,
+              mountPoint: '/Volumes/PARTY IPOD',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
+      ensureSysInfoExtended: async () => {
+        writeCalled = true;
+        return {
+          present: true,
+          source: 'usb-read',
+          identity: {
+            firewireGuid: '000A27001A0647CB',
+            serialNumber: 'YM7275YSVQH',
+          },
+        } as SysInfoExtendedResult;
+      },
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    expect(writeCalled).toBe(true);
+  });
+
+  it('skips SysInfoExtended write under --no-firmware-inquiry', async () => {
+    const ctx = makeContext({ device: 'nano2g', json: true, configPath: tempConfig });
+    const { out, stdout } = makeOut(true);
+
+    let writeCalled = false;
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'disk6s2',
+              volumeName: 'PARTY IPOD',
+              volumeUuid: 'NANO-2G-UUID',
+              size: 4_000_000_000,
+              isMounted: true,
+              mountPoint: '/Volumes/PARTY IPOD',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
+      ensureSysInfoExtended: async () => {
+        writeCalled = true;
+        return { present: false, source: 'unavailable', identity: {} } as SysInfoExtendedResult;
+      },
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(
+      ctx,
+      // commander's `--no-firmware-inquiry` parses to `firmwareInquiry: false`.
+      { type: 'ipod', yes: true, firmwareInquiry: false },
+      out,
+      deps
+    );
+    expect(writeCalled).toBe(false);
+    const result = stdout.json<AddOutputSuccess>();
+    expect(result.success).toBe(true);
+    // Identity still cascade-resolved even without firmware write.
+    expect(result.device.modelName).toContain('nano (2nd Generation)');
+  });
+
+  it('--path branch: cascade-resolves identity and writes SysInfoExtended', async () => {
+    const mountDir = await mkdtemp(join(tmpdir(), 'nano2g-mount-'));
+    try {
+      const ctx = makeContext({ device: 'nano2gpath', json: true, configPath: tempConfig });
+      const { out, stdout } = makeOut(true);
+
+      let writeCalled = false;
+      const deps: DeviceAddDeps = {
+        // Path branch only consults manager for volumeUuid lookup; isSupported=true triggers it.
+        getDeviceManager: () =>
+          fakeManager({
+            isSupported: true,
+            findIpodDevices: async () => [],
+          }),
+        assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
+        ensureSysInfoExtended: async () => {
+          writeCalled = true;
+          return {
+            present: true,
+            source: 'usb-read',
+            identity: {
+              firewireGuid: '000A27001A0647CB',
+              serialNumber: 'YM7275YSVQH',
+            },
+          } as SysInfoExtendedResult;
+        },
+        ipodDatabase: FAKE_IPOD_DB,
+      };
+
+      await runAdd(ctx, { type: 'ipod', yes: true, path: mountDir }, out, deps);
+
+      expect(process.exitCode).toBe(0);
+      const result = stdout.json<AddOutputSuccess>();
+      expect(result.success).toBe(true);
+      expect(result.device.modelName).toContain('nano (2nd Generation)');
+      expect(writeCalled).toBe(true);
+    } finally {
+      await rm(mountDir, { recursive: true, force: true });
+    }
+  });
+
+  it('blocks add when cascade reveals an unsupported generation', async () => {
+    const ctx = makeContext({ device: 'd', json: true, configPath: tempConfig });
+    const { out, stdout } = makeOut(true);
+
+    const unsupportedAssessment: IpodIdentityAssessment = {
+      model: {
+        displayName: 'iPod touch (1st Generation)',
+        generationId: 'touch_1g',
+        checksumType: 'none',
+        source: 'usb',
+        notSupportedReason:
+          'iPod touch (1st Generation) is not supported by podkit (libgpod cannot sync this generation).',
+      },
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'missing',
+      existing: null,
+      usbFingerprint: NANO_2G_USB,
+      sysInfoModelNumber: undefined,
+    };
+
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'disk1s2',
+              volumeName: 'TOUCH',
+              volumeUuid: 'TOUCH-UUID',
+              size: 0,
+              isMounted: true,
+              mountPoint: '/Volumes/TOUCH',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => unsupportedAssessment,
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    expect(process.exitCode).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.code).toBe('UNSUPPORTED_DEVICE');
+    expect(err.error).toContain('not supported');
   });
 });
