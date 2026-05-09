@@ -125,7 +125,9 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   // Stage 6: Has Database
   let trackCount: number | undefined;
   try {
-    const dbResult = await checkDatabase(device.mountPoint);
+    const dbResult = await checkDatabase(
+      input.ipod ? { ipod: input.ipod } : { mountPoint: device.mountPoint }
+    );
     stages.push(dbResult);
     trackCount = dbResult.trackCount;
   } catch (error) {

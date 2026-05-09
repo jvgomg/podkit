@@ -360,7 +360,7 @@ describe('checkDatabase', () => {
 
   it('fails when iTunesDB does not exist', async () => {
     createIpodStructure(tmpDir);
-    const result = await checkDatabase(tmpDir);
+    const result = await checkDatabase({ mountPoint: tmpDir });
     expect(result.status).toBe('fail');
     expect(result.summary).toContain('not found');
     expect(result.details?.exists).toBe(false);
@@ -370,7 +370,7 @@ describe('checkDatabase', () => {
     createIpodStructure(tmpDir);
     const dbPath = path.join(tmpDir, 'iPod_Control', 'iTunes', 'iTunesDB');
     fs.writeFileSync(dbPath, 'not a valid database');
-    const result = await checkDatabase(tmpDir);
+    const result = await checkDatabase({ mountPoint: tmpDir });
     expect(result.status).toBe('fail');
     expect(result.details?.exists).toBe(true);
   });
@@ -600,7 +600,7 @@ describe('checkReadiness', () => {
 
     it('checkDatabase is callable independently', async () => {
       createIpodStructure(tmpDir);
-      const result = await checkDatabase(tmpDir);
+      const result = await checkDatabase({ mountPoint: tmpDir });
       expect(result.stage).toBe('database');
       // No actual iTunesDB → fail
       expect(result.status).toBe('fail');

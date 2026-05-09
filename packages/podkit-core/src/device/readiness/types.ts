@@ -43,6 +43,7 @@ export interface ReadinessResult {
 import type { PlatformDeviceInfo } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import type { UsbFingerprint } from '@podkit/device-types';
+import type { IpodDatabase } from '../../ipod/database.js';
 
 export interface ReadinessInput {
   device: PlatformDeviceInfo;
@@ -51,6 +52,12 @@ export interface ReadinessInput {
   usbConnection?: UsbFingerprint;
   /** iPod model from USB discovery */
   usbModel?: IpodModel;
+  /**
+   * Pre-opened iPod database. Skips the redundant libgpod open in the
+   * `database` stage when the caller already has a handle. Caller owns
+   * the handle's lifecycle — readiness will not close it.
+   */
+  ipod?: IpodDatabase;
 }
 
 // ── SysInfo check result ─────────────────────────────────────────────────────
