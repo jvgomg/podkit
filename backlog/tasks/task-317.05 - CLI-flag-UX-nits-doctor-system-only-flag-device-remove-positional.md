@@ -4,6 +4,7 @@ title: 'CLI flag UX nits: doctor system-only flag + device remove positional'
 status: To Do
 assignee: []
 created_date: '2026-05-09 15:21'
+updated_date: '2026-05-09 20:29'
 labels:
   - cli
   - ux
@@ -49,3 +50,9 @@ See AC list. No real-hardware verification needed; CLI-only changes verified via
 - [ ] #5 `podkit doctor --help` and `podkit device remove --help` reflect the new behavior.
 - [ ] #6 No real-hardware verification required; mark this AC as 'N/A — CLI-only change'.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Linux reproduction of Bug 2 confirmed on linka (2026-05-09) during TASK-313: `podkit device add --path /media/james/disk` errors with `Missing required --device flag. Usage: podkit device add -d <name>` — same wording, same omission of the `-d` hint as the macOS reproduction. So the fix lands cross-platform: same code path. No additional Linux-specific work needed.
+<!-- SECTION:NOTES:END -->
