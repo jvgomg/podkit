@@ -357,28 +357,41 @@ describe('runCollectionVideo', () => {
     await rm(emptyDir, { recursive: true, force: true });
   });
 
-  it.skipIf(!videoFixturesExist)('scans for video files and prints a Title column', async () => {
-    const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
-    const { out, stdout } = makeOut();
-    await runVideo(ctx, { tracks: true, format: 'table' }, out);
-    expect(process.exitCode).toBe(0);
-    expect(stdout.text()).toContain('Title');
-  });
+  // Video tests spawn ffprobe per fixture file; under parallel integration-test
+  // pressure (libgpod + ffmpeg in sibling suites) the default 5s timeout is too
+  // tight. Probe runs in ~300ms in isolation, ~3-4s under load.
+  const VIDEO_PROBE_TIMEOUT_MS = 30000;
 
-  it.skipIf(!videoFixturesExist)('returns video metadata in JSON', async () => {
-    const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
-    const { out, stdout } = makeOut();
-    await runVideo(ctx, { tracks: true, format: 'json' }, out);
-    expect(process.exitCode).toBe(0);
-    const videos =
-      stdout.json<Array<{ title: string; duration: number; durationFormatted: string }>>();
-    expect(videos.length).toBeGreaterThan(0);
-    for (const v of videos) {
-      expect(v).toHaveProperty('title');
-      expect(typeof v.duration).toBe('number');
-      expect(v.durationFormatted).toMatch(/^\d+:\d{2}$/);
-    }
-  });
+  it.skipIf(!videoFixturesExist)(
+    'scans for video files and prints a Title column',
+    async () => {
+      const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
+      const { out, stdout } = makeOut();
+      await runVideo(ctx, { tracks: true, format: 'table' }, out);
+      expect(process.exitCode).toBe(0);
+      expect(stdout.text()).toContain('Title');
+    },
+    VIDEO_PROBE_TIMEOUT_MS
+  );
+
+  it.skipIf(!videoFixturesExist)(
+    'returns video metadata in JSON',
+    async () => {
+      const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
+      const { out, stdout } = makeOut();
+      await runVideo(ctx, { tracks: true, format: 'json' }, out);
+      expect(process.exitCode).toBe(0);
+      const videos =
+        stdout.json<Array<{ title: string; duration: number; durationFormatted: string }>>();
+      expect(videos.length).toBeGreaterThan(0);
+      for (const v of videos) {
+        expect(v).toHaveProperty('title');
+        expect(typeof v.duration).toBe('number');
+        expect(v.durationFormatted).toMatch(/^\d+:\d{2}$/);
+      }
+    },
+    VIDEO_PROBE_TIMEOUT_MS
+  );
 
   it('handles an empty directory by reporting "No tracks found"', async () => {
     const ctx = makeContext(videoConfig(emptyDir));
