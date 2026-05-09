@@ -17,7 +17,7 @@
     "share"
   ],
   "scripts": {
-    "build": "bun build src/main.ts --outdir dist --target node --external koffi --external usb --define PODKIT_VERSION=\"'$(jq -r .version package.json)'\" && bun run build:types",
+    "build": "bun build src/main.ts --outdir dist --target node --external koffi --external usb --define PODKIT_VERSION=\"'$(node -p \"require('./package.json').version\")'\" && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
     "dev": "bun run src/main.ts",
     "test": "true",

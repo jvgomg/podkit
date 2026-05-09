@@ -121,6 +121,7 @@ pkg-config --modversion libgpod-1.0
 # Install system dependencies
 sudo apt update
 sudo apt install -y \
+    build-essential \
     libgpod-dev \
     ffmpeg \
     libglib2.0-dev \
