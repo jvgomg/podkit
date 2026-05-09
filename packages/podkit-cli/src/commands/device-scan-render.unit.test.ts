@@ -19,6 +19,16 @@ import {
 import type { EnumeratedUsbDevice, ReadinessResult, ReadinessStageResult } from '@podkit/core';
 import { renderDeviceScan, type DeviceScanInput } from './device-scan-render.js';
 
+// Strip ANSI escape sequences so substring assertions don't break depending on
+// whether the test runner inherits a TTY (which toggles the renderer's `bold()`
+// helper). Without this, assertions that span a bold boundary (e.g.
+// "Unknown iPod" + " (USB only)") fail under a TTY because `\x1b[0m` lands
+// between the two halves.
+function stripAnsi(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/\x1b\[[0-9;]*m/g, '');
+}
+
 // ── Fake injectables ─────────────────────────────────────────────────────────
 
 /**
@@ -250,7 +260,7 @@ describe('renderDeviceScan', () => {
         supported: true,
       };
       const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
-      expect(lines.join('\n')).toContain('Unknown iPod (USB only)');
+      expect(stripAnsi(lines.join('\n'))).toContain('Unknown iPod (USB only)');
     });
   });
 });
