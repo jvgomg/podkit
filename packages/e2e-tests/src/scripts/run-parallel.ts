@@ -24,9 +24,13 @@ import { glob } from 'node:fs';
 
 const args = process.argv.slice(2);
 let concurrency = parseInt(process.env.E2E_CONCURRENCY ?? '4', 10);
-// E2E tests spawn CLI processes and run system commands that can take several
-// seconds — use a longer per-test timeout than bun's 5 s default.
-let timeout = parseInt(process.env.E2E_TIMEOUT ?? '15000', 10);
+// E2E tests spawn CLI processes (libgpod, diskutil, ffmpeg) that can take
+// several seconds — use a longer per-test timeout than bun's 5 s default.
+// 30s buffers against parallel-test pressure (concurrency=4 default) where
+// macOS serializes diskutil and the libuv thread pool saturates with libgpod
+// N-API calls. Tests that genuinely hang are still caught by the per-test
+// runCli timeout (see helpers/cli-runner.ts).
+let timeout = parseInt(process.env.E2E_TIMEOUT ?? '30000', 10);
 let bail = false;
 const pathFilters: string[] = [];
 
