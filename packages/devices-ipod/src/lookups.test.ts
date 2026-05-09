@@ -224,6 +224,16 @@ describe('lookupBySerial', () => {
     expect(variant!.displayName).toBe('iPod mini 4GB Pink (2nd Generation)');
   });
 
+  test('returns variant for nano 7G 16GB Blue (real hardware: serial DCYL44J8F0GP)', () => {
+    const variant = lookupBySerial('0GP');
+    expect(variant).toBeDefined();
+    expect(variant!.modelNumber).toBe('D477');
+    expect(variant!.generation).toBe('nano_7g');
+    expect(variant!.capacityGb).toBe(16);
+    expect(variant!.color).toBe('Blue');
+    expect(variant!.displayName).toBe('iPod nano 16GB Blue (7th Generation)');
+  });
+
   test('is case-insensitive', () => {
     const upper = lookupBySerial('YXX');
     const lower = lookupBySerial('yxx');

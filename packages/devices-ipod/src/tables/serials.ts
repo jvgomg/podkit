@@ -330,6 +330,8 @@ export const SERIAL_TO_MODEL: Record<string, string> = {
   // Mapped to E971 (2013 Space Gray). Could be KN52 (2015 Space Gray) —
   // both are 16GB Space Gray nano 7G, identical capabilities.
   JQ1: 'E971',
+  // Source: real hardware — serial DCYL44J8F0GP, device is Blue.
+  '0GP': 'D477',
 };
 
 // Duplicate-suffix handling: libgpod's C array has duplicate keys where "last wins".

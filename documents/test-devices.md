@@ -2,7 +2,7 @@
 
 Hardware iPods available for testing podkit's device identification and sync functionality. This document is updated as devices are tested and new data is captured.
 
-Last updated: 2026-05-02 (all 5 devices inventoried)
+Last updated: 2026-05-09 (TASK-312 sweep — 7 iPod inventory; nano 3G + nano 7G Blue added)
 
 ## Device Collection
 
@@ -37,6 +37,39 @@ Last updated: 2026-05-02 (all 5 devices inventoried)
 **SysInfoExtended highlights:** Audio codecs (AAC, MP3, ALAC, AIFF, WAV). Artwork: 176x132 (format 1023), 41x37 (format 1032). Album art: 42x42 (format 1031), 100x100 (format 1027). No video codec support. 32MB RAM.
 
 **XML capture:** `documents/sysinfo-captures/nano-2g-4gb-green.xml`
+
+---
+
+### iPod nano 3rd Generation (8GB Black)
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | IPOD | Filesystem |
+| USB Product ID | `0x1262` | USB enumeration |
+| Generation | nano_3g | ipod-models.ts lookup |
+| Apple serial | `XXXXXXXXEED6` | SysInfoExtended |
+| FireWire GUID | `000A27001BC8EED6` | USB serial descriptor |
+| FamilyID | (TBD) | SysInfoExtended |
+| Volume format | FAT32 | Filesystem |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-09):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Product ID, serial, vendor |
+| Filesystem identity | Partial | SysInfo is 0 bytes (post-2006); SysInfoExtended initially absent — written via repair. |
+| SCSI inquiry | Not tested separately | USB success short-circuited the cascade. |
+| USB inquiry | **Works** | 12,131 bytes XML. **No per-read crypto blob** — content byte-stable across reads. |
+| libgpod identification | N/A | Cascade now derives identity from firmware inquiry, not libgpod. |
+
+**KEY FINDING — USB inquiry boundary:** nano 3G supports USB inquiry. This refines the prior research summary ("USB preferred for 5G+") — pre-5G iPod 5G fails, but nano 3G (post-iPod 5G) succeeds. The boundary is between iPod 5G and nano 3G, not between iPod 5G and nano 4G.
+
+**SysInfoExtended highlights:** Audio + video codec support. Artwork formats 1055/1060/1061. ~63% the size of nano 4G's SIE (12,131 vs 14,297 bytes).
+
+**XML capture:** `documents/sysinfo-captures/nano-3g-8gb-black.xml`
+
+**Repair timing:** ~2.28s wall-clock (single run, name-mode). USB success path. Note: comparable wall-clock to SCSI-fallback iPods (~2.3s) — name-mode `findIpodDevices` discovery dominates the timing, not the firmware transport.
 
 ---
 
@@ -111,6 +144,42 @@ Last updated: 2026-05-02 (all 5 devices inventoried)
 **Notes:** Post-libgpod generation. Serial suffix FJQ1 not in podkit's serial-to-model table — nano 7G models are likely missing from the serial suffix mapping. Bluetooth directory present in Device folder. 64MB RAM (double the nano 4G).
 
 **XML captures:** `documents/sysinfo-captures/nano-7g-16gb-scsi.xml`, `documents/sysinfo-captures/nano-7g-16gb-usb.xml`
+
+---
+
+### iPod nano 7th Generation #2 (16GB Blue)
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | iPod (lowercase) | Filesystem |
+| USB Product ID | `0x1267` | USB enumeration |
+| Generation | nano_7g | ipod-models.ts lookup |
+| Model number | D477 | Serial suffix lookup (0GP — added this session) |
+| Display name | iPod nano 16GB Blue (7th Generation) | Serial suffix lookup |
+| Capacity | 16 GB | USB enumeration / diskutil |
+| Checksum type | hashAB | Generation table |
+| FireWire GUID | `000A270024565D97` | USB serial descriptor |
+| Apple serial | `DCYL44J8F0GP` | SysInfoExtended (firmware inquiry) |
+| FamilyID | 18 | SysInfoExtended |
+| Volume format | **HFS+** (Journaled) | Filesystem (different from #1's FAT32) |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-09):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Product ID, serial, vendor |
+| Filesystem identity | Fails | No SysInfo, no SysInfoExtended on disk in fresh state. |
+| SCSI inquiry | Not tested (USB short-circuit) | |
+| USB inquiry | **Works** | 47,000 bytes XML — same payload size as nano 7G #1. |
+| `device add` | **Refused** | New safety gate refuses unsupported generations (hashAB). User direction: should warn-but-allow (queued as backlog). |
+| `doctor --repair sysinfo-extended` | Fails on fresh device | "Failed to open database: Couldn't find an iPod database" — chicken-and-egg gating. Worked around via direct firmware probe. |
+
+**Serial-suffix lookup table addition (this session):** `0GP: 'D477'` added to `tables/serials.ts`. Variant resolved as "iPod nano 16GB Blue (7th Generation)".
+
+**Diff vs nano 7G #1 (Space Gray):** Per-read crypto blob, FireWireGUID, Apple serial, volume format (HFS+ vs FAT32). Otherwise content-identical — confirms nano 7G data structure consistency across units.
+
+**XML capture:** `documents/sysinfo-captures/nano-7g-16gb-blue-usb.xml`
 
 ---
 
@@ -214,9 +283,9 @@ The USB product ID 0x1209 is shared across Video 5G, 5.5G, and Classic 6G — po
 | Method | Working | Failing |
 |--------|---------|---------|
 | SCSI inquiry | nano 2G, nano 4G, nano 7G, mini 2G, iPod 5.5G | (none in collection) |
-| USB inquiry | nano 4G, nano 7G | nano 2G, mini 2G, iPod 5.5G |
+| USB inquiry | **nano 3G**, nano 4G, nano 7G | nano 2G, mini 2G, iPod 5.5G |
 
-SCSI inquiry works on all 5 devices. USB inquiry works on the two newer devices (nano 4G, 7G) and fails on the three older ones.
+SCSI inquiry works on all 6 supported devices. USB inquiry works on **nano 3G + nano 4G + nano 7G** and fails on the three older ones (nano 2G, mini 2G, iPod 5.5G). The boundary sits between iPod 5.5G (USB fails) and nano 3G (USB works) — refined this session from the prior assumption that USB started at nano 4G.
 
 ### USB product ID bugs discovered
 
@@ -229,15 +298,17 @@ SCSI inquiry works on all 5 devices. USB inquiry works on the two newer devices 
 
 - **No hash72 device.** The nano 5G is the only generation using hash72 checksums.
 - **No iPod Classic 6G.** Uses hash58 but is a distinct hardware platform.
-- **No nano 3G.** Would confirm USB inquiry lower boundary.
 - **No nano 1G.** Would test oldest nano SCSI support and resolve the 0x1205 product ID ambiguity.
+- **No nano 6G.** Uses hashAB like nano 7G; useful for confirming pre-7G hashAB hardware.
 
 ### What the collection validated
 
 - SCSI inquiry works across the full span: mini 2G (2005) through nano 7G (2012) — 7 years of hardware
-- USB inquiry boundary confirmed: fails on mini 2G, nano 2G, iPod 5.5G; works on nano 4G, nano 7G
+- USB inquiry boundary refined this session: fails on mini 2G, nano 2G, iPod 5.5G; **works on nano 3G**, nano 4G, nano 7G. Boundary sits between iPod 5.5G and nano 3G.
 - USB inquiry returns dramatically more data on nano 7G (14x more than SCSI) — confirms 5G+ extra fields research
 - iFlash hardware modification does not affect firmware inquiry
 - Pre-2006 vs post-2006 SysInfo behaviour confirmed: mini 2G has full SysInfo, all others have empty/absent
-- Serial suffix lookup works for nano 2G, nano 4G, iPod 5.5G; fails for mini 2G and nano 7G (not in table)
-- Identity discrepancies exist when USB product IDs are shared across generations (0x1209, 0x1205)
+- Serial suffix lookup table extended this session: `S4G` → mini 2G 4GB Pink (`9804`); `0GP` → nano 7G 16GB Blue (`D477`). Coverage gaps remain for unmapped suffixes.
+- Identity discrepancies exist when USB product IDs are shared across generations (0x1209 across 5G/5.5G/Classic 6G, 0x1205 between mini 2G and nano 1G)
+- nano 7G's USB-derived SysInfoExtended is byte-stable across reads except for a per-read crypto blob; nano 3G's SIE has no crypto blob and is fully deterministic
+- HFS+ vs FAT32 volume format does not affect firmware inquiry (validated across nano 4G HFS+ + nano 7G #2 HFS+ and nano 2G + nano 7G #1 + others on FAT32)
