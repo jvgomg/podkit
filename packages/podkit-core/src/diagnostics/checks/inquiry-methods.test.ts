@@ -12,15 +12,12 @@ import type { InquiryMethodsAvailability } from '@podkit/ipod-firmware';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-function makeAvailability(
-  scsiAvailable: boolean,
-  usbAvailable: boolean,
-  scsiReason?: string,
-  usbReason?: string
-): InquiryMethodsAvailability {
+function makeAvailability(scsiAvailable: boolean, scsiReason?: string): InquiryMethodsAvailability {
   return {
     scsi: { available: scsiAvailable, ...(scsiReason ? { reason: scsiReason } : {}) },
-    usb: { available: usbAvailable, ...(usbReason ? { reason: usbReason } : {}) },
+    // USB transport is bundled in shipped binaries — not user-actionable, so
+    // the check ignores it. Set to true for realism.
+    usb: { available: true },
   };
 }
 
@@ -43,80 +40,51 @@ describe('inquiryMethodsCheck metadata', () => {
 // ── Status derivation ─────────────────────────────────────────────────────────
 
 describe('checkInquiryMethods', () => {
-  it('pass when both SCSI and USB are available', async () => {
-    const probe = makeProbe(makeAvailability(true, true));
+  it('pass when SCSI is available', async () => {
+    const probe = makeProbe(makeAvailability(true));
     const result = await checkInquiryMethods(probe, 'darwin');
 
     expect(result.status).toBe('pass');
     expect(result.repairable).toBe(false);
   });
 
-  it('warn when only SCSI is available', async () => {
-    const probe = makeProbe(makeAvailability(true, false, undefined, 'libusb not loadable'));
+  it('warn when SCSI is unavailable (USB fallback still works for most devices)', async () => {
+    const probe = makeProbe(makeAvailability(false, 'iPodDriver.kext not present'));
     const result = await checkInquiryMethods(probe, 'darwin');
 
     expect(result.status).toBe('warn');
-    expect(result.repairable).toBe(false);
-  });
-
-  it('warn when only USB is available', async () => {
-    const probe = makeProbe(
-      makeAvailability(false, true, 'iPodDriver.kext not present — SCSI inquiry unavailable')
-    );
-    const result = await checkInquiryMethods(probe, 'darwin');
-
-    expect(result.status).toBe('warn');
-    expect(result.repairable).toBe(false);
-  });
-
-  it('fail when neither is available', async () => {
-    const probe = makeProbe(
-      makeAvailability(
-        false,
-        false,
-        'iPodDriver.kext not present — SCSI inquiry unavailable',
-        'libusb not loadable'
-      )
-    );
-    const result = await checkInquiryMethods(probe, 'darwin');
-
-    expect(result.status).toBe('fail');
     expect(result.repairable).toBe(false);
   });
 
   // ── Summary text by platform ─────────────────────────────────────────────
 
   it('macOS pass: summary mentions iPodDriver.kext', async () => {
-    const probe = makeProbe(makeAvailability(true, true));
+    const probe = makeProbe(makeAvailability(true));
     const result = await checkInquiryMethods(probe, 'darwin');
 
-    expect(result.summary).toContain('iPodDriver.kext present');
-    expect(result.summary).toContain('libusb available');
+    expect(result.summary).toBe('iPodDriver.kext present');
   });
 
   it('macOS warn: summary mentions kext missing', async () => {
     const probe = makeProbe(
-      makeAvailability(false, true, 'iPodDriver.kext not present — SCSI inquiry unavailable')
+      makeAvailability(false, 'iPodDriver.kext not present — SCSI inquiry unavailable')
     );
     const result = await checkInquiryMethods(probe, 'darwin');
 
-    expect(result.summary).toContain('iPodDriver.kext not present');
-    expect(result.summary).toContain('libusb available');
+    expect(result.summary).toBe('iPodDriver.kext not present');
   });
 
   it('Linux pass: summary mentions /dev/sg*', async () => {
-    const probe = makeProbe(makeAvailability(true, true));
+    const probe = makeProbe(makeAvailability(true));
     const result = await checkInquiryMethods(probe, 'linux');
 
-    expect(result.summary).toContain('/dev/sg* present');
-    expect(result.summary).toContain('libusb available');
+    expect(result.summary).toBe('/dev/sg* present');
   });
 
   it('Linux warn: summary mentions permission requirement when sg* not readable', async () => {
     const probe = makeProbe(
       makeAvailability(
         false,
-        true,
         '/dev/sg* present but not readable by current uid (gid plugdev or sudo required)'
       )
     );
@@ -126,32 +94,28 @@ describe('checkInquiryMethods', () => {
     expect(result.summary).toContain('plugdev');
   });
 
-  it('Linux fail: no sg nodes', async () => {
+  it('Linux warn: no sg nodes', async () => {
     const probe = makeProbe(
       makeAvailability(
         false,
-        false,
-        'no /dev/sg* nodes present — SCSI inquiry unavailable (no SCSI generic devices on this system)',
-        'libusb not loadable'
+        'no /dev/sg* nodes present — SCSI inquiry unavailable (no SCSI generic devices on this system)'
       )
     );
     const result = await checkInquiryMethods(probe, 'linux');
 
-    expect(result.status).toBe('fail');
-    expect(result.summary).toContain('no /dev/sg*');
-    expect(result.summary).toContain('libusb unavailable');
+    expect(result.status).toBe('warn');
+    expect(result.summary).toBe('no /dev/sg* nodes');
   });
 
   // ── Details structure ────────────────────────────────────────────────────
 
-  it('details contains scsi, usb, and platform', async () => {
-    const probe = makeProbe(makeAvailability(true, true));
+  it('details contains scsi and platform', async () => {
+    const probe = makeProbe(makeAvailability(true));
     const result = await checkInquiryMethods(probe, 'darwin');
 
     expect(result.details).toBeDefined();
     const d = result.details as Record<string, unknown>;
     expect(d['scsi']).toMatchObject({ available: true });
-    expect(d['usb']).toMatchObject({ available: true });
     expect(d['platform']).toBe('darwin');
   });
 });

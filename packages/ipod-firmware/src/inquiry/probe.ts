@@ -9,16 +9,17 @@
  * extensions and device nodes is stable within a single process lifetime.
  * Call `clearProbeCache()` in tests to reset between cases.
  *
- * USB availability is determined by attempting to load libusb-1.0 via koffi.
- * The probe shares the loader with `usb.ts` so "probe says available" implies
- * the inquiry path can run without further setup.
+ * USB availability is determined by attempting to import the `usb` npm
+ * package (which bundles its own libusb prebuild). The probe shares the
+ * loader with `usb.ts` so "probe says available" implies the inquiry path
+ * can run without further setup.
  *
  * @module
  */
 
 import * as nodefs from 'node:fs';
 import * as nodeos from 'node:os';
-import { loadLibusb } from './usb.js';
+import { loadUsb } from './usb.js';
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -36,7 +37,7 @@ export interface InquiryMethodAvailability {
 export interface InquiryMethodsAvailability {
   /** SCSI generic inquiry (IOKit on macOS, SG_IO on Linux). */
   scsi: InquiryMethodAvailability;
-  /** USB control-transfer inquiry (via libusb-1.0 loaded with koffi). */
+  /** USB control-transfer inquiry (via the `usb` npm package). */
   usb: InquiryMethodAvailability;
 }
 
@@ -88,14 +89,14 @@ const defaultPlatform: ProbePlatform = {
 };
 
 /**
- * Default USB loader: tries to load libusb-1.0 directly via koffi using
- * the same candidate list as the inquiry path. Returns `true` only when
- * the library was found and bound — meaning the USB inquiry can actually
- * proceed with no further setup.
+ * Default USB loader: tries to import the `usb` npm package (which bundles
+ * its own prebuilt libusb). Returns `true` only when the package loads
+ * cleanly — meaning the USB inquiry can actually proceed with no further
+ * setup.
  */
 const defaultUsbLoader: ProbeUsbLoader = async () => {
   try {
-    await loadLibusb();
+    await loadUsb();
     return true;
   } catch {
     return false;
@@ -202,7 +203,7 @@ export function clearProbeCache(): void {
 
 /**
  * Options for `probeInquiryMethods`. All fields are optional; defaults use
- * real filesystem, `os.platform()`, and a direct libusb-1.0 koffi load.
+ * real filesystem, `os.platform()`, and a `usb` npm dynamic import.
  *
  * Pass fakes here in unit tests to avoid touching real FS or native bindings.
  */

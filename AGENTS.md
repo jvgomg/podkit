@@ -18,7 +18,7 @@ packages/
 ├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
 ├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
 ├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
-├── ipod-firmware/   # iPod firmware inquiry — SCSI (SG_IO/IOKit) + USB (libusb-1.0), all via koffi FFI
+├── ipod-firmware/   # iPod firmware inquiry — SCSI via koffi (SG_IO/IOKit), USB via the `usb` npm package
 ├── ipod-web/        # Virtual iPod UI — React + Jotai web component
 ├── libgpod-node/    # Native Node.js bindings for libgpod (database operations only; no USB/libusb)
 ├── podkit-core/     # Core sync logic, adapters, transcoding
@@ -172,6 +172,10 @@ Quick reference: `bun run test:unit --filter <package>` for targeted tests, `bun
 ## libgpod-node: Native Bindings
 
 Read [agents/libgpod-node.md](agents/libgpod-node.md) when modifying the N-API bindings or investigating libgpod edge cases.
+
+## ipod-firmware: USB inquiry + bundling
+
+Read [agents/ipod-firmware.md](agents/ipod-firmware.md) when working on the firmware inquiry orchestrator, the diagnostic logger surface, or bundling `@podkit/ipod-firmware` (or anything that depends on it transitively) into a single-file binary.
 
 ## Demo GIF
 

@@ -108,7 +108,7 @@ The `artworkMaxResolution` field on `DeviceCapabilities` is typed as `number | n
 - **libgpod-node is scoped and shrinkable.** The binding covers database operations only; m-8 (pure TypeScript iTunesDB) can replace it without touching inquiry or capability code.
 - **New device classes are self-contained.** Adding a new mass-storage preset or a new device provider requires no changes to `podkit-core`.
 - **Multiple same-class devices work correctly.** Two Echo Minis with different configurations are distinct presets in the caller-composed map; no singleton collision.
-- **Distro packagers can drop `libusb-1.0-dev`.** It is now a dependency of `@podkit/ipod-firmware` (via koffi peer) only, not of the libgpod-node build.
+- **No system libusb required.** `@podkit/ipod-firmware` reaches libusb through the `usb` npm package, whose prebuilt N-API binding statically links libusb. End-user binaries embed that prebuild; distro packagers don't need `libusb-1.0-dev` at all.
 - **Type-honest capabilities.** `artworkMaxResolution: null` is statically checked; the sentinel-`0` pattern is gone.
 - **Browser-compatible types.** `@podkit/device-types` is a leaf package with no Node.js imports, usable in `ipod-web` and future browser contexts.
 

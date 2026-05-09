@@ -35,7 +35,7 @@ See `packages/libgpod-node/README.md` for the full list. Key deviations:
 
 As of P2 (m-18 device-capability architecture), `@podkit/libgpod-node` is database-only. It handles reading and writing the iTunesDB via libgpod — nothing else.
 
-USB firmware inquiry (`itdb_read_sysinfo_extended_from_usb`, the dlsym shim, the libusb build dependency) was removed in TASK-293.04. That capability now lives entirely in `@podkit/ipod-firmware`, which uses koffi FFI to call libusb-1.0 directly. The native binding no longer requires libusb at build or runtime — no `HAVE_LIBUSB` patch, no `libusb-1.0-0-dev` system header.
+USB firmware inquiry (`itdb_read_sysinfo_extended_from_usb`, the dlsym shim, the libusb build dependency) was removed in TASK-293.04. That capability now lives entirely in `@podkit/ipod-firmware`, which uses the `usb` npm package (which bundles its own prebuilt libusb). The native binding no longer requires libusb at build or runtime — no `HAVE_LIBUSB` patch, no `libusb-1.0-0-dev` system header.
 
 If you encounter any remaining libusb references in `packages/libgpod-node/native/` or `binding.gyp`, they are bugs introduced after P2 and should be removed.
 

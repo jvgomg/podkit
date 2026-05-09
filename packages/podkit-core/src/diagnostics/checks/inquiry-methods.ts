@@ -1,9 +1,15 @@
 /**
  * iPod Firmware Inquiry Methods diagnostic check
  *
- * System-scope check that reports which firmware inquiry transports
- * (SCSI and USB) are available on the current host. This is a read-only
- * probe — no repair action.
+ * System-scope check that reports whether the SCSI inquiry transport
+ * is available on the current host. The USB transport is always
+ * available in shipped binaries (the `usb` npm package's prebuild is
+ * embedded), so it is not user-actionable — checking it would just be
+ * noise.
+ *
+ * SCSI variance is real and user-actionable:
+ *   - macOS: requires `iPodDriver.kext` to be installed
+ *   - Linux: requires `/dev/sg*` nodes to exist and be readable
  */
 
 import {
@@ -21,57 +27,43 @@ export type ProbeFn = (opts?: ProbeOptions) => Promise<InquiryMethodsAvailabilit
 /**
  * Build a human-readable summary line for the current platform.
  *
- * macOS: "iPodDriver.kext present, libusb available"
- * Linux: "/dev/sg* present, libusb available"
- * Linux warn: "/dev/sg* present but not readable (gid plugdev or sudo required)"
+ * macOS pass:  "iPodDriver.kext present"
+ * Linux pass:  "/dev/sg* present"
+ * Linux warn:  "/dev/sg* present but not readable (gid plugdev or sudo required)"
  */
 function buildSummary(
   a: InquiryMethodsAvailability,
   platform: NodeJS.Platform = process.platform
 ): string {
-  const parts: string[] = [];
-
   if (a.scsi.available) {
-    if (platform === 'darwin') {
-      parts.push('iPodDriver.kext present');
-    } else {
-      parts.push('/dev/sg* present');
-    }
-  } else if (a.scsi.reason) {
-    // Surface the reason concisely
-    if (a.scsi.reason.includes('not readable')) {
-      parts.push('/dev/sg* present but not readable (gid plugdev or sudo required)');
-    } else if (a.scsi.reason.includes('no /dev/sg*')) {
-      parts.push('no /dev/sg* nodes');
-    } else if (a.scsi.reason.includes('iPodDriver.kext not present')) {
-      parts.push('iPodDriver.kext not present');
-    } else if (a.scsi.reason.includes('not implemented')) {
-      parts.push('SCSI not supported on this platform');
-    } else {
-      parts.push(`SCSI unavailable: ${a.scsi.reason}`);
-    }
-  } else {
-    parts.push('SCSI unavailable');
+    return platform === 'darwin' ? 'iPodDriver.kext present' : '/dev/sg* present';
   }
 
-  if (a.usb.available) {
-    parts.push('libusb available');
-  } else {
-    parts.push('libusb unavailable');
+  const reason = a.scsi.reason ?? '';
+  if (reason.includes('not readable')) {
+    return '/dev/sg* present but not readable (gid plugdev or sudo required)';
   }
-
-  return parts.join(', ');
+  if (reason.includes('no /dev/sg*')) {
+    return 'no /dev/sg* nodes';
+  }
+  if (reason.includes('iPodDriver.kext not present')) {
+    return 'iPodDriver.kext not present';
+  }
+  if (reason.includes('not implemented')) {
+    return 'SCSI not supported on this platform';
+  }
+  return reason ? `SCSI unavailable: ${reason}` : 'SCSI unavailable';
 }
 
 /**
  * Derive check status from availability results.
- * pass: both available; warn: exactly one available; fail: neither available.
+ *
+ * SCSI is the fallback path when USB inquiry stalls (older iPod
+ * generations). When SCSI is available we pass; when it's not, we warn —
+ * USB still works for most devices, so this is degraded, not broken.
  */
-function deriveStatus(a: InquiryMethodsAvailability): 'pass' | 'warn' | 'fail' {
-  const count = (a.scsi.available ? 1 : 0) + (a.usb.available ? 1 : 0);
-  if (count === 2) return 'pass';
-  if (count === 1) return 'warn';
-  return 'fail';
+function deriveStatus(a: InquiryMethodsAvailability): 'pass' | 'warn' {
+  return a.scsi.available ? 'pass' : 'warn';
 }
 
 /**
@@ -90,7 +82,6 @@ export async function checkInquiryMethods(
     repairable: false,
     details: {
       scsi: { available: a.scsi.available, reason: a.scsi.reason },
-      usb: { available: a.usb.available, reason: a.usb.reason },
       platform,
     },
   };

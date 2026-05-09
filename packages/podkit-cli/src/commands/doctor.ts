@@ -90,8 +90,8 @@ interface DoctorOptions {
   format?: 'csv';
   /**
    * commander's `--no-system` flag sets `system: false`. Default is `true`.
-   * Skips system-scope checks (FFmpeg encoders, libusb availability, etc.)
-   * when the user wants device-only diagnostics.
+   * Skips system-scope checks (FFmpeg encoders, SCSI transport availability,
+   * etc.) when the user wants device-only diagnostics.
    */
   system?: boolean;
 }
@@ -186,7 +186,7 @@ export const doctorCommand = new Command('doctor')
   .option('-c, --collection <name>', 'music collection to use as artwork source')
   .option('--dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
-  .option('--no-system', 'skip system-scope checks (FFmpeg, libusb, udev rule, etc.)')
+  .option('--no-system', 'skip system-scope checks (FFmpeg, SCSI transport, udev rule, etc.)')
   .action(async (options: DoctorOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);

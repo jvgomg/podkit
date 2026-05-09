@@ -9,10 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./bundle": {
+      "require": "./bundle.cjs"
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "bundle.cjs"
   ],
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node && bun run build:types",
@@ -25,12 +29,14 @@
   },
   "dependencies": {
     "@podkit/device-types": "workspace:*",
-    "koffi": "^2.13.0"
+    "koffi": "^2.13.0",
+    "usb": "^2.17.0"
   },
   "devDependencies": {
     "@types/bun": "latest"
   },
   "trustedDependencies": [
-    "koffi"
+    "koffi",
+    "usb"
   ]
 }

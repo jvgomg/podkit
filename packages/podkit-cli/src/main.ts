@@ -15,6 +15,7 @@ import { mountCommand } from './commands/mount.js';
 import { migrateCommand } from './commands/migrate.js';
 import { doctorCommand } from './commands/doctor.js';
 import { completionsCommand, completeCommand } from './commands/completions.js';
+import { setLogger as setFirmwareLogger } from '@podkit/ipod-firmware';
 import { loadConfig, DEFAULT_CONFIG_PATH } from './config/index.js';
 import type { GlobalOptions } from './config/index.js';
 import { setContext } from './context.js';
@@ -66,6 +67,15 @@ program.hook('preAction', (thisCommand, actionCommand) => {
   if (cmdChain[0] === '__complete' || cmdChain[0] === 'migrate' || cmdChain[0] === 'init') return;
 
   const globalOpts = thisCommand.opts() as GlobalOptions;
+
+  // Forward library diagnostic events to stderr when -v is passed.
+  // Library packages don't write to the console themselves; the CLI
+  // installs receivers and decides format/destination.
+  if (globalOpts.verbose && globalOpts.verbose >= 1) {
+    setFirmwareLogger((event) => {
+      process.stderr.write(`[ipod-firmware] ${event.message}\n`);
+    });
+  }
 
   // Get command-specific options that affect config
   const commandOpts = actionCommand.opts() as {

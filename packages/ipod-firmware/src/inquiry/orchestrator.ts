@@ -27,6 +27,7 @@
  */
 
 import type { UsbFingerprint, ParsedFirmware } from '@podkit/device-types';
+import { emit } from '../logger.js';
 import { extractFromPlist } from '../firmware/extract.js';
 import { parsePlist } from '../plist/parser.js';
 import {
@@ -186,9 +187,12 @@ export async function inquireFirmware(
         const bytes = await usbTransport(fp, transportOpts);
         return parseAndExtract(bytes);
       } catch (err) {
-        // TODO(structured-logging): route via core's logger; suppress in test runs.
-        // eslint-disable-next-line no-console
-        console.debug('[ipod-firmware] USB inquiry failed, falling back to SCSI', err);
+        emit({
+          level: 'debug',
+          message: `USB inquiry failed, falling back to SCSI: ${
+            err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+          }`,
+        });
       }
       try {
         const bytes = await scsiTransport(fp, transportOpts);

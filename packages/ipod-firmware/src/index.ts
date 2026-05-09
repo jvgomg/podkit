@@ -41,17 +41,20 @@ export {
   type ScsiSyscallResult,
 } from './inquiry/scsi/types.js';
 
-// USB transport (libusb-1.0 via koffi FFI)
+// USB transport (libusb-1.0 via the `usb` npm package)
 export {
   readUsbInquiry,
-  loadLibusb,
+  loadUsb,
   UsbInquiryError,
   type UsbReadOptions,
-  type LibusbBinding,
-  type LibusbPtr,
-  type LibusbLoadResult,
+  type UsbBinding,
+  type UsbDeviceHandle,
+  type UsbLoadResult,
   type UsbInquiryErrorKind,
 } from './inquiry/usb.js';
+
+// Diagnostic logger (consumers install a receiver; library is silent by default)
+export { setLogger, type FirmwareLogger, type FirmwareLogEvent } from './logger.js';
 
 // Method availability probe
 export {

@@ -1,14 +1,14 @@
 /**
- * Unit tests for the libusb FFI USB inquiry implementation.
+ * Unit tests for the USB inquiry implementation.
  *
- * Tests inject a fake `LibusbBinding` so they exercise the protocol logic
+ * Tests inject a fake `UsbBinding` so they exercise the protocol logic
  * (page iteration, short-read termination, control-transfer parameters,
- * cleanup discipline, error propagation) without loading real libusb.
+ * cleanup discipline, error propagation) without loading a real USB stack.
  */
 
 import { describe, expect, it } from 'bun:test';
 import { readUsbInquiry, UsbInquiryError } from './usb';
-import type { LibusbBinding, LibusbPtr } from './usb';
+import type { UsbBinding, UsbDeviceHandle } from './usb';
 import type { UsbFingerprint } from '@podkit/device-types';
 
 // ---------------------------------------------------------------------------
@@ -22,13 +22,11 @@ function makeFingerprint(bus = 1, devnum = 4): UsbFingerprint {
 }
 
 interface CallLog {
-  init: number;
-  exit: number;
-  open: number;
-  close: number;
-  ref: number;
-  unref: number;
-  freeList: number;
+  /** Number of times `withOpenDevice` was entered. */
+  opens: number;
+  /** Number of times the cleanup `finally` block ran (i.e. close occurred). */
+  closes: number;
+  /** Recorded control transfer parameters in the order they were issued. */
   controlTransfers: Array<{
     bmRequestType: number;
     bRequest: number;
@@ -40,100 +38,82 @@ interface CallLog {
 }
 
 interface FakeOptions {
-  /** Devices on the bus, by index. */
+  /** Devices reachable by the binding. Match by exact (bus, devnum) pair. */
   devices?: Array<{ bus: number; devnum: number }>;
   /** Per-page response: undefined means call returns 0 bytes. */
   pageResponses?: Map<number, Uint8Array | { error: number }>;
-  /** Force `init` to fail with this code (non-zero). */
-  initFails?: number;
-  /** Force `open` to fail with this code (non-zero). */
+  /** Force `getDeviceList`/init to fail with a given Error. */
+  initFails?: Error;
+  /** Force `device.open` to fail with a given libusb-style code. */
   openFails?: number;
-  /** Force `get_device_list` to fail (negative code). */
-  getListFails?: number;
 }
 
-function makeFake(opts: FakeOptions): { binding: LibusbBinding; calls: CallLog } {
-  const calls: CallLog = {
-    init: 0,
-    exit: 0,
-    open: 0,
-    close: 0,
-    ref: 0,
-    unref: 0,
-    freeList: 0,
-    controlTransfers: [],
-  };
+function makeFake(opts: FakeOptions): { binding: UsbBinding; calls: CallLog } {
+  const calls: CallLog = { opens: 0, closes: 0, controlTransfers: [] };
 
-  // Distinct sentinel "pointers" — koffi-typed as `unknown`, so any value works.
-  const ctxPtr: LibusbPtr = { tag: 'ctx' };
-  const listPtr: LibusbPtr = { tag: 'list', devices: opts.devices ?? [] };
-  const handlePtr: LibusbPtr = { tag: 'handle' };
-
-  const binding: LibusbBinding = {
-    init(ctxOut) {
-      calls.init++;
-      if (opts.initFails) return opts.initFails;
-      // Mark the buffer so decodePointer can recognise it (purely for debug).
-      ctxOut.writeUInt8(1, 0);
-      return 0;
-    },
-    exit(_ctx) {
-      calls.exit++;
-    },
-    get_device_list(_ctx, listOut) {
-      if (opts.getListFails !== undefined) return opts.getListFails;
-      listOut.writeUInt8(2, 0);
-      return (opts.devices ?? []).length;
-    },
-    free_device_list(_list, _unref) {
-      calls.freeList++;
-    },
-    get_bus_number(dev) {
-      return (dev as { bus: number }).bus;
-    },
-    get_device_address(dev) {
-      return (dev as { devnum: number }).devnum;
-    },
-    ref_device(dev) {
-      calls.ref++;
-      return dev;
-    },
-    unref_device(_dev) {
-      calls.unref++;
-    },
-    open(_dev, handleOut) {
-      calls.open++;
-      if (opts.openFails) return opts.openFails;
-      handleOut.writeUInt8(3, 0);
-      return 0;
-    },
-    close(_handle) {
-      calls.close++;
-    },
-    control_transfer(_handle, bmRequestType, bRequest, wValue, wIndex, data, wLength, timeout) {
-      calls.controlTransfers.push({ bmRequestType, bRequest, wValue, wIndex, wLength, timeout });
-      const resp = opts.pageResponses?.get(wIndex);
-      if (!resp) return 0; // empty
-      if ('error' in resp) return resp.error;
-      // Write the response bytes into the supplied buffer.
-      for (let i = 0; i < resp.length; i++) {
-        data.writeUInt8(resp[i] ?? 0, i);
+  const binding: UsbBinding = {
+    async withOpenDevice<T>(
+      bus: number,
+      devnum: number,
+      fn: (handle: UsbDeviceHandle) => Promise<T>
+    ): Promise<T> {
+      if (opts.initFails) {
+        throw new UsbInquiryError({
+          kind: 'init-failed',
+          message: opts.initFails.message,
+          cause: opts.initFails,
+        });
       }
-      return resp.length;
-    },
-    decodeDeviceAt(list, index) {
-      const devs = (list as { devices: Array<{ bus: number; devnum: number }> }).devices;
-      return devs[index] as LibusbPtr;
-    },
-    decodePointer(buf) {
-      // Distinguish ctx vs list vs handle by the byte we wrote above.
-      const sentinel = buf.readUInt8(0);
-      if (sentinel === 1) return ctxPtr;
-      if (sentinel === 2) return listPtr;
-      if (sentinel === 3) return handlePtr;
-      return null;
+
+      const match = (opts.devices ?? []).find((d) => d.bus === bus && d.devnum === devnum);
+      if (!match) {
+        throw new UsbInquiryError({
+          kind: 'device-not-found',
+          message: `no USB device matched bus=${bus} devnum=${devnum}`,
+        });
+      }
+
+      if (opts.openFails !== undefined) {
+        throw new UsbInquiryError({
+          kind: 'open-failed',
+          message: `device.open failed with code ${opts.openFails}`,
+          libusbStatus: opts.openFails,
+        });
+      }
+
+      calls.opens++;
+
+      const handle: UsbDeviceHandle = {
+        async controlTransfer(bmRequestType, bRequest, wValue, wIndex, wLength, timeout) {
+          calls.controlTransfers.push({
+            bmRequestType,
+            bRequest,
+            wValue,
+            wIndex,
+            wLength,
+            timeout,
+          });
+          const resp = opts.pageResponses?.get(wIndex);
+          if (!resp) return new Uint8Array(0);
+          if ('error' in resp) {
+            throw new UsbInquiryError({
+              kind: 'control-transfer-failed',
+              message: `controlTransfer failed on page ${wIndex}`,
+              libusbStatus: resp.error,
+            });
+          }
+          return resp;
+        },
+      };
+
+      try {
+        return await fn(handle);
+      } finally {
+        calls.closes++;
+      }
     },
   };
+
   return { binding, calls };
 }
 
@@ -217,23 +197,18 @@ describe('readUsbInquiry — happy path', () => {
 });
 
 describe('readUsbInquiry — cleanup', () => {
-  it('balances init/exit, open/close, ref/unref on success', async () => {
+  it('closes device on success', async () => {
     const responses = new Map<number, Uint8Array>([[0, bytes(10, 0xff)]]);
     const { binding, calls } = makeFake({
       devices: [{ bus: 1, devnum: 4 }],
       pageResponses: responses,
     });
     await readUsbInquiry(makeFingerprint(1, 4), undefined, binding);
-    expect(calls.init).toBe(1);
-    expect(calls.exit).toBe(1);
-    expect(calls.open).toBe(1);
-    expect(calls.close).toBe(1);
-    expect(calls.ref).toBe(1);
-    expect(calls.unref).toBe(1);
-    expect(calls.freeList).toBe(1);
+    expect(calls.opens).toBe(1);
+    expect(calls.closes).toBe(1);
   });
 
-  it('exits context even when control_transfer throws', async () => {
+  it('closes device even when controlTransfer throws', async () => {
     const responses = new Map<number, Uint8Array | { error: number }>([
       [0, { error: -7 }], // LIBUSB_ERROR_TIMEOUT
     ]);
@@ -242,34 +217,22 @@ describe('readUsbInquiry — cleanup', () => {
       pageResponses: responses,
     });
     await expect(readUsbInquiry(makeFingerprint(1, 4), undefined, binding)).rejects.toThrow();
-    // Even though the transfer errored, lifecycle is balanced.
-    expect(calls.init).toBe(1);
-    expect(calls.exit).toBe(1);
-    expect(calls.open).toBe(1);
-    expect(calls.close).toBe(1);
-    expect(calls.ref).toBe(1);
-    expect(calls.unref).toBe(1);
+    expect(calls.opens).toBe(1);
+    expect(calls.closes).toBe(1);
   });
 
-  it('frees device list even when no device matches', async () => {
+  it('does not open when no device matches', async () => {
     const { binding, calls } = makeFake({
       devices: [{ bus: 9, devnum: 9 }], // does not match
     });
     await expect(readUsbInquiry(makeFingerprint(1, 4), undefined, binding)).rejects.toThrow(
       /no USB device matched/
     );
-    expect(calls.freeList).toBe(1);
-    // Never opened anything, so close/unref stay 0.
-    expect(calls.open).toBe(0);
-    expect(calls.close).toBe(0);
-    expect(calls.ref).toBe(0);
-    expect(calls.unref).toBe(0);
-    // But init/exit are still balanced.
-    expect(calls.init).toBe(1);
-    expect(calls.exit).toBe(1);
+    expect(calls.opens).toBe(0);
+    expect(calls.closes).toBe(0);
   });
 
-  it('exits context when libusb_open fails', async () => {
+  it('does not open when libusb_open fails', async () => {
     const { binding, calls } = makeFake({
       devices: [{ bus: 1, devnum: 4 }],
       openFails: -3, // LIBUSB_ERROR_ACCESS
@@ -277,21 +240,16 @@ describe('readUsbInquiry — cleanup', () => {
     await expect(readUsbInquiry(makeFingerprint(1, 4), undefined, binding)).rejects.toMatchObject({
       kind: 'open-failed',
     });
-    expect(calls.init).toBe(1);
-    expect(calls.exit).toBe(1);
-    // Device was ref'd but open failed → must unref so refcount stays balanced.
-    expect(calls.ref).toBe(1);
-    expect(calls.unref).toBe(1);
-    expect(calls.close).toBe(0);
+    expect(calls.opens).toBe(0);
+    expect(calls.closes).toBe(0);
   });
 });
 
 describe('readUsbInquiry — error paths', () => {
-  it('throws init-failed when libusb_init returns non-zero', async () => {
-    const { binding } = makeFake({ initFails: -1 });
+  it('throws init-failed when the USB stack fails to initialise', async () => {
+    const { binding } = makeFake({ initFails: new Error('boom') });
     await expect(readUsbInquiry(makeFingerprint(), undefined, binding)).rejects.toMatchObject({
       kind: 'init-failed',
-      libusbCode: -1,
     });
   });
 
@@ -305,14 +263,6 @@ describe('readUsbInquiry — error paths', () => {
     });
   });
 
-  it('throws device-not-found when get_device_list returns negative', async () => {
-    const { binding } = makeFake({ getListFails: -99 });
-    await expect(readUsbInquiry(makeFingerprint(), undefined, binding)).rejects.toMatchObject({
-      kind: 'device-not-found',
-      libusbCode: -99,
-    });
-  });
-
   it('throws control-transfer-failed and surfaces libusb error code', async () => {
     const { binding } = makeFake({
       devices: [{ bus: 1, devnum: 4 }],
@@ -321,7 +271,7 @@ describe('readUsbInquiry — error paths', () => {
     const err = await readUsbInquiry(makeFingerprint(1, 4), undefined, binding).catch((e) => e);
     expect(err).toBeInstanceOf(UsbInquiryError);
     expect((err as UsbInquiryError).kind).toBe('control-transfer-failed');
-    expect((err as UsbInquiryError).libusbCode).toBe(-4);
+    expect((err as UsbInquiryError).libusbStatus).toBe(-4);
   });
 
   it('throws empty-response when device returns zero bytes on page 0', async () => {
@@ -335,9 +285,17 @@ describe('readUsbInquiry — error paths', () => {
   });
 
   it('UsbInquiryError exposes kind for libusb-not-loadable case', () => {
-    const e = new UsbInquiryError({ kind: 'libusb-not-loadable', message: 'no libusb' });
+    const e = new UsbInquiryError({ kind: 'libusb-not-loadable', message: 'no usb' });
     expect(e).toBeInstanceOf(Error);
     expect(e.kind).toBe('libusb-not-loadable');
+  });
+
+  it('throws device-not-found when fingerprint lacks bus/devnum', async () => {
+    const { binding } = makeFake({ devices: [{ bus: 1, devnum: 4 }] });
+    const fp: UsbFingerprint = { vendorId: '05ac', productId: '1261' };
+    await expect(readUsbInquiry(fp, undefined, binding)).rejects.toMatchObject({
+      kind: 'device-not-found',
+    });
   });
 });
 
