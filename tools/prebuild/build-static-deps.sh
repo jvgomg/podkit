@@ -115,9 +115,6 @@ if [ "$OS" = "Darwin" ]; then
     fi
   done
 
-  LIBUSB_PREFIX="$(brew --prefix libusb)"
-  copy_if_exists "$LIBUSB_PREFIX/lib/libusb-1.0.a" "$STATIC_DEPS_DIR/lib/libusb-1.0.a"
-
   # 2. Build gdk-pixbuf .a (Homebrew doesn't ship static lib)
   PKG_PATHS="$HOMEBREW_PREFIX/lib/pkgconfig"
   LINK_ARGS=""
@@ -153,12 +150,9 @@ if [ "$OS" = "Darwin" ]; then
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
 
-    # Add itdb_usb.c for SysInfoExtended USB read support
-    bash "$REPO_ROOT/tools/prebuild/patches/apply-sysinfo-usb.sh"
-
     # Use Homebrew pkg-config paths — same as tools/libgpod-macos/build.sh
     LIBPLIST_PREFIX="$(brew --prefix libplist)"
-    export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig:$LIBUSB_PREFIX/lib/pkgconfig"
+    export PKG_CONFIG_PATH="$HOMEBREW_PREFIX/lib/pkgconfig:$LIBPLIST_PREFIX/lib/pkgconfig"
     export CFLAGS="-I$HOMEBREW_PREFIX/include -I$LIBPLIST_PREFIX/include"
     export LDFLAGS="-L$HOMEBREW_PREFIX/lib -L$LIBPLIST_PREFIX/lib"
 
@@ -169,8 +163,11 @@ if [ "$OS" = "Darwin" ]; then
       --disable-more-warnings --disable-silent-rules \
       --disable-udev --disable-pygobject \
       --with-python=no --without-hal
-    make -j"$NPROC"
-    make install
+    # Build only the library (src/), not tools — avoids HAVE_LIBUSB auto-detect
+    # leaking a Homebrew-libusb dynamic link into a tool binary we don't ship.
+    make -C src -j"$NPROC"
+    make -C src install
+    make install-pkgconfigDATA
   else
     log "libgpod already built, skipping"
   fi
@@ -475,34 +472,6 @@ elif [ "$OS" = "Linux" ]; then
     "-L$STATIC_DEPS_DIR/lib -lpng16 -ljpeg -ltiff -lz"
 
   # -----------------------------------------------------------------------
-  # Phase 4.5: libusb (no dependencies beyond libc)
-  # -----------------------------------------------------------------------
-  if [ ! -f "$STATIC_DEPS_DIR/lib/libusb-1.0.a" ]; then
-    log "Building libusb 1.0.27 (static, -fPIC)..."
-    cd "$WORK_DIR"
-
-    LIBUSB_VERSION="1.0.27"
-    if [ ! -f "libusb-${LIBUSB_VERSION}.tar.bz2" ]; then
-      curl -L -o "libusb-${LIBUSB_VERSION}.tar.bz2" \
-        "https://github.com/libusb/libusb/releases/download/v${LIBUSB_VERSION}/libusb-${LIBUSB_VERSION}.tar.bz2"
-    fi
-
-    rm -rf "libusb-${LIBUSB_VERSION}"
-    tar xjf "libusb-${LIBUSB_VERSION}.tar.bz2"
-    cd "libusb-${LIBUSB_VERSION}"
-
-    ./configure \
-      --prefix="$STATIC_DEPS_DIR" \
-      --enable-static --disable-shared \
-      --disable-udev \
-      CFLAGS="-fPIC"
-    make -j"$NPROC"
-    make install
-  else
-    log "libusb already built, skipping"
-  fi
-
-  # -----------------------------------------------------------------------
   # Phase 5: libgpod (needs glib, gdk-pixbuf, libplist, libxml2, sqlite3)
   # -----------------------------------------------------------------------
   if [ ! -f "$STATIC_DEPS_DIR/lib/libgpod.a" ]; then
@@ -524,9 +493,6 @@ elif [ "$OS" = "Linux" ]; then
     curl -sL -o libplist.patch "https://raw.githubusercontent.com/pld-linux/libgpod/master/libgpod-libplist.patch"
     patch -p0 < callout.patch
     patch -p1 < libplist.patch
-
-    # Add itdb_usb.c for SysInfoExtended USB read support
-    bash "$REPO_ROOT/tools/prebuild/patches/apply-sysinfo-usb.sh"
 
     # Point pkg-config at our static deps so configure finds glib, gdk-pixbuf, libplist
     export PKG_CONFIG_PATH="$STATIC_PKG_PATH"
@@ -563,9 +529,9 @@ fi
 log "Verifying static dependencies..."
 MISSING=""
 if [ "$OS" = "Darwin" ]; then
-  REQUIRED="libgpod.a libglib-2.0.a libgobject-2.0.a libgdk_pixbuf-2.0.a libusb-1.0.a"
+  REQUIRED="libgpod.a libglib-2.0.a libgobject-2.0.a libgdk_pixbuf-2.0.a"
 else
-  REQUIRED="libz.a libffi.a libpcre2-8.a libsqlite3.a libglib-2.0.a libgobject-2.0.a libplist-2.0.a libxml2.a libpng16.a libjpeg.a libtiff.a libgdk_pixbuf-2.0.a libgpod.a libusb-1.0.a"
+  REQUIRED="libz.a libffi.a libpcre2-8.a libsqlite3.a libglib-2.0.a libgobject-2.0.a libplist-2.0.a libxml2.a libpng16.a libjpeg.a libtiff.a libgdk_pixbuf-2.0.a libgpod.a"
 fi
 for lib in $REQUIRED; do
   if [ ! -f "$STATIC_DEPS_DIR/lib/$lib" ]; then
