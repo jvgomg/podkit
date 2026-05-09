@@ -102,6 +102,12 @@ import {
 export { formatBytes, formatNumber } from '../output/index.js';
 export { formatGeneration } from '@podkit/core';
 
+const SYSINFO_MISSING_PROMPT_LINES = [
+  'SysInfo/SysInfoExtended is missing — required for syncing this iPod.',
+  'podkit can read it from the device firmware over USB.',
+  'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices',
+] as const;
+
 /**
  * Format a generation display name for the "not supported on …" tail of a
  * negative capability bullet. Strips parenthesised disambiguators for compactness.
@@ -1976,10 +1982,7 @@ export async function runDeviceAdd(
     if (!autoConfirm && out.isText) {
       if (offerFirmwareInquiry) {
         out.newline();
-        out.print(`This iPod's identity file (SysInfoExtended) is missing.`);
-        out.print('podkit can read it from the device firmware over USB.');
-        out.print('Writing SysInfoExtended confirms the exact device variant');
-        out.print('and is required for the database checksum on hash-based generations.');
+        for (const line of SYSINFO_MISSING_PROMPT_LINES) out.print(line);
         out.newline();
       } else {
         out.newline();
@@ -2363,10 +2366,7 @@ export async function runDeviceAdd(
   if (!autoConfirm && out.isText) {
     if (offerFirmwareInquiry) {
       out.newline();
-      out.print(`This iPod's identity file (SysInfoExtended) is missing.`);
-      out.print('podkit can read it from the device firmware over USB.');
-      out.print('Writing SysInfoExtended confirms the exact device variant');
-      out.print('and is required for the database checksum on hash-based generations.');
+      for (const line of SYSINFO_MISSING_PROMPT_LINES) out.print(line);
       out.newline();
     } else {
       out.newline();
