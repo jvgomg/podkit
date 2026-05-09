@@ -7,16 +7,12 @@
  * phantom-iPod regression (8 USB peripherals → 8 phantoms) by asserting
  * non-iPod / non-mass-storage devices drop to zero recognised entries.
  *
- * Coverage gap (acknowledged, not closed). This test pins the data-flow
- * boundary at `classifyUsbDevices` — that is where the phantom-iPod bug
- * actually lived, and it is the cheapest place to catch a regression of
- * the same shape. It does NOT pin the CLI's rendering output, so a future
- * regression that reintroduces "render everything" logic at the rendering
- * layer (i.e. inside the `device scan` action callback, downstream of
- * classification) would not be caught here. Closing that gap requires
- * restructuring the command so its renderer is injectable / testable in
- * isolation, which is broader scope than this refactor warranted.
- * See TASK-317.01 round-2 review for the reasoning.
+ * Coverage at the rendering layer is pinned by the companion unit test
+ * `device-scan-render.unit.test.ts`, which exercises `renderDeviceScan`
+ * directly with synthetic classified-device sets — including the empty-
+ * input regression that asserts the renderer never emits "Unknown iPod"
+ * when nothing is on the bus. Together the two files cover the data-flow
+ * boundary (here) and the rendering boundary (the unit test).
  */
 
 import { describe, expect, it } from 'bun:test';

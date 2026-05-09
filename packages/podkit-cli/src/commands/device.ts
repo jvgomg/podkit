@@ -85,14 +85,18 @@ import {
 import type { DeviceAssessment, IFlashEvidence } from '@podkit/core';
 import type { DeviceTrack, IpodTrack } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
-import type { ReadinessResult, ReadinessStageResult, ReadinessLevel } from '@podkit/core';
+import type { ReadinessResult, ReadinessLevel } from '@podkit/core';
 import {
   stageMarker,
   formatReadinessLevel,
-  printReadinessSummary,
   collectReadinessIssues,
   printIssues,
 } from './readiness-display.js';
+import {
+  renderDeviceScan,
+  type DeviceScanInput,
+  type DeviceScanIpodRow,
+} from './device-scan-render.js';
 
 // =============================================================================
 // Shared utilities
@@ -710,37 +714,6 @@ export function synthesizePathModeDeviceInfo(
 // Scan subcommand
 // =============================================================================
 
-// ── Readiness display helpers ────────────────────────────────────────────────
-
-function printReadinessStages(
-  out: OutputContext,
-  stages: ReadinessStageResult[],
-  readiness: ReadinessResult,
-  deviceName: string
-): void {
-  printReadinessSummary(out, stages);
-  out.newline();
-
-  // Summary line
-  if (readiness.level === 'ready' && readiness.summary) {
-    const trackStr = formatNumber(readiness.summary.trackCount);
-    const parts = [`${trackStr} track${readiness.summary.trackCount === 1 ? '' : 's'}`];
-    if (readiness.summary.freeBytes !== undefined) {
-      parts.push(`${formatBytes(readiness.summary.freeBytes)} free`);
-    }
-    out.print(`  Ready \u2014 ${parts.join(', ')}`);
-  } else {
-    out.print(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
-  }
-
-  // Issues section
-  const issues = collectReadinessIssues(stages, deviceName);
-  if (issues.length > 0) {
-    out.newline();
-    printIssues(out, issues);
-  }
-}
-
 // ── Scan helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -1192,123 +1165,52 @@ const scanSubcommand = new Command('scan')
       return;
     }
 
+    const ipodRows: DeviceScanIpodRow[] = ipods.map((device, i) => {
+      const readiness = readinessResults[i];
+      const matchedUsb = findMatchingUsbIpod(device.identifier);
+      const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
+      return {
+        device: {
+          volumeName: device.volumeName,
+          volumeUuid: device.volumeUuid,
+          identifier: device.identifier,
+          size: device.size,
+          isMounted: device.isMounted,
+          ...(device.mountPoint ? { mountPoint: device.mountPoint } : {}),
+        },
+        ...(readiness ? { readiness } : {}),
+        ...(configuredName ? { configuredName } : {}),
+        ...(matchedUsb?.model?.displayName
+          ? { fallbackUsbModelDisplayName: matchedUsb.model.displayName }
+          : {}),
+      };
+    });
+
+    const renderInput: DeviceScanInput = {
+      ipods: ipodRows,
+      usbOnlyIpods,
+      massStorageDevices: massStorageList,
+      configuredDevices,
+      isSupportedPlatform: manager.isSupported,
+      createUsbOnlyReadinessResult,
+    };
+
+    const writeRender = () => {
+      for (const line of renderDeviceScan(renderInput)) {
+        if (line === '') out.newline();
+        else out.print(line);
+      }
+    };
+
     if (!hasAnyDevices) {
-      out.result<DeviceScanOutput>({ success: true, devices: [], configuredDevices: [] }, () => {
-        out.print('No devices found.');
-        out.newline();
-        out.print(
-          'Make sure your device is connected and mounted, or add one with: podkit device add'
-        );
-      });
+      out.result<DeviceScanOutput>(
+        { success: true, devices: [], configuredDevices: [] },
+        writeRender
+      );
       return;
     }
 
-    out.result<DeviceScanOutput>({ success: true, devices, configuredDevices }, () => {
-      // Show iPods with readiness
-      if (ipods.length > 0) {
-        for (let i = 0; i < ipods.length; i++) {
-          const device = ipods[i]!;
-          const readiness = readinessResults[i];
-          const label = device.volumeName || '(unnamed)';
-          const identifier = device.identifier ? ` (${device.identifier})` : '';
-
-          // Use richest available model: deviceModel (from SysInfo) > usbModel (from USB product ID)
-          const displayModel = readiness?.deviceModel ?? readiness?.usbModel;
-          const matchedUsb = findMatchingUsbIpod(device.identifier);
-          const modelLabel = displayModel?.displayName ?? matchedUsb?.model?.displayName;
-          const modelSource = displayModel?.source === 'usb' ? ' (USB)' : '';
-          if (modelLabel) {
-            out.print(`  ${bold(label)}${identifier}  ${modelLabel}${modelSource}`);
-          } else {
-            out.print(`  ${bold(label)}${identifier}`);
-          }
-
-          // Show config relationship
-          const configName = findConfiguredDeviceName(device, config.devices ?? {});
-          if (configName) {
-            out.print(`  Configured as: ${configName}`);
-          } else {
-            const suggestedName = label.toLowerCase().replace(/[^a-z0-9-]/g, '-') || 'myipod';
-            out.print(`  Not configured \u2014 run: podkit device add -d ${suggestedName}`);
-          }
-
-          out.newline();
-
-          if (readiness) {
-            // Use configured name, mount path, or volume label (in that order) for CLI hints
-            const cmdId = configName ?? device.mountPoint ?? label;
-            printReadinessStages(out, readiness.stages, readiness, cmdId);
-          } else {
-            // Unsupported platform — fall back to basic display
-            out.print(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
-            out.print(`    Size:         ${formatBytes(device.size)}`);
-            if (device.isMounted && device.mountPoint) {
-              out.print(`    Mounted:      ${device.mountPoint}`);
-            } else {
-              out.print(`    Mounted:      no`);
-            }
-          }
-          out.newline();
-        }
-      }
-
-      // Show USB-only iPods (no disk representation)
-      if (usbOnlyIpods.length > 0) {
-        for (const recognised of usbOnlyIpods) {
-          const label = recognised.model?.displayName ?? 'Unknown iPod';
-          out.print(`  ${bold(label)} (USB only)`);
-          out.newline();
-
-          if (!recognised.supported) {
-            // Unsupported device — show reason and move on
-            out.print('  This device is not supported by podkit.');
-            if (recognised.notSupportedReason) {
-              out.print(`  ${recognised.notSupportedReason}`);
-            }
-          } else {
-            // Supported but needs partitioning — show readiness stages
-            const readiness = createUsbOnlyReadinessResult(recognised);
-            printReadinessStages(out, readiness.stages, readiness, label);
-          }
-          out.newline();
-        }
-      }
-
-      // Show recognised mass-storage devices (Echo Mini etc.) found on the bus.
-      if (massStorageList.length > 0) {
-        for (const recognised of massStorageList) {
-          const presetDisplayName = getDeviceTypeDisplayName(recognised.presetId);
-          if (recognised.device.diskIdentifier) {
-            out.print(
-              `  ${bold(presetDisplayName)} (${recognised.presetId}) — disk: ${recognised.device.diskIdentifier}`
-            );
-          } else {
-            out.print(`  ${bold(presetDisplayName)} (${recognised.presetId}) — no volume mounted`);
-          }
-          out.newline();
-        }
-      }
-
-      if (
-        ipods.length === 0 &&
-        usbOnlyIpods.length === 0 &&
-        massStorageList.length === 0 &&
-        manager.isSupported
-      ) {
-        out.print('No iPod devices found.');
-        out.newline();
-      }
-
-      // Show configured devices not detected in the scan
-      if (configuredDevices.length > 0) {
-        out.print('Not detected:');
-        for (const cd of configuredDevices) {
-          const pathInfo = cd.path ? ` \u2014 ${cd.path}` : '';
-          out.print(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd.type)})${pathInfo}`);
-        }
-        out.newline();
-      }
-    });
+    out.result<DeviceScanOutput>({ success: true, devices, configuredDevices }, writeRender);
   });
 
 // =============================================================================

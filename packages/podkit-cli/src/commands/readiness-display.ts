@@ -69,12 +69,13 @@ export interface ReadinessIssue {
 const SYSINFO_DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices';
 
 /**
- * Print compact one-line-per-stage readiness summary.
+ * Format compact one-line-per-stage readiness summary as a list of lines.
  *
- * Each stage gets a single line with marker + name + short summary.
- * SysInfoExtended status is shown as a sub-line for checksum devices.
+ * Pure: no I/O, no `OutputContext`. See `printReadinessSummary` for the
+ * `OutputContext`-driven counterpart.
  */
-export function printReadinessSummary(out: OutputContext, stages: ReadinessStageResult[]): void {
+export function formatReadinessSummaryLines(stages: ReadinessStageResult[]): string[] {
+  const lines: string[] = [];
   for (const stage of stages) {
     const marker = stageMarker(stage.status);
     const name = STAGE_DISPLAY_NAMES[stage.stage] || stage.stage;
@@ -98,9 +99,9 @@ export function printReadinessSummary(out: OutputContext, stages: ReadinessStage
     }
 
     if (inlineSummary) {
-      out.print(`  ${marker} ${name}    ${inlineSummary}`);
+      lines.push(`  ${marker} ${name}    ${inlineSummary}`);
     } else {
-      out.print(`  ${marker} ${name}`);
+      lines.push(`  ${marker} ${name}`);
     }
 
     // SysInfoExtended sub-line for checksum devices
@@ -110,13 +111,26 @@ export function printReadinessSummary(out: OutputContext, stages: ReadinessStage
       const needsChecksum =
         checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
       if (present === true) {
-        out.print('    SysInfoExtended: present');
+        lines.push('    SysInfoExtended: present');
       } else if (present === false && needsChecksum) {
-        out.print('    SysInfoExtended: missing (required for database checksums)');
+        lines.push('    SysInfoExtended: missing (required for database checksums)');
       } else if (present === false) {
-        out.print('    SysInfoExtended: not present');
+        lines.push('    SysInfoExtended: not present');
       }
     }
+  }
+  return lines;
+}
+
+/**
+ * Print compact one-line-per-stage readiness summary.
+ *
+ * Each stage gets a single line with marker + name + short summary.
+ * SysInfoExtended status is shown as a sub-line for checksum devices.
+ */
+export function printReadinessSummary(out: OutputContext, stages: ReadinessStageResult[]): void {
+  for (const line of formatReadinessSummaryLines(stages)) {
+    out.print(line);
   }
 }
 
@@ -233,30 +247,46 @@ export function collectReadinessIssues(
 // ── Issue rendering ─────────────────────────────────────────────────────────
 
 /**
- * Print collected issues with full details, docs URLs, and fix commands.
+ * Format collected issues as a list of lines.
+ *
+ * Pure: no I/O, no `OutputContext`. Empty strings represent blank lines
+ * (callers map them to `out.newline()`). Returns an empty array when
+ * `issues` is empty.
  */
-export function printIssues(out: OutputContext, issues: ReadinessIssue[]): void {
-  if (issues.length === 0) return;
+export function formatIssueLines(issues: ReadinessIssue[]): string[] {
+  if (issues.length === 0) return [];
 
-  out.print('Issues:');
+  const lines: string[] = [];
+  lines.push('Issues:');
   for (const issue of issues) {
-    out.print(`  ${issue.marker} ${issue.label} \u2014 ${issue.summary}`);
+    lines.push(`  ${issue.marker} ${issue.label} \u2014 ${issue.summary}`);
 
     for (const line of issue.details) {
-      out.print(`    ${line}`);
+      lines.push(`    ${line}`);
     }
 
     if (issue.docsUrl || issue.fixCommand) {
       // Blank line before links
       if (issue.details.length > 0) {
-        out.newline();
+        lines.push('');
       }
       if (issue.docsUrl) {
-        out.print(`    Docs: ${issue.docsUrl}`);
+        lines.push(`    Docs: ${issue.docsUrl}`);
       }
       if (issue.fixCommand) {
-        out.print(`    Fix:  ${issue.fixCommand}`);
+        lines.push(`    Fix:  ${issue.fixCommand}`);
       }
     }
+  }
+  return lines;
+}
+
+/**
+ * Print collected issues with full details, docs URLs, and fix commands.
+ */
+export function printIssues(out: OutputContext, issues: ReadinessIssue[]): void {
+  for (const line of formatIssueLines(issues)) {
+    if (line === '') out.newline();
+    else out.print(line);
   }
 }
