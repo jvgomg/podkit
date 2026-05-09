@@ -819,6 +819,32 @@ function parseFormat(filetype: string | undefined): string {
   return filetype;
 }
 
+/**
+ * Build a minimal `PlatformDeviceInfo` for a path the user passed via `--device`.
+ *
+ * In path mode we already know where the device is, so we don't need to walk
+ * every attached disk via `manager.findIpodDevices()` (which on macOS dispatches
+ * `diskutil list` + per-disk subprocess calls — slow under parallel load).
+ *
+ * Fields the readiness pipeline reads (`identifier`, `volumeName`, `volumeUuid`,
+ * `isMounted`, `mountPoint`) are populated from data we have. `size` and
+ * `mediaType` are unknown in path mode and left at safe defaults; callers that
+ * need them must use the full enumeration path.
+ */
+export function synthesizePathModeDeviceInfo(
+  mountPoint: string,
+  volumeUuid: string | undefined
+): import('@podkit/core').PlatformDeviceInfo {
+  return {
+    identifier: `path:${mountPoint}`,
+    volumeName: mountPoint.split('/').pop() || mountPoint,
+    volumeUuid: volumeUuid ?? '',
+    size: 0,
+    isMounted: true,
+    mountPoint,
+  };
+}
+
 // =============================================================================
 // Scan subcommand
 // =============================================================================
@@ -2676,17 +2702,23 @@ const infoSubcommand = new Command('info')
         });
 
         if (resolveResult.path && existsSync(resolveResult.path)) {
+          // Hold the open device for the entire live-status block: UUID
+          // lookup + readiness reuse the already-parsed iTunesDB rather than
+          // re-opening it inside checkDatabase. The try/finally guarantees
+          // adapter.close() runs even if a later block (UUID, readiness)
+          // throws an unexpected exception.
+          let openedDeviceResult: Awaited<ReturnType<typeof openDevice>> | undefined;
           try {
-            const deviceResult = await openDevice(
-              core,
-              resolveResult.path,
-              device,
-              podkitConfig.deviceDefaults
-            );
-            resolvedDeviceCapabilities = deviceResult.capabilities;
             try {
+              openedDeviceResult = await openDevice(
+                core,
+                resolveResult.path,
+                device,
+                podkitConfig.deviceDefaults
+              );
+              resolvedDeviceCapabilities = openedDeviceResult.capabilities;
               const storage = getStorageInfo(resolveResult.path);
-              const tracks = deviceResult.adapter.getTracks();
+              const tracks = openedDeviceResult.adapter.getTracks();
               const musicTracks = tracks.filter((t) => core.isMusicMediaType(t.mediaType));
               const musicCount = musicTracks.length;
               const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
@@ -2715,8 +2747,8 @@ const infoSubcommand = new Command('info')
               };
 
               // iPod-specific model and validation info
-              if (deviceResult.ipod) {
-                const info = deviceResult.ipod.getInfo();
+              if (openedDeviceResult.ipod) {
+                const info = openedDeviceResult.ipod.getInfo();
                 const deviceValidation = validateDevice(info.device, resolveResult.path);
                 liveStatus.model = {
                   name: info.device.modelName,
@@ -2733,7 +2765,7 @@ const infoSubcommand = new Command('info')
               }
 
               // Mass-storage capabilities for JSON output
-              if (!deviceResult.ipod && resolvedDeviceCapabilities) {
+              if (!openedDeviceResult.ipod && resolvedDeviceCapabilities) {
                 liveStatus.massStorageCapabilities = {
                   supportedAudioCodecs: [...resolvedDeviceCapabilities.supportedAudioCodecs],
                   artworkSources: [...resolvedDeviceCapabilities.artworkSources],
@@ -2753,61 +2785,68 @@ const infoSubcommand = new Command('info')
                   percentUsed: Math.round((storage.used / storage.total) * 100),
                 };
               }
-            } finally {
-              deviceResult.adapter.close();
+            } catch (err) {
+              liveStatus = { mounted: true, mountPoint: resolveResult.path };
+              const message = err instanceof Error ? err.message : String(err);
+              liveStatus.databaseError = message;
+              // IpodError on iPod devices is expected (empty/uninitialized)
+              if (err instanceof core.IpodError && !isMassStorageDevice(device?.type)) {
+                // Database not found or corrupt — expected on empty/uninitialized iPods
+              } else {
+                databaseErrorIsUnexpected = true;
+              }
             }
-          } catch (err) {
-            liveStatus = { mounted: true, mountPoint: resolveResult.path };
-            const message = err instanceof Error ? err.message : String(err);
-            liveStatus.databaseError = message;
-            // IpodError on iPod devices is expected (empty/uninitialized)
-            if (err instanceof core.IpodError && !isMassStorageDevice(device?.type)) {
-              // Database not found or corrupt — expected on empty/uninitialized iPods
-            } else {
-              databaseErrorIsUnexpected = true;
+
+            // Look up filesystem UUID for the mount point. Single diskutil-info
+            // call (cheap); avoids the full findIpodDevices walk below.
+            if (liveStatus?.mounted && manager.isSupported) {
+              try {
+                const uuid = await manager.getUuidForMountPoint(resolveResult.path);
+                if (uuid) {
+                  liveStatus.volumeUuid = uuid;
+                }
+              } catch {
+                // Gracefully skip UUID display when extraction fails
+              }
             }
+
+            // Run readiness check for iPod devices (skip mass-storage). In path
+            // mode we synthesize the PlatformDeviceInfo from data we already
+            // have rather than calling manager.findIpodDevices() — that's a
+            // full disk enumeration which on macOS dispatches diskutil
+            // subprocesses per attached disk.
+            if (liveStatus?.mounted && !isMassStorageDevice(device?.type) && manager.isSupported) {
+              try {
+                const matchingIpod =
+                  resolveResult.deviceInfo ??
+                  synthesizePathModeDeviceInfo(resolveResult.path, liveStatus.volumeUuid);
+                const readiness = await core.checkReadiness({
+                  device: matchingIpod,
+                  ipod: openedDeviceResult?.ipod,
+                });
+                const bestModel = readiness.deviceModel ?? readiness.usbModel;
+                readinessData = {
+                  level: readiness.level,
+                  stages: readiness.stages.map((s) => ({
+                    stage: s.stage,
+                    status: s.status,
+                    summary: s.summary,
+                    ...(s.details ? { details: s.details } : {}),
+                  })),
+                  ...(bestModel ? { model: bestModel } : {}),
+                  ...(readiness.summary ? { summary: readiness.summary } : {}),
+                };
+              } catch {
+                // Gracefully skip readiness if it fails
+              }
+            }
+          } finally {
+            // Guaranteed close, even if UUID/readiness blocks throw.
+            // adapter.close() owns the underlying ipod handle.
+            openedDeviceResult?.adapter.close();
           }
         } else if (resolveResult.deviceInfo) {
           liveStatus = { mounted: false };
-        }
-
-        // Look up filesystem UUID for the mount point
-        if (liveStatus?.mounted && resolveResult.path) {
-          try {
-            const uuid = await manager.getUuidForMountPoint(resolveResult.path);
-            if (uuid) {
-              liveStatus.volumeUuid = uuid;
-            }
-          } catch {
-            // Gracefully skip UUID display when extraction fails
-          }
-        }
-
-        // Run readiness check for iPod devices (skip mass-storage)
-        if (!isMassStorageDevice(device?.type) && manager.isSupported) {
-          try {
-            const ipods = await manager.findIpodDevices();
-            const matchingIpod = resolveResult.path
-              ? ipods.find((d) => d.mountPoint === resolveResult.path)
-              : undefined;
-            if (matchingIpod) {
-              const readiness = await core.checkReadiness({ device: matchingIpod });
-              const bestModel = readiness.deviceModel ?? readiness.usbModel;
-              readinessData = {
-                level: readiness.level,
-                stages: readiness.stages.map((s) => ({
-                  stage: s.stage,
-                  status: s.status,
-                  summary: s.summary,
-                  ...(s.details ? { details: s.details } : {}),
-                })),
-                ...(bestModel ? { model: bestModel } : {}),
-                ...(readiness.summary ? { summary: readiness.summary } : {}),
-              };
-            }
-          } catch {
-            // Gracefully skip readiness if it fails
-          }
         }
       }
     } catch (err) {
