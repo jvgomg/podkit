@@ -175,7 +175,8 @@ describe('podkit sync', () => {
 
           // Empty source abort: the CLI refuses to sync when zero tracks are found.
           // This protects against misconfigured paths or downed servers wiping an iPod.
-          expect(result.exitCode).toBe(1);
+          // Sync ran but couldn't complete the requested work — exit 2 (partial-failure).
+          expect(result.exitCode).toBe(2);
           expect(result.stderr).toContain('returned zero tracks');
           expect(result.stderr).toContain('Check your source configuration');
         } finally {

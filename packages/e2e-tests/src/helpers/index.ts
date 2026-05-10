@@ -30,6 +30,8 @@ export {
 
 export { runPreflightChecks, printResults, type CheckResult } from './preflight';
 
+export { expectCliError, type CliErrorJson, type ExpectCliErrorMatch } from './cli-error';
+
 export {
   getVideoFixturesDir,
   getVideoPath,

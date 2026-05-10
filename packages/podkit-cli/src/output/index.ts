@@ -25,13 +25,15 @@
 
 // Types
 export type {
+  ExitCodeSink,
   OutputMode,
   OutputOptions,
   OutputContextConfig,
+  OutputSink,
   SpinnerControl,
   TableOptions,
 } from './types.js';
-export { nullSpinner } from './types.js';
+export { BufferExitCodeSink, nullSpinner, processExitCodeSink } from './types.js';
 
 // Main context class
 export { OutputContext } from './context.js';

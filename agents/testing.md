@@ -394,9 +394,9 @@ Tests assert on the captured JSON shape. Don't write `expect(process.exitCode).t
 
 When in doubt, default to plain `it()`. Cross-file parallelism (bun test workers) gives you most of the speedup for free.
 
-### Output shape
+### Canonical error output shape
 
-Every CLI command returning JSON on failure emits the same shape (or is being migrated to it — see `backlog/tasks/task-314`):
+Every CLI command returning JSON on failure emits the same shape:
 
 ```json
 {
@@ -407,7 +407,81 @@ Every CLI command returning JSON on failure emits the same shape (or is being mi
 }
 ```
 
-JSON consumers should branch on `success === false` and read `error` / `code`.
+JSON consumers should branch on `success === false` and read `error` / `code`. The shape is enforced by `runAction` + `CliError` — every command's `.action()` callback wraps its body in `runAction(out, () => fn())`, every error path inside throws `CliError`. No command sets `process.exitCode` directly for error cases. (A small handful of commands set `process.exitCode = 1` AFTER emitting a successful-shape JSON to signal "ran cleanly but found problems" — e.g. `doctor` reporting an unhealthy device. That is not an error case.)
+
+For multi-line text-mode output, pass a `printText: (out: OutputContext) => void` callback in the `CliError` payload:
+
+```typescript
+throw new CliError({
+  message: 'Mount failed',
+  code: 'MOUNT_REQUIRES_SUDO',
+  details: { device: '/dev/disk4s2' },
+  printText: (o) => {
+    o.error('Mount failed.');
+    o.error('Run: sudo podkit mount');
+  },
+});
+```
+
+Without `printText`, runAction defaults to `out.error(err.message)`. The JSON-mode payload is unaffected; details merge into the top-level object.
+
+### Text-only commands
+
+A few commands (`completions zsh`, `completions bash`) emit non-JSON content (shell scripts) on the success path because that output is meant to be `eval`'d by the shell. Wrapping it in `{ "success": true, "script": "..." }` would break the use case.
+
+For these commands:
+
+- The **success path** writes plain text to stdout via `console.log` or `out.stdout()`. `--json` is ignored on success — the output is still the script.
+- The **error path** still goes through `CliError` + `runAction`. Errors emit canonical JSON when `--json` is set. This part is universal.
+
+Don't add per-command JSON shapes for text-only commands. If a user pipes the output, they want the shell script, not metadata. Document the asymmetry in the command's docstring.
+
+### Narrowing the discriminated union
+
+Each command's `*Output` type is a discriminated union of its success variant `| CliErrorOutput`. Consumers narrow with the `success` field:
+
+```ts
+import type { MountOutput } from 'podkit/commands/mount';
+
+function handle(output: MountOutput) {
+  if (output.success) {
+    // narrowed to MountSuccess: device, mountPoint, dryRunCommand, etc.
+    console.log(`Mounted at ${output.mountPoint}`);
+  } else {
+    // narrowed to CliErrorOutput: error, code, details
+    console.error(`[${output.code}] ${output.error}`);
+    if (output.details.requiresSudo) {
+      console.error('Try: sudo podkit mount');
+    }
+  }
+}
+```
+
+The `code` field (typed per-command via `XErrorCode`) lets consumers branch on machine-readable tags without parsing English. The `details` object carries command-specific extras nested one level — never spread at the top level — so the canonical fields can't collide with payload contents.
+
+For asserting on this shape in tests, use `expectCliError` from `../test-utils/cli-error.js` (in-process) or `../helpers/cli-error.ts` (e2e/subprocess) — see "Asserting on CliError shape" above.
+
+### Test helper: `expectCliError`
+
+Both the in-process (`packages/podkit-cli/src/test-utils/cli-error.ts`) and subprocess (`packages/e2e-tests/src/helpers/cli-error.ts`) helpers collapse the standard "parse JSON, narrow, check fields" flow into one call:
+
+```ts
+// in-process
+expectCliError(stdout, exitCode, {
+  code: MountErrorCodes.MOUNT_REQUIRES_SUDO,
+  error: /elevated privileges/,
+  details: { device: '/dev/disk4s2' },
+  exitCode: 1,           // optional, default 1
+});
+
+// e2e (spawns the CLI)
+const { json } = await expectCliError(
+  ['--config', cfg, 'mount', '--json'],
+  { code: 'MOUNT_REQUIRES_SUDO', error: /sudo/ }
+);
+```
+
+The helper asserts `success === false`, matches `code` exactly, optionally substring/regex-matches `error`, optionally checks `details` with `toMatchObject`, and asserts the exit code. Returns the parsed payload for additional inspection.
 
 ### Where the patterns live
 

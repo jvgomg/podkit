@@ -31,6 +31,42 @@ export interface OutputSink {
 }
 
 /**
+ * Sink for the process exit code. The default sink writes
+ * `process.exitCode`; tests inject a buffer to avoid mutating process-global
+ * state, which would otherwise prevent `it.concurrent` within a file.
+ */
+export interface ExitCodeSink {
+  set(code: number): void;
+  /** Most recently written code, or `undefined` if none. */
+  get(): number | undefined;
+}
+
+/** Default sink — writes `process.exitCode`. */
+export const processExitCodeSink: ExitCodeSink = {
+  set(code) {
+    process.exitCode = code;
+  },
+  get() {
+    return process.exitCode === undefined
+      ? undefined
+      : typeof process.exitCode === 'number'
+        ? process.exitCode
+        : Number(process.exitCode);
+  },
+};
+
+/** Buffer sink — captures into a field. Tests use this. */
+export class BufferExitCodeSink implements ExitCodeSink {
+  private code: number | undefined;
+  set(code: number): void {
+    this.code = code;
+  }
+  get(): number | undefined {
+    return this.code;
+  }
+}
+
+/**
  * Configuration for creating an OutputContext
  */
 export interface OutputContextConfig extends OutputOptions {
@@ -47,6 +83,8 @@ export interface OutputContextConfig extends OutputOptions {
   stdout?: OutputSink;
   /** stderr sink. Defaults to process.stderr. */
   stderr?: OutputSink;
+  /** Exit code sink. Defaults to writing `process.exitCode`. */
+  exitCode?: ExitCodeSink;
 }
 
 /**

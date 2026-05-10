@@ -18,6 +18,28 @@ import * as os from 'node:os';
 import { Command } from 'commander';
 import { parse as parseTOML } from 'smol-toml';
 import { DEFAULT_CONFIG_PATH } from '../config/index.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
+import { OutputContext } from '../output/index.js';
+
+/**
+ * Error codes emitted by `podkit completions`.
+ *
+ * Exhaustive — every CliError thrown from this command's runner uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const CompletionsErrorCodes = {
+  UNSUPPORTED_SHELL: 'UNSUPPORTED_SHELL',
+  WRITE_FAILED: 'WRITE_FAILED',
+} as const;
+export type CompletionsErrorCode =
+  (typeof CompletionsErrorCodes)[keyof typeof CompletionsErrorCodes];
+
+export interface CompletionsSuccess {
+  success: true;
+}
+
+export type CompletionsErrorOutput = CliErrorOutput & { code: CompletionsErrorCode };
+export type CompletionsOutput = CompletionsSuccess | CompletionsErrorOutput;
 
 /** Marker comment used to identify the completions line in shell config files */
 const CONFIG_MARKER = '# podkit shell completions';
@@ -210,74 +232,88 @@ completionsCommand
     'Create a dev shell function wrapping this command (e.g. "bun run podkit")'
   )
   .option('--name <name>', 'Name for the dev function (default: pk)', 'pk')
-  .action((opts: { append?: boolean; alias?: string; name: string }) => {
-    const shell = detectShell();
+  .action(async (opts: { append?: boolean; alias?: string; name: string }, command) => {
+    const rootCommand = command.parent?.parent;
+    const globalOpts = rootCommand?.opts() ?? {};
+    const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    if (!shell) {
-      const shellEnv = process.env.SHELL || '(not set)';
-      console.error(`Unsupported shell: ${shellEnv}`);
-      console.error('Supported shells: zsh, bash');
-      console.error('');
-      console.error('You can still generate completions manually:');
-      console.error('  podkit completions zsh');
-      console.error('  podkit completions bash');
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const shell = detectShell();
 
-    const aliasName = opts.alias ? opts.name : undefined;
-    const block = buildConfigBlock(shell, opts.alias, aliasName);
-    const displayLines = block
-      .trim()
-      .split('\n')
-      .filter((l) => !l.startsWith('#'));
-
-    if (opts.append) {
-      if (isAlreadyInstalled(shell.configFile, aliasName)) {
-        console.log(`Completions are already installed in ${shell.configFile}`);
-        return;
+      if (!shell) {
+        const shellEnv = process.env.SHELL || '(not set)';
+        throw new CliError({
+          message: `Unsupported shell: ${shellEnv}`,
+          code: CompletionsErrorCodes.UNSUPPORTED_SHELL,
+          details: { shell: shellEnv },
+          printText: (o) => {
+            o.error(`Unsupported shell: ${shellEnv}`);
+            o.error('Supported shells: zsh, bash');
+            o.newline();
+            o.error('You can still generate completions manually:');
+            o.error('  podkit completions zsh');
+            o.error('  podkit completions bash');
+          },
+        });
       }
 
-      try {
-        fs.appendFileSync(shell.configFile, block);
-        console.log(`Added to ${shell.configFile}:`);
+      const aliasName = opts.alias ? opts.name : undefined;
+      const block = buildConfigBlock(shell, opts.alias, aliasName);
+      const displayLines = block
+        .trim()
+        .split('\n')
+        .filter((l) => !l.startsWith('#'));
+
+      if (opts.append) {
+        if (isAlreadyInstalled(shell.configFile, aliasName)) {
+          console.log(`Completions are already installed in ${shell.configFile}`);
+          return;
+        }
+
+        try {
+          fs.appendFileSync(shell.configFile, block);
+          console.log(`Added to ${shell.configFile}:`);
+          for (const line of displayLines) {
+            console.log(`  ${line}`);
+          }
+          console.log('');
+          console.log(`Restart your shell or run: source ${shell.configFile}`);
+        } catch (err: any) {
+          throw new CliError({
+            message: `Failed to write to ${shell.configFile}: ${err.message}`,
+            code: CompletionsErrorCodes.WRITE_FAILED,
+            details: { configFile: shell.configFile },
+            printText: (o) => o.error(`Failed to write to ${shell.configFile}: ${err.message}`),
+          });
+        }
+      } else {
+        if (isAlreadyInstalled(shell.configFile, aliasName)) {
+          console.log(`Completions are already installed in ${shell.configFile}`);
+          console.log('');
+          console.log(`If completions aren't working, restart your shell or run:`);
+          console.log(`  source ${shell.configFile}`);
+          return;
+        }
+
+        console.log(`Detected shell: ${shell.name}`);
+        console.log(`Config file: ${shell.configFile}`);
+        console.log('');
+        console.log('Add these lines to your shell config:');
         for (const line of displayLines) {
           console.log(`  ${line}`);
         }
         console.log('');
-        console.log(`Restart your shell or run: source ${shell.configFile}`);
-      } catch (err: any) {
-        console.error(`Failed to write to ${shell.configFile}: ${err.message}`);
-        process.exitCode = 1;
-        return;
-      }
-    } else {
-      if (isAlreadyInstalled(shell.configFile, aliasName)) {
-        console.log(`Completions are already installed in ${shell.configFile}`);
-        console.log('');
-        console.log(`If completions aren't working, restart your shell or run:`);
-        console.log(`  source ${shell.configFile}`);
-        return;
-      }
-
-      console.log(`Detected shell: ${shell.name}`);
-      console.log(`Config file: ${shell.configFile}`);
-      console.log('');
-      console.log('Add these lines to your shell config:');
-      for (const line of displayLines) {
-        console.log(`  ${line}`);
-      }
-      console.log('');
-      let appendCmd = 'podkit completions install --append';
-      if (opts.alias) {
-        appendCmd += ` --alias "${opts.alias}"`;
-        if (opts.name !== 'pk') {
-          appendCmd += ` --name "${opts.name}"`;
+        let appendCmd = 'podkit completions install --append';
+        if (opts.alias) {
+          appendCmd += ` --alias "${opts.alias}"`;
+          if (opts.name !== 'pk') {
+            appendCmd += ` --name "${opts.name}"`;
+          }
         }
+        console.log('Or run this to do it automatically:');
+        console.log(`  ${appendCmd}`);
       }
-      console.log('Or run this to do it automatically:');
-      console.log(`  ${appendCmd}`);
-    }
+    });
   });
 
 function getRootCommand(): Command {

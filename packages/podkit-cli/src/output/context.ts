@@ -22,8 +22,14 @@
  * ```
  */
 
-import type { OutputContextConfig, OutputSink, SpinnerControl, TableOptions } from './types.js';
-import { nullSpinner } from './types.js';
+import type {
+  ExitCodeSink,
+  OutputContextConfig,
+  OutputSink,
+  SpinnerControl,
+  TableOptions,
+} from './types.js';
+import { nullSpinner, processExitCodeSink } from './types.js';
 import type { TipContext } from './tips.js';
 import { collectTips, formatTips } from './tips.js';
 
@@ -76,6 +82,7 @@ export class OutputContext {
   private readonly tty: boolean;
   private readonly out: OutputSink;
   private readonly err: OutputSink;
+  private readonly exitCode: ExitCodeSink;
 
   constructor(config: OutputContextConfig) {
     this.mode = config.mode;
@@ -86,6 +93,24 @@ export class OutputContext {
     this.tty = config.tty;
     this.out = config.stdout ?? process.stdout;
     this.err = config.stderr ?? process.stderr;
+    this.exitCode = config.exitCode ?? processExitCodeSink;
+  }
+
+  /**
+   * Set the process exit code via the configured sink.
+   *
+   * Default sink writes `process.exitCode`. Tests should construct an
+   * OutputContext with a `BufferExitCodeSink` to capture the value
+   * without mutating process-global state — that's what enables
+   * `it.concurrent` within a single file.
+   */
+  setExitCode(code: number): void {
+    this.exitCode.set(code);
+  }
+
+  /** Read the most recently set exit code, or `undefined`. */
+  getExitCode(): number | undefined {
+    return this.exitCode.get();
   }
 
   /**

@@ -8,12 +8,12 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { runCli, runCliJson } from '../helpers/cli-runner';
+import { runCli } from '../helpers/cli-runner';
+import { expectCliError } from '../helpers/cli-error';
 
 describe('podkit device music', () => {
   describe('error handling', () => {
     it('fails when no device configured', async () => {
-      // Use non-existent config to ensure we don't pick up user's config file
       const result = await runCli(['--config', '/nonexistent/config.toml', 'device', 'music']);
 
       expect(result.exitCode).toBe(1);
@@ -21,18 +21,10 @@ describe('podkit device music', () => {
     });
 
     it('outputs error in JSON when no device configured', async () => {
-      // Use non-existent config to ensure we don't pick up user's config file
-      const { result, json } = await runCliJson<{ error: boolean; message: string }>([
-        '--config',
-        '/nonexistent/config.toml',
-        'device',
-        'music',
-        '--json',
-      ]);
-
-      expect(result.exitCode).toBe(1);
-      expect(json?.error).toBe(true);
-      expect(json?.message).toContain('No devices configured');
+      await expectCliError(['--config', '/nonexistent/config.toml', 'device', 'music', '--json'], {
+        error: /No devices configured/,
+        code: 'DEVICE_NOT_RESOLVED',
+      });
     });
 
     it('fails when specified device not found in config', async () => {

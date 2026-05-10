@@ -3,7 +3,28 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { DEFAULT_CONFIG_PATH, DEFAULT_CONFIG, CURRENT_CONFIG_VERSION } from '../config/index.js';
 import type { GlobalOptions } from '../config/index.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext } from '../output/index.js';
+
+/**
+ * Error codes emitted by `podkit init`.
+ *
+ * Exhaustive — every CliError thrown from this command's runner uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const InitErrorCodes = {
+  CONFIG_EXISTS: 'CONFIG_EXISTS',
+} as const;
+export type InitErrorCode = (typeof InitErrorCodes)[keyof typeof InitErrorCodes];
+
+export interface InitSuccess {
+  success: true;
+  configPath: string;
+  created: true;
+}
+
+export type InitErrorOutput = CliErrorOutput & { code: InitErrorCode };
+export type InitOutput = InitSuccess | InitErrorOutput;
 
 /**
  * Default configuration file template (TOML format)
@@ -168,15 +189,19 @@ export const initCommand = new Command('init')
     const configPath = options.path as string;
     const force = options.force as boolean;
 
-    const result = createConfigFile({ configPath, force });
+    await runAction(out, async () => {
+      const result = createConfigFile({ configPath, force });
 
-    if (!result.success) {
-      out.error(`Error: ${result.error}`);
-      out.json({ success: false, error: result.error, configPath: result.configPath });
-      process.exitCode = 1;
-      return;
-    }
+      if (!result.success) {
+        throw new CliError({
+          message: result.error ?? 'Failed to create config file',
+          code: InitErrorCodes.CONFIG_EXISTS,
+          details: { configPath: result.configPath },
+          printText: (o) => o.error(`Error: ${result.error}`),
+        });
+      }
 
-    out.print(formatSuccessMessage(result.configPath));
-    out.json({ success: true, configPath: result.configPath, created: true });
+      out.print(formatSuccessMessage(result.configPath));
+      out.json({ success: true, configPath: result.configPath, created: true });
+    });
   });

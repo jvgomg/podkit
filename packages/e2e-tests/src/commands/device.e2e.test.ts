@@ -725,8 +725,8 @@ describe('podkit doctor with readiness', () => {
     // Database Health section should be skipped
     expect(result.stdout).toContain('Skipped');
     expect(result.stdout).toContain('database is not available');
-    // Should exit with error
-    expect(result.exitCode).toBe(1);
+    // Doctor ran cleanly but found issues — exit 2 (not 1, which would be a command error)
+    expect(result.exitCode).toBe(2);
   });
 
   it('JSON output shows readiness failure when no database', async () => {
@@ -746,7 +746,8 @@ describe('podkit doctor with readiness', () => {
       checks: Array<unknown>;
     }>(['--config', configPath, '--json', '--device', ipodPath, 'doctor']);
 
-    expect(result.exitCode).toBe(1);
+    // Doctor ran cleanly but found issues — exit 2
+    expect(result.exitCode).toBe(2);
     expect(json).not.toBeNull();
     expect(json!.healthy).toBe(false);
     expect(json!.readiness).toBeDefined();
@@ -774,7 +775,8 @@ describe('podkit doctor with readiness', () => {
       checks: Array<unknown>;
     }>(['--config', configPath, '--json', '--device', emptyPath, 'doctor']);
 
-    expect(result.exitCode).toBe(1);
+    // Doctor ran cleanly but found issues — exit 2
+    expect(result.exitCode).toBe(2);
     expect(json).not.toBeNull();
     expect(json!.healthy).toBe(false);
     expect(json!.readiness).toBeDefined();

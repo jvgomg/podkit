@@ -190,6 +190,8 @@ describe('runWithContext isolation against module-level setContext', () => {
 
     const stdout = new BufferSink();
     const stderr = new BufferSink();
+    const { BufferExitCodeSink } = await import('./output/index.js');
+    const exitCode = new BufferExitCodeSink();
     const out = new OutputContext({
       mode: 'json',
       quiet: false,
@@ -199,21 +201,16 @@ describe('runWithContext isolation against module-level setContext', () => {
       tty: false,
       stdout,
       stderr,
+      exitCode,
     });
 
-    const originalExitCode = process.exitCode;
-    process.exitCode = 0;
-    try {
-      await runWithContext(clean, () =>
-        runAction(out, () => runDeviceAdd({ type: 'echo-mini' }, out))
-      );
-      // The runner should have hit the --path-required error (because echo-mini
-      // requires --path), NOT the duplicate-name error from the leaked context.
-      const err = stdout.json<{ success: false; error: string }>();
-      expect(err.error).toContain('--path is required');
-      expect(err.error).not.toContain('already exists');
-    } finally {
-      process.exitCode = originalExitCode;
-    }
+    await runWithContext(clean, () =>
+      runAction(out, () => runDeviceAdd({ type: 'echo-mini' }, out))
+    );
+    // The runner should have hit the --path-required error (because echo-mini
+    // requires --path), NOT the duplicate-name error from the leaked context.
+    const err = stdout.json<{ success: false; error: string }>();
+    expect(err.error).toContain('--path is required');
+    expect(err.error).not.toContain('already exists');
   });
 });

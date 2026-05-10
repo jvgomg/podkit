@@ -21,16 +21,35 @@ import {
   parseCliDeviceArg,
   resolveEffectiveDevice,
 } from '../device-resolver.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext } from '../output/index.js';
 import { getDeviceLabel } from './open-device.js';
 
-export interface EjectOutput {
-  success: boolean;
+/**
+ * Error codes emitted by `podkit eject`.
+ *
+ * Exhaustive — every CliError thrown from this command's runner uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const EjectErrorCodes = {
+  DEVICE_NOT_RESOLVED: 'DEVICE_NOT_RESOLVED',
+  CORE_LOAD_FAILED: 'CORE_LOAD_FAILED',
+  EJECT_UNSUPPORTED: 'EJECT_UNSUPPORTED',
+  DEVICE_PATH_UNRESOLVED: 'DEVICE_PATH_UNRESOLVED',
+  DEVICE_PATH_NOT_FOUND: 'DEVICE_PATH_NOT_FOUND',
+  EJECT_FAILED: 'EJECT_FAILED',
+} as const;
+export type EjectErrorCode = (typeof EjectErrorCodes)[keyof typeof EjectErrorCodes];
+
+export interface EjectSuccess {
+  success: true;
   device?: string;
   forced?: boolean;
   attempts?: number;
-  error?: string;
 }
+
+export type EjectErrorOutput = CliErrorOutput & { code: EjectErrorCode };
+export type EjectOutput = EjectSuccess | EjectErrorOutput;
 
 interface EjectOptions {
   force?: boolean;
@@ -45,149 +64,138 @@ export const ejectCommand = new Command('eject')
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const force = options.force ?? false;
 
-    // Resolve device from --device flag or default
-    const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
-    const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
+    await runAction(out, async () => {
+      const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
+      const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
 
-    if (!deviceResult.success) {
-      out.result<EjectOutput>({ success: false, error: deviceResult.error }, () =>
-        out.error(deviceResult.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+      if (!deviceResult.success) {
+        throw new CliError({
+          message: deviceResult.error,
+          code: EjectErrorCodes.DEVICE_NOT_RESOLVED,
+        });
+      }
 
-    const resolvedDevice = deviceResult.device;
-    const cliPath = deviceResult.cliPath;
+      const resolvedDevice = deviceResult.device;
+      const cliPath = deviceResult.cliPath;
 
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
-    let ejectWithRetry: typeof import('@podkit/core').ejectWithRetry;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let ejectWithRetry: typeof import('@podkit/core').ejectWithRetry;
 
-    try {
-      const core = await import('@podkit/core');
-      getDeviceManager = core.getDeviceManager;
-      ejectWithRetry = core.ejectWithRetry;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<EjectOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
+      try {
+        const core = await import('@podkit/core');
+        getDeviceManager = core.getDeviceManager;
+        ejectWithRetry = core.ejectWithRetry;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: EjectErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
+      }
+
+      const manager = getDeviceManager();
+
+      if (!manager.isSupported) {
+        throw new CliError({
+          message: `Eject is not supported on ${manager.platform}`,
+          code: EjectErrorCodes.EJECT_UNSUPPORTED,
+          printText: (o) => {
+            o.error(`Eject is not supported on ${manager.platform}.`);
+            o.newline();
+            o.error(manager.getManualInstructions('eject'));
+          },
+        });
+      }
+
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
+
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
       });
-      process.exitCode = 1;
-      return;
-    }
 
-    const manager = getDeviceManager();
+      if (!resolveResult.path) {
+        const message = resolveResult.error ?? formatDeviceError(resolveResult);
+        throw new CliError({ message, code: EjectErrorCodes.DEVICE_PATH_UNRESOLVED });
+      }
 
-    if (!manager.isSupported) {
-      out.result<EjectOutput>(
-        { success: false, error: `Eject is not supported on ${manager.platform}` },
-        () => {
-          out.error(`Eject is not supported on ${manager.platform}.`);
-          out.newline();
-          out.error(manager.getManualInstructions('eject'));
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
+      const devicePath = resolveResult.path;
+      const deviceLabel = getDeviceLabel(resolvedDevice?.config?.type);
 
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: EjectErrorCodes.DEVICE_PATH_NOT_FOUND,
+          details: { device: devicePath },
+          printText: (o) => {
+            o.error(`${deviceLabel} not found at: ${devicePath}`);
+            o.newline();
+            o.error(`Make sure the ${deviceLabel.toLowerCase()} is connected and mounted.`);
+          },
+        });
+      }
 
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
+      let additionalMountPoints: string[] = [];
+      try {
+        additionalMountPoints = await manager.getSiblingVolumes(devicePath);
+      } catch {
+        // Best-effort — if discovery fails, just eject the primary volume
+      }
 
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-    });
-
-    if (!resolveResult.path) {
-      out.result<EjectOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const devicePath = resolveResult.path;
-
-    const deviceLabel = getDeviceLabel(resolvedDevice?.config?.type);
-
-    if (!existsSync(devicePath)) {
-      out.result<EjectOutput>(
-        { success: false, device: devicePath, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`${deviceLabel} not found at: ${devicePath}`);
-          out.newline();
-          out.error(`Make sure the ${deviceLabel.toLowerCase()} is connected and mounted.`);
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // Discover sibling volumes for dual-LUN devices (e.g., Echo Mini with
-    // internal storage + SD card). These will be ejected after the primary.
-    let additionalMountPoints: string[] = [];
-    try {
-      additionalMountPoints = await manager.getSiblingVolumes(devicePath);
-    } catch {
-      // Best-effort — if discovery fails, just eject the primary volume
-    }
-
-    const result = await ejectWithRetry(manager, devicePath, {
-      force,
-      deviceLabel,
-      additionalMountPoints,
-      onProgress: (event) => {
-        if (!out.isText) return;
-        switch (event.phase) {
-          case 'sync':
-            out.verbose1(event.message);
-            break;
-          case 'eject':
-          case 'waiting':
-            out.print(event.message);
-            break;
-          case 'eject-sibling':
-            out.verbose1(event.message);
-            break;
-        }
-      },
-    });
-
-    if (result.success) {
-      out.result<EjectOutput>(
-        { success: true, device: devicePath, forced: result.forced, attempts: result.attempts },
-        () => out.success(`${deviceLabel} ejected successfully. Safe to disconnect.`)
-      );
-    } else {
-      out.result<EjectOutput>(
-        {
-          success: false,
-          device: devicePath,
-          forced: result.forced,
-          attempts: result.attempts,
-          error: result.error,
+      const result = await ejectWithRetry(manager, devicePath, {
+        force,
+        deviceLabel,
+        additionalMountPoints,
+        onProgress: (event) => {
+          if (!out.isText) return;
+          switch (event.phase) {
+            case 'sync':
+              out.verbose1(event.message);
+              break;
+            case 'eject':
+            case 'waiting':
+              out.print(event.message);
+              break;
+            case 'eject-sibling':
+              out.verbose1(event.message);
+              break;
+          }
         },
-        () => {
-          out.error(`Failed to eject ${deviceLabel.toLowerCase()}.`);
-          out.newline();
-          if (result.error) {
-            out.error(result.error);
-          }
-          if (!force) {
-            out.newline();
-            out.error('Try: podkit eject --force');
-          }
-        }
-      );
-      process.exitCode = 1;
-    }
+      });
+
+      if (result.success) {
+        out.result<EjectOutput>(
+          { success: true, device: devicePath, forced: result.forced, attempts: result.attempts },
+          () => out.success(`${deviceLabel} ejected successfully. Safe to disconnect.`)
+        );
+      } else {
+        throw new CliError({
+          message: result.error ?? 'Eject failed',
+          code: EjectErrorCodes.EJECT_FAILED,
+          details: { device: devicePath, forced: result.forced, attempts: result.attempts },
+          printText: (o) => {
+            o.error(`Failed to eject ${deviceLabel.toLowerCase()}.`);
+            o.newline();
+            if (result.error) {
+              o.error(result.error);
+            }
+            if (!force) {
+              o.newline();
+              o.error('Try: podkit eject --force');
+            }
+          },
+        });
+      }
+    });
   });

@@ -10,7 +10,38 @@ import {
 } from '../config/migrations/index.js';
 import type { MigrationContext } from '../config/migrations/index.js';
 import type { GlobalOptions } from '../config/types.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext } from '../output/index.js';
+
+/**
+ * Error codes emitted by `podkit migrate`.
+ *
+ * Exhaustive — every CliError thrown from this command's runner uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const MigrateErrorCodes = {
+  CONFIG_NOT_FOUND: 'CONFIG_NOT_FOUND',
+  CONFIG_VERSION_UNREADABLE: 'CONFIG_VERSION_UNREADABLE',
+  MIGRATION_ABORTED: 'MIGRATION_ABORTED',
+  CONFIG_WRITE_FAILED: 'CONFIG_WRITE_FAILED',
+} as const;
+export type MigrateErrorCode = (typeof MigrateErrorCodes)[keyof typeof MigrateErrorCodes];
+
+export interface MigrateSuccess {
+  success: true;
+  configPath: string;
+  version?: number;
+  fromVersion?: number;
+  toVersion?: number;
+  upToDate?: boolean;
+  dryRun?: boolean;
+  applied?: unknown[];
+  diff?: string[];
+  backupPath?: string;
+}
+
+export type MigrateErrorOutput = CliErrorOutput & { code: MigrateErrorCode };
+export type MigrateOutput = MigrateSuccess | MigrateErrorOutput;
 
 /**
  * Resolve the config file path from global options/environment.
@@ -197,172 +228,151 @@ export const migrateCommand = new Command('migrate')
   .option('-n, --dry-run', 'show what would change without writing')
   .option('-y, --yes', 'skip confirmation prompt')
   .action(async (options, command) => {
-    // Access global options from the root command (bypasses normal config loading)
     const rootCommand = command.parent;
     const globalOpts = rootCommand.opts() as GlobalOptions;
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const dryRun = options.dryRun as boolean | undefined;
     const skipConfirm = options.yes as boolean | undefined;
-
-    // Resolve config path
     const configPath = resolveConfigPath(globalOpts);
 
-    // Check if config file exists
-    if (!fs.existsSync(configPath)) {
-      if (globalOpts.json) {
-        out.json({
-          success: false,
-          error: 'Config file not found',
-          configPath,
+    await runAction(out, async () => {
+      if (!fs.existsSync(configPath)) {
+        throw new CliError({
+          message: `Config file not found: ${configPath}`,
+          code: MigrateErrorCodes.CONFIG_NOT_FOUND,
+          details: { configPath },
+          printText: (o) => {
+            o.error(`Config file not found: ${configPath}`);
+            o.print("Run 'podkit init' to create a config file.");
+          },
         });
-      } else {
-        out.error(`Config file not found: ${configPath}`);
-        out.print("Run 'podkit init' to create a config file.");
       }
-      process.exitCode = 1;
-      return;
-    }
 
-    // Read raw TOML content
-    const content = fs.readFileSync(configPath, 'utf-8');
+      const content = fs.readFileSync(configPath, 'utf-8');
 
-    // Determine current version
-    let currentVersion: number;
-    try {
-      currentVersion = readConfigVersion(content);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (globalOpts.json) {
-        out.json({ success: false, error: message, configPath });
-      } else {
-        out.error(`Error reading config version: ${message}`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    // Check if already up to date
-    if (currentVersion >= CURRENT_CONFIG_VERSION) {
-      if (globalOpts.json) {
-        out.json({
-          success: true,
-          configPath,
-          version: currentVersion,
-          upToDate: true,
-          applied: [],
+      let currentVersion: number;
+      try {
+        currentVersion = readConfigVersion(content);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message,
+          code: MigrateErrorCodes.CONFIG_VERSION_UNREADABLE,
+          details: { configPath },
+          printText: (o) => o.error(`Error reading config version: ${message}`),
         });
-      } else {
-        out.print(`Config is up to date (version ${currentVersion}).`);
       }
-      return;
-    }
 
-    // Show pending migrations
-    const pending = getPendingMigrations(currentVersion);
-
-    if (!globalOpts.json) {
-      out.print(`Config file: ${configPath}`);
-      out.print(`Current version: ${currentVersion}`);
-      out.print(`Target version:  ${CURRENT_CONFIG_VERSION}`);
-      out.print('');
-      out.print(`Pending migrations (${pending.length}):`);
-      for (const m of pending) {
-        const typeTag = m.type === 'interactive' ? ' [interactive]' : '';
-        out.print(`  ${m.fromVersion} -> ${m.toVersion}: ${m.description}${typeTag}`);
-      }
-      out.print('');
-    }
-
-    // Create migration context with prompt and filesystem utilities
-    const context = createMigrationContext(!!dryRun);
-
-    // Run migrations (may throw MigrationAbortError for interactive migrations)
-    let result;
-    try {
-      result = await runMigrations(content, currentVersion, context);
-    } catch (err) {
-      if (err instanceof MigrationAbortError) {
-        if (globalOpts.json) {
+      if (currentVersion >= CURRENT_CONFIG_VERSION) {
+        if (out.isJson) {
           out.json({
-            success: false,
-            aborted: true,
+            success: true,
             configPath,
-            error: err.message,
+            version: currentVersion,
+            upToDate: true,
+            applied: [],
           });
         } else {
-          out.print('Migration aborted. No changes were made.');
+          out.print(`Config is up to date (version ${currentVersion}).`);
         }
         return;
       }
-      throw err;
-    }
 
-    // Show diff
-    const diffLines = simpleDiff(content, result.content);
+      const pending = getPendingMigrations(currentVersion);
 
-    if (!globalOpts.json && diffLines.length > 0) {
-      out.print('Changes:');
-      for (const line of diffLines) {
-        out.print(`  ${line}`);
+      if (!out.isJson) {
+        out.print(`Config file: ${configPath}`);
+        out.print(`Current version: ${currentVersion}`);
+        out.print(`Target version:  ${CURRENT_CONFIG_VERSION}`);
+        out.print('');
+        out.print(`Pending migrations (${pending.length}):`);
+        for (const m of pending) {
+          const typeTag = m.type === 'interactive' ? ' [interactive]' : '';
+          out.print(`  ${m.fromVersion} -> ${m.toVersion}: ${m.description}${typeTag}`);
+        }
+        out.print('');
       }
-      out.print('');
-    }
 
-    // Handle dry run
-    if (dryRun) {
-      if (globalOpts.json) {
+      const context = createMigrationContext(!!dryRun);
+
+      let result;
+      try {
+        result = await runMigrations(content, currentVersion, context);
+      } catch (err) {
+        if (err instanceof MigrationAbortError) {
+          throw new CliError({
+            message: err.message,
+            code: MigrateErrorCodes.MIGRATION_ABORTED,
+            exitCode: 0,
+            details: { aborted: true, configPath },
+            printText: (o) => o.print('Migration aborted. No changes were made.'),
+          });
+        }
+        throw err;
+      }
+
+      const diffLines = simpleDiff(content, result.content);
+
+      if (!out.isJson && diffLines.length > 0) {
+        out.print('Changes:');
+        for (const line of diffLines) {
+          out.print(`  ${line}`);
+        }
+        out.print('');
+      }
+
+      if (dryRun) {
+        if (out.isJson) {
+          out.json({
+            success: true,
+            dryRun: true,
+            configPath,
+            fromVersion: result.fromVersion,
+            toVersion: result.toVersion,
+            applied: result.applied,
+            diff: diffLines,
+          });
+        } else {
+          out.print('Dry run — no changes written.');
+        }
+        return;
+      }
+
+      if (!skipConfirm && !out.isJson) {
+        const confirmed = await confirm('Apply changes? (y/N) ');
+        if (!confirmed) {
+          out.print('Migration cancelled.');
+          return;
+        }
+      }
+
+      let backupPath: string;
+      try {
+        backupPath = generateBackupPath(configPath);
+        fs.copyFileSync(configPath, backupPath);
+        fs.writeFileSync(configPath, result.content);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message: `Failed to write config: ${message}`,
+          code: MigrateErrorCodes.CONFIG_WRITE_FAILED,
+          details: { configPath },
+          printText: (o) => o.error(`Failed to write config: ${message}`),
+        });
+      }
+
+      if (out.isJson) {
         out.json({
           success: true,
-          dryRun: true,
           configPath,
+          backupPath,
           fromVersion: result.fromVersion,
           toVersion: result.toVersion,
           applied: result.applied,
-          diff: diffLines,
         });
       } else {
-        out.print('Dry run — no changes written.');
+        out.print(`Backup saved to ${backupPath}`);
+        out.print(`Config migrated from version ${result.fromVersion} to ${result.toVersion}.`);
       }
-      return;
-    }
-
-    // Confirm with user (unless --yes or --json)
-    if (!skipConfirm && !globalOpts.json) {
-      const confirmed = await confirm('Apply changes? (y/N) ');
-      if (!confirmed) {
-        out.print('Migration cancelled.');
-        return;
-      }
-    }
-
-    // Create backup and write migrated content
-    let backupPath: string;
-    try {
-      backupPath = generateBackupPath(configPath);
-      fs.copyFileSync(configPath, backupPath);
-      fs.writeFileSync(configPath, result.content);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      if (globalOpts.json) {
-        out.json({ success: false, error: `Failed to write config: ${message}`, configPath });
-      } else {
-        out.error(`Failed to write config: ${message}`);
-      }
-      process.exitCode = 1;
-      return;
-    }
-
-    if (globalOpts.json) {
-      out.json({
-        success: true,
-        configPath,
-        backupPath,
-        fromVersion: result.fromVersion,
-        toVersion: result.toVersion,
-        applied: result.applied,
-      });
-    } else {
-      out.print(`Backup saved to ${backupPath}`);
-      out.print(`Config migrated from version ${result.fromVersion} to ${result.toVersion}.`);
-    }
+    });
   });

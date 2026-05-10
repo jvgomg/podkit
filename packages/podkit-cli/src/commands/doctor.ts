@@ -30,6 +30,31 @@ import {
 } from '../device-resolver.js';
 import type { DeviceConfig } from '../config/types.js';
 import { OutputContext } from '../output/index.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
+
+/**
+ * Error codes emitted by `podkit doctor`.
+ *
+ * Exhaustive — every CliError thrown from this command's runners (default
+ * doctor + repair pathways) uses one of these. Consumers branching on
+ * `output.code` can rely on this union.
+ */
+export const DoctorErrorCodes = {
+  CORE_LOAD_FAILED: 'CORE_LOAD_FAILED',
+  UNKNOWN_CHECK: 'UNKNOWN_CHECK',
+  CHECK_NOT_REPAIRABLE: 'CHECK_NOT_REPAIRABLE',
+  DEVICE_REQUIRED: 'DEVICE_REQUIRED',
+  COLLECTION_REQUIRED: 'COLLECTION_REQUIRED',
+  DEVICE_NOT_RESOLVED: 'DEVICE_NOT_RESOLVED',
+  INCOMPATIBLE_DEVICE_TYPE: 'INCOMPATIBLE_DEVICE_TYPE',
+  REPAIR_FAILED: 'REPAIR_FAILED',
+  IPOD_DATABASE_OPEN_FAILED: 'IPOD_DATABASE_OPEN_FAILED',
+  COLLECTION_NOT_FOUND: 'COLLECTION_NOT_FOUND',
+  ADAPTER_CONNECT_FAILED: 'ADAPTER_CONNECT_FAILED',
+} as const;
+export type DoctorErrorCode = (typeof DoctorErrorCodes)[keyof typeof DoctorErrorCodes];
+
+export type DoctorErrorOutput = CliErrorOutput & { code: DoctorErrorCode };
 import { existsSync } from '../utils/fs.js';
 import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
@@ -57,6 +82,14 @@ interface DoctorCheckOutput {
 }
 
 interface DoctorOutput {
+  /** Always `true` — the diagnostic ran. Use `status` to read the result. */
+  success: true;
+  /**
+   * Outcome of the diagnostic.
+   * - `'ok'`: every check passed, exit code 0
+   * - `'issues-found'`: ran cleanly but found problems, exit code 2
+   */
+  status: 'ok' | 'issues-found';
   healthy: boolean;
   mountPoint: string;
   deviceModel: string;
@@ -74,7 +107,7 @@ interface DoctorOutput {
 }
 
 interface RepairOutput {
-  success: boolean;
+  success: true;
   summary: string;
   checkId: string;
   dryRun: boolean;
@@ -191,111 +224,118 @@ export const doctorCommand = new Command('doctor')
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    // Repair mode: validate requirements before resolving device
-    if (options.repair) {
-      // Look up the check
-      let getDiagnosticCheck: typeof import('@podkit/core').getDiagnosticCheck;
-      let getDiagnosticCheckIds: typeof import('@podkit/core').getDiagnosticCheckIds;
-      try {
-        const core = await import('@podkit/core');
-        getDiagnosticCheck = core.getDiagnosticCheck;
-        getDiagnosticCheckIds = core.getDiagnosticCheckIds;
-      } catch (err) {
-        out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
-        process.exitCode = 1;
-        return;
-      }
+    await runAction(out, async () => {
+      // Repair mode: validate requirements before resolving device
+      if (options.repair) {
+        // Look up the check
+        let getDiagnosticCheck: typeof import('@podkit/core').getDiagnosticCheck;
+        let getDiagnosticCheckIds: typeof import('@podkit/core').getDiagnosticCheckIds;
+        try {
+          const core = await import('@podkit/core');
+          getDiagnosticCheck = core.getDiagnosticCheck;
+          getDiagnosticCheckIds = core.getDiagnosticCheckIds;
+        } catch (err) {
+          throw new CliError({
+            message: err instanceof Error ? err.message : 'Failed to load podkit-core',
+            code: DoctorErrorCodes.CORE_LOAD_FAILED,
+          });
+        }
 
-      const check = getDiagnosticCheck(options.repair);
-      if (!check) {
-        const available = getDiagnosticCheckIds();
-        out.error(
-          `Unknown check ID: "${options.repair}". Available checks: ${available.join(', ')}`
-        );
-        process.exitCode = 1;
-        return;
-      }
+        const check = getDiagnosticCheck(options.repair);
+        if (!check) {
+          const available = getDiagnosticCheckIds();
+          throw new CliError({
+            message: `Unknown check ID: "${options.repair}". Available checks: ${available.join(', ')}`,
+            code: DoctorErrorCodes.UNKNOWN_CHECK,
+            details: { checkId: options.repair, available },
+          });
+        }
 
-      if (!check.repair) {
-        out.error(`Check "${options.repair}" does not support automatic repair.`);
-        process.exitCode = 1;
-        return;
-      }
+        if (!check.repair) {
+          throw new CliError({
+            message: `Check "${options.repair}" does not support automatic repair.`,
+            code: DoctorErrorCodes.CHECK_NOT_REPAIRABLE,
+            details: { checkId: options.repair },
+          });
+        }
 
-      // System-level repairs (scope === 'system' with no requirements) don't need a device.
-      // Run them immediately without device resolution or database access.
-      const isSystemRepair = check.scope === 'system' && check.repair.requirements.length === 0;
+        // System-level repairs (scope === 'system' with no requirements) don't need a device.
+        // Run them immediately without device resolution or database access.
+        const isSystemRepair = check.scope === 'system' && check.repair.requirements.length === 0;
 
-      if (isSystemRepair) {
-        await runSystemRepair(check, options, out);
-        return;
-      }
-
-      // Map domain requirements to CLI validation
-      if (!globalOpts.device) {
-        out.error(
-          'Repair requires an explicit device. Use -d <name|path> to specify which iPod to repair.'
-        );
-        process.exitCode = 1;
-        return;
-      }
-
-      const needsSource = check.repair.requirements.includes('source-collection');
-      if (needsSource && !options.collection) {
-        const available = Object.keys(config.music ?? {});
-        const hint = available.length > 0 ? ` Available collections: ${available.join(', ')}` : '';
-        out.error(
-          `Repair "${options.repair}" requires a source collection. Use -c <name> to specify.${hint}`
-        );
-        process.exitCode = 1;
-        return;
-      }
-
-      // Resolve device and run repair
-      const resolved = await resolveDevice(out);
-      if ('error' in resolved) {
-        out.error(resolved.error);
-        process.exitCode = 1;
-        return;
-      }
-
-      const isMassStorage =
-        resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
-      if (isMassStorage) {
-        // Check if this repair check applies to mass-storage
-        const applicableTypes = check.applicableTo ?? ['ipod'];
-        if (!applicableTypes.includes('mass-storage')) {
-          out.error(`Repair "${options.repair}" is not available for mass-storage devices.`);
-          process.exitCode = 1;
+        if (isSystemRepair) {
+          await runSystemRepair(check, options, out);
           return;
         }
-        await runMassStorageRepair(
-          resolved.path,
-          resolved.deviceConfig!,
-          check,
-          options,
-          out,
-          config
-        );
+
+        // Map domain requirements to CLI validation
+        if (!globalOpts.device) {
+          throw new CliError({
+            message:
+              'Repair requires an explicit device. Use -d <name|path> to specify which iPod to repair.',
+            code: DoctorErrorCodes.DEVICE_REQUIRED,
+          });
+        }
+
+        const needsSource = check.repair.requirements.includes('source-collection');
+        if (needsSource && !options.collection) {
+          const available = Object.keys(config.music ?? {});
+          const hint =
+            available.length > 0 ? ` Available collections: ${available.join(', ')}` : '';
+          throw new CliError({
+            message: `Repair "${options.repair}" requires a source collection. Use -c <name> to specify.${hint}`,
+            code: DoctorErrorCodes.COLLECTION_REQUIRED,
+            details: { checkId: options.repair, available },
+          });
+        }
+
+        // Resolve device and run repair
+        const resolved = await resolveDevice(out);
+        if ('error' in resolved) {
+          throw new CliError({
+            message: resolved.error,
+            code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
+          });
+        }
+
+        const isMassStorage =
+          resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
+        if (isMassStorage) {
+          // Check if this repair check applies to mass-storage
+          const applicableTypes = check.applicableTo ?? ['ipod'];
+          if (!applicableTypes.includes('mass-storage')) {
+            throw new CliError({
+              message: `Repair "${options.repair}" is not available for mass-storage devices.`,
+              code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
+              details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type },
+            });
+          }
+          await runMassStorageRepair(
+            resolved.path,
+            resolved.deviceConfig!,
+            check,
+            options,
+            out,
+            config
+          );
+          return;
+        }
+
+        await runRepair(resolved.path, check, options, out, config);
         return;
       }
 
-      await runRepair(resolved.path, check, options, out, config);
-      return;
-    }
+      // Diagnostic-only mode
+      const resolved = await resolveDevice(out);
+      if ('error' in resolved) {
+        throw new CliError({
+          message: resolved.error,
+          code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
+        });
+      }
 
-    // Diagnostic-only mode
-    const resolved = await resolveDevice(out);
-    if ('error' in resolved) {
-      out.result<DoctorOutput>(
-        { healthy: false, mountPoint: '', deviceModel: '', deviceType: 'ipod', checks: [] },
-        () => out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
+      await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
+    });
   });
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────
@@ -310,9 +350,10 @@ async function runDoctorDiagnostics(
   try {
     core = await import('@podkit/core');
   } catch (err) {
-    out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : 'Failed to load podkit-core',
+      code: DoctorErrorCodes.CORE_LOAD_FAILED,
+    });
   }
 
   const { config, globalOpts } = getContext();
@@ -347,6 +388,8 @@ async function runDoctorDiagnostics(
     }));
 
     const output: DoctorOutput = {
+      success: true,
+      status: report.healthy ? 'ok' : 'issues-found',
       healthy: report.healthy,
       mountPoint: devicePath,
       deviceModel: label,
@@ -410,7 +453,9 @@ async function runDoctorDiagnostics(
     });
 
     if (!report.healthy) {
-      process.exitCode = 1;
+      // Diagnostic ran cleanly but found problems — exit 2 distinguishes
+      // this from a command error (exit 1).
+      out.setExitCode(2);
     }
     return;
   }
@@ -530,6 +575,8 @@ async function runDoctorDiagnostics(
   const healthy = readinessHealthy && dbHealthy;
 
   const output: DoctorOutput = {
+    success: true,
+    status: healthy ? 'ok' : 'issues-found',
     healthy,
     mountPoint: devicePath,
     deviceModel,
@@ -753,7 +800,9 @@ async function runDoctorDiagnostics(
   opened?.ipod?.close();
 
   if (!healthy) {
-    process.exitCode = 1;
+    // Diagnostic ran cleanly but found problems — exit 2 distinguishes
+    // this from a command error (exit 1).
+    out.setExitCode(2);
   }
 }
 
@@ -787,33 +836,42 @@ async function runSystemRepair(
     adapters: [],
   };
 
+  let result: Awaited<ReturnType<typeof repair.run>>;
   try {
-    const result = await repair.run(stubCtx, { dryRun });
-
-    const output: RepairOutput = {
-      success: result.success,
-      summary: result.summary,
-      checkId: check.id,
-      dryRun,
-      details: result.details,
-    };
-
-    out.result<RepairOutput>(output, () => {
-      out.print(result.summary);
-
-      if (!dryRun && result.success) {
-        out.newline();
-        out.success('Repair complete.');
-      }
-    });
-
-    if (!result.success) {
-      process.exitCode = 1;
-    }
+    result = await repair.run(stubCtx, { dryRun });
   } catch (err) {
-    out.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CliError({
+      message: `Repair failed: ${message}`,
+      code: DoctorErrorCodes.REPAIR_FAILED,
+      details: { checkId: check.id },
+    });
   }
+
+  if (!result.success) {
+    throw new CliError({
+      message: result.summary,
+      code: DoctorErrorCodes.REPAIR_FAILED,
+      details: { checkId: check.id, dryRun, ...result.details },
+    });
+  }
+
+  const output: RepairOutput = {
+    success: true,
+    summary: result.summary,
+    checkId: check.id,
+    dryRun,
+    details: result.details,
+  };
+
+  out.result<RepairOutput>(output, () => {
+    out.print(result.summary);
+
+    if (!dryRun) {
+      out.newline();
+      out.success('Repair complete.');
+    }
+  });
 }
 
 // ── Repair ──────────────────────────────────────────────────────────────────
@@ -832,9 +890,10 @@ async function runRepair(
   try {
     core = await import('@podkit/core');
   } catch (err) {
-    out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : 'Failed to load podkit-core',
+      code: DoctorErrorCodes.CORE_LOAD_FAILED,
+    });
   }
 
   // Open iPod database
@@ -842,89 +901,116 @@ async function runRepair(
   try {
     db = await core.IpodDatabase.open(devicePath);
   } catch (err) {
-    out.error(err instanceof Error ? err.message : 'Failed to open iPod database');
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : 'Failed to open iPod database',
+      code: DoctorErrorCodes.IPOD_DATABASE_OPEN_FAILED,
+    });
   }
 
-  // Resolve source collection adapters if needed
   const adapters: import('@podkit/core').CollectionAdapter[] = [];
-  const needsSource = repair.requirements.includes('source-collection');
-
-  if (needsSource && options.collection) {
-    const allMusic = config.music ?? {};
-    const found = allMusic[options.collection];
-    if (!found) {
-      db.close();
-      const available = Object.keys(allMusic);
-      const msg =
-        available.length > 0
-          ? `Available collections: ${available.join(', ')}`
-          : 'No music collections configured.';
-      out.error(`Music collection "${options.collection}" not found. ${msg}`);
-      process.exitCode = 1;
-      return;
-    }
-
-    try {
-      const adapter = createMusicAdapter({
-        config: found,
-        name: options.collection,
-      });
-      await adapter.connect();
-      adapters.push(adapter);
-    } catch (err) {
-      db.close();
-      out.error(
-        `Failed to connect to source collection: ${err instanceof Error ? err.message : String(err)}`
-      );
-      process.exitCode = 1;
-      return;
-    }
-  }
-
-  if (!dryRun) {
-    out.print(`Repairing ${check.id}: ${repair.description}...`);
-    out.newline();
-  } else {
-    out.print(`Dry run: ${repair.description}...`);
-    out.newline();
-  }
-
-  const shutdown = createShutdownController();
-  shutdown.install();
 
   try {
-    const result = await repair.run(
-      { mountPoint: devicePath, deviceType: 'ipod', db, adapters },
-      {
-        dryRun,
-        signal: shutdown.signal,
-        onProgress: (progress) => {
-          if (!out.isText) return;
-          const p = progress as Record<string, unknown>;
-          if (typeof p.current === 'number' && typeof p.total === 'number') {
-            const pct = Math.round((p.current / p.total) * 100);
-            let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
-            // Append check-specific counters when present
-            if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
-            if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
-            if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
-            process.stderr.write(line);
-          } else if (typeof p.message === 'string') {
-            process.stderr.write(`\r  ${p.message}`);
-          }
-        },
+    // Resolve source collection adapters if needed
+    const needsSource = repair.requirements.includes('source-collection');
+
+    if (needsSource && options.collection) {
+      const allMusic = config.music ?? {};
+      const found = allMusic[options.collection];
+      if (!found) {
+        const available = Object.keys(allMusic);
+        const msg =
+          available.length > 0
+            ? `Available collections: ${available.join(', ')}`
+            : 'No music collections configured.';
+        throw new CliError({
+          message: `Music collection "${options.collection}" not found. ${msg}`,
+          code: DoctorErrorCodes.COLLECTION_NOT_FOUND,
+          details: { collection: options.collection, available },
+        });
       }
-    );
+
+      try {
+        const adapter = createMusicAdapter({
+          config: found,
+          name: options.collection,
+        });
+        await adapter.connect();
+        adapters.push(adapter);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message: `Failed to connect to source collection: ${message}`,
+          code: DoctorErrorCodes.ADAPTER_CONNECT_FAILED,
+          details: { collection: options.collection },
+        });
+      }
+    }
+
+    if (!dryRun) {
+      out.print(`Repairing ${check.id}: ${repair.description}...`);
+      out.newline();
+    } else {
+      out.print(`Dry run: ${repair.description}...`);
+      out.newline();
+    }
+
+    const shutdown = createShutdownController();
+    shutdown.install();
+
+    let result: Awaited<ReturnType<typeof repair.run>>;
+    try {
+      result = await repair.run(
+        { mountPoint: devicePath, deviceType: 'ipod', db, adapters },
+        {
+          dryRun,
+          signal: shutdown.signal,
+          onProgress: (progress) => {
+            if (!out.isText) return;
+            const p = progress as Record<string, unknown>;
+            if (typeof p.current === 'number' && typeof p.total === 'number') {
+              const pct = Math.round((p.current / p.total) * 100);
+              let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
+              // Append check-specific counters when present
+              if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
+              if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
+              if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
+              process.stderr.write(line);
+            } else if (typeof p.message === 'string') {
+              process.stderr.write(`\r  ${p.message}`);
+            }
+          },
+        }
+      );
+    } catch (err) {
+      // Clear progress line before bubbling
+      if (out.isText) {
+        process.stderr.write('\r' + ' '.repeat(100) + '\r');
+      }
+      const message = err instanceof Error ? err.message : String(err);
+      throw new CliError({
+        message: `Repair failed: ${message}`,
+        code: DoctorErrorCodes.REPAIR_FAILED,
+        details: { checkId: check.id },
+      });
+    } finally {
+      shutdown.uninstall();
+    }
 
     // Clear progress line
     if (out.isText) {
       process.stderr.write('\r' + ' '.repeat(100) + '\r');
     }
 
+    if (!result.success) {
+      throw new CliError({
+        message: result.summary,
+        code: DoctorErrorCodes.REPAIR_FAILED,
+        details: { checkId: check.id, dryRun, ...result.details },
+      });
+    }
+
     const output: RepairOutput = {
-      success: result.success,
+      success: true,
       summary: result.summary,
       checkId: check.id,
       dryRun,
@@ -934,36 +1020,12 @@ async function runRepair(
     out.result<RepairOutput>(output, () => {
       out.print(result.summary);
 
-      if (result.details) {
-        const d = result.details;
-        if (d.errorDetails && Array.isArray(d.errorDetails)) {
-          out.newline();
-          out.error('Error details:');
-          for (const err of (
-            d.errorDetails as Array<{ artist: string; title: string; error: string }>
-          ).slice(0, 10)) {
-            out.error(`  ${err.artist} - ${err.title}: ${err.error}`);
-          }
-          if ((d.errorDetails as Array<unknown>).length > 10) {
-            out.error(`  ... and ${(d.errorDetails as Array<unknown>).length - 10} more`);
-          }
-        }
-      }
-
-      if (!dryRun && result.success) {
+      if (!dryRun) {
         out.newline();
         out.success('Repair complete. Run `podkit doctor` to verify.');
       }
     });
-
-    if (!result.success) {
-      process.exitCode = 1;
-    }
-  } catch (err) {
-    out.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
   } finally {
-    shutdown.uninstall();
     for (const adapter of adapters) {
       try {
         await adapter.disconnect();
@@ -1018,9 +1080,10 @@ async function runMassStorageRepair(
   try {
     core = await import('@podkit/core');
   } catch (err) {
-    out.error(err instanceof Error ? err.message : 'Failed to load podkit-core');
-    process.exitCode = 1;
-    return;
+    throw new CliError({
+      message: err instanceof Error ? err.message : 'Failed to load podkit-core',
+      code: DoctorErrorCodes.CORE_LOAD_FAILED,
+    });
   }
 
   const contentPaths = resolveMassStorageContentPaths(deviceConfig, config.deviceDefaults, core);
@@ -1036,8 +1099,9 @@ async function runMassStorageRepair(
   const shutdown = createShutdownController();
   shutdown.install();
 
+  let result: Awaited<ReturnType<typeof repair.run>>;
   try {
-    const result = await repair.run(
+    result = await repair.run(
       {
         mountPoint: devicePath,
         deviceType: 'mass-storage',
@@ -1057,38 +1121,50 @@ async function runMassStorageRepair(
         },
       }
     );
-
-    // Clear progress line
+  } catch (err) {
+    // Clear progress line before bubbling
     if (out.isText) {
       process.stderr.write('\r' + ' '.repeat(80) + '\r');
     }
-
-    const output: RepairOutput = {
-      success: result.success,
-      summary: result.summary,
-      checkId: check.id,
-      dryRun,
-      details: result.details,
-    };
-
-    out.result<RepairOutput>(output, () => {
-      out.print(result.summary);
-
-      if (!dryRun && result.success) {
-        out.newline();
-        out.success('Repair complete. Run `podkit doctor` to verify.');
-      }
+    const message = err instanceof Error ? err.message : String(err);
+    throw new CliError({
+      message: `Repair failed: ${message}`,
+      code: DoctorErrorCodes.REPAIR_FAILED,
+      details: { checkId: check.id },
     });
-
-    if (!result.success) {
-      process.exitCode = 1;
-    }
-  } catch (err) {
-    out.error(`Repair failed: ${err instanceof Error ? err.message : String(err)}`);
-    process.exitCode = 1;
   } finally {
     shutdown.uninstall();
   }
+
+  // Clear progress line
+  if (out.isText) {
+    process.stderr.write('\r' + ' '.repeat(80) + '\r');
+  }
+
+  if (!result.success) {
+    throw new CliError({
+      message: result.summary,
+      code: DoctorErrorCodes.REPAIR_FAILED,
+      details: { checkId: check.id, dryRun, ...result.details },
+    });
+  }
+
+  const output: RepairOutput = {
+    success: true,
+    summary: result.summary,
+    checkId: check.id,
+    dryRun,
+    details: result.details,
+  };
+
+  out.result<RepairOutput>(output, () => {
+    out.print(result.summary);
+
+    if (!dryRun) {
+      out.newline();
+      out.success('Repair complete. Run `podkit doctor` to verify.');
+    }
+  });
 }
 
 // ── Orphan file helpers ────────────────────────────────────────────────────

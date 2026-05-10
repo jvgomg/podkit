@@ -237,7 +237,8 @@ describe('podkit doctor', () => {
 
           const { result, json } = await runDoctor(target.path);
 
-          expect(result.exitCode).toBe(1);
+          // Doctor ran cleanly but found issues — exit 2
+          expect(result.exitCode).toBe(2);
           expect(json).not.toBeNull();
           expect(json!.healthy).toBe(false);
 

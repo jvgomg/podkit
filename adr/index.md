@@ -24,6 +24,8 @@ This section contains Architecture Decision Records (ADRs) documenting significa
 | [ADR-009](/developers/adr/adr-009-self-healing-sync) | Self-Healing Sync | Accepted | 2026-03-14 |
 | [ADR-012](/developers/adr/adr-012-artwork-change-detection) | Artwork Change Detection | Accepted | 2026-03-16 |
 | [ADR-013](/developers/adr/adr-013-ipod-artwork-corruption-diagnosis-and-repair) | iPod Artwork Corruption — Diagnosis and Repair | Draft | 2026-03-20 |
+| [ADR-014](/developers/adr/adr-014-device-capability-architecture) | Device Capability Architecture (m-18) | Accepted | 2026-05-06 |
+| [ADR-015](/developers/adr/adr-015-cli-error-output-shape) | CLI Error Output Shape | Accepted | 2026-05-09 |
 
 ## What is an ADR?
 

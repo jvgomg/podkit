@@ -19,19 +19,39 @@ import {
   parseCliDeviceArg,
   resolveEffectiveDevice,
 } from '../device-resolver.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext, bold } from '../output/index.js';
 import { getDeviceLabel } from './open-device.js';
 import type { DeviceAssessment } from '@podkit/core';
 
-export interface MountOutput {
-  success: boolean;
+/**
+ * Error codes emitted by `podkit mount`.
+ *
+ * Exhaustive — every CliError thrown from this command's runner uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const MountErrorCodes = {
+  DEVICE_NOT_RESOLVED: 'DEVICE_NOT_RESOLVED',
+  CORE_LOAD_FAILED: 'CORE_LOAD_FAILED',
+  MOUNT_UNSUPPORTED: 'MOUNT_UNSUPPORTED',
+  DEVICE_NOT_FOUND: 'DEVICE_NOT_FOUND',
+  NO_DEVICE: 'NO_DEVICE',
+  MOUNT_REQUIRES_SUDO: 'MOUNT_REQUIRES_SUDO',
+  MOUNT_FAILED: 'MOUNT_FAILED',
+} as const;
+export type MountErrorCode = (typeof MountErrorCodes)[keyof typeof MountErrorCodes];
+
+export interface MountSuccess {
+  success: true;
   device?: string;
   mountPoint?: string;
   dryRunCommand?: string;
-  error?: string;
   requiresSudo?: boolean;
   assessment?: DeviceAssessment;
 }
+
+export type MountErrorOutput = CliErrorOutput & { code: MountErrorCode };
+export type MountOutput = MountSuccess | MountErrorOutput;
 
 interface MountOptions {
   disk?: string;
@@ -47,209 +67,212 @@ export const mountCommand = new Command('mount')
   .action(async (options: MountOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    const explicitDisk = options.disk;
-    const dryRun = options.dryRun ?? false;
+    await runAction(out, () => runMount(options, out));
+  });
 
-    // Resolve device from --device flag or default
-    // Note: explicitDisk (--disk option) bypasses named device resolution
-    // Mount's --disk is for disk identifier (e.g., /dev/disk4s2), not mount point
-    const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
-    const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
+export async function runMount(options: MountOptions, out: OutputContext): Promise<void> {
+  const { config, globalOpts } = getContext();
+  const explicitDisk = options.disk;
+  const dryRun = options.dryRun ?? false;
 
-    // If explicit device identifier provided, we don't need a named device
-    if (!deviceResult.success && !explicitDisk) {
-      out.result<MountOutput>({ success: false, error: deviceResult.error }, () =>
-        out.error(deviceResult.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+  const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
+  const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
 
-    // Get resolved device (may be undefined if using explicit device identifier)
-    const resolvedDevice = deviceResult.success ? deviceResult.device : undefined;
+  if (!deviceResult.success && !explicitDisk) {
+    throw new CliError({
+      message: deviceResult.error,
+      code: MountErrorCodes.DEVICE_NOT_RESOLVED,
+    });
+  }
 
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+  const resolvedDevice = deviceResult.success ? deviceResult.device : undefined;
 
-    try {
-      const core = await import('@podkit/core');
-      getDeviceManager = core.getDeviceManager;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<MountOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
+  let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
-    const manager = getDeviceManager();
+  try {
+    const core = await import('@podkit/core');
+    getDeviceManager = core.getDeviceManager;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+    throw new CliError({
+      message,
+      code: MountErrorCodes.CORE_LOAD_FAILED,
+      printText: (o) => {
+        o.error('Failed to load podkit-core.');
+        o.verbose1(`Details: ${message}`);
+      },
+    });
+  }
 
-    if (!manager.isSupported) {
-      out.result<MountOutput>(
-        { success: false, error: `Mount is not supported on ${manager.platform}` },
-        () => {
-          out.error(`Mount is not supported on ${manager.platform}.`);
-          out.newline();
-          out.error(manager.getManualInstructions('mount'));
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
+  const manager = getDeviceManager();
 
-    let deviceId: string | undefined;
-    let volumeName: string | undefined;
+  if (!manager.isSupported) {
+    const message = `Mount is not supported on ${manager.platform}`;
+    throw new CliError({
+      message,
+      code: MountErrorCodes.MOUNT_UNSUPPORTED,
+      printText: (o) => {
+        o.error(`${message}.`);
+        o.newline();
+        o.error(manager.getManualInstructions('mount'));
+      },
+    });
+  }
 
-    if (explicitDisk) {
-      deviceId = explicitDisk;
-    } else {
-      const volumeUuid = resolvedDevice?.config.volumeUuid;
+  let deviceId: string | undefined;
+  let volumeName: string | undefined;
 
-      if (volumeUuid) {
-        const deviceIdentity = getDeviceIdentity(resolvedDevice);
-        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+  if (explicitDisk) {
+    deviceId = explicitDisk;
+  } else {
+    const volumeUuid = resolvedDevice?.config.volumeUuid;
 
-        const device = await manager.findByVolumeUuid(volumeUuid);
+    if (volumeUuid) {
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
 
-        if (!device) {
-          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-          out.result<MountOutput>(
-            { success: false, error: `${devLabel} not found with UUID: ${volumeUuid}` },
-            () => {
-              out.error(`${devLabel} not found with UUID: ${volumeUuid}`);
-              out.newline();
-              out.error(`Make sure the ${devLabel.toLowerCase()} is connected.`);
-              out.newline();
-              out.error('You can specify a device explicitly:');
-              out.error('  podkit mount --disk /dev/disk4s2');
-            }
-          );
-          process.exitCode = 1;
-          return;
-        }
+      const device = await manager.findByVolumeUuid(volumeUuid);
 
-        if (device.isMounted && device.mountPoint) {
-          out.result<MountOutput>(
-            { success: true, device: device.identifier, mountPoint: device.mountPoint },
-            () => out.print(`Device already mounted at: ${device.mountPoint}`)
-          );
-          return;
-        }
+      if (!device) {
+        const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+        const message = `${devLabel} not found with UUID: ${volumeUuid}`;
+        throw new CliError({
+          message,
+          code: MountErrorCodes.DEVICE_NOT_FOUND,
+          printText: (o) => {
+            o.error(message);
+            o.newline();
+            o.error(`Make sure the ${devLabel.toLowerCase()} is connected.`);
+            o.newline();
+            o.error('You can specify a device explicitly:');
+            o.error('  podkit mount --disk /dev/disk4s2');
+          },
+        });
+      }
 
-        deviceId = device.identifier;
-        volumeName = device.volumeName;
-      } else {
+      if (device.isMounted && device.mountPoint) {
         out.result<MountOutput>(
-          { success: false, error: 'No device specified and no device registered in config' },
-          () => {
-            out.error('No device specified and no device registered in config.');
-            out.newline();
-            out.error('Either specify a device:');
-            out.error('  podkit mount --disk /dev/disk4s2');
-            out.newline();
-            out.error('Or register a device first:');
-            out.error('  podkit device add -d <name>');
-          }
+          { success: true, device: device.identifier, mountPoint: device.mountPoint },
+          () => out.print(`Device already mounted at: ${device.mountPoint}`)
         );
-        process.exitCode = 1;
         return;
       }
-    }
 
-    if (!dryRun) {
-      const displayName = volumeName || deviceId;
-      const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-      out.print(`Mounting ${devLabel}: ${displayName}...`);
-    }
-
-    const mountTarget = options.target ?? (volumeName ? `/tmp/podkit-${volumeName}` : undefined);
-
-    const result = await manager.mount(deviceId, {
-      target: mountTarget,
-      dryRun,
-    });
-
-    if (dryRun) {
-      out.result<MountOutput>(
-        {
-          success: true,
-          device: deviceId,
-          mountPoint: result.mountPoint,
-          dryRunCommand: result.dryRunCommand,
-        },
-        () => {
-          out.print('Dry run - command that would be executed:');
-          out.print(`  ${result.dryRunCommand}`);
-          if (result.mountPoint) {
-            out.print(`  Mount point: ${result.mountPoint}`);
-          }
-        }
-      );
-      return;
-    }
-
-    if (result.requiresSudo) {
-      const assessment = result.assessment;
-      out.result<MountOutput>(
-        {
-          success: false,
-          device: deviceId,
-          error: 'Mount requires elevated privileges',
-          requiresSudo: true,
-          dryRunCommand: result.dryRunCommand,
-          assessment,
-        },
-        () => {
-          const displayName = assessment?.volumeName ?? deviceId;
-          const diskId = assessment?.diskIdentifier ?? deviceId;
-          out.error(`Mount failed for ${displayName} (${diskId})`);
-          out.newline();
-
-          if (assessment?.iFlash.confirmed) {
-            out.error('iFlash storage detected:');
-            for (const evidence of assessment.iFlash.evidence) {
-              out.error(`  • ${evidence.signal}: ${evidence.value}`);
-              out.error(`    ${evidence.detail}`);
-            }
-            out.newline();
-            out.error('macOS refuses to automatically mount large FAT32 volumes created by');
-            out.error('iFlash adapters. Elevated privileges are required to bypass this.');
-          } else {
-            out.error('This device requires elevated privileges to mount.');
-          }
-
-          out.newline();
-          out.error('Run:');
-          out.error(`  ${bold('sudo')} podkit mount`);
-
-          out.printTips({ mountRequiresSudo: true });
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    if (result.success) {
-      out.result<MountOutput>(
-        { success: true, device: deviceId, mountPoint: result.mountPoint },
-        () => {
-          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-          out.print(`${devLabel} mounted at: ${result.mountPoint}`);
-          out.newline();
-          out.print('You can now use:');
-          out.print('  podkit device info');
-          out.print('  podkit sync');
-        }
-      );
+      deviceId = device.identifier;
+      volumeName = device.volumeName;
     } else {
-      out.result<MountOutput>({ success: false, device: deviceId, error: result.error }, () => {
-        out.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`);
-        out.newline();
-        if (result.error) {
-          out.error(result.error);
-        }
+      throw new CliError({
+        message: 'No device specified and no device registered in config',
+        code: MountErrorCodes.NO_DEVICE,
+        printText: (o) => {
+          o.error('No device specified and no device registered in config.');
+          o.newline();
+          o.error('Either specify a device:');
+          o.error('  podkit mount --disk /dev/disk4s2');
+          o.newline();
+          o.error('Or register a device first:');
+          o.error('  podkit device add -d <name>');
+        },
       });
-      process.exitCode = 1;
     }
+  }
+
+  if (!dryRun) {
+    const displayName = volumeName || deviceId;
+    const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+    out.print(`Mounting ${devLabel}: ${displayName}...`);
+  }
+
+  const mountTarget = options.target ?? (volumeName ? `/tmp/podkit-${volumeName}` : undefined);
+
+  const result = await manager.mount(deviceId, {
+    target: mountTarget,
+    dryRun,
   });
+
+  if (dryRun) {
+    out.result<MountOutput>(
+      {
+        success: true,
+        device: deviceId,
+        mountPoint: result.mountPoint,
+        dryRunCommand: result.dryRunCommand,
+      },
+      () => {
+        out.print('Dry run - command that would be executed:');
+        out.print(`  ${result.dryRunCommand}`);
+        if (result.mountPoint) {
+          out.print(`  Mount point: ${result.mountPoint}`);
+        }
+      }
+    );
+    return;
+  }
+
+  if (result.requiresSudo) {
+    const assessment = result.assessment;
+    throw new CliError({
+      message: 'Mount requires elevated privileges',
+      code: MountErrorCodes.MOUNT_REQUIRES_SUDO,
+      details: {
+        device: deviceId,
+        requiresSudo: true,
+        dryRunCommand: result.dryRunCommand,
+        assessment,
+      },
+      printText: (o) => {
+        const displayName = assessment?.volumeName ?? deviceId;
+        const diskId = assessment?.diskIdentifier ?? deviceId;
+        o.error(`Mount failed for ${displayName} (${diskId})`);
+        o.newline();
+
+        if (assessment?.iFlash.confirmed) {
+          o.error('iFlash storage detected:');
+          for (const evidence of assessment.iFlash.evidence) {
+            o.error(`  • ${evidence.signal}: ${evidence.value}`);
+            o.error(`    ${evidence.detail}`);
+          }
+          o.newline();
+          o.error('macOS refuses to automatically mount large FAT32 volumes created by');
+          o.error('iFlash adapters. Elevated privileges are required to bypass this.');
+        } else {
+          o.error('This device requires elevated privileges to mount.');
+        }
+
+        o.newline();
+        o.error('Run:');
+        o.error(`  ${bold('sudo')} podkit mount`);
+
+        o.printTips({ mountRequiresSudo: true });
+      },
+    });
+  }
+
+  if (result.success) {
+    out.result<MountOutput>(
+      { success: true, device: deviceId, mountPoint: result.mountPoint },
+      () => {
+        const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+        out.print(`${devLabel} mounted at: ${result.mountPoint}`);
+        out.newline();
+        out.print('You can now use:');
+        out.print('  podkit device info');
+        out.print('  podkit sync');
+      }
+    );
+  } else {
+    const message = result.error ?? 'Mount failed';
+    throw new CliError({
+      message,
+      code: MountErrorCodes.MOUNT_FAILED,
+      details: { device: deviceId },
+      printText: (o) => {
+        o.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`);
+        o.newline();
+        if (result.error) {
+          o.error(result.error);
+        }
+      },
+    });
+  }
+}

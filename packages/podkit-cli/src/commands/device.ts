@@ -23,7 +23,75 @@ import { Command, Option } from 'commander';
 import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statSync, statfsSync } from '../utils/fs.js';
 import { getContext } from '../context.js';
-import { CliError, runAction } from '../errors.js';
+import { CliError, runAction, type CliErrorOutput } from '../errors.js';
+
+/**
+ * Error codes emitted by `podkit device` (and all subcommands).
+ *
+ * Exhaustive — every CliError thrown from this command's runners uses one
+ * of these. Consumers branching on `output.code` can rely on this union.
+ */
+export const DeviceErrorCodes = {
+  // Device resolution / I/O
+  DEVICE_NOT_RESOLVED: 'DEVICE_NOT_RESOLVED',
+  DEVICE_NOT_FOUND: 'DEVICE_NOT_FOUND',
+  DEVICE_PATH_UNRESOLVED: 'DEVICE_PATH_UNRESOLVED',
+  DEVICE_PATH_NOT_FOUND: 'DEVICE_PATH_NOT_FOUND',
+  DEVICE_REQUIRED: 'DEVICE_REQUIRED',
+  NO_DEVICE: 'NO_DEVICE',
+  CORE_LOAD_FAILED: 'CORE_LOAD_FAILED',
+  CONFIG_SAVE_FAILED: 'CONFIG_SAVE_FAILED',
+  CANCELLED: 'CANCELLED',
+  // Add / set / remove
+  INVALID_DEVICE_NAME: 'INVALID_DEVICE_NAME',
+  DEVICE_EXISTS: 'DEVICE_EXISTS',
+  INVALID_QUALITY: 'INVALID_QUALITY',
+  INVALID_AUDIO_QUALITY: 'INVALID_AUDIO_QUALITY',
+  INVALID_VIDEO_QUALITY: 'INVALID_VIDEO_QUALITY',
+  INVALID_ENCODING: 'INVALID_ENCODING',
+  PATH_REQUIRED: 'PATH_REQUIRED',
+  PATH_NOT_FOUND: 'PATH_NOT_FOUND',
+  PATH_NOT_DIRECTORY: 'PATH_NOT_DIRECTORY',
+  INVALID_ARTWORK_RESOLUTION: 'INVALID_ARTWORK_RESOLUTION',
+  INVALID_ARTWORK_SOURCE: 'INVALID_ARTWORK_SOURCE',
+  INVALID_AUDIO_CODEC: 'INVALID_AUDIO_CODEC',
+  INVALID_OPTION_FOR_TYPE: 'INVALID_OPTION_FOR_TYPE',
+  UNSUPPORTED_DEVICE: 'UNSUPPORTED_DEVICE',
+  INIT_FAILED: 'INIT_FAILED',
+  NO_UPDATES: 'NO_UPDATES',
+  // Scan
+  SCAN_UNSUPPORTED: 'SCAN_UNSUPPORTED',
+  NO_IPOD: 'NO_IPOD',
+  DETECTED_MASS_STORAGE: 'DETECTED_MASS_STORAGE',
+  MULTIPLE_IPODS: 'MULTIPLE_IPODS',
+  // Mount
+  MOUNT_UNSUPPORTED: 'MOUNT_UNSUPPORTED',
+  MOUNT_REQUIRES_SUDO: 'MOUNT_REQUIRES_SUDO',
+  MOUNT_FAILED: 'MOUNT_FAILED',
+  // Eject
+  EJECT_UNSUPPORTED: 'EJECT_UNSUPPORTED',
+  EJECT_FAILED: 'EJECT_FAILED',
+  // Init lifecycle
+  DEVICE_ALREADY_INITIALIZED: 'DEVICE_ALREADY_INITIALIZED',
+  NEEDS_FORMAT: 'NEEDS_FORMAT',
+  NEEDS_PARTITION: 'NEEDS_PARTITION',
+  NEEDS_REPAIR: 'NEEDS_REPAIR',
+  HARDWARE_ERROR: 'HARDWARE_ERROR',
+  DATABASE_EXISTS: 'DATABASE_EXISTS',
+  // Content (clear / reset / list)
+  IPOD_ONLY: 'IPOD_ONLY',
+  IPOD_DATABASE_OPEN_FAILED: 'IPOD_DATABASE_OPEN_FAILED',
+  IPOD_DATABASE_INVALID: 'IPOD_DATABASE_INVALID',
+  INVALID_TYPE: 'INVALID_TYPE',
+  RESET_FAILED: 'RESET_FAILED',
+  RESET_ARTWORK_FAILED: 'RESET_ARTWORK_FAILED',
+  // Music / video listing
+  INVALID_OPTION: 'INVALID_OPTION',
+  INVALID_FIELDS: 'INVALID_FIELDS',
+  MUSIC_LIST_FAILED: 'MUSIC_LIST_FAILED',
+  VIDEO_LIST_FAILED: 'VIDEO_LIST_FAILED',
+} as const;
+export type DeviceErrorCode = (typeof DeviceErrorCodes)[keyof typeof DeviceErrorCodes];
 import {
   addDevice,
   updateDevice,
@@ -321,8 +389,8 @@ function resolveDeviceArg(): DeviceArgResult {
 // Output types
 // =============================================================================
 
-export interface DeviceListOutput {
-  success: boolean;
+export interface DeviceListSuccess {
+  success: true;
   devices: Array<{
     name: string;
     isDefault: boolean;
@@ -340,11 +408,13 @@ export interface DeviceListOutput {
     artworkSource: string;
   }>;
   defaultDevice?: string;
-  error?: string;
 }
 
-export interface DeviceAddOutput {
-  success: boolean;
+export type DeviceListErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceListOutput = DeviceListSuccess | DeviceListErrorOutput;
+
+export interface DeviceAddSuccess {
+  success: true;
   device?: {
     name: string;
     identifier: string;
@@ -360,18 +430,22 @@ export interface DeviceAddOutput {
   saved?: boolean;
   configPath?: string;
   isDefault?: boolean;
-  error?: string;
 }
 
-export interface DeviceRemoveOutput {
-  success: boolean;
+export type DeviceAddErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceAddOutput = DeviceAddSuccess | DeviceAddErrorOutput;
+
+export interface DeviceRemoveSuccess {
+  success: true;
   device?: string;
   wasDefault?: boolean;
-  error?: string;
 }
 
-export interface DeviceInfoOutput {
-  success: boolean;
+export type DeviceRemoveErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceRemoveOutput = DeviceRemoveSuccess | DeviceRemoveErrorOutput;
+
+export interface DeviceInfoSuccess {
+  success: true;
   device?: {
     name: string;
     volumeUuid?: string;
@@ -446,82 +520,102 @@ export interface DeviceInfoOutput {
     model?: DeviceModelOutput;
     summary?: { trackCount: number; freeBytes?: number; totalBytes?: number };
   };
-  error?: string;
 }
 
-export interface DeviceMusicOutput {
-  success: boolean;
+export type DeviceInfoErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceInfoOutput = DeviceInfoSuccess | DeviceInfoErrorOutput;
+
+export interface DeviceMusicSuccess {
+  success: true;
   tracks?: Array<Record<string, unknown>>;
   count?: number;
-  error?: string;
 }
 
-export interface DeviceVideoOutput {
-  success: boolean;
+export type DeviceMusicErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceMusicOutput = DeviceMusicSuccess | DeviceMusicErrorOutput;
+
+export interface DeviceVideoSuccess {
+  success: true;
   videos?: Array<Record<string, unknown>>;
   count?: number;
-  error?: string;
 }
 
-export interface DeviceClearOutput {
-  success: boolean;
+export type DeviceVideoErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceVideoOutput = DeviceVideoSuccess | DeviceVideoErrorOutput;
+
+export interface DeviceClearSuccess {
+  success: true;
   contentType?: 'music' | 'video' | 'all';
   tracksRemoved?: number;
   totalTracks?: number;
   totalSize?: number;
   dryRun?: boolean;
-  error?: string;
   fileDeleteErrors?: string[];
 }
 
-export interface DeviceResetOutput {
-  success: boolean;
+export type DeviceClearErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceClearOutput = DeviceClearSuccess | DeviceClearErrorOutput;
+
+export interface DeviceResetSuccess {
+  success: true;
   mountPoint?: string;
   modelName?: string;
   tracksRemoved?: number;
   dryRun?: boolean;
-  error?: string;
 }
 
-export interface DeviceEjectOutput {
-  success: boolean;
+export type DeviceResetErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceResetOutput = DeviceResetSuccess | DeviceResetErrorOutput;
+
+export interface DeviceEjectSuccess {
+  success: true;
   device?: string;
   forced?: boolean;
-  error?: string;
 }
 
-export interface DeviceMountOutput {
-  success: boolean;
+export type DeviceEjectErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceEjectOutput = DeviceEjectSuccess | DeviceEjectErrorOutput;
+
+export interface DeviceMountSuccess {
+  success: true;
   device?: string;
   mountPoint?: string;
   dryRunCommand?: string;
-  error?: string;
   requiresSudo?: boolean;
   assessment?: import('@podkit/core').DeviceAssessment;
 }
 
-export interface DeviceInitOutput {
-  success: boolean;
+export type DeviceMountErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceMountOutput = DeviceMountSuccess | DeviceMountErrorOutput;
+
+export interface DeviceInitSuccess {
+  success: true;
   device?: string;
   mountPoint?: string;
   modelName?: string;
   readinessLevel?: string;
-  error?: string;
 }
 
-export interface DeviceSetOutput {
-  success: boolean;
+export type DeviceInitErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceInitOutput = DeviceInitSuccess | DeviceInitErrorOutput;
+
+export interface DeviceSetSuccess {
+  success: true;
   device?: string;
   updated?: Record<string, unknown>;
-  error?: string;
 }
 
-export interface DeviceDefaultOutput {
-  success: boolean;
+export type DeviceSetErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceSetOutput = DeviceSetSuccess | DeviceSetErrorOutput;
+
+export interface DeviceDefaultSuccess {
+  success: true;
   device?: string;
   cleared?: boolean;
-  error?: string;
 }
+
+export type DeviceDefaultErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceDefaultOutput = DeviceDefaultSuccess | DeviceDefaultErrorOutput;
 
 /** Serialised iPod model identity for JSON output */
 export interface DeviceModelOutput {
@@ -534,8 +628,8 @@ export interface DeviceModelOutput {
   color?: string;
 }
 
-export interface DeviceScanOutput {
-  success: boolean;
+export interface DeviceScanSuccess {
+  success: true;
   devices?: Array<{
     volumeName: string;
     volumeUuid: string;
@@ -566,8 +660,10 @@ export interface DeviceScanOutput {
     type: string;
     path?: string;
   }>;
-  error?: string;
 }
+
+export type DeviceScanErrorOutput = CliErrorOutput & { code: DeviceErrorCode };
+export type DeviceScanOutput = DeviceScanSuccess | DeviceScanErrorOutput;
 
 // =============================================================================
 // Re-export display utilities for backward compatibility
@@ -951,266 +1047,270 @@ const scanSubcommand = new Command('scan')
     const { globalOpts, config } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    // Load core dependencies
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
-    let checkReadiness: typeof import('@podkit/core').checkReadiness;
-    let enumerateUsb: typeof import('@podkit/core').enumerateUsb;
-    let classifyUsbDevices: typeof import('@podkit/core').classifyUsbDevices;
-    let createUsbOnlyReadinessResult: typeof import('@podkit/core').createUsbOnlyReadinessResult;
-    try {
-      const core = await import('@podkit/core');
-      getDeviceManager = core.getDeviceManager;
-      checkReadiness = core.checkReadiness;
-      enumerateUsb = core.enumerateUsb;
-      classifyUsbDevices = core.classifyUsbDevices;
-      createUsbOnlyReadinessResult = core.createUsbOnlyReadinessResult;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceScanOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
-
-    const manager = getDeviceManager();
-
-    // Enumerate the USB bus and classify the result. `enumerateUsb` returns
-    // EVERY USB device on the bus (mice, hubs, docks, …); `classifyUsbDevices`
-    // drops everything that is not a recognised iPod or mass-storage DAP, so
-    // the rest of `device scan` only ever sees real music players.
-    type RecognizedDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
-    type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
-    type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
-
-    let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
-    let recognizedDevices: RecognizedDevice[] = [];
-    if (manager.isSupported) {
-      const [foundIpods, enumerated] = await Promise.all([
-        manager.findIpodDevices(),
-        enumerateUsb(),
-      ]);
-      ipods = foundIpods;
-      recognizedDevices = classifyUsbDevices(enumerated);
-    }
-
-    // Correlate recognised USB devices with disk iPods by
-    // diskIdentifier ↔ identifier. USB diskIdentifier is the whole-disk BSD name
-    // (e.g., "disk5"); PlatformDeviceInfo.identifier is the partition (e.g.,
-    // "disk5s2"). Only iPod-classified entries can correlate to a disk iPod —
-    // mass-storage entries render as their own scan group.
-    const ipodRecognizedList = recognizedDevices.filter(
-      (d): d is IpodRecognized => d.kind === 'ipod'
-    );
-    const massStorageList = recognizedDevices.filter(
-      (d): d is MassStorageRecognized => d.kind === 'mass-storage'
-    );
-
-    const ipodUsbByDisk = new Map<string, IpodRecognized>();
-    for (const r of ipodRecognizedList) {
-      if (r.device.diskIdentifier) {
-        ipodUsbByDisk.set(r.device.diskIdentifier, r);
+    await runAction(out, async () => {
+      // Load core dependencies
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let checkReadiness: typeof import('@podkit/core').checkReadiness;
+      let enumerateUsb: typeof import('@podkit/core').enumerateUsb;
+      let classifyUsbDevices: typeof import('@podkit/core').classifyUsbDevices;
+      let createUsbOnlyReadinessResult: typeof import('@podkit/core').createUsbOnlyReadinessResult;
+      try {
+        const core = await import('@podkit/core');
+        getDeviceManager = core.getDeviceManager;
+        checkReadiness = core.checkReadiness;
+        enumerateUsb = core.enumerateUsb;
+        classifyUsbDevices = core.classifyUsbDevices;
+        createUsbOnlyReadinessResult = core.createUsbOnlyReadinessResult;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
       }
-    }
 
-    function findMatchingUsbIpod(identifier: string): IpodRecognized | undefined {
-      const wholeDisk = identifier.replace(/s\d+$/, '');
-      return ipodUsbByDisk.get(wholeDisk);
-    }
+      const manager = getDeviceManager();
 
-    // USB-only iPods = iPod-classified devices without a matched disk
-    const matchedIpodDiskIds = new Set<string>();
-    for (const ipod of ipods) {
-      const wholeDisk = ipod.identifier.replace(/s\d+$/, '');
-      if (ipodUsbByDisk.has(wholeDisk)) matchedIpodDiskIds.add(wholeDisk);
-    }
-    const usbOnlyIpods = ipodRecognizedList.filter(
-      (r) => !r.device.diskIdentifier || !matchedIpodDiskIds.has(r.device.diskIdentifier)
-    );
+      // Enumerate the USB bus and classify the result. `enumerateUsb` returns
+      // EVERY USB device on the bus (mice, hubs, docks, …); `classifyUsbDevices`
+      // drops everything that is not a recognised iPod or mass-storage DAP, so
+      // the rest of `device scan` only ever sees real music players.
+      type RecognizedDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
+      type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
+      type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
 
-    // Gather configured devices not found in the scan
-    const detectedUuids = new Set(ipods.map((d) => d.volumeUuid?.toUpperCase()).filter(Boolean));
-    const configuredDevices = findUndetectedDevices(detectedUuids, config.devices ?? {});
-
-    // Run readiness pipeline on each iPod (only on supported platforms)
-    const readinessResults: ReadinessResult[] = [];
-    if (manager.isSupported) {
-      for (const ipod of ipods) {
-        const matchedUsb = findMatchingUsbIpod(ipod.identifier);
-        readinessResults.push(
-          await checkReadiness({
-            device: ipod,
-            usbConnection: matchedUsb?.device,
-            usbModel: matchedUsb?.model,
-          })
-        );
+      let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
+      let recognizedDevices: RecognizedDevice[] = [];
+      if (manager.isSupported) {
+        const [foundIpods, enumerated] = await Promise.all([
+          manager.findIpodDevices(),
+          enumerateUsb(),
+        ]);
+        ipods = foundIpods;
+        recognizedDevices = classifyUsbDevices(enumerated);
       }
-    }
 
-    // Handle unmounted devices: prompt or auto-mount
-    if (manager.isSupported) {
-      const { interpretError } = await import('@podkit/core');
-      for (let i = 0; i < ipods.length; i++) {
-        const ipod = ipods[i]!;
-        if (ipod.isMounted) continue;
+      // Correlate recognised USB devices with disk iPods by
+      // diskIdentifier ↔ identifier. USB diskIdentifier is the whole-disk BSD name
+      // (e.g., "disk5"); PlatformDeviceInfo.identifier is the partition (e.g.,
+      // "disk5s2"). Only iPod-classified entries can correlate to a disk iPod —
+      // mass-storage entries render as their own scan group.
+      const ipodRecognizedList = recognizedDevices.filter(
+        (d): d is IpodRecognized => d.kind === 'ipod'
+      );
+      const massStorageList = recognizedDevices.filter(
+        (d): d is MassStorageRecognized => d.kind === 'mass-storage'
+      );
 
-        const readiness = readinessResults[i];
-        const mountStage = readiness?.stages.find((s) => s.stage === 'mount');
-        if (!mountStage || mountStage.status !== 'fail') continue;
-        if (mountStage.details?.isMounted !== false) continue;
-
-        const label = ipod.volumeName || '(unnamed)';
-        let shouldMount = false;
-
-        if (scanOptions.mount) {
-          // --mount flag: auto-mount
-          shouldMount = true;
-        } else if (process.stdout.isTTY && !globalOpts.json) {
-          // Interactive TTY: prompt user
-          shouldMount = await confirm(`${label} is unmounted. Mount now?`);
+      const ipodUsbByDisk = new Map<string, IpodRecognized>();
+      for (const r of ipodRecognizedList) {
+        if (r.device.diskIdentifier) {
+          ipodUsbByDisk.set(r.device.diskIdentifier, r);
         }
+      }
 
-        if (shouldMount) {
-          try {
-            const result = await manager.mount(ipod.identifier);
-            if (result.success && result.mountPoint) {
-              // Update the ipod entry with new mount info
-              ipod.isMounted = true;
-              (ipod as { mountPoint?: string }).mountPoint = result.mountPoint;
-              // Re-run readiness to get full picture
-              readinessResults[i] = await checkReadiness({ device: ipod });
-              out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
-            } else if (result.requiresSudo) {
-              const assessment = result.assessment;
-              if (assessment?.iFlash.confirmed) {
-                const lines = formatIFlashMountExplanation(assessment);
-                for (const line of lines) {
-                  out.error(line);
+      function findMatchingUsbIpod(identifier: string): IpodRecognized | undefined {
+        const wholeDisk = identifier.replace(/s\d+$/, '');
+        return ipodUsbByDisk.get(wholeDisk);
+      }
+
+      // USB-only iPods = iPod-classified devices without a matched disk
+      const matchedIpodDiskIds = new Set<string>();
+      for (const ipod of ipods) {
+        const wholeDisk = ipod.identifier.replace(/s\d+$/, '');
+        if (ipodUsbByDisk.has(wholeDisk)) matchedIpodDiskIds.add(wholeDisk);
+      }
+      const usbOnlyIpods = ipodRecognizedList.filter(
+        (r) => !r.device.diskIdentifier || !matchedIpodDiskIds.has(r.device.diskIdentifier)
+      );
+
+      // Gather configured devices not found in the scan
+      const detectedUuids = new Set(ipods.map((d) => d.volumeUuid?.toUpperCase()).filter(Boolean));
+      const configuredDevices = findUndetectedDevices(detectedUuids, config.devices ?? {});
+
+      // Run readiness pipeline on each iPod (only on supported platforms)
+      const readinessResults: ReadinessResult[] = [];
+      if (manager.isSupported) {
+        for (const ipod of ipods) {
+          const matchedUsb = findMatchingUsbIpod(ipod.identifier);
+          readinessResults.push(
+            await checkReadiness({
+              device: ipod,
+              usbConnection: matchedUsb?.device,
+              usbModel: matchedUsb?.model,
+            })
+          );
+        }
+      }
+
+      // Handle unmounted devices: prompt or auto-mount
+      if (manager.isSupported) {
+        const { interpretError } = await import('@podkit/core');
+        for (let i = 0; i < ipods.length; i++) {
+          const ipod = ipods[i]!;
+          if (ipod.isMounted) continue;
+
+          const readiness = readinessResults[i];
+          const mountStage = readiness?.stages.find((s) => s.stage === 'mount');
+          if (!mountStage || mountStage.status !== 'fail') continue;
+          if (mountStage.details?.isMounted !== false) continue;
+
+          const label = ipod.volumeName || '(unnamed)';
+          let shouldMount = false;
+
+          if (scanOptions.mount) {
+            // --mount flag: auto-mount
+            shouldMount = true;
+          } else if (process.stdout.isTTY && !globalOpts.json) {
+            // Interactive TTY: prompt user
+            shouldMount = await confirm(`${label} is unmounted. Mount now?`);
+          }
+
+          if (shouldMount) {
+            try {
+              const result = await manager.mount(ipod.identifier);
+              if (result.success && result.mountPoint) {
+                // Update the ipod entry with new mount info
+                ipod.isMounted = true;
+                (ipod as { mountPoint?: string }).mountPoint = result.mountPoint;
+                // Re-run readiness to get full picture
+                readinessResults[i] = await checkReadiness({ device: ipod });
+                out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
+              } else if (result.requiresSudo) {
+                const assessment = result.assessment;
+                if (assessment?.iFlash.confirmed) {
+                  const lines = formatIFlashMountExplanation(assessment);
+                  for (const line of lines) {
+                    out.error(line);
+                  }
+                } else {
+                  out.error(`Failed to mount ${label}: elevated privileges required.`);
                 }
+                out.newline();
+                out.error(`Run:  ${bold('sudo')} podkit device scan --mount`);
               } else {
-                out.error(`Failed to mount ${label}: elevated privileges required.`);
+                const errMsg = result.error ?? 'Unknown mount error';
+                const interpreted = interpretError(errMsg);
+                out.error(`Failed to mount ${label}: ${interpreted.explanation}`);
               }
-              out.newline();
-              out.error(`Run:  ${bold('sudo')} podkit device scan --mount`);
-            } else {
-              const errMsg = result.error ?? 'Unknown mount error';
-              const interpreted = interpretError(errMsg);
+            } catch (err) {
+              const interpreted = interpretError(err instanceof Error ? err : String(err));
               out.error(`Failed to mount ${label}: ${interpreted.explanation}`);
             }
-          } catch (err) {
-            const interpreted = interpretError(err instanceof Error ? err : String(err));
-            out.error(`Failed to mount ${label}: ${interpreted.explanation}`);
           }
         }
       }
-    }
 
-    const devices = ipods.map((d, i) => {
-      const readiness = readinessResults[i];
-      const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
-      const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
-      return {
-        volumeName: d.volumeName,
-        volumeUuid: d.volumeUuid,
-        identifier: d.identifier,
-        size: d.size,
-        isMounted: d.isMounted,
-        ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
-        ...(configuredAs ? { configuredAs } : {}),
-        ...(bestModel ? { model: bestModel } : {}),
-        ...(readiness
-          ? {
-              readiness: {
-                level: readiness.level,
-                stages: readiness.stages.map((s) => ({
-                  stage: s.stage,
-                  status: s.status,
-                  summary: s.summary,
-                  ...(s.details ? { details: s.details } : {}),
-                })),
-                ...(readiness.summary ? { summary: readiness.summary } : {}),
-              },
-            }
-          : {}),
-      };
-    });
+      const devices = ipods.map((d, i) => {
+        const readiness = readinessResults[i];
+        const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
+        const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
+        return {
+          volumeName: d.volumeName,
+          volumeUuid: d.volumeUuid,
+          identifier: d.identifier,
+          size: d.size,
+          isMounted: d.isMounted,
+          ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
+          ...(configuredAs ? { configuredAs } : {}),
+          ...(bestModel ? { model: bestModel } : {}),
+          ...(readiness
+            ? {
+                readiness: {
+                  level: readiness.level,
+                  stages: readiness.stages.map((s) => ({
+                    stage: s.stage,
+                    status: s.status,
+                    summary: s.summary,
+                    ...(s.details ? { details: s.details } : {}),
+                  })),
+                  ...(readiness.summary ? { summary: readiness.summary } : {}),
+                },
+              }
+            : {}),
+        };
+      });
 
-    const hasAnyDevices =
-      ipods.length > 0 ||
-      usbOnlyIpods.length > 0 ||
-      massStorageList.length > 0 ||
-      configuredDevices.length > 0;
+      const hasAnyDevices =
+        ipods.length > 0 ||
+        usbOnlyIpods.length > 0 ||
+        massStorageList.length > 0 ||
+        configuredDevices.length > 0;
 
-    // Handle --report flag: generate diagnostic report instead of normal output
-    if (scanOptions.report) {
-      const cliVersion = scanSubcommand.parent?.parent?.version() ?? 'unknown';
-      const report = await generateDiagnosticReport(
-        ipods,
-        readinessResults,
-        usbOnlyIpods.map((r) => ({
-          modelName: r.model?.displayName,
-          supported: r.supported,
-          notSupportedReason: r.notSupportedReason,
-        })),
-        massStorageList.map((r) => ({
-          presetId: r.presetId,
-          diskIdentifier: r.device.diskIdentifier,
-        })),
-        configuredDevices,
-        config,
-        cliVersion
-      );
-      out.stdout(redactPaths(report));
-      return;
-    }
-
-    const ipodRows: DeviceScanIpodRow[] = ipods.map((device, i) => {
-      const readiness = readinessResults[i];
-      const matchedUsb = findMatchingUsbIpod(device.identifier);
-      const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
-      return {
-        device: {
-          volumeName: device.volumeName,
-          volumeUuid: device.volumeUuid,
-          identifier: device.identifier,
-          size: device.size,
-          isMounted: device.isMounted,
-          ...(device.mountPoint ? { mountPoint: device.mountPoint } : {}),
-        },
-        ...(readiness ? { readiness } : {}),
-        ...(configuredName ? { configuredName } : {}),
-        ...(matchedUsb?.model?.displayName
-          ? { fallbackUsbModelDisplayName: matchedUsb.model.displayName }
-          : {}),
-      };
-    });
-
-    const renderInput: DeviceScanInput = {
-      ipods: ipodRows,
-      usbOnlyIpods,
-      massStorageDevices: massStorageList,
-      configuredDevices,
-      isSupportedPlatform: manager.isSupported,
-      createUsbOnlyReadinessResult,
-    };
-
-    const writeRender = () => {
-      for (const line of renderDeviceScan(renderInput)) {
-        if (line === '') out.newline();
-        else out.print(line);
+      // Handle --report flag: generate diagnostic report instead of normal output
+      if (scanOptions.report) {
+        const cliVersion = scanSubcommand.parent?.parent?.version() ?? 'unknown';
+        const report = await generateDiagnosticReport(
+          ipods,
+          readinessResults,
+          usbOnlyIpods.map((r) => ({
+            modelName: r.model?.displayName,
+            supported: r.supported,
+            notSupportedReason: r.notSupportedReason,
+          })),
+          massStorageList.map((r) => ({
+            presetId: r.presetId,
+            diskIdentifier: r.device.diskIdentifier,
+          })),
+          configuredDevices,
+          config,
+          cliVersion
+        );
+        out.stdout(redactPaths(report));
+        return;
       }
-    };
 
-    if (!hasAnyDevices) {
-      out.result<DeviceScanOutput>(
-        { success: true, devices: [], configuredDevices: [] },
-        writeRender
-      );
-      return;
-    }
+      const ipodRows: DeviceScanIpodRow[] = ipods.map((device, i) => {
+        const readiness = readinessResults[i];
+        const matchedUsb = findMatchingUsbIpod(device.identifier);
+        const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
+        return {
+          device: {
+            volumeName: device.volumeName,
+            volumeUuid: device.volumeUuid,
+            identifier: device.identifier,
+            size: device.size,
+            isMounted: device.isMounted,
+            ...(device.mountPoint ? { mountPoint: device.mountPoint } : {}),
+          },
+          ...(readiness ? { readiness } : {}),
+          ...(configuredName ? { configuredName } : {}),
+          ...(matchedUsb?.model?.displayName
+            ? { fallbackUsbModelDisplayName: matchedUsb.model.displayName }
+            : {}),
+        };
+      });
 
-    out.result<DeviceScanOutput>({ success: true, devices, configuredDevices }, writeRender);
+      const renderInput: DeviceScanInput = {
+        ipods: ipodRows,
+        usbOnlyIpods,
+        massStorageDevices: massStorageList,
+        configuredDevices,
+        isSupportedPlatform: manager.isSupported,
+        createUsbOnlyReadinessResult,
+      };
+
+      const writeRender = () => {
+        for (const line of renderDeviceScan(renderInput)) {
+          if (line === '') out.newline();
+          else out.print(line);
+        }
+      };
+
+      if (!hasAnyDevices) {
+        out.result<DeviceScanOutput>(
+          { success: true, devices: [], configuredDevices: [] },
+          writeRender
+        );
+        return;
+      }
+
+      out.result<DeviceScanOutput>({ success: true, devices, configuredDevices }, writeRender);
+    });
   });
 
 // =============================================================================
@@ -1581,7 +1681,7 @@ export async function runDeviceAdd(
   if (!name) {
     throw new CliError({
       message: 'Missing required --device flag. Usage: podkit device add -d <name>',
-      code: 'DEVICE_REQUIRED',
+      code: DeviceErrorCodes.DEVICE_REQUIRED,
     });
   }
 
@@ -1590,7 +1690,7 @@ export async function runDeviceAdd(
     throw new CliError({
       message:
         'Invalid device name. Must start with a letter and contain only letters, numbers, hyphens, and underscores.',
-      code: 'INVALID_DEVICE_NAME',
+      code: DeviceErrorCodes.INVALID_DEVICE_NAME,
     });
   }
 
@@ -1598,7 +1698,7 @@ export async function runDeviceAdd(
   if (name in existingDevices) {
     throw new CliError({
       message: `Device "${name}" already exists in config. Use a different name or remove it first.`,
-      code: 'DEVICE_EXISTS',
+      code: DeviceErrorCodes.DEVICE_EXISTS,
     });
   }
 
@@ -1606,7 +1706,7 @@ export async function runDeviceAdd(
   if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
     throw new CliError({
       message: `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
-      code: 'INVALID_QUALITY',
+      code: DeviceErrorCodes.INVALID_QUALITY,
     });
   }
   if (
@@ -1615,7 +1715,7 @@ export async function runDeviceAdd(
   ) {
     throw new CliError({
       message: `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
-      code: 'INVALID_AUDIO_QUALITY',
+      code: DeviceErrorCodes.INVALID_AUDIO_QUALITY,
     });
   }
   if (
@@ -1624,13 +1724,13 @@ export async function runDeviceAdd(
   ) {
     throw new CliError({
       message: `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`,
-      code: 'INVALID_VIDEO_QUALITY',
+      code: DeviceErrorCodes.INVALID_VIDEO_QUALITY,
     });
   }
   if (options.encoding !== undefined && options.encoding !== 'vbr' && options.encoding !== 'cbr') {
     throw new CliError({
       message: `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`,
-      code: 'INVALID_ENCODING',
+      code: DeviceErrorCodes.INVALID_ENCODING,
     });
   }
 
@@ -1644,7 +1744,7 @@ export async function runDeviceAdd(
     if (!explicitPath) {
       throw new CliError({
         message: `--path is required for ${getDeviceTypeDisplayName(deviceType)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
-        code: 'PATH_REQUIRED',
+        code: DeviceErrorCodes.PATH_REQUIRED,
       });
     }
 
@@ -1654,7 +1754,9 @@ export async function runDeviceAdd(
         message: existsSync(explicitPath)
           ? `Path is not a directory: ${explicitPath}`
           : `Path not found: ${explicitPath}`,
-        code: existsSync(explicitPath) ? 'PATH_NOT_DIRECTORY' : 'PATH_NOT_FOUND',
+        code: existsSync(explicitPath)
+          ? DeviceErrorCodes.PATH_NOT_DIRECTORY
+          : DeviceErrorCodes.PATH_NOT_FOUND,
       });
     }
 
@@ -1664,7 +1766,7 @@ export async function runDeviceAdd(
       if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
         throw new CliError({
           message: `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`,
-          code: 'INVALID_ARTWORK_RESOLUTION',
+          code: DeviceErrorCodes.INVALID_ARTWORK_RESOLUTION,
         });
       }
     }
@@ -1673,7 +1775,7 @@ export async function runDeviceAdd(
         if (!ARTWORK_SOURCES.includes(source as any)) {
           throw new CliError({
             message: `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`,
-            code: 'INVALID_ARTWORK_SOURCE',
+            code: DeviceErrorCodes.INVALID_ARTWORK_SOURCE,
           });
         }
       }
@@ -1683,7 +1785,7 @@ export async function runDeviceAdd(
         if (!AUDIO_CODECS.includes(codec as any)) {
           throw new CliError({
             message: `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`,
-            code: 'INVALID_AUDIO_CODEC',
+            code: DeviceErrorCodes.INVALID_AUDIO_CODEC,
           });
         }
       }
@@ -1746,7 +1848,7 @@ export async function runDeviceAdd(
     if (!result.success) {
       throw new CliError({
         message: `Failed to save config: ${result.error}`,
-        code: 'CONFIG_SAVE_FAILED',
+        code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
         details: { device: deviceInfo },
       });
     }
@@ -1804,7 +1906,7 @@ export async function runDeviceAdd(
   if (massStorageOnlyOptions.length > 0) {
     throw new CliError({
       message: `${massStorageOnlyOptions.join(', ')} ${massStorageOnlyOptions.length === 1 ? 'is' : 'are'} only valid for mass-storage devices (--type echo-mini|rockbox|generic).`,
-      code: 'INVALID_OPTION_FOR_TYPE',
+      code: DeviceErrorCodes.INVALID_OPTION_FOR_TYPE,
     });
   }
 
@@ -1819,7 +1921,7 @@ export async function runDeviceAdd(
     const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
     throw new CliError({
       message: `Failed to load podkit-core: ${message}`,
-      code: 'CORE_LOAD_FAILED',
+      code: DeviceErrorCodes.CORE_LOAD_FAILED,
     });
   }
 
@@ -1830,7 +1932,7 @@ export async function runDeviceAdd(
     if (!existsSync(explicitPath)) {
       throw new CliError({
         message: `Path not found: ${explicitPath}`,
-        code: 'PATH_NOT_FOUND',
+        code: DeviceErrorCodes.PATH_NOT_FOUND,
       });
     }
 
@@ -1847,7 +1949,7 @@ export async function runDeviceAdd(
       }
       throw new CliError({
         message,
-        code: 'UNSUPPORTED_DEVICE',
+        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
         details: { generation: assessment.model.generationId },
       });
     }
@@ -1887,7 +1989,7 @@ export async function runDeviceAdd(
         const message = err instanceof Error ? err.message : String(err);
         throw new CliError({
           message: `Failed to initialize iPod: ${message}`,
-          code: 'INIT_FAILED',
+          code: DeviceErrorCodes.INIT_FAILED,
         });
       }
     } else {
@@ -2010,7 +2112,7 @@ export async function runDeviceAdd(
     if (!result.success) {
       throw new CliError({
         message: `Failed to save config: ${result.error}`,
-        code: 'CONFIG_SAVE_FAILED',
+        code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
         details: { device: deviceInfo },
       });
     }
@@ -2058,7 +2160,7 @@ export async function runDeviceAdd(
   if (!manager.isSupported) {
     throw new CliError({
       message: `Device scanning is not supported on ${manager.platform}. Specify a path explicitly: podkit device add -d <name> --path <path>`,
-      code: 'SCAN_UNSUPPORTED',
+      code: DeviceErrorCodes.SCAN_UNSUPPORTED,
     });
   }
 
@@ -2124,12 +2226,12 @@ export async function runDeviceAdd(
       throw new CliError({
         message:
           'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.',
-        code: 'NO_IPOD',
+        code: DeviceErrorCodes.NO_IPOD,
       });
     }
     throw new CliError({
       message: `Detected ${massStorageHint} device — add with --type ${massStorageHint} --path <mount-point>`,
-      code: 'DETECTED_MASS_STORAGE',
+      code: DeviceErrorCodes.DETECTED_MASS_STORAGE,
       details: { presetId: massStorageHint },
     });
   }
@@ -2147,7 +2249,7 @@ export async function runDeviceAdd(
     }
     throw new CliError({
       message: `Multiple iPod devices found (${ipods.length}). Specify a path explicitly.`,
-      code: 'MULTIPLE_IPODS',
+      code: DeviceErrorCodes.MULTIPLE_IPODS,
       details: {
         ipods: ipods.map((d) => ({
           identifier: d.identifier,
@@ -2202,13 +2304,13 @@ export async function runDeviceAdd(
       }
       throw new CliError({
         message: 'Elevated privileges required to mount device',
-        code: 'MOUNT_REQUIRES_SUDO',
+        code: DeviceErrorCodes.MOUNT_REQUIRES_SUDO,
         details: { explanation: explanationLines },
       });
     } else {
       throw new CliError({
         message: `Failed to mount: ${mountResult.error ?? 'unknown error'}`,
-        code: 'MOUNT_FAILED',
+        code: DeviceErrorCodes.MOUNT_FAILED,
       });
     }
   }
@@ -2234,7 +2336,7 @@ export async function runDeviceAdd(
     }
     throw new CliError({
       message,
-      code: 'UNSUPPORTED_DEVICE',
+      code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
       details: { generation: assessment.model.generationId },
     });
   }
@@ -2281,7 +2383,7 @@ export async function runDeviceAdd(
         const message = err instanceof Error ? err.message : String(err);
         throw new CliError({
           message: `Failed to initialize iPod: ${message}`,
-          code: 'INIT_FAILED',
+          code: DeviceErrorCodes.INIT_FAILED,
         });
       }
     } else {
@@ -2401,7 +2503,7 @@ export async function runDeviceAdd(
   if (!result.success) {
     throw new CliError({
       message: `Failed to save config: ${result.error}`,
-      code: 'CONFIG_SAVE_FAILED',
+      code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
       details: { device: deviceInfo },
     });
   }
@@ -2460,65 +2562,70 @@ const removeSubcommand = new Command('remove')
     const name = globalOpts.device;
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    if (!name) {
-      const error = 'Missing required --device flag. Usage: podkit device remove -d <name>';
-      out.result<DeviceRemoveOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      if (!name) {
+        throw new CliError({
+          message: 'Missing required --device flag. Usage: podkit device remove -d <name>',
+          code: DeviceErrorCodes.DEVICE_REQUIRED,
+        });
+      }
 
-    const devices = config.devices || {};
-    const defaultDevice = config.defaults?.device;
+      const devices = config.devices || {};
+      const defaultDevice = config.defaults?.device;
 
-    if (!(name in devices)) {
-      const error = `Device "${name}" not found in config.`;
-      out.result<DeviceRemoveOutput>({ success: false, error }, () => {
-        out.error(error);
-        const available = Object.keys(devices);
-        if (available.length > 0) {
-          out.error(`Available devices: ${available.join(', ')}`);
+      if (!(name in devices)) {
+        const error = `Device "${name}" not found in config.`;
+        throw new CliError({
+          message: error,
+          code: DeviceErrorCodes.DEVICE_NOT_FOUND,
+          printText: (o) => {
+            o.error(error);
+            const available = Object.keys(devices);
+            if (available.length > 0) {
+              o.error(`Available devices: ${available.join(', ')}`);
+            }
+          },
+        });
+      }
+
+      const wasDefault = name === defaultDevice;
+
+      if (!options.confirm && out.isText) {
+        out.print(`This will remove device "${name}" from the config.`);
+        if (wasDefault) {
+          out.print('This device is currently set as the default.');
+        }
+        out.newline();
+
+        const confirmed = await confirmNo(`Remove device "${name}"?`);
+        if (!confirmed) {
+          out.print('Cancelled. No changes made.');
+          return;
+        }
+      }
+
+      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+      const result = removeDevice(name, { configPath });
+
+      if (!result.success) {
+        const errMsg = result.error ?? 'Failed to remove device';
+        throw new CliError({
+          message: errMsg,
+          code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
+          printText: (o) => o.error(`Failed to remove device: ${errMsg}`),
+        });
+      }
+
+      if (wasDefault) {
+        setDefaultDevice('', { configPath });
+      }
+
+      out.result<DeviceRemoveOutput>({ success: true, device: name, wasDefault }, () => {
+        out.print(`Device "${name}" removed from config.`);
+        if (wasDefault) {
+          out.print('Cleared default device setting.');
         }
       });
-      process.exitCode = 1;
-      return;
-    }
-
-    const wasDefault = name === defaultDevice;
-
-    if (!options.confirm && out.isText) {
-      out.print(`This will remove device "${name}" from the config.`);
-      if (wasDefault) {
-        out.print('This device is currently set as the default.');
-      }
-      out.newline();
-
-      const confirmed = await confirmNo(`Remove device "${name}"?`);
-      if (!confirmed) {
-        out.print('Cancelled. No changes made.');
-        return;
-      }
-    }
-
-    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
-    const result = removeDevice(name, { configPath });
-
-    if (!result.success) {
-      out.result<DeviceRemoveOutput>({ success: false, error: result.error }, () =>
-        out.error(`Failed to remove device: ${result.error}`)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    if (wasDefault) {
-      setDefaultDevice('', { configPath });
-    }
-
-    out.result<DeviceRemoveOutput>({ success: true, device: name, wasDefault }, () => {
-      out.print(`Device "${name}" removed from config.`);
-      if (wasDefault) {
-        out.print('Cleared default device setting.');
-      }
     });
   });
 
@@ -2532,526 +2639,531 @@ const infoSubcommand = new Command('info')
     const { globalOpts, config: podkitConfig } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceInfoOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const { resolvedDevice, cliPath, config } = resolved;
-    const device = resolvedDevice?.config;
-    const deviceName = resolvedDevice?.name;
-    const defaultDevice = config.defaults?.device;
-    const isDefault = deviceName === defaultDevice;
-
-    // Try to get live status if device is connected
-    let liveStatus: DeviceInfoOutput['status'] | undefined;
-    let databaseErrorIsUnexpected = false;
-    let resolvedDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
-    let readinessData: DeviceInfoOutput['readiness'] | undefined;
-
-    try {
-      const core = await import('@podkit/core');
-      const manager = core.getDeviceManager();
-      const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-      if (cliPath || deviceIdentity) {
-        const resolveResult = await resolveDevicePath({
-          cliDevice: cliPath,
-          deviceIdentity,
-          manager,
-          requireMounted: true,
-          quiet: true,
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({
+          message: resolved.error,
+          code: DeviceErrorCodes.DEVICE_NOT_RESOLVED,
         });
-
-        if (resolveResult.path && existsSync(resolveResult.path)) {
-          // Hold the open device for the entire live-status block: UUID
-          // lookup + readiness reuse the already-parsed iTunesDB rather than
-          // re-opening it inside checkDatabase. The try/finally guarantees
-          // adapter.close() runs even if a later block (UUID, readiness)
-          // throws an unexpected exception.
-          let openedDeviceResult: Awaited<ReturnType<typeof openDevice>> | undefined;
-          try {
-            try {
-              openedDeviceResult = await openDevice(
-                core,
-                resolveResult.path,
-                device,
-                podkitConfig.deviceDefaults
-              );
-              resolvedDeviceCapabilities = openedDeviceResult.capabilities;
-              const storage = getStorageInfo(resolveResult.path);
-              const tracks = openedDeviceResult.adapter.getTracks();
-              const musicTracks = tracks.filter((t) => core.isMusicMediaType(t.mediaType));
-              const musicCount = musicTracks.length;
-              const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
-              const parsedSyncTags = musicTracks.map((t) => ({
-                tag: t.syncTag,
-                hasArtwork: t.hasArtwork,
-              }));
-              const syncTagCount = parsedSyncTags.filter((t) => t.tag !== null).length;
-              const syncTagComplete = parsedSyncTags.filter(
-                (t) => t.tag !== null && (t.tag.artworkHash || t.hasArtwork === false)
-              ).length;
-              const syncTagMissingArt = syncTagCount - syncTagComplete;
-              const syncTagMissingTransfer = parsedSyncTags.filter(
-                (t) => t.tag !== null && !t.tag.transferMode
-              ).length;
-
-              liveStatus = {
-                mounted: true,
-                mountPoint: resolveResult.path,
-                musicCount,
-                videoCount,
-                syncTagCount,
-                syncTagComplete,
-                syncTagMissingArt,
-                syncTagMissingTransfer,
-              };
-
-              // iPod-specific model and validation info
-              if (openedDeviceResult.ipod) {
-                const info = openedDeviceResult.ipod.getInfo();
-                const deviceValidation = validateDevice(info.device, resolveResult.path);
-                liveStatus.model = {
-                  name: info.device.modelName,
-                  number: info.device.modelNumber,
-                  generation: info.device.generation,
-                  capacity: info.device.capacity,
-                };
-                liveStatus.capabilities = deviceValidation.capabilities;
-                liveStatus.validation = {
-                  supported: deviceValidation.supported,
-                  issues: deviceValidation.issues,
-                  warnings: deviceValidation.warnings,
-                };
-              }
-
-              // Mass-storage capabilities for JSON output
-              if (!openedDeviceResult.ipod && resolvedDeviceCapabilities) {
-                liveStatus.massStorageCapabilities = {
-                  supportedAudioCodecs: [...resolvedDeviceCapabilities.supportedAudioCodecs],
-                  artworkSources: [...resolvedDeviceCapabilities.artworkSources],
-                  artworkMaxResolution: resolvedDeviceCapabilities.artworkMaxResolution,
-                  supportsVideo: resolvedDeviceCapabilities.supportsVideo,
-                  audioNormalization: resolvedDeviceCapabilities.audioNormalization,
-                  supportsAlbumArtistBrowsing:
-                    resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
-                };
-              }
-
-              if (storage) {
-                liveStatus.storage = {
-                  used: storage.used,
-                  total: storage.total,
-                  free: storage.free,
-                  percentUsed: Math.round((storage.used / storage.total) * 100),
-                };
-              }
-            } catch (err) {
-              liveStatus = { mounted: true, mountPoint: resolveResult.path };
-              const message = err instanceof Error ? err.message : String(err);
-              liveStatus.databaseError = message;
-              // IpodError on iPod devices is expected (empty/uninitialized)
-              if (err instanceof core.IpodError && !isMassStorageDevice(device?.type)) {
-                // Database not found or corrupt — expected on empty/uninitialized iPods
-              } else {
-                databaseErrorIsUnexpected = true;
-              }
-            }
-
-            // Look up filesystem UUID for the mount point. Single diskutil-info
-            // call (cheap); avoids the full findIpodDevices walk below.
-            if (liveStatus?.mounted && manager.isSupported) {
-              try {
-                const uuid = await manager.getUuidForMountPoint(resolveResult.path);
-                if (uuid) {
-                  liveStatus.volumeUuid = uuid;
-                }
-              } catch {
-                // Gracefully skip UUID display when extraction fails
-              }
-            }
-
-            // Run readiness check for iPod devices (skip mass-storage). In path
-            // mode we synthesize the PlatformDeviceInfo from data we already
-            // have rather than calling manager.findIpodDevices() — that's a
-            // full disk enumeration which on macOS dispatches diskutil
-            // subprocesses per attached disk.
-            if (liveStatus?.mounted && !isMassStorageDevice(device?.type) && manager.isSupported) {
-              try {
-                const matchingIpod =
-                  resolveResult.deviceInfo ??
-                  synthesizePathModeDeviceInfo(resolveResult.path, liveStatus.volumeUuid);
-                const readiness = await core.checkReadiness({
-                  device: matchingIpod,
-                  ipod: openedDeviceResult?.ipod,
-                });
-                const bestModel = readiness.deviceModel ?? readiness.usbModel;
-                readinessData = {
-                  level: readiness.level,
-                  stages: readiness.stages.map((s) => ({
-                    stage: s.stage,
-                    status: s.status,
-                    summary: s.summary,
-                    ...(s.details ? { details: s.details } : {}),
-                  })),
-                  ...(bestModel ? { model: bestModel } : {}),
-                  ...(readiness.summary ? { summary: readiness.summary } : {}),
-                };
-              } catch {
-                // Gracefully skip readiness if it fails
-              }
-            }
-          } finally {
-            // Guaranteed close, even if UUID/readiness blocks throw.
-            // adapter.close() owns the underlying ipod handle.
-            openedDeviceResult?.adapter.close();
-          }
-        } else if (resolveResult.deviceInfo) {
-          liveStatus = { mounted: false };
-        }
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      liveStatus = { mounted: false, databaseError: message };
-      databaseErrorIsUnexpected = true;
-    }
 
-    // Compute transform warnings for JSON output
-    let deviceTransformWarnings: Array<{ type: string; message: string }> | undefined;
-    if (
-      device &&
-      isMassStorageDevice(device.type) &&
-      resolvedDeviceCapabilities &&
-      device.transforms?.cleanArtists
-    ) {
-      const { resolveCleanArtistsTransform, computeTransformWarnings } =
-        await import('./transform-warnings.js');
-      const deviceCleanArtists = device.transforms.cleanArtists as Partial<
-        import('@podkit/core').CleanArtistsConfig
-      >;
-      const effectiveTransforms: import('@podkit/core').TransformsConfig = {
-        cleanArtists: {
-          ...podkitConfig.transforms.cleanArtists,
-          ...deviceCleanArtists,
-        },
-      };
-      const resolution = resolveCleanArtistsTransform(
-        effectiveTransforms,
-        resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
-        true
-      );
-      const hasCapabilityOverride = device.supportsAlbumArtistBrowsing !== undefined;
-      const warnings = computeTransformWarnings(
-        resolution,
-        resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
-        hasCapabilityOverride
-      );
-      if (warnings.length > 0) {
-        deviceTransformWarnings = warnings.map((w) => ({ type: w.type, message: w.message }));
-      }
-    }
+      const { resolvedDevice, cliPath, config } = resolved;
+      const device = resolvedDevice?.config;
+      const deviceName = resolvedDevice?.name;
+      const defaultDevice = config.defaults?.device;
+      const isDefault = deviceName === defaultDevice;
 
-    out.result<DeviceInfoOutput>(
-      {
-        success: true,
-        device: device
-          ? {
-              name: deviceName!,
-              volumeUuid: device.volumeUuid,
-              volumeName: device.volumeName,
-              quality: device.quality,
-              audioQuality: device.audioQuality,
-              videoQuality: device.videoQuality,
-              artwork: device.artwork,
-              transforms: device.transforms as unknown as Record<string, unknown> | undefined,
-              transformWarnings: deviceTransformWarnings,
-              isDefault,
-            }
-          : undefined,
-        status: liveStatus,
-        readiness: readinessData,
-      },
-      () => {
-        // Human-readable output — Summary zone then Issues zone
-        const isMassStorage = device ? isMassStorageDevice(device.type) : false;
-        const infoIssues: import('./readiness-display.js').ReadinessIssue[] = [];
-        const cmdTarget = deviceName || cliPath || 'device';
+      // Try to get live status if device is connected
+      let liveStatus: DeviceInfoSuccess['status'] | undefined;
+      let databaseErrorIsUnexpected = false;
+      let resolvedDeviceCapabilities: import('@podkit/core').DeviceCapabilities | undefined;
+      let readinessData: DeviceInfoSuccess['readiness'] | undefined;
 
-        // ── Summary zone ──────────────────────────────────────────────
-        if (device) {
-          out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
-          if (isMassStorage) {
-            out.print(`  Type:          ${getDeviceTypeDisplayName(device.type)}`);
-          }
-          if (device.volumeUuid) {
-            out.print(`  Volume UUID:   ${device.volumeUuid}`);
-          }
-          if (device.volumeName) {
-            out.print(`  Volume Name:   ${device.volumeName}`);
-          }
-        } else if (cliPath) {
-          out.print(`Device: ${cliPath} (path mode)`);
-          if (liveStatus?.volumeUuid) {
-            out.print(`  Volume UUID:   ${liveStatus.volumeUuid}`);
-          }
-        }
+      try {
+        const core = await import('@podkit/core');
+        const manager = core.getDeviceManager();
+        const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
-        if (liveStatus) {
-          if (liveStatus.mounted && liveStatus.mountPoint) {
-            out.print(`  Status:        Mounted at ${liveStatus.mountPoint}`);
-          } else if (liveStatus.mounted === false) {
-            out.print(`  Status:        Not mounted`);
-          }
-
-          // Model line — prefer IpodModel (has color) over database model
-          if (!isMassStorage && readinessData?.model) {
-            out.print(`  Model:         ${readinessData.model.displayName}`);
-          } else if (!isMassStorage && liveStatus.model) {
-            const capacityStr =
-              liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
-            const genStr = formatGeneration(liveStatus.model.generation);
-            out.print(`  Model:         ${liveStatus.model.name}${capacityStr} - ${genStr}`);
-          } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
-            out.print('  Model:         Unknown \u2014 SysInfo missing');
-          }
-
-          // Readiness line — short status only
-          if (!isMassStorage && readinessData) {
-            const levelLabel =
-              readinessData.level === 'ready'
-                ? 'Ready'
-                : formatReadinessLevel(readinessData.level as ReadinessLevel, cmdTarget);
-            out.print(`  Readiness:     ${levelLabel}`);
-
-            // Collect readiness issues for the Issues zone
-            const readinessIssues = collectReadinessIssues(
-              readinessData.stages as import('@podkit/core').ReadinessStageResult[],
-              cmdTarget
-            );
-            infoIssues.push(...readinessIssues);
-          }
-
-          // Collect validation issues for the Issues zone (iPod only)
-          if (!isMassStorage && liveStatus.validation) {
-            for (const issue of liveStatus.validation.issues) {
-              infoIssues.push({
-                marker: issue.type === 'unsupported_device' ? '\u2717' : '!',
-                label: 'Validation',
-                summary: issue.message,
-                details: [],
-                ...(issue.suggestion ? { docsUrl: undefined, fixCommand: undefined } : {}),
-              });
-            }
-          }
-
-          // Capabilities — compact
-          if (!isMassStorage && liveStatus.capabilities && liveStatus.model) {
-            out.print('  Capabilities:');
-            const caps = liveStatus.capabilities;
-            const gen = formatGeneration(liveStatus.model.generation);
-            const capEntries: Array<[string, boolean]> = [
-              ['Music', caps.music],
-              ['Artwork', caps.artwork],
-              ['Video', caps.video],
-              ['Podcasts', caps.podcast],
-            ];
-            for (const [name, supported] of capEntries) {
-              if (supported) {
-                out.print(`    + ${name}`);
-              } else {
-                out.print(`    - ${name} (not supported on ${gen})`);
-              }
-            }
-          } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
-            out.print('  Capabilities:  Music only (model unknown)');
-          } else if (isMassStorage && resolvedDeviceCapabilities) {
-            out.print('  Capabilities:');
-            out.print(
-              `    Audio Codecs:    ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')}`
-            );
-            out.print(
-              `    Artwork:         ${resolvedDeviceCapabilities.artworkSources.join(', ')} (max ${resolvedDeviceCapabilities.artworkMaxResolution}px)`
-            );
-            out.print(
-              `    Video:           ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
-            );
-            out.print(`    Normalization:   ${resolvedDeviceCapabilities.audioNormalization}`);
-            out.print(
-              `    Album Artist:    ${resolvedDeviceCapabilities.supportsAlbumArtistBrowsing ? 'yes' : 'no'}`
-            );
-          }
-
-          // Codec display
-          if (resolvedDeviceCapabilities) {
-            const deviceCodecs = new Set<string>(resolvedDeviceCapabilities.supportedAudioCodecs);
-            const codecConfig = device?.codec ?? podkitConfig.codec;
-            const lossyStack = codecConfig?.lossy ?? DEFAULT_LOSSY_STACK;
-            const losslessStack = codecConfig?.lossless ?? DEFAULT_LOSSLESS_STACK;
-
-            const allStacks = [...lossyStack, ...losslessStack];
-            const seen = new Set<string>();
-            const supportedCodecs = allStacks.filter((c) => {
-              if (c === 'source' || seen.has(c)) return false;
-              seen.add(c);
-              return deviceCodecs.has(c);
-            });
-
-            out.print(`  Codecs:          ${supportedCodecs.join(', ') || 'none'}`);
-          }
-
-          if (liveStatus.storage) {
-            const usedStr = formatBytes(liveStatus.storage.used);
-            const totalStr = formatBytes(liveStatus.storage.total);
-            out.print(
-              `  Storage:       ${usedStr} used / ${totalStr} total (${liveStatus.storage.percentUsed}%)`
-            );
-          }
-
-          if (liveStatus.musicCount !== undefined) {
-            const trackCount = liveStatus.musicCount;
-            const syncTagCount = liveStatus.syncTagCount ?? 0;
-            const complete = liveStatus.syncTagComplete ?? 0;
-            const missingArt = liveStatus.syncTagMissingArt ?? 0;
-            const noTag = trackCount - syncTagCount;
-            const missingTransfer = liveStatus.syncTagMissingTransfer ?? 0;
-
-            out.print(
-              `  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag, missingTransfer)}`
-            );
-          }
-          if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {
-            out.print(`  Video:         ${formatNumber(liveStatus.videoCount)} videos`);
-          }
-
-          if (liveStatus.databaseError) {
-            out.newline();
-            if (databaseErrorIsUnexpected) {
-              const errLabel = isMassStorage ? 'Cannot read device' : 'Cannot read iPod database';
-              out.error(`${errLabel}: ${liveStatus.databaseError}`);
-            } else {
-              out.print(`  Database:      Could not read (${liveStatus.databaseError})`);
-            }
-          }
-        }
-
-        if (device) {
-          out.print(`  Quality:       ${device.quality || '(not set)'}`);
-          if (device.audioQuality) {
-            out.print(`  Audio Quality: ${device.audioQuality}`);
-          }
-          if (device.videoQuality) {
-            out.print(`  Video Quality: ${device.videoQuality}`);
-          }
-          out.print(
-            `  Artwork:       ${device.artwork === true ? 'yes' : device.artwork === false ? 'no' : '(not set)'}`
-          );
-
-          if (device.transforms) {
-            out.print('  Transforms:');
-            for (const [transformName, transformConfig] of Object.entries(device.transforms)) {
-              const cfg = transformConfig as Record<string, unknown>;
-              const enabled = cfg.enabled !== false;
-              const details: string[] = [];
-
-              if ('format' in cfg && cfg.format) {
-                details.push(`format: "${cfg.format}"`);
-              }
-              if ('drop' in cfg && cfg.drop === true) {
-                details.push('drop');
-              }
-
-              const detailStr = details.length > 0 ? ` (${details.join(', ')})` : '';
-              out.print(`    ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
-            }
-          }
-
-          // Collect transform warnings for Issues zone
-          if (deviceTransformWarnings) {
-            for (const warning of deviceTransformWarnings) {
-              infoIssues.push({
-                marker: '!',
-                label: 'Transform',
-                summary: warning.message,
-                details: [],
-              });
-            }
-          }
-
-          // Show mass-storage-specific config overrides
-          if (isMassStorage) {
-            const overrides: string[] = [];
-            if (device.artworkMaxResolution !== undefined) {
-              overrides.push(`  Artwork Resolution: ${device.artworkMaxResolution}px (override)`);
-            }
-            if (device.artworkSources !== undefined) {
-              overrides.push(
-                `  Artwork Sources:    ${device.artworkSources.join(', ')} (override)`
-              );
-            }
-            if (device.supportedAudioCodecs !== undefined) {
-              overrides.push(
-                `  Audio Codecs:       ${device.supportedAudioCodecs.join(', ')} (override)`
-              );
-            }
-            if (device.supportsVideo !== undefined) {
-              overrides.push(
-                `  Video Support:      ${device.supportsVideo ? 'yes' : 'no'} (override)`
-              );
-            }
-            if (device.audioNormalization !== undefined) {
-              overrides.push(`  Normalization:      ${device.audioNormalization} (override)`);
-            }
-            if (device.supportsAlbumArtistBrowsing !== undefined) {
-              overrides.push(
-                `  Album Artist:       ${device.supportsAlbumArtistBrowsing ? 'yes' : 'no'} (override)`
-              );
-            }
-            if (device.musicDir !== undefined) {
-              overrides.push(`  Music Directory:    ${device.musicDir}`);
-            }
-            if (device.moviesDir !== undefined) {
-              overrides.push(`  Movies Directory:   ${device.moviesDir}`);
-            }
-            if (device.tvShowsDir !== undefined) {
-              overrides.push(`  TV Shows Directory: ${device.tvShowsDir}`);
-            }
-            if (overrides.length > 0) {
-              for (const line of overrides) {
-                out.print(line);
-              }
-            }
-          }
-        }
-
-        // ── Issues zone ───────────────────────────────────────────────
-        if (infoIssues.length > 0) {
-          out.newline();
-          printIssues(out, infoIssues);
-        }
-
-        // Show tips based on sync tag state
-        if (liveStatus?.musicCount !== undefined && liveStatus.musicCount > 0) {
-          const syncTagCount = liveStatus.syncTagCount ?? 0;
-          const missingArt = liveStatus.syncTagMissingArt ?? 0;
-          out.printTips({
-            syncTagInfo: {
-              trackCount: liveStatus.musicCount,
-              syncTagCount,
-              missingArt,
-            },
+        if (cliPath || deviceIdentity) {
+          const resolveResult = await resolveDevicePath({
+            cliDevice: cliPath,
+            deviceIdentity,
+            manager,
+            requireMounted: true,
+            quiet: true,
           });
+
+          if (resolveResult.path && existsSync(resolveResult.path)) {
+            // Hold the open device for the entire live-status block: UUID
+            // lookup + readiness reuse the already-parsed iTunesDB rather than
+            // re-opening it inside checkDatabase. The try/finally guarantees
+            // adapter.close() runs even if a later block (UUID, readiness)
+            // throws an unexpected exception.
+            let openedDeviceResult: Awaited<ReturnType<typeof openDevice>> | undefined;
+            try {
+              try {
+                openedDeviceResult = await openDevice(
+                  core,
+                  resolveResult.path,
+                  device,
+                  podkitConfig.deviceDefaults
+                );
+                resolvedDeviceCapabilities = openedDeviceResult.capabilities;
+                const storage = getStorageInfo(resolveResult.path);
+                const tracks = openedDeviceResult.adapter.getTracks();
+                const musicTracks = tracks.filter((t) => core.isMusicMediaType(t.mediaType));
+                const musicCount = musicTracks.length;
+                const videoCount = tracks.filter((t) => core.isVideoMediaType(t.mediaType)).length;
+                const parsedSyncTags = musicTracks.map((t) => ({
+                  tag: t.syncTag,
+                  hasArtwork: t.hasArtwork,
+                }));
+                const syncTagCount = parsedSyncTags.filter((t) => t.tag !== null).length;
+                const syncTagComplete = parsedSyncTags.filter(
+                  (t) => t.tag !== null && (t.tag.artworkHash || t.hasArtwork === false)
+                ).length;
+                const syncTagMissingArt = syncTagCount - syncTagComplete;
+                const syncTagMissingTransfer = parsedSyncTags.filter(
+                  (t) => t.tag !== null && !t.tag.transferMode
+                ).length;
+
+                liveStatus = {
+                  mounted: true,
+                  mountPoint: resolveResult.path,
+                  musicCount,
+                  videoCount,
+                  syncTagCount,
+                  syncTagComplete,
+                  syncTagMissingArt,
+                  syncTagMissingTransfer,
+                };
+
+                // iPod-specific model and validation info
+                if (openedDeviceResult.ipod) {
+                  const info = openedDeviceResult.ipod.getInfo();
+                  const deviceValidation = validateDevice(info.device, resolveResult.path);
+                  liveStatus.model = {
+                    name: info.device.modelName,
+                    number: info.device.modelNumber,
+                    generation: info.device.generation,
+                    capacity: info.device.capacity,
+                  };
+                  liveStatus.capabilities = deviceValidation.capabilities;
+                  liveStatus.validation = {
+                    supported: deviceValidation.supported,
+                    issues: deviceValidation.issues,
+                    warnings: deviceValidation.warnings,
+                  };
+                }
+
+                // Mass-storage capabilities for JSON output
+                if (!openedDeviceResult.ipod && resolvedDeviceCapabilities) {
+                  liveStatus.massStorageCapabilities = {
+                    supportedAudioCodecs: [...resolvedDeviceCapabilities.supportedAudioCodecs],
+                    artworkSources: [...resolvedDeviceCapabilities.artworkSources],
+                    artworkMaxResolution: resolvedDeviceCapabilities.artworkMaxResolution,
+                    supportsVideo: resolvedDeviceCapabilities.supportsVideo,
+                    audioNormalization: resolvedDeviceCapabilities.audioNormalization,
+                    supportsAlbumArtistBrowsing:
+                      resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+                  };
+                }
+
+                if (storage) {
+                  liveStatus.storage = {
+                    used: storage.used,
+                    total: storage.total,
+                    free: storage.free,
+                    percentUsed: Math.round((storage.used / storage.total) * 100),
+                  };
+                }
+              } catch (err) {
+                liveStatus = { mounted: true, mountPoint: resolveResult.path };
+                const message = err instanceof Error ? err.message : String(err);
+                liveStatus.databaseError = message;
+                // IpodError on iPod devices is expected (empty/uninitialized)
+                if (err instanceof core.IpodError && !isMassStorageDevice(device?.type)) {
+                  // Database not found or corrupt — expected on empty/uninitialized iPods
+                } else {
+                  databaseErrorIsUnexpected = true;
+                }
+              }
+
+              // Look up filesystem UUID for the mount point. Single diskutil-info
+              // call (cheap); avoids the full findIpodDevices walk below.
+              if (liveStatus?.mounted && manager.isSupported) {
+                try {
+                  const uuid = await manager.getUuidForMountPoint(resolveResult.path);
+                  if (uuid) {
+                    liveStatus.volumeUuid = uuid;
+                  }
+                } catch {
+                  // Gracefully skip UUID display when extraction fails
+                }
+              }
+
+              // Run readiness check for iPod devices (skip mass-storage). In path
+              // mode we synthesize the PlatformDeviceInfo from data we already
+              // have rather than calling manager.findIpodDevices() — that's a
+              // full disk enumeration which on macOS dispatches diskutil
+              // subprocesses per attached disk.
+              if (
+                liveStatus?.mounted &&
+                !isMassStorageDevice(device?.type) &&
+                manager.isSupported
+              ) {
+                try {
+                  const matchingIpod =
+                    resolveResult.deviceInfo ??
+                    synthesizePathModeDeviceInfo(resolveResult.path, liveStatus.volumeUuid);
+                  const readiness = await core.checkReadiness({
+                    device: matchingIpod,
+                    ipod: openedDeviceResult?.ipod,
+                  });
+                  const bestModel = readiness.deviceModel ?? readiness.usbModel;
+                  readinessData = {
+                    level: readiness.level,
+                    stages: readiness.stages.map((s) => ({
+                      stage: s.stage,
+                      status: s.status,
+                      summary: s.summary,
+                      ...(s.details ? { details: s.details } : {}),
+                    })),
+                    ...(bestModel ? { model: bestModel } : {}),
+                    ...(readiness.summary ? { summary: readiness.summary } : {}),
+                  };
+                } catch {
+                  // Gracefully skip readiness if it fails
+                }
+              }
+            } finally {
+              // Guaranteed close, even if UUID/readiness blocks throw.
+              // adapter.close() owns the underlying ipod handle.
+              openedDeviceResult?.adapter.close();
+            }
+          } else if (resolveResult.deviceInfo) {
+            liveStatus = { mounted: false };
+          }
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        liveStatus = { mounted: false, databaseError: message };
+        databaseErrorIsUnexpected = true;
+      }
+
+      // Compute transform warnings for JSON output
+      let deviceTransformWarnings: Array<{ type: string; message: string }> | undefined;
+      if (
+        device &&
+        isMassStorageDevice(device.type) &&
+        resolvedDeviceCapabilities &&
+        device.transforms?.cleanArtists
+      ) {
+        const { resolveCleanArtistsTransform, computeTransformWarnings } =
+          await import('./transform-warnings.js');
+        const deviceCleanArtists = device.transforms.cleanArtists as Partial<
+          import('@podkit/core').CleanArtistsConfig
+        >;
+        const effectiveTransforms: import('@podkit/core').TransformsConfig = {
+          cleanArtists: {
+            ...podkitConfig.transforms.cleanArtists,
+            ...deviceCleanArtists,
+          },
+        };
+        const resolution = resolveCleanArtistsTransform(
+          effectiveTransforms,
+          resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+          true
+        );
+        const hasCapabilityOverride = device.supportsAlbumArtistBrowsing !== undefined;
+        const warnings = computeTransformWarnings(
+          resolution,
+          resolvedDeviceCapabilities.supportsAlbumArtistBrowsing,
+          hasCapabilityOverride
+        );
+        if (warnings.length > 0) {
+          deviceTransformWarnings = warnings.map((w) => ({ type: w.type, message: w.message }));
         }
       }
-    );
 
-    if (databaseErrorIsUnexpected) {
-      process.exitCode = 1;
-    }
+      out.result<DeviceInfoOutput>(
+        {
+          success: true,
+          device: device
+            ? {
+                name: deviceName!,
+                volumeUuid: device.volumeUuid,
+                volumeName: device.volumeName,
+                quality: device.quality,
+                audioQuality: device.audioQuality,
+                videoQuality: device.videoQuality,
+                artwork: device.artwork,
+                transforms: device.transforms as unknown as Record<string, unknown> | undefined,
+                transformWarnings: deviceTransformWarnings,
+                isDefault,
+              }
+            : undefined,
+          status: liveStatus,
+          readiness: readinessData,
+        },
+        () => {
+          // Human-readable output — Summary zone then Issues zone
+          const isMassStorage = device ? isMassStorageDevice(device.type) : false;
+          const infoIssues: import('./readiness-display.js').ReadinessIssue[] = [];
+          const cmdTarget = deviceName || cliPath || 'device';
+
+          // ── Summary zone ──────────────────────────────────────────────
+          if (device) {
+            out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
+            if (isMassStorage) {
+              out.print(`  Type:          ${getDeviceTypeDisplayName(device.type)}`);
+            }
+            if (device.volumeUuid) {
+              out.print(`  Volume UUID:   ${device.volumeUuid}`);
+            }
+            if (device.volumeName) {
+              out.print(`  Volume Name:   ${device.volumeName}`);
+            }
+          } else if (cliPath) {
+            out.print(`Device: ${cliPath} (path mode)`);
+            if (liveStatus?.volumeUuid) {
+              out.print(`  Volume UUID:   ${liveStatus.volumeUuid}`);
+            }
+          }
+
+          if (liveStatus) {
+            if (liveStatus.mounted && liveStatus.mountPoint) {
+              out.print(`  Status:        Mounted at ${liveStatus.mountPoint}`);
+            } else if (liveStatus.mounted === false) {
+              out.print(`  Status:        Not mounted`);
+            }
+
+            // Model line — prefer IpodModel (has color) over database model
+            if (!isMassStorage && readinessData?.model) {
+              out.print(`  Model:         ${readinessData.model.displayName}`);
+            } else if (!isMassStorage && liveStatus.model) {
+              const capacityStr =
+                liveStatus.model.capacity > 0 ? ` (${liveStatus.model.capacity}GB)` : '';
+              const genStr = formatGeneration(liveStatus.model.generation);
+              out.print(`  Model:         ${liveStatus.model.name}${capacityStr} - ${genStr}`);
+            } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
+              out.print('  Model:         Unknown \u2014 SysInfo missing');
+            }
+
+            // Readiness line — short status only
+            if (!isMassStorage && readinessData) {
+              const levelLabel =
+                readinessData.level === 'ready'
+                  ? 'Ready'
+                  : formatReadinessLevel(readinessData.level as ReadinessLevel, cmdTarget);
+              out.print(`  Readiness:     ${levelLabel}`);
+
+              // Collect readiness issues for the Issues zone
+              const readinessIssues = collectReadinessIssues(
+                readinessData.stages as import('@podkit/core').ReadinessStageResult[],
+                cmdTarget
+              );
+              infoIssues.push(...readinessIssues);
+            }
+
+            // Collect validation issues for the Issues zone (iPod only)
+            if (!isMassStorage && liveStatus.validation) {
+              for (const issue of liveStatus.validation.issues) {
+                infoIssues.push({
+                  marker: issue.type === 'unsupported_device' ? '\u2717' : '!',
+                  label: 'Validation',
+                  summary: issue.message,
+                  details: [],
+                  ...(issue.suggestion ? { docsUrl: undefined, fixCommand: undefined } : {}),
+                });
+              }
+            }
+
+            // Capabilities — compact
+            if (!isMassStorage && liveStatus.capabilities && liveStatus.model) {
+              out.print('  Capabilities:');
+              const caps = liveStatus.capabilities;
+              const gen = formatGeneration(liveStatus.model.generation);
+              const capEntries: Array<[string, boolean]> = [
+                ['Music', caps.music],
+                ['Artwork', caps.artwork],
+                ['Video', caps.video],
+                ['Podcasts', caps.podcast],
+              ];
+              for (const [name, supported] of capEntries) {
+                if (supported) {
+                  out.print(`    + ${name}`);
+                } else {
+                  out.print(`    - ${name} (not supported on ${gen})`);
+                }
+              }
+            } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
+              out.print('  Capabilities:  Music only (model unknown)');
+            } else if (isMassStorage && resolvedDeviceCapabilities) {
+              out.print('  Capabilities:');
+              out.print(
+                `    Audio Codecs:    ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')}`
+              );
+              out.print(
+                `    Artwork:         ${resolvedDeviceCapabilities.artworkSources.join(', ')} (max ${resolvedDeviceCapabilities.artworkMaxResolution}px)`
+              );
+              out.print(
+                `    Video:           ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
+              );
+              out.print(`    Normalization:   ${resolvedDeviceCapabilities.audioNormalization}`);
+              out.print(
+                `    Album Artist:    ${resolvedDeviceCapabilities.supportsAlbumArtistBrowsing ? 'yes' : 'no'}`
+              );
+            }
+
+            // Codec display
+            if (resolvedDeviceCapabilities) {
+              const deviceCodecs = new Set<string>(resolvedDeviceCapabilities.supportedAudioCodecs);
+              const codecConfig = device?.codec ?? podkitConfig.codec;
+              const lossyStack = codecConfig?.lossy ?? DEFAULT_LOSSY_STACK;
+              const losslessStack = codecConfig?.lossless ?? DEFAULT_LOSSLESS_STACK;
+
+              const allStacks = [...lossyStack, ...losslessStack];
+              const seen = new Set<string>();
+              const supportedCodecs = allStacks.filter((c) => {
+                if (c === 'source' || seen.has(c)) return false;
+                seen.add(c);
+                return deviceCodecs.has(c);
+              });
+
+              out.print(`  Codecs:          ${supportedCodecs.join(', ') || 'none'}`);
+            }
+
+            if (liveStatus.storage) {
+              const usedStr = formatBytes(liveStatus.storage.used);
+              const totalStr = formatBytes(liveStatus.storage.total);
+              out.print(
+                `  Storage:       ${usedStr} used / ${totalStr} total (${liveStatus.storage.percentUsed}%)`
+              );
+            }
+
+            if (liveStatus.musicCount !== undefined) {
+              const trackCount = liveStatus.musicCount;
+              const syncTagCount = liveStatus.syncTagCount ?? 0;
+              const complete = liveStatus.syncTagComplete ?? 0;
+              const missingArt = liveStatus.syncTagMissingArt ?? 0;
+              const noTag = trackCount - syncTagCount;
+              const missingTransfer = liveStatus.syncTagMissingTransfer ?? 0;
+
+              out.print(
+                `  Music:         ${formatSyncTagSummary(trackCount, complete, missingArt, noTag, missingTransfer)}`
+              );
+            }
+            if (liveStatus.videoCount !== undefined && liveStatus.videoCount > 0) {
+              out.print(`  Video:         ${formatNumber(liveStatus.videoCount)} videos`);
+            }
+
+            if (liveStatus.databaseError) {
+              out.newline();
+              if (databaseErrorIsUnexpected) {
+                const errLabel = isMassStorage ? 'Cannot read device' : 'Cannot read iPod database';
+                out.error(`${errLabel}: ${liveStatus.databaseError}`);
+              } else {
+                out.print(`  Database:      Could not read (${liveStatus.databaseError})`);
+              }
+            }
+          }
+
+          if (device) {
+            out.print(`  Quality:       ${device.quality || '(not set)'}`);
+            if (device.audioQuality) {
+              out.print(`  Audio Quality: ${device.audioQuality}`);
+            }
+            if (device.videoQuality) {
+              out.print(`  Video Quality: ${device.videoQuality}`);
+            }
+            out.print(
+              `  Artwork:       ${device.artwork === true ? 'yes' : device.artwork === false ? 'no' : '(not set)'}`
+            );
+
+            if (device.transforms) {
+              out.print('  Transforms:');
+              for (const [transformName, transformConfig] of Object.entries(device.transforms)) {
+                const cfg = transformConfig as Record<string, unknown>;
+                const enabled = cfg.enabled !== false;
+                const details: string[] = [];
+
+                if ('format' in cfg && cfg.format) {
+                  details.push(`format: "${cfg.format}"`);
+                }
+                if ('drop' in cfg && cfg.drop === true) {
+                  details.push('drop');
+                }
+
+                const detailStr = details.length > 0 ? ` (${details.join(', ')})` : '';
+                out.print(`    ${transformName}: ${enabled ? 'enabled' : 'disabled'}${detailStr}`);
+              }
+            }
+
+            // Collect transform warnings for Issues zone
+            if (deviceTransformWarnings) {
+              for (const warning of deviceTransformWarnings) {
+                infoIssues.push({
+                  marker: '!',
+                  label: 'Transform',
+                  summary: warning.message,
+                  details: [],
+                });
+              }
+            }
+
+            // Show mass-storage-specific config overrides
+            if (isMassStorage) {
+              const overrides: string[] = [];
+              if (device.artworkMaxResolution !== undefined) {
+                overrides.push(`  Artwork Resolution: ${device.artworkMaxResolution}px (override)`);
+              }
+              if (device.artworkSources !== undefined) {
+                overrides.push(
+                  `  Artwork Sources:    ${device.artworkSources.join(', ')} (override)`
+                );
+              }
+              if (device.supportedAudioCodecs !== undefined) {
+                overrides.push(
+                  `  Audio Codecs:       ${device.supportedAudioCodecs.join(', ')} (override)`
+                );
+              }
+              if (device.supportsVideo !== undefined) {
+                overrides.push(
+                  `  Video Support:      ${device.supportsVideo ? 'yes' : 'no'} (override)`
+                );
+              }
+              if (device.audioNormalization !== undefined) {
+                overrides.push(`  Normalization:      ${device.audioNormalization} (override)`);
+              }
+              if (device.supportsAlbumArtistBrowsing !== undefined) {
+                overrides.push(
+                  `  Album Artist:       ${device.supportsAlbumArtistBrowsing ? 'yes' : 'no'} (override)`
+                );
+              }
+              if (device.musicDir !== undefined) {
+                overrides.push(`  Music Directory:    ${device.musicDir}`);
+              }
+              if (device.moviesDir !== undefined) {
+                overrides.push(`  Movies Directory:   ${device.moviesDir}`);
+              }
+              if (device.tvShowsDir !== undefined) {
+                overrides.push(`  TV Shows Directory: ${device.tvShowsDir}`);
+              }
+              if (overrides.length > 0) {
+                for (const line of overrides) {
+                  out.print(line);
+                }
+              }
+            }
+          }
+
+          // ── Issues zone ───────────────────────────────────────────────
+          if (infoIssues.length > 0) {
+            out.newline();
+            printIssues(out, infoIssues);
+          }
+
+          // Show tips based on sync tag state
+          if (liveStatus?.musicCount !== undefined && liveStatus.musicCount > 0) {
+            const syncTagCount = liveStatus.syncTagCount ?? 0;
+            const missingArt = liveStatus.syncTagMissingArt ?? 0;
+            out.printTips({
+              syncTagInfo: {
+                trackCount: liveStatus.musicCount,
+                syncTagCount,
+                missingArt,
+              },
+            });
+          }
+        }
+      );
+
+      if (databaseErrorIsUnexpected) {
+        process.exitCode = 1;
+      }
+    });
   });
 
 // =============================================================================
@@ -3090,152 +3202,161 @@ const musicSubcommand = new Command('music')
           ? 'artists'
           : 'stats';
 
-    const outputError = (error: string) => {
-      if (format === 'json') {
-        out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-      } else {
-        out.error(`Error: ${error}`);
-      }
-      process.exitCode = 1;
-    };
-
-    if (options.fields && mode !== 'tracks') {
-      outputError('--fields can only be used with --tracks');
-      return;
-    }
-
-    let fields;
-    try {
-      fields = parseFields(options.fields);
-    } catch (err) {
-      outputError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      outputError(resolved.error);
-      return;
-    }
-
-    const { resolvedDevice, cliPath } = resolved;
-
-    try {
-      const core = await import('@podkit/core');
-      const manager = core.getDeviceManager();
-      const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-      if (deviceIdentity?.volumeUuid && format !== 'json') {
-        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-      }
-
-      const resolveResult = await resolveDevicePath({
-        cliDevice: cliPath,
-        deviceIdentity,
-        manager,
-        requireMounted: true,
-        quiet: globalOpts.quiet,
-      });
-
-      if (!resolveResult.path) {
-        outputError(resolveResult.error ?? formatDeviceError(resolveResult));
-        return;
-      }
-
-      if (!existsSync(resolveResult.path)) {
-        const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type) ? 'Device' : 'iPod';
-        outputError(`${deviceLabel} not found at path: ${resolveResult.path}`);
-        return;
-      }
-
-      // Output helper for music tracks (shared between iPod and mass-storage)
-      const outputMusicTracks = (
-        musicTracks: DeviceTrack[],
-        displayTracks: DisplayTrack[],
-        heading: string,
-        fullJsonMapper: (t: DeviceTrack) => Record<string, unknown>
-      ) => {
-        if (mode === 'stats') {
-          const stats = computeStats(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(stats, null, 2));
-          } else {
-            out.stdout(
-              formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
-            );
-          }
-        } else if (mode === 'albums') {
-          const albums = aggregateAlbums(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(albums, null, 2));
-          } else if (format === 'csv') {
-            const lines = ['Album,Artist,Tracks'];
-            for (const a of albums) {
-              lines.push(`${escapeCsvField(a.album)},${escapeCsvField(a.artist)},${a.tracks}`);
-            }
-            out.stdout(lines.join('\n'));
-          } else {
-            out.stdout(formatAlbumsTable(albums, heading));
-          }
-        } else if (mode === 'artists') {
-          const artists = aggregateArtists(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(artists, null, 2));
-          } else if (format === 'csv') {
-            const lines = ['Artist,Albums,Tracks'];
-            for (const a of artists) {
-              lines.push(`${escapeCsvField(a.artist)},${a.albums},${a.tracks}`);
-            }
-            out.stdout(lines.join('\n'));
-          } else {
-            out.stdout(formatArtistsTable(artists, heading));
-          }
-        } else {
-          // tracks mode
-          if (format === 'json') {
-            const fullTracks = musicTracks.map((t) => ({
-              ...fullJsonMapper(t),
-              syncTag: t.syncTag,
-            }));
-            out.stdout(JSON.stringify(fullTracks, null, 2));
-          } else if (format === 'csv') {
-            out.stdout(formatCsv(displayTracks, fields));
-          } else {
-            out.stdout(formatTable(displayTracks, fields));
-          }
-        }
+    await runAction(out, async () => {
+      const throwCliError = (error: string, code: DeviceErrorCode): never => {
+        throw new CliError({
+          message: error,
+          code,
+          printText: (o) => o.error(`Error: ${error}`),
+        });
       };
 
-      const deviceResult = await openDevice(
-        core,
-        resolveResult.path,
-        resolvedDevice?.config,
-        config.deviceDefaults
-      );
-      try {
-        const allTracks = deviceResult.adapter.getTracks();
-        const musicTracks = allTracks.filter((t) => core.isMusicMediaType(t.mediaType));
-        const deviceName =
-          resolvedDevice?.name?.toUpperCase() ||
-          (deviceResult.isIpodDevice
-            ? 'iPod'
-            : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
-        const heading = `Music on ${deviceName}:`;
-        const displayTracks = musicTracks.map(deviceTrackToDisplayTrack);
-
-        // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
-        // (IpodDeviceAdapter returns them directly), so the cast is safe.
-        const jsonMapper = deviceResult.isIpodDevice
-          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
-          : deviceTrackToFullJson;
-        outputMusicTracks(musicTracks, displayTracks, heading, jsonMapper);
-      } finally {
-        deviceResult.adapter.close();
+      if (options.fields && mode !== 'tracks') {
+        throwCliError('--fields can only be used with --tracks', DeviceErrorCodes.INVALID_OPTION);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      outputError(message);
-    }
+
+      let fields: FieldName[] = DEFAULT_FIELDS;
+      try {
+        fields = parseFields(options.fields);
+      } catch (err) {
+        throwCliError(
+          err instanceof Error ? err.message : String(err),
+          DeviceErrorCodes.INVALID_FIELDS
+        );
+      }
+
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throwCliError(resolved.error, DeviceErrorCodes.DEVICE_NOT_RESOLVED);
+        return;
+      }
+
+      const { resolvedDevice, cliPath } = resolved;
+
+      try {
+        const core = await import('@podkit/core');
+        const manager = core.getDeviceManager();
+        const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+        if (deviceIdentity?.volumeUuid && format !== 'json') {
+          out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+        }
+
+        const resolveResult = await resolveDevicePath({
+          cliDevice: cliPath,
+          deviceIdentity,
+          manager,
+          requireMounted: true,
+          quiet: globalOpts.quiet,
+        });
+
+        if (!resolveResult.path) {
+          throwCliError(
+            resolveResult.error ?? formatDeviceError(resolveResult),
+            DeviceErrorCodes.DEVICE_PATH_UNRESOLVED
+          );
+          return;
+        }
+
+        if (!existsSync(resolveResult.path)) {
+          const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type) ? 'Device' : 'iPod';
+          throwCliError(
+            `${deviceLabel} not found at path: ${resolveResult.path}`,
+            DeviceErrorCodes.DEVICE_PATH_NOT_FOUND
+          );
+          return;
+        }
+
+        // Output helper for music tracks (shared between iPod and mass-storage)
+        const outputMusicTracks = (
+          musicTracks: DeviceTrack[],
+          displayTracks: DisplayTrack[],
+          heading: string,
+          fullJsonMapper: (t: DeviceTrack) => Record<string, unknown>
+        ) => {
+          if (mode === 'stats') {
+            const stats = computeStats(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(stats, null, 2));
+            } else {
+              out.stdout(
+                formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
+              );
+            }
+          } else if (mode === 'albums') {
+            const albums = aggregateAlbums(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(albums, null, 2));
+            } else if (format === 'csv') {
+              const lines = ['Album,Artist,Tracks'];
+              for (const a of albums) {
+                lines.push(`${escapeCsvField(a.album)},${escapeCsvField(a.artist)},${a.tracks}`);
+              }
+              out.stdout(lines.join('\n'));
+            } else {
+              out.stdout(formatAlbumsTable(albums, heading));
+            }
+          } else if (mode === 'artists') {
+            const artists = aggregateArtists(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(artists, null, 2));
+            } else if (format === 'csv') {
+              const lines = ['Artist,Albums,Tracks'];
+              for (const a of artists) {
+                lines.push(`${escapeCsvField(a.artist)},${a.albums},${a.tracks}`);
+              }
+              out.stdout(lines.join('\n'));
+            } else {
+              out.stdout(formatArtistsTable(artists, heading));
+            }
+          } else {
+            // tracks mode
+            if (format === 'json') {
+              const fullTracks = musicTracks.map((t) => ({
+                ...fullJsonMapper(t),
+                syncTag: t.syncTag,
+              }));
+              out.stdout(JSON.stringify(fullTracks, null, 2));
+            } else if (format === 'csv') {
+              out.stdout(formatCsv(displayTracks, fields));
+            } else {
+              out.stdout(formatTable(displayTracks, fields));
+            }
+          }
+        };
+
+        const deviceResult = await openDevice(
+          core,
+          resolveResult.path,
+          resolvedDevice?.config,
+          config.deviceDefaults
+        );
+        try {
+          const allTracks = deviceResult.adapter.getTracks();
+          const musicTracks = allTracks.filter((t) => core.isMusicMediaType(t.mediaType));
+          const deviceName =
+            resolvedDevice?.name?.toUpperCase() ||
+            (deviceResult.isIpodDevice
+              ? 'iPod'
+              : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
+          const heading = `Music on ${deviceName}:`;
+          const displayTracks = musicTracks.map(deviceTrackToDisplayTrack);
+
+          // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
+          // (IpodDeviceAdapter returns them directly), so the cast is safe.
+          const jsonMapper = deviceResult.isIpodDevice
+            ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
+            : deviceTrackToFullJson;
+          outputMusicTracks(musicTracks, displayTracks, heading, jsonMapper);
+        } finally {
+          deviceResult.adapter.close();
+        }
+      } catch (error) {
+        if (error instanceof CliError) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        throwCliError(message, DeviceErrorCodes.MUSIC_LIST_FAILED);
+      }
+    });
   });
 
 // =============================================================================
@@ -3266,162 +3387,173 @@ const videoSubcommand = new Command('video')
           ? 'artists'
           : 'stats';
 
-    const outputError = (error: string) => {
-      if (format === 'json') {
-        out.stdout(JSON.stringify({ error: true, message: error }, null, 2));
-      } else {
-        out.error(`Error: ${error}`);
-      }
-      process.exitCode = 1;
-    };
-
-    if (options.fields && mode !== 'tracks') {
-      outputError('--fields can only be used with --tracks');
-      return;
-    }
-
-    let fields;
-    try {
-      fields = parseFields(options.fields);
-    } catch (err) {
-      outputError(err instanceof Error ? err.message : String(err));
-      return;
-    }
-
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      outputError(resolved.error);
-      return;
-    }
-
-    const { resolvedDevice, cliPath } = resolved;
-
-    try {
-      const core = await import('@podkit/core');
-      const manager = core.getDeviceManager();
-      const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-      if (deviceIdentity?.volumeUuid && format !== 'json') {
-        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-      }
-
-      const resolveResult = await resolveDevicePath({
-        cliDevice: cliPath,
-        deviceIdentity,
-        manager,
-        requireMounted: true,
-        quiet: globalOpts.quiet,
-      });
-
-      if (!resolveResult.path) {
-        outputError(resolveResult.error ?? formatDeviceError(resolveResult));
-        return;
-      }
-
-      if (!existsSync(resolveResult.path)) {
-        const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type) ? 'Device' : 'iPod';
-        outputError(`${deviceLabel} not found at path: ${resolveResult.path}`);
-        return;
-      }
-
-      // Output helper for video tracks (shared between iPod and mass-storage)
-      const outputVideoTracks = (
-        videoTracks: DeviceTrack[],
-        displayTracks: DisplayTrack[],
-        heading: string,
-        fullJsonMapper: (t: DeviceTrack) => Record<string, unknown>
-      ) => {
-        if (mode === 'stats') {
-          const stats = computeStats(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(stats, null, 2));
-          } else {
-            out.stdout(
-              formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
-            );
-          }
-        } else if (mode === 'albums') {
-          const albums = aggregateAlbums(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(albums, null, 2));
-          } else if (format === 'csv') {
-            const lines = ['Album,Artist,Tracks'];
-            for (const a of albums) {
-              lines.push(`${escapeCsvField(a.album)},${escapeCsvField(a.artist)},${a.tracks}`);
-            }
-            out.stdout(lines.join('\n'));
-          } else {
-            out.stdout(formatAlbumsTable(albums, heading));
-          }
-        } else if (mode === 'artists') {
-          const artists = aggregateArtists(displayTracks);
-          if (format === 'json') {
-            out.stdout(JSON.stringify(artists, null, 2));
-          } else if (format === 'csv') {
-            const lines = ['Artist,Albums,Tracks'];
-            for (const a of artists) {
-              lines.push(`${escapeCsvField(a.artist)},${a.albums},${a.tracks}`);
-            }
-            out.stdout(lines.join('\n'));
-          } else {
-            out.stdout(formatArtistsTable(artists, heading));
-          }
-        } else {
-          // tracks mode
-          if (format === 'json') {
-            const fullTracks = videoTracks.map((t) => ({
-              ...fullJsonMapper(t),
-              syncTag: t.syncTag,
-            }));
-            out.stdout(JSON.stringify(fullTracks, null, 2));
-          } else if (format === 'csv') {
-            out.stdout(formatCsv(displayTracks, fields));
-          } else {
-            out.stdout(formatTable(displayTracks, fields));
-          }
-        }
+    await runAction(out, async () => {
+      const throwCliError = (error: string, code: DeviceErrorCode): never => {
+        throw new CliError({
+          message: error,
+          code,
+          printText: (o) => o.error(`Error: ${error}`),
+        });
       };
 
-      const deviceResult = await openDevice(
-        core,
-        resolveResult.path,
-        resolvedDevice?.config,
-        config.deviceDefaults
-      );
+      if (options.fields && mode !== 'tracks') {
+        throwCliError('--fields can only be used with --tracks', DeviceErrorCodes.INVALID_OPTION);
+      }
+
+      let fields: FieldName[] = DEFAULT_FIELDS;
       try {
-        // Check if device supports video
-        if (!deviceResult.capabilities.supportsVideo) {
-          if (format === 'json') {
-            out.stdout(JSON.stringify({ message: 'This device does not support video.' }, null, 2));
-          } else {
-            out.print('This device does not support video.');
-          }
+        fields = parseFields(options.fields);
+      } catch (err) {
+        throwCliError(
+          err instanceof Error ? err.message : String(err),
+          DeviceErrorCodes.INVALID_FIELDS
+        );
+      }
+
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throwCliError(resolved.error, DeviceErrorCodes.DEVICE_NOT_RESOLVED);
+        return;
+      }
+
+      const { resolvedDevice, cliPath } = resolved;
+
+      try {
+        const core = await import('@podkit/core');
+        const manager = core.getDeviceManager();
+        const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+        if (deviceIdentity?.volumeUuid && format !== 'json') {
+          out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+        }
+
+        const resolveResult = await resolveDevicePath({
+          cliDevice: cliPath,
+          deviceIdentity,
+          manager,
+          requireMounted: true,
+          quiet: globalOpts.quiet,
+        });
+
+        if (!resolveResult.path) {
+          throwCliError(
+            resolveResult.error ?? formatDeviceError(resolveResult),
+            DeviceErrorCodes.DEVICE_PATH_UNRESOLVED
+          );
           return;
         }
 
-        const allTracks = deviceResult.adapter.getTracks();
-        const videoTracks = allTracks.filter((t) => core.isVideoMediaType(t.mediaType));
-        const deviceName =
-          resolvedDevice?.name?.toUpperCase() ||
-          (deviceResult.isIpodDevice
-            ? 'iPod'
-            : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
-        const heading = `Video on ${deviceName}:`;
-        const displayTracks = videoTracks.map(deviceTrackToDisplayTrack);
+        if (!existsSync(resolveResult.path)) {
+          const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type) ? 'Device' : 'iPod';
+          throwCliError(
+            `${deviceLabel} not found at path: ${resolveResult.path}`,
+            DeviceErrorCodes.DEVICE_PATH_NOT_FOUND
+          );
+          return;
+        }
 
-        // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
-        // (IpodDeviceAdapter returns them directly), so the cast is safe.
-        const jsonMapper = deviceResult.isIpodDevice
-          ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
-          : deviceTrackToFullJson;
-        outputVideoTracks(videoTracks, displayTracks, heading, jsonMapper);
-      } finally {
-        deviceResult.adapter.close();
+        // Output helper for video tracks (shared between iPod and mass-storage)
+        const outputVideoTracks = (
+          videoTracks: DeviceTrack[],
+          displayTracks: DisplayTrack[],
+          heading: string,
+          fullJsonMapper: (t: DeviceTrack) => Record<string, unknown>
+        ) => {
+          if (mode === 'stats') {
+            const stats = computeStats(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(stats, null, 2));
+            } else {
+              out.stdout(
+                formatStatsText(stats, heading, { verbose: out.isVerbose, tips: out.tipsEnabled })
+              );
+            }
+          } else if (mode === 'albums') {
+            const albums = aggregateAlbums(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(albums, null, 2));
+            } else if (format === 'csv') {
+              const lines = ['Album,Artist,Tracks'];
+              for (const a of albums) {
+                lines.push(`${escapeCsvField(a.album)},${escapeCsvField(a.artist)},${a.tracks}`);
+              }
+              out.stdout(lines.join('\n'));
+            } else {
+              out.stdout(formatAlbumsTable(albums, heading));
+            }
+          } else if (mode === 'artists') {
+            const artists = aggregateArtists(displayTracks);
+            if (format === 'json') {
+              out.stdout(JSON.stringify(artists, null, 2));
+            } else if (format === 'csv') {
+              const lines = ['Artist,Albums,Tracks'];
+              for (const a of artists) {
+                lines.push(`${escapeCsvField(a.artist)},${a.albums},${a.tracks}`);
+              }
+              out.stdout(lines.join('\n'));
+            } else {
+              out.stdout(formatArtistsTable(artists, heading));
+            }
+          } else {
+            // tracks mode
+            if (format === 'json') {
+              const fullTracks = videoTracks.map((t) => ({
+                ...fullJsonMapper(t),
+                syncTag: t.syncTag,
+              }));
+              out.stdout(JSON.stringify(fullTracks, null, 2));
+            } else if (format === 'csv') {
+              out.stdout(formatCsv(displayTracks, fields));
+            } else {
+              out.stdout(formatTable(displayTracks, fields));
+            }
+          }
+        };
+
+        const deviceResult = await openDevice(
+          core,
+          resolveResult.path,
+          resolvedDevice?.config,
+          config.deviceDefaults
+        );
+        try {
+          // Check if device supports video
+          if (!deviceResult.capabilities.supportsVideo) {
+            if (format === 'json') {
+              out.stdout(
+                JSON.stringify({ message: 'This device does not support video.' }, null, 2)
+              );
+            } else {
+              out.print('This device does not support video.');
+            }
+            return;
+          }
+
+          const allTracks = deviceResult.adapter.getTracks();
+          const videoTracks = allTracks.filter((t) => core.isVideoMediaType(t.mediaType));
+          const deviceName =
+            resolvedDevice?.name?.toUpperCase() ||
+            (deviceResult.isIpodDevice
+              ? 'iPod'
+              : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
+          const heading = `Video on ${deviceName}:`;
+          const displayTracks = videoTracks.map(deviceTrackToDisplayTrack);
+
+          // When isIpodDevice, the DeviceTrack objects are IpodTrack instances
+          // (IpodDeviceAdapter returns them directly), so the cast is safe.
+          const jsonMapper = deviceResult.isIpodDevice
+            ? (t: DeviceTrack) => ipodTrackToFullJson(t as IpodTrack)
+            : deviceTrackToFullJson;
+          outputVideoTracks(videoTracks, displayTracks, heading, jsonMapper);
+        } finally {
+          deviceResult.adapter.close();
+        }
+      } catch (error) {
+        if (error instanceof CliError) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        throwCliError(message, DeviceErrorCodes.VIDEO_LIST_FAILED);
       }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      outputError(message);
-    }
+    });
   });
 
 // =============================================================================
@@ -3447,234 +3579,233 @@ const clearSubcommand = new Command('clear')
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceClearOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
+      }
 
-    const { resolvedDevice, cliPath } = resolved;
+      const { resolvedDevice, cliPath } = resolved;
 
-    // Gate: this command only works with iPod devices (requires iTunesDB)
-    const resolvedType = resolvedDevice?.config?.type;
-    if (resolvedType && resolvedType !== 'ipod') {
-      const error =
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.';
-      out.result<DeviceClearOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
+      // Gate: this command only works with iPod devices (requires iTunesDB)
+      const resolvedType = resolvedDevice?.config?.type;
+      if (resolvedType && resolvedType !== 'ipod') {
+        throw new CliError({
+          message:
+            'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
+          code: DeviceErrorCodes.IPOD_ONLY,
+        });
+      }
 
-    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
-    let IpodError: typeof import('@podkit/core').IpodError;
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+      let IpodError: typeof import('@podkit/core').IpodError;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
-    try {
-      const core = await import('@podkit/core');
-      IpodDatabase = core.IpodDatabase;
-      IpodError = core.IpodError;
-      getDeviceManager = core.getDeviceManager;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceClearOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
+      try {
+        const core = await import('@podkit/core');
+        IpodDatabase = core.IpodDatabase;
+        IpodError = core.IpodError;
+        getDeviceManager = core.getDeviceManager;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
+      }
+
+      const manager = getDeviceManager();
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
+
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
       });
-      process.exitCode = 1;
-      return;
-    }
 
-    const manager = getDeviceManager();
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+      if (!resolveResult.path) {
+        throw new CliError({
+          message: resolveResult.error ?? formatDeviceError(resolveResult),
+          code: DeviceErrorCodes.DEVICE_PATH_UNRESOLVED,
+        });
+      }
 
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
+      const devicePath = resolveResult.path;
 
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-    });
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: DeviceErrorCodes.DEVICE_PATH_NOT_FOUND,
+          printText: (o) => {
+            o.error(`iPod not found at: ${devicePath}`);
+            o.newline();
+            o.error('Make sure the iPod is connected and mounted.');
+          },
+        });
+      }
 
-    if (!resolveResult.path) {
-      out.result<DeviceClearOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
+      // Validate type option (before opening the database, to avoid a needless open/close)
+      const contentType = options.type ?? 'all';
+      if (!['music', 'video', 'all'].includes(contentType)) {
+        throw new CliError({
+          message: `Invalid type "${contentType}". Must be "music", "video", or "all".`,
+          code: DeviceErrorCodes.INVALID_TYPE,
+        });
+      }
 
-    const devicePath = resolveResult.path;
+      let ipod;
+      try {
+        ipod = await IpodDatabase.open(devicePath);
+      } catch (err) {
+        const isIpodError = err instanceof IpodError;
+        const message = err instanceof Error ? err.message : String(err);
 
-    if (!existsSync(devicePath)) {
-      out.result<DeviceClearOutput>(
-        { success: false, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`iPod not found at: ${devicePath}`);
-          out.newline();
-          out.error('Make sure the iPod is connected and mounted.');
+        throw new CliError({
+          message: isIpodError ? `Not an iPod or database corrupted: ${message}` : message,
+          code: isIpodError
+            ? DeviceErrorCodes.IPOD_DATABASE_INVALID
+            : DeviceErrorCodes.IPOD_DATABASE_OPEN_FAILED,
+          printText: (o) => {
+            o.error(`Cannot read iPod database at: ${devicePath}`);
+            o.newline();
+            if (isIpodError) {
+              o.error('This path does not appear to be a valid iPod:');
+              o.error('  - Missing iTunesDB file');
+              o.error('  - Database may be corrupted');
+            } else {
+              o.error(`Error: ${message}`);
+            }
+          },
+        });
+      }
+
+      try {
+        const { isMusicMediaType, isVideoMediaType } = await import('@podkit/core');
+
+        const allTracks = ipod.getTracks();
+
+        // Filter tracks based on content type
+        let targetTracks;
+        if (contentType === 'all') {
+          targetTracks = allTracks;
+        } else if (contentType === 'music') {
+          targetTracks = allTracks.filter((t) => isMusicMediaType(t.mediaType));
+        } else {
+          targetTracks = allTracks.filter((t) => isVideoMediaType(t.mediaType));
         }
-      );
-      process.exitCode = 1;
-      return;
-    }
 
-    let ipod;
-    try {
-      ipod = await IpodDatabase.open(devicePath);
-    } catch (err) {
-      const isIpodError = err instanceof IpodError;
-      const message = err instanceof Error ? err.message : String(err);
+        const targetCount = targetTracks.length;
+        const targetSize = targetTracks.reduce((sum, track) => sum + track.size, 0);
 
-      out.result<DeviceClearOutput>(
-        {
-          success: false,
-          error: isIpodError ? `Not an iPod or database corrupted: ${message}` : message,
-        },
-        () => {
-          out.error(`Cannot read iPod database at: ${devicePath}`);
+        const contentLabel =
+          contentType === 'all' ? 'content' : contentType === 'music' ? 'music tracks' : 'videos';
+
+        if (targetCount === 0) {
+          out.result<DeviceClearOutput>(
+            {
+              success: true,
+              contentType,
+              tracksRemoved: 0,
+              totalTracks: 0,
+              dryRun: options.dryRun,
+            },
+            () => out.print(`iPod has no ${contentLabel} to remove.`)
+          );
+          return;
+        }
+
+        if (options.dryRun) {
+          out.result<DeviceClearOutput>(
+            {
+              success: true,
+              contentType,
+              tracksRemoved: targetCount,
+              totalTracks: targetCount,
+              totalSize: targetSize,
+              dryRun: true,
+            },
+            () => {
+              out.print(
+                `Found ${formatNumber(targetCount)} ${contentLabel} (${formatBytes(targetSize)})`
+              );
+              out.newline();
+              out.print(`Dry run: would remove ${contentLabel} and files.`);
+            }
+          );
+          return;
+        }
+
+        if (!options.confirm && out.isText) {
+          out.print(
+            `Found ${formatNumber(targetCount)} ${contentLabel} (${formatBytes(targetSize)})`
+          );
           out.newline();
-          if (isIpodError) {
-            out.error('This path does not appear to be a valid iPod:');
-            out.error('  - Missing iTunesDB file');
-            out.error('  - Database may be corrupted');
+          if (contentType === 'all') {
+            out.print('This will remove ALL content from the iPod. Files will be deleted.');
           } else {
-            out.error(`Error: ${message}`);
+            out.print(`This will remove all ${contentLabel} from the iPod. Files will be deleted.`);
+          }
+          out.print('This action cannot be undone.');
+          out.newline();
+
+          const confirmPrompt =
+            contentType === 'all' ? 'Delete all content?' : `Delete all ${contentLabel}?`;
+          const confirmed = await confirmNo(confirmPrompt);
+          if (!confirmed) {
+            throw new CliError({
+              message: 'Operation cancelled by user',
+              code: DeviceErrorCodes.CANCELLED,
+              printText: (o) => o.print('Operation cancelled.'),
+            });
           }
         }
-      );
-      process.exitCode = 1;
-      return;
-    }
 
-    // Validate type option
-    const contentType = options.type ?? 'all';
-    if (!['music', 'video', 'all'].includes(contentType)) {
-      const errorMsg = `Invalid type "${contentType}". Must be "music", "video", or "all".`;
-      out.result<DeviceClearOutput>({ success: false, error: errorMsg }, () => out.error(errorMsg));
-      process.exitCode = 1;
-      ipod.close();
-      return;
-    }
+        out.print(`Removing ${contentLabel}...`);
 
-    try {
-      const { isMusicMediaType, isVideoMediaType } = await import('@podkit/core');
+        // Perform the removal based on content type
+        let result;
+        if (contentType === 'all') {
+          result = ipod.removeAllTracks({ deleteFiles: true });
+        } else {
+          result = ipod.removeTracksByContentType(contentType, { deleteFiles: true });
+        }
+        await ipod.save();
 
-      const allTracks = ipod.getTracks();
+        if (result.fileDeleteErrors.length > 0) {
+          for (const error of result.fileDeleteErrors) {
+            out.warn(error);
+          }
+        }
 
-      // Filter tracks based on content type
-      let targetTracks;
-      if (contentType === 'all') {
-        targetTracks = allTracks;
-      } else if (contentType === 'music') {
-        targetTracks = allTracks.filter((t) => isMusicMediaType(t.mediaType));
-      } else {
-        targetTracks = allTracks.filter((t) => isVideoMediaType(t.mediaType));
-      }
-
-      const targetCount = targetTracks.length;
-      const targetSize = targetTracks.reduce((sum, track) => sum + track.size, 0);
-
-      const contentLabel =
-        contentType === 'all' ? 'content' : contentType === 'music' ? 'music tracks' : 'videos';
-
-      if (targetCount === 0) {
-        out.result<DeviceClearOutput>(
-          { success: true, contentType, tracksRemoved: 0, totalTracks: 0, dryRun: options.dryRun },
-          () => out.print(`iPod has no ${contentLabel} to remove.`)
-        );
-        return;
-      }
-
-      if (options.dryRun) {
         out.result<DeviceClearOutput>(
           {
             success: true,
             contentType,
-            tracksRemoved: targetCount,
+            tracksRemoved: result.removedCount,
             totalTracks: targetCount,
             totalSize: targetSize,
-            dryRun: true,
+            fileDeleteErrors:
+              result.fileDeleteErrors.length > 0 ? result.fileDeleteErrors : undefined,
           },
-          () => {
+          () =>
             out.print(
-              `Found ${formatNumber(targetCount)} ${contentLabel} (${formatBytes(targetSize)})`
-            );
-            out.newline();
-            out.print(`Dry run: would remove ${contentLabel} and files.`);
-          }
+              `Removed ${formatNumber(result.removedCount)} ${contentLabel}, freed ${formatBytes(targetSize)}.`
+            )
         );
-        return;
+      } finally {
+        ipod.close();
       }
-
-      if (!options.confirm && out.isText) {
-        out.print(
-          `Found ${formatNumber(targetCount)} ${contentLabel} (${formatBytes(targetSize)})`
-        );
-        out.newline();
-        if (contentType === 'all') {
-          out.print('This will remove ALL content from the iPod. Files will be deleted.');
-        } else {
-          out.print(`This will remove all ${contentLabel} from the iPod. Files will be deleted.`);
-        }
-        out.print('This action cannot be undone.');
-        out.newline();
-
-        const confirmPrompt =
-          contentType === 'all' ? 'Delete all content?' : `Delete all ${contentLabel}?`;
-        const confirmed = await confirmNo(confirmPrompt);
-        if (!confirmed) {
-          out.result<DeviceClearOutput>(
-            { success: false, error: 'Operation cancelled by user' },
-            () => out.print('Operation cancelled.')
-          );
-          process.exitCode = 1;
-          return;
-        }
-      }
-
-      out.print(`Removing ${contentLabel}...`);
-
-      // Perform the removal based on content type
-      let result;
-      if (contentType === 'all') {
-        result = ipod.removeAllTracks({ deleteFiles: true });
-      } else {
-        result = ipod.removeTracksByContentType(contentType, { deleteFiles: true });
-      }
-      await ipod.save();
-
-      if (result.fileDeleteErrors.length > 0) {
-        for (const error of result.fileDeleteErrors) {
-          out.warn(error);
-        }
-      }
-
-      out.result<DeviceClearOutput>(
-        {
-          success: true,
-          contentType,
-          tracksRemoved: result.removedCount,
-          totalTracks: targetCount,
-          totalSize: targetSize,
-          fileDeleteErrors:
-            result.fileDeleteErrors.length > 0 ? result.fileDeleteErrors : undefined,
-        },
-        () =>
-          out.print(
-            `Removed ${formatNumber(result.removedCount)} ${contentLabel}, freed ${formatBytes(targetSize)}.`
-          )
-      );
-    } finally {
-      ipod.close();
-    }
+    });
   });
 
 // =============================================================================
@@ -3697,180 +3828,180 @@ const resetSubcommand = new Command('reset')
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const autoConfirm = options.yes ?? false;
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceResetOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
+      }
 
-    const { resolvedDevice, cliPath } = resolved;
+      const { resolvedDevice, cliPath } = resolved;
 
-    // Gate: this command only works with iPod devices (requires iTunesDB)
-    const resolvedType = resolvedDevice?.config?.type;
-    if (resolvedType && resolvedType !== 'ipod') {
-      const error =
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.';
-      out.result<DeviceResetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
+      // Gate: this command only works with iPod devices (requires iTunesDB)
+      const resolvedType = resolvedDevice?.config?.type;
+      if (resolvedType && resolvedType !== 'ipod') {
+        throw new CliError({
+          message:
+            'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
+          code: DeviceErrorCodes.IPOD_ONLY,
+        });
+      }
 
-    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
-    try {
-      const core = await import('@podkit/core');
-      IpodDatabase = core.IpodDatabase;
-      getDeviceManager = core.getDeviceManager;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceResetOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
-
-    const manager = getDeviceManager();
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
-
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-    });
-
-    if (!resolveResult.path) {
-      out.result<DeviceResetOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const devicePath = resolveResult.path;
-
-    if (!existsSync(devicePath)) {
-      out.result<DeviceResetOutput>(
-        { success: false, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`iPod not found at: ${devicePath}`);
-          out.newline();
-          out.error('Make sure the iPod is connected and mounted.');
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // Check if database exists and get current track count
-    const hasDb = await IpodDatabase.hasDatabase(devicePath);
-    let currentTrackCount = 0;
-
-    if (hasDb) {
       try {
-        const ipod = await IpodDatabase.open(devicePath);
-        try {
-          currentTrackCount = ipod.trackCount;
-        } finally {
-          ipod.close();
-        }
-      } catch {
-        // Database exists but couldn't be read - that's fine, we're resetting anyway
+        const core = await import('@podkit/core');
+        IpodDatabase = core.IpodDatabase;
+        getDeviceManager = core.getDeviceManager;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
       }
-    }
 
-    const actionVerb = hasDb ? 'recreate' : 'create';
-    const actionVerbPast = hasDb ? 'recreated' : 'created';
-    const actionVerbIng = hasDb ? 'Recreating' : 'Creating';
+      const manager = getDeviceManager();
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
-    if (options.dryRun) {
-      out.result<DeviceResetOutput>(
-        { success: true, mountPoint: devicePath, tracksRemoved: currentTrackCount, dryRun: true },
-        () => {
-          out.print('Dry run - would perform the following:');
-          out.newline();
-          if (hasDb) {
-            out.print(`  1. Remove existing database (${formatNumber(currentTrackCount)} tracks)`);
-            out.print('  2. Create fresh iTunesDB');
-          } else {
-            out.print('  1. Create new iTunesDB (no existing database found)');
-          }
-          out.print(`  ${hasDb ? '3' : '2'}. Preserve filesystem and volume UUID`);
-          out.newline();
-          out.print('No changes made.');
-        }
-      );
-      return;
-    }
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
 
-    // Strong confirmation (defaults to No) - only needed if there's content to lose
-    if (!autoConfirm && out.isText) {
-      out.newline();
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
+      });
+
+      if (!resolveResult.path) {
+        throw new CliError({
+          message: resolveResult.error ?? formatDeviceError(resolveResult),
+          code: DeviceErrorCodes.DEVICE_PATH_UNRESOLVED,
+        });
+      }
+
+      const devicePath = resolveResult.path;
+
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: DeviceErrorCodes.DEVICE_PATH_NOT_FOUND,
+          printText: (o) => {
+            o.error(`iPod not found at: ${devicePath}`);
+            o.newline();
+            o.error('Make sure the iPod is connected and mounted.');
+          },
+        });
+      }
+
+      // Check if database exists and get current track count
+      const hasDb = await IpodDatabase.hasDatabase(devicePath);
+      let currentTrackCount = 0;
+
       if (hasDb) {
-        out.print('WARNING: This will recreate the iPod database from scratch.');
-        out.print('All tracks, playlists, and play counts will be lost.');
-        if (currentTrackCount > 0) {
-          out.print(`Currently: ${formatNumber(currentTrackCount)} tracks`);
+        try {
+          const ipod = await IpodDatabase.open(devicePath);
+          try {
+            currentTrackCount = ipod.trackCount;
+          } finally {
+            ipod.close();
+          }
+        } catch {
+          // Database exists but couldn't be read - that's fine, we're resetting anyway
         }
-        out.newline();
-        out.print('Your device configuration in podkit will remain valid.');
-        out.newline();
-
-        const confirmed = await confirmNo('Continue?');
-        if (!confirmed) {
-          out.print('Cancelled. No changes made.');
-          return;
-        }
-      } else {
-        out.print('No existing database found. A fresh database will be created.');
-        out.newline();
       }
-    }
 
-    out.print(`${actionVerbIng} database...`);
+      const actionVerb = hasDb ? 'recreate' : 'create';
+      const actionVerbPast = hasDb ? 'recreated' : 'created';
+      const actionVerbIng = hasDb ? 'Recreating' : 'Creating';
 
-    try {
-      const ipod = await IpodDatabase.initializeIpod(devicePath);
-      const modelName = ipod.device.modelName;
-      ipod.close();
-
-      out.result<DeviceResetOutput>(
-        { success: true, mountPoint: devicePath, modelName, tracksRemoved: currentTrackCount },
-        () => {
-          out.newline();
-          out.print(`Database ${actionVerbPast}.`);
-          out.print(`  Model:  ${modelName}`);
-          out.print(`  Tracks: 0`);
-          out.print(`  Path:   ${devicePath}`);
-          if (currentTrackCount > 0) {
+      if (options.dryRun) {
+        out.result<DeviceResetOutput>(
+          { success: true, mountPoint: devicePath, tracksRemoved: currentTrackCount, dryRun: true },
+          () => {
+            out.print('Dry run - would perform the following:');
             out.newline();
-            out.print(`Removed ${formatNumber(currentTrackCount)} tracks.`);
+            if (hasDb) {
+              out.print(
+                `  1. Remove existing database (${formatNumber(currentTrackCount)} tracks)`
+              );
+              out.print('  2. Create fresh iTunesDB');
+            } else {
+              out.print('  1. Create new iTunesDB (no existing database found)');
+            }
+            out.print(`  ${hasDb ? '3' : '2'}. Preserve filesystem and volume UUID`);
+            out.newline();
+            out.print('No changes made.');
+          }
+        );
+        return;
+      }
+
+      // Strong confirmation (defaults to No) - only needed if there's content to lose
+      if (!autoConfirm && out.isText) {
+        out.newline();
+        if (hasDb) {
+          out.print('WARNING: This will recreate the iPod database from scratch.');
+          out.print('All tracks, playlists, and play counts will be lost.');
+          if (currentTrackCount > 0) {
+            out.print(`Currently: ${formatNumber(currentTrackCount)} tracks`);
           }
           out.newline();
-          out.print('You can now sync fresh content:');
-          out.print('  podkit sync');
+          out.print('Your device configuration in podkit will remain valid.');
+          out.newline();
+
+          const confirmed = await confirmNo('Continue?');
+          if (!confirmed) {
+            out.print('Cancelled. No changes made.');
+            return;
+          }
+        } else {
+          out.print('No existing database found. A fresh database will be created.');
+          out.newline();
         }
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      out.result<DeviceResetOutput>(
-        { success: false, mountPoint: devicePath, error: message },
-        () => out.error(`Failed to ${actionVerb} iPod database: ${message}`)
-      );
-      process.exitCode = 1;
-    }
+      }
+
+      out.print(`${actionVerbIng} database...`);
+
+      try {
+        const ipod = await IpodDatabase.initializeIpod(devicePath);
+        const modelName = ipod.device.modelName;
+        ipod.close();
+
+        out.result<DeviceResetOutput>(
+          { success: true, mountPoint: devicePath, modelName, tracksRemoved: currentTrackCount },
+          () => {
+            out.newline();
+            out.print(`Database ${actionVerbPast}.`);
+            out.print(`  Model:  ${modelName}`);
+            out.print(`  Tracks: 0`);
+            out.print(`  Path:   ${devicePath}`);
+            if (currentTrackCount > 0) {
+              out.newline();
+              out.print(`Removed ${formatNumber(currentTrackCount)} tracks.`);
+            }
+            out.newline();
+            out.print('You can now sync fresh content:');
+            out.print('  podkit sync');
+          }
+        );
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.RESET_FAILED,
+          details: { mountPoint: devicePath },
+          printText: (o) => o.error(`Failed to ${actionVerb} iPod database: ${message}`),
+        });
+      }
+    });
   });
 
 // =============================================================================
@@ -3890,115 +4021,113 @@ const ejectSubcommand = new Command('eject')
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const force = options.force ?? false;
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceEjectOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
+      }
 
-    const { resolvedDevice, cliPath } = resolved;
+      const { resolvedDevice, cliPath } = resolved;
 
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
-    try {
-      const core = await import('@podkit/core');
-      getDeviceManager = core.getDeviceManager;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceEjectOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
+      try {
+        const core = await import('@podkit/core');
+        getDeviceManager = core.getDeviceManager;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
+      }
+
+      const manager = getDeviceManager();
+
+      if (!manager.isSupported) {
+        throw new CliError({
+          message: `Eject is not supported on ${manager.platform}`,
+          code: DeviceErrorCodes.EJECT_UNSUPPORTED,
+          printText: (o) => {
+            o.error(`Eject is not supported on ${manager.platform}.`);
+            o.newline();
+            o.error(manager.getManualInstructions('eject'));
+          },
+        });
+      }
+
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
+
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
       });
-      process.exitCode = 1;
-      return;
-    }
 
-    const manager = getDeviceManager();
+      if (!resolveResult.path) {
+        throw new CliError({
+          message: resolveResult.error ?? formatDeviceError(resolveResult),
+          code: DeviceErrorCodes.DEVICE_PATH_UNRESOLVED,
+        });
+      }
 
-    if (!manager.isSupported) {
-      out.result<DeviceEjectOutput>(
-        { success: false, error: `Eject is not supported on ${manager.platform}` },
-        () => {
-          out.error(`Eject is not supported on ${manager.platform}.`);
-          out.newline();
-          out.error(manager.getManualInstructions('eject'));
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
+      const devicePath = resolveResult.path;
 
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+      const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type)
+        ? getDeviceTypeDisplayName(resolvedDevice?.config?.type)
+        : 'iPod';
 
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: DeviceErrorCodes.DEVICE_PATH_NOT_FOUND,
+          details: { device: devicePath },
+          printText: (o) => {
+            o.error(`${deviceLabel} not found at: ${devicePath}`);
+            o.newline();
+            o.error(`Make sure the ${deviceLabel.toLowerCase()} is connected and mounted.`);
+          },
+        });
+      }
 
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
+      out.print(`Ejecting ${deviceLabel} at ${devicePath}...`);
+
+      const result = await manager.eject(devicePath, { force });
+
+      if (result.success) {
+        out.result<DeviceEjectOutput>(
+          { success: true, device: devicePath, forced: result.forced },
+          () => out.success(`${deviceLabel} ejected successfully. Safe to disconnect.`)
+        );
+      } else {
+        throw new CliError({
+          message: result.error ?? 'Eject failed',
+          code: DeviceErrorCodes.EJECT_FAILED,
+          details: { device: devicePath, forced: result.forced },
+          printText: (o) => {
+            o.error(`Failed to eject ${deviceLabel.toLowerCase()}.`);
+            o.newline();
+            if (result.error) {
+              o.error(result.error);
+            }
+            if (!force) {
+              o.newline();
+              o.error('Try: podkit device eject --force');
+            }
+          },
+        });
+      }
     });
-
-    if (!resolveResult.path) {
-      out.result<DeviceEjectOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const devicePath = resolveResult.path;
-
-    const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type)
-      ? getDeviceTypeDisplayName(resolvedDevice?.config?.type)
-      : 'iPod';
-
-    if (!existsSync(devicePath)) {
-      out.result<DeviceEjectOutput>(
-        { success: false, device: devicePath, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`${deviceLabel} not found at: ${devicePath}`);
-          out.newline();
-          out.error(`Make sure the ${deviceLabel.toLowerCase()} is connected and mounted.`);
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    out.print(`Ejecting ${deviceLabel} at ${devicePath}...`);
-
-    const result = await manager.eject(devicePath, { force });
-
-    if (result.success) {
-      out.result<DeviceEjectOutput>(
-        { success: true, device: devicePath, forced: result.forced },
-        () => out.success(`${deviceLabel} ejected successfully. Safe to disconnect.`)
-      );
-    } else {
-      out.result<DeviceEjectOutput>(
-        { success: false, device: devicePath, forced: result.forced, error: result.error },
-        () => {
-          out.error(`Failed to eject ${deviceLabel.toLowerCase()}.`);
-          out.newline();
-          if (result.error) {
-            out.error(result.error);
-          }
-          if (!force) {
-            out.newline();
-            out.error('Try: podkit device eject --force');
-          }
-        }
-      );
-      process.exitCode = 1;
-    }
   });
 
 // =============================================================================
@@ -4022,206 +4151,202 @@ const mountSubcommand = new Command('mount')
     const explicitDisk = options.disk;
     const dryRun = options.dryRun ?? false;
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved && !explicitDisk) {
-      out.result<DeviceMountOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved && !explicitDisk) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
+      }
 
-    const resolvedDevice = 'resolvedDevice' in resolved ? resolved.resolvedDevice : undefined;
+      const resolvedDevice = 'resolvedDevice' in resolved ? resolved.resolvedDevice : undefined;
 
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
 
-    try {
-      const core = await import('@podkit/core');
-      getDeviceManager = core.getDeviceManager;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceMountOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
+      try {
+        const core = await import('@podkit/core');
+        getDeviceManager = core.getDeviceManager;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
+      }
 
-    const manager = getDeviceManager();
+      const manager = getDeviceManager();
 
-    if (!manager.isSupported) {
-      out.result<DeviceMountOutput>(
-        { success: false, error: `Mount is not supported on ${manager.platform}` },
-        () => {
-          out.error(`Mount is not supported on ${manager.platform}.`);
-          out.newline();
-          out.error(manager.getManualInstructions('mount'));
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
+      if (!manager.isSupported) {
+        throw new CliError({
+          message: `Mount is not supported on ${manager.platform}`,
+          code: DeviceErrorCodes.MOUNT_UNSUPPORTED,
+          printText: (o) => {
+            o.error(`Mount is not supported on ${manager.platform}.`);
+            o.newline();
+            o.error(manager.getManualInstructions('mount'));
+          },
+        });
+      }
 
-    let deviceId: string | undefined;
-    let volumeName: string | undefined;
+      let deviceId: string | undefined;
+      let volumeName: string | undefined;
 
-    if (explicitDisk) {
-      deviceId = explicitDisk;
-    } else {
-      const volumeUuid = resolvedDevice?.config.volumeUuid;
-
-      if (volumeUuid) {
-        const deviceIdentity = getDeviceIdentity(resolvedDevice);
-        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-
-        const device = await manager.findByVolumeUuid(volumeUuid);
-
-        if (!device) {
-          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-          out.result<DeviceMountOutput>(
-            { success: false, error: `${devLabel} not found with UUID: ${volumeUuid}` },
-            () => {
-              out.error(`${devLabel} not found with UUID: ${volumeUuid}`);
-              out.newline();
-              out.error(`Make sure the ${devLabel.toLowerCase()} is connected.`);
-              out.newline();
-              out.error('You can specify a device explicitly:');
-              out.error('  podkit device mount --disk /dev/disk4s2');
-            }
-          );
-          process.exitCode = 1;
-          return;
-        }
-
-        if (device.isMounted && device.mountPoint) {
-          out.result<DeviceMountOutput>(
-            { success: true, device: device.identifier, mountPoint: device.mountPoint },
-            () => out.print(`Device already mounted at: ${device.mountPoint}`)
-          );
-          return;
-        }
-
-        deviceId = device.identifier;
-        volumeName = device.volumeName;
+      if (explicitDisk) {
+        deviceId = explicitDisk;
       } else {
+        const volumeUuid = resolvedDevice?.config.volumeUuid;
+
+        if (volumeUuid) {
+          const deviceIdentity = getDeviceIdentity(resolvedDevice);
+          out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+
+          const device = await manager.findByVolumeUuid(volumeUuid);
+
+          if (!device) {
+            const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+            throw new CliError({
+              message: `${devLabel} not found with UUID: ${volumeUuid}`,
+              code: DeviceErrorCodes.DEVICE_NOT_FOUND,
+              printText: (o) => {
+                o.error(`${devLabel} not found with UUID: ${volumeUuid}`);
+                o.newline();
+                o.error(`Make sure the ${devLabel.toLowerCase()} is connected.`);
+                o.newline();
+                o.error('You can specify a device explicitly:');
+                o.error('  podkit device mount --disk /dev/disk4s2');
+              },
+            });
+          }
+
+          if (device.isMounted && device.mountPoint) {
+            out.result<DeviceMountOutput>(
+              { success: true, device: device.identifier, mountPoint: device.mountPoint },
+              () => out.print(`Device already mounted at: ${device.mountPoint}`)
+            );
+            return;
+          }
+
+          deviceId = device.identifier;
+          volumeName = device.volumeName;
+        } else {
+          throw new CliError({
+            message: 'No device specified and no device registered in config',
+            code: DeviceErrorCodes.NO_DEVICE,
+            printText: (o) => {
+              o.error('No device specified and no device registered in config.');
+              o.newline();
+              o.error('Either specify a device:');
+              o.error('  podkit device mount --disk /dev/disk4s2');
+              o.newline();
+              o.error('Or register a device first:');
+              o.error('  podkit device add -d <name>');
+            },
+          });
+        }
+      }
+
+      if (!dryRun) {
+        const displayName = volumeName || deviceId;
+        const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+        out.print(`Mounting ${devLabel}: ${displayName}...`);
+      }
+
+      const mountTarget = options.target ?? (volumeName ? `/tmp/podkit-${volumeName}` : undefined);
+
+      const result = await manager.mount(deviceId, {
+        target: mountTarget,
+        dryRun,
+      });
+
+      if (dryRun) {
         out.result<DeviceMountOutput>(
-          { success: false, error: 'No device specified and no device registered in config' },
+          {
+            success: true,
+            device: deviceId,
+            mountPoint: result.mountPoint,
+            dryRunCommand: result.dryRunCommand,
+          },
           () => {
-            out.error('No device specified and no device registered in config.');
-            out.newline();
-            out.error('Either specify a device:');
-            out.error('  podkit device mount --disk /dev/disk4s2');
-            out.newline();
-            out.error('Or register a device first:');
-            out.error('  podkit device add -d <name>');
+            out.print('Dry run - command that would be executed:');
+            out.print(`  ${result.dryRunCommand}`);
+            if (result.mountPoint) {
+              out.print(`  Mount point: ${result.mountPoint}`);
+            }
           }
         );
-        process.exitCode = 1;
         return;
       }
-    }
 
-    if (!dryRun) {
-      const displayName = volumeName || deviceId;
-      const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-      out.print(`Mounting ${devLabel}: ${displayName}...`);
-    }
+      if (result.requiresSudo) {
+        const assessment = result.assessment;
+        throw new CliError({
+          message: 'Mount requires elevated privileges',
+          code: DeviceErrorCodes.MOUNT_REQUIRES_SUDO,
+          details: {
+            device: deviceId,
+            requiresSudo: true,
+            dryRunCommand: result.dryRunCommand,
+            assessment,
+          },
+          printText: (o) => {
+            const displayName = assessment?.volumeName ?? deviceId;
+            const diskId = assessment?.diskIdentifier ?? deviceId;
+            o.error(`Mount failed for ${displayName} (${diskId})`);
+            o.newline();
 
-    const mountTarget = options.target ?? (volumeName ? `/tmp/podkit-${volumeName}` : undefined);
-
-    const result = await manager.mount(deviceId, {
-      target: mountTarget,
-      dryRun,
-    });
-
-    if (dryRun) {
-      out.result<DeviceMountOutput>(
-        {
-          success: true,
-          device: deviceId,
-          mountPoint: result.mountPoint,
-          dryRunCommand: result.dryRunCommand,
-        },
-        () => {
-          out.print('Dry run - command that would be executed:');
-          out.print(`  ${result.dryRunCommand}`);
-          if (result.mountPoint) {
-            out.print(`  Mount point: ${result.mountPoint}`);
-          }
-        }
-      );
-      return;
-    }
-
-    if (result.requiresSudo) {
-      const assessment = result.assessment;
-      out.result<DeviceMountOutput>(
-        {
-          success: false,
-          device: deviceId,
-          error: 'Mount requires elevated privileges',
-          requiresSudo: true,
-          dryRunCommand: result.dryRunCommand,
-          assessment,
-        },
-        () => {
-          const displayName = assessment?.volumeName ?? deviceId;
-          const diskId = assessment?.diskIdentifier ?? deviceId;
-          out.error(`Mount failed for ${displayName} (${diskId})`);
-          out.newline();
-
-          if (assessment?.iFlash.confirmed) {
-            out.error('iFlash storage detected:');
-            for (const evidence of assessment.iFlash.evidence) {
-              out.error(`  • ${evidence.signal}: ${evidence.value}`);
-              out.error(`    ${evidence.detail}`);
+            if (assessment?.iFlash.confirmed) {
+              o.error('iFlash storage detected:');
+              for (const evidence of assessment.iFlash.evidence) {
+                o.error(`  • ${evidence.signal}: ${evidence.value}`);
+                o.error(`    ${evidence.detail}`);
+              }
+              o.newline();
+              o.error('macOS refuses to automatically mount large FAT32 volumes created by');
+              o.error('iFlash adapters. Elevated privileges are required to bypass this.');
+            } else {
+              o.error('This device requires elevated privileges to mount.');
             }
+
+            o.newline();
+            o.error('Run:');
+            o.error(`  ${bold('sudo')} podkit device mount`);
+
+            o.printTips({ mountRequiresSudo: true });
+          },
+        });
+      }
+
+      if (result.success) {
+        out.result<DeviceMountOutput>(
+          { success: true, device: deviceId, mountPoint: result.mountPoint },
+          () => {
+            const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+            out.print(`${devLabel} mounted at: ${result.mountPoint}`);
             out.newline();
-            out.error('macOS refuses to automatically mount large FAT32 volumes created by');
-            out.error('iFlash adapters. Elevated privileges are required to bypass this.');
-          } else {
-            out.error('This device requires elevated privileges to mount.');
+            out.print('You can now use:');
+            out.print(`  podkit device info`);
+            out.print(`  podkit sync`);
           }
-
-          out.newline();
-          out.error('Run:');
-          out.error(`  ${bold('sudo')} podkit device mount`);
-
-          out.printTips({ mountRequiresSudo: true });
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    if (result.success) {
-      out.result<DeviceMountOutput>(
-        { success: true, device: deviceId, mountPoint: result.mountPoint },
-        () => {
-          const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
-          out.print(`${devLabel} mounted at: ${result.mountPoint}`);
-          out.newline();
-          out.print('You can now use:');
-          out.print(`  podkit device info`);
-          out.print(`  podkit sync`);
-        }
-      );
-    } else {
-      out.result<DeviceMountOutput>(
-        { success: false, device: deviceId, error: result.error },
-        () => {
-          out.error(
-            `Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`
-          );
-          out.newline();
-          if (result.error) {
-            out.error(result.error);
-          }
-        }
-      );
-      process.exitCode = 1;
-    }
+        );
+      } else {
+        throw new CliError({
+          message: result.error ?? 'Mount failed',
+          code: DeviceErrorCodes.MOUNT_FAILED,
+          details: { device: deviceId },
+          printText: (o) => {
+            o.error(
+              `Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`
+            );
+            o.newline();
+            if (result.error) {
+              o.error(result.error);
+            }
+          },
+        });
+      }
+    });
   });
 
 // =============================================================================
@@ -4242,258 +4367,251 @@ const initSubcommand = new Command('init')
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const autoConfirm = options.yes ?? false;
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceInitOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
+      }
 
-    const { resolvedDevice, cliPath } = resolved;
+      const { resolvedDevice, cliPath } = resolved;
 
-    // Gate: this command only works with iPod devices (requires iTunesDB)
-    const resolvedType = resolvedDevice?.config?.type;
-    if (resolvedType && resolvedType !== 'ipod') {
-      const error =
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.';
-      out.result<DeviceInitOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
+      // Gate: this command only works with iPod devices (requires iTunesDB)
+      const resolvedType = resolvedDevice?.config?.type;
+      if (resolvedType && resolvedType !== 'ipod') {
+        throw new CliError({
+          message:
+            'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
+          code: DeviceErrorCodes.IPOD_ONLY,
+        });
+      }
 
-    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
-    let checkReadiness: typeof import('@podkit/core').checkReadiness;
+      let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let checkReadiness: typeof import('@podkit/core').checkReadiness;
 
-    try {
-      const core = await import('@podkit/core');
-      IpodDatabase = core.IpodDatabase;
-      getDeviceManager = core.getDeviceManager;
-      checkReadiness = core.checkReadiness;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceInitOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
-
-    const manager = getDeviceManager();
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
-
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-    });
-
-    if (!resolveResult.path) {
-      out.result<DeviceInitOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const devicePath = resolveResult.path;
-
-    if (!existsSync(devicePath)) {
-      out.result<DeviceInitOutput>(
-        { success: false, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`iPod not found at: ${devicePath}`);
-          out.newline();
-          out.error('Make sure the iPod is connected and mounted.');
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // Run readiness check to determine device state
-    let readinessLevel: ReadinessLevel | undefined;
-    if (manager.isSupported) {
       try {
-        const ipods = await manager.findIpodDevices();
-        const matchingIpod = ipods.find((d) => d.mountPoint === devicePath);
-        if (matchingIpod) {
-          const readiness = await checkReadiness({ device: matchingIpod });
-          readinessLevel = readiness.level;
-        }
-      } catch {
-        // Fall through to legacy hasDatabase check if readiness fails
+        const core = await import('@podkit/core');
+        IpodDatabase = core.IpodDatabase;
+        getDeviceManager = core.getDeviceManager;
+        checkReadiness = core.checkReadiness;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
       }
-    }
 
-    // Branch on readiness level (when available)
-    if (readinessLevel) {
-      switch (readinessLevel) {
-        case 'ready': {
-          if (!options.force) {
-            out.result<DeviceInitOutput>(
-              {
-                success: false,
-                readinessLevel,
-                error: 'Device is already initialized. Use --force to reinitialize.',
-              },
-              () => {
-                out.print('Device is already initialized.');
-                out.newline();
-                out.print(
-                  'Use --force to reinitialize (this will delete all tracks and playlists).'
-                );
-              }
-            );
-            process.exitCode = 1;
-            return;
+      const manager = getDeviceManager();
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
+
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
+      });
+
+      if (!resolveResult.path) {
+        throw new CliError({
+          message: resolveResult.error ?? formatDeviceError(resolveResult),
+          code: DeviceErrorCodes.DEVICE_PATH_UNRESOLVED,
+        });
+      }
+
+      const devicePath = resolveResult.path;
+
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: DeviceErrorCodes.DEVICE_PATH_NOT_FOUND,
+          printText: (o) => {
+            o.error(`iPod not found at: ${devicePath}`);
+            o.newline();
+            o.error('Make sure the iPod is connected and mounted.');
+          },
+        });
+      }
+
+      // Run readiness check to determine device state
+      let readinessLevel: ReadinessLevel | undefined;
+      if (manager.isSupported) {
+        try {
+          const ipods = await manager.findIpodDevices();
+          const matchingIpod = ipods.find((d) => d.mountPoint === devicePath);
+          if (matchingIpod) {
+            const readiness = await checkReadiness({ device: matchingIpod });
+            readinessLevel = readiness.level;
           }
-          // --force on ready device: proceed with reinit (handled below)
-          break;
+        } catch {
+          // Fall through to legacy hasDatabase check if readiness fails
         }
-        case 'needs-init':
-          // Proceed with init (handled below)
-          break;
-        case 'needs-format': {
-          const error = 'Device has a partition table but no recognized filesystem.';
-          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
-            out.print('This device has a partition table but no recognized filesystem.');
-            out.newline();
-            out.print('Automatic formatting is not yet supported by podkit.');
-            out.print('To format manually:');
-            out.print(
-              '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Format: MS-DOS (FAT32)'
-            );
-            out.print('  Or: Use iTunes/Finder to restore the iPod');
-            out.newline();
-            out.print('After formatting, run: podkit device init');
-          });
-          process.exitCode = 1;
-          return;
-        }
-        case 'needs-partition': {
-          const error = 'Device has no partition table. It appears to be completely uninitialized.';
-          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
-            out.print(
-              'This device has no partition table. It appears to be completely uninitialized.'
-            );
-            out.newline();
-            out.print('Automatic partitioning is not yet supported by podkit.');
-            out.print('To set up manually:');
-            out.print(
-              '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Scheme: Master Boot Record, Format: MS-DOS (FAT32)'
-            );
-            out.print('  Or: Use iTunes/Finder to restore the iPod');
-            out.newline();
-            out.print('After partitioning and formatting, run: podkit device init');
-          });
-          process.exitCode = 1;
-          return;
-        }
-        case 'needs-repair': {
-          const error =
-            'Device database or SysInfo appears corrupt. Run `podkit device reset` to recreate.';
-          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
-            out.error(error);
-          });
-          process.exitCode = 1;
-          return;
-        }
-        case 'hardware-error': {
-          const error =
-            'Hardware error detected. Check that the device is properly connected and the cable is working.';
-          out.result<DeviceInitOutput>({ success: false, readinessLevel, error }, () => {
-            out.error(error);
-          });
-          process.exitCode = 1;
-          return;
-        }
-        default:
-          // Unknown level — fall through to legacy check
-          break;
       }
-    }
 
-    // Legacy path: readiness not available (unsupported platform) or --force on ready device
-    if (!readinessLevel) {
-      // Fall back to hasDatabase check
-      const hasDb = await IpodDatabase.hasDatabase(devicePath);
+      // Branch on readiness level (when available)
+      if (readinessLevel) {
+        switch (readinessLevel) {
+          case 'ready': {
+            if (!options.force) {
+              throw new CliError({
+                message: 'Device is already initialized. Use --force to reinitialize.',
+                code: DeviceErrorCodes.DEVICE_ALREADY_INITIALIZED,
+                details: { readinessLevel },
+                printText: (o) => {
+                  o.print('Device is already initialized.');
+                  o.newline();
+                  o.print(
+                    'Use --force to reinitialize (this will delete all tracks and playlists).'
+                  );
+                },
+              });
+            }
+            // --force on ready device: proceed with reinit (handled below)
+            break;
+          }
+          case 'needs-init':
+            // Proceed with init (handled below)
+            break;
+          case 'needs-format': {
+            throw new CliError({
+              message: 'Device has a partition table but no recognized filesystem.',
+              code: DeviceErrorCodes.NEEDS_FORMAT,
+              details: { readinessLevel },
+              printText: (o) => {
+                o.print('This device has a partition table but no recognized filesystem.');
+                o.newline();
+                o.print('Automatic formatting is not yet supported by podkit.');
+                o.print('To format manually:');
+                o.print(
+                  '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Format: MS-DOS (FAT32)'
+                );
+                o.print('  Or: Use iTunes/Finder to restore the iPod');
+                o.newline();
+                o.print('After formatting, run: podkit device init');
+              },
+            });
+          }
+          case 'needs-partition': {
+            throw new CliError({
+              message: 'Device has no partition table. It appears to be completely uninitialized.',
+              code: DeviceErrorCodes.NEEDS_PARTITION,
+              details: { readinessLevel },
+              printText: (o) => {
+                o.print(
+                  'This device has no partition table. It appears to be completely uninitialized.'
+                );
+                o.newline();
+                o.print('Automatic partitioning is not yet supported by podkit.');
+                o.print('To set up manually:');
+                o.print(
+                  '  macOS: Open Disk Utility \u2192 Select the device \u2192 Erase \u2192 Scheme: Master Boot Record, Format: MS-DOS (FAT32)'
+                );
+                o.print('  Or: Use iTunes/Finder to restore the iPod');
+                o.newline();
+                o.print('After partitioning and formatting, run: podkit device init');
+              },
+            });
+          }
+          case 'needs-repair': {
+            throw new CliError({
+              message:
+                'Device database or SysInfo appears corrupt. Run `podkit device reset` to recreate.',
+              code: DeviceErrorCodes.NEEDS_REPAIR,
+              details: { readinessLevel },
+            });
+          }
+          case 'hardware-error': {
+            throw new CliError({
+              message:
+                'Hardware error detected. Check that the device is properly connected and the cable is working.',
+              code: DeviceErrorCodes.HARDWARE_ERROR,
+              details: { readinessLevel },
+            });
+          }
+          default:
+            // Unknown level — fall through to legacy check
+            break;
+        }
+      }
 
-      if (hasDb && !options.force) {
+      // Legacy path: readiness not available (unsupported platform) or --force on ready device
+      if (!readinessLevel) {
+        // Fall back to hasDatabase check
+        const hasDb = await IpodDatabase.hasDatabase(devicePath);
+
+        if (hasDb && !options.force) {
+          throw new CliError({
+            message: 'Database already exists. Use --force to overwrite.',
+            code: DeviceErrorCodes.DATABASE_EXISTS,
+            printText: (o) => {
+              o.error('iPod already has a database. Use --force to reinitialize.');
+              o.newline();
+              o.error('Warning: This will delete all tracks and playlists!');
+            },
+          });
+        }
+      }
+
+      // Confirm reinit when --force is used
+      if (options.force && !autoConfirm && out.isText) {
+        out.newline();
+        out.print('WARNING: This will delete all existing tracks and playlists!');
+        out.newline();
+        const confirmed = await confirmNo('Reinitialize the iPod database?');
+        if (!confirmed) {
+          out.print('Cancelled. No changes made.');
+          return;
+        }
+      }
+
+      out.print('Initializing iPod database...');
+
+      try {
+        const ipod = await IpodDatabase.initializeIpod(devicePath);
+        const modelName = ipod.device.modelName;
+        ipod.close();
+
         out.result<DeviceInitOutput>(
-          { success: false, error: 'Database already exists. Use --force to overwrite.' },
+          {
+            success: true,
+            device: resolvedDevice?.name,
+            mountPoint: devicePath,
+            modelName,
+            readinessLevel: readinessLevel ?? undefined,
+          },
           () => {
-            out.error('iPod already has a database. Use --force to reinitialize.');
             out.newline();
-            out.error('Warning: This will delete all tracks and playlists!');
+            out.print(`iPod database initialized successfully.`);
+            out.print(`  Model: ${modelName}`);
+            out.print(`  Path:  ${devicePath}`);
+            out.newline();
+            out.print('You can now use:');
+            out.print('  podkit sync    # Sync content to this device');
           }
         );
-        process.exitCode = 1;
-        return;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.INIT_FAILED,
+          details: {
+            device: resolvedDevice?.name,
+            mountPoint: devicePath,
+            readinessLevel: readinessLevel ?? undefined,
+          },
+          printText: (o) => o.error(`Failed to initialize iPod database: ${message}`),
+        });
       }
-    }
-
-    // Confirm reinit when --force is used
-    if (options.force && !autoConfirm && out.isText) {
-      out.newline();
-      out.print('WARNING: This will delete all existing tracks and playlists!');
-      out.newline();
-      const confirmed = await confirmNo('Reinitialize the iPod database?');
-      if (!confirmed) {
-        out.print('Cancelled. No changes made.');
-        return;
-      }
-    }
-
-    out.print('Initializing iPod database...');
-
-    try {
-      const ipod = await IpodDatabase.initializeIpod(devicePath);
-      const modelName = ipod.device.modelName;
-      ipod.close();
-
-      out.result<DeviceInitOutput>(
-        {
-          success: true,
-          device: resolvedDevice?.name,
-          mountPoint: devicePath,
-          modelName,
-          readinessLevel: readinessLevel ?? undefined,
-        },
-        () => {
-          out.newline();
-          out.print(`iPod database initialized successfully.`);
-          out.print(`  Model: ${modelName}`);
-          out.print(`  Path:  ${devicePath}`);
-          out.newline();
-          out.print('You can now use:');
-          out.print('  podkit sync    # Sync content to this device');
-        }
-      );
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      out.result<DeviceInitOutput>(
-        {
-          success: false,
-          device: resolvedDevice?.name,
-          mountPoint: devicePath,
-          readinessLevel: readinessLevel ?? undefined,
-          error: message,
-        },
-        () => out.error(`Failed to initialize iPod database: ${message}`)
-      );
-      process.exitCode = 1;
-    }
+    });
   });
 
 // =============================================================================
@@ -4584,235 +4702,240 @@ const setSubcommand = new Command('set')
     const out = OutputContext.fromGlobalOpts(globalOpts);
     const name = globalOpts.device;
 
-    if (!name) {
-      const error =
-        'Missing required --device flag. Usage: podkit device set -d <name> --quality <preset>';
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
+    await runAction(out, async () => {
+      if (!name) {
+        throw new CliError({
+          message:
+            'Missing required --device flag. Usage: podkit device set -d <name> --quality <preset>',
+          code: DeviceErrorCodes.DEVICE_REQUIRED,
+        });
+      }
 
-    const devices = config.devices || {};
-    if (!(name in devices)) {
-      const error = `Device "${name}" not found in config.`;
-      out.result<DeviceSetOutput>({ success: false, error }, () => {
-        out.error(error);
-        const available = Object.keys(devices);
-        if (available.length > 0) {
-          out.error(`Available devices: ${available.join(', ')}`);
+      const devices = config.devices || {};
+      if (!(name in devices)) {
+        const error = `Device "${name}" not found in config.`;
+        throw new CliError({
+          message: error,
+          code: DeviceErrorCodes.DEVICE_NOT_FOUND,
+          printText: (o) => {
+            o.error(error);
+            const available = Object.keys(devices);
+            if (available.length > 0) {
+              o.error(`Available devices: ${available.join(', ')}`);
+            }
+          },
+        });
+      }
+
+      // Validate quality options
+      if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
+        throw new CliError({
+          message: `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
+          code: DeviceErrorCodes.INVALID_QUALITY,
+        });
+      }
+      if (
+        options.audioQuality !== undefined &&
+        !QUALITY_PRESETS.includes(options.audioQuality as any)
+      ) {
+        throw new CliError({
+          message: `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`,
+          code: DeviceErrorCodes.INVALID_AUDIO_QUALITY,
+        });
+      }
+      if (
+        options.videoQuality !== undefined &&
+        !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)
+      ) {
+        throw new CliError({
+          message: `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`,
+          code: DeviceErrorCodes.INVALID_VIDEO_QUALITY,
+        });
+      }
+      if (
+        options.encoding !== undefined &&
+        options.encoding !== 'vbr' &&
+        options.encoding !== 'cbr'
+      ) {
+        throw new CliError({
+          message: `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`,
+          code: DeviceErrorCodes.INVALID_ENCODING,
+        });
+      }
+
+      // Validate capability override options
+      if (options.artworkMaxResolution !== undefined) {
+        const parsed = parseInt(options.artworkMaxResolution, 10);
+        if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+          throw new CliError({
+            message: `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`,
+            code: DeviceErrorCodes.INVALID_ARTWORK_RESOLUTION,
+          });
+        }
+      }
+      if (options.artworkSources !== undefined) {
+        for (const source of options.artworkSources) {
+          if (!ARTWORK_SOURCES.includes(source as any)) {
+            throw new CliError({
+              message: `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`,
+              code: DeviceErrorCodes.INVALID_ARTWORK_SOURCE,
+            });
+          }
+        }
+      }
+      if (options.supportedAudioCodecs !== undefined) {
+        for (const codec of options.supportedAudioCodecs) {
+          if (!AUDIO_CODECS.includes(codec as any)) {
+            throw new CliError({
+              message: `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`,
+              code: DeviceErrorCodes.INVALID_AUDIO_CODEC,
+            });
+          }
+        }
+      }
+
+      // Validate mass-storage-only options are not set on iPod devices
+      const deviceConfig = devices[name]!;
+      const isMassStorage = isMassStorageDevice(deviceConfig.type);
+      const massStorageOptions = [
+        options.artworkMaxResolution,
+        options.artworkSources,
+        options.supportedAudioCodecs,
+        options.supportsVideo,
+        options.musicDir,
+        options.moviesDir,
+        options.tvShowsDir,
+        options.clearArtworkMaxResolution,
+        options.clearArtworkSources,
+        options.clearSupportedAudioCodecs,
+        options.clearSupportsVideo,
+        options.clearMusicDir,
+        options.clearMoviesDir,
+        options.clearTvShowsDir,
+      ];
+      if (!isMassStorage && massStorageOptions.some((o) => o !== undefined)) {
+        throw new CliError({
+          message:
+            'Capability overrides and content path options are only valid for mass-storage devices (echo-mini, rockbox, generic).',
+          code: DeviceErrorCodes.INVALID_OPTION_FOR_TYPE,
+        });
+      }
+
+      // Build updates object (null means remove the setting)
+      const updates: Record<string, string | number | boolean | string[] | null> = {};
+
+      if (options.clearQuality) {
+        updates.quality = null;
+      } else if (options.quality !== undefined) {
+        updates.quality = options.quality;
+      }
+
+      if (options.clearAudioQuality) {
+        updates.audioQuality = null;
+      } else if (options.audioQuality !== undefined) {
+        updates.audioQuality = options.audioQuality;
+      }
+
+      if (options.clearVideoQuality) {
+        updates.videoQuality = null;
+      } else if (options.videoQuality !== undefined) {
+        updates.videoQuality = options.videoQuality;
+      }
+
+      if (options.clearEncoding) {
+        updates.encoding = null;
+      } else if (options.encoding !== undefined) {
+        updates.encoding = options.encoding;
+      }
+
+      if (options.clearArtwork) {
+        updates.artwork = null;
+      } else if (options.artwork !== undefined) {
+        updates.artwork = options.artwork;
+      }
+
+      if (options.clearArtworkMaxResolution) {
+        updates.artworkMaxResolution = null;
+      } else if (options.artworkMaxResolution !== undefined) {
+        updates.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
+      }
+
+      if (options.clearArtworkSources) {
+        updates.artworkSources = null;
+      } else if (options.artworkSources !== undefined) {
+        updates.artworkSources = options.artworkSources;
+      }
+
+      if (options.clearSupportedAudioCodecs) {
+        updates.supportedAudioCodecs = null;
+      } else if (options.supportedAudioCodecs !== undefined) {
+        updates.supportedAudioCodecs = options.supportedAudioCodecs;
+      }
+
+      if (options.clearSupportsVideo) {
+        updates.supportsVideo = null;
+      } else if (options.supportsVideo !== undefined) {
+        updates.supportsVideo = options.supportsVideo;
+      }
+
+      if (options.clearMusicDir) {
+        updates.musicDir = null;
+      } else if (options.musicDir !== undefined) {
+        updates.musicDir = options.musicDir;
+      }
+
+      if (options.clearMoviesDir) {
+        updates.moviesDir = null;
+      } else if (options.moviesDir !== undefined) {
+        updates.moviesDir = options.moviesDir;
+      }
+
+      if (options.clearTvShowsDir) {
+        updates.tvShowsDir = null;
+      } else if (options.tvShowsDir !== undefined) {
+        updates.tvShowsDir = options.tvShowsDir;
+      }
+
+      if (options.clearCleanArtists) {
+        updates.cleanArtists = null;
+      } else if (options.cleanArtists !== undefined) {
+        updates.cleanArtists = options.cleanArtists;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        throw new CliError({
+          message:
+            'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, --clean-artists, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).',
+          code: DeviceErrorCodes.NO_UPDATES,
+        });
+      }
+
+      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+      const result = updateDevice(name, updates, { configPath });
+
+      if (!result.success) {
+        const errMsg = result.error ?? 'Failed to update device';
+        throw new CliError({
+          message: errMsg,
+          code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
+          printText: (o) => o.error(`Failed to update device: ${errMsg}`),
+        });
+      }
+
+      out.result<DeviceSetOutput>({ success: true, device: name, updated: updates }, () => {
+        const changes: string[] = [];
+        for (const [key, value] of Object.entries(updates)) {
+          if (value === null) {
+            changes.push(`  ${key}: cleared (will use global default)`);
+          } else {
+            changes.push(`  ${key}: ${value}`);
+          }
+        }
+        out.print(`Updated device "${name}":`);
+        for (const change of changes) {
+          out.print(change);
         }
       });
-      process.exitCode = 1;
-      return;
-    }
-
-    // Validate quality options
-    if (options.quality !== undefined && !QUALITY_PRESETS.includes(options.quality as any)) {
-      const error = `Invalid quality preset "${options.quality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-    if (
-      options.audioQuality !== undefined &&
-      !QUALITY_PRESETS.includes(options.audioQuality as any)
-    ) {
-      const error = `Invalid audio quality preset "${options.audioQuality}". Valid values: ${QUALITY_PRESETS.join(', ')}`;
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-    if (
-      options.videoQuality !== undefined &&
-      !VIDEO_QUALITY_PRESETS.includes(options.videoQuality as any)
-    ) {
-      const error = `Invalid video quality preset "${options.videoQuality}". Valid values: ${VIDEO_QUALITY_PRESETS.join(', ')}`;
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-    if (
-      options.encoding !== undefined &&
-      options.encoding !== 'vbr' &&
-      options.encoding !== 'cbr'
-    ) {
-      const error = `Invalid encoding mode "${options.encoding}". Valid values: vbr, cbr`;
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-
-    // Validate capability override options
-    if (options.artworkMaxResolution !== undefined) {
-      const parsed = parseInt(options.artworkMaxResolution, 10);
-      if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
-        const error = `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`;
-        out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-        process.exitCode = 1;
-        return;
-      }
-    }
-    if (options.artworkSources !== undefined) {
-      for (const source of options.artworkSources) {
-        if (!ARTWORK_SOURCES.includes(source as any)) {
-          const error = `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`;
-          out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-          process.exitCode = 1;
-          return;
-        }
-      }
-    }
-    if (options.supportedAudioCodecs !== undefined) {
-      for (const codec of options.supportedAudioCodecs) {
-        if (!AUDIO_CODECS.includes(codec as any)) {
-          const error = `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`;
-          out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-          process.exitCode = 1;
-          return;
-        }
-      }
-    }
-
-    // Validate mass-storage-only options are not set on iPod devices
-    const deviceConfig = devices[name]!;
-    const isMassStorage = isMassStorageDevice(deviceConfig.type);
-    const massStorageOptions = [
-      options.artworkMaxResolution,
-      options.artworkSources,
-      options.supportedAudioCodecs,
-      options.supportsVideo,
-      options.musicDir,
-      options.moviesDir,
-      options.tvShowsDir,
-      options.clearArtworkMaxResolution,
-      options.clearArtworkSources,
-      options.clearSupportedAudioCodecs,
-      options.clearSupportsVideo,
-      options.clearMusicDir,
-      options.clearMoviesDir,
-      options.clearTvShowsDir,
-    ];
-    if (!isMassStorage && massStorageOptions.some((o) => o !== undefined)) {
-      const error =
-        'Capability overrides and content path options are only valid for mass-storage devices (echo-mini, rockbox, generic).';
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-
-    // Build updates object (null means remove the setting)
-    const updates: Record<string, string | number | boolean | string[] | null> = {};
-
-    if (options.clearQuality) {
-      updates.quality = null;
-    } else if (options.quality !== undefined) {
-      updates.quality = options.quality;
-    }
-
-    if (options.clearAudioQuality) {
-      updates.audioQuality = null;
-    } else if (options.audioQuality !== undefined) {
-      updates.audioQuality = options.audioQuality;
-    }
-
-    if (options.clearVideoQuality) {
-      updates.videoQuality = null;
-    } else if (options.videoQuality !== undefined) {
-      updates.videoQuality = options.videoQuality;
-    }
-
-    if (options.clearEncoding) {
-      updates.encoding = null;
-    } else if (options.encoding !== undefined) {
-      updates.encoding = options.encoding;
-    }
-
-    if (options.clearArtwork) {
-      updates.artwork = null;
-    } else if (options.artwork !== undefined) {
-      updates.artwork = options.artwork;
-    }
-
-    if (options.clearArtworkMaxResolution) {
-      updates.artworkMaxResolution = null;
-    } else if (options.artworkMaxResolution !== undefined) {
-      updates.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
-    }
-
-    if (options.clearArtworkSources) {
-      updates.artworkSources = null;
-    } else if (options.artworkSources !== undefined) {
-      updates.artworkSources = options.artworkSources;
-    }
-
-    if (options.clearSupportedAudioCodecs) {
-      updates.supportedAudioCodecs = null;
-    } else if (options.supportedAudioCodecs !== undefined) {
-      updates.supportedAudioCodecs = options.supportedAudioCodecs;
-    }
-
-    if (options.clearSupportsVideo) {
-      updates.supportsVideo = null;
-    } else if (options.supportsVideo !== undefined) {
-      updates.supportsVideo = options.supportsVideo;
-    }
-
-    if (options.clearMusicDir) {
-      updates.musicDir = null;
-    } else if (options.musicDir !== undefined) {
-      updates.musicDir = options.musicDir;
-    }
-
-    if (options.clearMoviesDir) {
-      updates.moviesDir = null;
-    } else if (options.moviesDir !== undefined) {
-      updates.moviesDir = options.moviesDir;
-    }
-
-    if (options.clearTvShowsDir) {
-      updates.tvShowsDir = null;
-    } else if (options.tvShowsDir !== undefined) {
-      updates.tvShowsDir = options.tvShowsDir;
-    }
-
-    if (options.clearCleanArtists) {
-      updates.cleanArtists = null;
-    } else if (options.cleanArtists !== undefined) {
-      updates.cleanArtists = options.cleanArtists;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      const error =
-        'No settings to update. Specify at least one option (--quality, --audio-quality, --video-quality, --encoding, --artwork, --clean-artists, capability overrides, --music-dir, --movies-dir, --tv-shows-dir, or --clear-* variants).';
-      out.result<DeviceSetOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-
-    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
-    const result = updateDevice(name, updates, { configPath });
-
-    if (!result.success) {
-      out.result<DeviceSetOutput>({ success: false, error: result.error }, () =>
-        out.error(`Failed to update device: ${result.error}`)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    out.result<DeviceSetOutput>({ success: true, device: name, updated: updates }, () => {
-      const changes: string[] = [];
-      for (const [key, value] of Object.entries(updates)) {
-        if (value === null) {
-          changes.push(`  ${key}: cleared (will use global default)`);
-        } else {
-          changes.push(`  ${key}: ${value}`);
-        }
-      }
-      out.print(`Updated device "${name}":`);
-      for (const change of changes) {
-        out.print(change);
-      }
     });
   });
 
@@ -4828,67 +4951,73 @@ const defaultSubcommand = new Command('default')
     const name = globalOpts.device;
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
-    if (options.clear) {
-      // Clear the default
-      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
-      const result = setDefaultDevice('', { configPath });
+    await runAction(out, async () => {
+      if (options.clear) {
+        // Clear the default
+        const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+        const result = setDefaultDevice('', { configPath });
 
-      if (!result.success) {
-        out.result<DeviceDefaultOutput>({ success: false, error: result.error }, () =>
-          out.error(`Failed to clear default device: ${result.error}`)
+        if (!result.success) {
+          const errMsg = result.error ?? 'Failed to clear default device';
+          throw new CliError({
+            message: errMsg,
+            code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
+            printText: (o) => o.error(`Failed to clear default device: ${errMsg}`),
+          });
+        }
+
+        out.result<DeviceDefaultOutput>({ success: true, cleared: true }, () =>
+          out.print('Cleared default device.')
         );
-        process.exitCode = 1;
         return;
       }
 
-      out.result<DeviceDefaultOutput>({ success: true, cleared: true }, () =>
-        out.print('Cleared default device.')
+      if (!name) {
+        // Show current default
+        const defaultDevice = config.defaults?.device;
+        out.result<DeviceDefaultOutput>({ success: true, device: defaultDevice }, () => {
+          if (defaultDevice) {
+            out.print(`Default device: ${defaultDevice}`);
+          } else {
+            out.print('No default device set.');
+          }
+        });
+        return;
+      }
+
+      // Set default
+      const devices = config.devices || {};
+      if (!(name in devices)) {
+        const error = `Device "${name}" not found in config.`;
+        throw new CliError({
+          message: error,
+          code: DeviceErrorCodes.DEVICE_NOT_FOUND,
+          printText: (o) => {
+            o.error(error);
+            const available = Object.keys(devices);
+            if (available.length > 0) {
+              o.error(`Available devices: ${available.join(', ')}`);
+            }
+          },
+        });
+      }
+
+      const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
+      const result = setDefaultDevice(name, { configPath });
+
+      if (!result.success) {
+        const errMsg = result.error ?? 'Failed to set default device';
+        throw new CliError({
+          message: errMsg,
+          code: DeviceErrorCodes.CONFIG_SAVE_FAILED,
+          printText: (o) => o.error(`Failed to set default device: ${errMsg}`),
+        });
+      }
+
+      out.result<DeviceDefaultOutput>({ success: true, device: name }, () =>
+        out.print(`Set "${name}" as the default device.`)
       );
-      return;
-    }
-
-    if (!name) {
-      // Show current default
-      const defaultDevice = config.defaults?.device;
-      out.result<DeviceDefaultOutput>({ success: true, device: defaultDevice }, () => {
-        if (defaultDevice) {
-          out.print(`Default device: ${defaultDevice}`);
-        } else {
-          out.print('No default device set.');
-        }
-      });
-      return;
-    }
-
-    // Set default
-    const devices = config.devices || {};
-    if (!(name in devices)) {
-      const error = `Device "${name}" not found in config.`;
-      out.result<DeviceDefaultOutput>({ success: false, error }, () => {
-        out.error(error);
-        const available = Object.keys(devices);
-        if (available.length > 0) {
-          out.error(`Available devices: ${available.join(', ')}`);
-        }
-      });
-      process.exitCode = 1;
-      return;
-    }
-
-    const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
-    const result = setDefaultDevice(name, { configPath });
-
-    if (!result.success) {
-      out.result<DeviceDefaultOutput>({ success: false, error: result.error }, () =>
-        out.error(`Failed to set default device: ${result.error}`)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    out.result<DeviceDefaultOutput>({ success: true, device: name }, () =>
-      out.print(`Set "${name}" as the default device.`)
-    );
+    });
   });
 
 // =============================================================================
@@ -4900,14 +5029,15 @@ interface ResetArtworkOptions {
   dryRun?: boolean;
 }
 
-interface DeviceResetArtworkOutput {
-  success: boolean;
+interface DeviceResetArtworkSuccess {
+  success: true;
   tracksCleared?: number;
   totalTracks?: number;
   orphanedFilesRemoved?: number;
   dryRun?: boolean;
-  error?: string;
 }
+
+type DeviceResetArtworkOutput = DeviceResetArtworkSuccess | CliErrorOutput;
 
 const resetArtworkSubcommand = new Command('reset-artwork')
   .description('wipe all artwork and clear artwork sync tags')
@@ -4919,158 +5049,149 @@ const resetArtworkSubcommand = new Command('reset-artwork')
     const autoConfirm = options.yes ?? false;
     const dryRun = options.dryRun ?? false;
 
-    const resolved = resolveDeviceArg();
-    if ('error' in resolved) {
-      out.result<DeviceResetArtworkOutput>({ success: false, error: resolved.error }, () =>
-        out.error(resolved.error)
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const { resolvedDevice, cliPath } = resolved;
-
-    // Gate: this command only works with iPod devices (requires iTunesDB)
-    const resolvedType = resolvedDevice?.config?.type;
-    if (resolvedType && resolvedType !== 'ipod') {
-      const error =
-        'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.';
-      out.result<DeviceResetArtworkOutput>({ success: false, error }, () => out.error(error));
-      process.exitCode = 1;
-      return;
-    }
-
-    let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
-    let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
-    let resetArtworkDatabase: typeof import('@podkit/core').resetArtworkDatabase;
-
-    try {
-      const core = await import('@podkit/core');
-      IpodDatabase = core.IpodDatabase;
-      getDeviceManager = core.getDeviceManager;
-      resetArtworkDatabase = core.resetArtworkDatabase;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-      out.result<DeviceResetArtworkOutput>({ success: false, error: message }, () => {
-        out.error('Failed to load podkit-core.');
-        out.verbose1(`Details: ${message}`);
-      });
-      process.exitCode = 1;
-      return;
-    }
-
-    const manager = getDeviceManager();
-    const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-    if (deviceIdentity?.volumeUuid) {
-      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-    }
-
-    const resolveResult = await resolveDevicePath({
-      cliDevice: cliPath,
-      deviceIdentity,
-      manager,
-      requireMounted: true,
-      quiet: globalOpts.quiet,
-    });
-
-    if (!resolveResult.path) {
-      out.result<DeviceResetArtworkOutput>(
-        { success: false, error: resolveResult.error ?? formatDeviceError(resolveResult) },
-        () => out.error(resolveResult.error ?? formatDeviceError(resolveResult))
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const devicePath = resolveResult.path;
-
-    if (!existsSync(devicePath)) {
-      out.result<DeviceResetArtworkOutput>(
-        { success: false, error: `Device path not found: ${devicePath}` },
-        () => {
-          out.error(`iPod not found at: ${devicePath}`);
-          out.newline();
-          out.error('Make sure the iPod is connected and mounted.');
-        }
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    // Open database to get track count for confirmation message
-    let db: Awaited<ReturnType<typeof IpodDatabase.open>>;
-    try {
-      db = await IpodDatabase.open(devicePath);
-    } catch (err) {
-      out.result<DeviceResetArtworkOutput>(
-        {
-          success: false,
-          error: err instanceof Error ? err.message : 'Failed to open iPod database',
-        },
-        () => out.error(err instanceof Error ? err.message : 'Failed to open iPod database')
-      );
-      process.exitCode = 1;
-      return;
-    }
-
-    const trackCount = db.trackCount;
-
-    // Confirmation prompt (destructive operation — default to NO)
-    if (!dryRun && !autoConfirm && out.isText) {
-      out.print(`This will remove all artwork from ${trackCount.toLocaleString()} tracks`);
-      out.print('and clear artwork sync tags so the next sync re-adds artwork.');
-      out.newline();
-
-      const confirmed = await confirmNo('Reset artwork database?');
-      if (!confirmed) {
-        db.close();
-        out.print('Cancelled. No changes made.');
-        return;
+    await runAction(out, async () => {
+      const resolved = resolveDeviceArg();
+      if ('error' in resolved) {
+        throw new CliError({ message: resolved.error, code: DeviceErrorCodes.DEVICE_NOT_RESOLVED });
       }
-    }
 
-    try {
-      const result = await resetArtworkDatabase(db, devicePath, { dryRun });
+      const { resolvedDevice, cliPath } = resolved;
 
-      const output: DeviceResetArtworkOutput = {
-        success: true,
-        tracksCleared: result.tracksCleared,
-        totalTracks: result.totalTracks,
-        orphanedFilesRemoved: result.orphanedFilesRemoved,
-        dryRun,
-      };
+      // Gate: this command only works with iPod devices (requires iTunesDB)
+      const resolvedType = resolvedDevice?.config?.type;
+      if (resolvedType && resolvedType !== 'ipod') {
+        throw new CliError({
+          message:
+            'This command is only supported for iPod devices. Mass-storage devices do not use an iTunesDB.',
+          code: DeviceErrorCodes.IPOD_ONLY,
+        });
+      }
 
-      out.result<DeviceResetArtworkOutput>(output, () => {
-        if (dryRun) {
-          out.print(
-            `Dry run: would clear artwork from ${result.tracksCleared.toLocaleString()} of ${result.totalTracks.toLocaleString()} tracks.`
-          );
-        } else {
-          out.success(
-            `Cleared artwork from ${result.tracksCleared.toLocaleString()} of ${result.totalTracks.toLocaleString()} tracks.`
-          );
-          if (result.orphanedFilesRemoved > 0) {
-            out.print(
-              `Cleaned up ${result.orphanedFilesRemoved} orphaned .ithmb file${result.orphanedFilesRemoved === 1 ? '' : 's'}.`
-            );
-          }
-          out.newline();
-          out.print('The next `podkit sync` will re-add artwork from your source collection.');
-        }
+      let IpodDatabase: typeof import('@podkit/core').IpodDatabase;
+      let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+      let resetArtworkDatabase: typeof import('@podkit/core').resetArtworkDatabase;
+
+      try {
+        const core = await import('@podkit/core');
+        IpodDatabase = core.IpodDatabase;
+        getDeviceManager = core.getDeviceManager;
+        resetArtworkDatabase = core.resetArtworkDatabase;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.CORE_LOAD_FAILED,
+          printText: (o) => {
+            o.error('Failed to load podkit-core.');
+            o.verbose1(`Details: ${message}`);
+          },
+        });
+      }
+
+      const manager = getDeviceManager();
+      const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+      if (deviceIdentity?.volumeUuid) {
+        out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+      }
+
+      const resolveResult = await resolveDevicePath({
+        cliDevice: cliPath,
+        deviceIdentity,
+        manager,
+        requireMounted: true,
+        quiet: globalOpts.quiet,
       });
-    } catch (err) {
-      out.result<DeviceResetArtworkOutput>(
-        {
-          success: false,
-          error: err instanceof Error ? err.message : String(err),
-        },
-        () => out.error(`Reset artwork failed: ${err instanceof Error ? err.message : String(err)}`)
-      );
-      process.exitCode = 1;
-    } finally {
-      db.close();
-    }
+
+      if (!resolveResult.path) {
+        throw new CliError({
+          message: resolveResult.error ?? formatDeviceError(resolveResult),
+          code: DeviceErrorCodes.DEVICE_PATH_UNRESOLVED,
+        });
+      }
+
+      const devicePath = resolveResult.path;
+
+      if (!existsSync(devicePath)) {
+        throw new CliError({
+          message: `Device path not found: ${devicePath}`,
+          code: DeviceErrorCodes.DEVICE_PATH_NOT_FOUND,
+          printText: (o) => {
+            o.error(`iPod not found at: ${devicePath}`);
+            o.newline();
+            o.error('Make sure the iPod is connected and mounted.');
+          },
+        });
+      }
+
+      // Open database to get track count for confirmation message
+      let db: Awaited<ReturnType<typeof IpodDatabase.open>>;
+      try {
+        db = await IpodDatabase.open(devicePath);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to open iPod database';
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.IPOD_DATABASE_OPEN_FAILED,
+        });
+      }
+
+      try {
+        const trackCount = db.trackCount;
+
+        // Confirmation prompt (destructive operation — default to NO)
+        if (!dryRun && !autoConfirm && out.isText) {
+          out.print(`This will remove all artwork from ${trackCount.toLocaleString()} tracks`);
+          out.print('and clear artwork sync tags so the next sync re-adds artwork.');
+          out.newline();
+
+          const confirmed = await confirmNo('Reset artwork database?');
+          if (!confirmed) {
+            out.print('Cancelled. No changes made.');
+            return;
+          }
+        }
+
+        const result = await resetArtworkDatabase(db, devicePath, { dryRun });
+
+        const output: DeviceResetArtworkSuccess = {
+          success: true,
+          tracksCleared: result.tracksCleared,
+          totalTracks: result.totalTracks,
+          orphanedFilesRemoved: result.orphanedFilesRemoved,
+          dryRun,
+        };
+
+        out.result<DeviceResetArtworkOutput>(output, () => {
+          if (dryRun) {
+            out.print(
+              `Dry run: would clear artwork from ${result.tracksCleared.toLocaleString()} of ${result.totalTracks.toLocaleString()} tracks.`
+            );
+          } else {
+            out.success(
+              `Cleared artwork from ${result.tracksCleared.toLocaleString()} of ${result.totalTracks.toLocaleString()} tracks.`
+            );
+            if (result.orphanedFilesRemoved > 0) {
+              out.print(
+                `Cleaned up ${result.orphanedFilesRemoved} orphaned .ithmb file${result.orphanedFilesRemoved === 1 ? '' : 's'}.`
+              );
+            }
+            out.newline();
+            out.print('The next `podkit sync` will re-add artwork from your source collection.');
+          }
+        });
+      } catch (err) {
+        if (err instanceof CliError) throw err;
+        const message = err instanceof Error ? err.message : String(err);
+        throw new CliError({
+          message,
+          code: DeviceErrorCodes.RESET_ARTWORK_FAILED,
+          printText: (o) => o.error(`Reset artwork failed: ${message}`),
+        });
+      } finally {
+        db.close();
+      }
+    });
   });
 
 // =============================================================================
