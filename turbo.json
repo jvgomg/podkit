@@ -22,11 +22,12 @@
         "!src/__tests__/**",
         "native/**",
         "binding.gyp",
+        "scripts/has-prebuild.cjs",
         "package.json",
         "tsconfig.json",
         "tsconfig.build.json"
       ],
-      "outputs": ["dist/**", "build/**"]
+      "outputs": ["dist/**", "build/**", "prebuilds/**"]
     },
     "@podkit/ipod-web#build": {
       "dependsOn": ["^build"],
@@ -62,19 +63,20 @@
       "outputs": []
     },
     "test:unit": {
-      "dependsOn": ["build"],
+      "dependsOn": ["build", "^build"],
       "inputs": [
         "src/**",
         "!src/**/*.integration.test.ts",
         "!src/**/*.e2e.test.ts",
         "test/preload.ts",
-        "bunfig.toml"
+        "bunfig.toml",
+        "package.json"
       ],
       "outputs": []
     },
     "test:integration": {
-      "dependsOn": ["build", "@podkit/gpod-testing#generate-templates"],
-      "inputs": ["src/**", "test/**", "bunfig.toml"],
+      "dependsOn": ["build", "^build", "@podkit/gpod-testing#generate-templates"],
+      "inputs": ["src/**", "test/**", "bunfig.toml", "package.json"],
       "outputs": []
     },
     "@podkit/e2e-tests#test": {
