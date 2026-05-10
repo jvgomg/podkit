@@ -536,6 +536,45 @@ describe('SyncOrchestrator', () => {
     expect(orchestrator.isSyncing).toBe(false);
   });
 
+  it('exit code 2 (partial-failure) is treated as completion, not error', async () => {
+    const notifications: { title: string; body: string }[] = [];
+    const mockNotify = {
+      notify: async (title: string, body: string) => {
+        notifications.push({ title, body });
+      },
+    };
+
+    // Sync exits 2 with success-shape JSON containing a non-zero failed count.
+    // Daemon should log a warning + send a "Sync Complete" notification, NOT
+    // a "Sync Error".
+    const partialResult: CliResult<SyncOutput> = {
+      exitCode: 2,
+      stdout: '',
+      stderr: '',
+      json: {
+        success: true,
+        status: 'partial-failure',
+        dryRun: false,
+        result: { completed: 7, failed: 3, duration: 12.0 },
+      } as SyncOutput,
+      duration: 100,
+    };
+
+    const cli = createMockCli({ sync: partialResult });
+    const orchestrator = new SyncOrchestrator({ ...cli, notify: mockNotify });
+
+    await orchestrator.handleDeviceAppeared(makeDevice());
+
+    const errorNotifications = notifications.filter((n) => n.title === 'Sync Error');
+    expect(errorNotifications).toHaveLength(0);
+
+    const completeNotifications = notifications.filter((n) => n.title === 'Sync Complete');
+    expect(completeNotifications).toHaveLength(1);
+
+    // Eject should still proceed
+    expect(cli.calls).toContain('eject');
+  });
+
   it('exit code 130 is treated as graceful abort, not error', async () => {
     const notifications: { title: string; body: string }[] = [];
     const mockNotify = {

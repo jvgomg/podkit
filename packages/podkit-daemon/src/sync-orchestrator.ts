@@ -229,7 +229,31 @@ export class SyncOrchestrator {
         if (syncResult.exitCode === 130) {
           log('info', 'Sync aborted gracefully', { device: device.name });
           // Don't treat as failure — database was saved before exit
-        } else if (syncResult.exitCode !== 0 || !syncResult.json?.success) {
+        } else if (syncResult.exitCode === 0 || syncResult.exitCode === 2) {
+          // 0 = clean success; 2 = ran with item failures (partial-failure).
+          // Both produce a success-shape JSON; the daemon logs and notifies
+          // either way and surfaces the failed count from the result.
+          const result = syncResult.json?.result;
+          const duration = result ? `${result.duration.toFixed(1)}s` : 'unknown';
+          const completed = result?.completed ?? 0;
+          const failed = result?.failed ?? 0;
+          if (failed > 0) {
+            log('warn', `Sync completed with failures for ${device.name}`, {
+              completed,
+              failed,
+              duration,
+            });
+          } else {
+            log('info', `Sync completed for ${device.name}`, { completed, failed, duration });
+          }
+          if (syncResult.json) {
+            await this.notify.notify(
+              'Sync Complete',
+              formatPostSyncNotification(device, syncResult.json)
+            );
+          }
+        } else {
+          // Exit code 1 (or other non-zero, non-130, non-2): hard command error.
           const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
           const error = syncResult.json?.error ?? syncResult.stderr.trim() ?? 'Unknown sync error';
           log('error', `Sync failed for ${device.name}: ${error}`, {
@@ -237,18 +261,6 @@ export class SyncOrchestrator {
           });
           await this.notify.notify('Sync Error', formatErrorNotification(device, reason, error));
           syncFailed = true;
-        } else {
-          const result = syncResult.json.result;
-          const duration = result ? `${result.duration.toFixed(1)}s` : 'unknown';
-          log('info', `Sync completed for ${device.name}`, {
-            completed: result?.completed ?? 0,
-            failed: result?.failed ?? 0,
-            duration,
-          });
-          await this.notify.notify(
-            'Sync Complete',
-            formatPostSyncNotification(device, syncResult.json)
-          );
         }
       } catch (err) {
         const reason = this._deviceDisconnected ? 'device disconnected' : 'sync';
