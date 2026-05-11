@@ -1,0 +1,144 @@
+/**
+ * Unit tests for the `sync` runner.
+ *
+ * The full sync flow is exercised end-to-end against real fixtures in
+ * `sync.integration.test.ts`. These tests target the deps seam added in
+ * TASK-315 — they confirm short-circuit paths (validation + core-load
+ * failure) without performing a real USB walk.
+ */
+
+import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import type { DeviceManager } from '@podkit/core';
+import { runSync, type SyncDeps, SyncErrorCodes } from './sync.js';
+import { BufferExitCodeSink, OutputContext } from '../output/index.js';
+import { runWithContext, type CliContext } from '../context.js';
+import { runAction } from '../errors.js';
+import { BufferSink } from '../test-utils/buffer-sink.js';
+import {
+  DEFAULT_TRANSFORMS_CONFIG,
+  DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+  type PodkitConfig,
+  type GlobalOptions,
+  type LoadConfigResult,
+} from '../config/index.js';
+
+let sharedSourceDir = '/tmp';
+
+function makeContext(device?: string, withCollections = true): CliContext {
+  const config: PodkitConfig = {
+    quality: 'medium',
+    artwork: true,
+    tips: true,
+    transforms: DEFAULT_TRANSFORMS_CONFIG,
+    videoTransforms: DEFAULT_VIDEO_TRANSFORMS_CONFIG,
+    devices: {},
+    music: withCollections ? { main: { path: sharedSourceDir } } : {},
+    video: {},
+    defaults: withCollections ? { music: 'main' } : undefined,
+  };
+  const globalOpts: GlobalOptions = {
+    json: true,
+    quiet: false,
+    verbose: 0,
+    color: false,
+    tips: false,
+    tty: false,
+    device,
+  };
+  const configResult: LoadConfigResult = {
+    config,
+    configPath: undefined,
+    configFileExists: false,
+  };
+  return { config, globalOpts, configResult };
+}
+
+function makeOut() {
+  const stdout = new BufferSink();
+  const stderr = new BufferSink();
+  const exitCode = new BufferExitCodeSink();
+  const out = new OutputContext({
+    mode: 'json',
+    quiet: false,
+    verbose: 0,
+    color: false,
+    tips: false,
+    tty: false,
+    stdout,
+    stderr,
+    exitCode,
+  });
+  return { out, stdout, stderr, exitCode };
+}
+
+interface ErrJson {
+  success: false;
+  error: string;
+  code: string;
+}
+
+function fakeManager(): DeviceManager {
+  return {
+    platform: 'test',
+    isSupported: true,
+    findIpodDevices: async () => [],
+    findByVolumeUuid: async () => null,
+  } as unknown as DeviceManager;
+}
+
+describe('runSync: validation + deps seam', () => {
+  beforeAll(async () => {
+    sharedSourceDir = await mkdtemp(join(tmpdir(), 'sync-runner-'));
+  });
+  afterAll(async () => {
+    await rm(sharedSourceDir, { recursive: true, force: true });
+  });
+
+  it('rejects an invalid --type value with INVALID_SYNC_TYPE', async () => {
+    const ctx = makeContext('/Volumes/iPod');
+    const { out, stdout, exitCode } = makeOut();
+    await runWithContext(ctx, () =>
+      runAction(out, () => runSync({ type: ['photos'] } as never, out))
+    );
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.INVALID_SYNC_TYPE);
+  });
+
+  it('honours deps.loadCore — sync reaches it before performing real USB walk', async () => {
+    const ctx = makeContext();
+    const { out, exitCode } = makeOut();
+    let loadCoreCalled = false;
+    const deps: SyncDeps = {
+      loadCore: async () => {
+        loadCoreCalled = true;
+        return {} as typeof import('@podkit/core');
+      },
+      getDeviceManager: () => fakeManager(),
+    };
+    // No --device + no default → runner enters auto-detect, which requires
+    // loadCore. We don't care about the eventual outcome here, only that the
+    // seam was honoured before any real USB walk could happen.
+    await runWithContext(ctx, () => runAction(out, () => runSync({}, out, deps)));
+    expect(loadCoreCalled).toBe(true);
+    expect(exitCode.get()).toBe(1);
+  });
+
+  it('surfaces CORE_LOAD_FAILED when loadCore rejects', async () => {
+    const ctx = makeContext('/Volumes/iPod');
+    const { out, stdout, exitCode } = makeOut();
+    const deps: SyncDeps = {
+      loadCore: async () => {
+        throw new Error('mock failure');
+      },
+    };
+    await runWithContext(ctx, () => runAction(out, () => runSync({}, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.CORE_LOAD_FAILED);
+    expect(err.error).toContain('mock failure');
+  });
+});

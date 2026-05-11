@@ -14,7 +14,7 @@ import {
 describe('per-command error code enums', () => {
   it('every code in MountErrorCodes maps to its own SCREAMING_SNAKE name', () => {
     for (const [k, v] of Object.entries(MountErrorCodes)) {
-      expect(v).toBe(k);
+      expect(v as string).toBe(k);
       expect(k).toMatch(/^[A-Z][A-Z0-9_]*$/);
     }
   });
@@ -37,7 +37,7 @@ describe('per-command error code enums', () => {
       expect(entries.length).toBeGreaterThan(0);
       for (const [k, v] of entries) {
         expect(typeof v).toBe('string');
-        expect(v).toBe(k);
+        expect(v as string).toBe(k);
         expect(k).toMatch(/^[A-Z][A-Z0-9_]*$/);
       }
     });

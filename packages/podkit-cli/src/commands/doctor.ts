@@ -31,6 +31,7 @@ import {
 import type { DeviceConfig } from '../config/types.js';
 import { OutputContext } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
+import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -148,10 +149,24 @@ function shellQuote(value: string): string {
   return `"${value.replace(/(["\\$`])/g, '\\$1')}"`;
 }
 
+/**
+ * Dependency injection seam shared by `runDoctorDiagnostics` and the
+ * doctor command's internal `resolveDevice` helper. Tests pass stubs to
+ * avoid real USB walks and the dynamic `@podkit/core` import.
+ *
+ * NOTE: `resolveDevice` deliberately surfaces core-load failures as a
+ * `{ error }` return value rather than throwing, so the helper has its
+ * own try/catch and does NOT use the throw-style `loadCoreOrFail`.
+ */
+export interface DoctorDeps extends CoreLoaderDeps {
+  getDeviceManager?: () => import('@podkit/core').DeviceManager;
+}
+
 // ── Resolve device helper ───────────────────────────────────────────────────
 
 async function resolveDevice(
-  out: OutputContext
+  out: OutputContext,
+  deps: DoctorDeps = {}
 ): Promise<{ path: string; deviceConfig?: DeviceConfig } | { error: string }> {
   const { config, globalOpts } = getContext();
 
@@ -166,15 +181,14 @@ async function resolveDevice(
   const cliPath = deviceResult.cliPath;
   const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
-  let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
+  let core: typeof import('@podkit/core');
   try {
-    const core = await import('@podkit/core');
-    getDeviceManager = core.getDeviceManager;
+    core = await (deps.loadCore ?? (() => import('@podkit/core')))();
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Failed to load podkit-core' };
   }
 
-  const manager = getDeviceManager();
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
   if (deviceIdentity?.volumeUuid) {
     out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
@@ -228,18 +242,8 @@ export const doctorCommand = new Command('doctor')
       // Repair mode: validate requirements before resolving device
       if (options.repair) {
         // Look up the check
-        let getDiagnosticCheck: typeof import('@podkit/core').getDiagnosticCheck;
-        let getDiagnosticCheckIds: typeof import('@podkit/core').getDiagnosticCheckIds;
-        try {
-          const core = await import('@podkit/core');
-          getDiagnosticCheck = core.getDiagnosticCheck;
-          getDiagnosticCheckIds = core.getDiagnosticCheckIds;
-        } catch (err) {
-          throw new CliError({
-            message: err instanceof Error ? err.message : 'Failed to load podkit-core',
-            code: DoctorErrorCodes.CORE_LOAD_FAILED,
-          });
-        }
+        const core = await loadCoreOrFail({}, DoctorErrorCodes.CORE_LOAD_FAILED);
+        const { getDiagnosticCheck, getDiagnosticCheckIds } = core;
 
         const check = getDiagnosticCheck(options.repair);
         if (!check) {
@@ -344,17 +348,10 @@ async function runDoctorDiagnostics(
   devicePath: string,
   deviceConfig: DeviceConfig | undefined,
   out: OutputContext,
-  options: DoctorOptions
+  options: DoctorOptions,
+  deps: DoctorDeps = {}
 ): Promise<void> {
-  let core: typeof import('@podkit/core');
-  try {
-    core = await import('@podkit/core');
-  } catch (err) {
-    throw new CliError({
-      message: err instanceof Error ? err.message : 'Failed to load podkit-core',
-      code: DoctorErrorCodes.CORE_LOAD_FAILED,
-    });
-  }
+  const core = await loadCoreOrFail(deps, DoctorErrorCodes.CORE_LOAD_FAILED);
 
   const { config, globalOpts } = getContext();
   const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
@@ -465,7 +462,7 @@ async function runDoctorDiagnostics(
   // Build a PlatformDeviceInfo for the readiness pipeline.
   // Try to find the real device info from the platform device manager first,
   // fall back to a minimal constructed info if not found.
-  const manager = core.getDeviceManager();
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
   let deviceInfo: import('@podkit/core').PlatformDeviceInfo | undefined;
 
   if (manager.isSupported) {

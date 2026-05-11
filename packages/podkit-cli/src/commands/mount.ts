@@ -22,7 +22,8 @@ import {
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { OutputContext, bold } from '../output/index.js';
 import { getDeviceLabel } from './open-device.js';
-import type { DeviceAssessment } from '@podkit/core';
+import type { DeviceAssessment, DeviceManager } from '@podkit/core';
+import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 
 /**
  * Error codes emitted by `podkit mount`.
@@ -59,6 +60,15 @@ interface MountOptions {
   dryRun?: boolean;
 }
 
+/**
+ * Dependency injection seam for `runMount`. Tests pass stubs to avoid
+ * real USB walks and disk operations. Production passes nothing — the
+ * defaults are the real implementations.
+ */
+export interface MountDeps extends CoreLoaderDeps {
+  getDeviceManager?: () => DeviceManager;
+}
+
 export const mountCommand = new Command('mount')
   .description('mount a device (shortcut for "device mount")')
   .option('--disk <identifier>', 'disk identifier (e.g., /dev/disk4s2)')
@@ -70,7 +80,11 @@ export const mountCommand = new Command('mount')
     await runAction(out, () => runMount(options, out));
   });
 
-export async function runMount(options: MountOptions, out: OutputContext): Promise<void> {
+export async function runMount(
+  options: MountOptions,
+  out: OutputContext,
+  deps: MountDeps = {}
+): Promise<void> {
   const { config, globalOpts } = getContext();
   const explicitDisk = options.disk;
   const dryRun = options.dryRun ?? false;
@@ -87,24 +101,8 @@ export async function runMount(options: MountOptions, out: OutputContext): Promi
 
   const resolvedDevice = deviceResult.success ? deviceResult.device : undefined;
 
-  let getDeviceManager: typeof import('@podkit/core').getDeviceManager;
-
-  try {
-    const core = await import('@podkit/core');
-    getDeviceManager = core.getDeviceManager;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-    throw new CliError({
-      message,
-      code: MountErrorCodes.CORE_LOAD_FAILED,
-      printText: (o) => {
-        o.error('Failed to load podkit-core.');
-        o.verbose1(`Details: ${message}`);
-      },
-    });
-  }
-
-  const manager = getDeviceManager();
+  const core = await loadCoreOrFail(deps, MountErrorCodes.CORE_LOAD_FAILED);
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
   if (!manager.isSupported) {
     const message = `Mount is not supported on ${manager.platform}`;

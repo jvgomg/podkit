@@ -55,6 +55,7 @@ import {
   renderProgressBar,
 } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
+import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
 
 /**
  * Error codes emitted by `podkit sync`.
@@ -507,721 +508,717 @@ export const syncCommand = new Command('sync')
   .option('--delete', 'remove tracks from device not in source')
   .option('--eject', 'eject device after successful sync')
   .action(async (options: SyncOptions) => {
-    const { config, globalOpts, configResult } = getContext();
-    const startTime = Date.now();
+    const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts, config);
-
-    const dryRun = options.dryRun ?? false;
-    const removeOrphans = options.delete ?? false;
-
-    await runAction(out, async () => {
-      // ----- Validate type argument -----
-      const typeArgs = options.type ?? [];
-      const syncTypes: SyncType[] = [];
-      for (const t of typeArgs) {
-        if (t === 'music' || t === 'video') {
-          if (!syncTypes.includes(t)) syncTypes.push(t);
-        } else if (t !== 'all') {
-          throw new CliError({
-            message: `Invalid sync type: ${t}. Valid values: music, video`,
-            code: SyncErrorCodes.INVALID_SYNC_TYPE,
-            details: { dryRun },
-            printText: (o) => {
-              o.error(`Invalid sync type: ${t}`);
-              o.error('Valid values: music, video');
-            },
-          });
-        }
-      }
-      // If no types specified or 'all' was included, sync everything
-      const syncType: SyncType | undefined = syncTypes.length === 1 ? syncTypes[0] : undefined;
-
-      // ----- Resolve device -----
-      const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
-      const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
-
-      // When no --device flag and no default configured, defer to auto-detect
-      // (Scenario A). Auto-detection requires DeviceManager from @podkit/core,
-      // so the actual detection happens after the core import below.
-      const resolvedDevice = deviceResult.success ? deviceResult.device : undefined;
-      const cliPath = deviceResult.success ? deviceResult.cliPath : undefined;
-      const needsAutoDetect = !deviceResult.success && cliDeviceArg.type === 'none';
-
-      if (!deviceResult.success && !needsAutoDetect) {
-        throw new CliError({
-          message: deviceResult.error,
-          code: SyncErrorCodes.DEVICE_NOT_RESOLVED,
-          details: { dryRun },
-        });
-      }
-
-      // Derive all effective settings from device config.
-      // Called once now and potentially re-called after auto-matching.
-      // Uses the config resolver for device → global → default chain,
-      // then overlays CLI options (highest priority).
-      function deriveSettings(dc: DeviceConfig | undefined) {
-        const resolved = resolveDeviceSettings(config, '', dc ?? {}, null, false, false);
-
-        return {
-          transforms: getEffectiveTransforms(config.transforms, dc),
-          videoTransforms: getEffectiveVideoTransforms(config.videoTransforms, dc),
-          quality: options.audioQuality
-            ? (options.audioQuality as QualityPreset)
-            : options.quality
-              ? (options.quality as QualityPreset)
-              : resolved.audio.value,
-          videoQuality: options.videoQuality
-            ? (options.videoQuality as VideoQualityPreset)
-            : options.quality
-              ? (options.quality as VideoQualityPreset)
-              : (resolved.video.value ?? ('high' as VideoQualityPreset)),
-          artwork:
-            options.artwork !== undefined ? options.artwork : (resolved.artwork.value ?? true),
-          skipUpgrades:
-            options.skipUpgrades !== undefined ? options.skipUpgrades : resolved.skipUpgrades.value,
-          encoding: options.encoding
-            ? (options.encoding as import('@podkit/core').EncodingMode)
-            : resolved.encoding.value,
-          transferMode: options.transferMode
-            ? (options.transferMode as import('@podkit/core').TransferMode)
-            : resolved.transferMode.value,
-          customBitrate: resolved.customBitrate.value,
-          bitrateTolerance: resolved.bitrateTolerance.value,
-        };
-      }
-
-      let deviceConfig = resolvedDevice?.config;
-
-      // Determine device type — undefined or 'ipod' means iPod (backward compat)
-      let deviceType = deviceConfig?.type;
-      let isIpodDevice = !deviceType || deviceType === 'ipod';
-
-      let derived = deriveSettings(deviceConfig);
-      // Unpack into local variables that downstream code uses
-      let effectiveTransforms = derived.transforms;
-      let effectiveVideoTransforms = derived.videoTransforms;
-      let effectiveQuality = derived.quality;
-      let effectiveVideoQuality = derived.videoQuality;
-      let effectiveArtwork = derived.artwork;
-      let effectiveSkipUpgrades = derived.skipUpgrades;
-      let effectiveEncoding = derived.encoding;
-      let effectiveTransferMode = derived.transferMode;
-      let effectiveCustomBitrate = derived.customBitrate;
-      let effectiveBitrateTolerance = derived.bitrateTolerance;
-      let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
-      let transformWarnings: TransformWarning[] = [];
-
-      // ----- Resolve collections -----
-      const allCollections = resolveCollections(config, options.collection, syncType);
-      const musicCollections = allCollections.filter((c) => c.type === 'music');
-      const videoCollections = allCollections.filter((c) => c.type === 'video');
-
-      const hasMusicToSync = musicCollections.length > 0;
-      const hasVideoToSync = videoCollections.length > 0;
-
-      if (!hasMusicToSync && !hasVideoToSync) {
-        const errorMsg = options.collection
-          ? `Collection "${options.collection}" not found in config`
-          : 'No collections configured to sync';
-
-        throw new CliError({
-          message: errorMsg,
-          code: options.collection
-            ? SyncErrorCodes.COLLECTION_NOT_FOUND
-            : SyncErrorCodes.NO_COLLECTIONS,
-          details: { dryRun },
-          printText: (o) => {
-            if (options.collection) {
-              o.error(`Collection "${options.collection}" not found in config.`);
-              const musicNames = config.music ? Object.keys(config.music) : [];
-              const videoNames = config.video ? Object.keys(config.video) : [];
-              if (musicNames.length > 0) {
-                o.error(`Available music collections: ${musicNames.join(', ')}`);
-              }
-              if (videoNames.length > 0) {
-                o.error(`Available video collections: ${videoNames.join(', ')}`);
-              }
-              if (musicNames.length === 0 && videoNames.length === 0) {
-                o.error(
-                  'No collections configured. Add collections to your config file or set PODKIT_MUSIC_PATH via environment variable.'
-                );
-              }
-            } else {
-              o.error('No collections configured to sync.');
-              o.error('');
-              o.error('Add collections to your config file:');
-              if (configResult.configPath) {
-                o.error(`  ${configResult.configPath}`);
-              }
-              o.error('');
-              o.error('Example:');
-              o.error('  [music.main]');
-              o.error('  path = "/path/to/music"');
-              o.error('');
-              o.error('Or set via environment variable:');
-              o.error('  PODKIT_MUSIC_PATH=/path/to/music');
-            }
-          },
-        });
-      }
-
-      // Validate collection paths exist
-      for (const collection of [...musicCollections, ...videoCollections]) {
-        const collConfig = collection.config as MusicCollectionConfig | VideoCollectionConfig;
-        const isSubsonic = 'type' in collConfig && collConfig.type === 'subsonic';
-        if (!isSubsonic && collConfig.path && !existsSync(collConfig.path)) {
-          throw new CliError({
-            message: `Source directory not found: ${collConfig.path}`,
-            code: SyncErrorCodes.SOURCE_NOT_FOUND,
-            details: { dryRun, source: collConfig.path },
-            printText: (o) => {
-              o.error(`Source directory not found: ${collConfig.path}`);
-              o.error(`  Collection: ${collection.name} (${collection.type})`);
-            },
-          });
-        }
-      }
-
-      // ----- Load dependencies dynamically -----
-      let core: typeof import('@podkit/core');
-
-      try {
-        core = await import('@podkit/core');
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to load podkit-core';
-        throw new CliError({
-          message,
-          code: SyncErrorCodes.CORE_LOAD_FAILED,
-          details: { dryRun },
-          printText: (o) => {
-            o.error('Failed to load podkit-core.');
-            if (o.isVerbose) {
-              o.error(`Details: ${message}`);
-            }
-          },
-        });
-      }
-
-      // ----- Resolve device path -----
-      const manager = core.getDeviceManager();
-      let resolved: Awaited<ReturnType<typeof resolveDevicePath>>;
-
-      if (needsAutoDetect) {
-        // Scenario A: no --device flag, no default — auto-detect connected iPod
-        resolved = await autoDetectDevice(manager, config);
-      } else {
-        const deviceIdentity = getDeviceIdentity(resolvedDevice);
-
-        if (deviceIdentity?.volumeUuid || deviceIdentity?.path) {
-          out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
-        }
-
-        resolved = await resolveDevicePath({
-          cliDevice: cliPath,
-          deviceIdentity,
-          manager,
-          requireMounted: true,
-          quiet: globalOpts.quiet,
-          config,
-        });
-      }
-
-      if (!resolved.path) {
-        const message = resolved.error ?? formatDeviceError(resolved);
-        throw new CliError({
-          message,
-          code: SyncErrorCodes.DEVICE_PATH_UNRESOLVED,
-          details: { dryRun },
-        });
-      }
-
-      // If auto-matching found a configured device, apply its settings
-      if (resolved.matchedDevice) {
-        deviceConfig = resolved.matchedDevice.config;
-        derived = deriveSettings(deviceConfig);
-        effectiveTransforms = derived.transforms;
-        effectiveVideoTransforms = derived.videoTransforms;
-        effectiveQuality = derived.quality;
-        effectiveVideoQuality = derived.videoQuality;
-        effectiveArtwork = derived.artwork;
-        effectiveSkipUpgrades = derived.skipUpgrades;
-        effectiveEncoding = derived.encoding;
-        effectiveTransferMode = derived.transferMode;
-        effectiveCustomBitrate = derived.customBitrate;
-        effectiveBitrateTolerance = derived.bitrateTolerance;
-
-        // Re-derive device type after auto-match (the matched device may have a type)
-        deviceType = deviceConfig?.type;
-        isIpodDevice = !deviceType || deviceType === 'ipod';
-
-        out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
-      }
-
-      // Show hint if resolver provided one (e.g., "Run 'podkit device add'")
-      if (resolved.hint) {
-        out.tip(resolved.hint);
-      }
-
-      const devicePath = resolved.path;
-
-      if (!existsSync(devicePath)) {
-        const label = isIpodDevice ? 'iPod' : 'Device';
-        throw new CliError({
-          message: `Device path not found: ${devicePath}`,
-          code: SyncErrorCodes.DEVICE_PATH_NOT_FOUND,
-          details: { dryRun, device: devicePath },
-          printText: (o) => {
-            o.error(`${label} not found at: ${devicePath}`);
-            o.error('');
-            o.error(`Make sure the ${label.toLowerCase()} is connected and mounted.`);
-          },
-        });
-      }
-
-      // ----- Check FFmpeg availability -----
-      const transcoder = core.createFFmpegTranscoder();
-      let transcoderCapabilities: import('@podkit/core').TranscoderCapabilities | undefined;
-      try {
-        transcoderCapabilities = await transcoder.detect();
-      } catch (err) {
-        const message = err instanceof Error ? err.message : 'FFmpeg not found';
-        throw new CliError({
-          message: `FFmpeg not available: ${message}`,
-          code: SyncErrorCodes.FFMPEG_UNAVAILABLE,
-          details: { dryRun, device: devicePath },
-          printText: (o) => {
-            o.error('FFmpeg not found or not functional.');
-            o.error('');
-            o.error('Install FFmpeg:');
-            o.error('  macOS: brew install ffmpeg');
-            o.error('  Ubuntu: apt install ffmpeg');
-            if (o.isVerbose) {
-              o.error('');
-              o.error(`Details: ${message}`);
-            }
-          },
-        });
-      }
-
-      // ----- Open device -----
-      const spinnerLabel = isIpodDevice ? 'Opening iPod database...' : 'Opening device...';
-      const dbSpinner = out.spinner(spinnerLabel);
-
-      let openResult: import('./open-device.js').OpenDeviceResult;
-      try {
-        openResult = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
-      } catch (err) {
-        dbSpinner.stop();
-        const isIpodError = err instanceof core.IpodError;
-        const message = err instanceof Error ? err.message : 'Failed to open device';
-
-        if (isIpodDevice) {
-          throw new CliError({
-            message: `Failed to open iPod: ${message}`,
-            code: SyncErrorCodes.IPOD_OPEN_FAILED,
-            details: { dryRun, device: devicePath },
-            printText: (o) => {
-              o.error(`Cannot read iPod database at: ${devicePath}`);
-              o.error('');
-              if (isIpodError) {
-                o.error('This path does not appear to be a valid iPod:');
-                o.error('  - Missing iTunesDB file');
-                o.error('  - Database may be corrupted');
-              } else {
-                o.error(`Error: ${message}`);
-              }
-              if (o.isVerbose) {
-                o.error('');
-                o.error(`Details: ${message}`);
-              }
-            },
-          });
-        } else {
-          throw new CliError({
-            message: `Failed to open device: ${message}`,
-            code: SyncErrorCodes.DEVICE_OPEN_FAILED,
-            details: { dryRun, device: devicePath },
-            printText: (o) => o.error(`Failed to open device at: ${devicePath}`),
-          });
-        }
-      }
-
-      dbSpinner.stop(isIpodDevice ? 'iPod database opened' : 'Device opened');
-
-      const adapter: import('@podkit/core').DeviceAdapter = openResult.adapter;
-      const ipod = openResult.ipod;
-      const deviceSupportsAlac = openResult.deviceSupportsAlac;
-      const deviceCapabilities = openResult.capabilities;
-
-      // Track overall results — declared here so they're visible after the
-      // adapter try/finally block for the final summary.
-      let totalCompleted = 0;
-      let totalFailed = 0;
-      let anyError = false;
-      let totalArtworkMissingBaseline = 0;
-      let totalTransferModeMismatch = 0;
-
-      const shutdown = createShutdownController();
-      shutdown.install();
-
-      try {
-        // Apply capability-gated transform resolution
-        if (deviceCapabilities) {
-          const hasPerDeviceCleanArtists = deviceConfig?.transforms?.cleanArtists !== undefined;
-          const resolution = resolveCleanArtistsTransform(
-            effectiveTransforms,
-            deviceCapabilities.supportsAlbumArtistBrowsing,
-            hasPerDeviceCleanArtists
-          );
-          effectiveTransforms = resolution.transforms;
-          cleanArtistsResolutionReason = resolution.reason;
-
-          const hasCapabilityOverride = deviceConfig?.supportsAlbumArtistBrowsing !== undefined;
-          transformWarnings = computeTransformWarnings(
-            resolution,
-            deviceCapabilities.supportsAlbumArtistBrowsing,
-            hasCapabilityOverride
-          );
-        }
-
-        // Pre-flight device validation (iPod only)
-        if (ipod) {
-          const ipodDeviceInfo = ipod.getInfo().device;
-          if (ipodDeviceInfo) {
-            const deviceValidation = core.validateDevice(ipodDeviceInfo, devicePath);
-
-            if (!deviceValidation.supported) {
-              const messages = core.formatValidationMessages(deviceValidation);
-              throw new CliError({
-                message: messages[0] ?? 'Device validation failed',
-                code: SyncErrorCodes.DEVICE_UNSUPPORTED,
-                details: { dryRun, device: devicePath },
-                printText: (o) => {
-                  o.newline();
-                  for (const msg of messages) {
-                    o.print(msg);
-                  }
-                },
-              });
-            }
-
-            for (const issue of deviceValidation.issues) {
-              out.warn(issue.message);
-              if (issue.suggestion) {
-                out.print(`  ${issue.suggestion}`);
-              }
-            }
-          }
-        }
-
-        // ----- Resolve codec preferences -----
-        const effectiveCodecPreference = deviceConfig?.codec ?? config.codec ?? undefined;
-        const lossyStack = effectiveCodecPreference?.lossy ?? core.DEFAULT_LOSSY_STACK;
-        let resolvedLossyCodec: string | undefined;
-
-        if (hasMusicToSync && deviceCapabilities) {
-          const deviceCodecSet = new Set<string>(deviceCapabilities.supportedAudioCodecs);
-          for (const codec of lossyStack) {
-            if (deviceCodecSet.has(codec)) {
-              resolvedLossyCodec = codec;
-              break;
-            }
-          }
-
-          if (!resolvedLossyCodec) {
-            throw new CliError({
-              message: `No compatible lossy codec found. Preference: ${lossyStack.join(', ')}. Device supports: ${deviceCapabilities.supportedAudioCodecs.join(', ')}`,
-              code: SyncErrorCodes.NO_COMPATIBLE_CODEC,
-              details: { dryRun, device: devicePath },
-            });
-          }
-        }
-
-        // ----- Sync Music Collections -----
-        if (hasMusicToSync) {
-          for (const collection of musicCollections) {
-            const musicCollectionConfig = collection.config as MusicCollectionConfig;
-            const sourcePath =
-              musicCollectionConfig.type === 'subsonic'
-                ? musicCollectionConfig.url!
-                : musicCollectionConfig.path;
-
-            if (musicCollections.length > 1) {
-              out.newline();
-              out.print(`=== Music: ${collection.name} ===`);
-            }
-
-            const musicConfig: MusicContentConfig = {
-              type: 'music',
-              effectiveTransforms,
-              cleanArtistsResolutionReason,
-              transformWarnings,
-              effectiveQuality,
-              effectiveEncoding,
-              effectiveTransferMode,
-              effectiveCustomBitrate,
-              effectiveBitrateTolerance,
-              deviceSupportsAlac,
-              effectiveArtwork,
-              skipUpgrades: effectiveSkipUpgrades,
-              forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
-              forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
-              forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
-              forceMetadata: options.forceMetadata ?? false,
-              checkArtwork:
-                options.checkArtwork ??
-                resolveDeviceSettings(config, '', deviceConfig ?? {}, null, false, false)
-                  .checkArtwork.value,
-              transcoder,
-              capabilities: deviceCapabilities,
-              effectiveCodecPreference,
-              resolvedLossyCodec,
-              lossyPreferenceStack: [...lossyStack],
-              transcoderCapabilities,
-            };
-            const result = await genericSyncCollection(
-              new MusicPresenter(),
-              out,
-              collection,
-              sourcePath,
-              devicePath,
-              dryRun,
-              removeOrphans,
-              musicConfig,
-              adapter,
-              core,
-              shutdown.signal,
-              shutdown
-            );
-
-            if (result.jsonOutput && out.isJson) {
-              out.json(result.jsonOutput);
-            }
-
-            totalCompleted += result.completed;
-            totalFailed += result.failed;
-            totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
-            totalTransferModeMismatch += result.transferModeMismatch ?? 0;
-            if (!result.success) {
-              anyError = true;
-            }
-
-            if (result.interrupted) {
-              if (!dryRun && totalCompleted > 0) {
-                out.print('Saving device database...');
-                await adapter.save();
-                out.print('Database saved. Sync interrupted.');
-              }
-              out.setExitCode(130);
-              break;
-            }
-          }
-        }
-
-        // ----- Sync Video Collections -----
-        if (hasVideoToSync && !shutdown.isShuttingDown) {
-          // Check video support via device capabilities
-          if (!(deviceCapabilities?.supportsVideo ?? false)) {
-            const explicitVideo = syncType === 'video';
-            out.newline();
-            if (explicitVideo) {
-              out.warn(
-                'This device does not support video playback. No video files will be synced.'
-              );
-            } else {
-              out.print('Skipping video: device does not support video playback.');
-            }
-          } else {
-            for (const collection of videoCollections) {
-              const sourcePath = (collection.config as VideoCollectionConfig).path;
-
-              out.newline();
-              out.print(`=== Video: ${collection.name} ===`);
-
-              const videoConfig: VideoContentConfig = {
-                type: 'video',
-                effectiveVideoQuality,
-                effectiveVideoTransforms,
-                effectiveTransferMode,
-                forceMetadata: options.forceMetadata ?? false,
-              };
-              const result = await genericSyncCollection(
-                new VideoPresenter(),
-                out,
-                collection,
-                sourcePath,
-                devicePath,
-                dryRun,
-                removeOrphans,
-                videoConfig,
-                adapter,
-                core,
-                shutdown.signal,
-                shutdown
-              );
-
-              if (result.jsonOutput && out.isJson) {
-                out.json(result.jsonOutput);
-              }
-
-              totalCompleted += result.completed;
-              totalFailed += result.failed;
-              if (!result.success) {
-                anyError = true;
-              }
-
-              if (result.interrupted) {
-                if (!dryRun && totalCompleted > 0) {
-                  out.print('Saving device database...');
-                  await adapter.save();
-                  out.print('Database saved. Video sync interrupted.');
-                }
-                out.setExitCode(130);
-                break;
-              }
-            }
-
-            // Save database after video sync (not in dry-run)
-            if (!dryRun && !shutdown.isShuttingDown) {
-              await adapter.save();
-            }
-          }
-        }
-
-        // Final summary
-        const duration = (Date.now() - startTime) / 1000;
-
-        if (shutdown.isShuttingDown) {
-          // Interrupted — show abbreviated summary, skip eject
-          if (!dryRun) {
-            out.newline();
-            out.print('=== Sync Interrupted ===');
-            out.newline();
-            if (totalCompleted > 0) {
-              out.print(`Saved ${formatNumber(totalCompleted)} completed items to device.`);
-            }
-            if (totalFailed > 0) {
-              out.print(`${formatNumber(totalFailed)} items failed before interruption.`);
-            }
-            out.print(`Duration: ${formatDuration(duration)}`);
-          }
-        } else {
-          const syncSucceeded = !dryRun && totalFailed === 0 && !anyError;
-
-          if (!dryRun) {
-            out.newline();
-            out.print('=== Summary ===');
-            out.newline();
-            if (totalFailed > 0) {
-              out.print(
-                `Synced ${formatNumber(totalCompleted)} items (${formatNumber(totalFailed)} failed)`
-              );
-            } else if (totalCompleted > 0) {
-              out.print(`Synced ${formatNumber(totalCompleted)} items successfully`);
-            } else {
-              out.print('Everything already in sync!');
-            }
-            out.print(`Duration: ${formatDuration(duration)}`);
-          }
-
-          // Discover sibling volumes for dual-LUN devices before ejecting
-          let siblingMountPoints: string[] = [];
-          if (options.eject && syncSucceeded) {
-            try {
-              siblingMountPoints = await manager.getSiblingVolumes(devicePath);
-            } catch {
-              // Best-effort
-            }
-          }
-
-          // JSON output for actual sync completion
-          if (!dryRun && out.isJson) {
-            let ejectInfo: SyncOutput['eject'];
-            if (options.eject && syncSucceeded) {
-              const ejectResult = await core.ejectWithRetry(manager, devicePath, {
-                additionalMountPoints: siblingMountPoints,
-              });
-              ejectInfo = {
-                requested: true,
-                success: ejectResult.success,
-                error: ejectResult.error,
-              };
-            }
-
-            const cleanRun = totalFailed === 0 && !anyError;
-            out.json({
-              success: true,
-              status: cleanRun ? 'ok' : 'partial-failure',
-              dryRun: false,
-              result: {
-                completed: totalCompleted,
-                failed: totalFailed,
-                skipped: 0,
-                bytesTransferred: 0,
-                duration,
-              },
-              eject: ejectInfo,
-            });
-          }
-
-          if (dryRun) {
-            out.newline();
-            out.print('Run without --dry-run to execute this plan.');
-          }
-
-          // Show tips at end of sync
-          if (totalArtworkMissingBaseline > 0 || totalTransferModeMismatch > 0) {
-            out.printTips({
-              artworkMissingBaseline: totalArtworkMissingBaseline || undefined,
-              transferModeMismatch: totalTransferModeMismatch || undefined,
-            });
-          }
-
-          // Show eject tip or auto-eject on successful sync
-          if (syncSucceeded && out.isText) {
-            if (options.eject) {
-              out.newline();
-              const ejectResult = await core.ejectWithRetry(manager, devicePath, {
-                additionalMountPoints: siblingMountPoints,
-                onProgress: (event) => {
-                  switch (event.phase) {
-                    case 'sync':
-                      out.verbose1(event.message);
-                      break;
-                    case 'eject':
-                    case 'waiting':
-                      out.print(event.message);
-                      break;
-                    case 'eject-sibling':
-                      out.verbose1(event.message);
-                      break;
-                  }
-                },
-              });
-              if (ejectResult.success) {
-                out.print('Device ejected. Safe to disconnect.');
-              } else {
-                out.print('Could not eject device automatically.');
-                if (ejectResult.error) {
-                  out.print(`  ${ejectResult.error}`);
-                }
-                out.print('  Run: podkit eject --force');
-              }
-            } else {
-              out.newline();
-              out.tip("Run 'podkit eject' to safely disconnect, or use --eject next time.");
-            }
-          }
-
-          if (totalFailed > 0 || anyError) {
-            // Sync ran cleanly but some items failed — exit 2 distinguishes
-            // this from a command error (exit 1).
-            out.setExitCode(2);
-          }
-        }
-      } finally {
-        shutdown.uninstall();
-        adapter.close();
-      }
-    });
+    await runAction(out, () => runSync(options, out));
   });
+
+/**
+ * Dependency injection seam for `runSync`. Tests pass stubs to avoid real
+ * USB walks and disk operations. Production passes nothing — the defaults
+ * are the real implementations.
+ */
+export interface SyncDeps extends CoreLoaderDeps {
+  getDeviceManager?: () => import('@podkit/core').DeviceManager;
+}
+
+export async function runSync(
+  options: SyncOptions,
+  out: OutputContext,
+  deps: SyncDeps = {}
+): Promise<void> {
+  const { config, globalOpts, configResult } = getContext();
+  const startTime = Date.now();
+
+  const dryRun = options.dryRun ?? false;
+  const removeOrphans = options.delete ?? false;
+
+  // ----- Validate type argument -----
+  const typeArgs = options.type ?? [];
+  const syncTypes: SyncType[] = [];
+  for (const t of typeArgs) {
+    if (t === 'music' || t === 'video') {
+      if (!syncTypes.includes(t)) syncTypes.push(t);
+    } else if (t !== 'all') {
+      throw new CliError({
+        message: `Invalid sync type: ${t}. Valid values: music, video`,
+        code: SyncErrorCodes.INVALID_SYNC_TYPE,
+        details: { dryRun },
+        printText: (o) => {
+          o.error(`Invalid sync type: ${t}`);
+          o.error('Valid values: music, video');
+        },
+      });
+    }
+  }
+  // If no types specified or 'all' was included, sync everything
+  const syncType: SyncType | undefined = syncTypes.length === 1 ? syncTypes[0] : undefined;
+
+  // ----- Resolve device -----
+  const cliDeviceArg = parseCliDeviceArg(globalOpts.device, config);
+  const deviceResult = resolveEffectiveDevice(cliDeviceArg, undefined, config);
+
+  // When no --device flag and no default configured, defer to auto-detect
+  // (Scenario A). Auto-detection requires DeviceManager from @podkit/core,
+  // so the actual detection happens after the core import below.
+  const resolvedDevice = deviceResult.success ? deviceResult.device : undefined;
+  const cliPath = deviceResult.success ? deviceResult.cliPath : undefined;
+  const needsAutoDetect = !deviceResult.success && cliDeviceArg.type === 'none';
+
+  if (!deviceResult.success && !needsAutoDetect) {
+    throw new CliError({
+      message: deviceResult.error,
+      code: SyncErrorCodes.DEVICE_NOT_RESOLVED,
+      details: { dryRun },
+    });
+  }
+
+  // Derive all effective settings from device config.
+  // Called once now and potentially re-called after auto-matching.
+  // Uses the config resolver for device → global → default chain,
+  // then overlays CLI options (highest priority).
+  function deriveSettings(dc: DeviceConfig | undefined) {
+    const resolved = resolveDeviceSettings(config, '', dc ?? {}, null, false, false);
+
+    return {
+      transforms: getEffectiveTransforms(config.transforms, dc),
+      videoTransforms: getEffectiveVideoTransforms(config.videoTransforms, dc),
+      quality: options.audioQuality
+        ? (options.audioQuality as QualityPreset)
+        : options.quality
+          ? (options.quality as QualityPreset)
+          : resolved.audio.value,
+      videoQuality: options.videoQuality
+        ? (options.videoQuality as VideoQualityPreset)
+        : options.quality
+          ? (options.quality as VideoQualityPreset)
+          : (resolved.video.value ?? ('high' as VideoQualityPreset)),
+      artwork: options.artwork !== undefined ? options.artwork : (resolved.artwork.value ?? true),
+      skipUpgrades:
+        options.skipUpgrades !== undefined ? options.skipUpgrades : resolved.skipUpgrades.value,
+      encoding: options.encoding
+        ? (options.encoding as import('@podkit/core').EncodingMode)
+        : resolved.encoding.value,
+      transferMode: options.transferMode
+        ? (options.transferMode as import('@podkit/core').TransferMode)
+        : resolved.transferMode.value,
+      customBitrate: resolved.customBitrate.value,
+      bitrateTolerance: resolved.bitrateTolerance.value,
+    };
+  }
+
+  let deviceConfig = resolvedDevice?.config;
+
+  // Determine device type — undefined or 'ipod' means iPod (backward compat)
+  let deviceType = deviceConfig?.type;
+  let isIpodDevice = !deviceType || deviceType === 'ipod';
+
+  let derived = deriveSettings(deviceConfig);
+  // Unpack into local variables that downstream code uses
+  let effectiveTransforms = derived.transforms;
+  let effectiveVideoTransforms = derived.videoTransforms;
+  let effectiveQuality = derived.quality;
+  let effectiveVideoQuality = derived.videoQuality;
+  let effectiveArtwork = derived.artwork;
+  let effectiveSkipUpgrades = derived.skipUpgrades;
+  let effectiveEncoding = derived.encoding;
+  let effectiveTransferMode = derived.transferMode;
+  let effectiveCustomBitrate = derived.customBitrate;
+  let effectiveBitrateTolerance = derived.bitrateTolerance;
+  let cleanArtistsResolutionReason: CleanArtistsResolutionReason | undefined;
+  let transformWarnings: TransformWarning[] = [];
+
+  // ----- Resolve collections -----
+  const allCollections = resolveCollections(config, options.collection, syncType);
+  const musicCollections = allCollections.filter((c) => c.type === 'music');
+  const videoCollections = allCollections.filter((c) => c.type === 'video');
+
+  const hasMusicToSync = musicCollections.length > 0;
+  const hasVideoToSync = videoCollections.length > 0;
+
+  if (!hasMusicToSync && !hasVideoToSync) {
+    const errorMsg = options.collection
+      ? `Collection "${options.collection}" not found in config`
+      : 'No collections configured to sync';
+
+    throw new CliError({
+      message: errorMsg,
+      code: options.collection
+        ? SyncErrorCodes.COLLECTION_NOT_FOUND
+        : SyncErrorCodes.NO_COLLECTIONS,
+      details: { dryRun },
+      printText: (o) => {
+        if (options.collection) {
+          o.error(`Collection "${options.collection}" not found in config.`);
+          const musicNames = config.music ? Object.keys(config.music) : [];
+          const videoNames = config.video ? Object.keys(config.video) : [];
+          if (musicNames.length > 0) {
+            o.error(`Available music collections: ${musicNames.join(', ')}`);
+          }
+          if (videoNames.length > 0) {
+            o.error(`Available video collections: ${videoNames.join(', ')}`);
+          }
+          if (musicNames.length === 0 && videoNames.length === 0) {
+            o.error(
+              'No collections configured. Add collections to your config file or set PODKIT_MUSIC_PATH via environment variable.'
+            );
+          }
+        } else {
+          o.error('No collections configured to sync.');
+          o.error('');
+          o.error('Add collections to your config file:');
+          if (configResult.configPath) {
+            o.error(`  ${configResult.configPath}`);
+          }
+          o.error('');
+          o.error('Example:');
+          o.error('  [music.main]');
+          o.error('  path = "/path/to/music"');
+          o.error('');
+          o.error('Or set via environment variable:');
+          o.error('  PODKIT_MUSIC_PATH=/path/to/music');
+        }
+      },
+    });
+  }
+
+  // Validate collection paths exist
+  for (const collection of [...musicCollections, ...videoCollections]) {
+    const collConfig = collection.config as MusicCollectionConfig | VideoCollectionConfig;
+    const isSubsonic = 'type' in collConfig && collConfig.type === 'subsonic';
+    if (!isSubsonic && collConfig.path && !existsSync(collConfig.path)) {
+      throw new CliError({
+        message: `Source directory not found: ${collConfig.path}`,
+        code: SyncErrorCodes.SOURCE_NOT_FOUND,
+        details: { dryRun, source: collConfig.path },
+        printText: (o) => {
+          o.error(`Source directory not found: ${collConfig.path}`);
+          o.error(`  Collection: ${collection.name} (${collection.type})`);
+        },
+      });
+    }
+  }
+
+  // ----- Load dependencies dynamically -----
+  const core = await loadCoreOrFail(deps, SyncErrorCodes.CORE_LOAD_FAILED);
+
+  // ----- Resolve device path -----
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
+  let resolved: Awaited<ReturnType<typeof resolveDevicePath>>;
+
+  if (needsAutoDetect) {
+    // Scenario A: no --device flag, no default — auto-detect connected iPod
+    resolved = await autoDetectDevice(manager, config);
+  } else {
+    const deviceIdentity = getDeviceIdentity(resolvedDevice);
+
+    if (deviceIdentity?.volumeUuid || deviceIdentity?.path) {
+      out.print(formatDeviceLookupMessage(resolvedDevice?.name, deviceIdentity, out.isVerbose));
+    }
+
+    resolved = await resolveDevicePath({
+      cliDevice: cliPath,
+      deviceIdentity,
+      manager,
+      requireMounted: true,
+      quiet: globalOpts.quiet,
+      config,
+    });
+  }
+
+  if (!resolved.path) {
+    const message = resolved.error ?? formatDeviceError(resolved);
+    throw new CliError({
+      message,
+      code: SyncErrorCodes.DEVICE_PATH_UNRESOLVED,
+      details: { dryRun },
+    });
+  }
+
+  // If auto-matching found a configured device, apply its settings
+  if (resolved.matchedDevice) {
+    deviceConfig = resolved.matchedDevice.config;
+    derived = deriveSettings(deviceConfig);
+    effectiveTransforms = derived.transforms;
+    effectiveVideoTransforms = derived.videoTransforms;
+    effectiveQuality = derived.quality;
+    effectiveVideoQuality = derived.videoQuality;
+    effectiveArtwork = derived.artwork;
+    effectiveSkipUpgrades = derived.skipUpgrades;
+    effectiveEncoding = derived.encoding;
+    effectiveTransferMode = derived.transferMode;
+    effectiveCustomBitrate = derived.customBitrate;
+    effectiveBitrateTolerance = derived.bitrateTolerance;
+
+    // Re-derive device type after auto-match (the matched device may have a type)
+    deviceType = deviceConfig?.type;
+    isIpodDevice = !deviceType || deviceType === 'ipod';
+
+    out.verbose1(`Auto-matched device to configured device '${resolved.matchedDevice.name}'`);
+  }
+
+  // Show hint if resolver provided one (e.g., "Run 'podkit device add'")
+  if (resolved.hint) {
+    out.tip(resolved.hint);
+  }
+
+  const devicePath = resolved.path;
+
+  if (!existsSync(devicePath)) {
+    const label = isIpodDevice ? 'iPod' : 'Device';
+    throw new CliError({
+      message: `Device path not found: ${devicePath}`,
+      code: SyncErrorCodes.DEVICE_PATH_NOT_FOUND,
+      details: { dryRun, device: devicePath },
+      printText: (o) => {
+        o.error(`${label} not found at: ${devicePath}`);
+        o.error('');
+        o.error(`Make sure the ${label.toLowerCase()} is connected and mounted.`);
+      },
+    });
+  }
+
+  // ----- Check FFmpeg availability -----
+  const transcoder = core.createFFmpegTranscoder();
+  let transcoderCapabilities: import('@podkit/core').TranscoderCapabilities | undefined;
+  try {
+    transcoderCapabilities = await transcoder.detect();
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'FFmpeg not found';
+    throw new CliError({
+      message: `FFmpeg not available: ${message}`,
+      code: SyncErrorCodes.FFMPEG_UNAVAILABLE,
+      details: { dryRun, device: devicePath },
+      printText: (o) => {
+        o.error('FFmpeg not found or not functional.');
+        o.error('');
+        o.error('Install FFmpeg:');
+        o.error('  macOS: brew install ffmpeg');
+        o.error('  Ubuntu: apt install ffmpeg');
+        if (o.isVerbose) {
+          o.error('');
+          o.error(`Details: ${message}`);
+        }
+      },
+    });
+  }
+
+  // ----- Open device -----
+  const spinnerLabel = isIpodDevice ? 'Opening iPod database...' : 'Opening device...';
+  const dbSpinner = out.spinner(spinnerLabel);
+
+  let openResult: import('./open-device.js').OpenDeviceResult;
+  try {
+    openResult = await openDevice(core, devicePath, deviceConfig, config.deviceDefaults);
+  } catch (err) {
+    dbSpinner.stop();
+    const isIpodError = err instanceof core.IpodError;
+    const message = err instanceof Error ? err.message : 'Failed to open device';
+
+    if (isIpodDevice) {
+      throw new CliError({
+        message: `Failed to open iPod: ${message}`,
+        code: SyncErrorCodes.IPOD_OPEN_FAILED,
+        details: { dryRun, device: devicePath },
+        printText: (o) => {
+          o.error(`Cannot read iPod database at: ${devicePath}`);
+          o.error('');
+          if (isIpodError) {
+            o.error('This path does not appear to be a valid iPod:');
+            o.error('  - Missing iTunesDB file');
+            o.error('  - Database may be corrupted');
+          } else {
+            o.error(`Error: ${message}`);
+          }
+          if (o.isVerbose) {
+            o.error('');
+            o.error(`Details: ${message}`);
+          }
+        },
+      });
+    } else {
+      throw new CliError({
+        message: `Failed to open device: ${message}`,
+        code: SyncErrorCodes.DEVICE_OPEN_FAILED,
+        details: { dryRun, device: devicePath },
+        printText: (o) => o.error(`Failed to open device at: ${devicePath}`),
+      });
+    }
+  }
+
+  dbSpinner.stop(isIpodDevice ? 'iPod database opened' : 'Device opened');
+
+  const adapter: import('@podkit/core').DeviceAdapter = openResult.adapter;
+  const ipod = openResult.ipod;
+  const deviceSupportsAlac = openResult.deviceSupportsAlac;
+  const deviceCapabilities = openResult.capabilities;
+
+  // Track overall results — declared here so they're visible after the
+  // adapter try/finally block for the final summary.
+  let totalCompleted = 0;
+  let totalFailed = 0;
+  let anyError = false;
+  let totalArtworkMissingBaseline = 0;
+  let totalTransferModeMismatch = 0;
+
+  const shutdown = createShutdownController();
+  shutdown.install();
+
+  try {
+    // Apply capability-gated transform resolution
+    if (deviceCapabilities) {
+      const hasPerDeviceCleanArtists = deviceConfig?.transforms?.cleanArtists !== undefined;
+      const resolution = resolveCleanArtistsTransform(
+        effectiveTransforms,
+        deviceCapabilities.supportsAlbumArtistBrowsing,
+        hasPerDeviceCleanArtists
+      );
+      effectiveTransforms = resolution.transforms;
+      cleanArtistsResolutionReason = resolution.reason;
+
+      const hasCapabilityOverride = deviceConfig?.supportsAlbumArtistBrowsing !== undefined;
+      transformWarnings = computeTransformWarnings(
+        resolution,
+        deviceCapabilities.supportsAlbumArtistBrowsing,
+        hasCapabilityOverride
+      );
+    }
+
+    // Pre-flight device validation (iPod only)
+    if (ipod) {
+      const ipodDeviceInfo = ipod.getInfo().device;
+      if (ipodDeviceInfo) {
+        const deviceValidation = core.validateDevice(ipodDeviceInfo, devicePath);
+
+        if (!deviceValidation.supported) {
+          const messages = core.formatValidationMessages(deviceValidation);
+          throw new CliError({
+            message: messages[0] ?? 'Device validation failed',
+            code: SyncErrorCodes.DEVICE_UNSUPPORTED,
+            details: { dryRun, device: devicePath },
+            printText: (o) => {
+              o.newline();
+              for (const msg of messages) {
+                o.print(msg);
+              }
+            },
+          });
+        }
+
+        for (const issue of deviceValidation.issues) {
+          out.warn(issue.message);
+          if (issue.suggestion) {
+            out.print(`  ${issue.suggestion}`);
+          }
+        }
+      }
+    }
+
+    // ----- Resolve codec preferences -----
+    const effectiveCodecPreference = deviceConfig?.codec ?? config.codec ?? undefined;
+    const lossyStack = effectiveCodecPreference?.lossy ?? core.DEFAULT_LOSSY_STACK;
+    let resolvedLossyCodec: string | undefined;
+
+    if (hasMusicToSync && deviceCapabilities) {
+      const deviceCodecSet = new Set<string>(deviceCapabilities.supportedAudioCodecs);
+      for (const codec of lossyStack) {
+        if (deviceCodecSet.has(codec)) {
+          resolvedLossyCodec = codec;
+          break;
+        }
+      }
+
+      if (!resolvedLossyCodec) {
+        throw new CliError({
+          message: `No compatible lossy codec found. Preference: ${lossyStack.join(', ')}. Device supports: ${deviceCapabilities.supportedAudioCodecs.join(', ')}`,
+          code: SyncErrorCodes.NO_COMPATIBLE_CODEC,
+          details: { dryRun, device: devicePath },
+        });
+      }
+    }
+
+    // ----- Sync Music Collections -----
+    if (hasMusicToSync) {
+      for (const collection of musicCollections) {
+        const musicCollectionConfig = collection.config as MusicCollectionConfig;
+        const sourcePath =
+          musicCollectionConfig.type === 'subsonic'
+            ? musicCollectionConfig.url!
+            : musicCollectionConfig.path;
+
+        if (musicCollections.length > 1) {
+          out.newline();
+          out.print(`=== Music: ${collection.name} ===`);
+        }
+
+        const musicConfig: MusicContentConfig = {
+          type: 'music',
+          effectiveTransforms,
+          cleanArtistsResolutionReason,
+          transformWarnings,
+          effectiveQuality,
+          effectiveEncoding,
+          effectiveTransferMode,
+          effectiveCustomBitrate,
+          effectiveBitrateTolerance,
+          deviceSupportsAlac,
+          effectiveArtwork,
+          skipUpgrades: effectiveSkipUpgrades,
+          forceTranscode: options.forceTranscode ?? config.forceTranscode ?? false,
+          forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
+          forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
+          forceMetadata: options.forceMetadata ?? false,
+          checkArtwork:
+            options.checkArtwork ??
+            resolveDeviceSettings(config, '', deviceConfig ?? {}, null, false, false).checkArtwork
+              .value,
+          transcoder,
+          capabilities: deviceCapabilities,
+          effectiveCodecPreference,
+          resolvedLossyCodec,
+          lossyPreferenceStack: [...lossyStack],
+          transcoderCapabilities,
+        };
+        const result = await genericSyncCollection(
+          new MusicPresenter(),
+          out,
+          collection,
+          sourcePath,
+          devicePath,
+          dryRun,
+          removeOrphans,
+          musicConfig,
+          adapter,
+          core,
+          shutdown.signal,
+          shutdown
+        );
+
+        if (result.jsonOutput && out.isJson) {
+          out.json(result.jsonOutput);
+        }
+
+        totalCompleted += result.completed;
+        totalFailed += result.failed;
+        totalArtworkMissingBaseline += result.artworkMissingBaseline ?? 0;
+        totalTransferModeMismatch += result.transferModeMismatch ?? 0;
+        if (!result.success) {
+          anyError = true;
+        }
+
+        if (result.interrupted) {
+          if (!dryRun && totalCompleted > 0) {
+            out.print('Saving device database...');
+            await adapter.save();
+            out.print('Database saved. Sync interrupted.');
+          }
+          out.setExitCode(130);
+          break;
+        }
+      }
+    }
+
+    // ----- Sync Video Collections -----
+    if (hasVideoToSync && !shutdown.isShuttingDown) {
+      // Check video support via device capabilities
+      if (!(deviceCapabilities?.supportsVideo ?? false)) {
+        const explicitVideo = syncType === 'video';
+        out.newline();
+        if (explicitVideo) {
+          out.warn('This device does not support video playback. No video files will be synced.');
+        } else {
+          out.print('Skipping video: device does not support video playback.');
+        }
+      } else {
+        for (const collection of videoCollections) {
+          const sourcePath = (collection.config as VideoCollectionConfig).path;
+
+          out.newline();
+          out.print(`=== Video: ${collection.name} ===`);
+
+          const videoConfig: VideoContentConfig = {
+            type: 'video',
+            effectiveVideoQuality,
+            effectiveVideoTransforms,
+            effectiveTransferMode,
+            forceMetadata: options.forceMetadata ?? false,
+          };
+          const result = await genericSyncCollection(
+            new VideoPresenter(),
+            out,
+            collection,
+            sourcePath,
+            devicePath,
+            dryRun,
+            removeOrphans,
+            videoConfig,
+            adapter,
+            core,
+            shutdown.signal,
+            shutdown
+          );
+
+          if (result.jsonOutput && out.isJson) {
+            out.json(result.jsonOutput);
+          }
+
+          totalCompleted += result.completed;
+          totalFailed += result.failed;
+          if (!result.success) {
+            anyError = true;
+          }
+
+          if (result.interrupted) {
+            if (!dryRun && totalCompleted > 0) {
+              out.print('Saving device database...');
+              await adapter.save();
+              out.print('Database saved. Video sync interrupted.');
+            }
+            out.setExitCode(130);
+            break;
+          }
+        }
+
+        // Save database after video sync (not in dry-run)
+        if (!dryRun && !shutdown.isShuttingDown) {
+          await adapter.save();
+        }
+      }
+    }
+
+    // Final summary
+    const duration = (Date.now() - startTime) / 1000;
+
+    if (shutdown.isShuttingDown) {
+      // Interrupted — show abbreviated summary, skip eject
+      if (!dryRun) {
+        out.newline();
+        out.print('=== Sync Interrupted ===');
+        out.newline();
+        if (totalCompleted > 0) {
+          out.print(`Saved ${formatNumber(totalCompleted)} completed items to device.`);
+        }
+        if (totalFailed > 0) {
+          out.print(`${formatNumber(totalFailed)} items failed before interruption.`);
+        }
+        out.print(`Duration: ${formatDuration(duration)}`);
+      }
+    } else {
+      const syncSucceeded = !dryRun && totalFailed === 0 && !anyError;
+
+      if (!dryRun) {
+        out.newline();
+        out.print('=== Summary ===');
+        out.newline();
+        if (totalFailed > 0) {
+          out.print(
+            `Synced ${formatNumber(totalCompleted)} items (${formatNumber(totalFailed)} failed)`
+          );
+        } else if (totalCompleted > 0) {
+          out.print(`Synced ${formatNumber(totalCompleted)} items successfully`);
+        } else {
+          out.print('Everything already in sync!');
+        }
+        out.print(`Duration: ${formatDuration(duration)}`);
+      }
+
+      // Discover sibling volumes for dual-LUN devices before ejecting
+      let siblingMountPoints: string[] = [];
+      if (options.eject && syncSucceeded) {
+        try {
+          siblingMountPoints = await manager.getSiblingVolumes(devicePath);
+        } catch {
+          // Best-effort
+        }
+      }
+
+      // JSON output for actual sync completion
+      if (!dryRun && out.isJson) {
+        let ejectInfo: SyncOutput['eject'];
+        if (options.eject && syncSucceeded) {
+          const ejectResult = await core.ejectWithRetry(manager, devicePath, {
+            additionalMountPoints: siblingMountPoints,
+          });
+          ejectInfo = {
+            requested: true,
+            success: ejectResult.success,
+            error: ejectResult.error,
+          };
+        }
+
+        const cleanRun = totalFailed === 0 && !anyError;
+        out.json({
+          success: true,
+          status: cleanRun ? 'ok' : 'partial-failure',
+          dryRun: false,
+          result: {
+            completed: totalCompleted,
+            failed: totalFailed,
+            skipped: 0,
+            bytesTransferred: 0,
+            duration,
+          },
+          eject: ejectInfo,
+        });
+      }
+
+      if (dryRun) {
+        out.newline();
+        out.print('Run without --dry-run to execute this plan.');
+      }
+
+      // Show tips at end of sync
+      if (totalArtworkMissingBaseline > 0 || totalTransferModeMismatch > 0) {
+        out.printTips({
+          artworkMissingBaseline: totalArtworkMissingBaseline || undefined,
+          transferModeMismatch: totalTransferModeMismatch || undefined,
+        });
+      }
+
+      // Show eject tip or auto-eject on successful sync
+      if (syncSucceeded && out.isText) {
+        if (options.eject) {
+          out.newline();
+          const ejectResult = await core.ejectWithRetry(manager, devicePath, {
+            additionalMountPoints: siblingMountPoints,
+            onProgress: (event) => {
+              switch (event.phase) {
+                case 'sync':
+                  out.verbose1(event.message);
+                  break;
+                case 'eject':
+                case 'waiting':
+                  out.print(event.message);
+                  break;
+                case 'eject-sibling':
+                  out.verbose1(event.message);
+                  break;
+              }
+            },
+          });
+          if (ejectResult.success) {
+            out.print('Device ejected. Safe to disconnect.');
+          } else {
+            out.print('Could not eject device automatically.');
+            if (ejectResult.error) {
+              out.print(`  ${ejectResult.error}`);
+            }
+            out.print('  Run: podkit eject --force');
+          }
+        } else {
+          out.newline();
+          out.tip("Run 'podkit eject' to safely disconnect, or use --eject next time.");
+        }
+      }
+
+      if (totalFailed > 0 || anyError) {
+        // Sync ran cleanly but some items failed — exit 2 distinguishes
+        // this from a command error (exit 1).
+        out.setExitCode(2);
+      }
+    }
+  } finally {
+    shutdown.uninstall();
+    adapter.close();
+  }
+}

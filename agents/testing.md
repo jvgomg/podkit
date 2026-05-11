@@ -367,7 +367,31 @@ it('rejects an unknown --quality preset', async () => {
 
 If a Commander action callback grows beyond ~100 lines, or has any branch you'd like to unit-test, extract it. The pattern: pull the body into `export async function runX(opts, out, deps?)`, leave the `.action()` callback as a one-liner that builds `out` and calls `runAction(out, () => runX(...))`.
 
-For external dependencies the runner pulls in (`getDeviceManager`, `confirm`, dynamic `import('@podkit/core')`), put them behind a `XDeps` interface so tests can stub. See `DeviceAddDeps` in `commands/device.ts:1658` as the canonical example.
+For external dependencies the runner pulls in (`getDeviceManager`, `confirm`, dynamic `import('@podkit/core')`), put them behind a `XDeps` interface so tests can stub. See `DeviceAddDeps` in `commands/device.ts` as the canonical example.
+
+### The deps seam, in detail
+
+Every runner that touches the device manager or `@podkit/core` accepts a `XDeps` interface that extends `CoreLoaderDeps` (from `src/handler-deps.ts`):
+
+```typescript
+import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
+
+export interface MyDeps extends CoreLoaderDeps {
+  getDeviceManager?: () => import('@podkit/core').DeviceManager;
+}
+
+export async function runMyCommand(opts: MyOptions, out: OutputContext, deps: MyDeps = {}) {
+  const core = await loadCoreOrFail(deps, MyErrorCodes.CORE_LOAD_FAILED);
+  const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
+  // …
+}
+```
+
+`CoreLoaderDeps` carries `loadCore?: () => Promise<typeof import('@podkit/core')>`. In tests, pass a stub returning a fake module — the real dynamic import never runs.
+
+`loadCoreOrFail(deps, code)` centralises the "core failed to load" CliError. The supplied `code` is the per-command error code (e.g. `SyncErrorCodes.CORE_LOAD_FAILED`). It is **throw-style** — use it only when a core-load failure should surface as a CLI error. Handlers that intentionally swallow failures (e.g. `runDeviceList` falls back to config-only output, `doctor.resolveDevice` returns `{ error }`) use `deps.loadCore` directly inside their own try/catch.
+
+For tests, the minimal seam is `loadCore: async () => ({} as typeof import('@podkit/core'))` plus a `getDeviceManager` stub built with the small `fakeManager(overrides)` helper local to each test file. See `device-add.unit.test.ts` for the full pattern and `eject.unit.test.ts`, `mount.unit.test.ts`, `device-scan.unit.test.ts`, `device-list.unit.test.ts`, `device-info-runner.unit.test.ts`, `device-music-video.unit.test.ts`, `device-ipod-ops.unit.test.ts`, and `sync-runner.unit.test.ts` for variations on the same shape.
 
 ### Throwing `CliError` instead of `process.exitCode = 1`
 
