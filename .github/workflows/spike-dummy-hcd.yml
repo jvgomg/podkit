@@ -15,6 +15,12 @@ name: SPIKE — dummy_hcd on GH Actions
 
 on:
   workflow_dispatch:
+  # Push trigger restricted to this spike branch only — required because
+  # workflow_dispatch needs the file on the default branch to be invokable.
+  # Remove (or delete the whole file) once the spike is concluded.
+  push:
+    branches:
+      - spike/gha-dummy-hcd
 
 jobs:
   probe:
