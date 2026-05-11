@@ -1,0 +1,234 @@
+# SPIKE — De-risk: can GH Actions ubuntu-latest load dummy_hcd + libcomposite
+# + usb_f_mass_storage + usb_f_fs and create a working USB gadget via configfs?
+#
+# This workflow is a throwaway investigation. It is NOT part of regular CI.
+# Manually triggered only. Delete this file (and the spike/gha-dummy-hcd branch)
+# once the verdict is recorded.
+#
+# Goal: confirm whether GH-hosted ubuntu-latest runners are suitable as a
+# Tier 3 test environment for podkit's virtual iPod test harness, or whether
+# we need a self-hosted Linux runner.
+#
+# Reference: https://docs.kernel.org/usb/gadget_configfs.html
+# Reference: packages/virtual-ipod-server/src/gadget.ts
+name: SPIKE — dummy_hcd on GH Actions
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    name: SPIKE — modprobe + configfs gadget probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Diagnostics — runner info
+        run: |
+          set -x
+          echo "=== Runner OS / kernel / distro ==="
+          uname -a || true
+          cat /etc/os-release || true
+          cat /proc/version || true
+          echo "=== CPU / mem ==="
+          nproc || true
+          free -h || true
+          echo "=== Pre-existing modules / mounts ==="
+          lsmod | head -40 || true
+          mount | grep -E 'configfs|sysfs' || true
+          ls -la /sys/kernel/config 2>/dev/null || echo "/sys/kernel/config not present"
+          ls /sys/class/udc 2>/dev/null || echo "no UDC pre-existing"
+
+      - name: apt-get update
+        run: |
+          set -x
+          sudo apt-get update
+
+      - name: Install linux-modules-extra
+        id: install_modules_extra
+        continue-on-error: true
+        run: |
+          set -x
+          KVER="$(uname -r)"
+          echo "kernel_version=${KVER}" | tee -a "$GITHUB_OUTPUT"
+          echo "=== Looking for linux-modules-extra-${KVER} ==="
+          if sudo apt-get install -y "linux-modules-extra-${KVER}"; then
+            echo "install_status=ok" | tee -a "$GITHUB_OUTPUT"
+          else
+            EXIT=$?
+            echo "install_status=failed(${EXIT})" | tee -a "$GITHUB_OUTPUT"
+            echo "=== Diagnostics: apt-cache search ==="
+            apt-cache search "^linux-modules-extra" || true
+            echo "=== Available linux-modules packages ==="
+            apt-cache search "^linux-modules" || true
+            echo "=== Currently installed kernel packages ==="
+            dpkg -l | grep -E 'linux-(image|modules|headers)' || true
+            exit ${EXIT}
+          fi
+
+      - name: modprobe dummy_hcd
+        id: modprobe_dummy_hcd
+        continue-on-error: true
+        run: |
+          set -x
+          sudo modprobe dummy_hcd
+          lsmod | grep dummy_hcd
+          echo "=== /sys/class/udc after dummy_hcd ==="
+          ls -la /sys/class/udc/ || true
+
+      - name: modprobe libcomposite
+        id: modprobe_libcomposite
+        continue-on-error: true
+        run: |
+          set -x
+          sudo modprobe libcomposite
+          lsmod | grep libcomposite
+
+      - name: modprobe usb_f_mass_storage
+        id: modprobe_usb_f_mass_storage
+        continue-on-error: true
+        run: |
+          set -x
+          sudo modprobe usb_f_mass_storage
+          lsmod | grep usb_f_mass_storage
+
+      - name: modprobe usb_f_fs (FunctionFS)
+        id: modprobe_usb_f_fs
+        continue-on-error: true
+        run: |
+          set -x
+          sudo modprobe usb_f_fs
+          lsmod | grep usb_f_fs
+
+      - name: Verify modules + configfs
+        id: verify_modules
+        continue-on-error: true
+        run: |
+          set -x
+          echo "=== lsmod (filtered) ==="
+          lsmod | grep -E 'dummy_hcd|libcomposite|usb_f|configfs' || true
+          echo "=== Mount configfs if not mounted ==="
+          if ! mountpoint -q /sys/kernel/config; then
+            sudo mkdir -p /sys/kernel/config
+            sudo mount -t configfs none /sys/kernel/config
+          else
+            echo "configfs already mounted"
+          fi
+          mount | grep configfs
+          echo "=== /sys/kernel/config ==="
+          ls -la /sys/kernel/config/
+          echo "=== /sys/kernel/config/usb_gadget ==="
+          ls -la /sys/kernel/config/usb_gadget/ || echo "usb_gadget dir not created — libcomposite may not have registered"
+          echo "=== /sys/class/udc ==="
+          ls -la /sys/class/udc/ || true
+
+      - name: Create minimal gadget + bind UDC
+        id: gadget_create
+        continue-on-error: true
+        run: |
+          set -x
+          set -e
+          G=/sys/kernel/config/usb_gadget/probe0
+
+          # Backing file for mass storage (4 MiB)
+          BACKING=/tmp/probe-backing.img
+          sudo dd if=/dev/zero of="${BACKING}" bs=1M count=4
+          sudo mkfs.vfat "${BACKING}" || true
+
+          sudo mkdir -p "${G}"
+          echo 0x05ac | sudo tee "${G}/idVendor"
+          echo 0x1209 | sudo tee "${G}/idProduct"
+          echo 0x0001 | sudo tee "${G}/bcdDevice"
+          echo 0x0200 | sudo tee "${G}/bcdUSB"
+
+          sudo mkdir -p "${G}/strings/0x409"
+          echo "PROBE0001"   | sudo tee "${G}/strings/0x409/serialnumber"
+          echo "Apple Inc."  | sudo tee "${G}/strings/0x409/manufacturer"
+          echo "iPod"        | sudo tee "${G}/strings/0x409/product"
+
+          sudo mkdir -p "${G}/configs/c.1/strings/0x409"
+          echo "Mass Storage" | sudo tee "${G}/configs/c.1/strings/0x409/configuration"
+          echo 500            | sudo tee "${G}/configs/c.1/MaxPower"
+
+          sudo mkdir -p "${G}/functions/mass_storage.0/lun.0"
+          echo "${BACKING}" | sudo tee "${G}/functions/mass_storage.0/lun.0/file"
+          echo 0            | sudo tee "${G}/functions/mass_storage.0/lun.0/removable"
+
+          sudo ln -s "${G}/functions/mass_storage.0" "${G}/configs/c.1/mass_storage.0"
+
+          echo "=== Available UDCs ==="
+          ls /sys/class/udc/
+          UDC="$(ls /sys/class/udc/ | head -n1)"
+          if [ -z "${UDC}" ]; then
+            echo "No UDC available — dummy_hcd did not register a UDC"
+            exit 2
+          fi
+          echo "Binding to UDC: ${UDC}"
+          echo "${UDC}" | sudo tee "${G}/UDC"
+
+          echo "=== Bound. Waiting up to 10s for block device ==="
+          for i in $(seq 1 20); do
+            if [ -b /dev/sda ] || [ -b /dev/sdb ]; then
+              break
+            fi
+            sleep 0.5
+          done
+          echo "=== Block devices ==="
+          lsblk || true
+          ls -la /dev/sd* 2>/dev/null || echo "no /dev/sd* block device appeared"
+          echo "=== dmesg tail ==="
+          sudo dmesg | tail -50 || true
+
+      - name: Teardown gadget
+        if: always()
+        continue-on-error: true
+        run: |
+          set -x
+          G=/sys/kernel/config/usb_gadget/probe0
+          if [ -d "${G}" ]; then
+            # Unbind UDC
+            echo "" | sudo tee "${G}/UDC" || true
+            # Remove function-to-config symlink
+            sudo rm -f "${G}/configs/c.1/mass_storage.0" || true
+            # Remove configfs dirs in correct order
+            sudo rmdir "${G}/configs/c.1/strings/0x409" || true
+            sudo rmdir "${G}/configs/c.1" || true
+            sudo rmdir "${G}/functions/mass_storage.0/lun.0" || true
+            sudo rmdir "${G}/functions/mass_storage.0" || true
+            sudo rmdir "${G}/strings/0x409" || true
+            sudo rmdir "${G}" || true
+          fi
+          sudo rm -f /tmp/probe-backing.img || true
+          # Unload modules (reverse order)
+          sudo modprobe -r usb_f_fs || true
+          sudo modprobe -r usb_f_mass_storage || true
+          sudo modprobe -r libcomposite || true
+          sudo modprobe -r dummy_hcd || true
+          echo "=== Final lsmod (filtered) ==="
+          lsmod | grep -E 'dummy_hcd|libcomposite|usb_f' || echo "(all unloaded)"
+
+      - name: Verdict summary
+        if: always()
+        run: |
+          set -x
+          echo "=== STEP OUTCOMES ==="
+          echo "install_modules_extra: ${{ steps.install_modules_extra.outcome }}"
+          echo "modprobe_dummy_hcd:    ${{ steps.modprobe_dummy_hcd.outcome }}"
+          echo "modprobe_libcomposite: ${{ steps.modprobe_libcomposite.outcome }}"
+          echo "modprobe_usb_f_mass:   ${{ steps.modprobe_usb_f_mass_storage.outcome }}"
+          echo "modprobe_usb_f_fs:     ${{ steps.modprobe_usb_f_fs.outcome }}"
+          echo "verify_modules:        ${{ steps.verify_modules.outcome }}"
+          echo "gadget_create:         ${{ steps.gadget_create.outcome }}"
+          echo "kernel:                ${{ steps.install_modules_extra.outputs.kernel_version }}"
+          # Fail the job if any critical step failed
+          if [ "${{ steps.modprobe_dummy_hcd.outcome }}" != "success" ] || \
+             [ "${{ steps.modprobe_libcomposite.outcome }}" != "success" ] || \
+             [ "${{ steps.modprobe_usb_f_mass_storage.outcome }}" != "success" ] || \
+             [ "${{ steps.modprobe_usb_f_fs.outcome }}" != "success" ]; then
+            echo "VERDICT: ONE OR MORE MODPROBE STEPS FAILED — see logs"
+            exit 1
+          fi
+          if [ "${{ steps.gadget_create.outcome }}" != "success" ]; then
+            echo "VERDICT: modules loaded but gadget bind failed — partial support"
+            exit 1
+          fi
+          echo "VERDICT: ALL STEPS PASSED — GH Actions ubuntu-latest IS suitable"
