@@ -11,7 +11,10 @@
  * (e.g. doctor.ts:resolveDevice) — those keep their inline try/catch.
  */
 
+import type { IpodTrack } from '@podkit/core';
 import { CliError } from './errors.js';
+import type { OpenDeviceResult } from './commands/open-device.js';
+import type { DeviceConfig, PodkitConfig } from './config/types.js';
 
 /**
  * Mixed in by every handler `*Deps` interface. Production omits this field
@@ -20,6 +23,61 @@ import { CliError } from './errors.js';
 export interface CoreLoaderDeps {
   loadCore?: () => Promise<typeof import('@podkit/core')>;
 }
+
+/**
+ * Test-time shape of an open iPod adapter.
+ *
+ * Mirrors the `@podkit/core` `IpodDatabase` instance surface that handlers
+ * call into (`getTracks`, `removeAllTracks`, etc) — but only the methods
+ * the runners actually invoke. Tests provide a fake adapter via
+ * `IpodDatabaseStub` so behaviour tests don't need a real iTunesDB fixture.
+ *
+ * NOTE: `DeviceAddDeps.ipodDatabase` uses a narrower inline shape for its
+ * cascade-add flow. Keep that one intact — the broader shape here serves
+ * the `clear` / `reset` / `init` / `reset-artwork` family.
+ */
+export interface IpodAdapterStub {
+  trackCount: number;
+  /** Mirrors `IpodDatabase.device` (a getter on the real class). */
+  device: { modelName: string; modelNumber: string; generation: string; capacity: number };
+  getTracks(): IpodTrack[];
+  removeAllTracks(opts?: { deleteFiles?: boolean }): {
+    removedCount: number;
+    fileDeleteErrors: string[];
+  };
+  removeTracksByContentType(
+    type: 'music' | 'video',
+    opts?: { deleteFiles?: boolean }
+  ): { removedCount: number; fileDeleteErrors: string[] };
+  save(): Promise<void>;
+  close(): void;
+}
+
+/**
+ * Test-time shape of the `IpodDatabase` static surface used by the
+ * iPod-only operation runners (clear/reset/init/reset-artwork).
+ */
+export interface IpodDatabaseStub {
+  open(path: string): Promise<IpodAdapterStub>;
+  hasDatabase(path: string): Promise<boolean>;
+  initializeIpod(path: string): Promise<IpodAdapterStub>;
+}
+
+/**
+ * Override the high-level `openDevice` helper that branches on device type
+ * (iPod vs mass-storage) and returns an opened adapter + capabilities.
+ *
+ * Used by handlers that read tracks from the device: `runDeviceInfo`,
+ * `runDeviceMusic`, `runDeviceVideo`. Stubbing here avoids having to wire
+ * `core.IpodDeviceAdapter`, `core.identifyCapabilities`, and
+ * `resolveIpodModel` together in the test.
+ */
+export type OpenDeviceFn = (
+  core: typeof import('@podkit/core'),
+  path: string,
+  deviceConfig?: DeviceConfig,
+  deviceDefaults?: PodkitConfig['deviceDefaults']
+) => Promise<OpenDeviceResult>;
 
 /**
  * Resolve the `@podkit/core` module via `deps.loadCore` or the real dynamic

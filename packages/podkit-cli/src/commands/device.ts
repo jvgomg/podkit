@@ -24,7 +24,12 @@ import { confirm, confirmNo } from '../utils/confirm.js';
 import { existsSync, statSync, statfsSync } from '../utils/fs.js';
 import { getContext } from '../context.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
-import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
+import {
+  loadCoreOrFail,
+  type CoreLoaderDeps,
+  type IpodDatabaseStub,
+  type OpenDeviceFn,
+} from '../handler-deps.js';
 
 /**
  * Error codes emitted by `podkit device` (and all subcommands).
@@ -2677,6 +2682,8 @@ const removeSubcommand = new Command('remove')
  */
 export interface DeviceInfoDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
+  /** Override the `openDevice` helper so tests don't need a real iTunesDB. */
+  openDevice?: OpenDeviceFn;
 }
 
 const infoSubcommand = new Command('info')
@@ -2734,7 +2741,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
         let openedDeviceResult: Awaited<ReturnType<typeof openDevice>> | undefined;
         try {
           try {
-            openedDeviceResult = await openDevice(
+            openedDeviceResult = await (deps.openDevice ?? openDevice)(
               core,
               resolveResult.path,
               device,
@@ -3227,6 +3234,8 @@ interface MusicVideoOptions {
  */
 export interface DeviceMusicDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
+  /** Override the `openDevice` helper so tests don't need a real iTunesDB. */
+  openDevice?: OpenDeviceFn;
 }
 export type DeviceVideoDeps = DeviceMusicDeps;
 
@@ -3385,7 +3394,7 @@ export async function runDeviceMusic(
       }
     };
 
-    const deviceResult = await openDevice(
+    const deviceResult = await (deps.openDevice ?? openDevice)(
       core,
       resolveResult.path,
       resolvedDevice?.config,
@@ -3577,7 +3586,7 @@ export async function runDeviceVideo(
       }
     };
 
-    const deviceResult = await openDevice(
+    const deviceResult = await (deps.openDevice ?? openDevice)(
       core,
       resolveResult.path,
       resolvedDevice?.config,
@@ -3643,6 +3652,16 @@ interface ClearOptions {
 export interface DeviceOpDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
   confirm?: (msg: string) => Promise<boolean>;
+  /**
+   * Override `core.IpodDatabase` (the static surface used by clear/reset/
+   * init/reset-artwork). Tests pass a fake — see `IpodDatabaseStub`.
+   */
+  ipodDatabase?: IpodDatabaseStub;
+  /**
+   * Override `core.resetArtworkDatabase`. Only consulted by
+   * `runDeviceResetArtwork`; harmless on the other runners.
+   */
+  resetArtworkDatabase?: typeof import('@podkit/core').resetArtworkDatabase;
 }
 
 const clearSubcommand = new Command('clear')
@@ -3686,7 +3705,8 @@ export async function runDeviceClear(
   }
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { IpodDatabase, IpodError } = core;
+  const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
+  const { IpodError } = core;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
   const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
@@ -3759,7 +3779,7 @@ export async function runDeviceClear(
   }
 
   try {
-    const { isMusicMediaType, isVideoMediaType } = await import('@podkit/core');
+    const { isMusicMediaType, isVideoMediaType } = core;
 
     const allTracks = ipod.getTracks();
 
@@ -3921,7 +3941,7 @@ export async function runDeviceReset(
   }
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { IpodDatabase } = core;
+  const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
   const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
@@ -4447,7 +4467,8 @@ export async function runDeviceInit(
   }
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { IpodDatabase, checkReadiness } = core;
+  const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
+  const { checkReadiness } = core;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
   const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
@@ -5116,7 +5137,8 @@ export async function runDeviceResetArtwork(
   }
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { IpodDatabase, resetArtworkDatabase } = core;
+  const IpodDatabase = deps.ipodDatabase ?? core.IpodDatabase;
+  const resetArtworkDatabase = deps.resetArtworkDatabase ?? core.resetArtworkDatabase;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
   const deviceIdentity = getDeviceIdentity(resolvedDevice);
 
@@ -5181,7 +5203,14 @@ export async function runDeviceResetArtwork(
       }
     }
 
-    const result = await resetArtworkDatabase(db, devicePath, { dryRun });
+    // `db` may be either a real `IpodDatabase` or an `IpodAdapterStub` (when
+    // tests override `deps.ipodDatabase`). The override of `resetArtworkDatabase`
+    // is wired to handle either; the cast is safe.
+    const result = await resetArtworkDatabase(
+      db as import('@podkit/core').IpodDatabase,
+      devicePath,
+      { dryRun }
+    );
 
     const output: DeviceResetArtworkSuccess = {
       success: true,

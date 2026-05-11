@@ -393,6 +393,46 @@ export async function runMyCommand(opts: MyOptions, out: OutputContext, deps: My
 
 For tests, the minimal seam is `loadCore: async () => ({} as typeof import('@podkit/core'))` plus a `getDeviceManager` stub built with the small `fakeManager(overrides)` helper local to each test file. See `device-add.unit.test.ts` for the full pattern and `eject.unit.test.ts`, `mount.unit.test.ts`, `device-scan.unit.test.ts`, `device-list.unit.test.ts`, `device-info-runner.unit.test.ts`, `device-music-video.unit.test.ts`, `device-ipod-ops.unit.test.ts`, and `sync-runner.unit.test.ts` for variations on the same shape.
 
+#### Behaviour-test seams: `openDevice` and `ipodDatabase`
+
+Seam-check tests prove the runner *honours* the deps. **Behaviour tests** drive past `IpodDatabase.open(...)` and `openDevice(core, path)` so we can assert on `removeAllTracks`, track-list filtering, model-name reporting, etc. — without a real iTunesDB fixture.
+
+Two extra seams enable this:
+
+- **`OpenDeviceFn`** on `DeviceInfoDeps` / `DeviceMusicDeps` / `DeviceVideoDeps` — overrides the high-level `openDevice(core, path, deviceConfig, defaults)` helper from `commands/open-device.ts`. Returns a stubbed `OpenDeviceResult` (adapter + capabilities + optional iPod handle).
+- **`IpodDatabaseStub`** on `DeviceOpDeps` (clear / reset / init / reset-artwork) — overrides `core.IpodDatabase` (the static surface: `open` / `hasDatabase` / `initializeIpod`). Each returns an `IpodAdapterStub` whose method surface mirrors the runners' actual call sites. `DeviceOpDeps` also carries `resetArtworkDatabase?: typeof core.resetArtworkDatabase` for that specific command.
+
+Shared factories live in `src/test-utils/fake-ipod.ts`:
+
+```typescript
+import { makeFakeIpodAdapter, makeFakeIpodTrack, makeFakeOpenDeviceResult } from '../test-utils/fake-ipod.js';
+
+// Fake adapter that records side effects
+let removeAllCalled = false;
+const adapter = makeFakeIpodAdapter({
+  trackCount: 5,
+  getTracks: () => [makeFakeIpodTrack({ title: 'A', mediaType: 1 })],
+  removeAllTracks: () => { removeAllCalled = true; return { removedCount: 5, fileDeleteErrors: [] }; },
+});
+
+const deps: DeviceOpDeps = {
+  loadCore: async () => fakeCore(),                        // minimal core stub
+  getDeviceManager: () => fakeManager(),
+  ipodDatabase: { open: async () => adapter, hasDatabase: async () => true, initializeIpod: async () => adapter },
+};
+
+await runWithContext(ctx, () => runAction(out, () => runDeviceClear({ type: 'all', confirm: true }, out, deps)));
+expect(removeAllCalled).toBe(true);
+```
+
+Gotchas:
+
+- **`existsSync` wall.** Every iPod-only runner gates with `if (!existsSync(devicePath)) { throw … }`. Behaviour tests use `mkdtemp` (in `beforeEach`) to satisfy the check without touching real iPod paths.
+- **`runDeviceInfo` error-swallowing.** The live-status block catches and demotes failures to `status.databaseError` rather than throwing. Behaviour tests assert on the JSON payload shape, not on thrown `CliError`s. It also mutates `process.exitCode` directly on unexpected DB errors — `BufferExitCodeSink` won't capture that.
+- **`DeviceAddDeps.ipodDatabase`** is intentionally a *narrower* shape (only `hasDatabase` / `open` / `initializeIpod` returning `{ trackCount; close }`). Don't conflate with the wider `IpodDatabaseStub` used by `DeviceOpDeps`.
+
+See `device-ipod-ops.behavior.test.ts`, `device-music-video.behavior.test.ts`, and `device-info.behavior.test.ts` for working examples.
+
 ### Throwing `CliError` instead of `process.exitCode = 1`
 
 Inside a runner, error paths should:
