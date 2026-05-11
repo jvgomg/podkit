@@ -1,6 +1,7 @@
 ---
 status: agreed
 last-updated: 2026-05-11
+user-stories-addressed: [US-04, US-10, US-21, US-22]
 links:
   - source-capabilities.md
   - ../features/README.md

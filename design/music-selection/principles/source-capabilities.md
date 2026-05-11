@@ -1,6 +1,7 @@
 ---
 status: tentative
 last-updated: 2026-05-11
+user-stories-addressed: [US-03, US-14, US-24]
 links:
   - playlist-roles-separated.md
   - runtime-mismatches-not-config-errors.md

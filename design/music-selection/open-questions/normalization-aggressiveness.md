@@ -2,6 +2,9 @@
 status: open
 last-updated: 2026-05-11
 importance: medium
+user-stories-addressed: [US-16]
+gates-features: [track-identity]
+informed-by-spikes: []
 links:
   - ../principles/track-identity-foundation.md
   - ../features/README.md

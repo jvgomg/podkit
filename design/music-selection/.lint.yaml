@@ -1,0 +1,68 @@
+# Bidirectional-link lint config for the music-selection design workspace.
+# Run from the repo root:
+#   bun run scripts/lint-frontmatter-links.ts design/music-selection/.lint.yaml
+
+# All paths are resolved relative to this YAML file's directory.
+root: .
+
+# Categories declare directories of markdown files with frontmatter.
+# `id-from` is either "filename" (slug derived from filename minus .md)
+# or the name of a frontmatter key whose value is the file's id.
+categories:
+  user-stories:
+    dir: user-stories
+    id-from: id
+    exclude: ["README.md", "archive"]
+  principles:
+    dir: principles
+    id-from: filename
+    exclude: ["README.md"]
+  features:
+    dir: features
+    id-from: filename
+    exclude: ["README.md"]
+  open-questions:
+    dir: open-questions
+    id-from: filename
+    exclude: ["README.md", "archive"]
+  spikes:
+    dir: spikes
+    id-from: filename
+    exclude: ["README.md", "archive"]
+
+# Bidirectional relations. For each file in `from`, the frontmatter at
+# `via` is interpreted as a list of ids in the `to` category; each target
+# file must have an entry for the source file's id under `backref`.
+relations:
+  - from: user-stories
+    via: addressed-by.features
+    to: features
+    backref: user-stories-addressed
+  - from: user-stories
+    via: addressed-by.principles
+    to: principles
+    backref: user-stories-addressed
+  - from: user-stories
+    via: addressed-by.open-questions
+    to: open-questions
+    backref: user-stories-addressed
+  - from: user-stories
+    via: addressed-by.spikes
+    to: spikes
+    backref: user-stories-addressed
+  - from: spikes
+    via: informs.features
+    to: features
+    backref: informed-by-spikes
+  - from: spikes
+    via: informs.open-questions
+    to: open-questions
+    backref: informed-by-spikes
+  - from: features
+    via: gated-by.open-questions
+    to: open-questions
+    backref: gates-features
+  - from: features
+    via: depends-on.features
+    to: features
+    backref: depended-on-by-features

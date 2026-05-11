@@ -1,6 +1,7 @@
 ---
 status: tentative
 last-updated: 2026-05-11
+user-stories-addressed: [US-19, US-24]
 links:
   - source-capabilities.md
   - track-identity-foundation.md

@@ -1,10 +1,13 @@
 ---
 status: proposed
 last-updated: 2026-05-11
+user-stories-addressed: [US-18, US-19]
+informs:
+  features: [estimation-accuracy]
+  open-questions: []
 links:
   - ../features/README.md
   - ../roadmap.md
-  - ../user-stories.md
 ---
 
 # Spike: file-size estimation accuracy

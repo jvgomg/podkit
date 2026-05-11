@@ -1,6 +1,7 @@
 ---
 status: agreed
 last-updated: 2026-05-11
+user-stories-addressed: [US-05, US-07, US-08, US-12]
 links:
   - collections-are-content-sets.md
   - source-capabilities.md

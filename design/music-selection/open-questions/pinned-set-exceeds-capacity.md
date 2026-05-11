@@ -2,10 +2,12 @@
 status: open
 last-updated: 2026-05-11
 importance: medium
+user-stories-addressed: [US-05, US-18]
+gates-features: [selector-pipeline, device-playlists-write]
+informed-by-spikes: []
 links:
   - ../principles/playlist-roles-separated.md
   - ../features/README.md
-  - ../user-stories.md
 ---
 
 # What happens when the pinned set exceeds device capacity?

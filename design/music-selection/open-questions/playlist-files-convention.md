@@ -2,10 +2,12 @@
 status: open
 last-updated: 2026-05-11
 importance: low-medium
+user-stories-addressed: [US-14]
+gates-features: [sources-and-collections]
+informed-by-spikes: []
 links:
   - ../principles/source-capabilities.md
   - ../principles/playlist-roles-separated.md
-  - ../user-stories.md
 ---
 
 # Where do playlist files live in a directory source?

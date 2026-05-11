@@ -105,8 +105,15 @@ Technical investigations that resolve hard unknowns ahead of feature work.
 See [`spikes/README.md`](spikes/README.md).
 
 ### User stories
-The set of user-facing scenarios driving the design.
-See [`user-stories.md`](user-stories.md).
+The set of user-facing scenarios driving the design — ranked by priority,
+mapped to features / principles / open questions / spikes.
+See [`user-stories/README.md`](user-stories/README.md).
+
+### Specs
+Living end-state documents (config schema, canonical terminology).
+See [`specs/README.md`](specs/README.md). When in doubt about what to call
+something, [`specs/terminology.md`](specs/terminology.md) is the
+canonical reference.
 
 ### Roadmap
 Tier-ordered plan for how the work sequences.

@@ -27,7 +27,18 @@ the resolved-then question was answered.
 ## Adding a spike
 
 1. Create a file under `spikes/` with a descriptive slug.
-2. Frontmatter `status: proposed`.
+2. Frontmatter:
+   ```yaml
+   ---
+   status: proposed
+   last-updated: <date>
+   user-stories-addressed: [US-NN, ...]   # stories whose resolution depends on this spike
+   informs:
+     features: [<feature-slug>, ...]      # features the findings will shape
+     open-questions: [<question-slug>, ...] # open questions the findings will help resolve
+   links: [...]
+   ---
+   ```
 3. Sections: **Question** (what we're trying to learn), **Why this matters**
    (the downstream decision it unblocks), **Approach** (what we'll do),
    **Time-box** (an explicit ceiling — spikes that grow into projects
@@ -35,6 +46,8 @@ the resolved-then question was answered.
    **Actions** (what gets created from the findings).
 4. Add to the index above.
 5. Cross-reference from any open question or feature that depends on it.
+6. Run the lint to verify bidirectional links:
+   `bun run scripts/lint-frontmatter-links.ts design/music-selection/.lint.yaml`
 
 ## Archiving a spike
 

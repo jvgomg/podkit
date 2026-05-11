@@ -1,6 +1,7 @@
 ---
 status: tentative
 last-updated: 2026-05-11
+user-stories-addressed: [US-16, US-17, US-25]
 links:
   - ../features/README.md
   - ../open-questions/normalization-aggressiveness.md

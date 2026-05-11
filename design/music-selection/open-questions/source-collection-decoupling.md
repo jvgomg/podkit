@@ -2,10 +2,12 @@
 status: open
 last-updated: 2026-05-11
 importance: foundational
+user-stories-addressed: [US-03, US-16]
+gates-features: [sources-and-collections, cross-source-playlists]
+informed-by-spikes: []
 links:
   - ../principles/source-capabilities.md
   - ../principles/collections-are-content-sets.md
-  - ../user-stories.md
   - ../features/README.md
 ---
 

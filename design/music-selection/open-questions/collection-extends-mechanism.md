@@ -2,6 +2,9 @@
 status: open
 last-updated: 2026-05-11
 importance: medium
+user-stories-addressed: [US-11]
+gates-features: [sources-and-collections]
+informed-by-spikes: []
 links:
   - ../principles/inline-collections-on-devices.md
   - filter-overrides-merge-rules.md

@@ -38,12 +38,20 @@ convention, not tooling — copy the structure when starting a new one.
 ```
 design/<workspace-name>/
 ├── README.md                # Master PRD — entry point; problem statement; map of everything else
-├── user-stories.md          # Registry of user stories driving the design
 ├── roadmap.md               # Sequenced plan of features/tiers
+├── .lint.yaml               # Bidirectional-link lint config (see "Link consistency" below)
+├── user-stories/            # Registry of user stories driving the design
+│   ├── README.md            # Overview + ranked index table
+│   ├── <us-id-slug>.md      # One per story
+│   └── archive/             # Solved / out-of-scope stories
+│       └── README.md
 ├── principles/              # Discrete design principles — one per file
 │   ├── README.md            # Index + status of each principle
 │   └── <principle-name>.md
-├── features/                # Sub-PRDs — one per feature
+├── specs/                   # Living end-state documents (config schema, terminology, …)
+│   ├── README.md            # Index of specs
+│   └── <spec-name>.md
+├── features/                # Sub-PRDs — one per feature (stub-then-draft)
 │   ├── README.md            # Inventory of features; status of each
 │   └── <feature-name>.md
 ├── spikes/                  # Technical research / investigations
@@ -110,6 +118,52 @@ For spikes, additional values:
   is updated with a "shipped to backlog as doc-NNN" link.
 - **Workspaces themselves** persist indefinitely as the shaping record, even
   after most of their contents have graduated.
+
+## Bidirectional link conventions
+
+Several files cross-link bidirectionally — e.g., a user story names the
+features that address it, and each feature names the stories it
+addresses. The full set of relations is declared in the workspace's
+`.lint.yaml` config and validated by the
+[`scripts/lint-frontmatter-links.ts`](../scripts/lint-frontmatter-links.ts)
+script.
+
+Run the lint from the repo root:
+
+```bash
+bun run scripts/lint-frontmatter-links.ts design/<workspace>/.lint.yaml
+```
+
+Standard relations (configured per workspace; not all need to be used):
+
+| Forward edge                           | Backref                       |
+|----------------------------------------|-------------------------------|
+| user-stories → features (`addressed-by.features`) | features `user-stories-addressed` |
+| user-stories → principles (`addressed-by.principles`) | principles `user-stories-addressed` |
+| user-stories → open-questions (`addressed-by.open-questions`) | open-questions `user-stories-addressed` |
+| user-stories → spikes (`addressed-by.spikes`) | spikes `user-stories-addressed` |
+| spikes → features (`informs.features`) | features `informed-by-spikes` |
+| spikes → open-questions (`informs.open-questions`) | open-questions `informed-by-spikes` |
+| features → open-questions (`gated-by.open-questions`) | open-questions `gates-features` |
+| features → features (`depends-on.features`) | features `depended-on-by-features` |
+
+When you add a forward link, update the backref. Run the lint
+to catch what you missed. CI integration is optional — for now, the
+script is runnable manually.
+
+## Specs
+
+A workspace's `specs/` directory holds **living end-state documents**:
+the consolidated, normative statement of one cross-cutting concern (e.g.,
+the config schema, the terminology, the selector semantics). Specs are
+distinct from features (which design new work) and principles (which
+capture rules). A spec is the *result* — what the world looks like once
+the relevant principles, features, and open questions have had their
+say.
+
+Specs evolve continually. Each block / field / term in a spec carries
+an annotation indicating its source of authority and confidence
+(`agreed` / `tentative` / `pending: <open-question>`).
 
 ## Relationship to other artefacts
 

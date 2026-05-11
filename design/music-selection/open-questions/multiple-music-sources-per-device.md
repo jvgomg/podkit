@@ -2,9 +2,11 @@
 status: deferred
 last-updated: 2026-05-11
 importance: low (today)
+user-stories-addressed: []
+gates-features: []
+informed-by-spikes: []
 links:
   - ../principles/collections-are-content-sets.md
-  - ../user-stories.md
 ---
 
 # Should one device be able to draw music from multiple sources?

@@ -1,29 +1,29 @@
 # Features (sub-PRDs)
 
-Inventory of feature-level sub-PRDs that the music-selection workspace
-expects to produce. **Each feature gets its own sub-PRD file in this
-directory** when it's ready to draft. Until drafted, the feature is
-represented only by its row in the table below — a name, a one-line summary,
-its tier, and its dependencies.
+Inventory of feature-level sub-PRDs. Each feature has a **stub file** in
+this directory that reserves its slug, records its dependencies, and
+tracks the user stories it addresses. The stub is upgraded to a full
+sub-PRD when the feature is drafted.
 
-This README is intentionally an inventory, not a set of stub files. We
-discuss each feature before drafting its PRD.
+We discuss each feature's scope before drafting its full PRD. Stub
+files exist so the bidirectional-link lint has stable targets and so
+the dependency graph is checkable.
 
 ## Inventory
 
 | Feature | Tier | Status | Depends on | Summary |
 |---------|------|--------|------------|---------|
-| Sources & Collections architecture | 0 | not drafted | source-collection-decoupling open question | The config grammar: source declarations, collection definitions, content typing. Foundational. |
-| Selector pipeline | 0 | not drafted | Sources & Collections | Pin > pool ordering, capacity-fit, eviction policy, over-budget UX. Where intent meets reality. |
-| File-size estimation accuracy | 0 | not drafted | estimation spike findings | Better estimates + cache + confidence-interval UX. Gates capacity-fit reliability. |
-| Per-content-type collections (TV/movies) | 1 | not drafted | Tier 0 | Replaces doc-007. Music / TV / movies as first-class content types with declared content, no auto-detection. |
-| Device playlists (write side) | 1 | not drafted | Tier 0 | `collection.playlists` materialised on the device. union/intersect modes. Pin source for selector. |
-| Track identity matching | 2 | not drafted | Tier 0 | Foundational primitive. Identity record + matching cascade. Used by cross-source playlists, OTG protection, self-healing sync. |
-| Cross-source playlists | 3 | parked (WIP) | Tier 2; resolution of source-collection-decoupling | Resolve playlist references against a source other than the active music source. Gated on cross-source surviving the source-collection-decoupling decision. |
-| Device state read + OTG protection | 3 | not drafted | Tier 2; libgpod / ipod-db read capability | Reading device-side state (play counts, on-device playlists) to inform selector behaviour. Enables OTG-protection-during-eviction. |
-| Smart / rotational selection | 4 | not drafted | Tier 3 (needs play counts) | Play-count-aware selection, rotation policies, freshness. |
-| Audiobook content type | 4 | not drafted | Tier 0/1 | Audiobook-specific collection schema and selector behaviours. |
-| Podcast content type | 4 | not drafted | Tier 0/1, possibly Tier 2 | Podcast-specific collection schema (last-N-unplayed-per-feed). |
+| [Sources & Collections architecture](sources-and-collections.md) | 0 | not drafted | source-collection-decoupling open question | The config grammar: source declarations, collection definitions, content typing. Foundational. |
+| [Selector pipeline](selector-pipeline.md) | 0 | not drafted | Sources & Collections | Pin > pool ordering, capacity-fit, eviction policy, over-budget UX. Where intent meets reality. |
+| [File-size estimation accuracy](estimation-accuracy.md) | 0 | not drafted | estimation spike findings | Better estimates + cache + confidence-interval UX. Gates capacity-fit reliability. |
+| [Per-content-type collections (TV/movies)](per-content-type-collections.md) | 1 | not drafted | Tier 0 | Replaces doc-007. Music / TV / movies as first-class content types with declared content, no auto-detection. |
+| [Device playlists (write side)](device-playlists-write.md) | 1 | not drafted | Tier 0 | `collection.playlists` materialised on the device. union/intersect modes. Pin source for selector. |
+| [Track identity matching](track-identity.md) | 2 | not drafted | Tier 0 | Foundational primitive. Identity record + matching cascade. Used by cross-source playlists, OTG protection, self-healing sync. |
+| [Cross-source playlists](cross-source-playlists.md) | 3 | parked (WIP) | Tier 2; resolution of source-collection-decoupling | Resolve playlist references against a source other than the active music source. Gated on cross-source surviving the source-collection-decoupling decision. |
+| [Device state read + OTG protection](device-state-read.md) | 3 | not drafted | Tier 2; libgpod / ipod-db read capability | Reading device-side state (play counts, on-device playlists) to inform selector behaviour. Enables OTG-protection-during-eviction. |
+| [Smart / rotational selection](smart-selection.md) | 4 | not drafted | Tier 3 (needs play counts) | Play-count-aware selection, rotation policies, freshness. |
+| [Audiobook content type](audiobook-content-type.md) | 4 | not drafted | Tier 0/1 | Audiobook-specific collection schema and selector behaviours. |
+| [Podcast content type](podcast-content-type.md) | 4 | not drafted | Tier 0/1, possibly Tier 2 | Podcast-specific collection schema (last-N-unplayed-per-feed). |
 
 ## Status values
 

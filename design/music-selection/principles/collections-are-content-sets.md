@@ -1,6 +1,7 @@
 ---
 status: tentative
 last-updated: 2026-05-11
+user-stories-addressed: [US-01, US-02, US-03, US-06, US-09]
 links:
   - inline-collections-on-devices.md
   - playlist-roles-separated.md
