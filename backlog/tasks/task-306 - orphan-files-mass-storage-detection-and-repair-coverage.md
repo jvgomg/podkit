@@ -4,6 +4,7 @@ title: 'orphan-files-mass-storage: detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -22,6 +23,14 @@ ordinal: 18000
 Verify the mass-storage flavour of orphan-file detection across the layouts produced by all built-in presets (echo-mini, generic, rockbox) plus user-customised content paths. Mass-storage orphan logic is meaningfully different from iPod orphan logic — there's no library database; "managed" files are identified by being inside the configured `musicDir` / `moviesDir` / `tvShowsDir` and having a file pattern that podkit would have produced. Anything else in those directories is an orphan.
 
 For every test, run `podkit doctor --device <fixture> --json --no-system` against a mass-storage device fixture and assert on the `orphan-files-mass-storage` entry in `checks[]`. The fixture's content-paths configuration (preset + per-device overrides + global defaults) should be varied to exercise the resolution chain.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; the `echo-mini-empty` starter persona supplies the canonical mass-storage fixture; orphan-state variations are test-local mutations of the persona's `massStorageBackingFile` content
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against the `echo-mini-empty` persona, with the FAT32 backing file manipulated to introduce orphans
+- The `SystemState` registry (`@podkit/device-testing`) supplies any required system environment state
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

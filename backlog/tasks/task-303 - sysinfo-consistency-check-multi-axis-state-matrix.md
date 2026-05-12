@@ -4,6 +4,7 @@ title: 'sysinfo-consistency check: multi-axis state matrix'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:22'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -23,6 +24,13 @@ Verify the redesigned `sysinfo-consistency` check across the full matrix of on-d
 Today this is covered by injected-fs unit tests. We need integration coverage that runs the real check against fixtures whose on-disk file content and live USB descriptor are programmable, so we can be confident the resolution path through `resolveUsbDeviceFromPath`, `extractFromPlist`, `identify()`, and the axis comparator behaves correctly on real OS-level USB enumeration.
 
 For every test, run `podkit doctor --device <fixture> --json --no-system` and assert on the `sysinfo-consistency` entry in `checks[]`: `status`, `summary`, `repairable`, `details.axes` (array of per-axis results), `details.onDiskGuid`, `details.onDiskModel`.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.sysInfoExtendedXml` and `usbDescriptor` fields as the injectable fake data for the two axes
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner; the iPod personas (`ipod-video-5g-fresh`, `ipod-nano-7g-populated`) supply the live USB descriptor via the FunctionFS daemon
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

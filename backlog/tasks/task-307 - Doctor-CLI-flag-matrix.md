@@ -4,6 +4,7 @@ title: Doctor CLI flag matrix
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -31,6 +32,14 @@ Flags in scope:
 - `--no-system`
 
 For every test, run `podkit doctor` with the relevant flag combination and assert on exit code, stdout structure, stderr content (for errors), and JSON parsability where applicable.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` and `systemStates` from `@podkit/device-testing`; use `DevicePersona` and `SystemState` registries to supply injectable fakes for flags that require a device or system context
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner; the runner restores the appropriate `SystemState` snapshot before the test group runs
+- **T2 (native subprocess):** flag-matrix tests that require a real subprocess invocation are tagged `*.linux.test.ts` or `*.darwin.test.ts` as appropriate
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

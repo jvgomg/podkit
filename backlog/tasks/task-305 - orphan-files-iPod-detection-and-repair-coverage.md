@@ -4,6 +4,7 @@ title: 'orphan-files (iPod): detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -21,6 +22,13 @@ ordinal: 17000
 Verify the iPod-flavoured `orphan-files` check across realistic combinations of files-on-disk vs library-references. The check scans `iPod_Control/Music/F*` directories and reports any audio file not referenced by an iTunesDB track, plus optional verbose breakdown by directory and extension and a CSV export path. Today's coverage is shallow — the breakdown logic, the largest-orphans listing, and the repair edge cases (read-only filesystem, partial deletion failure) aren't exercised.
 
 For every test, run `podkit doctor --device <fixture> --json --no-system` and assert on the `orphan-files` entry in `checks[]`: `status`, `summary`, `repairable`, `details.orphanCount`, `details.wastedBytes`, `details.orphans` (array of {path, size}). For CSV tests, run `podkit doctor --device <fixture> --format csv --no-system` and assert on stdout shape.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.partitionLayout` and `expectedCapabilities` for injectable fakes; orphan-state variations are test-local mutations
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against the `ipod-nano-7g-populated` persona (populated iTunes library provides the baseline)
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

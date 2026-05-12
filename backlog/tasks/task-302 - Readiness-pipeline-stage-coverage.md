@@ -4,6 +4,7 @@ title: Readiness pipeline stage coverage
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:21'
+updated_date: '2026-05-12 11:55'
 labels:
   - testing
   - doctor
@@ -23,6 +24,14 @@ Verify each of the six readiness stages reports the right status across the real
 Stages, in order: `usb`, `partition`, `filesystem`, `mount`, `sysinfo`, `database`.
 
 For every test, run `podkit doctor --device <fixture> --json --no-system` (system checks out of scope here) and assert on `readiness.level` plus the matching entry in `readiness.stages[]`: `status`, `summary`, and `details`. Where stages depend on prior stages, also assert that downstream stages skip when an upstream stage fails — that "earliest failure stops the pipeline" behaviour is part of the contract.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; inject fakes via `DevicePersona` fields (`partitionLayout`, `lsblkJson`, `systemProfilerJson`) into injectable transports
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against synthesized personas
+- **T2 (native subprocess):** OS-specific subprocess parsing tests tagged `*.linux.test.ts` / `*.darwin.test.ts`
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

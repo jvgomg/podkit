@@ -4,6 +4,7 @@ title: Doctor across device types and presets
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:24'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -25,6 +26,13 @@ For every test, run `podkit doctor --device <name|path> --json --no-system` and 
 - the set of check IDs present in `checks[]` (no iPod-only checks for mass-storage devices, no mass-storage checks for iPod, etc.)
 - `deviceModel` resolves to the right human-readable label per type
 - text-mode section headers match the type ('Database Health' for iPod, 'Device Health' for mass-storage)
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; the `ipod-video-5g-fresh` persona covers iPod-type assertions; the `echo-mini-empty` persona covers mass-storage-type assertions; `DevicePersona.expectedCapabilities` and `expectedDoctorOutput` supply the expected values
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against the starter personas to confirm device-type selection on real kernel-level USB enumeration
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

@@ -4,6 +4,7 @@ title: 'Device discovery and identification: USB descriptor permutations'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:25'
+updated_date: '2026-05-12 11:57'
 labels:
   - testing
   - device-discovery
@@ -23,6 +24,14 @@ Verify the device-discovery and identification pipelines (`@podkit/devices-ipod`
 Adjacent to doctor coverage but worth its own ticket: `podkit device scan`, `podkit device info`, and `podkit device add` consume the same discovery surface. Pinning the matrix here makes those commands' tests far cheaper to write.
 
 For every test, place the platform in a known USB state (one or more synthetic Apple/iPod descriptors, with controllable vendorId/productId/serialNumber/bus/devnum), then run the relevant podkit subcommand or core API and assert on the resolved identity.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.usbDescriptor` fields as the injectable fake USB descriptor — covers `identify()`, `discoverUsbIpods`, and `resolveUsbDeviceFromPath` logic without any real USB hardware
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner; the FunctionFS daemon synthesises the USB device from the `DevicePersona.usbDescriptor`, providing real libusb/udev enumeration for each starter persona
+- **T2 (native subprocess):** `resolveUsbDeviceFromPath` subprocess tests (real `lsblk` on Linux, real `system_profiler` on mac) are tagged `*.linux.test.ts` / `*.darwin.test.ts`; canned fixtures live in `@podkit/device-testing` persona directories (`lsblkJson`, `systemProfilerJson`)
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

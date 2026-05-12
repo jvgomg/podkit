@@ -4,6 +4,7 @@ title: Doctor JSON output schema and human-text rendering
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:25'
+updated_date: '2026-05-12 11:57'
 labels:
   - testing
   - doctor
@@ -23,6 +24,13 @@ Lock in the public output contract of `podkit doctor` (JSON schema and the human
 The JSON output is consumed by the docs site, by `gpod-tool` integration, and potentially by user scripts — its shape is part of the public API. The human text output is what users see when triaging a device, and several historical regressions (missing 'Issues:' block, suggested-action commands missing the right `-d` argument) would have been caught by structural assertions on stdout.
 
 For every test, run `podkit doctor` against a fixture in a known state and assert on the precise output shape. Use a small number of fixtures that cover the interesting state combinations rather than enumerating; the value here is contract-stability, not state-matrix coverage.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.expectedDoctorOutput` as the canonical golden reference for JSON schema assertions — no inline goldens
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner; golden JSON schema is verified against real `podkit doctor` output for each starter persona
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

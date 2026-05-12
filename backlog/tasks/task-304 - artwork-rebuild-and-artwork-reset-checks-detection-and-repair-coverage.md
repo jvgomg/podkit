@@ -4,6 +4,7 @@ title: 'artwork-rebuild and artwork-reset checks: detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:22'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -23,6 +24,13 @@ Verify the artwork integrity diagnostic and its two repair paths across realisti
 `artwork-rebuild` is both a detection check and a repair: it scans entries in ArtworkDB, validates that each thumbnail's offset is within its ithmb file, and on repair re-extracts artwork from a source collection and updates sync tags. `artwork-reset` is repair-only — it clears all artwork without needing a source collection.
 
 For every test, run `podkit doctor --device <fixture> --json --no-system` (and the appropriate repair command), and assert on the `artwork-rebuild` entry in `checks[]`. For repair tests, also assert on the repair JSON output (`success`, `details.matched`, `details.errors`, `details.noSource`, `details.noArtwork`).
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.partitionLayout` and `expectedCapabilities` to set up injectable fakes; artwork state variations are test-local mutations of persona data
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against the `ipod-nano-7g-populated` persona (which has artwork-relevant state)
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria

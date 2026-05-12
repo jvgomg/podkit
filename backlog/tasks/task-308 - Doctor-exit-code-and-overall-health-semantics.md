@@ -4,6 +4,7 @@ title: Doctor exit code and overall-health semantics
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:24'
+updated_date: '2026-05-12 11:56'
 labels:
   - testing
   - doctor
@@ -23,6 +24,13 @@ Pin down what flips doctor's exit code and the `healthy` boolean. Today's behavi
 This ticket is partly test coverage and partly a forcing function for a design decision: should `warn` count as healthy or not? Either is defensible, but the answer must be consistent and documented. Once decided, lock in the behaviour with tests.
 
 For every test, run `podkit doctor --device <fixture> --json` (with and without `--no-system` as the matrix demands) and assert on `exit code`, `healthy`, and the count of issues reported in the human output.
+
+---
+
+**Harness note (TASK-321.08 sweep):** Tests implementing this task must use the `@podkit/device-testing` package:
+- **T1 (unit):** import `personas` and `systemStates` from `@podkit/device-testing`; inject fakes via `DevicePersona` and `SystemState` registries to produce each (healthy/warn/fail) × (system/device) combination
+- **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner; the runner restores the appropriate `SystemState` snapshot (e.g. `base-no-ffmpeg`) before the test group runs
+- See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
