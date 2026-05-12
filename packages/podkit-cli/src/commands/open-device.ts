@@ -235,7 +235,14 @@ export async function openDevice(
     hasOverrides || presetDefaults
       ? core.normalizeContentPaths(contentPathOverrides, presetDefaults)
       : undefined;
-  const adapterOptions = contentPaths ? { contentPaths } : undefined;
+
+  // Resolve pathTemplate: per-device config > global deviceDefaults > adapter default
+  const pathTemplate = deviceConfig?.pathTemplate ?? deviceDefaults?.pathTemplate;
+
+  const adapterOptions =
+    contentPaths || pathTemplate !== undefined
+      ? { ...(contentPaths ? { contentPaths } : {}), ...(pathTemplate ? { pathTemplate } : {}) }
+      : undefined;
   const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 
   return {

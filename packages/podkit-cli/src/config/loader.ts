@@ -96,6 +96,22 @@ function isValidDeviceType(value: string): value is DeviceType {
 }
 
 /**
+ * Validate a music path template. Required variables: {title} and {ext}.
+ * Throws with a context-tagged message if invalid.
+ */
+function validatePathTemplate(template: string, context: string): void {
+  if (template.trim() === '') {
+    throw new Error(`Invalid pathTemplate in ${context}: must not be empty.`);
+  }
+  if (!/\{title\}/.test(template)) {
+    throw new Error(`Invalid pathTemplate in ${context}: must contain {title}.`);
+  }
+  if (!/\{ext\}/.test(template)) {
+    throw new Error(`Invalid pathTemplate in ${context}: must contain {ext}.`);
+  }
+}
+
+/**
  * Read and parse a TOML config file
  *
  * @param configPath Path to the config file
@@ -978,6 +994,15 @@ function parseDevices(
       device.tvShowsDir = rawDevice.tvShowsDir;
     }
 
+    // Parse optional pathTemplate
+    if (rawDevice.pathTemplate !== undefined) {
+      if (typeof rawDevice.pathTemplate !== 'string') {
+        throw new Error(`Invalid pathTemplate value in [devices.${name}]. ` + `Must be a string.`);
+      }
+      validatePathTemplate(rawDevice.pathTemplate, `[devices.${name}]`);
+      device.pathTemplate = rawDevice.pathTemplate;
+    }
+
     // Validate: capability overrides and musicDir are only valid for mass-storage devices
     const isIpodDevice = !device.type || device.type === 'ipod';
     if (isIpodDevice) {
@@ -991,6 +1016,7 @@ function parseDevices(
         'musicDir',
         'moviesDir',
         'tvShowsDir',
+        'pathTemplate',
       ] as const;
       const presentFields = massStorageFields.filter((f) => device[f] !== undefined);
       if (presentFields.length > 0) {
@@ -1355,6 +1381,13 @@ export function loadEnvConfig(): PartialConfig {
   const envTvShowsDir = process.env[ENV_KEYS.tvShowsDir];
   if (envTvShowsDir !== undefined) {
     deviceDefaults.tvShowsDir = envTvShowsDir;
+    hasDeviceDefaults = true;
+  }
+
+  const envPathTemplate = process.env[ENV_KEYS.pathTemplate];
+  if (envPathTemplate !== undefined) {
+    validatePathTemplate(envPathTemplate, `env ${ENV_KEYS.pathTemplate}`);
+    deviceDefaults.pathTemplate = envPathTemplate;
     hasDeviceDefaults = true;
   }
 

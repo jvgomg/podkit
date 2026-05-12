@@ -1099,6 +1099,83 @@ tvShowsDir = "TV"
         );
       });
 
+      it('parses pathTemplate on mass-storage devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+pathTemplate = "{artist}/{album}/{title}{ext}"
+`)
+        );
+
+        const result = loadConfigFile(configPath)!;
+        expect(result.devices!.player!.pathTemplate).toBe('{artist}/{album}/{title}{ext}');
+      });
+
+      it('rejects pathTemplate on iPod devices', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+pathTemplate = "{artist}/{album}/{title}{ext}"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(
+          /Mass-storage settings.*pathTemplate.*only valid for mass-storage/
+        );
+      });
+
+      it('rejects pathTemplate missing {title}', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+pathTemplate = "{artist}/{album}{ext}"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/pathTemplate.*must contain \{title\}/);
+      });
+
+      it('rejects pathTemplate missing {ext}', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+pathTemplate = "{artist}/{album}/{title}"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/pathTemplate.*must contain \{ext\}/);
+      });
+
+      it('rejects empty pathTemplate', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.player]
+type = "generic"
+path = "/mnt/player"
+pathTemplate = ""
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/pathTemplate.*must not be empty/);
+      });
+
       it('rejects duplicate content paths', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(
@@ -1758,6 +1835,25 @@ device = "terapod"
         const result = loadEnvConfig();
         expect(result.deviceDefaults?.tvShowsDir).toBe('TV');
         delete process.env[ENV_KEYS.tvShowsDir];
+      });
+
+      it('parses PODKIT_PATH_TEMPLATE', () => {
+        process.env[ENV_KEYS.pathTemplate] = '{artist}/{album}/{title}{ext}';
+        try {
+          const result = loadEnvConfig();
+          expect(result.deviceDefaults?.pathTemplate).toBe('{artist}/{album}/{title}{ext}');
+        } finally {
+          delete process.env[ENV_KEYS.pathTemplate];
+        }
+      });
+
+      it('rejects PODKIT_PATH_TEMPLATE missing required variables', () => {
+        process.env[ENV_KEYS.pathTemplate] = '{artist}/{album}';
+        try {
+          expect(() => loadEnvConfig()).toThrow(/pathTemplate.*must contain \{title\}/);
+        } finally {
+          delete process.env[ENV_KEYS.pathTemplate];
+        }
       });
 
       it('returns no deviceDefaults when no device env vars set', () => {

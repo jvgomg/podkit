@@ -215,6 +215,12 @@ export interface DeviceConfig {
   moviesDir?: string;
   /** Override the TV shows directory name on the device (default: "Video/Shows") */
   tvShowsDir?: string;
+  /**
+   * Override the music file path template (default: "{albumArtist}/{album}/{trackNumber} - {title}{ext}").
+   * Variables: {albumArtist}, {artist}, {album}, {title}, {trackNumber}, {discNumber}, {totalDiscs}, {genre}, {year}, {ext}.
+   * Must contain {title} and {ext}.
+   */
+  pathTemplate?: string;
 }
 
 /**
@@ -330,6 +336,7 @@ export interface PodkitConfig {
     musicDir?: string;
     moviesDir?: string;
     tvShowsDir?: string;
+    pathTemplate?: string;
   };
 }
 
@@ -452,6 +459,7 @@ export interface ConfigFileDevice {
   musicDir?: string;
   moviesDir?: string;
   tvShowsDir?: string;
+  pathTemplate?: string;
 }
 
 /**

@@ -18,8 +18,8 @@
 
 import { describe, it, expect, beforeAll } from 'bun:test';
 import { mkdtemp, rm, writeFile, readdir, stat, mkdir, symlink } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
+import { existsSync, statSync } from 'node:fs';
+import { execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runCli, runCliJson } from '../helpers/cli-runner';
@@ -47,6 +47,67 @@ function isFfprobeAvailable(): boolean {
   } catch {
     return false;
   }
+}
+
+function isMetaflacAvailable(): boolean {
+  try {
+    execSync('which metaflac', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+interface FlacMetadata {
+  title: string;
+  artist: string;
+  albumArtist?: string;
+  album: string;
+  trackNumber: number;
+}
+
+/**
+ * Generate a 1-second FLAC file with the given Vorbis-comment metadata.
+ * No artwork — keeps these tests focused on path-template behaviour.
+ */
+function writeFlacWithMetadata(filePath: string, meta: FlacMetadata): void {
+  const args = [
+    '-y',
+    '-loglevel',
+    'error',
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:duration=1:sample_rate=44100',
+    '-c:a',
+    'flac',
+    '-ar',
+    '44100',
+    '-ac',
+    '2',
+    '-metadata',
+    `title=${meta.title}`,
+    '-metadata',
+    `artist=${meta.artist}`,
+    '-metadata',
+    `album=${meta.album}`,
+    '-metadata',
+    `track=${meta.trackNumber}`,
+  ];
+  if (meta.albumArtist !== undefined) {
+    args.push('-metadata', `ALBUMARTIST=${meta.albumArtist}`);
+  }
+  args.push(filePath);
+  execFileSync('ffmpeg', args, { stdio: 'pipe' });
+}
+
+/**
+ * Rewrite a single Vorbis-comment tag on an existing FLAC file (in place).
+ * Audio data is untouched.
+ */
+function retagFlac(filePath: string, key: string, value: string): void {
+  execFileSync('metaflac', [`--remove-tag=${key}`, filePath], { stdio: 'pipe' });
+  execFileSync('metaflac', [`--set-tag=${key}=${value}`, filePath], { stdio: 'pipe' });
 }
 
 /**
@@ -171,11 +232,15 @@ async function writeEchoMiniConfig(
     transferMode?: string;
     artwork?: boolean;
     delete?: boolean;
+    pathTemplate?: string;
   }
 ): Promise<void> {
   const quality = options.quality ?? 'low';
   const artwork = options.artwork !== undefined ? options.artwork : true;
   const transferMode = options.transferMode ? `transferMode = "${options.transferMode}"` : '';
+  const pathTemplate = options.pathTemplate
+    ? `pathTemplate = ${JSON.stringify(options.pathTemplate)}`
+    : '';
 
   const content = `version = 1
 
@@ -189,6 +254,7 @@ path = "${options.musicPath}"
 [devices.echomini]
 type = "echo-mini"
 path = "${options.devicePath}"
+${pathTemplate}
 
 [defaults]
 music = "default"
@@ -1132,4 +1198,592 @@ device = "echomini"
       await rm(configDir, { recursive: true, force: true });
     }
   }, 120000);
+
+  // ---------------------------------------------------------------------------
+  // Album-artist paths: compilation grouping (TASK-263)
+  // ---------------------------------------------------------------------------
+
+  it('groups compilation tracks under albumArtist directory', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      // Compilation: three tracks with different per-track artist values but a
+      // shared "Various Artists" albumArtist. They should land in one directory.
+      writeFlacWithMetadata(join(collectionDir, '01-track-a.flac'), {
+        title: 'Track A',
+        artist: 'Artist One',
+        albumArtist: 'Various Artists',
+        album: 'Best of 2026',
+        trackNumber: 1,
+      });
+      writeFlacWithMetadata(join(collectionDir, '02-track-b.flac'), {
+        title: 'Track B',
+        artist: 'Artist Two',
+        albumArtist: 'Various Artists',
+        album: 'Best of 2026',
+        trackNumber: 2,
+      });
+      writeFlacWithMetadata(join(collectionDir, '03-track-c.flac'), {
+        title: 'Track C',
+        artist: 'Artist Three',
+        albumArtist: 'Various Artists',
+        album: 'Best of 2026',
+        trackNumber: 3,
+      });
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result, json } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+
+      if (result.exitCode !== 0) {
+        console.log('STDERR:', result.stderr.slice(0, 2000));
+      }
+      expect(result.exitCode).toBe(0);
+      expect(json?.result?.completed).toBe(3);
+
+      const audioFiles = await findDeviceAudioFiles(devicePath, '');
+      expect(audioFiles.length).toBe(3);
+
+      // All three tracks should live under "Various Artists/Best of 2026/"
+      // — not scattered across per-artist directories.
+      const inVariousArtists = audioFiles.filter((f) =>
+        f.includes('/Various Artists/Best of 2026/')
+      );
+      expect(inVariousArtists.length).toBe(3);
+
+      // Per-artist directories must NOT exist
+      expect(existsSync(join(devicePath, 'Artist One'))).toBe(false);
+      expect(existsSync(join(devicePath, 'Artist Two'))).toBe(false);
+      expect(existsSync(join(devicePath, 'Artist Three'))).toBe(false);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 120000);
+
+  // ---------------------------------------------------------------------------
+  // Self-healing relocate: albumArtist metadata change (TASK-263)
+  // ---------------------------------------------------------------------------
+
+  it('relocates files on device when source albumArtist changes', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      const sourceFile = join(collectionDir, '01-only-track.flac');
+      writeFlacWithMetadata(sourceFile, {
+        title: 'Only Track',
+        artist: 'Performer',
+        albumArtist: 'Origin Artist',
+        album: 'The Album',
+        trackNumber: 1,
+      });
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      // First sync
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(1);
+
+      const originDir = join(devicePath, 'Origin Artist', 'The Album');
+      const filesBefore = await findDeviceAudioFiles(devicePath, '');
+      expect(filesBefore.length).toBe(1);
+      expect(filesBefore[0]!.startsWith(originDir + '/')).toBe(true);
+      const sizeBefore = statSync(filesBefore[0]!).size;
+
+      // Mutate albumArtist on source — should trigger a relocate on next sync.
+      retagFlac(sourceFile, 'ALBUMARTIST', 'Renamed Artist');
+
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+
+      const filesAfter = await findDeviceAudioFiles(devicePath, '');
+      expect(filesAfter.length).toBe(1);
+
+      const newDir = join(devicePath, 'Renamed Artist', 'The Album');
+      expect(filesAfter[0]!.startsWith(newDir + '/')).toBe(true);
+      // File extension preserved (still .m4a from initial transcode)
+      expect(filesAfter[0]!.endsWith('.m4a')).toBe(true);
+
+      // Old origin directory must be empty (file was moved, not re-transcoded).
+      // The adapter may also remove the now-empty dir tree; tolerate either.
+      if (existsSync(originDir)) {
+        const remaining = await readdir(originDir);
+        expect(remaining.length).toBe(0);
+      }
+
+      // Audio file size unchanged: fs.rename, not a re-transcode.
+      const sizeAfter = statSync(filesAfter[0]!).size;
+      expect(sizeAfter).toBe(sizeBefore);
+
+      // A third sync should not move or re-transcode the file. Mass-storage
+      // does not currently rewrite non-comment tags on disk after a relocate,
+      // so the source's new albumArtist is rediscovered as a metadata diff each
+      // sync — but that path resolves to a zero-byte metadata op, never a
+      // transfer or another relocate.
+      const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.bytesTransferred).toBe(0);
+
+      const filesAfterThird = await findDeviceAudioFiles(devicePath, '');
+      expect(filesAfterThird.length).toBe(1);
+      expect(filesAfterThird[0]!.startsWith(newDir + '/')).toBe(true);
+      expect(statSync(filesAfterThird[0]!).size).toBe(sizeBefore);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // Custom pathTemplate via config (TASK-263)
+  // ---------------------------------------------------------------------------
+
+  it('relocates files when device pathTemplate changes between syncs', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      writeFlacWithMetadata(join(collectionDir, '01-song-one.flac'), {
+        title: 'Song One',
+        artist: 'Solo Artist',
+        albumArtist: 'Solo Artist',
+        album: 'Debut',
+        trackNumber: 1,
+      });
+
+      // First sync with default template (albumArtist/album/track - title)
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(1);
+
+      const defaultDir = join(devicePath, 'Solo Artist', 'Debut');
+      const filesBefore = await findDeviceAudioFiles(devicePath, '');
+      expect(filesBefore.length).toBe(1);
+      expect(filesBefore[0]!.startsWith(defaultDir + '/')).toBe(true);
+
+      // Re-write config with a custom pathTemplate that nests under a top-level
+      // "Music" directory. Re-sync should relocate the existing file rather
+      // than re-transcoding it.
+      const customTemplate = 'Library/{albumArtist}/{album}/{title}{ext}';
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+        pathTemplate: customTemplate,
+      });
+
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      if (r2.exitCode !== 0) {
+        console.log('STDERR:', r2.stderr.slice(0, 2000));
+      }
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+
+      const filesAfter = await findDeviceAudioFiles(devicePath, '');
+      expect(filesAfter.length).toBe(1);
+      const newDir = join(devicePath, 'Library', 'Solo Artist', 'Debut');
+      expect(filesAfter[0]!.startsWith(newDir + '/')).toBe(true);
+
+      // Filename no longer carries the "01 - " trackNumber prefix under the
+      // new template — verifies the full template was honoured, not just the
+      // directory portion.
+      const newFilename = filesAfter[0]!.slice(newDir.length + 1);
+      expect(newFilename.startsWith('01 ')).toBe(false);
+      expect(newFilename.endsWith('.m4a')).toBe(true);
+
+      // Re-sync was a relocate, not a re-transcode: no bytes transferred.
+      expect(j2?.result?.bytesTransferred).toBe(0);
+
+      // The old "Solo Artist/Debut/" dir tree must not still hold the file.
+      // The adapter may leave the empty directory or prune it — tolerate either,
+      // but it must NOT contain the original file.
+      if (existsSync(defaultDir)) {
+        const remaining = await readdir(defaultDir);
+        expect(remaining.length).toBe(0);
+      }
+
+      // Third sync with same template: no-op.
+      const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.completed).toBe(0);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // pathTemplate change combined with adding new music in the same op (TASK-263)
+  // ---------------------------------------------------------------------------
+
+  it('relocates existing files and adds new files in the same sync when pathTemplate changes', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      // Initial source: one track.
+      writeFlacWithMetadata(join(collectionDir, '01-existing-track.flac'), {
+        title: 'Existing Track',
+        artist: 'Alpha Artist',
+        albumArtist: 'Alpha Artist',
+        album: 'Alpha Album',
+        trackNumber: 1,
+      });
+
+      // First sync with default template.
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(1);
+
+      const oldDir = join(devicePath, 'Alpha Artist', 'Alpha Album');
+      const filesBefore = await findDeviceAudioFiles(devicePath, '');
+      expect(filesBefore.length).toBe(1);
+      expect(filesBefore[0]!.startsWith(oldDir + '/')).toBe(true);
+      const existingSizeBefore = statSync(filesBefore[0]!).size;
+
+      // Add a brand-new source track AND switch to a custom template — in the
+      // same re-sync op the adapter must (a) relocate the existing track to
+      // the new template and (b) transfer the new one straight to the new
+      // template, with no path collisions between the two passes.
+      writeFlacWithMetadata(join(collectionDir, '02-new-track.flac'), {
+        title: 'New Track',
+        artist: 'Beta Artist',
+        albumArtist: 'Beta Artist',
+        album: 'Beta Album',
+        trackNumber: 2,
+      });
+
+      const customTemplate = 'Library/{albumArtist}/{album}/{title}{ext}';
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+        pathTemplate: customTemplate,
+      });
+
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      if (r2.exitCode !== 0) {
+        console.log('STDERR:', r2.stderr.slice(0, 2000));
+      }
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+
+      const filesAfter = await findDeviceAudioFiles(devicePath, '');
+      expect(filesAfter.length).toBe(2);
+
+      const relocatedDir = join(devicePath, 'Library', 'Alpha Artist', 'Alpha Album');
+      const newDir = join(devicePath, 'Library', 'Beta Artist', 'Beta Album');
+
+      const relocated = filesAfter.filter((f) => f.startsWith(relocatedDir + '/'));
+      const added = filesAfter.filter((f) => f.startsWith(newDir + '/'));
+      expect(relocated.length).toBe(1);
+      expect(added.length).toBe(1);
+
+      // Relocated track is the same file: byte-equal to the pre-sync version.
+      expect(statSync(relocated[0]!).size).toBe(existingSizeBefore);
+
+      // Old top-level "Alpha Artist" dir must not still hold a file.
+      if (existsSync(oldDir)) {
+        const remaining = await readdir(oldDir);
+        expect(remaining.length).toBe(0);
+      }
+
+      // Third sync: no transfers — everything is in place.
+      const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.bytesTransferred).toBe(0);
+
+      // File set is identical after the no-op third sync.
+      const filesFinal = await findDeviceAudioFiles(devicePath, '');
+      expect(filesFinal.length).toBe(2);
+      expect(filesFinal.filter((f) => f.startsWith(relocatedDir + '/')).length).toBe(1);
+      expect(filesFinal.filter((f) => f.startsWith(newDir + '/')).length).toBe(1);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // pathTemplate change combined with --delete and an add in the same op
+  // (TASK-263)
+  // ---------------------------------------------------------------------------
+
+  it('relocates, adds, and deletes in one sync when pathTemplate changes with --delete', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      // Initial source: two tracks (one will be kept-and-relocated, the other
+      // will be removed from source before the second sync).
+      writeFlacWithMetadata(join(collectionDir, '01-keeper.flac'), {
+        title: 'Keeper',
+        artist: 'Stay Artist',
+        albumArtist: 'Stay Artist',
+        album: 'Stay Album',
+        trackNumber: 1,
+      });
+      const doomedSource = join(collectionDir, '02-doomed.flac');
+      writeFlacWithMetadata(doomedSource, {
+        title: 'Doomed',
+        artist: 'Gone Artist',
+        albumArtist: 'Gone Artist',
+        album: 'Gone Album',
+        trackNumber: 1,
+      });
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+      });
+
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(2);
+
+      const keeperOldDir = join(devicePath, 'Stay Artist', 'Stay Album');
+      const doomedOldDir = join(devicePath, 'Gone Artist', 'Gone Album');
+      const before = await findDeviceAudioFiles(devicePath, '');
+      expect(before.length).toBe(2);
+      const keeperBefore = before.find((f) => f.startsWith(keeperOldDir + '/'));
+      const doomedBefore = before.find((f) => f.startsWith(doomedOldDir + '/'));
+      expect(keeperBefore).toBeDefined();
+      expect(doomedBefore).toBeDefined();
+      const keeperSizeBefore = statSync(keeperBefore!).size;
+
+      // Remove the doomed source, add a third (new) source, switch template.
+      await rm(doomedSource);
+      writeFlacWithMetadata(join(collectionDir, '03-fresh.flac'), {
+        title: 'Fresh',
+        artist: 'Fresh Artist',
+        albumArtist: 'Fresh Artist',
+        album: 'Fresh Album',
+        trackNumber: 1,
+      });
+
+      const customTemplate = 'Library/{albumArtist}/{album}/{title}{ext}';
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+        pathTemplate: customTemplate,
+      });
+
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+        '--delete',
+      ]);
+      if (r2.exitCode !== 0) {
+        console.log('STDERR:', r2.stderr.slice(0, 2000));
+      }
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+
+      const after = await findDeviceAudioFiles(devicePath, '');
+      // Final state: keeper relocated, fresh added, doomed deleted = 2 files.
+      expect(after.length).toBe(2);
+
+      const keeperNewDir = join(devicePath, 'Library', 'Stay Artist', 'Stay Album');
+      const freshNewDir = join(devicePath, 'Library', 'Fresh Artist', 'Fresh Album');
+
+      const keeperAfter = after.find((f) => f.startsWith(keeperNewDir + '/'));
+      const freshAfter = after.find((f) => f.startsWith(freshNewDir + '/'));
+      expect(keeperAfter).toBeDefined();
+      expect(freshAfter).toBeDefined();
+
+      // Keeper was relocated, not re-transcoded.
+      expect(statSync(keeperAfter!).size).toBe(keeperSizeBefore);
+
+      // Doomed track must be gone from BOTH the old and the new template paths.
+      const doomedNewDir = join(devicePath, 'Library', 'Gone Artist', 'Gone Album');
+      expect(after.some((f) => f.startsWith(doomedOldDir + '/'))).toBe(false);
+      expect(after.some((f) => f.startsWith(doomedNewDir + '/'))).toBe(false);
+
+      // Old directories should be empty (or pruned).
+      for (const dir of [keeperOldDir, doomedOldDir]) {
+        if (existsSync(dir)) {
+          const remaining = await readdir(dir);
+          expect(remaining.length).toBe(0);
+        }
+      }
+
+      // Follow-up sync is a no-op for transfers.
+      const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+        '--delete',
+      ]);
+      expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.bytesTransferred).toBe(0);
+      const final = await findDeviceAudioFiles(devicePath, '');
+      expect(final.length).toBe(2);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
 });

@@ -85,4 +85,5 @@ export const ENV_KEYS = {
   musicDir: `${ENV_PREFIX}MUSIC_DIR`,
   moviesDir: `${ENV_PREFIX}MOVIES_DIR`,
   tvShowsDir: `${ENV_PREFIX}TV_SHOWS_DIR`,
+  pathTemplate: `${ENV_PREFIX}PATH_TEMPLATE`,
 } as const;
