@@ -1,9 +1,10 @@
 ---
 id: TASK-316
 title: Split device.ts into per-subcommand files
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-08 16:44'
+updated_date: '2026-05-12 13:01'
 labels:
   - tech-debt
   - cli
@@ -87,10 +88,34 @@ Pure mechanical refactor with significant diff. Doing it alongside the test-arch
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 device.ts becomes a thin barrel re-exporting from device/
-- [ ] #2 Each subcommand lives in its own file under packages/podkit-cli/src/commands/device/
-- [ ] #3 Shared helpers move to device/shared.ts; their public exports are preserved via the barrel
-- [ ] #4 All existing imports across the repo (including test files) continue to work without per-call-site changes
-- [ ] #5 bun run test:unit, test:integration, test:e2e all pass
-- [ ] #6 No behaviour change — pure organisation
+- [x] #1 device.ts becomes a thin barrel re-exporting from device/
+- [x] #2 Each subcommand lives in its own file under packages/podkit-cli/src/commands/device/
+- [x] #3 Shared helpers move to device/shared.ts; their public exports are preserved via the barrel
+- [x] #4 All existing imports across the repo (including test files) continue to work without per-call-site changes
+- [x] #5 bun run test:unit, test:integration, test:e2e all pass
+- [x] #6 No behaviour change — pure organisation
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Split `packages/podkit-cli/src/commands/device.ts` (5278 lines) into per-subcommand files under `packages/podkit-cli/src/commands/device/`. `device.ts` is now an 11-line barrel re-exporting from `device/index.ts` and `device/shared.ts`, plus the legacy `formatBytes` / `formatNumber` / `formatGeneration` re-exports.
+
+## Structure
+
+- `device/index.ts` (75 lines) — composes `deviceCommand` from subcommands, re-exports public API for back-compat
+- `device/shared.ts` (827 lines) — `DeviceErrorCodes`, `DeviceOpDeps`, all `Device*Output` / `Device*Success` types, cross-subcommand helpers (`resolveDeviceArg`, `getStorageInfo`, `deviceTrackToDisplayTrack`, `deviceTrackToFullJson`, `formatSyncTagSummary`, `escapeCsvField`, `ipodTrackToFullJson`, `parseFormat`, `synthesizePathModeDeviceInfo`, `findConfiguredDeviceName`, `findUndetectedDevices`, `sortDevicesForDisplay`, `getDevicePrefix`, `redactPaths`, `formatIFlashEvidence`, `formatIFlashMountExplanation`)
+- 15 per-subcommand files: `scan.ts`, `list.ts`, `add.ts`, `remove.ts`, `info.ts`, `music.ts`, `video.ts`, `clear.ts`, `reset.ts`, `reset-artwork.ts`, `eject.ts`, `mount.ts`, `init.ts`, `set.ts`, `default.ts`
+
+Subcommand-private helpers stayed co-located: `SYSINFO_MISSING_PROMPT_LINES`, `generationLabel`, `printCapabilitySummary` → `add.ts`; `generateDiagnosticReport` → `scan.ts`; `formatRow` → `list.ts`.
+
+## Notes
+
+- Task description listed a `model.ts`; no `modelSubcommand` actually exists in the file. There is a `resetArtworkSubcommand` (not in task description) — moved to `reset-artwork.ts`.
+- All historical imports from `./commands/device.js` keep working via the barrel + `export *` from `device/shared.ts` and re-exports from `device/index.ts`.
+
+## Verification
+
+- `bun run typecheck` clean
+- `bun run test` — 53 tasks pass: 1136 unit tests + 27 E2E tests, 0 failures
+<!-- SECTION:FINAL_SUMMARY:END -->
