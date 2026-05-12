@@ -55,6 +55,7 @@ import { buildOptimizedCopyArgs } from '../../transcode/ffmpeg.js';
 import { getCodecMetadata } from '../../transcode/codecs.js';
 import { fileTypeToAudioCodec } from './planner.js';
 import { getCodecPresetBitrate, getCodecVbrQuality } from '../../transcode/types.js';
+import type { TransferMode } from '../../transcode/types.js';
 import type { TranscodePresetRef } from '../engine/types.js';
 import type {
   ExecuteOptions,
@@ -175,7 +176,7 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    * - `portable`: optimize completeness (preserve embedded artwork even when the
    *   device doesn't need it, for portability if files are copied elsewhere).
    */
-  transferMode?: string;
+  transferMode?: TransferMode;
   /**
    * Save the iPod database every N completed track operations.
    *
@@ -616,7 +617,7 @@ export class MusicPipeline implements SyncExecutor {
   /** Sync tag config for the current execution (set during execute()) */
   private syncTagConfig?: SyncTagConfig;
   /** Transfer mode for the current execution (set during execute()) */
-  private transferMode?: string;
+  private transferMode?: TransferMode;
   /** Artwork resize dimension for embedded artwork devices (set during execute()) */
   private artworkResize?: number;
   /** Audio normalization mode for the target device (set during execute()) */
@@ -1425,7 +1426,7 @@ export class MusicPipeline implements SyncExecutor {
       ...toDeviceTrackInput(source),
       bitrate: result.bitrate,
       filetype: getTranscodeFiletypeLabel(presetRef),
-      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
+      transferMode: this.transferMode,
     };
 
     const track = this.device.addTrack(trackInput);
@@ -1463,7 +1464,7 @@ export class MusicPipeline implements SyncExecutor {
     const trackInput: DeviceTrackInput = {
       ...toDeviceTrackInput(source),
       filetype: getFileTypeLabel(source.filePath),
-      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
+      transferMode: this.transferMode,
     };
 
     const track = this.device.addTrack(trackInput);
@@ -1584,7 +1585,7 @@ export class MusicPipeline implements SyncExecutor {
     // Tell the adapter which transfer mode is in effect so device-specific
     // tag-write policies (iPod portable, etc.) can fire.
     if (this.transferMode) {
-      updateFields.transferMode = this.transferMode as DeviceTrackInput['transferMode'];
+      updateFields.transferMode = this.transferMode;
     }
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
@@ -1667,7 +1668,7 @@ export class MusicPipeline implements SyncExecutor {
     // Apply metadata updates if any
     if (metadata && Object.keys(metadata).length > 0) {
       const withMode: DeviceTrackMetadata = this.transferMode
-        ? { ...metadata, transferMode: this.transferMode as DeviceTrackInput['transferMode'] }
+        ? { ...metadata, transferMode: this.transferMode }
         : { ...metadata };
       this.device.updateTrack(trackAfterRelocate, withMode);
     }
@@ -1972,7 +1973,7 @@ export class MusicPipeline implements SyncExecutor {
       ...toDeviceTrackInput(source),
       filetype,
       ...(bitrate !== undefined && { bitrate }),
-      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
+      transferMode: this.transferMode,
     };
 
     // Write sync tag for transcode operations

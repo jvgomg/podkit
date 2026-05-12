@@ -88,6 +88,14 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
 export function categorizeError(error: Error, operationType: string): ErrorCategory {
   const message = error.message.toLowerCase();
 
+  // Check for aggregated tag-write failures FIRST. The message embeds per-file
+  // paths which may contain keywords ("iPod", "iTunes", "ffmpeg" etc.) that
+  // would otherwise mis-classify. Tag writes are file I/O — retry semantics
+  // match "copy".
+  if (message.includes('tag write')) {
+    return 'copy';
+  }
+
   // Check for database errors FIRST (most specific, no retry)
   if (
     message.includes('database') ||

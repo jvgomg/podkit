@@ -8,7 +8,7 @@
  * @module
  */
 
-export { BUILT_IN_PRESETS } from './presets/built-in.js';
+export { BUILT_IN_PRESETS, MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS } from './presets/built-in.js';
 
 export type {
   ContentPaths,

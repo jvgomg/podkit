@@ -40,11 +40,21 @@ import {
   validateContentPaths,
   type MassStorageManifest,
 } from './mass-storage-utils.js';
-import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
+import {
+  DEFAULT_CONTENT_PATHS,
+  MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS,
+} from '@podkit/devices-mass-storage';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
-import { TagLibTagWriter, type TagFields, type TagWriter } from './mass-storage-tag-writer.js';
+import {
+  DEFAULT_TAG_WRITE_CONCURRENCY,
+  TagLibTagWriter,
+  diffTagFields,
+  runWithConcurrency,
+  type TagFields,
+  type TagWriter,
+} from './mass-storage-tag-writer.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import {
   soundcheckToReplayGainDb,
@@ -495,7 +505,19 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     options?: MassStorageAdapterOptions
   ) {
     this.mountPoint = mountPoint;
-    this.capabilities = capabilities;
+    // Filter out codecs podkit won't manage as device-output on mass-storage,
+    // even when the device firmware can play them. The preset/raw capability
+    // data keeps wav/aiff for documentation; the adapter's `capabilities`
+    // represents what podkit will actually use, which the planner consumes
+    // for direct-copy-vs-transcode decisions. See
+    // MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS in @podkit/devices-mass-storage
+    // for the rationale (tag-write reliability across RIFF/IFF containers).
+    this.capabilities = {
+      ...capabilities,
+      supportedAudioCodecs: capabilities.supportedAudioCodecs.filter(
+        (c) => !MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS.includes(c)
+      ),
+    };
 
     // Resolve content paths: explicit contentPaths > legacy musicDir > defaults
     const pathOverrides: Partial<ContentPaths> = { ...options?.contentPaths };
@@ -785,38 +807,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Queue textual-tag writes for every field that actually changed.
     // Diffing against the current track avoids redundant disk writes when
     // the executor passes through fields that already match.
-    const tagDiff: TagFields = {};
-    if (fields.title !== undefined && fields.title !== track.title) {
-      tagDiff.title = fields.title;
-    }
-    if (fields.artist !== undefined && fields.artist !== track.artist) {
-      tagDiff.artist = fields.artist;
-    }
-    if (fields.albumArtist !== undefined && fields.albumArtist !== track.albumArtist) {
-      tagDiff.albumArtist = fields.albumArtist;
-    }
-    if (fields.album !== undefined && fields.album !== track.album) {
-      tagDiff.album = fields.album;
-    }
-    if (fields.genre !== undefined && fields.genre !== track.genre) {
-      tagDiff.genre = fields.genre;
-    }
-    if (fields.year !== undefined && fields.year !== track.year) {
-      tagDiff.year = fields.year;
-    }
-    if (fields.trackNumber !== undefined && fields.trackNumber !== track.trackNumber) {
-      tagDiff.trackNumber = fields.trackNumber;
-    }
-    if (fields.discNumber !== undefined && fields.discNumber !== track.discNumber) {
-      tagDiff.discNumber = fields.discNumber;
-    }
-    if (fields.compilation !== undefined && fields.compilation !== track.compilation) {
-      tagDiff.compilation = fields.compilation;
-    }
-    if (fields.comment !== undefined && fields.comment !== track.comment) {
-      tagDiff.comment = fields.comment;
-    }
-    this.queueTagWrite(track.filePath, tagDiff);
+    this.queueTagWrite(track.filePath, diffTagFields(track, fields));
 
     // Queue picture write for OGG/Opus files where FFmpeg can't embed artwork
     if (fields.embeddedPictureData) {
@@ -1135,13 +1126,18 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.pendingMoves.clear();
     }
 
-    // Flush pending tag writes to audio files
+    // Flush pending tag writes to audio files. Concurrency is capped to
+    // avoid `EMFILE` on large libraries — each writeTags opens the file
+    // via node-taglib-sharp.
     if (this.pendingTagWrites.size > 0) {
       const entries = [...this.pendingTagWrites.entries()];
-      const settled = await Promise.allSettled(
-        entries.map(([filePath, fields]) =>
-          this.tagWriter.writeTags(path.join(this.mountPoint, filePath), fields)
-        )
+      const settled = await runWithConcurrency(
+        entries.map(
+          ([filePath, fields]) =>
+            () =>
+              this.tagWriter.writeTags(path.join(this.mountPoint, filePath), fields)
+        ),
+        DEFAULT_TAG_WRITE_CONCURRENCY
       );
       this.pendingTagWrites.clear();
       const failures: string[] = [];
@@ -1153,12 +1149,18 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         }
       }
       if (failures.length > 0) {
-        // Surface as a single aggregated error so callers (sync executor) can
-        // categorise it. Per-file context is preserved in the message; the
-        // next sync will re-detect any unwritten diffs and retry.
-        throw new Error(
-          `Failed to write tags to ${failures.length} file(s): ${failures.join('; ')}`
+        // Surface as a single aggregated error so callers (sync executor)
+        // can categorise it. The "tag write" prefix anchors classification
+        // in error-handling.ts; per-file context follows for diagnostics.
+        // The next sync will re-detect any unwritten diffs and retry —
+        // mass-storage reads file tags as the source of truth on rescan.
+        const err = new Error(
+          `tag write failed for ${failures.length} file(s): ${failures.join('; ')}`
         );
+        // Stash the per-file error list so debug tooling can inspect it
+        // without parsing the message.
+        (err as Error & { causes?: string[] }).causes = failures;
+        throw err;
       }
     }
 

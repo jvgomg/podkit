@@ -16,6 +16,7 @@
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
+import type { TransferMode } from '../transcode/types.js';
 
 // =============================================================================
 // DeviceTrack
@@ -74,7 +75,7 @@ export interface DeviceTrackInput {
    * input metadata into the on-disk file tags. Mass-storage always writes
    * tags; iPod writes tags only under `portable`.
    */
-  transferMode?: 'fast' | 'optimized' | 'portable';
+  transferMode?: TransferMode;
 }
 
 /**
@@ -119,7 +120,7 @@ export type DeviceTrackMetadata = Partial<DeviceTrackInput> & {
    *   `fast` and `optimized` the iTunesDB is authoritative and the
    *   underlying file is left untouched.
    */
-  transferMode?: 'fast' | 'optimized' | 'portable';
+  transferMode?: TransferMode;
 };
 
 /**

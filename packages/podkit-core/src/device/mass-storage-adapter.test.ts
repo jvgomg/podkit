@@ -1327,12 +1327,21 @@ describe('MassStorageAdapter', () => {
   });
 
   describe('capabilities and mountPoint', () => {
-    test('exposes capabilities', async () => {
+    test('exposes capabilities (filtered through MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS)', async () => {
       const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
         metadataReader: createMockMetadataReader({}),
       });
 
-      expect(adapter.capabilities).toBe(TEST_CAPABILITIES);
+      // The adapter applies the codec filter (drops wav/aiff) and so a
+      // strict reference-equality check against the input no longer holds.
+      // The values must still match for every field — only the codec list
+      // is potentially narrowed.
+      expect(adapter.capabilities).toEqual({
+        ...TEST_CAPABILITIES,
+        supportedAudioCodecs: TEST_CAPABILITIES.supportedAudioCodecs.filter(
+          (c) => c !== 'wav' && c !== 'aiff'
+        ),
+      });
     });
 
     test('exposes mountPoint', async () => {
@@ -1341,6 +1350,49 @@ describe('MassStorageAdapter', () => {
       });
 
       expect(adapter.mountPoint).toBe(mountPoint);
+    });
+  });
+
+  describe('podkit-output codec filter', () => {
+    // The preset/raw capability data may list wav/aiff as "device can play
+    // these natively". The MassStorageAdapter's `capabilities` represents
+    // what podkit will actually USE as device-output and must strip the
+    // codecs podkit can't reliably manage (tag-writing). The classifier
+    // consults `device.capabilities.supportedAudioCodecs` for direct-copy
+    // decisions — filtering here means WAV sources transcode rather than
+    // being placed on the device as WAV with stale tags.
+    test('strips wav and aiff from supportedAudioCodecs', async () => {
+      createFakeAudioFile(mountPoint, 'Music/A/B/01 - Song.flac');
+      const adapter = await MassStorageAdapter.open(
+        mountPoint,
+        {
+          ...TEST_CAPABILITIES,
+          supportedAudioCodecs: ['aac', 'mp3', 'flac', 'wav', 'aiff'],
+        },
+        {
+          metadataReader: createMockMetadataReader({
+            '01 - Song.flac': { title: 'Song', artist: 'A', album: 'B' },
+          }),
+        }
+      );
+      expect(adapter.capabilities.supportedAudioCodecs).toEqual(['aac', 'mp3', 'flac']);
+    });
+
+    test('leaves a wav/aiff-free codec list untouched', async () => {
+      createFakeAudioFile(mountPoint, 'Music/A/B/01 - Song.flac');
+      const adapter = await MassStorageAdapter.open(
+        mountPoint,
+        {
+          ...TEST_CAPABILITIES,
+          supportedAudioCodecs: ['aac', 'mp3', 'flac', 'opus'],
+        },
+        {
+          metadataReader: createMockMetadataReader({
+            '01 - Song.flac': { title: 'Song', artist: 'A', album: 'B' },
+          }),
+        }
+      );
+      expect(adapter.capabilities.supportedAudioCodecs).toEqual(['aac', 'mp3', 'flac', 'opus']);
     });
   });
 
@@ -1607,7 +1659,10 @@ describe('MassStorageAdapter', () => {
       const track = adapter.getTracks()[0]!;
       adapter.updateTrack(track, { comment: 'sync-tag' });
 
-      await expect(adapter.save()).rejects.toThrow('FFmpeg exploded');
+      // The save() aggregates per-file failures into one Error whose message
+      // begins with "tag write failed" (anchors categorization) and whose
+      // body lists each failure verbatim.
+      await expect(adapter.save()).rejects.toThrow(/tag write failed.*FFmpeg exploded/);
     });
 
     test('comment set during addTrack is queued for persistence', async () => {

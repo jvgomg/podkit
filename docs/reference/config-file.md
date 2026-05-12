@@ -99,13 +99,57 @@ These apply to all devices unless overridden at the device level.
 | `audioQuality` | string | - | Audio-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for audio. |
 | `videoQuality` | string | - | Video-specific quality override: `max`, `high`, `medium`, `low`. Overrides `quality` for video. |
 | `encoding` | string | `"vbr"` | Encoding mode for lossy transcoding: `vbr` (variable bitrate) or `cbr` (constant bitrate). VBR produces better quality per MB; CBR produces predictable file sizes and more reliable preset change detection. Applies to whichever codec the [preference stack](/user-guide/transcoding/codec-preferences) resolves. |
-| `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled during sync. `fast` skips extra data for fastest sync. `optimized` strips data your device won't use, saving storage. `portable` preserves extra track data for extracting files later. |
+| `transferMode` | string | `"fast"` | Transfer mode controlling how extra file data (e.g. embedded artwork) is handled, and — for iPod — whether on-disk file tags are kept in sync with the iTunesDB. See [Transfer Mode](#transfer-mode) below. |
 | `customBitrate` | integer | - | Override the preset's target bitrate (64-320 kbps). Ignored when `max` resolves to ALAC. |
 | `bitrateTolerance` | number | - | Override the automatic preset change detection tolerance (0.0-1.0). Default is 0.3 (30%) for VBR and 0.1 (10%) for CBR. |
 | `artwork` | boolean | `true` | Include album artwork during sync |
 | `checkArtwork` | boolean | `false` | Detect artwork changes between syncs (added, removed, or replaced). For Subsonic sources, adds one HTTP request per unique album during scanning. Consider using the `--check-artwork` CLI flag for periodic checks instead of enabling permanently on large libraries. |
 | `tips` | boolean | `true` | Show contextual tips (e.g., Sound Check, eject reminders). Also controllable via `--no-tips` flag or `PODKIT_TIPS=false`. |
 | `skipUpgrades` | boolean | `false` | Skip file-replacement upgrades for changed source files |
+
+## Transfer Mode
+
+`transferMode` controls two related decisions: how extra in-file data
+(embedded artwork) is treated during transfer, and whether podkit keeps
+the audio file's embedded tags (title, artist, albumArtist, etc.) in
+sync with the source on every sync.
+
+The contract differs between device families because the iPod plays
+metadata out of the iTunesDB while mass-storage players (Echo Mini,
+Rockbox, generic DAPs) read tags directly from the file.
+
+| Mode | iPod | Mass-storage |
+|------|------|--------------|
+| `fast` | iTunesDB only — file tags are whatever the source happened to carry. Embedded artwork is stripped from transcoded files. | File tags always written. Embedded artwork stripped from transcoded files. |
+| `optimized` | iTunesDB only — file tags untouched, even on first sync. Embedded artwork stripped. | File tags always written. Embedded artwork stripped. |
+| `portable` | iTunesDB **and** on-disk file tags. Embedded artwork preserved. Best-effort: writes that fail are surfaced as warnings, not sync failures. | File tags always written. Embedded artwork preserved. |
+
+Why mass-storage always writes tags: most non-iPod DAPs read metadata
+from the file's embedded tags during playback, so if podkit didn't keep
+them in sync the device UI would show stale values.
+
+Why iPod portable is a separate case: the iPod's firmware plays from
+the iTunesDB and never looks at file tags during playback, but a user
+who copies files off the device (recovery, ripping back to a library)
+needs the file to be self-describing. `portable` opts into that extra
+write at the cost of a small per-track tag-write.
+
+After upgrading from a podkit version that did not write file tags,
+the first sync on an existing mass-storage device will likely show a
+long list of `metadata-correction` operations as stale on-disk tags
+converge to the source. These are zero-byte writes — no transfers
+happen — and the noise clears after one cycle.
+
+### Codecs that always transcode on mass-storage
+
+WAV and AIFF appear in preset `supportedAudioCodecs` lists for
+documentation (the device firmware can play them), but podkit refuses
+to use them as device-output on mass-storage. Tag-writing through the
+RIFF/IFF container formats is unreliable across players, so source
+files in these formats are transcoded to a managed codec (typically
+AAC, ALAC, or FLAC depending on the codec preference stack) before
+being placed on the device. iPod is exempt — libgpod and the iTunesDB
+handle metadata for WAV/AIFF tracks on iPod natively.
 
 ## Codec Preferences
 
@@ -234,7 +278,7 @@ quality = "max"               # Use --device <path> to specify mount point
 | `audioQuality` | string | no | global `audioQuality` | Audio-specific quality override for this device |
 | `videoQuality` | string | no | global `videoQuality` | Video-specific quality override for this device |
 | `encoding` | string | no | global `encoding` | Encoding mode override: `vbr` or `cbr` |
-| `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable` |
+| `transferMode` | string | no | global `transferMode` | Transfer mode override: `fast`, `optimized`, or `portable`. See [Transfer Mode](#transfer-mode) for the device-specific contract (file-tag writes differ between iPod and mass-storage). |
 | `customBitrate` | integer | no | global `customBitrate` | Override the preset's target bitrate for this device |
 | `bitrateTolerance` | number | no | global `bitrateTolerance` | Override preset change detection tolerance for this device |
 | `artwork` | boolean | no | global `artwork` | Artwork override for this device |
@@ -247,7 +291,7 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `supportedAudioCodecs` | string[] | from profile | Audio codecs the device can play natively: `aac`, `alac`, `mp3`, `flac`, `ogg`, `opus`, `wav`, `aiff` |
+| `supportedAudioCodecs` | string[] | from profile | Audio codecs the device can play natively: `aac`, `alac`, `mp3`, `flac`, `ogg`, `opus`, `wav`, `aiff`. Note: `wav` and `aiff` are listed for documentation only — podkit transcodes sources in those formats to a managed codec on mass-storage devices regardless of preset support. See [Transfer Mode → Codecs that always transcode](#codecs-that-always-transcode-on-mass-storage). |
 | `artworkSources` | string[] | from profile | How the device reads artwork, in priority order (first = preferred): `embedded`, `sidecar`, `database` |
 | `artworkMaxResolution` | integer | from profile | Maximum artwork dimension in pixels (square). podkit resizes artwork to fit. |
 | `supportsVideo` | boolean | from profile | Whether the device supports video playback |
@@ -256,8 +300,9 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 | `musicDir` | string | `"Music"` | Music directory path on the device. Use `/`, `.`, or `""` for device root. Defaults vary by device type (e.g., Echo Mini defaults to root). |
 | `moviesDir` | string | `"Video/Movies"` | Movies directory path on the device. Use `/`, `.`, or `""` for device root. |
 | `tvShowsDir` | string | `"Video/Shows"` | TV shows directory path on the device. Use `/`, `.`, or `""` for device root. |
+| `pathTemplate` | string | `"{albumArtist}/{album}/{trackNumber} - {title}{ext}"` | Override the music file path layout under `musicDir`. Variables: `{albumArtist}`, `{artist}`, `{album}`, `{title}`, `{trackNumber}`, `{discNumber}`, `{totalDiscs}`, `{genre}`, `{year}`, `{ext}`. Must contain `{title}` and `{ext}`. Changing this between syncs triggers a self-healing relocate — existing files are moved via `fs.rename()` to match the new layout, without re-transcoding. Also settable via `PODKIT_PATH_TEMPLATE`. |
 
-These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation.
+These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation; `pathTemplate` is rejected on iPod since libgpod manages the F00/F01 file layout.
 
 ### Per-Device Clean Artists
 

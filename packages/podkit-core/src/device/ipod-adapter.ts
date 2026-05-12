@@ -35,7 +35,15 @@ import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import { normalizationToSoundcheck } from '../metadata/normalization.js';
-import { TagLibTagWriter, type TagFields, type TagWriter } from './mass-storage-tag-writer.js';
+import {
+  DEFAULT_TAG_WRITE_CONCURRENCY,
+  TagLibTagWriter,
+  buildTagFieldsFromInput,
+  diffTagFields,
+  runWithConcurrency,
+  type TagFields,
+  type TagWriter,
+} from './mass-storage-tag-writer.js';
 
 /** Options for `new IpodDeviceAdapter(ipod, capabilities, options?)` */
 export interface IpodDeviceAdapterOptions {
@@ -121,8 +129,7 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     // Path resolution is deferred to save() because libgpod assigns the
     // F00/F01 ipodPath during copyFile, which happens after addTrack returns.
     if (transferMode === 'portable') {
-      const fields = pickTagFields(input);
-      this.queueTagWrite(track, fields);
+      this.queueTagWrite(track, buildTagFieldsFromInput(input));
     }
 
     return track;
@@ -138,38 +145,7 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
     // Portable mode: any metadata change that lives in iTunesDB also gets
     // mirrored into the file tags so the file remains self-describing.
     if (transferMode === 'portable') {
-      const tagDiff: TagFields = {};
-      if (fields.title !== undefined && fields.title !== track.title) {
-        tagDiff.title = fields.title;
-      }
-      if (fields.artist !== undefined && fields.artist !== track.artist) {
-        tagDiff.artist = fields.artist;
-      }
-      if (fields.albumArtist !== undefined && fields.albumArtist !== track.albumArtist) {
-        tagDiff.albumArtist = fields.albumArtist;
-      }
-      if (fields.album !== undefined && fields.album !== track.album) {
-        tagDiff.album = fields.album;
-      }
-      if (fields.genre !== undefined && fields.genre !== track.genre) {
-        tagDiff.genre = fields.genre;
-      }
-      if (fields.year !== undefined && fields.year !== track.year) {
-        tagDiff.year = fields.year;
-      }
-      if (fields.trackNumber !== undefined && fields.trackNumber !== track.trackNumber) {
-        tagDiff.trackNumber = fields.trackNumber;
-      }
-      if (fields.discNumber !== undefined && fields.discNumber !== track.discNumber) {
-        tagDiff.discNumber = fields.discNumber;
-      }
-      if (fields.compilation !== undefined && fields.compilation !== track.compilation) {
-        tagDiff.compilation = fields.compilation;
-      }
-      if (fields.comment !== undefined && fields.comment !== track.comment) {
-        tagDiff.comment = fields.comment;
-      }
-      this.queueTagWrite(updated, tagDiff);
+      this.queueTagWrite(updated, diffTagFields(track, fields));
     }
 
     return updated;
@@ -259,8 +235,13 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
       }
 
       const entries = [...merged.entries()];
-      const results = await Promise.allSettled(
-        entries.map(([abs, fields]) => this.tagWriter.writeTags(abs, fields))
+      const results = await runWithConcurrency(
+        entries.map(
+          ([abs, fields]) =>
+            () =>
+              this.tagWriter.writeTags(abs, fields)
+        ),
+        DEFAULT_TAG_WRITE_CONCURRENCY
       );
       const failures: string[] = [];
       for (let i = 0; i < results.length; i++) {
@@ -313,22 +294,6 @@ function applyNormalizationAsSoundcheck(
   if (sc !== undefined) {
     fields.soundcheck = sc;
   }
-}
-
-/** Project the writable subset of DeviceTrackInput into TagFields. */
-function pickTagFields(input: DeviceTrackInput): TagFields {
-  const fields: TagFields = {};
-  if (input.title !== undefined) fields.title = input.title;
-  if (input.artist !== undefined) fields.artist = input.artist;
-  if (input.albumArtist !== undefined) fields.albumArtist = input.albumArtist;
-  if (input.album !== undefined) fields.album = input.album;
-  if (input.genre !== undefined) fields.genre = input.genre;
-  if (input.year !== undefined) fields.year = input.year;
-  if (input.trackNumber !== undefined) fields.trackNumber = input.trackNumber;
-  if (input.discNumber !== undefined) fields.discNumber = input.discNumber;
-  if (input.compilation !== undefined) fields.compilation = input.compilation;
-  if (input.comment !== undefined) fields.comment = input.comment;
-  return fields;
 }
 
 /**

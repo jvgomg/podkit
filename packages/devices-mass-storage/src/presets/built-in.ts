@@ -15,10 +15,31 @@ import type { BuiltInPresetId, MassStoragePreset } from './types.js';
 // =============================================================================
 
 /**
+ * Codecs podkit refuses to USE as device-output on mass-storage devices,
+ * even when the device firmware can play them. WAV/AIFF tag-writing via
+ * node-taglib-sharp is unreliable across containers, so podkit transcodes
+ * sources in these formats to a managed codec before transfer.
+ *
+ * The codecs themselves remain listed in built-in presets (and may be
+ * declared by user-supplied presets) for documentation purposes — the
+ * presets represent device facts. The sync planner is the gate that
+ * actually enforces this policy.
+ *
+ * Note: iPod is exempt. Its `supportedAudioCodecs` come from libgpod
+ * generation metadata and the iPod's iTunesDB carries metadata so the
+ * tag-writing limitation does not apply.
+ */
+export const MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS: readonly string[] = ['wav', 'aiff'];
+
+/**
  * Preset data for all built-in mass-storage device types.
  *
  * iPod is intentionally absent — its capabilities are derived from
  * generation metadata in `@podkit/devices-ipod`.
+ *
+ * WAV/AIFF appear here as documentation of what the device firmware can
+ * play. Podkit will not use them as output formats — see
+ * `MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS`.
  */
 export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
   'echo-mini': {

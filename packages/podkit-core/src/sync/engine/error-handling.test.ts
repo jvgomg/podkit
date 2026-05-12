@@ -59,6 +59,19 @@ describe('categorizeError', () => {
         'transcode'
       );
     });
+
+    it('categorizes aggregated tag-write failures as copy', () => {
+      // Anchor: the "tag write" prefix in mass-storage-adapter's save()
+      // aggregation must classify consistently regardless of the per-file
+      // paths embedded after it (e.g. a path containing "iPod" must NOT
+      // win the database keyword).
+      expect(
+        categorizeError(
+          new Error('tag write failed for 2 file(s): /mnt/iPod/foo.flac: msg1; /mnt/x: msg2'),
+          'update-metadata'
+        )
+      ).toBe('copy');
+    });
   });
 
   describe('operation-type fallback', () => {

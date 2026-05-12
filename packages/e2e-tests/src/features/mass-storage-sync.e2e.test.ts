@@ -1891,4 +1891,97 @@ device = "echomini"
       await rm(collectionDir, { recursive: true, force: true });
     }
   }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // transferMode plumbing through the CLI (TASK-327 follow-up)
+  //
+  // Proves the chain: TOML transferMode="portable" → config loader →
+  // music-presenter → pipeline → adapter → on-disk tag write. The integration
+  // tests cover each link in isolation with mocks; this test wires them all
+  // together via the real CLI binary against a temp-directory device.
+  // ---------------------------------------------------------------------------
+
+  it('transferMode = "portable" in config produces files whose embedded tags match source', async () => {
+    if (skipIfUnavailable()) return;
+    if (!ffprobeAvailable) {
+      console.log('Skipping: ffprobe not available');
+      return;
+    }
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      const sourceFile = join(collectionDir, '01-portable.flac');
+      writeFlacWithMetadata(sourceFile, {
+        title: 'Portable Track',
+        artist: 'Portable Artist',
+        albumArtist: 'Portable AA',
+        album: 'Portable Album',
+        trackNumber: 5,
+      });
+
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+        transferMode: 'portable',
+      });
+
+      const { result, json } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+
+      if (result.exitCode !== 0) {
+        console.log('STDERR:', result.stderr.slice(0, 2000));
+      }
+      expect(result.exitCode).toBe(0);
+      expect(json?.result?.completed).toBe(1);
+
+      const audioFiles = await findDeviceAudioFiles(devicePath, '');
+      expect(audioFiles.length).toBe(1);
+
+      // Read the on-disk M4A's tags via ffprobe. Mass-storage always writes
+      // tags regardless of mode, so passing through portable here proves the
+      // CLI config plumbing accepted, validated, and propagated the field
+      // (no exception, no value drop) — not a mode-specific behaviour
+      // difference. Mode-specific differences (e.g. iPod fast vs portable)
+      // live in `ipod-adapter.integration.test.ts`.
+      const ffprobeOut = execSync(
+        `ffprobe -v error -show_entries format_tags -of json "${audioFiles[0]!}"`,
+        { encoding: 'utf-8' }
+      );
+      const tags = (JSON.parse(ffprobeOut).format?.tags ?? {}) as Record<string, string>;
+      // M4A tag names are not standardised across ffprobe versions — check a
+      // few common casings.
+      const tag = (...keys: string[]): string | undefined => {
+        for (const k of keys) {
+          const v = tags[k] ?? tags[k.toLowerCase()] ?? tags[k.toUpperCase()];
+          if (v !== undefined) return v;
+        }
+        return undefined;
+      };
+      expect(tag('title')).toBe('Portable Track');
+      expect(tag('artist')).toBe('Portable Artist');
+      expect(tag('album_artist', 'albumartist', 'aART')).toBe('Portable AA');
+      expect(tag('album')).toBe('Portable Album');
+      expect(tag('track')?.replace(/\/.*/, '')).toBe('5');
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 120000);
 });

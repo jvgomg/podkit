@@ -138,6 +138,9 @@ describe('validateCapabilityOverrides — artworkSources', () => {
 
 describe('validateCapabilityOverrides — supportedAudioCodecs', () => {
   it('accepts all valid codecs', () => {
+    // wav/aiff stay valid here — presets document what the device firmware
+    // can play. Podkit's planner is the gate that refuses to USE wav/aiff
+    // as device-output on mass-storage; see MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS.
     const result = validateCapabilityOverrides({
       supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
     });

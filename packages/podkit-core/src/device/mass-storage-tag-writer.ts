@@ -11,6 +11,48 @@
 import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-sharp';
 
 /**
+ * Default concurrency cap for tag-write flushes during `save()`.
+ *
+ * Each call opens a file via node-taglib-sharp. Without a cap, syncing a
+ * library of N tracks would fire N file descriptors at once and risk
+ * `EMFILE` (Node's per-process FD limit is ~256 on macOS by default).
+ * Sixteen is comfortably below that and still saturates disk I/O.
+ */
+export const DEFAULT_TAG_WRITE_CONCURRENCY = 16;
+
+/**
+ * Run a fixed-size pool of workers over `tasks`, returning per-task
+ * settled outcomes in the original order. Same shape as
+ * `Promise.allSettled` but with at most `limit` in-flight at any moment.
+ */
+export async function runWithConcurrency<T>(
+  tasks: Array<() => Promise<T>>,
+  limit: number
+): Promise<Array<PromiseSettledResult<T>>> {
+  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+  let next = 0;
+
+  async function worker(): Promise<void> {
+    while (true) {
+      const i = next++;
+      if (i >= tasks.length) return;
+      try {
+        results[i] = { status: 'fulfilled', value: await tasks[i]!() };
+      } catch (err) {
+        results[i] = {
+          status: 'rejected',
+          reason: err instanceof Error ? err : new Error(String(err)),
+        };
+      }
+    }
+  }
+
+  const workerCount = Math.max(1, Math.min(limit, tasks.length));
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return results;
+}
+
+/**
  * Subset of audio-file metadata fields podkit can write to disk.
  *
  * All fields are optional: undefined means "leave the existing tag value
@@ -29,6 +71,82 @@ export interface TagFields {
   discNumber?: number;
   compilation?: boolean;
   comment?: string;
+}
+
+/** Loose shape covering the readable subset (e.g. a DeviceTrack or the input payload). */
+interface TagFieldsSource {
+  title?: string;
+  artist?: string;
+  albumArtist?: string;
+  album?: string;
+  genre?: string;
+  year?: number;
+  trackNumber?: number;
+  discNumber?: number;
+  compilation?: boolean;
+  comment?: string;
+}
+
+/**
+ * Project a TagFields-compatible source object (e.g. a `DeviceTrackInput`)
+ * into a `TagFields` containing only the fields the caller actually
+ * supplied. Used by `addTrack` flows to push input metadata into a tag
+ * write.
+ */
+export function buildTagFieldsFromInput(source: TagFieldsSource): TagFields {
+  const out: TagFields = {};
+  if (source.title !== undefined) out.title = source.title;
+  if (source.artist !== undefined) out.artist = source.artist;
+  if (source.albumArtist !== undefined) out.albumArtist = source.albumArtist;
+  if (source.album !== undefined) out.album = source.album;
+  if (source.genre !== undefined) out.genre = source.genre;
+  if (source.year !== undefined) out.year = source.year;
+  if (source.trackNumber !== undefined) out.trackNumber = source.trackNumber;
+  if (source.discNumber !== undefined) out.discNumber = source.discNumber;
+  if (source.compilation !== undefined) out.compilation = source.compilation;
+  if (source.comment !== undefined) out.comment = source.comment;
+  return out;
+}
+
+/**
+ * Produce the partial `TagFields` containing only the fields that have
+ * actually changed between `current` (e.g. an existing on-device track)
+ * and `fields` (the incoming update payload). Returns an empty object
+ * when nothing differs — callers can use that as a no-op signal.
+ */
+export function diffTagFields(current: TagFieldsSource, fields: TagFieldsSource): TagFields {
+  const out: TagFields = {};
+  if (fields.title !== undefined && fields.title !== current.title) {
+    out.title = fields.title;
+  }
+  if (fields.artist !== undefined && fields.artist !== current.artist) {
+    out.artist = fields.artist;
+  }
+  if (fields.albumArtist !== undefined && fields.albumArtist !== current.albumArtist) {
+    out.albumArtist = fields.albumArtist;
+  }
+  if (fields.album !== undefined && fields.album !== current.album) {
+    out.album = fields.album;
+  }
+  if (fields.genre !== undefined && fields.genre !== current.genre) {
+    out.genre = fields.genre;
+  }
+  if (fields.year !== undefined && fields.year !== current.year) {
+    out.year = fields.year;
+  }
+  if (fields.trackNumber !== undefined && fields.trackNumber !== current.trackNumber) {
+    out.trackNumber = fields.trackNumber;
+  }
+  if (fields.discNumber !== undefined && fields.discNumber !== current.discNumber) {
+    out.discNumber = fields.discNumber;
+  }
+  if (fields.compilation !== undefined && fields.compilation !== current.compilation) {
+    out.compilation = fields.compilation;
+  }
+  if (fields.comment !== undefined && fields.comment !== current.comment) {
+    out.comment = fields.comment;
+  }
+  return out;
 }
 
 /**

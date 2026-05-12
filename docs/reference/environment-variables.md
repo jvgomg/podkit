@@ -33,6 +33,7 @@ podkit settings can be overridden via environment variables. These take preceden
 | `PODKIT_MUSIC_DIR` | Music directory path on mass-storage devices (overrides config `musicDir`) |
 | `PODKIT_MOVIES_DIR` | Movies directory path on mass-storage devices (overrides config `moviesDir`) |
 | `PODKIT_TV_SHOWS_DIR` | TV shows directory path on mass-storage devices (overrides config `tvShowsDir`) |
+| `PODKIT_PATH_TEMPLATE` | Music file path template on mass-storage devices (overrides config `pathTemplate`). Must contain `{title}` and `{ext}`. |
 | `PODKIT_SHOW_LANGUAGE` | Enable/disable language markers in video series titles (`true`/`false`) |
 | `PODKIT_SHOW_LANGUAGE_FORMAT` | Format string for language marker (e.g., `({})`, `[{}]`) |
 | `PODKIT_SHOW_LANGUAGE_EXPAND` | Expand language abbreviations to full names (`true`/`false`) |

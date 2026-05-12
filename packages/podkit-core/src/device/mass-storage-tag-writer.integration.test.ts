@@ -124,6 +124,48 @@ function generateMp3(dir: string, filename: string, comment?: string): string {
   return outPath;
 }
 
+/**
+ * Whether the local FFmpeg build was compiled with libvorbis support. The
+ * macOS Homebrew default omits it; CI Linux builds usually include it.
+ * OGG-format tests skip when this is false rather than fail spuriously.
+ */
+const HAS_LIBVORBIS = (() => {
+  try {
+    const out = execFileSync('ffmpeg', ['-hide_banner', '-encoders'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString();
+    return /\blibvorbis\b/.test(out);
+  } catch {
+    return false;
+  }
+})();
+
+/** Generate a minimal OGG Vorbis file. Caller must guard on HAS_LIBVORBIS. */
+function generateOgg(dir: string, filename: string): string {
+  const outPath = path.join(dir, filename);
+  execFileSync(
+    'ffmpeg',
+    [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:duration=1:sample_rate=44100',
+      '-c:a',
+      'libvorbis',
+      '-q:a',
+      '4',
+      '-metadata',
+      'title=Test Song',
+      '-metadata',
+      'artist=Test Artist',
+      outPath,
+    ],
+    { stdio: 'pipe' }
+  );
+  return outPath;
+}
+
 /** Generate a minimal OGG/Opus file */
 function generateOpus(dir: string, filename: string): string {
   const outPath = path.join(dir, filename);
@@ -251,6 +293,15 @@ describe('TagLibTagWriter', () => {
       expect(await readComment(filePath)).toBe(syncTag);
     });
 
+    test.skipIf(!HAS_LIBVORBIS)('OGG: writes comment', async () => {
+      const filePath = generateOgg(tempDir, 'test.ogg');
+      const syncTag = '[podkit:v1 quality=high]';
+
+      await writer.writeTags(filePath, { comment: syncTag });
+
+      expect(await readComment(filePath)).toBe(syncTag);
+    });
+
     test('preserves audio data and other metadata', async () => {
       const filePath = generateFlac(tempDir, 'preserve.flac');
       const sizeBefore = fs.statSync(filePath).size;
@@ -327,6 +378,15 @@ describe('TagLibTagWriter', () => {
 
     test('Opus: round-trips every supported field', async () => {
       const filePath = generateOpus(tempDir, 'full.opus');
+      await writer.writeTags(filePath, fullFields);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      assertAllFields(metadata);
+      expect(await readComment(filePath)).toBe(fullFields.comment);
+    });
+
+    test.skipIf(!HAS_LIBVORBIS)('OGG: round-trips every supported field', async () => {
+      const filePath = generateOgg(tempDir, 'full.ogg');
       await writer.writeTags(filePath, fullFields);
 
       const metadata = await mm.parseFile(filePath, { skipCovers: true });

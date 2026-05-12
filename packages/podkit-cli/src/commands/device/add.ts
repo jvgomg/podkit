@@ -96,7 +96,7 @@ export const addSubcommand = new Command('add')
   )
   .option(
     '--supported-audio-codecs <codecs...>',
-    'supported audio codecs: aac, alac, mp3, flac, ogg, opus, wav, aiff (mass-storage only)'
+    'supported audio codecs: aac, alac, mp3, flac, ogg, opus (mass-storage only; wav/aiff sources are transcoded)'
   )
   .option('--supports-video', 'device supports video playback (mass-storage only)')
   .option('--no-supports-video', 'device does not support video playback (mass-storage only)')
