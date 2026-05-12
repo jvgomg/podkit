@@ -1,10 +1,10 @@
 ---
 id: TASK-295
 title: P4 — Unification and cleanup
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-03 11:34'
-updated_date: '2026-05-08 08:12'
+updated_date: '2026-05-12 12:27'
 labels:
   - device-capability-architecture
   - phase-4

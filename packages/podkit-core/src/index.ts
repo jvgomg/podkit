@@ -620,7 +620,6 @@ export {
   resolveIpodModel,
 } from './device/index.js';
 export type {
-  LibgpodDeviceInfo,
   ResolveModelInput,
   IpodModel,
   IpodModelSource,

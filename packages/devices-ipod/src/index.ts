@@ -83,7 +83,6 @@ export { ipodProvider } from './provider.js';
 
 export {
   getUnsupportedReasonByLibgpodName,
-  type LibgpodDeviceInfo,
   type UnsupportedGenerationKind,
 } from './tables/libgpod-mapping.js';
 

@@ -1,10 +1,10 @@
 ---
 id: TASK-294
 title: P3 — devices-ipod and devices-mass-storage extraction + Provider framework
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-03 11:32'
-updated_date: '2026-05-08 08:12'
+updated_date: '2026-05-12 12:27'
 labels:
   - device-capability-architecture
   - phase-3

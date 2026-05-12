@@ -89,7 +89,7 @@ export function makeFakeOpenDeviceResult(
   } = {}
 ): OpenDeviceResult {
   const tracks = opts.tracks ?? [];
-  const capabilities: DeviceCapabilities = { ...NULL_CAPABILITIES, ...(opts.capabilities ?? {}) };
+  const capabilities: DeviceCapabilities = { ...NULL_CAPABILITIES, ...opts.capabilities };
   const adapter =
     opts.adapter ??
     ({
