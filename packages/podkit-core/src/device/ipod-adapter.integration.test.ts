@@ -14,16 +14,16 @@
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import * as path from 'node:path';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-
+import * as mm from 'music-metadata';
 import { IpodDatabase } from '../ipod/database.js';
 import { IpodDeviceAdapter } from './ipod-adapter.js';
 import { buildAudioSyncTag, buildCopySyncTag, buildVideoSyncTag } from '../metadata/sync-tags.js';
 import { GENERATIONS, type IpodGenerationId } from '@podkit/devices-ipod';
 import { identifyCapabilities } from './resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
-
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 
@@ -876,6 +876,207 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       }
     } finally {
       console.warn = originalWarn;
+      await testIpod.cleanup();
+    }
+  });
+
+  // ---------------------------------------------------------------------------
+  // Real on-disk taglib round-trips (TASK-327 follow-up)
+  //
+  // The tests above use a mock TagWriter — they verify the adapter contract
+  // (when to queue, when to flush, when to coalesce). These tests use the
+  // default TagLibTagWriter against the actual MP3 file that libgpod copies
+  // to iPod_Control/Music/F00/…, then read the tags back via music-metadata.
+  // They prove the wiring end-to-end so we have hard evidence that file
+  // tag writes WORK under portable and DO NOT happen under fast/optimized.
+  //
+  // The source MP3 has title="Test Track", artist="Test Artist", album="Test
+  // Album" (see generateTestMP3). When the adapter writes tags they overwrite
+  // those values; when it doesn't, the source values survive on disk.
+  // ---------------------------------------------------------------------------
+
+  /** Resolve an iPod colon-separated path to an absolute on-disk path. */
+  function absoluteIpodPath(mountPoint: string, ipodPath: string): string {
+    return path.join(mountPoint, ipodPath.replace(/^:/, '').replace(/:/g, '/'));
+  }
+
+  async function readOnDiskTags(absolutePath: string): Promise<{
+    title?: string;
+    artist?: string;
+    albumArtist?: string;
+    album?: string;
+  }> {
+    const md = await mm.parseFile(absolutePath, { skipCovers: true });
+    return {
+      title: md.common.title,
+      artist: md.common.artist,
+      albumArtist: md.common.albumartist,
+      album: md.common.album,
+    };
+  }
+
+  for (const mode of ['fast', 'optimized'] as const) {
+    it(`iPod ${mode}: addTrack does NOT rewrite source file tags on disk`, async () => {
+      const testIpod = await createTestIpod();
+      try {
+        const db = await IpodDatabase.open(testIpod.path);
+        let trackPath: string;
+        try {
+          const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+
+          // iTunesDB carries the new values, but with mode=fast/optimized the
+          // adapter should not touch the file's embedded tags. The source
+          // MP3's "Test Track" / "Test Artist" / "Test Album" must survive.
+          const track = adapter.addTrack({
+            title: 'Different Title',
+            artist: 'Different Artist',
+            albumArtist: 'Different AA',
+            album: 'Different Album',
+            transferMode: mode,
+          });
+          const copied = track.copyFile(mp3Path);
+          trackPath = absoluteIpodPath(testIpod.path, copied.filePath);
+          await adapter.save();
+        } finally {
+          db.close();
+        }
+
+        const tagsOnDisk = await readOnDiskTags(trackPath);
+        expect(tagsOnDisk.title).toBe('Test Track');
+        expect(tagsOnDisk.artist).toBe('Test Artist');
+        expect(tagsOnDisk.album).toBe('Test Album');
+        // The source MP3 has no albumArtist tag; FFmpeg won't add one.
+        expect(tagsOnDisk.albumArtist).toBeUndefined();
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+
+    it(`iPod ${mode}: updateTrack does NOT rewrite file tags on disk`, async () => {
+      const testIpod = await createTestIpod();
+      try {
+        // Seed: add a track with no mode (defaults to source-original tags).
+        const db1 = await IpodDatabase.open(testIpod.path);
+        let trackPath: string;
+        try {
+          const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
+          const track = adapter.addTrack({
+            title: 'Test Track',
+            artist: 'Test Artist',
+            album: 'Test Album',
+            albumArtist: 'Stored AA',
+          });
+          const copied = track.copyFile(mp3Path);
+          trackPath = absoluteIpodPath(testIpod.path, copied.filePath);
+          await adapter.save();
+        } finally {
+          db1.close();
+        }
+
+        // Update under fast/optimized: iTunesDB changes, file tags must not.
+        const db2 = await IpodDatabase.open(testIpod.path);
+        try {
+          const adapter = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
+          const track = adapter.getTracks()[0]!;
+          adapter.updateTrack(track, {
+            albumArtist: 'New AA After Update',
+            transferMode: mode,
+          });
+          await adapter.save();
+        } finally {
+          db2.close();
+        }
+
+        const tagsOnDisk = await readOnDiskTags(trackPath);
+        expect(tagsOnDisk.title).toBe('Test Track');
+        expect(tagsOnDisk.artist).toBe('Test Artist');
+        expect(tagsOnDisk.album).toBe('Test Album');
+        // File's albumArtist tag was never written — the source MP3 didn't
+        // have one and the adapter declined to add one under this mode.
+        expect(tagsOnDisk.albumArtist).toBeUndefined();
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+  }
+
+  it('iPod portable: addTrack rewrites source file tags to match input metadata', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      const db = await IpodDatabase.open(testIpod.path);
+      let trackPath: string;
+      try {
+        const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'));
+        const track = adapter.addTrack({
+          title: 'Portable Title',
+          artist: 'Portable Artist',
+          albumArtist: 'Portable AA',
+          album: 'Portable Album',
+          transferMode: 'portable',
+        });
+        const copied = track.copyFile(mp3Path);
+        trackPath = absoluteIpodPath(testIpod.path, copied.filePath);
+        await adapter.save();
+      } finally {
+        db.close();
+      }
+
+      const tagsOnDisk = await readOnDiskTags(trackPath);
+      expect(tagsOnDisk.title).toBe('Portable Title');
+      expect(tagsOnDisk.artist).toBe('Portable Artist');
+      expect(tagsOnDisk.album).toBe('Portable Album');
+      expect(tagsOnDisk.albumArtist).toBe('Portable AA');
+    } finally {
+      await testIpod.cleanup();
+    }
+  });
+
+  it('iPod portable: updateTrack rewrites the changed field on disk', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      // Seed (no transfer mode — leaves source tags alone).
+      const db1 = await IpodDatabase.open(testIpod.path);
+      let trackPath: string;
+      try {
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
+        const track = adapter.addTrack({
+          title: 'Test Track',
+          artist: 'Test Artist',
+          album: 'Test Album',
+        });
+        const copied = track.copyFile(mp3Path);
+        trackPath = absoluteIpodPath(testIpod.path, copied.filePath);
+        await adapter.save();
+      } finally {
+        db1.close();
+      }
+
+      // Sanity: source-original tags are on disk before the update.
+      const tagsBefore = await readOnDiskTags(trackPath);
+      expect(tagsBefore.albumArtist).toBeUndefined();
+
+      // Update under portable — taglib should write the new albumArtist.
+      const db2 = await IpodDatabase.open(testIpod.path);
+      try {
+        const adapter = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'));
+        const track = adapter.getTracks()[0]!;
+        adapter.updateTrack(track, {
+          albumArtist: 'Portable Update AA',
+          transferMode: 'portable',
+        });
+        await adapter.save();
+      } finally {
+        db2.close();
+      }
+
+      const tagsAfter = await readOnDiskTags(trackPath);
+      // The changed field landed on disk.
+      expect(tagsAfter.albumArtist).toBe('Portable Update AA');
+      // Other fields were left alone — only the diffed field is queued.
+      expect(tagsAfter.title).toBe('Test Track');
+      expect(tagsAfter.artist).toBe('Test Artist');
+      expect(tagsAfter.album).toBe('Test Album');
+    } finally {
       await testIpod.cleanup();
     }
   });
