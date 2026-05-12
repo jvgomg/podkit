@@ -40,3 +40,11 @@ export {
 
 // Provider
 export { createMassStorageProvider } from './provider.js';
+
+// Capability override validation
+export { validateCapabilityOverrides, MASS_STORAGE_CAPABILITY_KEYS } from './validate-overrides.js';
+export type {
+  CapabilityOverrideValidationError,
+  CapabilityOverrideValidationResult,
+  CapabilityOverrideErrorCode,
+} from './validate-overrides.js';

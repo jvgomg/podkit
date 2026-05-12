@@ -10,9 +10,8 @@ import {
   QUALITY_PRESETS,
   VIDEO_QUALITY_PRESETS,
   ENCODING_MODES,
-  AUDIO_CODECS,
-  ARTWORK_SOURCES,
 } from '../../config/index.js';
+import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
 import { OutputContext } from '../../output/index.js';
 import { isMassStorageDevice } from '../open-device.js';
 import { DeviceErrorCodes } from './error-codes.js';
@@ -164,33 +163,24 @@ export const setSubcommand = new Command('set')
       }
 
       // Validate capability override options
+      const capabilityOverridePatch: Parameters<typeof validateCapabilityOverrides>[0] = {};
       if (options.artworkMaxResolution !== undefined) {
-        const parsed = parseInt(options.artworkMaxResolution, 10);
-        if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
-          throw new CliError({
-            message: `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`,
-            code: DeviceErrorCodes.INVALID_ARTWORK_RESOLUTION,
-          });
-        }
+        capabilityOverridePatch.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
       }
       if (options.artworkSources !== undefined) {
-        for (const source of options.artworkSources) {
-          if (!ARTWORK_SOURCES.includes(source as any)) {
-            throw new CliError({
-              message: `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`,
-              code: DeviceErrorCodes.INVALID_ARTWORK_SOURCE,
-            });
-          }
-        }
+        capabilityOverridePatch.artworkSources = options.artworkSources as any;
       }
       if (options.supportedAudioCodecs !== undefined) {
-        for (const codec of options.supportedAudioCodecs) {
-          if (!AUDIO_CODECS.includes(codec as any)) {
-            throw new CliError({
-              message: `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`,
-              code: DeviceErrorCodes.INVALID_AUDIO_CODEC,
-            });
-          }
+        capabilityOverridePatch.supportedAudioCodecs = options.supportedAudioCodecs as any;
+      }
+      const capabilityValidation = validateCapabilityOverrides(capabilityOverridePatch);
+      if (!capabilityValidation.ok) {
+        const [first] = capabilityValidation.errors;
+        if (first) {
+          throw new CliError({
+            message: first.message,
+            code: DeviceErrorCodes[first.code as keyof typeof DeviceErrorCodes],
+          });
         }
       }
 

@@ -146,3 +146,52 @@ describe('createMassStorageProvider — case-insensitive VID/PID', () => {
     expect(result?.presetId).toBe('echo-mini');
   });
 });
+
+// =============================================================================
+// describeAddIntent
+// =============================================================================
+
+describe('createMassStorageProvider — describeAddIntent', () => {
+  it('returns a hint with --type and --path argv when discovered has a disk', () => {
+    const provider = createMassStorageProvider(BUILT_IN_PRESETS);
+    const identity = {
+      kind: 'mass-storage' as const,
+      presetId: 'echo-mini',
+      vendorId: '071b',
+      productId: '3203',
+    };
+    const intent = provider.describeAddIntent!(identity, { diskIdentifier: 'disk5' });
+
+    expect(intent).not.toBeNull();
+    expect(intent).toMatchObject({
+      providerId: 'mass-storage',
+      kind: 'echo-mini',
+      addArgs: ['--type', 'echo-mini', '--path', '<mount-point>'],
+    });
+    expect(intent?.notes).toEqual(['(disk: disk5 — mount it first if not already mounted)']);
+  });
+
+  it('omits notes when no diskIdentifier is present', () => {
+    const provider = createMassStorageProvider(BUILT_IN_PRESETS);
+    const identity = {
+      kind: 'mass-storage' as const,
+      presetId: 'generic',
+      vendorId: '0000',
+      productId: '0000',
+    };
+    const intent = provider.describeAddIntent!(identity, {});
+    expect(intent?.notes).toBeUndefined();
+    expect(intent?.kind).toBe('generic');
+  });
+
+  it('returns null when the identity has no presetId', () => {
+    const provider = createMassStorageProvider(BUILT_IN_PRESETS);
+    const identity = {
+      kind: 'mass-storage' as const,
+      vendorId: '0000',
+      productId: '0000',
+    };
+    const intent = provider.describeAddIntent!(identity, { diskIdentifier: 'disk5' });
+    expect(intent).toBeNull();
+  });
+});

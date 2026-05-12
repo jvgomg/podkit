@@ -199,4 +199,60 @@ describe('ipodProvider', () => {
       });
     }
   });
+
+  // -------------------------------------------------------------------------
+  // describeAddIntent
+  // -------------------------------------------------------------------------
+
+  describe('describeAddIntent', () => {
+    it('returns an informational intent for a supported iPod detected via USB only', () => {
+      const identity = {
+        kind: 'ipod' as const,
+        firewireGuid: '000A270024A23E9E',
+        serialNumber: '7K74HBYZRP2',
+        familyId: 120,
+      };
+      const intent = ipodProvider.describeAddIntent!(identity, {});
+
+      expect(intent).not.toBeNull();
+      expect(intent).toMatchObject({
+        providerId: 'ipod',
+        kind: 'ipod',
+        addArgs: [],
+      });
+      // Notes should explain how to proceed
+      expect(intent?.notes).toBeDefined();
+      expect(intent?.notes?.join('\n')).toContain('USB');
+      expect(intent?.notes?.join('\n')).toContain('mount');
+    });
+
+    it('surfaces notSupportedReason in notes for unsupported iPods', () => {
+      const identity = {
+        kind: 'ipod' as const,
+        firewireGuid: '',
+        serialNumber: '',
+        familyId: null,
+        notSupportedReason: 'iPod Touch is not supported by podkit (iTunes-only authentication).',
+      };
+      const intent = ipodProvider.describeAddIntent!(identity, {});
+
+      expect(intent).not.toBeNull();
+      expect(intent?.addArgs).toEqual([]);
+      const notesText = intent?.notes?.join('\n') ?? '';
+      expect(notesText).toContain('iPod Touch is not supported');
+      expect(notesText).toContain('jvgomg.github.io/podkit/devices/supported-devices');
+    });
+
+    it('ignores discovered context (diskIdentifier not relevant to iPod hint)', () => {
+      const identity = {
+        kind: 'ipod' as const,
+        firewireGuid: '000A270024A23E9E',
+        serialNumber: '7K74HBYZRP2',
+        familyId: 120,
+      };
+      const withDisk = ipodProvider.describeAddIntent!(identity, { diskIdentifier: 'disk5' });
+      const withoutDisk = ipodProvider.describeAddIntent!(identity, {});
+      expect(withDisk).toEqual(withoutDisk);
+    });
+  });
 });

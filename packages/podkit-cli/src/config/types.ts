@@ -79,24 +79,8 @@ export type DeviceType = 'ipod' | 'echo-mini' | 'rockbox' | 'generic';
 /** Valid device type values */
 export const DEVICE_TYPES = ['ipod', 'echo-mini', 'rockbox', 'generic'] as const;
 
-/** Valid audio codec values for capability overrides */
-export const AUDIO_CODECS: readonly AudioCodec[] = [
-  'aac',
-  'alac',
-  'mp3',
-  'flac',
-  'ogg',
-  'opus',
-  'wav',
-  'aiff',
-] as const;
-
-/** Valid artwork source values for capability overrides */
-export const ARTWORK_SOURCES: readonly DeviceArtworkSource[] = [
-  'database',
-  'embedded',
-  'sidecar',
-] as const;
+// Re-export canonical valid-values lists from the definitive source
+export { AUDIO_CODECS, ARTWORK_SOURCES } from '@podkit/device-types';
 
 // =============================================================================
 // Multi-Collection/Device Types (ADR-008)

@@ -14,6 +14,7 @@ export type {
   AudioNormalizationMode,
   DeviceCapabilities,
 } from './capabilities.js';
+export { ARTWORK_SOURCES, AUDIO_CODECS } from './capabilities.js';
 
 export type {
   UsbFingerprint,
@@ -24,7 +25,7 @@ export type {
 
 export type { FirmwareCapabilities, ParsedFirmware } from './firmware.js';
 
-export type { DeviceProvider } from './provider.js';
+export type { DeviceProvider, DeviceAddIntent, DiscoveredContext } from './provider.js';
 
 export type {
   IpodChecksumType,

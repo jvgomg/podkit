@@ -30,6 +30,7 @@
   },
   "dependencies": {
     "@podkit/core": "workspace:*",
+    "@podkit/device-types": "workspace:*",
     "@podkit/devices-ipod": "workspace:*",
     "@podkit/devices-mass-storage": "workspace:*",
     "@podkit/ipod-firmware": "workspace:*",

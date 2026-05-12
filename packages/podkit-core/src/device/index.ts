@@ -144,8 +144,26 @@ export {
 } from './readiness.js';
 
 // iPod identity assessment (cascade-resolved model + capabilities + inquiry state)
-export type { IpodIdentityAssessment, IpodFirmwareInquiryState } from './ipod-identity.js';
-export { assessIpodIdentity } from './ipod-identity.js';
+export type {
+  IpodIdentityAssessment,
+  IpodFirmwareInquiryState,
+  EnsureSysInfoExtendedAndReassessResult,
+  EnsureSysInfoExtendedAndReassessOptions,
+} from './ipod-identity.js';
+export { assessIpodIdentity, ensureSysInfoExtendedAndReassess } from './ipod-identity.js';
+
+// Mass-storage device assessment (symmetric to assessIpodIdentity)
+export type {
+  MassStorageAssessment,
+  AssessMassStorageDeviceOptions,
+} from './mass-storage-identity.js';
+export { assessMassStorageDevice } from './mass-storage-identity.js';
+
+// Cross-provider add-intent helper (drives the CLI's "you have X attached" hint)
+export type { SuggestAddIntentsOptions } from './add-intent.js';
+export { suggestAddIntents } from './add-intent.js';
+// Re-export the contract types for callers that consume the helper's return shape.
+export type { DeviceAddIntent, DiscoveredContext } from '@podkit/device-types';
 
 // SysInfoExtended orchestrator (imported directly from @podkit/ipod-firmware)
 export type {

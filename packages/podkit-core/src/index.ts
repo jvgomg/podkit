@@ -609,8 +609,25 @@ export {
 } from './device/index.js';
 
 // iPod identity assessment (cascade-resolved model + capabilities + inquiry state)
-export type { IpodIdentityAssessment, IpodFirmwareInquiryState } from './device/index.js';
-export { assessIpodIdentity } from './device/index.js';
+export type {
+  IpodIdentityAssessment,
+  IpodFirmwareInquiryState,
+  EnsureSysInfoExtendedAndReassessResult,
+  EnsureSysInfoExtendedAndReassessOptions,
+} from './device/index.js';
+export { assessIpodIdentity, ensureSysInfoExtendedAndReassess } from './device/index.js';
+
+// Mass-storage device assessment (symmetric to assessIpodIdentity)
+export type { MassStorageAssessment, AssessMassStorageDeviceOptions } from './device/index.js';
+export { assessMassStorageDevice } from './device/index.js';
+
+// Cross-provider add-intent helper
+export type {
+  SuggestAddIntentsOptions,
+  DeviceAddIntent,
+  DiscoveredContext,
+} from './device/index.js';
+export { suggestAddIntents } from './device/index.js';
 
 // iPod model lookup and resolver
 export {

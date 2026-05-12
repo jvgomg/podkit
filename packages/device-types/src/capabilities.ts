@@ -19,8 +19,27 @@
 /** Where the device reads artwork from */
 export type DeviceArtworkSource = 'database' | 'embedded' | 'sidecar';
 
+/** All valid artwork source values */
+export const ARTWORK_SOURCES: readonly DeviceArtworkSource[] = [
+  'database',
+  'embedded',
+  'sidecar',
+] as const;
+
 /** Audio codecs a device can play natively */
 export type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'ogg' | 'opus' | 'wav' | 'aiff';
+
+/** All valid audio codec values */
+export const AUDIO_CODECS: readonly AudioCodec[] = [
+  'aac',
+  'alac',
+  'mp3',
+  'flac',
+  'ogg',
+  'opus',
+  'wav',
+  'aiff',
+] as const;
 
 /**
  * Audio normalization mode the device supports.

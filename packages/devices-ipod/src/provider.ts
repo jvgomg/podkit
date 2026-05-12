@@ -28,7 +28,13 @@
  * @module
  */
 
-import type { DeviceProvider, UsbFingerprint, IpodIdentity } from '@podkit/device-types';
+import type {
+  DeviceProvider,
+  UsbFingerprint,
+  IpodIdentity,
+  DeviceAddIntent,
+  DiscoveredContext,
+} from '@podkit/device-types';
 import { inquireFirmware } from '@podkit/ipod-firmware';
 import { lookupByUsbId } from './lookups.js';
 import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from './tables/unsupported.js';
@@ -119,6 +125,38 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
       // SysInfoExtended plist; null when the field is absent or the firmware
       // path returned a partial result.
       familyId: firmware.capabilities?.familyId ?? null,
+    };
+  },
+
+  describeAddIntent(
+    identity: IpodIdentity,
+    _discovered: DiscoveredContext
+  ): DeviceAddIntent | null {
+    // Unsupported iPod (Touch / nano 6 / shuffle 3G/4G / iOS device): surface
+    // the reason as a note. No add-command to suggest — but the user benefits
+    // from knowing the device was *recognised*, just not supported.
+    if (identity.notSupportedReason) {
+      return {
+        providerId: 'ipod',
+        kind: 'ipod',
+        addArgs: [],
+        notes: [
+          identity.notSupportedReason,
+          'See: https://jvgomg.github.io/podkit/devices/supported-devices',
+        ],
+      };
+    }
+
+    // Supported iPod detected via USB only — no mounted disk found by the
+    // platform device manager. The user's add command was correct; they just
+    // need to mount the device first (or check the USB connection).
+    return {
+      providerId: 'ipod',
+      kind: 'ipod',
+      addArgs: [],
+      notes: [
+        '(iPod detected via USB but no mounted disk — try `podkit device mount` first, then re-run this command)',
+      ],
     };
   },
 };

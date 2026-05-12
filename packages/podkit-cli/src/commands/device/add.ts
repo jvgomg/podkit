@@ -14,61 +14,27 @@ import {
   VIDEO_QUALITY_PRESETS,
   ENCODING_MODES,
   DEVICE_TYPES,
-  AUDIO_CODECS,
-  ARTWORK_SOURCES,
 } from '../../config/index.js';
+import { validateCapabilityOverrides } from '@podkit/devices-mass-storage';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
-import { ensureSysInfoExtended, assessIpodIdentity } from '@podkit/core';
-import type { IpodIdentityAssessment, DeviceCapabilities } from '@podkit/core';
+import {
+  assessIpodIdentity,
+  ensureSysInfoExtendedAndReassess,
+  assessMassStorageDevice,
+} from '@podkit/core';
+import type { IpodIdentityAssessment } from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation } from './shared.js';
 import type { DeviceAddOutput } from './output-types.js';
+import { printCapabilitySummary, assertAssessmentSupported } from './capability-summary.js';
 
 const SYSINFO_MISSING_PROMPT_LINES = [
   'SysInfo/SysInfoExtended is missing — required for syncing this iPod.',
   'podkit can read it from the device firmware over USB.',
   'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices',
 ] as const;
-
-/**
- * Format a generation display name for the "not supported on …" tail of a
- * negative capability bullet. Strips parenthesised disambiguators for compactness.
- */
-function generationLabel(displayName: string): string {
-  // "iPod nano (2nd Generation)" → "iPod nano (2nd Generation)"
-  // (keep as-is for now — the parenthetical is the variant disambiguator)
-  return displayName;
-}
-
-/**
- * Render the cascade-derived capability summary for a confirmed device.
- *
- * Negative bullets carry a reason ("not supported on iPod nano (2nd Generation)")
- * rather than a bare dash. Artwork bullet includes the max resolution when known.
- */
-function printCapabilitySummary(
-  out: OutputContext,
-  capabilities: DeviceCapabilities,
-  modelDisplay: string
-): void {
-  const gen = generationLabel(modelDisplay);
-  out.print('Capabilities:');
-  out.print('  + Music');
-  if (capabilities.artworkSources.length > 0 && capabilities.artworkMaxResolution) {
-    out.print(`  + Artwork (max ${capabilities.artworkMaxResolution}px)`);
-  } else {
-    out.print(`  - Artwork (not supported on ${gen})`);
-  }
-  if (capabilities.supportsVideo) {
-    out.print('  + Video');
-  } else {
-    out.print(`  - Video (not supported on ${gen})`);
-  }
-  // Podcast is a class capability — all generations supporting artwork can do
-  // podcasts, but the generation table doesn't model it explicitly. Keep silent.
-}
 
 interface AddOptions {
   yes?: boolean;
@@ -205,7 +171,6 @@ export async function runDeviceAdd(
   const confirmFn = deps.confirm ?? confirm;
   const loadCore = deps.loadCore ?? (() => import('@podkit/core'));
   const assessIdentity = deps.assessIdentity ?? assessIpodIdentity;
-  const writeSysInfoExtended = deps.ensureSysInfoExtended ?? ensureSysInfoExtended;
 
   // Require --device flag
   if (!name) {
@@ -291,34 +256,39 @@ export async function runDeviceAdd(
     }
 
     // Validate capability override options
+    const capabilityOverridePatch: Parameters<typeof validateCapabilityOverrides>[0] = {};
     if (options.artworkMaxResolution !== undefined) {
-      const parsed = parseInt(options.artworkMaxResolution, 10);
-      if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 10000) {
+      capabilityOverridePatch.artworkMaxResolution = parseInt(options.artworkMaxResolution, 10);
+    }
+    if (options.artworkSources !== undefined) {
+      capabilityOverridePatch.artworkSources = options.artworkSources as any;
+    }
+    if (options.supportedAudioCodecs !== undefined) {
+      capabilityOverridePatch.supportedAudioCodecs = options.supportedAudioCodecs as any;
+    }
+    const capabilityValidation = validateCapabilityOverrides(capabilityOverridePatch);
+    if (!capabilityValidation.ok) {
+      const [first] = capabilityValidation.errors;
+      if (first) {
         throw new CliError({
-          message: `Invalid --artwork-max-resolution value "${options.artworkMaxResolution}". Must be a positive integer between 1 and 10000.`,
-          code: DeviceErrorCodes.INVALID_ARTWORK_RESOLUTION,
+          message: first.message,
+          code: DeviceErrorCodes[first.code as keyof typeof DeviceErrorCodes],
         });
       }
     }
-    if (options.artworkSources !== undefined) {
-      for (const source of options.artworkSources) {
-        if (!ARTWORK_SOURCES.includes(source as any)) {
-          throw new CliError({
-            message: `Invalid artwork source "${source}". Valid values: ${ARTWORK_SOURCES.join(', ')}`,
-            code: DeviceErrorCodes.INVALID_ARTWORK_SOURCE,
-          });
-        }
-      }
-    }
-    if (options.supportedAudioCodecs !== undefined) {
-      for (const codec of options.supportedAudioCodecs) {
-        if (!AUDIO_CODECS.includes(codec as any)) {
-          throw new CliError({
-            message: `Invalid audio codec "${codec}". Valid values: ${AUDIO_CODECS.join(', ')}`,
-            code: DeviceErrorCodes.INVALID_AUDIO_CODEC,
-          });
-        }
-      }
+
+    // Resolve preset + capabilities through the symmetric core helper.
+    // Today this catches typo'd preset ids defensively; once TASK-325 wires
+    // user-defined presets the same call surface will accept them.
+    const assessment = assessMassStorageDevice(explicitPath, {
+      presetId: deviceType,
+      overrides: capabilityOverridePatch,
+    });
+    if (!assessment.preset) {
+      throw new CliError({
+        message: `Unknown device preset "${deviceType}".`,
+        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+      });
     }
 
     const deviceConfig: DeviceConfig = {
@@ -470,19 +440,7 @@ export async function runDeviceAdd(
     let assessment: IpodIdentityAssessment = await assessIdentity(explicitPath);
 
     // Block known-unsupported generations early.
-    if (assessment.model?.notSupportedReason) {
-      const message = assessment.model.notSupportedReason;
-      if (out.isText) {
-        out.newline();
-        out.error(`Error: ${message}`);
-        out.print('  See: https://jvgomg.github.io/podkit/devices/supported-devices');
-      }
-      throw new CliError({
-        message,
-        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-        details: { generation: assessment.model.generationId },
-      });
-    }
+    assertAssessmentSupported(out, assessment);
 
     const identityDisplayName = assessment.model?.displayName ?? 'Unknown iPod';
 
@@ -613,27 +571,20 @@ export async function runDeviceAdd(
       }
     }
 
-    // Perform the firmware inquiry now if opted in.
+    // Perform the firmware inquiry now if opted in. The core helper handles
+    // the write → re-assess lifecycle; we surface a non-fatal warning on
+    // failure and continue (doctor --repair can retry later).
     let firmwareWritten = false;
-    if (offerFirmwareInquiry && assessment.usbFingerprint) {
-      const writeResult = await writeSysInfoExtended(explicitPath, {
-        vendorId: assessment.usbFingerprint.vendorId,
-        productId: assessment.usbFingerprint.productId,
-        ...(assessment.usbFingerprint.serialNumber
-          ? { serialNumber: assessment.usbFingerprint.serialNumber }
-          : {}),
-        bus: assessment.usbFingerprint.bus,
-        devnum: assessment.usbFingerprint.devnum,
+    if (offerFirmwareInquiry) {
+      const r = await ensureSysInfoExtendedAndReassess(explicitPath, assessment, {
+        assessIdentity: deps.assessIdentity,
+        ensureSysInfoExtended: deps.ensureSysInfoExtended,
       });
-      if (!writeResult.present) {
-        const reason = writeResult.error ?? 'unknown error';
-        if (out.isText) {
-          out.warn(`Failed to read SysInfoExtended from USB: ${reason}`);
-          out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
-        }
-      } else {
-        firmwareWritten = true;
-        assessment = await assessIdentity(explicitPath);
+      assessment = r.assessment;
+      firmwareWritten = r.firmwareWritten;
+      if (r.sysInfoWriteError && out.isText) {
+        out.warn(`Failed to read SysInfoExtended from USB: ${r.sysInfoWriteError}`);
+        out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
       }
     }
 
@@ -677,7 +628,10 @@ export async function runDeviceAdd(
         }
         if (assessment.capabilities) {
           out.newline();
-          printCapabilitySummary(out, assessment.capabilities, finalDisplayName);
+          printCapabilitySummary(out, assessment.capabilities, {
+            kind: 'ipod',
+            modelDisplay: finalDisplayName,
+          });
         }
         out.newline();
         out.print(`Done. Try: podkit sync -d ${name} --dry-run`);
@@ -699,70 +653,54 @@ export async function runDeviceAdd(
   const ipods = await manager.findIpodDevices();
 
   if (ipods.length === 0) {
-    // No iPod found via the manager. Run the broader USB enumeration to check
-    // whether a recognised mass-storage device (e.g. Echo Mini) is connected.
-    // This replaces the generic "no iPod found" error with an actionable hint.
-    let massStorageHint: string | undefined;
-
+    // No iPod found via the manager. Ask each device provider whether it sees
+    // an attached device it can describe an "add me" hint for — currently only
+    // mass-storage providers implement describeAddIntent, but the contract is
+    // open so any future provider (e.g. iPod USB-only) plugs in here.
+    let suggestedIntent: import('@podkit/core').DeviceAddIntent | undefined;
     try {
-      const { enumerateConnectedDevices } = await loadCore();
+      const { suggestAddIntents } = await loadCore();
       const { ipodProvider } = await import('@podkit/devices-ipod');
       const { createMassStorageProvider, BUILT_IN_PRESETS } =
         await import('@podkit/devices-mass-storage');
-
-      const enumerated = await enumerateConnectedDevices({
+      const intents = await suggestAddIntents({
         providers: [ipodProvider, createMassStorageProvider(BUILT_IN_PRESETS)],
       });
-
-      const massStorageDevice = enumerated.find(
-        (d) =>
-          d.matchedProviderId === 'mass-storage' &&
-          d.identity?.kind === 'mass-storage' &&
-          d.identity.presetId
-      );
-
-      if (massStorageDevice && massStorageDevice.identity?.kind === 'mass-storage') {
-        const presetId = massStorageDevice.identity.presetId!;
-        const displayName = getDeviceTypeDisplayName(presetId);
-
-        // Duplicate detection: check whether a device with the same USB serial
-        // is already configured. DeviceConfig does not persist serialNumber today
-        // (mass-storage entries store type + path), so this check is best-effort
-        // and will be a no-op until a future migration stores the serial.
-        // volumeUuid is unavailable at USB-scan time (requires mounting).
-        const detectedSerial = massStorageDevice.identity.serialNumber;
-
-        massStorageHint = presetId;
-        out.print(`Detected ${displayName} via USB.`);
-
-        if (detectedSerial !== undefined) {
-          out.verbose1(`  USB serial: ${detectedSerial}`);
-        }
-
-        out.print(`To add it, run:`);
-        out.print(`  podkit device add -d ${name} --type ${presetId} --path <mount-point>`);
-        if (massStorageDevice.discovered.diskIdentifier) {
-          out.print(
-            `  (disk: ${massStorageDevice.discovered.diskIdentifier} — mount it first if not already mounted)`
-          );
-        }
-      }
+      suggestedIntent = intents[0];
     } catch {
       // Enumeration is best-effort: if it fails (e.g. USB walk errors),
       // fall through to the original "no iPod found" error path.
     }
 
-    if (!massStorageHint) {
+    if (!suggestedIntent) {
       throw new CliError({
         message:
           'No iPod devices found. Make sure your iPod is connected, or specify a path explicitly with --path.',
         code: DeviceErrorCodes.NO_IPOD,
       });
     }
+
+    const displayName = getDeviceTypeDisplayName(suggestedIntent.kind);
+    out.print(`Detected ${displayName} via USB.`);
+    // Only render the "To add it, run:" block when the intent supplied
+    // a concrete command. Empty addArgs means "no command differs from
+    // what you just ran" — the notes carry the user-facing guidance.
+    if (suggestedIntent.addArgs.length > 0) {
+      out.print('To add it, run:');
+      out.print(`  podkit device add -d ${name} ${suggestedIntent.addArgs.join(' ')}`);
+    }
+    for (const note of suggestedIntent.notes ?? []) {
+      out.print(`  ${note}`);
+    }
+
+    const detailMessage =
+      suggestedIntent.addArgs.length > 0
+        ? `Detected ${suggestedIntent.kind} device — add with ${suggestedIntent.addArgs.join(' ')}`
+        : `Detected ${suggestedIntent.kind} device — see notes above`;
     throw new CliError({
-      message: `Detected ${massStorageHint} device — add with --type ${massStorageHint} --path <mount-point>`,
+      message: detailMessage,
       code: DeviceErrorCodes.DETECTED_MASS_STORAGE,
-      details: { presetId: massStorageHint },
+      details: { kind: suggestedIntent.kind, providerId: suggestedIntent.providerId },
     });
   }
 
@@ -857,19 +795,7 @@ export async function runDeviceAdd(
 
   // Block known-unsupported generations early — touch_*, nano_6, shuffle_3g/4g.
   // The cascade-resolved model carries `notSupportedReason` for these.
-  if (assessment?.model?.notSupportedReason) {
-    const message = assessment.model.notSupportedReason;
-    if (out.isText) {
-      out.newline();
-      out.error(`Error: ${message}`);
-      out.print('  See: https://jvgomg.github.io/podkit/devices/supported-devices');
-    }
-    throw new CliError({
-      message,
-      code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-      details: { generation: assessment.model.generationId },
-    });
-  }
+  assertAssessmentSupported(out, assessment);
 
   // Render identity to the user before any prompts. Cascade-derived display
   // name; USB product ID is enough for the nano 2G "empty SysInfo" case.
@@ -999,31 +925,20 @@ export async function runDeviceAdd(
     }
   }
 
-  // Perform the firmware inquiry now if opted in (or auto-confirmed).
+  // Perform the firmware inquiry now if opted in (or auto-confirmed). The
+  // core helper handles the write → re-assess lifecycle; we surface a
+  // non-fatal warning on failure and continue.
   let firmwareWritten = false;
-  if (offerFirmwareInquiry && assessment?.usbFingerprint && ipod.mountPoint) {
-    const writeResult = await writeSysInfoExtended(ipod.mountPoint, {
-      vendorId: assessment.usbFingerprint.vendorId,
-      productId: assessment.usbFingerprint.productId,
-      ...(assessment.usbFingerprint.serialNumber
-        ? { serialNumber: assessment.usbFingerprint.serialNumber }
-        : {}),
-      bus: assessment.usbFingerprint.bus,
-      devnum: assessment.usbFingerprint.devnum,
+  if (offerFirmwareInquiry && assessment && ipod.mountPoint) {
+    const r = await ensureSysInfoExtendedAndReassess(ipod.mountPoint, assessment, {
+      assessIdentity: deps.assessIdentity,
+      ensureSysInfoExtended: deps.ensureSysInfoExtended,
     });
-    if (!writeResult.present) {
-      // Inquiry failed — surface and continue (config still saves; user can
-      // re-run `podkit doctor --repair sysinfo-extended` later).
-      const reason = writeResult.error ?? 'unknown error';
-      if (out.isText) {
-        out.warn(`Failed to read SysInfoExtended from USB: ${reason}`);
-        out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
-      }
-    } else {
-      firmwareWritten = true;
-      // Re-assess so the capability summary reflects post-write identity (the
-      // model resolution may now be more specific via SysInfoExtended ModelNumStr).
-      assessment = await assessIdentity(ipod.mountPoint);
+    assessment = r.assessment;
+    firmwareWritten = r.firmwareWritten;
+    if (r.sysInfoWriteError && out.isText) {
+      out.warn(`Failed to read SysInfoExtended from USB: ${r.sysInfoWriteError}`);
+      out.print('  Run `podkit doctor --repair sysinfo-extended` to retry.');
     }
   }
 
@@ -1072,7 +987,10 @@ export async function runDeviceAdd(
       }
       if (finalCapabilities) {
         out.newline();
-        printCapabilitySummary(out, finalCapabilities, finalDisplayName);
+        printCapabilitySummary(out, finalCapabilities, {
+          kind: 'ipod',
+          modelDisplay: finalDisplayName,
+        });
       }
       out.newline();
       out.print(`Done. Try: podkit sync -d ${name} --dry-run`);

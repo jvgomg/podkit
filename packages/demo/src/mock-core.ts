@@ -2373,6 +2373,27 @@ export async function assessIpodIdentity(_mountPoint: string, _opts?: any): Prom
   };
 }
 
+export async function ensureSysInfoExtendedAndReassess(
+  _mountPoint: string,
+  assessment: any,
+  _opts?: any
+): Promise<any> {
+  return { assessment, firmwareWritten: false };
+}
+
+export function assessMassStorageDevice(mountPoint: string, opts: any): any {
+  return {
+    identity: { kind: 'mass-storage', presetId: opts?.presetId ?? 'generic' },
+    preset: null,
+    capabilities: null,
+    mountPoint,
+  };
+}
+
+export async function suggestAddIntents(_opts: any): Promise<any[]> {
+  return [];
+}
+
 export const SYSINFO_PATH = 'iPod_Control/Device/SysInfo';
 export const SYSINFO_EXTENDED_PATH = 'iPod_Control/Device/SysInfoExtended';
 export const SYSINFO_DEVICE_DIR = 'iPod_Control/Device';

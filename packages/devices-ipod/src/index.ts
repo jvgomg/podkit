@@ -75,6 +75,14 @@ export {
 
 export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js';
 
+export {
+  IPOD_CAPABILITY_KEYS,
+  validateCapabilityOverrides,
+  type CapabilityOverrideErrorCode,
+  type CapabilityOverrideValidationError,
+  type CapabilityOverrideValidationResult,
+} from './validate-overrides.js';
+
 // ── Provider ──────────────────────────────────────────────────────────────────
 
 export { ipodProvider } from './provider.js';

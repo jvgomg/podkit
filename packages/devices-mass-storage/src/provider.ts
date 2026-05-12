@@ -7,7 +7,13 @@
  * @module
  */
 
-import type { DeviceProvider, UsbFingerprint, MassStorageIdentity } from '@podkit/device-types';
+import type {
+  DeviceProvider,
+  UsbFingerprint,
+  MassStorageIdentity,
+  DeviceAddIntent,
+  DiscoveredContext,
+} from '@podkit/device-types';
 import type { MassStoragePreset } from './presets/types.js';
 import { identify } from './identity.js';
 
@@ -49,6 +55,30 @@ export function createMassStorageProvider(
     id: 'mass-storage',
     async detect(fp: UsbFingerprint): Promise<MassStorageIdentity | null> {
       return identify(fp, presets);
+    },
+    describeAddIntent(
+      identity: MassStorageIdentity,
+      discovered: DiscoveredContext
+    ): DeviceAddIntent | null {
+      // Without a preset id there's nothing actionable to suggest — the CLI
+      // would have nothing to pass to `--type`.
+      if (!identity.presetId) return null;
+
+      const addArgs: string[] = ['--type', identity.presetId, '--path', '<mount-point>'];
+      const notes: string[] = [];
+      if (discovered.diskIdentifier) {
+        notes.push(`(disk: ${discovered.diskIdentifier} — mount it first if not already mounted)`);
+      }
+
+      const intent: DeviceAddIntent = {
+        providerId: 'mass-storage',
+        kind: identity.presetId,
+        addArgs,
+      };
+      if (notes.length > 0) {
+        return { ...intent, notes };
+      }
+      return intent;
     },
   };
 }

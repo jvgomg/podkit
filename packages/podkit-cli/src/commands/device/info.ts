@@ -25,6 +25,7 @@ import {
   synthesizePathModeDeviceInfo,
 } from './shared.js';
 import type { DeviceInfoOutput, DeviceInfoSuccess } from './output-types.js';
+import { printCapabilitySummary } from './capability-summary.js';
 
 export interface DeviceInfoDeps extends CoreLoaderDeps {
   getDeviceManager?: () => import('@podkit/core').DeviceManager;
@@ -359,40 +360,33 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
           }
         }
 
-        // Capabilities — compact
-        if (!isMassStorage && liveStatus.capabilities && liveStatus.model) {
-          out.print('  Capabilities:');
-          const caps = liveStatus.capabilities;
-          const gen = formatGeneration(liveStatus.model.generation);
-          const capEntries: Array<[string, boolean]> = [
-            ['Music', caps.music],
-            ['Artwork', caps.artwork],
-            ['Video', caps.video],
-            ['Podcasts', caps.podcast],
-          ];
-          for (const [name, supported] of capEntries) {
-            if (supported) {
-              out.print(`    + ${name}`);
-            } else {
-              out.print(`    - ${name} (not supported on ${gen})`);
-            }
-          }
+        // Capabilities — compact, unified through the device-level helper.
+        // Podcasts support comes from libgpod (legacy boolean shape) and is
+        // not modelled in DeviceCapabilities, so we pass it through ctx.
+        if (
+          !isMassStorage &&
+          resolvedDeviceCapabilities &&
+          liveStatus.capabilities &&
+          liveStatus.model
+        ) {
+          printCapabilitySummary(
+            out,
+            resolvedDeviceCapabilities,
+            {
+              kind: 'ipod',
+              modelDisplay: formatGeneration(liveStatus.model.generation),
+              supportsPodcast: liveStatus.capabilities.podcast,
+            },
+            { indent: '  ' }
+          );
         } else if (!isMassStorage && !liveStatus.model && liveStatus.mounted) {
           out.print('  Capabilities:  Music only (model unknown)');
         } else if (isMassStorage && resolvedDeviceCapabilities) {
-          out.print('  Capabilities:');
-          out.print(
-            `    Audio Codecs:    ${resolvedDeviceCapabilities.supportedAudioCodecs.join(', ')}`
-          );
-          out.print(
-            `    Artwork:         ${resolvedDeviceCapabilities.artworkSources.join(', ')} (max ${resolvedDeviceCapabilities.artworkMaxResolution}px)`
-          );
-          out.print(
-            `    Video:           ${resolvedDeviceCapabilities.supportsVideo ? 'yes' : 'no'}`
-          );
-          out.print(`    Normalization:   ${resolvedDeviceCapabilities.audioNormalization}`);
-          out.print(
-            `    Album Artist:    ${resolvedDeviceCapabilities.supportsAlbumArtistBrowsing ? 'yes' : 'no'}`
+          printCapabilitySummary(
+            out,
+            resolvedDeviceCapabilities,
+            { kind: 'mass-storage' },
+            { indent: '  ' }
           );
         }
 

@@ -34,6 +34,7 @@ import {
 } from '@podkit/devices-ipod';
 import {
   readSysInfoExtended,
+  ensureSysInfoExtended,
   SYSINFO_PATH,
   type SysInfoExtendedResult,
 } from '@podkit/ipod-firmware';
@@ -172,4 +173,76 @@ export async function assessIpodIdentity(
     usbFingerprint,
     sysInfoModelNumber,
   };
+}
+
+// =============================================================================
+// ensureSysInfoExtendedAndReassess
+// =============================================================================
+
+/**
+ * Result of {@link ensureSysInfoExtendedAndReassess}.
+ *
+ * - `assessment` — updated identity if SIE was just written; the input
+ *   assessment unchanged otherwise.
+ * - `firmwareWritten` — true iff SIE was just written to disk.
+ * - `sysInfoWriteError` — non-empty when the SIE write was attempted but
+ *   failed (callers typically warn the user and continue; `podkit doctor`
+ *   can retry later).
+ */
+export interface EnsureSysInfoExtendedAndReassessResult {
+  assessment: IpodIdentityAssessment;
+  firmwareWritten: boolean;
+  sysInfoWriteError?: string;
+}
+
+/**
+ * Knobs for {@link ensureSysInfoExtendedAndReassess} — both production
+ * implementations are the defaults; tests override.
+ */
+export interface EnsureSysInfoExtendedAndReassessOptions {
+  /** Override for `assessIpodIdentity` (tests). */
+  assessIdentity?: (mountPoint: string) => Promise<IpodIdentityAssessment>;
+  /** Override for `ensureSysInfoExtended` (tests). */
+  ensureSysInfoExtended?: typeof ensureSysInfoExtended;
+}
+
+/**
+ * Write SysInfoExtended from USB firmware inquiry, then re-assess identity.
+ *
+ * Lifts the "write SIE → re-assess" pattern from `podkit device add`. The
+ * CLI calls {@link assessIpodIdentity} first to render device identity and
+ * decide whether to offer the firmware inquiry; on user confirmation it
+ * calls this helper with the existing assessment.
+ *
+ * No-op if the input assessment has no `usbFingerprint` (path mode without
+ * USB correlation) — returns the input assessment with
+ * `firmwareWritten: false`.
+ *
+ * Write failures are returned in `sysInfoWriteError`, NOT thrown. The
+ * caller decides whether to surface or continue.
+ */
+export async function ensureSysInfoExtendedAndReassess(
+  mountPoint: string,
+  assessment: IpodIdentityAssessment,
+  opts: EnsureSysInfoExtendedAndReassessOptions = {}
+): Promise<EnsureSysInfoExtendedAndReassessResult> {
+  if (!assessment.usbFingerprint) {
+    return { assessment, firmwareWritten: false };
+  }
+
+  const writeFn = opts.ensureSysInfoExtended ?? ensureSysInfoExtended;
+  const assessFn = opts.assessIdentity ?? assessIpodIdentity;
+
+  const writeResult = await writeFn(mountPoint, assessment.usbFingerprint);
+
+  if (!writeResult.present) {
+    return {
+      assessment,
+      firmwareWritten: false,
+      sysInfoWriteError: writeResult.error ?? 'unknown error',
+    };
+  }
+
+  const reassessed = await assessFn(mountPoint);
+  return { assessment: reassessed, firmwareWritten: true };
 }

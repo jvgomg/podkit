@@ -11,8 +11,13 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { assessIpodIdentity } from './ipod-identity.js';
+import {
+  assessIpodIdentity,
+  ensureSysInfoExtendedAndReassess,
+  type IpodIdentityAssessment,
+} from './ipod-identity.js';
 import type { CompleteUsbDevice } from './usb-path-resolution.js';
+import type { SysInfoExtendedResult } from '@podkit/ipod-firmware';
 
 const NANO_2G_USB: CompleteUsbDevice = {
   vendorId: '05ac',
@@ -133,5 +138,119 @@ describe('assessIpodIdentity', () => {
 
     expect(result.checksumType).toBe('hash58');
     expect(result.needsChecksum).toBe(true);
+  });
+});
+
+describe('ensureSysInfoExtendedAndReassess', () => {
+  function makeBaseAssessment(
+    overrides: Partial<IpodIdentityAssessment> = {}
+  ): IpodIdentityAssessment {
+    return {
+      model: null,
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: undefined,
+      firmwareInquiry: 'missing',
+      existing: null,
+      usbFingerprint: NANO_2G_USB,
+      sysInfoModelNumber: undefined,
+      ...overrides,
+    };
+  }
+
+  const writeSuccess: SysInfoExtendedResult = {
+    present: true,
+    source: 'usb-read',
+    identity: { firewireGuid: '000A27001A0647CB', serialNumber: 'YM7275YSVQH' },
+  };
+
+  const writeFailure: SysInfoExtendedResult = {
+    present: false,
+    source: 'unavailable',
+    identity: {},
+    error: 'SCSI transport returned data but it could not be parsed',
+  };
+
+  it('is a no-op when the input assessment lacks a usbFingerprint', async () => {
+    const input = makeBaseAssessment({ usbFingerprint: null });
+    let writeCalled = false;
+    let assessCalled = false;
+
+    const result = await ensureSysInfoExtendedAndReassess('/fake/mount', input, {
+      ensureSysInfoExtended: async () => {
+        writeCalled = true;
+        return writeSuccess;
+      },
+      assessIdentity: async () => {
+        assessCalled = true;
+        return input;
+      },
+    });
+
+    expect(result.assessment).toBe(input);
+    expect(result.firmwareWritten).toBe(false);
+    expect(result.sysInfoWriteError).toBeUndefined();
+    expect(writeCalled).toBe(false);
+    expect(assessCalled).toBe(false);
+  });
+
+  it('writes SIE, re-assesses, and returns updated assessment on success', async () => {
+    const input = makeBaseAssessment();
+    const reassessed = makeBaseAssessment({
+      firmwareInquiry: 'present',
+      sysInfoModelNumber: 'A1199',
+    });
+    const captured: { writeMount?: string; writeFp?: unknown; reassessMount?: string } = {};
+
+    const result = await ensureSysInfoExtendedAndReassess('/fake/mount', input, {
+      ensureSysInfoExtended: async (mp, fp) => {
+        captured.writeMount = mp;
+        captured.writeFp = fp;
+        return writeSuccess;
+      },
+      assessIdentity: async (mp) => {
+        captured.reassessMount = mp;
+        return reassessed;
+      },
+    });
+
+    expect(captured.writeMount).toBe('/fake/mount');
+    expect(captured.writeFp).toBe(NANO_2G_USB);
+    expect(captured.reassessMount).toBe('/fake/mount');
+    expect(result.firmwareWritten).toBe(true);
+    expect(result.assessment).toBe(reassessed);
+    expect(result.sysInfoWriteError).toBeUndefined();
+  });
+
+  it('returns sysInfoWriteError and leaves assessment unchanged on write failure', async () => {
+    const input = makeBaseAssessment();
+    let assessCalled = false;
+
+    const result = await ensureSysInfoExtendedAndReassess('/fake/mount', input, {
+      ensureSysInfoExtended: async () => writeFailure,
+      assessIdentity: async () => {
+        assessCalled = true;
+        return input;
+      },
+    });
+
+    expect(result.firmwareWritten).toBe(false);
+    expect(result.assessment).toBe(input);
+    expect(result.sysInfoWriteError).toBe(
+      'SCSI transport returned data but it could not be parsed'
+    );
+    expect(assessCalled).toBe(false);
+  });
+
+  it('falls back to "unknown error" when the write result has no error string', async () => {
+    const input = makeBaseAssessment();
+    const result = await ensureSysInfoExtendedAndReassess('/fake/mount', input, {
+      ensureSysInfoExtended: async () => ({
+        present: false,
+        source: 'unavailable',
+        identity: {},
+      }),
+    });
+    expect(result.sysInfoWriteError).toBe('unknown error');
   });
 });
