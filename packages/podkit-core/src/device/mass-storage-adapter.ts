@@ -44,7 +44,7 @@ import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
-import { TagLibTagWriter, type TagWriter } from './mass-storage-tag-writer.js';
+import { TagLibTagWriter, type TagFields, type TagWriter } from './mass-storage-tag-writer.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import {
   soundcheckToReplayGainDb,
@@ -459,10 +459,12 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private readonly tagWriter: TagWriter;
 
   /**
-   * Pending comment tag writes, keyed by relative file path.
-   * Accumulated by updateTrack() and flushed by save().
+   * Pending textual-tag writes, keyed by relative file path.
+   * Accumulated by updateTrack()/addTrack() and flushed by save() as a single
+   * `writeTags` call per file. Fields are merged across multiple updates so
+   * later writes overwrite earlier values for the same field.
    */
-  private pendingCommentWrites = new Map<string, string>();
+  private pendingTagWrites = new Map<string, TagFields>();
 
   /**
    * Pending ReplayGain tag writes, keyed by relative file path.
@@ -685,10 +687,21 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Queue comment write — the file doesn't exist yet (copyFile comes later),
     // but the write is deferred to save() by which point the file will exist.
     if (comment) {
-      this.pendingCommentWrites.set(uniquePath, comment);
+      this.queueTagWrite(uniquePath, { comment });
     }
 
     return track;
+  }
+
+  /**
+   * Merge a partial set of tag fields into the pending-write map for a file.
+   * Later writes overwrite earlier values for the same field; unrelated
+   * fields are preserved. Empty field sets are a no-op.
+   */
+  private queueTagWrite(filePath: string, fields: TagFields): void {
+    if (Object.keys(fields).length === 0) return;
+    const existing = this.pendingTagWrites.get(filePath);
+    this.pendingTagWrites.set(filePath, existing ? { ...existing, ...fields } : { ...fields });
   }
 
   /**
@@ -769,10 +782,41 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.tracks[index] = updated;
     }
 
-    // Queue comment tag write if the comment changed
-    if (fields.comment !== undefined && fields.comment !== track.comment) {
-      this.pendingCommentWrites.set(track.filePath, fields.comment);
+    // Queue textual-tag writes for every field that actually changed.
+    // Diffing against the current track avoids redundant disk writes when
+    // the executor passes through fields that already match.
+    const tagDiff: TagFields = {};
+    if (fields.title !== undefined && fields.title !== track.title) {
+      tagDiff.title = fields.title;
     }
+    if (fields.artist !== undefined && fields.artist !== track.artist) {
+      tagDiff.artist = fields.artist;
+    }
+    if (fields.albumArtist !== undefined && fields.albumArtist !== track.albumArtist) {
+      tagDiff.albumArtist = fields.albumArtist;
+    }
+    if (fields.album !== undefined && fields.album !== track.album) {
+      tagDiff.album = fields.album;
+    }
+    if (fields.genre !== undefined && fields.genre !== track.genre) {
+      tagDiff.genre = fields.genre;
+    }
+    if (fields.year !== undefined && fields.year !== track.year) {
+      tagDiff.year = fields.year;
+    }
+    if (fields.trackNumber !== undefined && fields.trackNumber !== track.trackNumber) {
+      tagDiff.trackNumber = fields.trackNumber;
+    }
+    if (fields.discNumber !== undefined && fields.discNumber !== track.discNumber) {
+      tagDiff.discNumber = fields.discNumber;
+    }
+    if (fields.compilation !== undefined && fields.compilation !== track.compilation) {
+      tagDiff.compilation = fields.compilation;
+    }
+    if (fields.comment !== undefined && fields.comment !== track.comment) {
+      tagDiff.comment = fields.comment;
+    }
+    this.queueTagWrite(track.filePath, tagDiff);
 
     // Queue picture write for OGG/Opus files where FFmpeg can't embed artwork
     if (fields.embeddedPictureData) {
@@ -824,10 +868,10 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     }
 
     // Re-key any pending writes from old path to new path
-    if (this.pendingCommentWrites.has(oldPath)) {
-      const val = this.pendingCommentWrites.get(oldPath)!;
-      this.pendingCommentWrites.delete(oldPath);
-      this.pendingCommentWrites.set(finalPath, val);
+    if (this.pendingTagWrites.has(oldPath)) {
+      const val = this.pendingTagWrites.get(oldPath)!;
+      this.pendingTagWrites.delete(oldPath);
+      this.pendingTagWrites.set(finalPath, val);
     }
     if (this.pendingReplayGainWrites.has(oldPath)) {
       const val = this.pendingReplayGainWrites.get(oldPath)!;
@@ -943,11 +987,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.managedFiles.delete(track.filePath);
       this.managedFiles.add(targetRelativePath);
 
-      // Update pendingCommentWrites if keyed on old path
-      if (this.pendingCommentWrites.has(track.filePath)) {
-        const comment = this.pendingCommentWrites.get(track.filePath)!;
-        this.pendingCommentWrites.delete(track.filePath);
-        this.pendingCommentWrites.set(targetRelativePath, comment);
+      // Update pendingTagWrites if keyed on old path
+      if (this.pendingTagWrites.has(track.filePath)) {
+        const fields = this.pendingTagWrites.get(track.filePath)!;
+        this.pendingTagWrites.delete(track.filePath);
+        this.pendingTagWrites.set(targetRelativePath, fields);
       }
 
       // Update pendingReplayGainWrites if keyed on old path
@@ -1007,7 +1051,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // to restore it — if the executor sets a new sync tag via updateTrack()
     // before save(), that will overwrite this entry in the pending map.
     if (track.comment) {
-      this.pendingCommentWrites.set(targetRelativePath, track.comment);
+      this.queueTagWrite(targetRelativePath, { comment: track.comment });
     }
 
     return updated;
@@ -1091,13 +1135,31 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.pendingMoves.clear();
     }
 
-    // Flush pending comment tag writes to audio files
-    if (this.pendingCommentWrites.size > 0) {
-      const writes = [...this.pendingCommentWrites.entries()].map(([filePath, comment]) =>
-        this.tagWriter.writeComment(path.join(this.mountPoint, filePath), comment)
+    // Flush pending tag writes to audio files
+    if (this.pendingTagWrites.size > 0) {
+      const entries = [...this.pendingTagWrites.entries()];
+      const settled = await Promise.allSettled(
+        entries.map(([filePath, fields]) =>
+          this.tagWriter.writeTags(path.join(this.mountPoint, filePath), fields)
+        )
       );
-      await Promise.all(writes);
-      this.pendingCommentWrites.clear();
+      this.pendingTagWrites.clear();
+      const failures: string[] = [];
+      for (let i = 0; i < settled.length; i++) {
+        const outcome = settled[i]!;
+        if (outcome.status === 'rejected') {
+          const [filePath] = entries[i]!;
+          failures.push(`${filePath}: ${(outcome.reason as Error).message ?? outcome.reason}`);
+        }
+      }
+      if (failures.length > 0) {
+        // Surface as a single aggregated error so callers (sync executor) can
+        // categorise it. Per-file context is preserved in the message; the
+        // next sync will re-detect any unwritten diffs and retry.
+        throw new Error(
+          `Failed to write tags to ${failures.length} file(s): ${failures.join('; ')}`
+        );
+      }
     }
 
     // Flush pending ReplayGain tag writes to audio files

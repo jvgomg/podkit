@@ -1425,6 +1425,7 @@ export class MusicPipeline implements SyncExecutor {
       ...toDeviceTrackInput(source),
       bitrate: result.bitrate,
       filetype: getTranscodeFiletypeLabel(presetRef),
+      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
     };
 
     const track = this.device.addTrack(trackInput);
@@ -1462,6 +1463,7 @@ export class MusicPipeline implements SyncExecutor {
     const trackInput: DeviceTrackInput = {
       ...toDeviceTrackInput(source),
       filetype: getFileTypeLabel(source.filePath),
+      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
     };
 
     const track = this.device.addTrack(trackInput);
@@ -1579,6 +1581,11 @@ export class MusicPipeline implements SyncExecutor {
     if (metadata.normalization !== undefined) {
       updateFields.normalization = metadata.normalization;
     }
+    // Tell the adapter which transfer mode is in effect so device-specific
+    // tag-write policies (iPod portable, etc.) can fire.
+    if (this.transferMode) {
+      updateFields.transferMode = this.transferMode as DeviceTrackInput['transferMode'];
+    }
     // Update the track metadata (preserves play stats automatically)
     this.device.updateTrack(foundTrack, updateFields);
 
@@ -1659,7 +1666,10 @@ export class MusicPipeline implements SyncExecutor {
 
     // Apply metadata updates if any
     if (metadata && Object.keys(metadata).length > 0) {
-      this.device.updateTrack(trackAfterRelocate, metadata);
+      const withMode: DeviceTrackMetadata = this.transferMode
+        ? { ...metadata, transferMode: this.transferMode as DeviceTrackInput['transferMode'] }
+        : { ...metadata };
+      this.device.updateTrack(trackAfterRelocate, withMode);
     }
 
     return { bytesTransferred: 0 };
@@ -1962,6 +1972,7 @@ export class MusicPipeline implements SyncExecutor {
       ...toDeviceTrackInput(source),
       filetype,
       ...(bitrate !== undefined && { bitrate }),
+      transferMode: this.transferMode as DeviceTrackInput['transferMode'],
     };
 
     // Write sync tag for transcode operations

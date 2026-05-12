@@ -8,8 +8,24 @@
  * IpodTrack extends DeviceTrack, so no mapping is needed for
  * getTracks() — we return IpodTrack instances directly.
  *
+ * ## Transfer-mode-aware on-disk tag writes
+ *
+ * iPod firmware reads playback metadata from iTunesDB, not from file tags.
+ * For `fast` and `optimized` transfer modes the adapter therefore touches
+ * the iTunesDB only and leaves the audio file's embedded tags as FFmpeg
+ * produced them at transcode time.
+ *
+ * Under `portable` the contract changes: the user has signalled they want
+ * the file to make sense if pulled off the device. The adapter mirrors the
+ * iTunesDB metadata into the audio file's embedded tags via the same
+ * `TagWriter` interface that mass-storage uses. The F00/F01-style filename
+ * the iPod assigns is still opaque, so portable on iPod is best-effort
+ * recovery — failures are surfaced as warnings, not hard errors.
+ *
  * @module
  */
+
+import * as path from 'node:path';
 
 import type { DeviceAdapter, DeviceTrackInput, DeviceTrackMetadata } from './adapter.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
@@ -19,20 +35,47 @@ import type { SyncTagData, SyncTagUpdate } from '../metadata/sync-tags.js';
 import { parseSyncTag, writeSyncTag } from '../metadata/sync-tags.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import { normalizationToSoundcheck } from '../metadata/normalization.js';
+import { TagLibTagWriter, type TagFields, type TagWriter } from './mass-storage-tag-writer.js';
+
+/** Options for `new IpodDeviceAdapter(ipod, capabilities, options?)` */
+export interface IpodDeviceAdapterOptions {
+  /**
+   * Inject a tag writer (defaults to `TagLibTagWriter`). Only used when
+   * `transferMode === 'portable'` — every other mode never opens the file.
+   */
+  tagWriter?: TagWriter;
+}
 
 /**
  * Adapter that wraps IpodDatabase to implement the generic DeviceAdapter interface.
- *
- * IpodTrack extends DeviceTrack, so this wrapper simply delegates calls
- * without data transformation.
  */
 export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
   private readonly ipod: IpodDatabase;
   readonly capabilities: DeviceCapabilities;
+  private readonly tagWriter: TagWriter;
 
-  constructor(ipod: IpodDatabase, capabilities: DeviceCapabilities) {
+  /**
+   * Pending on-disk tag writes, keyed by IpodTrack instance.
+   *
+   * Keyed by track (not path) because the iPod's ipodPath is assigned by
+   * libgpod during `copyFile` — at the time `addTrack` returns, the new
+   * track has no file path yet, so we defer path resolution until `save()`.
+   *
+   * Only populated under `portable` mode. Flushed by `save()` after the
+   * iTunesDB has been persisted, so a partial failure leaves the iPod's
+   * database authoritative and the on-disk tags as the best-effort
+   * recovery layer.
+   */
+  private pendingTagWrites = new Map<IpodTrack, TagFields>();
+
+  constructor(
+    ipod: IpodDatabase,
+    capabilities: DeviceCapabilities,
+    options?: IpodDeviceAdapterOptions
+  ) {
     this.ipod = ipod;
     this.capabilities = capabilities;
+    this.tagWriter = options?.tagWriter ?? new TagLibTagWriter();
   }
 
   get mountPoint(): string {
@@ -60,26 +103,82 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
 
   addTrack(input: DeviceTrackInput): IpodTrack {
     // If a syncTag is provided, embed it into the comment field for iPod storage
-    const { syncTag, normalization, ...rest } = input;
+    const { syncTag, normalization, transferMode, ...rest } = input;
     const trackInput = rest as TrackInput;
     if (syncTag) {
       trackInput.comment = writeSyncTag(trackInput.comment, syncTag);
     }
     // Convert normalization → soundcheck for iPod's iTunesDB storage
     applyNormalizationAsSoundcheck(trackInput, normalization);
-    return this.ipod.addTrack(trackInput);
+    const track = this.ipod.addTrack(trackInput);
+
+    // Portable mode: mirror the input metadata into the on-disk file tags so
+    // a pulled-off file carries canonical metadata. Source-vs-input may
+    // diverge when the collection adapter applied transforms (e.g.
+    // cleanArtists, Subsonic-side corrections) — FFmpeg's -map_metadata 0
+    // copies the source-original tags, so we re-tag here.
+    //
+    // Path resolution is deferred to save() because libgpod assigns the
+    // F00/F01 ipodPath during copyFile, which happens after addTrack returns.
+    if (transferMode === 'portable') {
+      const fields = pickTagFields(input);
+      this.queueTagWrite(track, fields);
+    }
+
+    return track;
   }
 
   updateTrack(track: IpodTrack, fields: DeviceTrackMetadata): IpodTrack {
-    const { normalization, ...rest } = fields;
+    const { normalization, transferMode, ...rest } = fields;
     const trackFields = rest as TrackFields;
     // Convert normalization → soundcheck for iPod's iTunesDB storage
     applyNormalizationAsSoundcheck(trackFields, normalization);
-    return this.ipod.updateTrack(track, trackFields);
+    const updated = this.ipod.updateTrack(track, trackFields);
+
+    // Portable mode: any metadata change that lives in iTunesDB also gets
+    // mirrored into the file tags so the file remains self-describing.
+    if (transferMode === 'portable') {
+      const tagDiff: TagFields = {};
+      if (fields.title !== undefined && fields.title !== track.title) {
+        tagDiff.title = fields.title;
+      }
+      if (fields.artist !== undefined && fields.artist !== track.artist) {
+        tagDiff.artist = fields.artist;
+      }
+      if (fields.albumArtist !== undefined && fields.albumArtist !== track.albumArtist) {
+        tagDiff.albumArtist = fields.albumArtist;
+      }
+      if (fields.album !== undefined && fields.album !== track.album) {
+        tagDiff.album = fields.album;
+      }
+      if (fields.genre !== undefined && fields.genre !== track.genre) {
+        tagDiff.genre = fields.genre;
+      }
+      if (fields.year !== undefined && fields.year !== track.year) {
+        tagDiff.year = fields.year;
+      }
+      if (fields.trackNumber !== undefined && fields.trackNumber !== track.trackNumber) {
+        tagDiff.trackNumber = fields.trackNumber;
+      }
+      if (fields.discNumber !== undefined && fields.discNumber !== track.discNumber) {
+        tagDiff.discNumber = fields.discNumber;
+      }
+      if (fields.compilation !== undefined && fields.compilation !== track.compilation) {
+        tagDiff.compilation = fields.compilation;
+      }
+      if (fields.comment !== undefined && fields.comment !== track.comment) {
+        tagDiff.comment = fields.comment;
+      }
+      this.queueTagWrite(updated, tagDiff);
+    }
+
+    return updated;
   }
 
   removeTrack(track: IpodTrack, options?: { deleteFile?: boolean }): void {
     this.ipod.removeTrack(track, options);
+    // Discard any queued tag writes for the removed track.
+    this.pendingTagWrites.delete(track);
   }
 
   copyTrackFile(track: IpodTrack, sourcePath: string): IpodTrack {
@@ -122,11 +221,79 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
   // Persistence
 
   async save(): Promise<void> {
+    // Persist the iTunesDB first — it's the authoritative source for iPod
+    // playback. On-disk tag writes are best-effort and follow.
     await this.ipod.save();
+
+    if (this.pendingTagWrites.size > 0) {
+      // Resolve file paths now — libgpod has assigned ipodPath via copyFile.
+      // Each updateTrack on the iPod returns a *new* IpodTrack wrapper for
+      // the same underlying row; TrackHandle objects are also recreated on
+      // each call. The stable identity is `handle.index`, so we key by that
+      // when re-resolving against the current track list.
+      type IndexedHandle = { _internalHandle: { index: number } };
+      const indexOf = (t: IpodTrack) => (t as unknown as IndexedHandle)._internalHandle.index;
+      const currentByIndex = new Map<number, IpodTrack>();
+      for (const t of this.ipod.getTracks()) {
+        currentByIndex.set(indexOf(t), t);
+      }
+
+      const merged = new Map<string, TagFields>();
+      const dropped: string[] = [];
+      for (const [track, fields] of this.pendingTagWrites) {
+        const live = currentByIndex.get(indexOf(track)) ?? track;
+        const abs = absolutePathFor(this.mountPoint, live.filePath);
+        if (!abs) {
+          dropped.push(track.title);
+          continue;
+        }
+        const existing = merged.get(abs);
+        merged.set(abs, existing ? { ...existing, ...fields } : { ...fields });
+      }
+      this.pendingTagWrites.clear();
+
+      if (dropped.length > 0) {
+        console.warn(
+          `[podkit] iPod portable: ${dropped.length} track(s) had no file path at save time; tag write skipped: ${dropped.join(', ')}`
+        );
+      }
+
+      const entries = [...merged.entries()];
+      const results = await Promise.allSettled(
+        entries.map(([abs, fields]) => this.tagWriter.writeTags(abs, fields))
+      );
+      const failures: string[] = [];
+      for (let i = 0; i < results.length; i++) {
+        const outcome = results[i]!;
+        if (outcome.status === 'rejected') {
+          const [abs] = entries[i]!;
+          failures.push(`${abs}: ${(outcome.reason as Error).message ?? outcome.reason}`);
+        }
+      }
+      if (failures.length > 0) {
+        // Surface as a non-fatal warning on stderr — iPod portable file tags
+        // are best-effort. The iTunesDB write already succeeded so playback
+        // is unaffected; only recovery (pulling files off the device) is
+        // degraded for these tracks.
+        console.warn(
+          `[podkit] iPod portable: failed to write file tags for ${failures.length} track(s): ${failures.join('; ')}`
+        );
+      }
+    }
   }
 
   close(): void {
     this.ipod.close();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Internal helpers
+  // ---------------------------------------------------------------------------
+
+  private queueTagWrite(track: IpodTrack, fields: TagFields): void {
+    if (Object.keys(fields).length === 0) return;
+    const existing = this.pendingTagWrites.get(track);
+    this.pendingTagWrites.set(track, existing ? { ...existing, ...fields } : { ...fields });
   }
 }
 
@@ -146,4 +313,32 @@ function applyNormalizationAsSoundcheck(
   if (sc !== undefined) {
     fields.soundcheck = sc;
   }
+}
+
+/** Project the writable subset of DeviceTrackInput into TagFields. */
+function pickTagFields(input: DeviceTrackInput): TagFields {
+  const fields: TagFields = {};
+  if (input.title !== undefined) fields.title = input.title;
+  if (input.artist !== undefined) fields.artist = input.artist;
+  if (input.albumArtist !== undefined) fields.albumArtist = input.albumArtist;
+  if (input.album !== undefined) fields.album = input.album;
+  if (input.genre !== undefined) fields.genre = input.genre;
+  if (input.year !== undefined) fields.year = input.year;
+  if (input.trackNumber !== undefined) fields.trackNumber = input.trackNumber;
+  if (input.discNumber !== undefined) fields.discNumber = input.discNumber;
+  if (input.compilation !== undefined) fields.compilation = input.compilation;
+  if (input.comment !== undefined) fields.comment = input.comment;
+  return fields;
+}
+
+/**
+ * Resolve an iPod-style ipodPath (`:iPod_Control:Music:F00:ABCD.mp3`) to a
+ * regular absolute filesystem path. Returns undefined if the input is empty
+ * or doesn't look like an ipodPath.
+ */
+function absolutePathFor(mountPoint: string, ipodPath: string): string | undefined {
+  if (!ipodPath) return undefined;
+  const rel = ipodPath.replace(/^:/, '').replace(/:/g, '/');
+  if (rel.length === 0) return undefined;
+  return path.join(mountPoint, rel);
 }

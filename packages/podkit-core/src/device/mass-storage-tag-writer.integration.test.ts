@@ -1,9 +1,9 @@
 /**
  * Tests for TagLibTagWriter
  *
- * Integration tests that create real audio files, write comment tags
- * via node-taglib-sharp, and read them back with music-metadata to
- * verify the round-trip works across FLAC, M4A, and MP3 containers.
+ * Integration tests that create real audio files, write tags via
+ * node-taglib-sharp, and read them back with music-metadata to verify the
+ * round-trip works across FLAC, MP3, M4A, OGG, and Opus containers.
  */
 
 import { describe, expect, test, beforeEach, afterEach } from 'bun:test';
@@ -13,7 +13,7 @@ import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import * as mm from 'music-metadata';
 
-import { TagLibTagWriter } from './mass-storage-tag-writer.js';
+import { TagLibTagWriter, type TagFields } from './mass-storage-tag-writer.js';
 
 // =============================================================================
 // Helpers
@@ -108,14 +108,12 @@ function generateMp3(dir: string, filename: string, comment?: string): string {
     '-metadata',
     'artist=Test Artist',
   ];
-  if (comment) {
-    // FFmpeg maps comment to TXXX:comment for MP3, not COMM.
-    // Set it properly via node-taglib-sharp after generation.
-  }
   args.push(outPath);
   execFileSync('ffmpeg', args, { stdio: 'pipe' });
 
   if (comment) {
+    // FFmpeg maps comment to TXXX:comment for MP3, not COMM.
+    // Set it properly via node-taglib-sharp after generation.
     const { File: TagFile } = require('node-taglib-sharp');
     const file = TagFile.createFromPath(outPath);
     file.tag.comment = comment;
@@ -124,6 +122,56 @@ function generateMp3(dir: string, filename: string, comment?: string): string {
   }
 
   return outPath;
+}
+
+/** Generate a minimal OGG/Opus file */
+function generateOpus(dir: string, filename: string): string {
+  const outPath = path.join(dir, filename);
+  execFileSync(
+    'ffmpeg',
+    [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      'sine=frequency=440:duration=1:sample_rate=48000',
+      '-c:a',
+      'libopus',
+      '-b:a',
+      '64k',
+      '-metadata',
+      'title=Test Song',
+      '-metadata',
+      'artist=Test Artist',
+      '-vn',
+      outPath,
+    ],
+    { stdio: 'pipe' }
+  );
+  return outPath;
+}
+
+/** Generate a minimal JPEG image using FFmpeg */
+function generateTestImage(width = 100, height = 100): Buffer {
+  const result = execFileSync(
+    'ffmpeg',
+    [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `color=c=red:size=${width}x${height}:duration=1:rate=1`,
+      '-frames:v',
+      '1',
+      '-f',
+      'image2',
+      '-c:v',
+      'mjpeg',
+      'pipe:1',
+    ],
+    { stdio: ['pipe', 'pipe', 'pipe'] }
+  );
+  return Buffer.from(result);
 }
 
 /** Read the comment tag from an audio file using music-metadata */
@@ -153,193 +201,225 @@ describe('TagLibTagWriter', () => {
     removeTempDir(tempDir);
   });
 
-  describe('FLAC files', () => {
-    test('writes comment to file without existing comment', async () => {
+  // ---------------------------------------------------------------------------
+  // writeTags — per-format round-trips
+  // ---------------------------------------------------------------------------
+
+  describe('writeTags — comment-only (sync-tag path)', () => {
+    test('FLAC: writes comment to file without existing comment', async () => {
       const filePath = generateFlac(tempDir, 'no-comment.flac');
       const syncTag = '[podkit:v1 quality=high encoding=vbr]';
 
-      await writer.writeComment(filePath, syncTag);
+      await writer.writeTags(filePath, { comment: syncTag });
 
-      const comment = await readComment(filePath);
-      expect(comment).toBe(syncTag);
+      expect(await readComment(filePath)).toBe(syncTag);
     });
 
-    test('overwrites existing comment', async () => {
-      const filePath = generateFlac(tempDir, 'has-comment.flac', 'original comment');
+    test('FLAC: overwrites existing comment', async () => {
+      const filePath = generateFlac(tempDir, 'has-comment.flac', 'original');
       const syncTag = '[podkit:v1 quality=medium encoding=cbr]';
 
-      await writer.writeComment(filePath, syncTag);
+      await writer.writeTags(filePath, { comment: syncTag });
 
-      const comment = await readComment(filePath);
-      expect(comment).toBe(syncTag);
+      expect(await readComment(filePath)).toBe(syncTag);
     });
 
-    test('preserves other metadata after write', async () => {
-      const filePath = generateFlac(tempDir, 'preserve-meta.flac');
+    test('M4A: writes comment', async () => {
+      const filePath = generateM4a(tempDir, 'test.m4a');
+      const syncTag = '[podkit:v1 quality=high art=a1b2c3d4]';
 
-      await writer.writeComment(filePath, 'sync tag');
+      await writer.writeTags(filePath, { comment: syncTag });
+
+      expect(await readComment(filePath)).toBe(syncTag);
+    });
+
+    test('MP3: writes comment', async () => {
+      const filePath = generateMp3(tempDir, 'test.mp3');
+      const syncTag = '[podkit:v1 quality=copy transfer=fast]';
+
+      await writer.writeTags(filePath, { comment: syncTag });
+
+      expect(await readComment(filePath)).toBe(syncTag);
+    });
+
+    test('Opus: writes comment', async () => {
+      const filePath = generateOpus(tempDir, 'test.opus');
+      const syncTag = '[podkit:v1 quality=high]';
+
+      await writer.writeTags(filePath, { comment: syncTag });
+
+      expect(await readComment(filePath)).toBe(syncTag);
+    });
+
+    test('preserves audio data and other metadata', async () => {
+      const filePath = generateFlac(tempDir, 'preserve.flac');
+      const sizeBefore = fs.statSync(filePath).size;
+
+      await writer.writeTags(filePath, { comment: '[podkit:v1 quality=high]' });
+
+      const sizeAfter = fs.statSync(filePath).size;
+      expect(Math.abs(sizeAfter - sizeBefore)).toBeLessThan(1000);
 
       const metadata = await mm.parseFile(filePath, { skipCovers: true });
       expect(metadata.common.title).toBe('Test Song');
       expect(metadata.common.artist).toBe('Test Artist');
-    });
-
-    test('preserves audio data (file is still valid)', async () => {
-      const filePath = generateFlac(tempDir, 'valid-audio.flac');
-      const sizeBefore = fs.statSync(filePath).size;
-
-      await writer.writeComment(filePath, '[podkit:v1 quality=high]');
-
-      const sizeAfter = fs.statSync(filePath).size;
-      // File size should be similar (comment adds a few bytes, no re-encoding)
-      expect(Math.abs(sizeAfter - sizeBefore)).toBeLessThan(1000);
-
-      // Should still parse without error
-      const metadata = await mm.parseFile(filePath, { duration: true });
       expect(metadata.format.duration).toBeGreaterThan(0);
     });
   });
 
-  describe('M4A files', () => {
-    test('writes comment to M4A file', async () => {
-      const filePath = generateM4a(tempDir, 'test.m4a');
-      const syncTag = '[podkit:v1 quality=high encoding=vbr art=a1b2c3d4]';
+  describe('writeTags — full metadata field coverage', () => {
+    // Cover the full set of textual metadata fields across the formats
+    // podkit actually produces as device-resident output. WAV/AIFF are
+    // skipped — taglib coverage on those is fragile and the formats are
+    // exceedingly rare on portable devices.
 
-      await writer.writeComment(filePath, syncTag);
+    const fullFields: TagFields = {
+      title: 'New Title',
+      artist: 'New Artist',
+      albumArtist: 'New Album Artist',
+      album: 'New Album',
+      genre: 'New Genre',
+      year: 2030,
+      trackNumber: 7,
+      discNumber: 2,
+      compilation: true,
+      comment: '[podkit:v1 quality=high]',
+    };
 
-      const comment = await readComment(filePath);
-      expect(comment).toBe(syncTag);
-    });
+    function assertAllFields(metadata: mm.IAudioMetadata): void {
+      expect(metadata.common.title).toBe('New Title');
+      expect(metadata.common.artist).toBe('New Artist');
+      expect(metadata.common.albumartist).toBe('New Album Artist');
+      expect(metadata.common.album).toBe('New Album');
+      expect(metadata.common.genre).toEqual(['New Genre']);
+      expect(metadata.common.year).toBe(2030);
+      expect(metadata.common.track.no).toBe(7);
+      expect(metadata.common.disk.no).toBe(2);
+      expect(metadata.common.compilation).toBe(true);
+    }
 
-    test('preserves metadata in M4A', async () => {
-      const filePath = generateM4a(tempDir, 'preserve.m4a');
-
-      await writer.writeComment(filePath, 'sync tag');
+    test('FLAC: round-trips every supported field', async () => {
+      const filePath = generateFlac(tempDir, 'full.flac');
+      await writer.writeTags(filePath, fullFields);
 
       const metadata = await mm.parseFile(filePath, { skipCovers: true });
-      expect(metadata.common.title).toBe('Test Song');
-      expect(metadata.common.artist).toBe('Test Artist');
+      assertAllFields(metadata);
+      expect(await readComment(filePath)).toBe(fullFields.comment);
+    });
+
+    test('MP3: round-trips every supported field', async () => {
+      const filePath = generateMp3(tempDir, 'full.mp3');
+      await writer.writeTags(filePath, fullFields);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      assertAllFields(metadata);
+      expect(await readComment(filePath)).toBe(fullFields.comment);
+    });
+
+    test('M4A: round-trips every supported field', async () => {
+      const filePath = generateM4a(tempDir, 'full.m4a');
+      await writer.writeTags(filePath, fullFields);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      assertAllFields(metadata);
+      expect(await readComment(filePath)).toBe(fullFields.comment);
+    });
+
+    test('Opus: round-trips every supported field', async () => {
+      const filePath = generateOpus(tempDir, 'full.opus');
+      await writer.writeTags(filePath, fullFields);
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      assertAllFields(metadata);
+      expect(await readComment(filePath)).toBe(fullFields.comment);
     });
   });
 
-  describe('MP3 files', () => {
-    test('writes comment to MP3 file', async () => {
-      const filePath = generateMp3(tempDir, 'test.mp3');
-      const syncTag = '[podkit:v1 quality=copy transfer=fast]';
+  describe('writeTags — partial updates and edge cases', () => {
+    test('undefined fields leave existing values untouched', async () => {
+      const filePath = generateFlac(tempDir, 'partial.flac');
+      // Seed with a full set.
+      await writer.writeTags(filePath, {
+        title: 'Original Title',
+        artist: 'Original Artist',
+        albumArtist: 'Original AA',
+        album: 'Original Album',
+      });
 
-      await writer.writeComment(filePath, syncTag);
-
-      const comment = await readComment(filePath);
-      expect(comment).toBe(syncTag);
-    });
-
-    test('preserves metadata in MP3', async () => {
-      const filePath = generateMp3(tempDir, 'preserve.mp3');
-
-      await writer.writeComment(filePath, 'sync tag');
+      // Update only albumArtist.
+      await writer.writeTags(filePath, { albumArtist: 'Renamed AA' });
 
       const metadata = await mm.parseFile(filePath, { skipCovers: true });
-      expect(metadata.common.title).toBe('Test Song');
-      expect(metadata.common.artist).toBe('Test Artist');
-    });
-  });
-
-  describe('edge cases', () => {
-    test('handles sync tag with all fields', async () => {
-      const filePath = generateFlac(tempDir, 'full-tag.flac');
-      const syncTag = '[podkit:v1 quality=high encoding=vbr art=abcd1234 transfer=optimized]';
-
-      await writer.writeComment(filePath, syncTag);
-
-      const comment = await readComment(filePath);
-      expect(comment).toBe(syncTag);
+      expect(metadata.common.title).toBe('Original Title');
+      expect(metadata.common.artist).toBe('Original Artist');
+      expect(metadata.common.albumartist).toBe('Renamed AA');
+      expect(metadata.common.album).toBe('Original Album');
     });
 
-    test('successive writes update the comment', async () => {
+    test('successive comment writes coalesce on disk to the latest value', async () => {
       const filePath = generateFlac(tempDir, 'successive.flac');
 
-      await writer.writeComment(filePath, '[podkit:v1 quality=high]');
-      await writer.writeComment(filePath, '[podkit:v1 quality=high art=deadbeef]');
+      await writer.writeTags(filePath, { comment: '[podkit:v1 quality=high]' });
+      await writer.writeTags(filePath, { comment: '[podkit:v1 quality=high art=deadbeef]' });
 
-      const comment = await readComment(filePath);
-      expect(comment).toBe('[podkit:v1 quality=high art=deadbeef]');
+      expect(await readComment(filePath)).toBe('[podkit:v1 quality=high art=deadbeef]');
+    });
+
+    test('toggling compilation off removes the flag', async () => {
+      const filePath = generateFlac(tempDir, 'compilation.flac');
+
+      await writer.writeTags(filePath, { compilation: true });
+      let metadata = await mm.parseFile(filePath, { skipCovers: true });
+      expect(metadata.common.compilation).toBe(true);
+
+      await writer.writeTags(filePath, { compilation: false });
+      metadata = await mm.parseFile(filePath, { skipCovers: true });
+      // music-metadata reports unset/false as undefined; either is acceptable
+      // as long as it is not still true.
+      expect(metadata.common.compilation === true).toBe(false);
+    });
+
+    test('Unicode field values round-trip', async () => {
+      const filePath = generateFlac(tempDir, 'unicode.flac');
+
+      await writer.writeTags(filePath, {
+        title: 'Café Mañana — 日本語',
+        artist: 'Björk',
+        albumArtist: 'Björk',
+      });
+
+      const metadata = await mm.parseFile(filePath, { skipCovers: true });
+      expect(metadata.common.title).toBe('Café Mañana — 日本語');
+      expect(metadata.common.artist).toBe('Björk');
     });
 
     test('does not leave temp files', async () => {
       const filePath = generateFlac(tempDir, 'cleanup.flac');
 
-      await writer.writeComment(filePath, 'tag');
+      await writer.writeTags(filePath, { comment: 'tag' });
 
-      // Only the original file should exist
       const files = fs.readdirSync(tempDir);
       expect(files).toEqual(['cleanup.flac']);
     });
 
     test('throws for nonexistent file', async () => {
       await expect(
-        writer.writeComment(path.join(tempDir, 'nonexistent.flac'), 'tag')
+        writer.writeTags(path.join(tempDir, 'nonexistent.flac'), { comment: 'tag' })
       ).rejects.toThrow();
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // writePicture (unchanged — kept as a separate concern from textual tags)
+  // ---------------------------------------------------------------------------
+
   describe('writePicture', () => {
-    /** Generate a minimal OGG/Opus file */
-    function generateOpus(dir: string, filename: string): string {
-      const outPath = path.join(dir, filename);
-      execFileSync(
-        'ffmpeg',
-        [
-          '-y',
-          '-f',
-          'lavfi',
-          '-i',
-          'sine=frequency=440:duration=1:sample_rate=48000',
-          '-c:a',
-          'libopus',
-          '-b:a',
-          '64k',
-          '-metadata',
-          'title=Test Song',
-          '-metadata',
-          'artist=Test Artist',
-          '-vn',
-          outPath,
-        ],
-        { stdio: 'pipe' }
-      );
-      return outPath;
-    }
-
-    /** Generate a minimal JPEG image using FFmpeg */
-    function generateTestImage(width = 100, height = 100): Buffer {
-      const result = execFileSync(
-        'ffmpeg',
-        [
-          '-y',
-          '-f',
-          'lavfi',
-          '-i',
-          `color=c=red:size=${width}x${height}:duration=1:rate=1`,
-          '-frames:v',
-          '1',
-          '-f',
-          'image2',
-          '-c:v',
-          'mjpeg',
-          'pipe:1',
-        ],
-        { stdio: ['pipe', 'pipe', 'pipe'] }
-      );
-      return Buffer.from(result);
-    }
-
     test('embeds artwork in OGG/Opus file', async () => {
       const filePath = generateOpus(tempDir, 'test.opus');
       const imageData = generateTestImage();
 
       await writer.writePicture(filePath, imageData);
 
-      // Verify artwork was embedded by reading back with music-metadata
       const metadata = await mm.parseFile(filePath, { skipCovers: false });
       expect(metadata.common.picture).toBeDefined();
       expect(metadata.common.picture!.length).toBeGreaterThanOrEqual(1);
@@ -376,7 +456,6 @@ describe('TagLibTagWriter', () => {
 
       await writer.writePicture(filePath, imageData);
 
-      // Should still parse without error
       const metadata = await mm.parseFile(filePath, { duration: true });
       expect(metadata.format.duration).toBeGreaterThan(0);
     });

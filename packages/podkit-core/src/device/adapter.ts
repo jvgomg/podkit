@@ -66,6 +66,15 @@ export interface DeviceTrackInput {
   seasonNumber?: number;
   episodeNumber?: number;
   movieFlag?: boolean;
+
+  /**
+   * The effective transfer mode for this sync.
+   *
+   * Adapters consult it on `addTrack` to decide whether to mirror the
+   * input metadata into the on-disk file tags. Mass-storage always writes
+   * tags; iPod writes tags only under `portable`.
+   */
+  transferMode?: 'fast' | 'optimized' | 'portable';
 }
 
 /**
@@ -97,6 +106,20 @@ export type DeviceTrackMetadata = Partial<DeviceTrackInput> & {
    * Ignored by iPod adapter (which uses ithmb artwork).
    */
   embeddedPictureData?: Buffer;
+
+  /**
+   * The effective transfer mode for this sync.
+   *
+   * Adapters use this to decide whether to write metadata into the on-disk
+   * file tags (in addition to whatever device-side database they own).
+   *
+   * - Mass-storage: always writes file tags regardless of mode (firmware
+   *   reads tags directly), so this field is informational only.
+   * - iPod: writes file tags only when transferMode === 'portable'. For
+   *   `fast` and `optimized` the iTunesDB is authoritative and the
+   *   underlying file is left untouched.
+   */
+  transferMode?: 'fast' | 'optimized' | 'portable';
 };
 
 /**

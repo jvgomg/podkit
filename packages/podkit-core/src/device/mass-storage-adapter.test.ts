@@ -12,7 +12,7 @@ import { tmpdir } from 'node:os';
 
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { MetadataReader } from './mass-storage-adapter.js';
-import type { TagWriter } from './mass-storage-tag-writer.js';
+import type { TagFields, TagWriter } from './mass-storage-tag-writer.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import {
   sanitizeFilename,
@@ -1345,15 +1345,15 @@ describe('MassStorageAdapter', () => {
   });
 
   describe('sync tag persistence (comment tag writes)', () => {
-    /** Mock tag writer that records all writeComment calls */
+    /** Mock tag writer that records all writeTags calls */
     function createMockTagWriter(): TagWriter & {
-      calls: Array<{ filePath: string; comment: string }>;
+      calls: Array<{ filePath: string; fields: TagFields }>;
     } {
-      const calls: Array<{ filePath: string; comment: string }> = [];
+      const calls: Array<{ filePath: string; fields: TagFields }> = [];
       return {
         calls,
-        async writeComment(filePath: string, comment: string) {
-          calls.push({ filePath, comment });
+        async writeTags(filePath: string, fields: TagFields) {
+          calls.push({ filePath, fields });
         },
         async writeReplayGain(_filePath: string, _trackGain: number, _trackPeak?: number) {},
         async writePicture(_filePath: string, _imageData: Buffer) {},
@@ -1383,10 +1383,12 @@ describe('MassStorageAdapter', () => {
       expect(tagWriter.calls[0]!.filePath).toBe(
         path.join(mountPoint, 'Music/Artist/Album/01 - Song.flac')
       );
-      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+      expect(tagWriter.calls[0]!.fields.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
     });
 
-    test('updateTrack without comment change does not queue a write', async () => {
+    test('updateTrack with changed title queues a tag write', async () => {
+      // Was previously locked-in as "no write when only title changes" —
+      // inverted to assert the new convergence behaviour.
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
 
       const tagWriter = createMockTagWriter();
@@ -1402,7 +1404,102 @@ describe('MassStorageAdapter', () => {
 
       await adapter.save();
 
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.fields).toEqual({ title: 'New Title' });
+    });
+
+    test('updateTrack with no actual changes does not queue a write', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      // Passing the same values back is a no-op at the disk layer.
+      adapter.updateTrack(track, { title: 'Song', artist: 'Artist', album: 'Album' });
+
+      await adapter.save();
+
       expect(tagWriter.calls).toHaveLength(0);
+    });
+
+    test('updateTrack queues every metadata field whose value differs', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': {
+            title: 'Song',
+            artist: 'Artist',
+            album: 'Album',
+            albumartist: 'Album Artist',
+            genre: 'Rock',
+            year: 2020,
+            trackNumber: 1,
+            discNumber: 1,
+            compilation: false,
+          },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, {
+        title: 'New Title',
+        artist: 'New Artist',
+        albumArtist: 'New Album Artist',
+        album: 'New Album',
+        genre: 'Jazz',
+        year: 2025,
+        trackNumber: 7,
+        discNumber: 2,
+        compilation: true,
+      });
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.fields).toEqual({
+        title: 'New Title',
+        artist: 'New Artist',
+        albumArtist: 'New Album Artist',
+        album: 'New Album',
+        genre: 'Jazz',
+        year: 2025,
+        trackNumber: 7,
+        discNumber: 2,
+        compilation: true,
+      });
+    });
+
+    test('multiple updates to same track coalesce into one writeTags call', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      const updated = adapter.updateTrack(track, { title: 'New Title' });
+      adapter.updateTrack(updated, { albumArtist: 'New AA' });
+
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.fields).toEqual({
+        title: 'New Title',
+        albumArtist: 'New AA',
+      });
     });
 
     test('multiple comment updates to same track coalesce to latest value', async () => {
@@ -1424,7 +1521,7 @@ describe('MassStorageAdapter', () => {
 
       // Only one write with the final value
       expect(tagWriter.calls).toHaveLength(1);
-      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high art=a1b2c3d4]');
+      expect(tagWriter.calls[0]!.fields.comment).toBe('[podkit:v1 quality=high art=a1b2c3d4]');
     });
 
     test('pending writes for multiple tracks are flushed in save()', async () => {
@@ -1447,7 +1544,7 @@ describe('MassStorageAdapter', () => {
       await adapter.save();
 
       expect(tagWriter.calls).toHaveLength(2);
-      const comments = tagWriter.calls.map((c) => c.comment).sort();
+      const comments = tagWriter.calls.map((c) => c.fields.comment).sort();
       expect(comments).toEqual(['tag-a', 'tag-b']);
     });
 
@@ -1489,7 +1586,7 @@ describe('MassStorageAdapter', () => {
       createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
 
       const failingWriter: TagWriter = {
-        async writeComment() {
+        async writeTags() {
           throw new Error('FFmpeg exploded');
         },
         async writeReplayGain() {
@@ -1534,7 +1631,7 @@ describe('MassStorageAdapter', () => {
       await adapter.save();
 
       expect(tagWriter.calls).toHaveLength(1);
-      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+      expect(tagWriter.calls[0]!.fields.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
     });
 
     test('replaceTrackFile queues comment write for the new file', async () => {
@@ -1568,7 +1665,7 @@ describe('MassStorageAdapter', () => {
 
       // The old sync tag should be re-queued for the new file
       expect(tagWriter.calls).toHaveLength(1);
-      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
+      expect(tagWriter.calls[0]!.fields.comment).toBe('[podkit:v1 quality=high encoding=vbr]');
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });
@@ -1607,7 +1704,7 @@ describe('MassStorageAdapter', () => {
 
       // Only the final sync tag should be written
       expect(tagWriter.calls).toHaveLength(1);
-      expect(tagWriter.calls[0]!.comment).toBe('[podkit:v1 quality=medium encoding=cbr]');
+      expect(tagWriter.calls[0]!.fields.comment).toBe('[podkit:v1 quality=medium encoding=cbr]');
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });
@@ -1792,8 +1889,10 @@ describe('MassStorageAdapter', () => {
       return {
         commentCalls,
         pictureCalls,
-        async writeComment(filePath: string, comment: string) {
-          commentCalls.push({ filePath, comment });
+        async writeTags(filePath: string, fields: TagFields) {
+          if (fields.comment !== undefined) {
+            commentCalls.push({ filePath, comment: fields.comment });
+          }
         },
         async writeReplayGain() {},
         async writePicture(filePath: string, imageData: Buffer) {

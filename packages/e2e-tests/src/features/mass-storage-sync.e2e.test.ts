@@ -1363,15 +1363,18 @@ device = "echomini"
         expect(remaining.length).toBe(0);
       }
 
-      // Audio file size unchanged: fs.rename, not a re-transcode.
+      // No bytes transferred — the file was relocated via fs.rename and had
+      // its tags rewritten in place, not re-transcoded. The on-disk size
+      // may shift slightly when taglib rewrites tags, so check the transfer
+      // counter rather than file size.
+      expect(j2?.result?.bytesTransferred).toBe(0);
+      // The file should still be smaller than 2× the original (sanity check
+      // against accidental duplication / re-transcode).
       const sizeAfter = statSync(filesAfter[0]!).size;
-      expect(sizeAfter).toBe(sizeBefore);
+      expect(sizeAfter).toBeLessThan(sizeBefore * 2);
 
-      // A third sync should not move or re-transcode the file. Mass-storage
-      // does not currently rewrite non-comment tags on disk after a relocate,
-      // so the source's new albumArtist is rediscovered as a metadata diff each
-      // sync — but that path resolves to a zero-byte metadata op, never a
-      // transfer or another relocate.
+      // Convergence: the relocate also rewrote the on-disk albumArtist tag,
+      // so a third sync sees no diff at all and produces an empty plan.
       const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
         '--config',
         configPath,
@@ -1381,12 +1384,13 @@ device = "echomini"
         '--json',
       ]);
       expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.completed).toBe(0);
       expect(j3?.result?.bytesTransferred).toBe(0);
 
       const filesAfterThird = await findDeviceAudioFiles(devicePath, '');
       expect(filesAfterThird.length).toBe(1);
       expect(filesAfterThird[0]!.startsWith(newDir + '/')).toBe(true);
-      expect(statSync(filesAfterThird[0]!).size).toBe(sizeBefore);
+      expect(statSync(filesAfterThird[0]!).size).toBe(sizeAfter);
     } finally {
       await rm(devicePath, { recursive: true, force: true });
       await rm(configDir, { recursive: true, force: true });
@@ -1780,6 +1784,107 @@ device = "echomini"
       expect(j3?.result?.bytesTransferred).toBe(0);
       const final = await findDeviceAudioFiles(devicePath, '');
       expect(final.length).toBe(2);
+    } finally {
+      await rm(devicePath, { recursive: true, force: true });
+      await rm(configDir, { recursive: true, force: true });
+      await rm(collectionDir, { recursive: true, force: true });
+    }
+  }, 180000);
+
+  // ---------------------------------------------------------------------------
+  // Headline convergence invariant (TASK-327)
+  //
+  // For every metadata field the differ tracks, mutating the source tag and
+  // running two consecutive syncs must converge: the second sync produces an
+  // empty plan. Failure mode this guards against: pre-fix mass-storage
+  // updated metadata in memory only, so the same diff resurfaced forever.
+  // ---------------------------------------------------------------------------
+
+  it('mass-storage converges after metadata changes in at most one re-sync', async () => {
+    if (skipIfUnavailable()) return;
+    if (!isMetaflacAvailable()) {
+      console.log('Skipping: metaflac not available');
+      return;
+    }
+
+    const devicePath = await createTempDevice();
+    const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
+    const configPath = join(configDir, 'config.toml');
+    const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-ms-collection-'));
+
+    try {
+      // Use a static path template so albumArtist/album/year edits do NOT
+      // perturb the on-device filename — this isolates the convergence test
+      // to the tag-rewrite path, separate from the relocate path covered
+      // above.
+      const sourceFile = join(collectionDir, '01-converge.flac');
+      writeFlacWithMetadata(sourceFile, {
+        title: 'Converge',
+        artist: 'Performer',
+        albumArtist: 'Original AA',
+        album: 'Original Album',
+        trackNumber: 1,
+      });
+      // Seed extra fields not handled by writeFlacWithMetadata so the
+      // differ has more axes to flag if any field fails to converge.
+      retagFlac(sourceFile, 'GENRE', 'Original Genre');
+      retagFlac(sourceFile, 'DATE', '2010');
+
+      // Stable path template — keeps the file at a fixed location regardless
+      // of which metadata field changes.
+      await writeEchoMiniConfig(configPath, {
+        musicPath: collectionDir,
+        devicePath,
+        quality: 'low',
+        artwork: false,
+        pathTemplate: 'Library/{title}{ext}',
+      });
+
+      // First sync — populate the device.
+      const { result: r1, json: j1 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r1.exitCode).toBe(0);
+      expect(j1?.result?.completed).toBe(1);
+
+      // Mutate every metadata-correction field the differ tracks.
+      retagFlac(sourceFile, 'ALBUMARTIST', 'New AA');
+      retagFlac(sourceFile, 'ALBUM', 'New Album');
+      retagFlac(sourceFile, 'GENRE', 'New Genre');
+      retagFlac(sourceFile, 'DATE', '2030');
+
+      // Second sync: applies metadata + tag-rewrite. After this, the source
+      // tags and the device-file tags must agree.
+      const { result: r2, json: j2 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r2.exitCode).toBe(0);
+      expect(j2?.success).toBe(true);
+      expect(j2?.result?.bytesTransferred).toBe(0); // metadata-only, no re-transcode
+
+      // Third sync MUST be a no-op. This is the convergence invariant —
+      // pre-fix mass-storage would still see the metadata diff here.
+      const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
+        '--config',
+        configPath,
+        'sync',
+        '--device',
+        'echomini',
+        '--json',
+      ]);
+      expect(r3.exitCode).toBe(0);
+      expect(j3?.result?.completed).toBe(0);
+      expect(j3?.result?.bytesTransferred).toBe(0);
     } finally {
       await rm(devicePath, { recursive: true, force: true });
       await rm(configDir, { recursive: true, force: true });

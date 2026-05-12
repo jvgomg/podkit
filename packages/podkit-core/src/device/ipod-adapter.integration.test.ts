@@ -600,4 +600,283 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       await testIpod.cleanup();
     }
   });
+
+  // ---------------------------------------------------------------------------
+  // Transfer-mode-aware on-disk tag writes (TASK-327)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Mock TagWriter that records all writeTags calls. Used by the
+   * transfer-mode tests below to assert WHEN the iPod adapter touches the
+   * on-disk file, without depending on a real taglib roundtrip (covered
+   * separately in mass-storage-tag-writer.integration.test.ts).
+   */
+  function createMockTagWriter() {
+    type TagFields = import('./mass-storage-tag-writer.js').TagFields;
+    type TagWriter = import('./mass-storage-tag-writer.js').TagWriter;
+    const calls: Array<{ filePath: string; fields: TagFields }> = [];
+    const writer: TagWriter & { calls: typeof calls } = {
+      calls,
+      async writeTags(filePath, fields) {
+        calls.push({ filePath, fields });
+      },
+      async writeReplayGain() {},
+      async writePicture() {},
+    };
+    return writer;
+  }
+
+  for (const mode of ['fast', 'optimized'] as const) {
+    it(`iPod ${mode}: addTrack does NOT write file tags`, async () => {
+      const testIpod = await createTestIpod();
+      try {
+        const db = await IpodDatabase.open(testIpod.path);
+        try {
+          const tagWriter = createMockTagWriter();
+          const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'), {
+            tagWriter,
+          });
+
+          const track = adapter.addTrack({
+            title: 'No File Tags',
+            artist: 'Artist',
+            album: 'Album',
+            albumArtist: 'Album Artist',
+            transferMode: mode,
+          });
+          track.copyFile(mp3Path);
+
+          await adapter.save();
+
+          // iTunesDB write happened (track is in DB)
+          expect(adapter.getTracks()).toHaveLength(1);
+          // But the audio file's embedded tags are untouched.
+          expect(tagWriter.calls).toHaveLength(0);
+        } finally {
+          db.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+
+    it(`iPod ${mode}: updateTrack does NOT write file tags`, async () => {
+      const testIpod = await createTestIpod();
+      try {
+        const db1 = await IpodDatabase.open(testIpod.path);
+        try {
+          const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
+          const track = adapter.addTrack({
+            title: 'Original',
+            artist: 'Artist',
+            album: 'Album',
+            albumArtist: 'Original AA',
+          });
+          track.copyFile(mp3Path);
+          await adapter.save();
+        } finally {
+          db1.close();
+        }
+
+        const db2 = await IpodDatabase.open(testIpod.path);
+        try {
+          const tagWriter = createMockTagWriter();
+          const adapter = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'), {
+            tagWriter,
+          });
+          const track = adapter.getTracks()[0]!;
+          adapter.updateTrack(track, { albumArtist: 'Renamed AA', transferMode: mode });
+          await adapter.save();
+
+          expect(tagWriter.calls).toHaveLength(0);
+        } finally {
+          db2.close();
+        }
+      } finally {
+        await testIpod.cleanup();
+      }
+    });
+  }
+
+  it('iPod portable: addTrack mirrors metadata into on-disk file tags', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      const db = await IpodDatabase.open(testIpod.path);
+      try {
+        const tagWriter = createMockTagWriter();
+        const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'), {
+          tagWriter,
+        });
+
+        const track = adapter.addTrack({
+          title: 'Portable Add',
+          artist: 'Artist',
+          album: 'Album',
+          albumArtist: 'Album Artist',
+          year: 2027,
+          trackNumber: 3,
+          transferMode: 'portable',
+        });
+        track.copyFile(mp3Path);
+
+        await adapter.save();
+
+        expect(tagWriter.calls).toHaveLength(1);
+        const call = tagWriter.calls[0]!;
+        // File path resolves to {mountPoint}/iPod_Control/Music/F00/... or similar.
+        expect(call.filePath.startsWith(testIpod.path)).toBe(true);
+        expect(call.fields.title).toBe('Portable Add');
+        expect(call.fields.artist).toBe('Artist');
+        expect(call.fields.albumArtist).toBe('Album Artist');
+        expect(call.fields.album).toBe('Album');
+        expect(call.fields.year).toBe(2027);
+        expect(call.fields.trackNumber).toBe(3);
+      } finally {
+        db.close();
+      }
+    } finally {
+      await testIpod.cleanup();
+    }
+  });
+
+  it('iPod portable: updateTrack writes ONLY the diffed fields to disk', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      // Seed: add track with no transfer mode, save.
+      const db1 = await IpodDatabase.open(testIpod.path);
+      try {
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
+        const track = adapter.addTrack({
+          title: 'Mutable',
+          artist: 'Artist',
+          album: 'Album',
+          albumArtist: 'Original AA',
+          year: 2010,
+        });
+        track.copyFile(mp3Path);
+        await adapter.save();
+      } finally {
+        db1.close();
+      }
+
+      // Update under portable: only albumArtist changes.
+      const db2 = await IpodDatabase.open(testIpod.path);
+      try {
+        const tagWriter = createMockTagWriter();
+        const adapter = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'), {
+          tagWriter,
+        });
+        const track = adapter.getTracks()[0]!;
+        adapter.updateTrack(track, {
+          // Same value — must NOT be queued.
+          title: 'Mutable',
+          // Changed — must be queued.
+          albumArtist: 'Renamed AA',
+          transferMode: 'portable',
+        });
+        await adapter.save();
+
+        expect(tagWriter.calls).toHaveLength(1);
+        expect(tagWriter.calls[0]!.fields).toEqual({ albumArtist: 'Renamed AA' });
+      } finally {
+        db2.close();
+      }
+    } finally {
+      await testIpod.cleanup();
+    }
+  });
+
+  it('iPod portable: multiple updates to one track coalesce into a single writeTags call', async () => {
+    const testIpod = await createTestIpod();
+    try {
+      const db1 = await IpodDatabase.open(testIpod.path);
+      try {
+        const adapter = new IpodDeviceAdapter(db1, capsForGeneration('classic_7g'));
+        const track = adapter.addTrack({
+          title: 'Coalesce',
+          artist: 'Original',
+          album: 'Album',
+          albumArtist: 'Original AA',
+        });
+        track.copyFile(mp3Path);
+        await adapter.save();
+      } finally {
+        db1.close();
+      }
+
+      const db2 = await IpodDatabase.open(testIpod.path);
+      try {
+        const tagWriter = createMockTagWriter();
+        const adapter = new IpodDeviceAdapter(db2, capsForGeneration('classic_7g'), {
+          tagWriter,
+        });
+        const track = adapter.getTracks()[0]!;
+        const t1 = adapter.updateTrack(track, {
+          artist: 'New Artist',
+          transferMode: 'portable',
+        });
+        adapter.updateTrack(t1, { albumArtist: 'New AA', transferMode: 'portable' });
+        await adapter.save();
+
+        expect(tagWriter.calls).toHaveLength(1);
+        expect(tagWriter.calls[0]!.fields).toEqual({
+          artist: 'New Artist',
+          albumArtist: 'New AA',
+        });
+      } finally {
+        db2.close();
+      }
+    } finally {
+      await testIpod.cleanup();
+    }
+  });
+
+  it('iPod portable: tag-write failure is surfaced as a warning, not a save() rejection', async () => {
+    const testIpod = await createTestIpod();
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+
+    try {
+      const db = await IpodDatabase.open(testIpod.path);
+      try {
+        const failingWriter: import('./mass-storage-tag-writer.js').TagWriter = {
+          async writeTags() {
+            throw new Error('synthetic taglib failure');
+          },
+          async writeReplayGain() {},
+          async writePicture() {},
+        };
+
+        const adapter = new IpodDeviceAdapter(db, capsForGeneration('classic_7g'), {
+          tagWriter: failingWriter,
+        });
+        const track = adapter.addTrack({
+          title: 'Best Effort',
+          artist: 'Artist',
+          album: 'Album',
+          transferMode: 'portable',
+        });
+        track.copyFile(mp3Path);
+
+        // save() must complete — the iTunesDB write is authoritative; file
+        // tag writes are best-effort on iPod portable.
+        await adapter.save();
+
+        // The iPod's view is consistent.
+        expect(adapter.getTracks()).toHaveLength(1);
+        // The user saw a warning.
+        expect(warnings.length).toBe(1);
+        expect(warnings[0]).toContain('iPod portable');
+        expect(warnings[0]).toContain('synthetic taglib failure');
+      } finally {
+        db.close();
+      }
+    } finally {
+      console.warn = originalWarn;
+      await testIpod.cleanup();
+    }
+  });
 });
