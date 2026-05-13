@@ -2518,3 +2518,11 @@ export function resolveCapabilities(_identity: any, _opts?: any): any {
 export function identifyCapabilities(_model: any, _opts?: any): any {
   return {};
 }
+
+// Subprocess runner — demo never spawns real subprocesses; stub the default.
+export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '@podkit/core';
+export const defaultSubprocessRunner = {
+  async run(_command: string, _args: string[], _opts?: unknown) {
+    return { stdout: '', stderr: '', exitCode: 0 };
+  },
+};

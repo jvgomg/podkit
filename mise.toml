@@ -45,6 +45,29 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 """
 
 # ---------------------------------------------------------------------------
+# Builder VM (Lima — Linux glibc cross-compile from macOS)
+# Produces @podkit/libgpod-node prebuilds + the podkit standalone binary
+# via the same shared script the GHA workflows use.
+# See: tools/device-testing/lima/builder.yaml and tools/device-testing/lima/README.md
+# ---------------------------------------------------------------------------
+
+[tasks."device-testing:build-linux"]
+description = "Build linux-x64 podkit binary via the Lima builder VM (turbo-cached)"
+run = "bunx turbo run @podkit/device-testing#build:linux-binary"
+
+[tasks."device-testing:build-linux:prebuild"]
+description = "Build only the libgpod-node linux prebuild (turbo-cached)"
+run = "bunx turbo run @podkit/device-testing#build:linux-prebuild"
+
+[tasks."device-testing:builder:stop"]
+description = "Stop the builder VM (preserves state + caches)"
+run = "limactl stop builder 2>/dev/null; echo Done."
+
+[tasks."device-testing:builder:destroy"]
+description = "Delete the builder VM entirely"
+run = "limactl delete builder --force 2>/dev/null; echo Done."
+
+# ---------------------------------------------------------------------------
 # Linux test VMs (Lima — cross-platform testing on Debian + Alpine)
 # ---------------------------------------------------------------------------
 

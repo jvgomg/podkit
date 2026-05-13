@@ -151,6 +151,49 @@
       "outputs": ["../../test/manual-collection/**"],
       "cache": true
     },
+    "@podkit/device-testing#test:vm": {
+      "dependsOn": [],
+      "cache": false,
+      "outputs": []
+    },
+    "@podkit/device-testing#build:linux-prebuild": {
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_ROOT$/packages/libgpod-node/native/**",
+        "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
+        "$TURBO_ROOT$/packages/libgpod-node/scripts/has-prebuild.cjs",
+        "$TURBO_ROOT$/tools/prebuild/build-static-deps.sh",
+        "$TURBO_ROOT$/tools/prebuild/build-linux-glibc.sh",
+        "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
+        "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
+        "$TURBO_ROOT$/tools/device-testing/lima/builder.yaml",
+        "scripts/build-linux-prebuild.sh"
+      ],
+      "outputs": [
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**"
+      ]
+    },
+    "@podkit/device-testing#build:linux-binary": {
+      "dependsOn": ["@podkit/device-testing#build:linux-prebuild", "^build"],
+      "inputs": [
+        "$TURBO_ROOT$/packages/*/src/**",
+        "!$TURBO_ROOT$/packages/*/src/**/*.test.ts",
+        "!$TURBO_ROOT$/packages/*/__tests__/**",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/*/tsconfig.json",
+        "$TURBO_ROOT$/packages/*/tsconfig.build.json",
+        "$TURBO_ROOT$/packages/podkit-cli/scripts/compile.sh",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
+        "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**",
+        "$TURBO_ROOT$/tools/device-testing/lima/builder.yaml",
+        "$TURBO_ROOT$/turbo.json",
+        "$TURBO_ROOT$/package.json",
+        "$TURBO_ROOT$/bun.lock",
+        "scripts/build-linux-binary.sh"
+      ],
+      "outputs": ["$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*"]
+    },
     "clean": {
       "cache": false
     }

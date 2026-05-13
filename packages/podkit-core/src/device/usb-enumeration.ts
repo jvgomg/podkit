@@ -16,9 +16,10 @@
  * Never throws — returns an empty array on any failure.
  */
 
-import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { SubprocessRunner } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../subprocess-runner.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -211,19 +212,14 @@ export function parseLocationId(locationId: string | undefined): {
   };
 }
 
-async function enumerateMacOS(): Promise<EnumeratedUsbDevice[]> {
+async function enumerateMacOS(subprocess: SubprocessRunner): Promise<EnumeratedUsbDevice[]> {
   try {
-    const stdout = await new Promise<string>((resolve, reject) => {
-      execFile(
-        'system_profiler',
-        ['SPUSBDataType', '-json'],
-        { timeout: 10_000 },
-        (error, stdout) => {
-          if (error) reject(error);
-          else resolve(stdout);
-        }
-      );
-    });
+    const { stdout, exitCode } = await subprocess.run(
+      'system_profiler',
+      ['SPUSBDataType', '-json'],
+      { timeoutMs: 10_000 }
+    );
+    if (exitCode !== 0) return [];
 
     const data: unknown = JSON.parse(stdout);
     const parsed = parseSystemProfilerUsbData(data);
@@ -360,13 +356,20 @@ async function enumerateLinux(): Promise<EnumeratedUsbDevice[]> {
  */
 export async function enumerateUsb(options?: {
   platform?: string;
+  /**
+   * Injectable subprocess runner used by the macOS path (`system_profiler`).
+   * Defaults to the real `execFile`-backed runner; Tier 1 tests pass a
+   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   */
+  subprocess?: SubprocessRunner;
 }): Promise<EnumeratedUsbDevice[]> {
   const platform = options?.platform ?? process.platform;
+  const subprocess = options?.subprocess ?? defaultSubprocessRunner;
 
   try {
     switch (platform) {
       case 'darwin':
-        return await enumerateMacOS();
+        return await enumerateMacOS(subprocess);
       case 'linux':
         return await enumerateLinux();
       default:

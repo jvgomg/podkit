@@ -5,7 +5,6 @@
  * and mount command for mounting devices.
  */
 
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
@@ -18,37 +17,33 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import type { UsbFingerprint } from '@podkit/device-types';
+import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../../subprocess-runner.js';
 import { parseLocationId } from '../usb-enumeration.js';
 
 /**
- * Execute a command and return stdout
+ * Execute a command via the injected `SubprocessRunner` and normalise the
+ * result into the historical `{ stdout, stderr, code }` shape so the rest
+ * of the file is left untouched. Transport-level rejections from the runner
+ * (e.g. binary not found) collapse into `code: 1` to preserve the legacy
+ * behaviour of returning rather than throwing — every caller in this file
+ * already inspects `code` to decide whether to act on `stdout`.
  */
-function execCommand(
+async function execCommand(
   command: string,
-  args: string[]
+  args: string[],
+  subprocess: SubprocessRunner
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve) => {
-    const proc = spawn(command, args);
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      resolve({ stdout, stderr, code: code ?? 0 });
-    });
-
-    proc.on('error', (err) => {
-      resolve({ stdout, stderr: err.message, code: 1 });
-    });
-  });
+  try {
+    const result = await subprocess.run(command, args);
+    return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
+  } catch (err) {
+    return {
+      stdout: '',
+      stderr: err instanceof Error ? err.message : String(err),
+      code: 1,
+    };
+  }
 }
 
 /**
@@ -99,10 +94,22 @@ export class MacOSDeviceManager implements DeviceManager {
   readonly platform = 'darwin';
   readonly isSupported = true;
 
+  /**
+   * Injected `SubprocessRunner` used by every `diskutil` / `system_profiler` /
+   * `mount` invocation in this class. Defaults to the real `execFile`-backed
+   * runner; Tier 1 tests construct the manager with a
+   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   */
+  private readonly subprocess: SubprocessRunner;
+
   // Cache listDevices() results for 1s so multiple calls within a single
   // command invocation (e.g. device info: UUID lookup + readiness check)
   // don't each pay the full diskutil cost.
   private _listDevicesCache: { result: PlatformDeviceInfo[]; expiresAt: number } | null = null;
+
+  constructor(opts: { subprocess?: SubprocessRunner } = {}) {
+    this.subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  }
 
   async eject(mountPoint: string, options?: EjectOptions): Promise<EjectResult> {
     const force = options?.force ?? false;
@@ -114,7 +121,11 @@ export class MacOSDeviceManager implements DeviceManager {
 
     if (force) {
       // Force: unmount the specific volume first, then eject the whole disk
-      const unmountResult = await execCommand('diskutil', ['unmount', 'force', mountPoint]);
+      const unmountResult = await execCommand(
+        'diskutil',
+        ['unmount', 'force', mountPoint],
+        this.subprocess
+      );
       if (unmountResult.code !== 0) {
         const errorMessage = unmountResult.stderr.trim() || unmountResult.stdout.trim();
         return {
@@ -127,7 +138,7 @@ export class MacOSDeviceManager implements DeviceManager {
 
       // Now eject the whole disk to fully detach the USB device
       if (wholeDisk) {
-        await execCommand('diskutil', ['eject', wholeDisk]);
+        await execCommand('diskutil', ['eject', wholeDisk], this.subprocess);
       }
 
       return {
@@ -139,7 +150,11 @@ export class MacOSDeviceManager implements DeviceManager {
 
     // Normal mode: eject the whole disk (unmounts all volumes + detaches device)
     const target = wholeDisk ?? mountPoint;
-    const { stdout, stderr, code } = await execCommand('diskutil', ['eject', target]);
+    const { stdout, stderr, code } = await execCommand(
+      'diskutil',
+      ['eject', target],
+      this.subprocess
+    );
 
     if (code === 0) {
       return {
@@ -175,7 +190,7 @@ export class MacOSDeviceManager implements DeviceManager {
    * from Disk Utility.
    */
   private async resolveWholeDisk(mountPoint: string): Promise<string | null> {
-    const { stdout, code } = await execCommand('diskutil', ['info', mountPoint]);
+    const { stdout, code } = await execCommand('diskutil', ['info', mountPoint], this.subprocess);
     if (code !== 0) return null;
 
     const info = parseDiskutilInfo(stdout);
@@ -244,7 +259,7 @@ export class MacOSDeviceManager implements DeviceManager {
     const diskutilArgs = options?.target
       ? ['mount', '-mountPoint', sudoMountPoint, diskId]
       : ['mount', diskId];
-    const diskutilResult = await execCommand('diskutil', diskutilArgs);
+    const diskutilResult = await execCommand('diskutil', diskutilArgs, this.subprocess);
     if (diskutilResult.code === 0) {
       if (options?.target) {
         return {
@@ -290,12 +305,11 @@ export class MacOSDeviceManager implements DeviceManager {
       }
     }
 
-    const { stderr, code } = await execCommand('mount', [
-      '-t',
-      'msdos',
-      devicePath,
-      sudoMountPoint,
-    ]);
+    const { stderr, code } = await execCommand(
+      'mount',
+      ['-t', 'msdos', devicePath, sudoMountPoint],
+      this.subprocess
+    );
 
     if (code === 0) {
       return {
@@ -318,7 +332,7 @@ export class MacOSDeviceManager implements DeviceManager {
       return this._listDevicesCache.result;
     }
 
-    const { stdout, code } = await execCommand('diskutil', ['list', '-plist']);
+    const { stdout, code } = await execCommand('diskutil', ['list', '-plist'], this.subprocess);
 
     if (code !== 0) {
       return [];
@@ -425,7 +439,7 @@ Replace diskXsY with your actual device identifier`;
     // Normalize identifier
     const diskId = identifier.replace('/dev/', '');
 
-    const { stdout, code } = await execCommand('diskutil', ['info', diskId]);
+    const { stdout, code } = await execCommand('diskutil', ['info', diskId], this.subprocess);
 
     if (code !== 0) {
       return null;
@@ -501,7 +515,11 @@ Replace diskXsY with your actual device identifier`;
     const siblings: string[] = [];
     for (const disk of siblingDisks) {
       // List partitions of this whole disk (diskN → diskNs1, diskNs2, etc.)
-      const { stdout, code } = await execCommand('diskutil', ['list', '-plist', disk]);
+      const { stdout, code } = await execCommand(
+        'diskutil',
+        ['list', '-plist', disk],
+        this.subprocess
+      );
       if (code !== 0) continue;
 
       const partitionIds = this.parseDiskIdentifiers(stdout);
@@ -528,7 +546,11 @@ Replace diskXsY with your actual device identifier`;
    * then returns those that differ from the given whole disk.
    */
   private async findSiblingDisks(wholeDisk: string): Promise<string[]> {
-    const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
+    const { stdout, code } = await execCommand(
+      'system_profiler',
+      ['SPUSBDataType', '-json'],
+      this.subprocess
+    );
     if (code !== 0 || !stdout) return [];
 
     let profilerData: unknown;
@@ -651,7 +673,11 @@ Replace diskXsY with your actual device identifier`;
    * identifier (e.g., "disk5"). Returns USB product/vendor IDs and connection data.
    */
   private async queryUsbInfo(wholeDisk: string): Promise<UsbFingerprint | undefined> {
-    const { stdout, code } = await execCommand('system_profiler', ['SPUSBDataType', '-json']);
+    const { stdout, code } = await execCommand(
+      'system_profiler',
+      ['SPUSBDataType', '-json'],
+      this.subprocess
+    );
     if (code !== 0 || !stdout) return undefined;
 
     let profilerData: unknown;
@@ -762,7 +788,11 @@ Replace diskXsY with your actual device identifier`;
 
 /**
  * Create a macOS device manager instance
+ *
+ * @param opts.subprocess - Injectable subprocess runner. Defaults to the
+ *   real `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
+ *   from `@podkit/device-testing`.
  */
-export function createMacOSManager(): DeviceManager {
-  return new MacOSDeviceManager();
+export function createMacOSManager(opts: { subprocess?: SubprocessRunner } = {}): DeviceManager {
+  return new MacOSDeviceManager(opts);
 }

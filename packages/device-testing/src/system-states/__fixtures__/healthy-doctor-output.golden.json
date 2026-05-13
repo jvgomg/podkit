@@ -1,0 +1,35 @@
+{
+  "overallStatus": "healthy",
+  "checks": [
+    {
+      "id": "ffmpeg",
+      "status": "pass",
+      "summary": "FFmpeg available"
+    },
+    {
+      "id": "codec-encoders",
+      "status": "pass",
+      "summary": "All codec encoders available"
+    },
+    {
+      "id": "video-encoder",
+      "status": "pass",
+      "summary": "libx264 available"
+    },
+    {
+      "id": "libgpod-runtime",
+      "status": "pass",
+      "summary": "libgpod runtime available"
+    },
+    {
+      "id": "inquiry-methods",
+      "status": "pass",
+      "summary": "/dev/sg* present"
+    },
+    {
+      "id": "configfs-mount",
+      "status": "pass",
+      "summary": "configfs mounted"
+    }
+  ]
+}
