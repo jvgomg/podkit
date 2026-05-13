@@ -67,12 +67,15 @@ function installHint(missing: EncoderRequirement[]): string {
     case 'brew':
       lines.push('  macOS (detected: Homebrew)');
       lines.push("    Homebrew's stock ffmpeg currently omits libvorbis.");
-      lines.push('    Use the homebrew-ffmpeg tap for a prebuilt bottle with full codec support:');
-      lines.push('      brew tap homebrew-ffmpeg/ffmpeg');
-      lines.push('      brew install homebrew-ffmpeg/ffmpeg/ffmpeg \\');
-      lines.push('        --with-libvorbis --with-libopus --with-libmp3lame --with-fdk-aac');
+      lines.push('    Use the homebrew-ffmpeg tap, which ships libvorbis, libopus, and libmp3lame');
+      lines.push('    as required dependencies (no --with-* flags needed for those):');
       lines.push(
-        '    Then re-link so `ffmpeg` resolves to the tap version (brew link --overwrite ffmpeg).'
+        '      brew uninstall --ignore-dependencies ffmpeg   # if stock ffmpeg is installed'
+      );
+      lines.push('      brew tap homebrew-ffmpeg/ffmpeg');
+      lines.push('      brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac');
+      lines.push(
+        '    The --with-fdk-aac flag is optional; macOS already has aac_at (VideoToolbox).'
       );
       break;
     case 'apt':

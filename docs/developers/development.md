@@ -71,11 +71,14 @@ With this, integration tests that need `libvorbis` (the mass-storage tag writer 
 **Full encoder coverage (recommended for contributors running the full test suite):**
 
 ```bash
+# Remove the stock ffmpeg if installed — the tap version replaces it.
+brew uninstall --ignore-dependencies ffmpeg   # safe; deps will resolve against the tap
+
 brew tap homebrew-ffmpeg/ffmpeg
-brew install homebrew-ffmpeg/ffmpeg/ffmpeg \
-  --with-libvorbis --with-libopus --with-libmp3lame --with-fdk-aac
-brew link --overwrite ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg --with-fdk-aac
 ```
+
+The tap requires `libvorbis`, `libopus`, and `lame` (MP3) as build deps, so they're always enabled — no `--with-libvorbis` / `--with-libopus` / `--with-libmp3lame` flags exist (or are needed). The `--with-fdk-aac` flag is optional; macOS already has the high-quality `aac_at` encoder via VideoToolbox.
 
 Validate your install matches what test-fixtures expects:
 
