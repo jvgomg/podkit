@@ -15,6 +15,29 @@
  *   0  lint passed
  *   1  lint failed (bidirectional links missing or broken)
  *   2  script error (bad config, unreadable files, etc.)
+ *
+ * ## Config YAML schema
+ *
+ * Paths are resolved relative to the config file's directory.
+ *
+ *   root: .                           # workspace root (usually ".")
+ *
+ *   categories:                       # one entry per markdown-bearing subdir
+ *     <name>:
+ *       dir: <relative-path>          # subdir containing the files
+ *       id-from: filename | <fm-key>  # "filename" => slug from filename
+ *                                     # otherwise => read this frontmatter key
+ *       exclude: [<entry>, ...]       # filenames or subdir names to skip;
+ *                                     # supports "name" and "name/**" patterns
+ *
+ *   relations:                        # one entry per bidirectional relation
+ *     - from: <category-name>         # category with the forward link
+ *       via:  <frontmatter-path>      # dotted path, e.g. "addressed-by.features"
+ *       to:   <category-name>         # category the link targets
+ *       backref: <frontmatter-key>    # field on the target with the back-ref
+ *
+ * Full canonical reference: see "Lint config schema" in
+ * design/README.md. Worked example: design/music-selection/.lint.yaml.
  */
 
 import { readFile } from 'node:fs/promises';

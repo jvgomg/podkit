@@ -30,6 +30,46 @@ When a workspace's thinking converges, its principles become ADRs, its
 features become backlog PRDs, and its roadmap becomes tasks. The workspace
 itself stays around as the shaping record.
 
+## Working in `design/` as an AI agent
+
+If you're an AI agent landing here to work on a design workspace cold —
+without the conversation history that produced its current state — read
+this section first.
+
+1. **Read this file** (the one you're reading). It documents shared
+   conventions every workspace follows.
+2. **Then read the target workspace's own `README.md`.** It frames the
+   problem, sketches the conceptual model, and maps to the rest of the
+   workspace.
+3. **Check `open-questions/README.md`** to see what is deliberately
+   undecided. Don't try to silently resolve open questions — flag your
+   reasoning and let the human decide.
+4. **Use the workspace's `specs/terminology.md`** (if it has one) as
+   the canonical vocabulary. Don't introduce new synonyms for existing
+   terms. If you need a new term, add it to `terminology.md` *first*,
+   then use it elsewhere.
+5. **Treat `tentative` principles as challengeable but visible.** A
+   `tentative` status means the principle is on the table, not
+   settled. You may push back on it — but make the challenge visible,
+   don't quietly modify or remove it.
+6. **Run the link lint after any frontmatter change:**
+
+   ```bash
+   bun run scripts/lint-frontmatter-links.ts design/<workspace>/.lint.yaml
+   ```
+
+   If the lint fails, fix the missing backrefs before continuing.
+   Bidirectional links are how the workspace stays internally
+   consistent.
+7. **Don't delete archived files.** Archives (under
+   `<subdir>/archive/`) are the historical record of resolved
+   decisions. They matter even when they're no longer active.
+8. **Prefer adding annotated content to overwriting.** When you change
+   an existing principle, open question, or spec, update its
+   `last-updated`, adjust its `status` if appropriate, and leave a
+   short note about what changed. The workspace is a long-running
+   record, not a notebook.
+
 ## Workspace structure
 
 Every workspace follows the same shape. The convention is enforced by
@@ -173,6 +213,98 @@ an annotation indicating its source of authority and confidence
   designs are ready to execute.
 - A workspace **may reference** GitHub Discussions when user-facing roadmap
   items align with discussions in the Ideas category.
+
+## Starting a new workspace
+
+To create a new design workspace for a different problem area:
+
+1. **Pick a slug** (lowercase, hyphenated). Examples: `music-selection`,
+   `device-capabilities`, `daemon-hotplug`. The slug becomes the
+   directory name under `design/`.
+
+2. **Create the directory structure.** Standard layout (omit any
+   subdirectories your workspace genuinely won't use):
+
+   ```bash
+   mkdir -p design/<slug>/{principles,features,specs}
+   mkdir -p design/<slug>/{open-questions,spikes,user-stories}/archive
+   ```
+
+3. **Seed the minimum files:**
+
+   - `design/<slug>/README.md` — master PRD: problem statement,
+     conceptual model, and a "Where to read more" map pointing into
+     each subdirectory.
+   - `design/<slug>/<each-subdir>/README.md` — short index for each
+     subdir (what lives there, how to add a new entry, how to retire
+     one).
+   - `design/<slug>/<each-subdir>/archive/README.md` — for the three
+     subdirs that have archives (`user-stories`, `open-questions`,
+     `spikes`).
+   - `design/<slug>/.lint.yaml` — bidirectional-link config (see "Lint
+     config schema" below).
+
+4. **Seed at least one of each substantive item:**
+   - One user story (you have to be designing *for someone*).
+   - One principle (the rule that emerges from the first story).
+   - One open question (the first thing you don't yet know).
+   - One feature stub (the first work that the principle implies).
+
+   Stubs are fine; the point is to have something the lint can
+   validate and something a reader landing cold can use as a starting
+   point.
+
+5. **Add the new workspace to the
+   [Active workspaces](#active-workspaces) table at the bottom of this
+   file.**
+
+6. **Run the lint:**
+
+   ```bash
+   bun run scripts/lint-frontmatter-links.ts design/<slug>/.lint.yaml
+   ```
+
+   It should pass on first run if the seeded items have matching
+   forward links and backrefs.
+
+### Lint config schema
+
+Each workspace's `.lint.yaml` declares its directory layout and the
+bidirectional relations the link lint enforces. Schema:
+
+```yaml
+# Workspace root, resolved relative to this YAML file's directory.
+# Almost always ".".
+root: .
+
+# One entry per markdown-bearing subdirectory. Each entry says how to
+# find files and how to derive each file's "id" — the string that
+# appears in other files' frontmatter when this category is
+# referenced.
+categories:
+  <category-name>:                    # e.g., principles, features
+    dir: <relative-path>              # subdir containing the files
+    id-from: filename | <fm-key>      # "filename" → slug from filename
+                                      # otherwise → read this frontmatter key
+    exclude: [<filename>, <subdir>]   # files / subdirs to skip
+                                      # (archive subdirs typically go here)
+
+# One entry per bidirectional relation. For each file in `from`, the
+# frontmatter value at `via` is treated as a list of ids in the `to`
+# category. Each referenced target file must carry the source file's
+# id in its `backref` field.
+relations:
+  - from: <category-name>             # category holding the forward link
+    via: <frontmatter-path>           # dotted path, e.g., "addressed-by.features"
+    to: <category-name>               # category the link targets
+    backref: <frontmatter-key>        # field on the target holding the back-ref
+```
+
+A workspace can use any subset of categories and any set of relations
+appropriate to its problem. The script is fully generic — it knows
+only what the config declares. See
+[`music-selection/.lint.yaml`](music-selection/.lint.yaml) for a
+worked example with five categories and eight relations.
 
 ## Active workspaces
 
