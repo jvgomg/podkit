@@ -1,0 +1,67 @@
+{
+  "_name": "ECHO MINI",
+  "bcd_device": "2.00",
+  "bus_power": "500",
+  "bus_power_used": "400",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04300000 / 13",
+  "manufacturer": "ECHO MINI",
+  "Media": [
+    {
+      "_name": "MINI",
+      "bsd_name": "disk4",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "7.53 GB",
+      "size_in_bytes": 7532969984,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "ECHO MINI",
+          "bsd_name": "disk4s1",
+          "file_system": "MS-DOS FAT32",
+          "free_space": "7.52 GB",
+          "free_space_in_bytes": 7516635136,
+          "iocontent": "DOS_FAT_32",
+          "mount_point": "/Volumes/ECHO MINI",
+          "size": "7.53 GB",
+          "size_in_bytes": 7532937216,
+          "volume_uuid": "00000000-0000-0000-0000-000000000000",
+          "writable": "yes"
+        }
+      ]
+    },
+    {
+      "_name": "MINI   SD",
+      "bsd_name": "disk5",
+      "Logical Unit": 1,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "126.44 GB",
+      "size_in_bytes": 126437294080,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "Echo SD",
+          "bsd_name": "disk5s1",
+          "file_system": "ExFAT",
+          "free_space": "126.2 GB",
+          "free_space_in_bytes": 126199136256,
+          "iocontent": "Windows_NTFS",
+          "mount_point": "/Volumes/Echo SD",
+          "size": "126.42 GB",
+          "size_in_bytes": 126420516864,
+          "volume_uuid": "77835823-7D54-386B-B6C2-2E65AB80C5B8",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x3203",
+  "serial_num": "USBV1.00",
+  "vendor_id": "0x071b"
+}

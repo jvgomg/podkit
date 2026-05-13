@@ -1,0 +1,48 @@
+{
+  "_name": "iPod",
+  "bcd_device": "0.01",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04300000 / 6",
+  "manufacturer": "Apple Inc.",
+  "Media": [
+    {
+      "_name": "iPod",
+      "bsd_name": "disk4",
+      "Logical Unit": 0,
+      "partition_map_type": "apple_partition_map_type",
+      "removable_media": "yes",
+      "size": "15.8 GB",
+      "size_in_bytes": 15798411264,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "disk4s1",
+          "bsd_name": "disk4s1",
+          "iocontent": "Apple_partition_map",
+          "size": "254 KB",
+          "size_in_bytes": 253952
+        },
+        {
+          "_name": "iPod",
+          "bsd_name": "disk4s2",
+          "file_system": "Journaled HFS+",
+          "free_space": "15.72 GB",
+          "free_space_in_bytes": 15718334464,
+          "iocontent": "Apple_HFS",
+          "mount_point": "/Volumes/iPod",
+          "size": "15.8 GB",
+          "size_in_bytes": 15798108160,
+          "volume_uuid": "0D9F9053-6CE5-3C9C-9E4D-7605622B16AA",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x1267",
+  "serial_num": "000A270024565D97",
+  "vendor_id": "apple_vendor_id"
+}

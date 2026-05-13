@@ -1,0 +1,190 @@
+ls: /Volumes/NO NAME/.Spotlight-V100: Operation not permitted
+total 256
+drwx------@ 1 james  staff      0 27 Dec  1970 .
+drwxr-xr-x  4 root   wheel    128 13 May 22:12 ..
+drwx------  1 james  staff  32768 13 May 22:12 .fseventsd
+drwx------  1 james  staff  32768 13 May 22:12 .Spotlight-V100
+drwx------  1 james  staff  32768 14 Apr  2010 OMGAUDIO
+
+/Volumes/NO NAME/.fseventsd:
+total 192
+drwx------  1 james  staff  32768 13 May 22:12 .
+drwx------@ 1 james  staff      0 27 Dec  1970 ..
+-rwx------  1 james  staff     36 13 May 22:12 fseventsd-uuid
+
+/Volumes/NO NAME/.Spotlight-V100:
+total 0
+
+/Volumes/NO NAME/OMGAUDIO:
+total 9024
+drwx------  1 james  staff    32768 14 Apr  2010 .
+drwx------@ 1 james  staff        0 27 Dec  1970 ..
+-rwx------  1 james  staff      220 14 Apr  2010 0001001D.DAT
+-rwx------  1 james  staff      172 14 Apr  2010 00010021.DAT
+-rwx------  1 james  staff     4576 23 Nov  2010 00GTRLST.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE01.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE02.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE03.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE04.DAT
+-rwx------  1 james  staff    16480 23 Nov  2012 01TREE10.DAT
+-rwx------  1 james  staff    16464 23 Nov  2010 01TREE11.DAT
+-rwx------  1 james  staff    16464 23 Nov  2010 01TREE12.DAT
+-rwx------  1 james  staff    16464 23 Nov  2010 01TREE13.DAT
+-rwx------  1 james  staff    16464 23 Nov  2010 01TREE14.DAT
+-rwx------  1 james  staff    16464 23 Nov  2010 01TREE15.DAT
+-rwx------  1 james  staff    16544 23 Nov  2010 01TREE22.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE2D.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE2E.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE2F.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE30.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE31.DAT
+-rwx------  1 james  staff    16496 23 Nov  2010 01TREE32.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE33.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE34.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE35.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE36.DAT
+-rwx------  1 james  staff    16624 23 Nov  2010 01TREE37.DAT
+-rwx------  1 james  staff     7968 23 Nov  2010 02TREINF.DAT
+-rwx------  1 james  staff    22000 23 Nov  2010 03GINF01.DAT
+-rwx------  1 james  staff     3504 23 Nov  2010 03GINF02.DAT
+-rwx------  1 james  staff     2496 23 Nov  2010 03GINF03.DAT
+-rwx------  1 james  staff     1776 23 Nov  2010 03GINF04.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF10.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF11.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF12.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF13.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF14.DAT
+-rwx------  1 james  staff      192 14 Apr  2010 03GINF15.DAT
+-rwx------  1 james  staff     2400 19 Apr  2010 03GINF22.DAT
+-rwx------  1 james  staff     9024 23 Nov  2010 03GINF2D.DAT
+-rwx------  1 james  staff    26976 23 Nov  2010 03GINF2E.DAT
+-rwx------  1 james  staff    38064 23 Nov  2010 03GINF2F.DAT
+-rwx------  1 james  staff    16944 23 Nov  2010 03GINF30.DAT
+-rwx------  1 james  staff     1680 23 Nov  2010 03GINF31.DAT
+-rwx------  1 james  staff     6304 23 Nov  2010 03GINF32.DAT
+-rwx------  1 james  staff     6848 23 Nov  2010 03GINF33.DAT
+-rwx------  1 james  staff     6848 23 Nov  2010 03GINF34.DAT
+-rwx------  1 james  staff     7664 23 Nov  2010 03GINF35.DAT
+-rwx------  1 james  staff    21536 23 Nov  2010 03GINF36.DAT
+-rwx------  1 james  staff    12560 23 Nov  2010 03GINF37.DAT
+-rwx------  1 james  staff    50560 23 Nov  2010 04CNTINF.DAT
+-rwx------  1 james  staff     3744 23 Nov  2010 05CIDLST.DAT
+-rwx------  1 james  staff      160 23 Nov  2010 07GTCHLG.DAT
+drwx------  1 james  staff    32768 14 Apr  2010 10F00
+drwx------  1 james  staff    32768 14 Apr  2010 30GRCT
+drwx------  1 james  staff    32768 14 Apr  2010 A_WM
+-rwx------  1 james  staff  2621440 23 Nov  2012 ACTIVITY.DAT
+drwx------  1 james  staff    32768 14 Apr  2010 CONNECT
+-rwx------  1 james  staff    32768 14 Apr  2010 SRCIDLST.BAK
+-rwx------  1 james  staff    32768 14 Apr  2010 SRCIDLST.DAT
+
+/Volumes/NO NAME/OMGAUDIO/10F00:
+total 465472
+drwx------  1 james  staff    32768 14 Apr  2010 .
+drwx------  1 james  staff    32768 14 Apr  2010 ..
+-rwx------  1 james  staff  4200000 14 Apr  2010 10000001.OMA
+-rwx------  1 james  staff  2507997 14 Apr  2010 10000002.OMA
+-rwx------  1 james  staff  3206825 14 Apr  2010 10000003.OMA
+-rwx------  1 james  staff  2497548 14 Apr  2010 10000004.OMA
+-rwx------  1 james  staff  4021010 14 Apr  2010 10000005.OMA
+-rwx------  1 james  staff  2507161 14 Apr  2010 10000006.OMA
+-rwx------  1 james  staff  3031282 14 Apr  2010 10000007.OMA
+-rwx------  1 james  staff  4717748 14 Apr  2010 10000008.OMA
+-rwx------  1 james  staff  2354188 19 Apr  2010 10000009.OMA
+-rwx------  1 james  staff  3041313 19 Apr  2010 1000000A.OMA
+-rwx------  1 james  staff  2146881 19 Apr  2010 1000000B.OMA
+-rwx------  1 james  staff  2854068 19 Apr  2010 1000000C.OMA
+-rwx------  1 james  staff  2387625 19 Apr  2010 1000000D.OMA
+-rwx------  1 james  staff  2477486 19 Apr  2010 1000000E.OMA
+-rwx------  1 james  staff  4165624 19 Apr  2010 1000000F.OMA
+-rwx------  1 james  staff  3366486 19 Apr  2010 10000010.OMA
+-rwx------  1 james  staff  3119472 19 Apr  2010 10000011.OMA
+-rwx------  1 james  staff  2129744 19 Apr  2010 10000012.OMA
+-rwx------  1 james  staff  3435449 19 Apr  2010 10000013.OMA
+-rwx------  1 james  staff  2911746 19 Apr  2010 10000014.OMA
+-rwx------  1 james  staff  2864935 19 Apr  2010 10000015.OMA
+-rwx------  1 james  staff  3860095 19 Apr  2010 10000016.OMA
+-rwx------  1 james  staff  3728856 19 Apr  2010 10000017.OMA
+-rwx------  1 james  staff  3573793 19 Apr  2010 10000018.OMA
+-rwx------  1 james  staff  3426672 19 Apr  2010 10000019.OMA
+-rwx------  1 james  staff  2486264 19 Apr  2010 1000001A.OMA
+-rwx------  1 james  staff  3336600 19 Apr  2010 1000001B.OMA
+-rwx------  1 james  staff  2690228 19 Apr  2010 1000001C.OMA
+-rwx------  1 james  staff  4617019 19 Apr  2010 1000001D.OMA
+-rwx------  1 james  staff  2486264 19 Apr  2010 1000001E.OMA
+-rwx------  1 james  staff  4020592 19 Apr  2010 1000001F.OMA
+-rwx------  1 james  staff  4196552 19 Apr  2010 10000020.OMA
+-rwx------  1 james  staff  3172970 19 Apr  2010 10000021.OMA
+-rwx------  1 james  staff  2875801 19 Apr  2010 10000022.OMA
+-rwx------  1 james  staff  2834424 19 Apr  2010 10000023.OMA
+-rwx------  1 james  staff  1766538 19 Apr  2010 10000024.OMA
+-rwx------  1 james  staff  3903563 19 Apr  2010 10000025.OMA
+-rwx------  1 james  staff  2908402 19 Apr  2010 10000026.OMA
+-rwx------  1 james  staff  3684552 19 Apr  2010 10000027.OMA
+-rwx------  1 james  staff  4265098 19 Apr  2010 10000028.OMA
+-rwx------  1 james  staff  2456170 19 Apr  2010 10000029.OMA
+-rwx------  1 james  staff  3056360 19 Apr  2010 1000002A.OMA
+-rwx------  1 james  staff  3817046 19 Apr  2010 1000002B.OMA
+-rwx------  1 james  staff  4420161 19 Apr  2010 1000002C.OMA
+-rwx------  1 james  staff  3791452 19 Apr  2010 1000002D.OMA
+-rwx------  1 james  staff  4019756 19 Apr  2010 1000002E.OMA
+-rwx------  1 james  staff  2586156 19 Apr  2010 1000002F.OMA
+-rwx------  1 james  staff  3452585 19 Apr  2010 10000030.OMA
+-rwx------  1 james  staff  3766965 19 Apr  2010 10000031.OMA
+-rwx------  1 james  staff  3930353 19 Apr  2010 10000032.OMA
+-rwx------  1 james  staff  3039156 19 Apr  2010 10000033.OMA
+-rwx------  1 james  staff  3289581 19 Apr  2010 10000034.OMA
+-rwx------  1 james  staff  2274085 19 Apr  2010 10000035.OMA
+-rwx------  1 james  staff  4418489 19 Apr  2010 10000036.OMA
+-rwx------  1 james  staff  1468952 19 Apr  2010 10000037.OMA
+-rwx------  1 james  staff  3411040 19 Apr  2010 10000038.OMA
+-rwx------  1 james  staff  2517600 19 Apr  2010 10000039.OMA
+-rwx------  1 james  staff  3475991 19 Apr  2010 1000003A.OMA
+-rwx------  1 james  staff  2161092 19 Apr  2010 1000003B.OMA
+-rwx------  1 james  staff  2321587 19 Apr  2010 1000003C.OMA
+-rwx------  1 james  staff  3762292 19 Apr  2010 1000003D.OMA
+-rwx------  1 james  staff  3884755 19 Apr  2010 1000003E.OMA
+-rwx------  1 james  staff  3374845 19 Apr  2010 1000003F.OMA
+-rwx------  1 james  staff  8387428 19 Apr  2010 10000040.OMA
+-rwx------  1 james  staff  2769836 19 Apr  2010 10000041.OMA
+-rwx------  1 james  staff  3291671 19 Apr  2010 10000042.OMA
+-rwx------  1 james  staff  3028356 19 Apr  2010 10000043.OMA
+-rwx------  1 james  staff  1551707 19 Apr  2010 10000044.OMA
+-rwx------  1 james  staff  1411664 28 Apr  2010 10000045.OMA
+-rwx------  1 james  staff  2174192 28 Apr  2010 10000046.OMA
+-rwx------  1 james  staff  1663960 28 Apr  2010 10000047.OMA
+-rwx------  1 james  staff  1628240 28 Apr  2010 10000048.OMA
+-rwx------  1 james  staff  2156520 28 Apr  2010 10000049.OMA
+-rwx------  1 james  staff  2081320 28 Apr  2010 1000004A.OMA
+-rwx------  1 james  staff  1415424 28 Apr  2010 1000004B.OMA
+-rwx------  1 james  staff   603648 23 Nov  2010 1000004C.OMA
+-rwx------  1 james  staff  2599948 23 Nov  2010 1000004D.OMA
+
+/Volumes/NO NAME/OMGAUDIO/30GRCT:
+total 128
+drwx------  1 james  staff  32768 14 Apr  2010 .
+drwx------  1 james  staff  32768 14 Apr  2010 ..
+
+/Volumes/NO NAME/OMGAUDIO/A_WM:
+total 1408
+drwx------  1 james  staff   32768 14 Apr  2010 .
+drwx------  1 james  staff   32768 14 Apr  2010 ..
+-rwx------  1 james  staff     112 28 Jan  2006 ARDETECT.DAT
+-rwx------  1 james  staff      80 19 Apr  2010 ARTISTLK.DAT
+-rwx------  1 james  staff     176 23 Nov  2010 C2DETECT.DAT
+-rwx------  1 james  staff    3744 23 Nov  2010 EXCNTINF.DAT
+-rwx------  1 james  staff    2208 23 Nov  2010 EXGINF01.DAT
+-rwx------  1 james  staff     192 23 Nov  2010 EXGINF02.DAT
+-rwx------  1 james  staff   17104 23 Nov  2010 EXTREE01.DAT
+-rwx------  1 james  staff   16816 23 Nov  2010 EXTREE02.DAT
+-rwx------  1 james  staff      48 14 Apr  2010 MISCNIDL.DAT
+-rwx------  1 james  staff      48 14 Apr  2010 MISCNMTD.DAT
+-rwx------  1 james  staff  314096 28 Jan  2006 USREVENT.LOG
+
+/Volumes/NO NAME/OMGAUDIO/CONNECT:
+total 384
+drwx------  1 james  staff  32768 14 Apr  2010 .
+drwx------  1 james  staff  32768 14 Apr  2010 ..
+-rwx------  1 james  staff     80 19 Apr  2010 ARTSTINF.DAT
+-rwx------  1 james  staff     48 14 Apr  2010 DELCNLST.DAT
+-rwx------  1 james  staff  51792 23 Nov  2010 EXCNTMTA.DAT

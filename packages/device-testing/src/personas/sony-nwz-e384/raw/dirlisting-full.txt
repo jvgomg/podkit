@@ -1,0 +1,70 @@
+total 17024
+drwx------@ 1 james  staff        0 13 May 21:08 .
+drwxr-xr-x  4 root   wheel      128 13 May 21:11 ..
+drwx------  1 james  staff    16384 13 May 21:08 .fseventsd
+-rwx------  1 james  staff        0  1 Jan  1980 .Trashes
+-rwx------  1 james  staff     3652  1 Jan  1980 capability_00.xml
+drwx------  1 james  staff    16384  1 Jan  1980 DCIM
+-rwx------  1 james  staff     1364  1 Jan  1980 default-capability.xml
+-rwx------  1 james  staff       32  1 Jan  1980 DeviceInfo.txt
+-rwx------  1 james  staff    76142  1 Jan  1980 DEVICON.FIL
+drwx------  1 james  staff    16384  1 Jan  1980 MP_ROOT
+drwx------  1 james  staff    16384  1 Jan  1980 MUSIC
+drwx------  1 james  staff    16384  1 Jan  1980 PICTURE
+drwx------  1 james  staff    16384  1 Jan  1980 PICTURES
+-rwx------  1 james  staff     2444  1 Jan  1980 RAMLIST.DAT
+-rwx------  1 james  staff      252  1 Jun  2013 SETSTOR.DAT
+-rwx------  1 james  staff  4194304  1 Jan  1980 STDBDATA.DAT
+-rwx------  1 james  staff     1308  1 Jan  1980 STDBDATA.IDX
+-rwx------  1 james  staff  4194304  1 Jan  1980 STDBSTR.DAT
+-rwx------  1 james  staff     6864  1 Jan  1980 STDBSTR.IDX
+drwx------  1 james  staff    16384  1 Jan  1980 VIDEO
+
+/Volumes/WALKMAN/.fseventsd:
+total 96
+drwx------  1 james  staff  16384 13 May 21:08 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff     36 13 May 21:08 fseventsd-uuid
+
+/Volumes/WALKMAN/DCIM:
+total 64
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380
+
+/Volumes/WALKMAN/MP_ROOT:
+total 64
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380
+
+/Volumes/WALKMAN/MUSIC:
+total 96
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380
+drwx------  1 james  staff  16384  1 Jan  1980 Playlists
+
+/Volumes/WALKMAN/MUSIC/Playlists:
+total 3264
+drwx------  1 james  staff    16384  1 Jan  1980 .
+drwx------  1 james  staff    16384  1 Jan  1980 ..
+-rwx------  1 james  staff  1632713 31 Dec  1979 With Hope Crossed On Our Hearts IN GAME VERSION (Deltarune Chapter 3+4 OST) (128kbit_AAC).m4a
+
+/Volumes/WALKMAN/PICTURE:
+total 64
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380
+
+/Volumes/WALKMAN/PICTURES:
+total 64
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380
+
+/Volumes/WALKMAN/VIDEO:
+total 64
+drwx------  1 james  staff  16384  1 Jan  1980 .
+drwx------@ 1 james  staff      0 13 May 21:08 ..
+-rwx------  1 james  staff      0  1 Jan  1980 .E380

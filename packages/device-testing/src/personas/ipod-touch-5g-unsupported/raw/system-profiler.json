@@ -1,0 +1,13 @@
+{
+  "_name": "iPod",
+  "bcd_device": "7.10",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04300000 / 10",
+  "manufacturer": "Apple Inc.",
+  "product_id": "0x12aa",
+  "serial_num": "637fea3cca37ff292e9cd4b26b1d411dfce06fd8",
+  "vendor_id": "apple_vendor_id"
+}

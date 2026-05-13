@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AllDisks</key>
+	<array>
+		<string>disk5</string>
+		<string>disk5s1</string>
+	</array>
+	<key>AllDisksAndPartitions</key>
+	<array>
+		<dict>
+			<key>Content</key>
+			<string>FDisk_partition_scheme</string>
+			<key>DeviceIdentifier</key>
+			<string>disk5</string>
+			<key>OSInternal</key>
+			<false/>
+			<key>Partitions</key>
+			<array>
+				<dict>
+					<key>Content</key>
+					<string>Windows_NTFS</string>
+					<key>DeviceIdentifier</key>
+					<string>disk5s1</string>
+					<key>MountPoint</key>
+					<string>/Volumes/Echo SD</string>
+					<key>Size</key>
+					<integer>126420516864</integer>
+					<key>VolumeName</key>
+					<string>Echo SD</string>
+					<key>VolumeUUID</key>
+					<string>77835823-7D54-386B-B6C2-2E65AB80C5B8</string>
+				</dict>
+			</array>
+			<key>Size</key>
+			<integer>126437294080</integer>
+		</dict>
+	</array>
+	<key>VolumesFromDisks</key>
+	<array>
+		<string>Echo SD</string>
+	</array>
+	<key>WholeDisks</key>
+	<array>
+		<string>disk5</string>
+	</array>
+</dict>
+</plist>

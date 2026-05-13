@@ -1,0 +1,15 @@
+ls: /Volumes/ECHO MINI/.Spotlight-V100: Operation not permitted
+total 24
+drwx------@ 1 james  staff     0  9 May 18:58 .
+drwxr-xr-x  6 root   wheel   192 13 May 21:08 ..
+drwx------  1 james  staff  4096 13 May 21:05 .fseventsd
+drwx------  1 james  staff  4096 24 Mar 12:08 .Spotlight-V100
+
+/Volumes/ECHO MINI/.fseventsd:
+total 24
+drwx------  1 james  staff  4096 13 May 21:05 .
+drwx------@ 1 james  staff     0  9 May 18:58 ..
+-rwx------  1 james  staff    36 13 May 21:05 fseventsd-uuid
+
+/Volumes/ECHO MINI/.Spotlight-V100:
+total 0

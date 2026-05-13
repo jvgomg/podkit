@@ -1,0 +1,41 @@
+{
+  "_name": "WALKMAN",
+  "bcd_device": "0.01",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04100000 / 14",
+  "manufacturer": "SONY",
+  "Media": [
+    {
+      "_name": "WALKMAN",
+      "bsd_name": "disk6",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "7.71 GB",
+      "size_in_bytes": 7713849344,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "WALKMAN",
+          "bsd_name": "disk6s1",
+          "file_system": "MS-DOS FAT32",
+          "free_space": "7.7 GB",
+          "free_space_in_bytes": 7699611648,
+          "iocontent": "DOS_FAT_32",
+          "mount_point": "/Volumes/WALKMAN",
+          "size": "7.71 GB",
+          "size_in_bytes": 7713839104,
+          "volume_uuid": "6D82FA4C-2F56-3BD8-AEB8-D378E5E02D12",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x0882",
+  "serial_num": "10431991572055",
+  "vendor_id": "0x054c  (Sony Corporation)"
+}

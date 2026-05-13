@@ -1,0 +1,37 @@
+{
+  "_name": "iPod",
+  "bcd_device": "0.02",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04100000 / 8",
+  "manufacturer": "Apple",
+  "Media": [
+    {
+      "_name": "iPod",
+      "bsd_name": "disk4",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "1 TB",
+      "size_in_bytes": 1003294294016,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "TERAPOD",
+          "bsd_name": "disk4s2",
+          "file_system": "MS-DOS FAT32",
+          "iocontent": "DOS_FAT_32",
+          "size": "1 TB",
+          "size_in_bytes": 1003195588608,
+          "volume_uuid": "2ADFFE6C-49BF-3F3A-8AF8-2787C0AD048B"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x1209",
+  "serial_num": "000A27001605D1A0",
+  "vendor_id": "apple_vendor_id"
+}

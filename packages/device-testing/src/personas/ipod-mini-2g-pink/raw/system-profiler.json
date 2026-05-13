@@ -1,0 +1,41 @@
+{
+  "_name": "iPod mini",
+  "bcd_device": "0.01",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04100000 / 2",
+  "manufacturer": "Apple",
+  "Media": [
+    {
+      "_name": "iPod",
+      "bsd_name": "disk4",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "4.1 GB",
+      "size_in_bytes": 4095737856,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "SALLYS IPOD",
+          "bsd_name": "disk4s2",
+          "file_system": "MS-DOS FAT32",
+          "free_space": "3.58 GB",
+          "free_space_in_bytes": 3579883520,
+          "iocontent": "DOS_FAT_32",
+          "mount_point": "/Volumes/SALLYS IPOD",
+          "size": "4.05 GB",
+          "size_in_bytes": 4046837760,
+          "volume_uuid": "393DBD2B-7F59-3E74-BF97-01F296F76B83",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x1205",
+  "serial_num": "000A270014198517",
+  "vendor_id": "apple_vendor_id"
+}

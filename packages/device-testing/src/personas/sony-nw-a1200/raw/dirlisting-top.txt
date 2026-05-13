@@ -1,0 +1,8 @@
+total 384
+drwx------@ 1 james  staff      0 14 Mar  1980 .
+drwxr-xr-x  4 root   wheel    128 13 May 22:19 ..
+drwx------  1 james  staff  32768 13 May 22:19 .fseventsd
+drwx------  1 james  staff  32768 13 May 22:19 .Spotlight-V100
+drwx------  1 james  staff  32768 13 Oct  2021 MEDIAGO
+drwx------  1 james  staff  32768 14 Jan  2020 OMGAUDIO
+drwx------  1 james  staff  32768 14 Jan  2020 System Volume Information

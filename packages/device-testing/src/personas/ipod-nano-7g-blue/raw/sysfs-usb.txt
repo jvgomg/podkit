@@ -1,0 +1,12 @@
+idVendor=05ac
+idProduct=1267
+serial=000A270024565D97
+bDeviceClass=00
+bDeviceSubClass=00
+bDeviceProtocol=00
+bcdDevice=0001
+bMaxPacketSize0=64
+bNumConfigurations=2
+manufacturer=Apple Inc.
+product=iPod
+version= 2.00

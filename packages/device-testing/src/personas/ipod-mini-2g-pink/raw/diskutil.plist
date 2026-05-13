@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AllDisks</key>
+	<array>
+		<string>disk4</string>
+		<string>disk4s2</string>
+	</array>
+	<key>AllDisksAndPartitions</key>
+	<array>
+		<dict>
+			<key>Content</key>
+			<string>FDisk_partition_scheme</string>
+			<key>DeviceIdentifier</key>
+			<string>disk4</string>
+			<key>OSInternal</key>
+			<false/>
+			<key>Partitions</key>
+			<array>
+				<dict>
+					<key>Content</key>
+					<string>DOS_FAT_32</string>
+					<key>DeviceIdentifier</key>
+					<string>disk4s2</string>
+					<key>MountPoint</key>
+					<string>/Volumes/SALLYS IPOD</string>
+					<key>Size</key>
+					<integer>4046837760</integer>
+					<key>VolumeName</key>
+					<string>SALLYS IPOD</string>
+					<key>VolumeUUID</key>
+					<string>393DBD2B-7F59-3E74-BF97-01F296F76B83</string>
+				</dict>
+			</array>
+			<key>Size</key>
+			<integer>4095737856</integer>
+		</dict>
+	</array>
+	<key>VolumesFromDisks</key>
+	<array>
+		<string>SALLYS IPOD</string>
+	</array>
+	<key>WholeDisks</key>
+	<array>
+		<string>disk4</string>
+	</array>
+</dict>
+</plist>

@@ -1,0 +1,40 @@
+{
+  "_name": "HDD WALKMAN",
+  "bcd_device": "1.00",
+  "bus_power": "500",
+  "bus_power_used": "500",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04100000 / 19",
+  "manufacturer": "Sony",
+  "Media": [
+    {
+      "_name": "HDD WALKMAN",
+      "bsd_name": "disk4",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "7.84 GB",
+      "size_in_bytes": 7838243328,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "NO NAME",
+          "bsd_name": "disk4s1",
+          "file_system": "MS-DOS FAT32",
+          "free_space": "4.28 GB",
+          "free_space_in_bytes": 4276486144,
+          "iocontent": "Windows_FAT_32",
+          "mount_point": "/Volumes/NO NAME",
+          "size": "7.84 GB",
+          "size_in_bytes": 7838211072,
+          "volume_uuid": "B0D74B8F-47CD-39D5-A1A9-1F58518EB837",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x026a",
+  "vendor_id": "0x054c  (Sony Corporation)"
+}

@@ -1,0 +1,36 @@
++-o WALKMAN@04100000  <class IOUSBHostDevice, id 0x101acc998, registered, matched, active, busy 0 (579 ms), retain 24>
+    {
+      "sessionID" = 25233342366082
+      "USBSpeed" = 3
+      "idProduct" = 2178
+      "iManufacturer" = 1
+      "bDeviceClass" = 0
+      "IOPowerManagement" = {"PowerOverrideOn"=Yes,"CapabilityFlags"=32768,"MaxPowerState"=2,"DevicePowerState"=2,"DriverPowerState"=0,"ChildrenPowerState"=2,"CurrentPowerState"=2}
+      "bcdDevice" = 1
+      "bMaxPacketSize0" = 64
+      "iProduct" = 2
+      "iSerialNumber" = 5
+      "bNumConfigurations" = 1
+      "UsbDeviceSignature" = <4c05820801003130343331393931353732303535000000080650>
+      "USB Product Name" = "WALKMAN"
+      "locationID" = 68157440
+      "bDeviceSubClass" = 0
+      "bcdUSB" = 512
+      "kUSBSerialNumberString" = "10431991572055"
+      "USB Address" = 14
+      "IOCFPlugInTypes" = {"9dc7b780-9ec0-11d4-a54f-000a27052861"="IOUSBHostFamily.kext/Contents/PlugIns/IOUSBLib.bundle"}
+      "kUSBCurrentConfiguration" = 1
+      "bDeviceProtocol" = 0
+      "USBPortType" = 0
+      "IOServiceDEXTEntitlements" = (("com.apple.developer.driverkit.transport.usb"))
+      "USB Vendor Name" = "SONY"
+      "Device Speed" = 2
+      "idVendor" = 1356
+      "kUSBProductString" = "WALKMAN"
+      "USB Serial Number" = "10431991572055"
+      "IOGeneralInterest" = "IOCommand is not serializable"
+      "kUSBAddress" = 14
+      "kUSBVendorString" = "SONY"
+    }
+    
+

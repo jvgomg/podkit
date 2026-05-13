@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<devices>
+  <version>3.0</version>
+  <device>
+    <identification>
+      <class>WALKMAN/Standard/AudioOnly</class>
+      <model>NWZ-E380 Series</model>
+      <marketingname>WALKMAN NWZ-E380 Series</marketingname>
+      <vendor>Sony Corporation</vendor>
+      <firmwareversion>1.00</firmwareversion> 
+    </identification>
+    <storage>
+      <type>INTERNAL</type>
+      <max-full>90</max-full>
+    </storage>
+    <audio> 
+      <format id="WAV">
+        <extension>wav</extension>
+      </format>
+      <format id="MP3">
+        <extension>mp3</extension>
+      </format>
+      <format id="MP4">
+        <extension>mp4</extension>
+      </format>
+      <format id="3GPP">
+        <extension>3gp</extension>
+      </format>
+      <format id="M4A">
+        <extension>m4a</extension>
+      </format>
+      <format id="Windows Media">
+        <extension>wma</extension>
+      </format>
+    </audio>
+    <audio-playlist>
+      <format id="m3u8">
+        <extension>m3u</extension>
+      </format>
+    </audio-playlist>
+    <filesystem>
+      <path>
+        <sound>\Music\</sound>
+        <soundsources/>
+        <feedsound/> 
+      </path>
+    </filesystem>
+    <drm>
+    </drm>
+    <SensMe available="false" />
+    <Kashipita available="false" />
+  </device>
+</devices>

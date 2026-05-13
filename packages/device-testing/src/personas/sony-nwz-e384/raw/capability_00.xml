@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Devices xmlns="http://xmlns.sony.net/walkman/capability" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+	<FormatDescription>
+		<Version>1.1.0</Version>
+		<FormatBrand>Walkman Playback Capability</FormatBrand>
+		<Description>Describe Walkman contents playback capability</Description>
+	</FormatDescription>
+	<Device>
+		<Identification>
+			<Model>NWZ-E380 Series</Model>
+			<Manufacturer>Sony Corporation</Manufacturer>
+			<Vendor>SONY</Vendor>
+			<Brand>Walkman</Brand>
+		</Identification>
+		<Storage type="MTP" max-full="100" />
+		<Display>
+			<Dimension unit="pixels">
+				<Height>128</Height>
+				<Width>160</Width>
+			</Dimension>
+		</Display>
+		<PlaybackCapabilities>
+			<Image>
+				<Format preferred="true">
+					<Extension>jpg</Extension>
+					<MIME-Type>image/jpeg</MIME-Type>
+				</Format>
+				<ImageCapability>
+					<ExpectedDimension unit="pixels">
+						<Height>128</Height>
+						<Width>160</Width>
+					</ExpectedDimension>
+					<CapableProgressive>false</CapableProgressive>
+				</ImageCapability>
+			</Image>
+			<Audio>
+				<Format preferred="true">
+					<Extension>mp3</Extension>
+					<MIME-Type>audio/mp3</MIME-Type>
+				</Format>
+			</Audio>
+			<Audio>
+				<Format>
+					<Extension>mp4</Extension>
+					<Extension>m4a</Extension>
+					<MIME-Type>audio/mp4</MIME-Type>
+					<MIME-Type>audio/m4a</MIME-Type>
+				</Format>
+			</Audio>
+			<Audio>
+				<Format>
+					<Extension>wma</Extension>
+					<MIME-Type>audio/wma</MIME-Type>
+					<MIME-Type>audio/x-ms-wma</MIME-Type>
+				</Format>
+			</Audio>
+			<Audio>
+				<Format>
+					<Extension>wav</Extension>
+					<MIME-Type>audio/wav</MIME-Type>
+				</Format>
+			</Audio>
+			<Video>
+				<Format>
+					<Extension>wmv</Extension>
+					<MIME-Type>video/x-ms-wmv</MIME-Type> 
+					<Encoding>
+						<Codec>WMA</Codec>
+						<Codec>VC1MP</Codec> 
+					</Encoding>
+				</Format>
+				<AudioCapability>
+					<Channel>2</Channel> 
+					<SamplingRate>44100</SamplingRate> 
+					<SamplingRate>48000</SamplingRate> 
+					<MaxBitrate>256000</MaxBitrate> 
+				</AudioCapability>
+				<VideoCapability>
+					<MaxFrameRate>30</MaxFrameRate> 
+					<CapableVariableFrameRate>true</CapableVariableFrameRate> 
+					<MaxDimension unit="pixels">
+						<Height>128</Height> 
+						<Width>160</Width> 
+					</MaxDimension>
+					<MaxBitrate>768000</MaxBitrate> 
+				</VideoCapability>
+			</Video>
+			<Video>
+				<Format>
+					<Extension>wmv</Extension>
+					<MIME-Type>video/x-ms-wmv</MIME-Type> 
+					<Encoding>
+						<Codec>WMA</Codec>
+						<Codec>VC1SP</Codec> 
+					</Encoding>
+				</Format>
+				<AudioCapability>
+					<Channel>2</Channel> 
+					<SamplingRate>44100</SamplingRate> 
+					<SamplingRate>48000</SamplingRate> 
+					<MaxBitrate>256000</MaxBitrate> 
+				</AudioCapability>
+				<VideoCapability>
+					<MaxFrameRate>30</MaxFrameRate> 
+					<CapableVariableFrameRate>true</CapableVariableFrameRate> 
+					<MaxDimension unit="pixels">
+						<Height>128</Height> 
+						<Width>160</Width> 
+					</MaxDimension>
+					<MaxBitrate>768000</MaxBitrate> 
+				</VideoCapability>
+			</Video>
+		</PlaybackCapabilities>
+		<FileSystem>
+			<Path content-type="camera" depth="6">
+				<Target>\DCIM\</Target>
+			</Path>
+			<Path content-type="image" depth="6">
+				<Target>\PICTURE\</Target>
+			</Path>
+			<Path content-type="video" depth="6">
+				<Target>\VIDEO\</Target>
+			</Path>
+			<Path content-type="sound" depth="7">
+				<Target>\MUSIC\</Target>
+			</Path>
+		</FileSystem>
+		<DRM target="wmdrm" capable="true" />
+	</Device>
+</Devices>

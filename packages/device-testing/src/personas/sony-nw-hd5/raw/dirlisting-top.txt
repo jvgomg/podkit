@@ -1,0 +1,6 @@
+total 256
+drwx------@ 1 james  staff      0  1 Apr  2000 .
+drwxr-xr-x  4 root   wheel    128 13 May 22:29 ..
+drwx------  1 james  staff  32768 13 May 22:29 .fseventsd
+drwx------  1 james  staff  32768 13 May 21:52 .Spotlight-V100
+drwx------  1 james  staff  32768 16 Jun  2005 OMGAUDIO

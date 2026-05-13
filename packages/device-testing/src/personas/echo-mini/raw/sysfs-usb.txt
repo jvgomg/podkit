@@ -1,0 +1,12 @@
+idVendor=071b
+idProduct=3203
+serial=USBV1.00
+bDeviceClass=00
+bDeviceSubClass=00
+bDeviceProtocol=00
+bcdDevice=0200
+bMaxPacketSize0=64
+bNumConfigurations=1
+manufacturer=ECHO MINI
+product=ECHO MINI
+version= 2.00

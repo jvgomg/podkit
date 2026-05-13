@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AllDisks</key>
+	<array>
+		<string>disk4</string>
+		<string>disk4s1</string>
+		<string>disk4s2</string>
+	</array>
+	<key>AllDisksAndPartitions</key>
+	<array>
+		<dict>
+			<key>Content</key>
+			<string>Apple_partition_scheme</string>
+			<key>DeviceIdentifier</key>
+			<string>disk4</string>
+			<key>OSInternal</key>
+			<false/>
+			<key>Partitions</key>
+			<array>
+				<dict>
+					<key>Content</key>
+					<string>Apple_partition_map</string>
+					<key>DeviceIdentifier</key>
+					<string>disk4s1</string>
+					<key>Size</key>
+					<integer>253952</integer>
+				</dict>
+				<dict>
+					<key>Content</key>
+					<string>Apple_HFS</string>
+					<key>DeviceIdentifier</key>
+					<string>disk4s2</string>
+					<key>MountPoint</key>
+					<string>/Volumes/iPod</string>
+					<key>Size</key>
+					<integer>15798108160</integer>
+					<key>VolumeName</key>
+					<string>iPod</string>
+					<key>VolumeUUID</key>
+					<string>0D9F9053-6CE5-3C9C-9E4D-7605622B16AA</string>
+				</dict>
+			</array>
+			<key>Size</key>
+			<integer>15798411264</integer>
+		</dict>
+	</array>
+	<key>VolumesFromDisks</key>
+	<array>
+		<string>iPod</string>
+	</array>
+	<key>WholeDisks</key>
+	<array>
+		<string>disk4</string>
+	</array>
+</dict>
+</plist>

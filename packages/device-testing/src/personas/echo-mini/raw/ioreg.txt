@@ -1,0 +1,36 @@
++-o ECHO MINI@04300000  <class IOUSBHostDevice, id 0x101acc894, registered, matched, active, busy 0 (294 ms), retain 23>
+    {
+      "sessionID" = 25229066437367
+      "USBSpeed" = 3
+      "idProduct" = 12803
+      "iManufacturer" = 1
+      "bDeviceClass" = 0
+      "IOPowerManagement" = {"PowerOverrideOn"=Yes,"CapabilityFlags"=32768,"MaxPowerState"=2,"DevicePowerState"=2,"DriverPowerState"=0,"ChildrenPowerState"=2,"CurrentPowerState"=2}
+      "bcdDevice" = 512
+      "bMaxPacketSize0" = 64
+      "iProduct" = 2
+      "iSerialNumber" = 3
+      "bNumConfigurations" = 1
+      "UsbDeviceSignature" = <1b070332000255534256312e3030000000080650>
+      "USB Product Name" = "ECHO MINI"
+      "locationID" = 70254592
+      "bDeviceSubClass" = 0
+      "bcdUSB" = 512
+      "kUSBSerialNumberString" = "USBV1.00"
+      "USB Address" = 13
+      "IOCFPlugInTypes" = {"9dc7b780-9ec0-11d4-a54f-000a27052861"="IOUSBHostFamily.kext/Contents/PlugIns/IOUSBLib.bundle"}
+      "kUSBCurrentConfiguration" = 1
+      "bDeviceProtocol" = 0
+      "USBPortType" = 0
+      "IOServiceDEXTEntitlements" = (("com.apple.developer.driverkit.transport.usb"))
+      "USB Vendor Name" = "ECHO MINI"
+      "Device Speed" = 2
+      "idVendor" = 1819
+      "kUSBProductString" = "ECHO MINI"
+      "USB Serial Number" = "USBV1.00"
+      "IOGeneralInterest" = "IOCommand is not serializable"
+      "kUSBAddress" = 13
+      "kUSBVendorString" = "ECHO MINI"
+    }
+    
+

@@ -4,7 +4,7 @@ title: 'Phase 5: persona registry expansion'
 status: To Do
 assignee: []
 created_date: '2026-05-11 22:56'
-updated_date: '2026-05-12 11:59'
+updated_date: '2026-05-13 22:30'
 labels:
   - testing
   - vm-coverage
@@ -22,44 +22,49 @@ ordinal: 800
 ## Description
 
 <!-- SECTION:DESCRIPTION:BEGIN -->
-Rolling parent task for expanding the persona registry beyond the 3 starter personas captured in Phase 1.
+Rolling parent task for expanding the persona registry beyond what landed in TASK-321.02.
+
+**Status update (2026-05-13):** TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starters — so most of this task's positive-case targets are already landed. What remains is **state variants**, **synthesised rejection cases**, and **firmware variants**.
 
 **Hardware inventory**: `documents/test-devices.md` is the canonical list of physical devices available for capture, with USB Product IDs, Apple serials, and capture-status notes per device. Update that doc as new personas are captured.
 
-Target personas (positive) — all confirmed in user's inventory unless noted:
-- `ipod-video-5g-fresh` (5G Video, iFlash 1TB mod) — SCSI-fallback generation; XML capture exists
-- `ipod-video-5g-corrupt-db` (5G Video, deliberately corrupted iTunesDB) — repair-path test
-- `ipod-nano-7g` (nano 7G 16GB) — USB-inquiry generation; XML capture exists; user has 2 (regular + Blue)
-- `ipod-nano-4g` (nano 4G 8GB Black) — additional generation coverage
-- `ipod-nano-3g` (nano 3G 8GB Black) — additional generation coverage
-- `ipod-nano-2g` (nano 2G 4GB Green) — captures the "post-2006 SysInfo 0-byte" edge case
-- `ipod-mini-2g` (mini 2G 4GB Pink) — SCSI-fallback generation
-- `ipod-classic-rockbox` (nano or other with Rockbox layout) — requires Rockbox install on existing hardware; firmware-variant capability synthesis
-- `echo-mini-populated` (Echo Mini DAP with content) — paired with starter `echo-mini-empty`
+**Already captured in TASK-321.02** (no longer in this task's scope):
+- ✓ `ipod-video-5g-iflash-1tb` (covers `ipod-video-5g-fresh`)
+- ✓ `ipod-nano-7g-space-gray` + `ipod-nano-7g-blue` (covers `ipod-nano-7g`)
+- ✓ `ipod-nano-4g-black` (covers `ipod-nano-4g`)
+- ✓ `ipod-nano-3g-black` (covers `ipod-nano-3g`)
+- ✓ `ipod-nano-2g-green` (covers `ipod-nano-2g`)
+- ✓ `ipod-mini-2g-pink` (covers `ipod-mini-2g`)
+- ✓ `echo-mini` (covers `echo-mini-empty`)
+- ✓ `ipod-touch-5g-unsupported` (covers `ipod-touch-not-supported`)
 
-Target personas (negative — should be rejected by classifier):
-- `ipod-touch-not-supported` (iPod touch 5G iOS) — in inventory; expected rejection
-- `ipod-shuffle-not-supported` (Shuffle) — NOT in user's inventory; needs procurement OR synthesised persona
-- `non-ipod-usb-disk` (random USB mass storage) — synthesised; must not be misclassified as iPod
-- `malformed-sysinfo` (synthetic — corrupted SysInfoExtended XML) — parser error path
+**Bonus captures landed in TASK-321.02 — not originally planned, but registry now contains:**
+- `sony-nw-hd5`, `sony-nw-a1000`, `sony-nw-a1200`, `sony-nw-a3000`, `sony-nwz-e384` (5 Sony Walkmans, rejection cases with rich probe data + family-level profiles in `devices/`)
 
-Each persona = one subtask. They're independent and can be picked up in any order.
+**Still to do — positive state variants** (require physical hardware in a particular state):
+- `ipod-video-5g-corrupt-db` — iPod 5G Video with deliberately corrupted iTunesDB. Exercises the repair path. Capture from existing 5G Video unit after running a controlled corruption (truncate iTunesDB / scramble checksum).
+- `echo-mini-populated` — Echo Mini DAP with content loaded. Pairs with the existing `echo-mini` empty-state persona to exercise sync-target detection on populated mass storage.
 
-Use the capture scripts established in TASK-321.02 for consistency. Each captured persona must update `documents/test-devices.md` with capture date + persona ID.
+**Still to do — firmware variants:**
+- `ipod-classic-rockbox` — iPod with Rockbox firmware installed. Tests firmware-variant capability synthesis. Requires Rockbox install on existing hardware (e.g. the iPod 5G Video). Coordinate with the user before installing — Rockbox install is reversible but a multi-hour commitment.
 
-**Human-in-the-loop capture flow** (same as TASK-321.02):
-1. User plugs device into mac.
-2. Agent runs `bun run device-testing:capture --persona <id>`.
-3. For Linux-side `lsblk` capture, device passed through to Lima VM via USB passthrough OR captured separately on a Linux machine.
-4. Agent commits captured data + provenance.md + updates documents/test-devices.md.
+**Still to do — synthesised rejection personas** (no hardware needed):
+- `ipod-shuffle-not-supported` — iPod shuffle. NOT in user's inventory. Synthesise from PIDs in `packages/devices-ipod/src/tables/unsupported.ts` (search for "shuffle"); set `usbDescriptor` + `unsupportedReason` only, no host-probe data. `expectedCapabilities: null`, `expectedReadiness.level: 'unsupported'` (once TASK-331 lands).
+- `non-ipod-usb-disk` — generic non-Apple USB drive (e.g. SanDisk Cruzer Blade `0x0781:0x5567`). Synthesised. Tests that the discovery pipeline silently rejects non-Apple devices rather than misclassifying them.
+- `malformed-sysinfo` — synthetic persona with a corrupted SysInfoExtended XML payload. Tests the SIE parser error path.
+
+**Workflow:** Synthesised personas follow `documents/persona-capture-playbook.md` §"Synthesised personas (no hardware)" — pure TypeScript, no `raw/` directory needed beyond a `provenance.md` explaining the synthesis recipe. State-variant personas (`corrupt-db`, `populated`, `rockbox`) follow the full hardware-capture playbook.
+
+**Dependency note:** Rejection-case personas (`ipod-shuffle-not-supported`, `non-ipod-usb-disk`, the existing `ipod-touch-5g-unsupported`, and the 5 Sony Walkmans) will all want `expectedReadiness.level: 'unsupported'` once TASK-331 lands. Either land TASK-331 first and create these personas with the new shape from day one, or create them with the current `'unknown'` workaround and sweep them in TASK-331's implementation.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 At least 6 additional positive personas captured (full set above is ideal); each cross-references documents/test-devices.md
-- [ ] #2 All 4 negative personas captured + tests asserting correct rejection behaviour
-- [ ] #3 Each persona has provenance.md
-- [ ] #4 Tier 1 unit tests cover each persona's expected capabilities / readiness / doctor output
-- [ ] #5 Tier 3 integration tests cover at least 1 positive + 1 negative persona end-to-end via the FunctionFS daemon
-- [ ] #6 documents/test-devices.md updated as each persona is captured (capture date + persona ID linked back to fixture path)
+- [ ] #1 State variants captured: ipod-video-5g-corrupt-db (deliberately corrupted iTunesDB) and echo-mini-populated (content-loaded), with provenance.md cross-referencing the empty-state siblings already in the registry
+- [ ] #2 Firmware variant captured: ipod-classic-rockbox (Rockbox-installed iPod) — coordinate with user before installing
+- [ ] #3 Synthesised rejection personas committed: ipod-shuffle-not-supported and non-ipod-usb-disk, each with synthesis recipe in provenance.md
+- [ ] #4 Synthetic error-path persona committed: malformed-sysinfo with a deliberately-corrupted SysInfoExtended XML payload, exercising the parser's error path
+- [ ] #5 Rejection-case personas (shuffle, non-ipod, plus existing touch 5G + 5 Sony Walkmans) use the canonical ReadinessLevel: 'unsupported' shape once TASK-331 lands
+- [ ] #6 documents/test-devices.md updated with each new capture's date and persona ID
+- [ ] #7 Each new persona has a provenance.md following the persona-capture-playbook template
 <!-- AC:END -->

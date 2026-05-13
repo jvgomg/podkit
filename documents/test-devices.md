@@ -1,8 +1,8 @@
 # Test Device Inventory
 
-Hardware iPods available for testing podkit's device identification and sync functionality. This document is updated as devices are tested and new data is captured.
+Hardware devices available for testing podkit's device identification and sync functionality. This document is updated as devices are tested and new data is captured.
 
-Last updated: 2026-05-09 (TASK-312 sweep — 7 iPod inventory; nano 3G + nano 7G Blue added)
+Last updated: 2026-05-13 (TASK-321.02 persona-capture sweep — Mac probes captured for all iPods + Echo Mini + new Sony Walkman NWZ-E384 added)
 
 ## Device Collection
 
@@ -49,7 +49,7 @@ Last updated: 2026-05-09 (TASK-312 sweep — 7 iPod inventory; nano 3G + nano 7G
 | Generation | nano_3g | ipod-models.ts lookup |
 | Apple serial | `XXXXXXXXEED6` | SysInfoExtended |
 | FireWire GUID | `000A27001BC8EED6` | USB serial descriptor |
-| FamilyID | (TBD) | SysInfoExtended |
+| FamilyID | unknown — not yet recorded from SysInfoExtended | SysInfoExtended |
 | Volume format | FAT32 | Filesystem |
 | Modifications | None | |
 
@@ -116,7 +116,7 @@ Last updated: 2026-05-09 (TASK-312 sweep — 7 iPod inventory; nano 3G + nano 7G
 | Volume name | IPOD | Filesystem |
 | USB Product ID | `0x1267` | USB enumeration |
 | Generation | nano_7g | ipod-models.ts lookup |
-| Model number | TBD | Serial suffix FJQ1 not in lookup table |
+| Model number | unknown | Serial suffix `FJQ1` not in lookup table |
 | Display name | iPod nano 16GB Space Gray (7th Generation) | Serial suffix lookup (JQ1 → E971) |
 | Capacity | 16 GB | USB enumeration / diskutil |
 | Checksum type | hashAB | Generation table (corrected this session) |
@@ -352,6 +352,243 @@ The USB product ID 0x1209 is shared across Video 5G, 5.5G, and Classic 6G — po
 **Video codecs from firmware:** H.264 Baseline L1.3 (peak 768kbps, max resolution 76800 pixels ≈ 320x240), H.264LC Baseline L3.0 (max 640x480), MPEG-4 (max 2500kbps). Album art: 100x100 (format 1028), 200x200 (format 1029) — matches podkit's `IPOD_ARTWORK_FORMATS.video` exactly.
 
 **XML capture:** `documents/sysinfo-captures/ipod-5g-video-iflash-1tb.xml`
+
+---
+
+### Sony Walkman NWZ-E384 (8GB)
+
+Non-iPod, non-Echo. Added 2026-05-13 as a candidate device for the mass-storage preset framework (no podkit preset registered yet). Full device profile + format/feature analysis in [`devices/sony-walkman-nwz-e380.md`](../devices/sony-walkman-nwz-e380.md).
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | WALKMAN | Filesystem |
+| USB Vendor ID | `0x054c` | USB enumeration (Sony Corporation) |
+| USB Product ID | `0x0882` | USB enumeration |
+| USB Vendor Name (descriptor) | `SONY` | ioreg `USB Vendor Name` |
+| USB Product Name (descriptor) | `WALKMAN` | ioreg `USB Product Name` |
+| Series | NWZ-E380 Series (E383 / E384 / E385) | `/capability_00.xml` `<Model>` |
+| Model | NWZ-E384 | Manufacturer marking + 8 GB SKU |
+| Marketing name | WALKMAN NWZ-E380 Series | `/default-capability.xml` `<marketingname>` |
+| Firmware version | 1.00 (PROD.1.00.2000) | `/DeviceInfo.txt` + `/default-capability.xml` |
+| USB Serial Number | `10431991572055` | ioreg (real per-unit serial) |
+| Capacity | 7.71 GB (7,713,849,344 bytes) | Filesystem |
+| Volume format | FAT32 | Filesystem |
+| Partition scheme | MBR (2048-byte sectors) | fdisk |
+| Display | 160×128 px | `/capability_00.xml` `<Display>` |
+| Sync transport | USB Mass Storage (also MTP-capable per XML) | macOS mounts as mass storage |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-13):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Vendor + product matches Sony; no `usb-hints.ts` entry → no preset auto-detect. |
+| Filesystem identity | Works | Authoritative signal is `/capability_00.xml` `<Model>NWZ-E380 Series</Model>` + `.E380` marker files in every content directory. |
+| SCSI / USB inquiry | n/a | Not an iPod; no SysInfoExtended. |
+| `device add` | **Unsupported today** | No Sony preset in `packages/devices-mass-storage/src/presets/built-in.ts`. Would need: usb-hints entry + preset definition. |
+
+**Content database:** Sony's binary `STDB*` format —
+
+- `STDBDATA.DAT` (4 MiB pre-allocated) + `STDBDATA.IDX` — record store + index
+- `STDBSTR.DAT` (4 MiB pre-allocated) + `STDBSTR.IDX` — string heap + index
+- High-entropy bytes after a short header in `STDBSTR.DAT` — may be obfuscated/compressed. Format is undocumented; the device rebuilds the DB on every unplug, so writing the DB is not required for sync.
+
+**Supported audio formats (per `/capability_00.xml` + `/default-capability.xml`):**
+
+| Codec | Container | Extension | Status |
+|-------|-----------|-----------|--------|
+| MP3 | — | `.mp3` | Preferred |
+| AAC | MP4 | `.mp4`, `.m4a` | Supported |
+| WMA | WMV | `.wma` | Supported (WMDRM-capable) |
+| WAV | — | `.wav` | Supported (PCM) |
+| 3GPP | — | `.3gp` | Supported (per default-capability.xml only) |
+
+No FLAC / ALAC / Vorbis / Opus support — predates Sony's lossless adoption on the entry Walkmans.
+
+**Supported video formats:** WMV (VC1MP + VC1SP codecs), 160×128 max, 30 fps max, 768 kbps video / 256 kbps audio.
+
+**Filesystem layout (per `/capability_00.xml` `<FileSystem>` paths):**
+
+| Content type | Path | Depth |
+|--------------|------|-------|
+| camera       | `\DCIM\`    | 6 |
+| image        | `\PICTURE\` | 6 |
+| video        | `\VIDEO\`   | 6 |
+| sound        | `\MUSIC\`   | 7 |
+
+`PICTURES/` (plural) also exists with a `.E380` marker but is not declared in `<FileSystem>` — likely a Sony PC-app convention; use `PICTURE/`.
+
+**Persona capture:** `packages/device-testing/src/personas/sony-nwz-e384/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
+
+**Implementation notes (for future Sony preset work):** see `devices/sony-walkman-nwz-e380.md` § "Implementation Notes" — proposed `sony-walkman-e380` preset, marker-file preservation, capability-XML reconciliation.
+
+---
+
+### Sony Walkman NW-A1000 (6GB HDD)
+
+Heritage SonicStage-era HDD Walkman (2005). Added 2026-05-13 to catalog the OpenMG/ATRAC content-layer constraints. Full device profile in [`devices/sony-walkman-nw-a-series.md`](../devices/sony-walkman-nw-a-series.md).
+
+| Field | Value | Source |
+|-------|-------|--------|
+| Volume name | NO NAME (FAT32 default — not rebranded) | Filesystem |
+| USB Vendor ID | `0x054c` | USB enumeration (Sony Corporation) |
+| USB Product ID | `0x026a` | USB enumeration |
+| USB Vendor Name (descriptor) | `Sony` (mixed case) | ioreg |
+| USB Product Name (descriptor) | `HDD WALKMAN` | ioreg |
+| USB Serial Number | **none — `iSerialNumber = 0`** | ioreg (pre-NWZ Sony pattern) |
+| Volume UUID | `9AED81A8-CDE2-3ED2-B01E-1E0FEB8898B9` | diskutil |
+| Series | NW-A HDD generation (A1000 / A1100 / A1200 / A3000) | community |
+| Model | NW-A1000 | manufacturer marking |
+| Firmware version | 1.00 (bcdDevice 0x0100) | ioreg |
+| Capacity | 5.98 GB (5,982,523,904 bytes) | Filesystem |
+| Volume format | FAT32-LBA (MBR partition type `0x0C`) | fdisk |
+| Partition scheme | MBR (512-byte sectors) | fdisk |
+| Storage medium | spinning HDD | manufacturer spec |
+| Sync transport | USB Mass Storage (content layer requires SonicStage) | macOS mount |
+| Modifications | None | |
+
+**Inquiry results (tested 2026-05-13):**
+
+| Method | Result | Notes |
+|--------|--------|-------|
+| USB enumeration | Works | Vendor + product; **no serial** in descriptor. |
+| Filesystem identity | Works | Definitive signal is presence of `/OMGAUDIO/` + OpenMG database magic bytes (`GTLT` / `GTIF` / `GPIF` / `CNIF` / `GTCL`). |
+| SCSI / USB inquiry | n/a | Not an iPod. |
+| `device add` | **Unsupported today** | No preset; content layer requires OpenMG/ATRAC authoring (SonicStage). |
+
+**OpenMG database files (magic bytes captured in persona `raw/headers-omgaudio-dat.hex`):**
+
+| File | Magic | Purpose |
+|------|-------|---------|
+| `00GTRLST.DAT` | `GTLT` | Group/track list (master index) |
+| `01TREE*.DAT` (37 files) | `GTFB` chunks | Browse-tree structure |
+| `02TREINF.DAT` | `GTIF` | Tree info |
+| `03GINF*.DAT` (37 files) | `GPIF` | Group info |
+| `04CNTINF.DAT` (972 KiB) | `CNIF` | Canonical content table |
+| `05CIDLST.DAT` | — | Content-ID list |
+| `07GTCHLG.DAT` | `GTCL` | DRM challenge log |
+| `A_WM/*.DAT` | — | Walkman-specific extensions (artist link, user event log, etc.) |
+| `CONNECT/*.DAT` | — | SonicStage CONNECT remnants |
+| `10F00/…/10F05/*.OMA` | `ea3` v3 | EA3-wrapped ATRAC3plus audio (DRM-bound) |
+
+**Supported audio formats:** ATRAC3 (66/105/132 kbps), ATRAC3plus (48–320 kbps), PCM-WAV, **MP3-in-EA3-wrapper only** (plain MP3 is not indexed without SonicStage re-wrapping).
+
+**Critical limitation:** Stock firmware accepts content only via SonicStage (Windows, discontinued 2008). Files dropped into `OMGAUDIO/` without matching database entries are invisible to the device's library. Firmware v2.0+ adds a "USB Mass Storage Mode" toggle for folder-only MP3 browsing — **the unit captured here is v1.00 (no MSM mode)**.
+
+**Persona capture:** `packages/device-testing/src/personas/sony-nw-a1000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy note in provenance** — the captured database-file hexdumps include user music metadata in cleartext UTF-16LE; review before committing to a public branch.
+
+**Implementation notes (three viable paths):** detect-and-reject with friendly SonicStage warning / MSM-mode preset (requires firmware v2.0+) / full OpenMG writer (out of scope). See `devices/sony-walkman-nw-a-series.md` § "Implementation Notes".
+
+---
+
+### Sony Walkman NW-A3000 (20GB HDD)
+
+Sibling of NW-A1000 in the SonicStage-era HDD Walkman line. Added 2026-05-13. Same family profile applies — see [`devices/sony-walkman-nw-a-series.md`](../devices/sony-walkman-nw-a-series.md). This entry captures the **per-model deltas** vs NW-A1000.
+
+| Field | NW-A1000 | NW-A3000 | Source |
+|-------|----------|----------|--------|
+| Volume name | NO NAME | NO NAME | Filesystem |
+| USB Vendor ID | `0x054c` | `0x054c` | ioreg |
+| **USB Product ID** | **`0x026a`** | **`0x0269`** | ioreg — distinct per model |
+| USB descriptor strings | `Sony` / `HDD WALKMAN` | `Sony` / `HDD WALKMAN` | ioreg |
+| USB Serial Number | none (`iSerialNumber = 0`) | none (`iSerialNumber = 0`) | ioreg |
+| Volume UUID | `9AED81A8-CDE2-3ED2-B01E-1E0FEB8898B9` | `3C8EA1A5-706B-351A-9415-160C9DA2948D` | diskutil |
+| Firmware (bcdDevice) | `0x0100` (1.00) | `0x0100` (1.00) | ioreg |
+| Capacity | 5.98 GB | 19.55 GB | diskutil |
+| Partition scheme | MBR, FAT32-LBA (`0x0C`), 512 B sectors | same | fdisk |
+| MBR padding | ~32 KiB | ~32 KiB | fdisk |
+| **OpenMG DB version** | **v1.1** (`01 01 00 00`) | **v2.0** (`02 00 00 00`) | magic bytes at offset 4–7 of GTLT/GTIF/CNIF |
+| EKB files (DRM keys) | none | `0001001D.DAT` (v29) + `00010021.DAT` (v33) | OMGAUDIO/ root |
+| SRCIDLST | absent | `SRCIDLST.DAT` + `SRCIDLST.BAK` (32 KiB each) | OMGAUDIO/ root |
+| `30GRCT/` directory | absent | present (empty here) | OMGAUDIO/ |
+| `A_WM/ARDETECT.DAT` | absent | present (`MCKF` magic, factory 2006-01-28) | A_WM/ |
+| Latest content mtime | 2008-04-24 | 2012-11-23 | filesystem |
+
+**Critical correction landed this session:** the initial commit of `devices/sony-walkman-nw-a-series.md` assumed NW-A HDD models share PID `0x026a`. **They do not.** Each model has a distinct USB product ID. The device profile now lists per-model PIDs.
+
+**New magic bytes documented (per `raw/headers-omgaudio-dat.hex`):**
+
+| Magic | File(s) | Purpose |
+|-------|---------|---------|
+| `EKB ` (with trailing space) | `0001XXXX.DAT` (filename hex = EKB version) | Encrypted Key Block — OpenMG DRM key material |
+| `MCKF` / `MCKB` chunks | `A_WM/ARDETECT.DAT`, `A_WM/C2DETECT.DAT` | DRM-handshake challenge records |
+| (header `00 01 00 80 …`) | `SRCIDLST.DAT` + `.BAK` | Source ID List (content origin tracking) |
+
+**Persona capture:** `packages/device-testing/src/personas/sony-nw-a3000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). Privacy notice on captured database hexdumps inherits from `sony-nw-a1000`.
+
+---
+
+### Sony Walkman NW-A1200 (8GB HDD)
+
+Third NW-A HDD unit. Added 2026-05-13. **Same hardware as NW-A1000 — only the HDD capacity differs.** All other table-level "differences" below are host-side state (which sync software last touched it, which Windows host indexed it), not hardware properties. See [`devices/sony-walkman-nw-a-series.md`](../devices/sony-walkman-nw-a-series.md) for the family profile.
+
+| Field | NW-A1000 | NW-A1200 | NW-A3000 | Source |
+|-------|----------|----------|----------|--------|
+| **USB Product ID** | **`0x026a`** | **`0x026a` (shared with A1000)** | **`0x0269`** | ioreg |
+| USB descriptor strings | `Sony` / `HDD WALKMAN` | same | same | ioreg |
+| USB Serial | none | none | none | ioreg |
+| Volume UUID | `9AED81A8-…` | `B0D74B8F-…` | `3C8EA1A5-…` | diskutil |
+| Capacity | 5.98 GB | 7.84 GB (8 GB SKU) | 19.55 GB | diskutil |
+| Firmware (bcdDevice) | 1.00 | 1.00 | 1.00 | ioreg |
+| Partition (MBR/FAT32-LBA, 512 B sectors) | yes | yes | yes | fdisk |
+| **OpenMG DB version** | **v1.1** | **v2.0** | **v2.0** | DAT-file version word |
+| EKB files (`0001001D.DAT` / `00010021.DAT`) | absent | present (v29 + v33) | present (v29 + v33) | OMGAUDIO/ |
+| `SRCIDLST.DAT` + `.BAK` | absent | present | present | OMGAUDIO/ |
+| `30GRCT/` | absent | present (empty) | present (empty) | OMGAUDIO/ |
+| `A_WM/ARDETECT.DAT` factory date | absent | **2005-12-31** | 2006-01-28 | filesystem mtime |
+| `MEDIAGO/MediaGo.xml` | absent | **present** (Media Go marker) | absent | filesystem root |
+| `System Volume Information/` | absent | **present** (Windows host artefact) | absent | filesystem root |
+| Last DB rebuild mtime | 2008-04-24 | 2021-11-12 | 2010-11-23 (+ 2012 ACTIVITY) | filesystem mtime |
+| Last-sync software (inferred) | SonicStage | **Media Go** | SonicStage | DB version + MEDIAGO/ presence |
+
+**Refinements landed this session:**
+
+- **NW-A1000 and NW-A1200 are the same hardware.** Confirmed firsthand: identical USB descriptors (vendor, product, firmware bcdDevice, descriptor strings), identical chassis, only HDD capacity differs (6 GB vs 8 GB). From a host-software perspective they're one device. A1200 needs no separate preset — whatever supports A1000 supports it.
+- **NW-A3000 is a different hardware platform.** Distinct PID (`0x0269`); larger HDD; same OpenMG content layer.
+- **DB version, `MEDIAGO/`, Windows artefacts are host-side state — not hardware.** A1200's v2.0 / MEDIAGO/ / System Volume Info reflect only that its host happened to be a Windows machine running Media Go through 2021. A1000's "absences" reflect only that its host stopped using it around 2008 with SonicStage 4.x. Either device could end up in either state after a sync.
+- **`MEDIAGO/MediaGo.xml` documents Media Go's device-handshake schema** — useful as a Media-Go-touched-this-unit marker, but does not differentiate hardware.
+
+**New magic bytes / artefacts** (per `raw/` captures): `MediaGo.xml` (XML, schema v1, Media Go classification), `IndexerVolumeGuid` (Windows binary GUID, 76 bytes), `WPSettings.dat` (Windows Properties, 12 bytes).
+
+**Persona capture:** `packages/device-testing/src/personas/sony-nw-a1200/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy notices in provenance** — captured `MediaGo.xml` contains a per-unit device UUID; review before public commit.
+
+---
+
+### Sony Walkman NW-HD5 (20GB HDD)
+
+Sony's original "Network Walkman" line — predates the NW-A rebrand (2004–2005). Distinct product line from NW-A despite sharing the OpenMG content layer. Added 2026-05-13. Full device profile in [`devices/sony-walkman-nw-hd-series.md`](../devices/sony-walkman-nw-hd-series.md).
+
+| Field | NW-HD5 | NW-A series (for contrast) | Source |
+|-------|--------|----------------------------|--------|
+| **USB Product Name** | **`ATRAC HDD`** | `HDD WALKMAN` | ioreg — definitive product-line marker |
+| Media subtree `_name` | `ATRAC HDD PA` | `HDD WALKMAN` | system_profiler |
+| **USB Product ID** | **`0x0233`** | `0x026a` / `0x0269` | ioreg |
+| USB Vendor ID | `0x054c` | `0x054c` | ioreg |
+| USB Serial | none | none | ioreg |
+| Volume UUID | `A243C550-F56E-3048-BC31-1EA5D7939C71` | per-unit | diskutil |
+| Capacity | 19.55 GB | varies | diskutil |
+| Firmware (bcdDevice) | 1.00 | 1.00 | ioreg |
+| Partition (MBR/FAT32-LBA, 512 B sectors) | yes | yes | fdisk |
+| **`A_WM/` directory** | **absent** | present (Walkman extensions) | filesystem |
+| **`CONNECT/` directory** | **absent** | present | filesystem |
+| **`30GRCT/` directory** | **absent** | present on A1200/A3000 | filesystem |
+| **`MEDIAGO/` directory** | **absent** | present on A1200 only | filesystem |
+| **`MACLIST0.DAT` + `.BAK`** | **present (32 KiB each, encrypted)** | **absent** | filesystem |
+| **`20PXX/` artwork folders** | **present (separate JPG files)** | **absent — NW-A embeds in EA3** | filesystem |
+| `01TREE` numbering | `01–04, 0A, 0B–0F (.BAK), 10–14, 22` (16 trees) | `01–15, 22, 2D–37` (27 trees) | OMGAUDIO/ |
+| `.BAK` tree backups | present (5 files) | absent | filesystem |
+| OpenMG DB version | v1.1 | v1.1 or v2.0 | DAT version word |
+| EKB files | only `00010021.DAT` (v33) | varies (v29 + v33 or none) | filesystem |
+| Era | 2004–2005 (Network Walkman) | 2005–2008+ (Walkman rebrand) | manufacturer history |
+| Last active sync | 2009-03-04 | varies | filesystem mtime |
+
+**Generational difference vs NW-A:** SonicStage writes `20PXX/` directories of separate JPG album-artwork files for NW-HD (filename pattern `1G<6-hex-chars><suffix>.JPG`); NW-A abandoned this scheme. Note however that **none of the HDD-era Sony Walkmans (NW-HD, NW-A) render album art on the device — they all have monochrome displays**. The `20PXX/` JPGs are consumed only by SonicStage's PC-side UI. Only the later NWZ generation (colour LCD) renders artwork on-device. Implication for any future Sony preset / OpenMG writer: **skip artwork emission for NW-HD and NW-A entirely**.
+
+**Additional DRM gate vs NW-A:** `MACLIST0.DAT` + `.BAK` carry per-track Message Authentication Codes — encrypted records (no plaintext magic) that DRM checks at playback. Modifying `.OMA` without updating the MAC will likely cause playback to fail. Not present on NW-A.
+
+**Persona capture:** `packages/device-testing/src/personas/sony-nw-hd5/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
+
+**Implementation note:** same `detect-and-reject` recommendation as NW-A. USB hints entry would be `0x054c:0x0233 → 'sony-nw-hd-network-walkman'`. If support is ever attempted, NW-HD needs both the separate-JPG artwork emission and MACLIST0 generation on top of NW-A's OpenMG writer requirements — substantially harder than NW-A.
 
 ## Generation Coverage Analysis
 

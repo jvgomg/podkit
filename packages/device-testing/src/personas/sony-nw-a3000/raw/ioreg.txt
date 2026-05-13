@@ -1,0 +1,34 @@
++-o HDD WALKMAN@04100000  <class IOUSBHostDevice, id 0x101ad5059, registered, matched, active, busy 0 (535 ms), retain 23>
+    {
+      "sessionID" = 25325317356737
+      "USBSpeed" = 3
+      "idProduct" = 617
+      "iManufacturer" = 1
+      "bDeviceClass" = 0
+      "IOPowerManagement" = {"PowerOverrideOn"=Yes,"CapabilityFlags"=32768,"MaxPowerState"=2,"DevicePowerState"=2,"DriverPowerState"=0,"ChildrenPowerState"=2,"CurrentPowerState"=2}
+      "bcdDevice" = 256
+      "bMaxPacketSize0" = 64
+      "iProduct" = 2
+      "iSerialNumber" = 0
+      "bNumConfigurations" = 1
+      "UsbDeviceSignature" = <4c0569020001000000080650>
+      "USB Product Name" = "HDD WALKMAN"
+      "locationID" = 68157440
+      "bDeviceSubClass" = 0
+      "bcdUSB" = 512
+      "USB Address" = 18
+      "kUSBCurrentConfiguration" = 1
+      "IOCFPlugInTypes" = {"9dc7b780-9ec0-11d4-a54f-000a27052861"="IOUSBHostFamily.kext/Contents/PlugIns/IOUSBLib.bundle"}
+      "bDeviceProtocol" = 0
+      "USBPortType" = 0
+      "IOServiceDEXTEntitlements" = (("com.apple.developer.driverkit.transport.usb"))
+      "USB Vendor Name" = "Sony"
+      "Device Speed" = 2
+      "idVendor" = 1356
+      "kUSBProductString" = "HDD WALKMAN"
+      "IOGeneralInterest" = "IOCommand is not serializable"
+      "kUSBAddress" = 18
+      "kUSBVendorString" = "Sony"
+    }
+    
+

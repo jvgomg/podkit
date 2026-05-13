@@ -2,9 +2,10 @@ import { describe, it, expect } from 'bun:test';
 import { personas, systemStates, getRunner, listRunners, type DevicePersona } from './index.js';
 
 describe('@podkit/device-testing scaffold', () => {
-  it('exposes an empty personas Map', () => {
+  it('exposes a populated personas Map', () => {
     expect(personas).toBeInstanceOf(Map);
-    expect(personas.size).toBe(0);
+    expect(personas.size).toBeGreaterThan(0);
+    expect(personas.has('ipod-mini-2g-pink')).toBe(true);
   });
 
   it('exposes a populated systemStates Map', () => {

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+
+<media-go>
+  <version>1</version>
+  <device-ids>
+    <device-id>{F952ECD7-4115-4821-9131-B5EE6C8EB778}</device-id>
+  </device-ids>
+
+  <preferred-name></preferred-name>
+  <preferred-name-device-id>Generic</preferred-name-device-id>
+  <device-subtype>Unknown</device-subtype>
+</media-go>
+
