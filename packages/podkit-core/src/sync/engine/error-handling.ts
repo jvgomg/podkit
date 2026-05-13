@@ -24,6 +24,7 @@
  */
 
 import type { ErrorCategory, CategorizedError } from './types.js';
+import { TagWriteError } from '../../device/mass-storage-tag-writer.js';
 
 // =============================================================================
 // Retry Configuration
@@ -86,15 +87,15 @@ export const VIDEO_RETRY_CONFIG: Required<RetryConfig> = {
  * 2. Fall back to operation type as a hint
  */
 export function categorizeError(error: Error, operationType: string): ErrorCategory {
-  const message = error.message.toLowerCase();
-
-  // Check for aggregated tag-write failures FIRST. The message embeds per-file
-  // paths which may contain keywords ("iPod", "iTunes", "ffmpeg" etc.) that
-  // would otherwise mis-classify. Tag writes are file I/O — retry semantics
-  // match "copy".
-  if (message.includes('tag write')) {
+  // Aggregated tag-write failures are typed — check before string heuristics.
+  // The per-file message body may embed paths containing keywords ("iPod",
+  // "iTunes", "ffmpeg"), so a substring match below would risk
+  // mis-classification.
+  if (error instanceof TagWriteError) {
     return 'copy';
   }
+
+  const message = error.message.toLowerCase();
 
   // Check for database errors FIRST (most specific, no retry)
   if (

@@ -987,6 +987,105 @@ supportedAudioCodecs = ["aac", "mp3"]
         expect(result.devices!.echo!.supportedAudioCodecs).toEqual(['aac', 'mp3']);
       });
 
+      describe('podkit-unsupported output codec warnings', () => {
+        // The preset/raw capability data may legitimately list wav/aiff as
+        // "device can play these natively". Podkit accepts the value (it's a
+        // valid AudioCodec union member) so the device.info surface can show
+        // device truth, but emits a warning at load time so the user knows
+        // sources in those formats will be transcoded rather than direct-
+        // copied. iPod is exempt (libgpod handles WAV/AIFF natively).
+        function withCapturedWarnings<T>(fn: () => T): { result: T; warnings: string[] } {
+          const original = console.warn;
+          const warnings: string[] = [];
+          console.warn = (msg: unknown) => {
+            warnings.push(String(msg));
+          };
+          try {
+            return { result: fn(), warnings };
+          } finally {
+            console.warn = original;
+          }
+        }
+
+        it('warns when echo-mini override includes wav', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.echo]
+type = "echo-mini"
+path = "/mnt/echo"
+supportedAudioCodecs = ["aac", "mp3", "wav"]
+`)
+          );
+
+          const { result, warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          // Config still loads successfully and preserves the user's value.
+          expect(result!.devices!.echo!.supportedAudioCodecs).toEqual(['aac', 'mp3', 'wav']);
+          // But the user got a warning naming wav specifically.
+          const codecWarning = warnings.find((w) => w.includes('supportedAudioCodecs'));
+          expect(codecWarning).toBeDefined();
+          expect(codecWarning!).toContain('"wav"');
+          expect(codecWarning!).toContain('transcoded');
+          expect(codecWarning!).toContain('[devices.echo]');
+        });
+
+        it('warns when override includes both wav and aiff, naming both', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.dap]
+type = "rockbox"
+path = "/mnt/dap"
+supportedAudioCodecs = ["wav", "aiff", "mp3"]
+`)
+          );
+
+          const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          const codecWarning = warnings.find((w) => w.includes('supportedAudioCodecs'));
+          expect(codecWarning).toBeDefined();
+          expect(codecWarning!).toContain('"wav"');
+          expect(codecWarning!).toContain('"aiff"');
+        });
+
+        it('does NOT warn when override contains only supported codecs', () => {
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.echo]
+type = "echo-mini"
+path = "/mnt/echo"
+supportedAudioCodecs = ["aac", "mp3", "flac", "ogg"]
+`)
+          );
+
+          const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          expect(warnings.find((w) => w.includes('supportedAudioCodecs'))).toBeUndefined();
+        });
+
+        it('does NOT warn for iPod devices (wav/aiff are legitimate there)', () => {
+          // iPod doesn't accept supportedAudioCodecs overrides at all, so this
+          // case is unreachable via the [devices.X] path — capability
+          // overrides on iPod throw. Instead exercise the implicit-iPod path
+          // (no `type` field) which silently rejects the field upstream of
+          // the warning. The contract is: no warning shall fire for iPod.
+          const configPath = path.join(tempDir, 'config.toml');
+          fs.writeFileSync(
+            configPath,
+            v(`
+[devices.terapod]
+volumeUuid = "ABC-123"
+type = "ipod"
+`)
+          );
+
+          const { warnings } = withCapturedWarnings(() => loadConfigFile(configPath));
+          expect(warnings.find((w) => w.includes('supportedAudioCodecs'))).toBeUndefined();
+        });
+      });
+
       it('parses musicDir on mass-storage devices', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(

@@ -11,6 +11,26 @@
 import { ByteVector, File as TagFile, Picture, PictureType } from 'node-taglib-sharp';
 
 /**
+ * Aggregated tag-write failure, thrown by `MassStorageAdapter.save()` when
+ * one or more queued `writeTags` calls reject. The sync executor's error
+ * categorizer uses an `instanceof` check to classify these as file-I/O
+ * (`copy`) errors regardless of the per-file paths embedded in the message,
+ * so paths containing keywords like "iPod" don't mis-classify as database
+ * errors.
+ *
+ * Per-file failure messages are also preserved in `causes` for diagnostics.
+ */
+export class TagWriteError extends Error {
+  readonly causes: readonly string[];
+
+  constructor(causes: readonly string[]) {
+    super(`tag write failed for ${causes.length} file(s): ${causes.join('; ')}`);
+    this.name = 'TagWriteError';
+    this.causes = causes;
+  }
+}
+
+/**
  * Default concurrency cap for tag-write flushes during `save()`.
  *
  * Each call opens a file via node-taglib-sharp. Without a cap, syncing a

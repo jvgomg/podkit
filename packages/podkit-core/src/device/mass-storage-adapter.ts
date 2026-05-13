@@ -50,6 +50,7 @@ import { CODEC_METADATA } from '../transcode/codecs.js';
 import {
   DEFAULT_TAG_WRITE_CONCURRENCY,
   TagLibTagWriter,
+  TagWriteError,
   diffTagFields,
   runWithConcurrency,
   type TagFields,
@@ -1150,17 +1151,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       }
       if (failures.length > 0) {
         // Surface as a single aggregated error so callers (sync executor)
-        // can categorise it. The "tag write" prefix anchors classification
-        // in error-handling.ts; per-file context follows for diagnostics.
-        // The next sync will re-detect any unwritten diffs and retry —
-        // mass-storage reads file tags as the source of truth on rescan.
-        const err = new Error(
-          `tag write failed for ${failures.length} file(s): ${failures.join('; ')}`
-        );
-        // Stash the per-file error list so debug tooling can inspect it
-        // without parsing the message.
-        (err as Error & { causes?: string[] }).causes = failures;
-        throw err;
+        // can categorise it via instanceof TagWriteError. Per-file context
+        // is preserved on `err.causes` for diagnostics. The next sync will
+        // re-detect any unwritten diffs and retry — mass-storage reads file
+        // tags as the source of truth on rescan.
+        throw new TagWriteError(failures);
       }
     }
 

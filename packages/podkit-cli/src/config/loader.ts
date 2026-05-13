@@ -54,7 +54,10 @@ import {
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
 import { normalizeContentPaths, validateContentPaths } from '@podkit/core';
-import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
+import {
+  BUILT_IN_PRESETS,
+  MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS,
+} from '@podkit/devices-mass-storage';
 
 /**
  * Build a quality validation error message.
@@ -932,6 +935,27 @@ function parseDevices(
         }
       }
       device.supportedAudioCodecs = rawDevice.supportedAudioCodecs as AudioCodec[];
+
+      // Warn when a mass-storage device is configured with codecs podkit will
+      // not transcode TO. The codec values remain valid (they describe what
+      // the device firmware can play) but mass-storage tag-writing is
+      // unreliable for these formats, so sources in them are transcoded to a
+      // managed codec rather than direct-copied. iPod is exempt — libgpod
+      // and the iTunesDB handle metadata for WAV/AIFF there.
+      const isMassStorage = device.type !== undefined && device.type !== 'ipod';
+      if (isMassStorage) {
+        const unsupported = (rawDevice.supportedAudioCodecs as string[]).filter((c) =>
+          MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS.includes(c)
+        );
+        if (unsupported.length > 0) {
+          console.warn(
+            `Warning: [devices.${name}] declares supportedAudioCodecs [${unsupported
+              .map((c) => `"${c}"`)
+              .join(', ')}] that podkit cannot use as device-output on mass-storage. ` +
+              `Sources in these formats will be transcoded to a managed codec (e.g. AAC/FLAC/ALAC) before transfer.`
+          );
+        }
+      }
     }
 
     if (rawDevice.supportsVideo !== undefined) {

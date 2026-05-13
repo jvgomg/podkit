@@ -1659,10 +1659,21 @@ describe('MassStorageAdapter', () => {
       const track = adapter.getTracks()[0]!;
       adapter.updateTrack(track, { comment: 'sync-tag' });
 
-      // The save() aggregates per-file failures into one Error whose message
-      // begins with "tag write failed" (anchors categorization) and whose
-      // body lists each failure verbatim.
-      await expect(adapter.save()).rejects.toThrow(/tag write failed.*FFmpeg exploded/);
+      // The save() aggregates per-file failures into a typed TagWriteError
+      // — categorization uses instanceof, not message keywords. Per-file
+      // context is preserved on `err.causes`.
+      const { TagWriteError } = await import('./mass-storage-tag-writer.js');
+      let caught: unknown;
+      try {
+        await adapter.save();
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).toBeInstanceOf(TagWriteError);
+      const tagErr = caught as InstanceType<typeof TagWriteError>;
+      expect(tagErr.causes.length).toBeGreaterThan(0);
+      expect(tagErr.message).toContain('FFmpeg exploded');
+      expect(tagErr.name).toBe('TagWriteError');
     });
 
     test('comment set during addTrack is queued for persistence', async () => {

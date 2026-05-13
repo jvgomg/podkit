@@ -4,6 +4,7 @@ title: CLI support for user-defined mass-storage presets via config + --type
 status: To Do
 assignee: []
 created_date: '2026-05-12 17:34'
+updated_date: '2026-05-13 08:39'
 labels:
   - device-capability-architecture
   - cli
@@ -60,3 +61,22 @@ User running `podkit device add --type my-walkman --path /mnt` gets: `error: opt
 - [ ] Doctor's mass-storage checks operate against user-preset content paths
 - [ ] Documentation example added showing how to define + use a custom preset
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## 2026-05-13 — Note on unsupported-codec warnings (from TASK-327 follow-up)
+
+When user-defined presets become a thing via this task, their `supportedAudioCodecs` declarations need to interact correctly with `MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS` (currently `['wav', 'aiff']`). The behaviour established by TASK-327's polish pass is:
+
+- Presets MAY declare wav/aiff as supported — this documents what the device firmware can play.
+- Podkit refuses to use these codecs as device-output on mass-storage; the `MassStorageAdapter` filters them out of its operational capabilities so the planner transcodes source wav/aiff to a managed codec before transfer.
+- When a user explicitly sets `supportedAudioCodecs = ["wav", ...]` on a `[devices.X]` override, the config loader emits a console warning naming the offending codecs (config still loads, value preserved). Test coverage lives in `packages/podkit-cli/src/config/loader.test.ts` under `describe('podkit-unsupported output codec warnings')`.
+
+## Additional acceptance criterion for this task
+
+- [ ] Same warning fires when a user-defined preset (the new `[presets.X]` section this task is adding) declares wav/aiff in its `supportedAudioCodecs`. Mirror the loader test pattern from TASK-327: capture `console.warn`, assert the warning names the offending codecs and is suppressed for fully-supported lists. Reuse `MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS` from `@podkit/devices-mass-storage` — do not duplicate the list.
+- [ ] The behaviour is symmetric across user presets and per-device overrides: a user-defined `my-walkman` preset listing `"wav"` triggers the warning at preset-definition time, not deferred until a device of that type is opened.
+
+Rationale: keeping presets as the source of device truth (firmware capability) while podkit consistently refuses to manage wav/aiff is a stable contract; user-defined presets must honour it. The warning is the user's signal that the codec is recorded for posterity but won't drive direct-copy decisions.
+<!-- SECTION:NOTES:END -->
