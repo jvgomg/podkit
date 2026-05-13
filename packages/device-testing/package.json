@@ -1,0 +1,35 @@
+{
+  "name": "@podkit/device-testing",
+  "version": "0.0.1",
+  "description": "Device persona + system-state fixtures and test runtime harness for podkit's three-tier test stack",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "bun test",
+    "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",
+    "build:linux-binary": "bash scripts/build-linux-binary.sh"
+  },
+  "dependencies": {
+    "@podkit/core": "workspace:*",
+    "@podkit/device-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

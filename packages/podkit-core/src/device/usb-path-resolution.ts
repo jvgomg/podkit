@@ -13,10 +13,10 @@
  * this file resolves a single path to a single device.
  */
 
-import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { UsbFingerprint } from '@podkit/device-types';
+import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../subprocess-runner.js';
 import { extractProductId, extractVendorId, parseLocationId } from './usb-enumeration.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -91,14 +91,22 @@ interface SystemProfilerData {
  */
 export async function resolveUsbDeviceFromPath(
   mountPath: string,
-  options?: { platform?: string }
+  options?: {
+    platform?: string;
+    /**
+     * Injectable subprocess runner used by the macOS path (`diskutil` +
+     * `system_profiler`). Defaults to the real `execFile`-backed runner.
+     */
+    subprocess?: SubprocessRunner;
+  }
 ): Promise<ResolvedUsbDevice | null> {
   const platform = options?.platform ?? process.platform;
+  const subprocess = options?.subprocess ?? defaultSubprocessRunner;
 
   try {
     switch (platform) {
       case 'darwin':
-        return await resolveUsbDeviceFromPathMacOS(mountPath);
+        return await resolveUsbDeviceFromPathMacOS(mountPath, subprocess);
       case 'linux':
         return await resolveUsbDeviceFromPathLinux(mountPath);
       default:
@@ -234,29 +242,25 @@ async function resolveUsbDeviceFromPathLinux(mountPath: string): Promise<Resolve
   return Object.keys(result).length > 0 ? (result as ResolvedUsbDevice) : null;
 }
 
-async function resolveUsbDeviceFromPathMacOS(mountPath: string): Promise<ResolvedUsbDevice | null> {
-  const diskutilOutput = await new Promise<string>((resolve, reject) => {
-    execFile('diskutil', ['info', mountPath], { timeout: 10_000 }, (error, stdout) => {
-      if (error) reject(error);
-      else resolve(stdout);
-    });
+async function resolveUsbDeviceFromPathMacOS(
+  mountPath: string,
+  subprocess: SubprocessRunner
+): Promise<ResolvedUsbDevice | null> {
+  const diskutilResult = await subprocess.run('diskutil', ['info', mountPath], {
+    timeoutMs: 10_000,
   });
+  if (diskutilResult.exitCode !== 0) return null;
+  const diskutilOutput = diskutilResult.stdout;
 
   const deviceNodeMatch = diskutilOutput.match(/Device Node:\s*\/dev\/(disk\d+)/);
   if (!deviceNodeMatch) return null;
   const bsdNamePrefix = deviceNodeMatch[1]!;
 
-  const spOutput = await new Promise<string>((resolve, reject) => {
-    execFile(
-      'system_profiler',
-      ['SPUSBDataType', '-json'],
-      { timeout: 10_000 },
-      (error, stdout) => {
-        if (error) reject(error);
-        else resolve(stdout);
-      }
-    );
+  const spResult = await subprocess.run('system_profiler', ['SPUSBDataType', '-json'], {
+    timeoutMs: 10_000,
   });
+  if (spResult.exitCode !== 0) return null;
+  const spOutput = spResult.stdout;
 
   const spData = JSON.parse(spOutput) as SystemProfilerData;
   if (!spData.SPUSBDataType) return null;

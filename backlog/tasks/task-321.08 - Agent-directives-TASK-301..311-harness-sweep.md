@@ -1,9 +1,10 @@
 ---
 id: TASK-321.08
 title: Agent directives + TASK-301..311 harness sweep
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-12 11:55'
+updated_date: '2026-05-13 18:06'
 labels:
   - testing
   - vm-coverage
@@ -53,8 +54,29 @@ For each of TASK-301 through TASK-311 (11 tasks), append a short note to the exi
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 agents/testing.md has a 'Three-tier test stack' section covering when each tier runs and quick-ref commands
-- [ ] #2 agents/device-testing.md exists and covers: three-tier architecture, DevicePersona schema + capture flow, SystemState registry, TestRuntime + runner selection, tagging convention, how to write a T3 test
-- [ ] #3 All 11 tasks TASK-301..TASK-311 have descriptions updated to reference @podkit/device-testing, DevicePersona, SystemState, and lima-test-vm runner
-- [ ] #4 agents/device-testing.md cross-references packages/device-testing/README.md for package-level detail
+- [x] #1 agents/testing.md has a 'Three-tier test stack' section covering when each tier runs and quick-ref commands
+- [x] #2 agents/device-testing.md exists and covers: three-tier architecture, DevicePersona schema + capture flow, SystemState registry, TestRuntime + runner selection, tagging convention, how to write a T3 test
+- [x] #3 All 11 tasks TASK-301..TASK-311 have descriptions updated to reference @podkit/device-testing, DevicePersona, SystemState, and lima-test-vm runner
+- [x] #4 agents/device-testing.md cross-references packages/device-testing/README.md for package-level detail
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## What shipped
+
+- `agents/testing.md` gained a `## Three-Tier Test Stack` section (~70 lines) placed between the `Per-OS Test Tagging` section (from TASK-321.05) and `Test Task Composition`. Covers T1/T2/T3 scope, when each runs, quick-ref commands, and persona-capture trigger. Cross-refs ADR-016, ADR-017, `agents/device-testing.md`, `packages/device-testing/README.md`.
+- New `agents/device-testing.md` (~173 lines, 14 sections). Canonical reference for: package purpose, three-tier architecture summary, DevicePersona schema overview, SystemState registry, TestRuntime + runner selection, test-file tagging recap, subprocess snapshot framework, build pipeline pointer, T3 "where to write tests" placeholder, full cross-reference list.
+- TASK-301 through TASK-311 (11 tasks) all received harness-integration sections appended to their descriptions. TASK-301–308 use the canonical block from the brief; TASK-309–311 received tailored variants (309 spotlights `expectedCapabilities`/`expectedDoctorOutput`, 310 reframes around golden-file references, 311 explicitly threads T2 with `lsblkJson` / `systemProfilerJson` per persona).
+
+## Quality gates
+- Full workspace `bun run typecheck` — pass (FULL TURBO, 29/29 cached).
+- `bun run test:unit --filter @podkit/device-testing` — 81 pass / 2 skip / 0 fail / 109 expects (unchanged baseline).
+- `bunx prettier --check agents/testing.md agents/device-testing.md` — clean.
+- Sweep verification: `git grep -lE "m-19 harness integration|TASK-321.08 sweep" backlog/tasks/` returns all 11 task files (301–311).
+
+## Constraints respected
+- No code changes outside `agents/*.md` + backlog descriptions.
+- No ACs were modified on TASK-301..311 — descriptions only.
+- Forward-references to `lima-test-vm`, `capture-persona.ts`, and Tier 3 commands are explicitly marked as forthcoming (TASK-322.x).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -11,6 +11,14 @@ export const VERSION = '0.0.0';
 export type { AudioFileType, TrackMetadata, TrackFilter, PodkitError } from './types.js';
 export { createError } from './types.js';
 
+// Subprocess runner (injection seam for ffmpeg/lsblk/diskutil/system_profiler/…)
+export type {
+  SubprocessRunner,
+  SubprocessRunOpts,
+  SubprocessRunResult,
+} from './subprocess-runner.js';
+export { defaultSubprocessRunner } from './subprocess-runner.js';
+
 // Collection adapters
 export type {
   FileAccess,

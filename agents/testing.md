@@ -10,6 +10,93 @@ Also see [docs/developers/testing.md](../docs/developers/testing.md) for full te
 - **Integration tests** (`*.integration.test.ts`): Require gpod-tool, FFmpeg, etc.
 - **E2E tests** (`packages/e2e-tests/`): Full CLI workflow tests
 
+## Per-OS Test Tagging
+
+Some tests exercise native subprocess paths that differ per OS — for example, `system_profiler` (macOS) vs `lsblk` (Linux). Running darwin tests on linux (or vice versa) would always fail meaninglessly, so we tag those files by OS.
+
+### Filename patterns
+
+| Pattern | Runs on |
+|---------|---------|
+| `*.test.ts` | Any OS (default) |
+| `*.darwin.test.ts` | macOS only (`process.platform === 'darwin'`) |
+| `*.linux.test.ts` | Linux only (`process.platform === 'linux'`) |
+
+The filename is a human-readable signal — it lets you scan the test suite and immediately see which files are OS-specific. The actual guard is a `describe.skipIf` at the top level of each file.
+
+### Standard pattern
+
+```ts
+// foo.darwin.test.ts
+import { describe, it, expect } from 'bun:test';
+
+const isDarwin = process.platform === 'darwin';
+if (!isDarwin) console.log(`Skipping foo.darwin.test.ts on ${process.platform}`);
+
+describe.skipIf(!isDarwin)('foo (darwin)', () => {
+  it('does the thing', () => { /* ... */ });
+});
+```
+
+Key points:
+
+- Use **`describe.skipIf`** (whole-block skip), not `it.skipIf` (per-test skip). A tagged file contains only OS-specific tests; skipping the whole block is cleaner and the intent is clearer.
+- The `console.log` at **module load** (outside `describe`) fires regardless of whether the block runs. This is what makes the skip visible in CI output — a `(skip)` annotation on an `it` is easy to miss; a log line printed unconditionally is not.
+- No shared helper. Each tagged file stands alone. This avoids coupling every package to a single utility module.
+
+### Rationale
+
+Tier 2 native integration tests (TASK-321 / ADR-016) call OS-specific subprocesses. On a Linux CI runner, spawning `system_profiler SPUSBDataType` will simply fail — there is nothing useful to assert. Tagging files by OS makes the skip intentional and visible rather than silent. The filename convention also makes it trivial to grep for all darwin-specific tests across the monorepo (`git grep -l '\.darwin\.test\.ts'`).
+
+## Three-Tier Test Stack
+
+The device-identification, doctor, and readiness pipelines are covered by three distinct test tiers. See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full design rationale and [agents/device-testing.md](device-testing.md) for the harness reference.
+
+### Tier 1 — unit tests with injectable fakes
+
+Pure TypeScript tests. Always run on every host. No subprocesses, no VMs, no special permissions.
+
+- Import `personas` and `systemStates` from `@podkit/device-testing` to get typed fixture objects.
+- Inject fakes through the `SubprocessRunner` seam (interface in `@podkit/device-types`; default implementation in `@podkit/core`; `ReplaySubprocessRunner` from `@podkit/device-testing`).
+- Use `DevicePersona` fields (`usbDescriptor`, `sysInfoExtendedXml`, `lsblkJson`, `systemProfilerJson`, etc.) to feed injectable transports (`UsbBinding`, `ScsiSyscall`, `ProbeFs`).
+- Use `SystemState` fields to configure subprocess replay, so the same fixture drives both the "FFmpeg missing" unit test and the Tier 3 snapshot.
+
+**When to capture a new `DevicePersona`:** when touching device-identification logic (`identify()`, capability resolution, `resolveCapabilities()`), when adding a new supported device family, or when the `DevicePersona` schema gains a required field. See [agents/device-testing.md](device-testing.md) §"DevicePersona".
+
+### Tier 2 — native subprocess tests (host-tagged)
+
+Tests that invoke real subprocesses against canned fixtures on the host. Always run; skipped on the wrong OS via `describe.skipIf`.
+
+- Files are tagged by OS: `*.darwin.test.ts` (macOS only) or `*.linux.test.ts` (Linux only).
+- Subprocess outputs (e.g., `lsblk -J`, `system_profiler SPUSBDataType -json`, `ffmpeg -encoders`) are exercised against their real parsers; no mock.
+- See §"Per-OS Test Tagging" for the full filename and `describe.skipIf` pattern.
+
+### Tier 3 — Linux VM with `dummy_hcd` + FunctionFS
+
+The full inquiry stack (`libusb`, `SG_IO`, `lsblk`, capability resolution) runs against a synthetic USB device inside a Lima test VM. The FunctionFS daemon loads a `DevicePersona` and presents real USB descriptors to the kernel.
+
+- **Auto-detected:** if the `lima-test-vm` runner is available (macOS host with Lima installed, or a Linux host), Tier 3 runs. If unavailable, tests are skipped with a warning (`[tier-3] Linux VM not available — skipping device integration tests`) rather than failed.
+- Test files are tagged `*.linux.tier3.test.ts` (forthcoming, lands in TASK-322).
+- `SystemState` snapshots (e.g. `base-no-ffmpeg`) are restored by the runner before each test group; the runner handles snapshot management transparently.
+- **Lands in TASK-322.x** — for now this is a forward reference. No Tier 3 test files exist yet.
+
+### Quick-reference commands (today)
+
+```bash
+bun run test:unit --filter <pkg>    # Tier 1 + Tier 2 (OS-tagged files self-skip)
+bun run test --filter <pkg>         # All tests for one package (T1 + T2 + integration)
+bun test packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
+```
+
+For Tier 3: **lands in TASK-322**. Future commands will include `mise run device-testing:test-vm` and related tasks.
+
+### Cross-references
+
+- [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — architecture decision and tier definitions
+- [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
+- [agents/device-testing.md](device-testing.md) — canonical reference for writing device tests
+- [packages/device-testing/README.md](../packages/device-testing/README.md) — package-level API reference
+
 ## Test Task Composition
 
 The `test` turbo task is composed from `test:unit` and `test:integration` — it doesn't run tests itself. This means turbo can cache each sub-task independently:

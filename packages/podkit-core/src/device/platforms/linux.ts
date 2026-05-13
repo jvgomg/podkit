@@ -8,7 +8,6 @@
  * Optional: udisksctl (from udisks2) for unprivileged mount/eject
  */
 
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type {
@@ -21,37 +20,36 @@ import type {
 } from '../types.js';
 import type { DeviceAssessment } from '../assessment.js';
 import { detectIFlash } from '../assessment.js';
-import type { UsbFingerprint } from '@podkit/device-types';
+import type { SubprocessRunner, UsbFingerprint } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../../subprocess-runner.js';
 
 // ---------------------------------------------------------------------------
 // Shell execution helper
 // ---------------------------------------------------------------------------
 
-function execCommand(
+/**
+ * Execute a command via the injected `SubprocessRunner` and normalise the
+ * result into the historical `{ stdout, stderr, code }` shape so the rest
+ * of the file is left untouched. Transport-level rejections from the runner
+ * (e.g. binary not found) collapse into `code: 1` to preserve the legacy
+ * behaviour of returning rather than throwing — every caller in this file
+ * already inspects `code` to decide whether to act on `stdout`.
+ */
+async function execCommand(
   command: string,
-  args: string[]
+  args: string[],
+  subprocess: SubprocessRunner
 ): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve) => {
-    const proc = spawn(command, args);
-    let stdout = '';
-    let stderr = '';
-
-    proc.stdout.on('data', (data: Buffer) => {
-      stdout += data.toString();
-    });
-
-    proc.stderr.on('data', (data: Buffer) => {
-      stderr += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      resolve({ stdout, stderr, code: code ?? 0 });
-    });
-
-    proc.on('error', (err) => {
-      resolve({ stdout, stderr: err.message, code: 1 });
-    });
-  });
+  try {
+    const result = await subprocess.run(command, args);
+    return { stdout: result.stdout, stderr: result.stderr, code: result.exitCode };
+  } catch (err) {
+    return {
+      stdout: '',
+      stderr: err instanceof Error ? err.message : String(err),
+      code: 1,
+    };
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -273,9 +271,21 @@ export class LinuxDeviceManager implements DeviceManager {
   readonly platform = 'linux';
   readonly isSupported = true;
 
+  /**
+   * Injected `SubprocessRunner` used by every `lsblk` / `mount` / `umount` /
+   * `udisksctl` / `which` invocation in this class. Defaults to the real
+   * `execFile`-backed runner; Tier 1 tests construct the manager with a
+   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   */
+  private readonly subprocess: SubprocessRunner;
+
   // Lazy-cached tool availability
   private _lsblkAvailable: boolean | null = null;
   private _udisksctlAvailable: boolean | null = null;
+
+  constructor(opts: { subprocess?: SubprocessRunner } = {}) {
+    this.subprocess = opts.subprocess ?? defaultSubprocessRunner;
+  }
 
   // ------------------------------------------------------------------
   // Tool detection
@@ -295,7 +305,7 @@ export class LinuxDeviceManager implements DeviceManager {
       );
     }
 
-    const { code } = await execCommand('which', ['lsblk']);
+    const { code } = await execCommand('which', ['lsblk'], this.subprocess);
     this._lsblkAvailable = code === 0;
 
     if (!this._lsblkAvailable) {
@@ -314,7 +324,7 @@ export class LinuxDeviceManager implements DeviceManager {
   async hasUdisksctl(): Promise<boolean> {
     if (this._udisksctlAvailable !== null) return this._udisksctlAvailable;
 
-    const { code } = await execCommand('which', ['udisksctl']);
+    const { code } = await execCommand('which', ['udisksctl'], this.subprocess);
     this._udisksctlAvailable = code === 0;
     return this._udisksctlAvailable;
   }
@@ -326,12 +336,11 @@ export class LinuxDeviceManager implements DeviceManager {
   async listDevices(): Promise<PlatformDeviceInfo[]> {
     await this.requireLsblk();
 
-    const { stdout, code } = await execCommand('lsblk', [
-      '--json',
-      '-b',
-      '-o',
-      'NAME,UUID,LABEL,MOUNTPOINT,FSTYPE,SIZE,PHY-SEC,TYPE',
-    ]);
+    const { stdout, code } = await execCommand(
+      'lsblk',
+      ['--json', '-b', '-o', 'NAME,UUID,LABEL,MOUNTPOINT,FSTYPE,SIZE,PHY-SEC,TYPE'],
+      this.subprocess
+    );
 
     if (code !== 0) {
       return [];
@@ -437,7 +446,7 @@ export class LinuxDeviceManager implements DeviceManager {
         };
       }
 
-      const udResult = await execCommand('udisksctl', ['mount', '-b', devicePath]);
+      const udResult = await execCommand('udisksctl', ['mount', '-b', devicePath], this.subprocess);
       if (udResult.code === 0) {
         // Parse mount point from udisksctl output: "Mounted /dev/sda1 at /media/user/LABEL."
         const mountMatch = udResult.stdout.match(/at (.+?)\.?\s*$/m);
@@ -496,7 +505,11 @@ export class LinuxDeviceManager implements DeviceManager {
       }
     }
 
-    const { stderr, code } = await execCommand('mount', ['-t', 'vfat', devicePath, mountTarget]);
+    const { stderr, code } = await execCommand(
+      'mount',
+      ['-t', 'vfat', devicePath, mountTarget],
+      this.subprocess
+    );
 
     if (code === 0) {
       return {
@@ -539,11 +552,15 @@ export class LinuxDeviceManager implements DeviceManager {
 
     // Attempt 1: udisksctl (unprivileged)
     if (devicePath && (await this.hasUdisksctl())) {
-      const unmountResult = await execCommand('udisksctl', ['unmount', '-b', devicePath]);
+      const unmountResult = await execCommand(
+        'udisksctl',
+        ['unmount', '-b', devicePath],
+        this.subprocess
+      );
       if (unmountResult.code === 0) {
         // Power off using the whole-disk device so the USB device fully detaches
         const powerOffTarget = wholeDiskPath ?? devicePath;
-        await execCommand('udisksctl', ['power-off', '-b', powerOffTarget]);
+        await execCommand('udisksctl', ['power-off', '-b', powerOffTarget], this.subprocess);
         return {
           success: true,
           device: mountPoint,
@@ -566,13 +583,13 @@ export class LinuxDeviceManager implements DeviceManager {
 
     // Attempt 2: umount
     const umountArgs = force ? ['-l', mountPoint] : [mountPoint];
-    const { stderr, code } = await execCommand('umount', umountArgs);
+    const { stderr, code } = await execCommand('umount', umountArgs, this.subprocess);
 
     if (code === 0) {
       // After successful umount, try to power off the USB device so it fully detaches.
       // Use udisksctl if available (doesn't require root for power-off after umount).
       if (wholeDiskPath && (await this.hasUdisksctl())) {
-        await execCommand('udisksctl', ['power-off', '-b', wholeDiskPath]);
+        await execCommand('udisksctl', ['power-off', '-b', wholeDiskPath], this.subprocess);
       }
       return {
         success: true,
@@ -717,7 +734,11 @@ Replace sdX1 with your actual device identifier.`;
 
 /**
  * Create a Linux device manager instance
+ *
+ * @param opts.subprocess - Injectable subprocess runner. Defaults to the
+ *   real `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
+ *   from `@podkit/device-testing`.
  */
-export function createLinuxManager(): DeviceManager {
-  return new LinuxDeviceManager();
+export function createLinuxManager(opts: { subprocess?: SubprocessRunner } = {}): DeviceManager {
+  return new LinuxDeviceManager(opts);
 }

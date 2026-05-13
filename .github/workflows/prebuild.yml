@@ -43,7 +43,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.STATIC_DEPS_DIR }}
-          key: static-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('tools/prebuild/build-static-deps.sh') }}
+          key: static-deps-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('tools/prebuild/build-static-deps.sh', 'tools/prebuild/build-linux-glibc.sh') }}
 
       # ---- Cache MISS: install full build toolchain and build from source ----
 
@@ -66,8 +66,9 @@ jobs:
             intltool autoconf automake libtool gtk-doc-tools \
             meson ninja-build curl
 
-      - name: Build static dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
+      # macOS path: build static deps inline (build-linux-glibc.sh is glibc-only).
+      - name: Build static dependencies (macOS)
+        if: matrix.platform == 'darwin' && steps.cache.outputs.cache-hit != 'true'
         run: bash tools/prebuild/build-static-deps.sh
 
       # ---- Cache HIT: install only what prebuildify needs (headers via pkg-config) ----
@@ -99,7 +100,17 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Create prebuild
+      # Linux glibc: shared script — same one the Lima builder VM uses.
+      # Single source of truth (TASK-321.07 / ADR-016).
+      - name: Build prebuild (Linux glibc, shared script)
+        if: matrix.platform == 'linux'
+        env:
+          SKIP_STATIC_DEPS: ${{ steps.cache.outputs.cache-hit == 'true' && '1' || '0' }}
+        run: bash tools/prebuild/build-linux-glibc.sh
+
+      # macOS keeps the inline prebuildify call — the shared script is glibc-only.
+      - name: Create prebuild (macOS)
+        if: matrix.platform == 'darwin'
         working-directory: packages/libgpod-node
         run: npx prebuildify --napi --strip
 
@@ -115,17 +126,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify static linking (Linux)
-        if: matrix.platform == 'linux'
-        working-directory: packages/libgpod-node
-        run: |
-          echo "Dynamic dependencies:"
-          PREBUILD=$(find prebuilds -name "*.node" | head -1)
-          ldd "$PREBUILD"
-          if ldd "$PREBUILD" | grep -E 'libgpod|libgdk_pixbuf'; then
-            echo "ERROR: Found unexpected dynamic dependencies"
-            exit 1
-          fi
+      # Linux glibc verification happens inside tools/prebuild/build-linux-glibc.sh
+      # (the shared script). No additional step needed here.
 
       - name: Run tests
         working-directory: packages/libgpod-node

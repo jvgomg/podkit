@@ -33,6 +33,17 @@
         "@types/bun": "latest",
       },
     },
+    "packages/device-testing": {
+      "name": "@podkit/device-testing",
+      "version": "0.0.1",
+      "dependencies": {
+        "@podkit/core": "workspace:*",
+        "@podkit/device-types": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/device-types": {
       "name": "@podkit/device-types",
       "version": "0.0.1",
@@ -606,6 +617,8 @@
     "@podkit/daemon": ["@podkit/daemon@workspace:packages/podkit-daemon"],
 
     "@podkit/demo": ["@podkit/demo@workspace:packages/demo"],
+
+    "@podkit/device-testing": ["@podkit/device-testing@workspace:packages/device-testing"],
 
     "@podkit/device-types": ["@podkit/device-types@workspace:packages/device-types"],
 

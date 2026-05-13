@@ -1,0 +1,58 @@
+# Lima VM: ABI verification (Debian 12 — stock, no dev tools)
+#
+# Purpose: a minimal stock Debian 12.10 environment used to spot-check that
+# a Linux glibc binary produced by the builder VM (or CI) loads with no
+# unresolved symbols and has no dynamic dependency on libgpod / glib /
+# gdk-pixbuf / libplist. Mirrors the "test VM" philosophy from ADR-016
+# (no dev tools, no -dev packages, no source tree) but is intentionally
+# small and disposable — the real test VM lands in TASK-322.01.
+#
+# AC #12 of TASK-321.07 calls for this:
+#   "A 30-min ABI spike verifies the cross-compiled Linux glibc binary
+#    loads on stock Debian 12.10 test VM with no unresolved symbols
+#    (`ldd /usr/local/bin/podkit` shows only stable system libs)."
+#
+# Usage:
+#   limactl start tools/device-testing/lima/abi-verify.yaml --name abi-verify
+#   limactl copy packages/podkit-cli/bin/podkit abi-verify:/tmp/podkit
+#   limactl shell abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+#   limactl shell abi-verify -- ldd /usr/local/bin/podkit
+#   limactl shell abi-verify -- /usr/local/bin/podkit --version
+#   limactl stop abi-verify; limactl delete abi-verify  # optional teardown
+#
+# Allowed runtime libs (anything else is a static-linking regression):
+#   linux-vdso.so.1, libc.so.6, libpthread.so.0, libdl.so.2, libm.so.6,
+#   libstdc++.so.6, libgcc_s.so.1, ld-linux-*.so.2 / ld-linux-aarch64.so.1
+#
+# Forbidden runtime libs:
+#   libgpod*, libgdk_pixbuf*, libglib*, libgobject*, libgio*, libgmodule*,
+#   libplist*, libxml2*, libffi*, libpcre2*, libsqlite3*, libpng*, libjpeg*,
+#   libtiff*
+
+images:
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
+    arch: 'aarch64'
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'
+    arch: 'x86_64'
+
+# No host mount. The binary is copied in via `limactl copy` — this matches
+# the test-VM model where the VM has no view into the source tree.
+
+cpus: 2
+memory: '2GiB'
+disk: '5GiB'
+
+provision:
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      # Deliberately minimal: only what a real user installs to run podkit.
+      # NO libgpod-dev. NO build-essential. NO Bun. NO Node.
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        ca-certificates \
+        ffmpeg \
+        coreutils \
+        binutils

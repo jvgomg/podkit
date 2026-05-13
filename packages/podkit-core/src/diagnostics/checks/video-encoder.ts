@@ -9,22 +9,18 @@
  * check is designed to catch).
  */
 
-import { spawn } from 'node:child_process';
+import type { SubprocessRunner } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../../subprocess-runner.js';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
 
 const FFMPEG = process.env['FFMPEG_PATH'] ?? 'ffmpeg';
 
-async function ffmpegEncoders(): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn(FFMPEG, ['-encoders'], { stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    proc.stdout.on('data', (d) => (stdout += d.toString()));
-    proc.on('error', reject);
-    proc.on('close', (code) => {
-      if (code === 0) resolve(stdout);
-      else reject(new Error(`ffmpeg -encoders exited ${code}`));
-    });
-  });
+async function ffmpegEncoders(subprocess: SubprocessRunner): Promise<string> {
+  const result = await subprocess.run(FFMPEG, ['-encoders']);
+  if (result.exitCode !== 0) {
+    throw new Error(`ffmpeg -encoders exited ${result.exitCode}`);
+  }
+  return result.stdout;
 }
 
 export const videoEncoderCheck: DiagnosticCheck = {
@@ -36,7 +32,7 @@ export const videoEncoderCheck: DiagnosticCheck = {
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
     let encoders: string;
     try {
-      encoders = await ffmpegEncoders();
+      encoders = await ffmpegEncoders(defaultSubprocessRunner);
     } catch {
       return {
         status: 'skip',

@@ -9,6 +9,8 @@
 
 import { spawn } from 'node:child_process';
 import { stat } from 'node:fs/promises';
+import type { SubprocessRunner } from '@podkit/device-types';
+import { defaultSubprocessRunner } from '../subprocess-runner.js';
 import type {
   Transcoder,
   TranscoderCapabilities,
@@ -82,6 +84,17 @@ export interface FFmpegTranscoderConfig {
   ffmpegPath?: string;
   /** Override FFprobe binary path */
   ffprobePath?: string;
+  /**
+   * Injectable subprocess runner used for short-lived calls
+   * (`ffmpeg -version`, `ffmpeg -encoders`, `ffprobe`). Defaults to the real
+   * `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
+   * from `@podkit/device-testing`.
+   *
+   * The streaming `transcode()` invocation continues to use a direct
+   * `spawn` because it consumes progress from stdout in real time, which is
+   * outside the scope of the `SubprocessRunner.run` contract.
+   */
+  subprocess?: SubprocessRunner;
 }
 
 /**
@@ -657,60 +670,35 @@ export class FFmpegTranscoder implements Transcoder {
   private ffmpegPath: string;
   private ffprobePath: string;
   private capabilities: TranscoderCapabilities | null = null;
+  private readonly subprocess: SubprocessRunner;
 
   constructor(config: FFmpegTranscoderConfig = {}) {
     this.ffmpegPath = config.ffmpegPath ?? DEFAULT_FFMPEG;
     this.ffprobePath = config.ffprobePath ?? DEFAULT_FFPROBE;
+    this.subprocess = config.subprocess ?? defaultSubprocessRunner;
   }
 
   /**
-   * Execute a command and return stdout/stderr
+   * Execute a short-lived command via the injected `SubprocessRunner`
+   * (e.g. `ffmpeg -version`, `ffmpeg -encoders`, `ffprobe`).
+   *
+   * The signal option from previous versions is no longer wired up here — no
+   * callers ever passed a signal to `this.exec`, so the abort surface was
+   * effectively dead code. The streaming `transcode()` path still installs
+   * its own signal handler via `spawn`.
    */
   private async exec(
     command: string,
-    args: string[],
-    options: { signal?: AbortSignal } = {}
+    args: string[]
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    return new Promise((resolve, reject) => {
-      const proc = spawn(command, args, {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      let stdout = '';
-      let stderr = '';
-
-      proc.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      proc.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      // Handle abort signal
-      if (options.signal) {
-        options.signal.addEventListener('abort', () => {
-          proc.kill('SIGTERM');
-          reject(new Error('Operation aborted'));
-        });
+    try {
+      return await this.subprocess.run(command, args);
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        throw new FFmpegNotFoundError(`${command} not found`);
       }
-
-      proc.on('error', (err: Error) => {
-        if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-          reject(new FFmpegNotFoundError(`${command} not found`));
-        } else {
-          reject(err);
-        }
-      });
-
-      proc.on('close', (code) => {
-        resolve({
-          stdout,
-          stderr,
-          exitCode: code ?? 0,
-        });
-      });
-    });
+      throw err;
+    }
   }
 
   /**

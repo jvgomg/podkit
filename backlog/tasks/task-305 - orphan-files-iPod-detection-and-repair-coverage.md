@@ -4,7 +4,7 @@ title: 'orphan-files (iPod): detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
-updated_date: '2026-05-12 11:56'
+updated_date: '2026-05-13 18:04'
 labels:
   - testing
   - doctor
@@ -29,6 +29,16 @@ For every test, run `podkit doctor --device <fixture> --json --no-system` and as
 - **T1 (unit):** import `personas` from `@podkit/device-testing`; use `DevicePersona.partitionLayout` and `expectedCapabilities` for injectable fakes; orphan-state variations are test-local mutations
 - **T3 (integration):** tests tagged `*.linux.tier3.test.ts` run inside the `lima-test-vm` runner against the `ipod-nano-7g-populated` persona (populated iTunes library provides the baseline)
 - See `agents/device-testing.md` and ADR-016/ADR-017 for the full harness architecture
+
+### m-19 harness integration (Phase 1 foundations)
+
+Use the test harness landed in TASK-321 (Phase 1):
+
+- **Fixtures** live in `@podkit/device-testing` — `DevicePersona` for device-facing state, `SystemState` for host-environment state. See `agents/device-testing.md` and `packages/device-testing/README.md`.
+- **Tier 1** unit tests inject `SubprocessRunner` (from `@podkit/device-types`) and `TestRuntime` fakes wired up against persona/state fixtures. Default runner is `defaultSubprocessRunner` from `@podkit/core`; tests substitute `ReplaySubprocessRunner` from `@podkit/device-testing`.
+- **Tier 3** integration tests run inside the `lima-test-vm` runner (lands in TASK-322.04) against synthesised USB gadgets.
+- **Native subprocess tests** follow the `*.darwin.test.ts` / `*.linux.test.ts` tagging convention — see `agents/testing.md` §"Per-OS Test Tagging".
+- Capture fresh subprocess fixtures with `PODKIT_SNAPSHOT_CAPTURE=1 PODKIT_SNAPSHOT_DIR=<dir>`; replay with `PODKIT_SNAPSHOT_REPLAY=1 PODKIT_SNAPSHOT_DIR=<dir>`.
 <!-- SECTION:DESCRIPTION:END -->
 
 ## Acceptance Criteria
