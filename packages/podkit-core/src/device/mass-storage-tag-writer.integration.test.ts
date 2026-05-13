@@ -12,6 +12,13 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import * as mm from 'music-metadata';
+import {
+  generateMiniFlac,
+  generateMiniM4a,
+  generateMiniMp3,
+  generateMiniOggOpus,
+  generateMiniOggVorbis,
+} from '@podkit/test-fixtures';
 
 import { TagLibTagWriter, type TagFields } from './mass-storage-tag-writer.js';
 
@@ -27,170 +34,46 @@ function removeTempDir(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
-/** Generate a minimal FLAC file with a sine tone */
-function generateFlac(dir: string, filename: string, comment?: string): string {
-  const outPath = path.join(dir, filename);
-  const args = [
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=frequency=440:duration=1:sample_rate=44100',
-    '-c:a',
-    'flac',
-    '-ar',
-    '44100',
-    '-metadata',
-    'title=Test Song',
-    '-metadata',
-    'artist=Test Artist',
-  ];
-  if (comment) {
-    args.push('-metadata', `comment=${comment}`);
-  }
-  args.push(outPath);
-  execFileSync('ffmpeg', args, { stdio: 'pipe' });
-
-  // FFmpeg maps -metadata comment to DESCRIPTION, not COMMENT.
-  // Use node-taglib-sharp to set the real COMMENT field for test setup.
-  if (comment) {
-    const { File: TagFile } = require('node-taglib-sharp');
-    const file = TagFile.createFromPath(outPath);
-    file.tag.comment = comment;
-    file.save();
-    file.dispose();
-  }
-
-  return outPath;
-}
-
-/** Generate a minimal M4A file */
-function generateM4a(dir: string, filename: string, comment?: string): string {
-  const outPath = path.join(dir, filename);
-  const args = [
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=frequency=440:duration=1:sample_rate=44100',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '128k',
-    '-metadata',
-    'title=Test Song',
-    '-metadata',
-    'artist=Test Artist',
-  ];
-  if (comment) {
-    args.push('-metadata', `comment=${comment}`);
-  }
-  args.push('-f', 'ipod', outPath);
-  execFileSync('ffmpeg', args, { stdio: 'pipe' });
-  return outPath;
-}
-
-/** Generate a minimal MP3 file */
-function generateMp3(dir: string, filename: string, comment?: string): string {
-  const outPath = path.join(dir, filename);
-  const args = [
-    '-y',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=frequency=440:duration=1:sample_rate=44100',
-    '-c:a',
-    'libmp3lame',
-    '-b:a',
-    '128k',
-    '-metadata',
-    'title=Test Song',
-    '-metadata',
-    'artist=Test Artist',
-  ];
-  args.push(outPath);
-  execFileSync('ffmpeg', args, { stdio: 'pipe' });
-
-  if (comment) {
-    // FFmpeg maps comment to TXXX:comment for MP3, not COMM.
-    // Set it properly via node-taglib-sharp after generation.
-    const { File: TagFile } = require('node-taglib-sharp');
-    const file = TagFile.createFromPath(outPath);
-    file.tag.comment = comment;
-    file.save();
-    file.dispose();
-  }
-
-  return outPath;
-}
-
 /**
- * Whether the local FFmpeg build was compiled with libvorbis support. The
- * macOS Homebrew default omits it; CI Linux builds usually include it.
- * OGG-format tests skip when this is false rather than fail spuriously.
+ * Overwrite the COMMENT tag on a freshly-generated audio file.
+ *
+ * ffmpeg's `-metadata comment=...` maps to DESCRIPTION in FLAC's Vorbis
+ * Comments and to TXXX:comment in MP3 ID3v2 — neither of which is the
+ * field the tag writer reads back as `comment`. We let test-fixtures
+ * lay the file down with the rest of the metadata, then re-open via
+ * node-taglib-sharp to set the real COMMENT field for tests that need
+ * to verify comment round-tripping.
  */
-const HAS_LIBVORBIS = (() => {
-  try {
-    const out = execFileSync('ffmpeg', ['-hide_banner', '-encoders'], {
-      stdio: ['ignore', 'pipe', 'ignore'],
-    }).toString();
-    return /\blibvorbis\b/.test(out);
-  } catch {
-    return false;
-  }
-})();
+function setComment(filePath: string, comment: string): void {
+  const { File: TagFile } = require('node-taglib-sharp');
+  const file = TagFile.createFromPath(filePath);
+  file.tag.comment = comment;
+  file.save();
+  file.dispose();
+}
 
-/** Generate a minimal OGG Vorbis file. Caller must guard on HAS_LIBVORBIS. */
-function generateOgg(dir: string, filename: string): string {
-  const outPath = path.join(dir, filename);
-  execFileSync(
-    'ffmpeg',
-    [
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      'sine=frequency=440:duration=1:sample_rate=44100',
-      '-c:a',
-      'libvorbis',
-      '-q:a',
-      '4',
-      '-metadata',
-      'title=Test Song',
-      '-metadata',
-      'artist=Test Artist',
-      outPath,
-    ],
-    { stdio: 'pipe' }
-  );
+function generateFlac(dir: string, filename: string, comment?: string): string {
+  const outPath = generateMiniFlac(dir, { filename, comment });
+  if (comment) setComment(outPath, comment);
   return outPath;
 }
 
-/** Generate a minimal OGG/Opus file */
-function generateOpus(dir: string, filename: string): string {
-  const outPath = path.join(dir, filename);
-  execFileSync(
-    'ffmpeg',
-    [
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      'sine=frequency=440:duration=1:sample_rate=48000',
-      '-c:a',
-      'libopus',
-      '-b:a',
-      '64k',
-      '-metadata',
-      'title=Test Song',
-      '-metadata',
-      'artist=Test Artist',
-      '-vn',
-      outPath,
-    ],
-    { stdio: 'pipe' }
-  );
+function generateM4a(dir: string, filename: string, comment?: string): string {
+  return generateMiniM4a(dir, { filename, comment });
+}
+
+function generateMp3(dir: string, filename: string, comment?: string): string {
+  const outPath = generateMiniMp3(dir, { filename });
+  if (comment) setComment(outPath, comment);
   return outPath;
+}
+
+function generateOgg(dir: string, filename: string): string {
+  return generateMiniOggVorbis(dir, { filename });
+}
+
+function generateOpus(dir: string, filename: string): string {
+  return generateMiniOggOpus(dir, { filename });
 }
 
 /** Generate a minimal JPEG image using FFmpeg */
@@ -293,7 +176,7 @@ describe('TagLibTagWriter', () => {
       expect(await readComment(filePath)).toBe(syncTag);
     });
 
-    test.skipIf(!HAS_LIBVORBIS)('OGG: writes comment', async () => {
+    test('OGG: writes comment', async () => {
       const filePath = generateOgg(tempDir, 'test.ogg');
       const syncTag = '[podkit:v1 quality=high]';
 
@@ -385,7 +268,7 @@ describe('TagLibTagWriter', () => {
       expect(await readComment(filePath)).toBe(fullFields.comment);
     });
 
-    test.skipIf(!HAS_LIBVORBIS)('OGG: round-trips every supported field', async () => {
+    test('OGG: round-trips every supported field', async () => {
       const filePath = generateOgg(tempDir, 'full.ogg');
       await writer.writeTags(filePath, fullFields);
 

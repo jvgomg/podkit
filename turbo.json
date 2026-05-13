@@ -134,6 +134,18 @@
       "inputs": ["src/**", "__tests__/**"],
       "outputs": []
     },
+    "@podkit/test-fixtures#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "src/**",
+        "!src/**/*.test.ts",
+        "scripts/**",
+        "package.json",
+        "tsconfig.json",
+        "tsconfig.build.json"
+      ],
+      "outputs": ["dist/**"]
+    },
     "@podkit/test-fixtures#generate-fixtures": {
       "inputs": ["src/**"],
       "outputs": ["../../test/manual-collection/**"],

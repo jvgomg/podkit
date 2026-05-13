@@ -58,8 +58,29 @@ curl -fsSL https://bun.sh/install | bash
 
 ### Step 2: Install FFmpeg
 
+Stock Homebrew FFmpeg works for running and developing podkit itself, but its bottle currently omits `libvorbis`, which the `@podkit/test-fixtures` package needs to synthesise OGG Vorbis test files. Two paths:
+
+**Quick (default Homebrew ffmpeg):**
+
 ```bash
 brew install ffmpeg
+```
+
+With this, integration tests that need `libvorbis` (the mass-storage tag writer OGG Vorbis round-trip tests) will fail loudly with an install hint rather than skipping.
+
+**Full encoder coverage (recommended for contributors running the full test suite):**
+
+```bash
+brew tap homebrew-ffmpeg/ffmpeg
+brew install homebrew-ffmpeg/ffmpeg/ffmpeg \
+  --with-libvorbis --with-libopus --with-libmp3lame --with-fdk-aac
+brew link --overwrite ffmpeg
+```
+
+Validate your install matches what test-fixtures expects:
+
+```bash
+bun run --filter @podkit/test-fixtures check-ffmpeg
 ```
 
 Verify AAC encoder support:
