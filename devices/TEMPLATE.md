@@ -62,16 +62,21 @@ artwork:
 # ============================================================================
 # Audio Format Support
 # ============================================================================
+# When documenting OGG-family support, name the **audio stream codec**
+# (Vorbis, Opus, OGG-FLAC), not the container. `.ogg` and `.opus` are file
+# extensions on the same OGG container — devices commonly support one
+# without the other. See docs/reference/codec-support.md for the full
+# codec/container model.
 audio_formats:
   lossy:
-    - codec: ""                   # e.g. "MP3"
-      extensions: []              # e.g. [".mp3"]
+    - codec: ""                   # e.g. "MP3", "OGG Vorbis", "Opus"
+      extensions: []              # e.g. [".mp3"], [".ogg"], [".opus"]
       max_sample_rate: ""         # e.g. "48kHz"
       max_bit_depth: ""           # e.g. "16-bit"
       notes: ""
   lossless:
-    - codec: ""                   # e.g. "FLAC"
-      extensions: []              # e.g. [".flac"]
+    - codec: ""                   # e.g. "FLAC", "ALAC"
+      extensions: []              # e.g. [".flac"], [".m4a"]
       max_sample_rate: ""         # e.g. "192kHz"
       max_bit_depth: ""           # e.g. "24-bit"
       notes: ""

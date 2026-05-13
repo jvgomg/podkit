@@ -38,7 +38,7 @@ import { DEFAULT_CONTENT_PATHS } from '@podkit/devices-mass-storage';
 const TEST_CAPABILITIES: DeviceCapabilities = {
   artworkSources: ['embedded'],
   artworkMaxResolution: 600,
-  supportedAudioCodecs: ['flac', 'mp3', 'aac', 'ogg'],
+  supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
   supportsVideo: false,
   audioNormalization: 'none',
   supportsAlbumArtistBrowsing: true,

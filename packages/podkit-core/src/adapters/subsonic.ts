@@ -216,6 +216,17 @@ function getCodec(suffix: string | undefined, contentType: string | undefined): 
         return 'aac';
       case 'ogg':
       case 'oga':
+        // .ogg/.oga container holds Vorbis by overwhelming convention, but
+        // some servers transcode/store Opus inside `.ogg`. Check contentType
+        // for the rare Opus-in-OGG case before defaulting to Vorbis.
+        //
+        // Limitation: Navidrome and most Subsonic servers set `contentType`
+        // from the file's MIME type (typically `audio/ogg` for any OGG
+        // container regardless of stream codec), not from the audio stream
+        // codec. A `.ogg` file containing Opus on such a server will be
+        // misclassified as Vorbis. The fix would require streaming the file
+        // header — deferred until evidence of users hitting this.
+        if (contentType?.toLowerCase().includes('opus')) return 'opus';
         return 'vorbis';
       case 'opus':
         return 'opus';

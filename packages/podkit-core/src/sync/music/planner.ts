@@ -97,7 +97,10 @@ export function requiresTranscoding(fileType: AudioFileType): boolean {
 /**
  * Map a track's file type and codec to the AudioCodec used in device capabilities.
  *
- * - m4a/aac files: use the codec field to distinguish AAC vs ALAC
+ * - `m4a`/`aac` files: use the codec field to distinguish AAC vs ALAC
+ * - `ogg` files: use the codec field to distinguish Vorbis vs Opus (defaults
+ *   to Vorbis when codec is missing or unrecognised — Vorbis-in-OGG is by far
+ *   the dominant case in the wild)
  * - Other file types map directly to AudioCodec names
  *
  * Returns undefined if the file type cannot be mapped (unknown format).
@@ -106,13 +109,18 @@ export function fileTypeToAudioCodec(
   fileType: AudioFileType,
   codec?: string
 ): AudioCodec | undefined {
+  const normalized = codec?.toLowerCase();
   switch (fileType) {
     case 'mp3':
       return 'mp3';
     case 'flac':
       return 'flac';
     case 'ogg':
-      return 'ogg';
+      // .ogg container can hold Vorbis, Opus, or (rarely) FLAC. Use the
+      // probed stream codec when available, default to Vorbis otherwise.
+      if (normalized?.includes('opus')) return 'opus';
+      if (normalized?.includes('flac')) return 'flac';
+      return 'vorbis';
     case 'opus':
       return 'opus';
     case 'wav':
@@ -124,7 +132,7 @@ export function fileTypeToAudioCodec(
     case 'm4a':
     case 'aac':
       // M4A can be AAC or ALAC — check codec field
-      if (codec?.toLowerCase() === 'alac') return 'alac';
+      if (normalized === 'alac') return 'alac';
       return 'aac';
     default:
       return undefined;

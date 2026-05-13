@@ -282,7 +282,7 @@ async function createArtworkCheckConfig(port: number): Promise<string> {
 
   await writeFile(
     configPath,
-    `version = 1
+    `version = 2
 
 [music.main]
 type = "subsonic"

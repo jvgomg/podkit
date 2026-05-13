@@ -38,7 +38,7 @@ import { getCliPath, isCliAvailable } from '../helpers/cli-runner';
  */
 async function createConfigFile(configDir: string, sourcePath: string): Promise<string> {
   const configPath = join(configDir, 'config.toml');
-  const content = `version = 1
+  const content = `version = 2
 quality = "low"
 
 [music.main]

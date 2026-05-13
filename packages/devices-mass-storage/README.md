@@ -24,7 +24,7 @@ const myDap = definePreset({
   id: 'my-dap',
   extends: 'generic',
   capabilities: {
-    supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'],
+    supportedAudioCodecs: ['aac', 'mp3', 'flac', 'vorbis'],
     artworkMaxResolution: 300,
   },
   contentPaths: {

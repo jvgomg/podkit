@@ -47,7 +47,7 @@ podkit device eject                                    # Safely eject
 
 **Minimal config example:**
 \`\`\`toml
-version = 1
+version = 2
 
 [music.main]
 path = "/path/to/your/music"

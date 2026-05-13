@@ -15,7 +15,7 @@ const allEncoders: EncoderAvailability = { hasEncoder: () => true };
 const noOpus: EncoderAvailability = { hasEncoder: (c) => c !== 'opus' };
 
 /** Rockbox-like device: supports many codecs */
-const rockboxCodecs = ['opus', 'aac', 'mp3', 'flac', 'alac', 'ogg'] as const;
+const rockboxCodecs = ['opus', 'aac', 'mp3', 'flac', 'alac', 'vorbis'] as const;
 
 /** iPod: limited codec support */
 const ipodCodecs = ['aac', 'mp3', 'alac'] as const;

@@ -243,9 +243,9 @@ describe('categorizeSource', () => {
       expect(categorizeSource(track, ['mp3', 'aac'])).toBe('incompatible-lossy');
     });
 
-    it('OGG source + device supports ogg → compatible-lossy', () => {
+    it('OGG Vorbis source + device supports vorbis → compatible-lossy', () => {
       const track = createCollectionTrack('Artist', 'Song', 'Album', 'ogg');
-      expect(categorizeSource(track, ['ogg', 'mp3'])).toBe('compatible-lossy');
+      expect(categorizeSource(track, ['vorbis', 'mp3'])).toBe('compatible-lossy');
     });
 
     it('MP3 on device supporting mp3 → compatible-lossy', () => {
@@ -327,7 +327,8 @@ describe('fileTypeToAudioCodec', () => {
   it('maps standard file types to codecs', () => {
     expect(fileTypeToAudioCodec('mp3')).toBe('mp3');
     expect(fileTypeToAudioCodec('flac')).toBe('flac');
-    expect(fileTypeToAudioCodec('ogg')).toBe('ogg');
+    // `.ogg` extension defaults to Vorbis when no stream codec is supplied
+    expect(fileTypeToAudioCodec('ogg')).toBe('vorbis');
     expect(fileTypeToAudioCodec('opus')).toBe('opus');
     expect(fileTypeToAudioCodec('wav')).toBe('wav');
     expect(fileTypeToAudioCodec('aiff')).toBe('aiff');
@@ -341,6 +342,20 @@ describe('fileTypeToAudioCodec', () => {
   it('maps m4a with alac codec to alac', () => {
     expect(fileTypeToAudioCodec('m4a', 'alac')).toBe('alac');
     expect(fileTypeToAudioCodec('m4a', 'ALAC')).toBe('alac');
+  });
+
+  it('maps .ogg with opus codec stream to opus', () => {
+    expect(fileTypeToAudioCodec('ogg', 'Opus')).toBe('opus');
+    expect(fileTypeToAudioCodec('ogg', 'opus')).toBe('opus');
+  });
+
+  it('maps .ogg with vorbis codec stream to vorbis', () => {
+    expect(fileTypeToAudioCodec('ogg', 'Vorbis I')).toBe('vorbis');
+    expect(fileTypeToAudioCodec('ogg', 'vorbis')).toBe('vorbis');
+  });
+
+  it('maps .ogg with flac codec stream to flac (OGG-FLAC, rare)', () => {
+    expect(fileTypeToAudioCodec('ogg', 'FLAC')).toBe('flac');
   });
 
   it('maps aac extension to aac', () => {

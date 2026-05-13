@@ -109,7 +109,7 @@ async function createTransferModeConfig(
   const configDir = await mkdtemp(join(tmpdir(), 'podkit-transfermode-config-'));
   const configPath = join(configDir, 'config.toml');
 
-  let content = `version = 1
+  let content = `version = 2
 
 # Use low quality for fast transcodes in tests
 quality = "low"

@@ -69,7 +69,7 @@ async function createVideoTransformConfig(
 ): Promise<string> {
   const configPath = join(configDir, 'config.toml');
 
-  let content = `version = 1\n\n# Video transform test config\n`;
+  let content = `version = 2\n\n# Video transform test config\n`;
 
   if (options.showLanguage !== undefined) {
     if (typeof options.showLanguage === 'boolean') {

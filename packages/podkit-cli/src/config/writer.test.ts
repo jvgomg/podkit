@@ -553,13 +553,13 @@ supportedAudioCodecs = ["aac", "mp3"]
 
     const result = updateDevice(
       'player',
-      { supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'] },
+      { supportedAudioCodecs: ['aac', 'mp3', 'flac', 'vorbis'] },
       { configPath }
     );
 
     expect(result.success).toBe(true);
     const content = fs.readFileSync(configPath, 'utf-8');
-    expect(content).toContain('supportedAudioCodecs = ["aac", "mp3", "flac", "ogg"]');
+    expect(content).toContain('supportedAudioCodecs = ["aac", "mp3", "flac", "vorbis"]');
     expect(content).not.toContain('supportedAudioCodecs = ["aac", "mp3"]');
   });
 

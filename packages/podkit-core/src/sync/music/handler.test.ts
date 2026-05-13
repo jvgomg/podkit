@@ -1107,7 +1107,7 @@ describe('MusicHandler', () => {
           codecPreference: { lossless: ['source', 'flac'], lossy: ['aac'] },
           encoderAvailability: { hasEncoder: () => true },
           capabilities: makeCapabilities({
-            supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'],
+            supportedAudioCodecs: ['aac', 'mp3', 'flac', 'vorbis'],
             artworkSources: ['embedded'],
             audioNormalization: 'none',
             supportsAlbumArtistBrowsing: true,

@@ -31,7 +31,7 @@ const MUSIC_DIR = 'Music';
 const TEST_CAPABILITIES: DeviceCapabilities = {
   artworkSources: ['embedded'],
   artworkMaxResolution: 600,
-  supportedAudioCodecs: ['flac', 'mp3', 'aac', 'ogg'],
+  supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
   supportsVideo: false,
   audioNormalization: 'none',
   supportsAlbumArtistBrowsing: true,

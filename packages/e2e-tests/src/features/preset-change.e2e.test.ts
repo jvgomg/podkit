@@ -47,7 +47,7 @@ async function createConfigFile(
 ): Promise<string> {
   const configPath = join(configDir, 'config.toml');
 
-  const content = `version = 1
+  const content = `version = 2
 
 [music.default]
 path = "${options.source}"
@@ -105,7 +105,7 @@ describe('preset change detection', () => {
         // Change to high quality and sync again — should succeed
         await writeFile(
           configPath,
-          `version = 1\n\n[music.default]\npath = "${collectionDir}"\nquality = "high"\n[defaults]\nmusic = "default"\n`
+          `version = 2\n\n[music.default]\npath = "${collectionDir}"\nquality = "high"\n[defaults]\nmusic = "default"\n`
         );
 
         const { result: result2, json: json2 } = await runCliJson<SyncOutput>([
@@ -161,7 +161,7 @@ describe('preset change detection', () => {
         // Change to high quality with --skip-upgrades — no file-replacement upgrades
         await writeFile(
           configPath,
-          `version = 1\n\n[music.default]\npath = "${collectionDir}"\nquality = "high"\n[defaults]\nmusic = "default"\n`
+          `version = 2\n\n[music.default]\npath = "${collectionDir}"\nquality = "high"\n[defaults]\nmusic = "default"\n`
         );
 
         const { result: dryResult, json: dryJson } = await runCliJson<SyncOutput>([

@@ -26,8 +26,20 @@ export const ARTWORK_SOURCES: readonly DeviceArtworkSource[] = [
   'sidecar',
 ] as const;
 
-/** Audio codecs a device can play natively */
-export type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'ogg' | 'opus' | 'wav' | 'aiff';
+/**
+ * Audio codecs a device can play natively.
+ *
+ * These name the **audio stream codec**, not the file container. A device
+ * declaring `'vorbis'` is implicitly declaring support for Vorbis in its
+ * canonical container (OGG, `.ogg` extension). `'opus'` is canonically an
+ * OGG container as well (RFC 7845) but uses the disambiguated `.opus`
+ * extension by convention. See `CODEC_CANONICAL_CONTAINER`.
+ *
+ * Note on rename: the literal `'ogg'` was previously used here to mean
+ * "OGG Vorbis." It was ambiguous — `.ogg` is a container that can hold
+ * Vorbis or Opus (or, rarely, FLAC). The codec slot now names the codec.
+ */
+export type AudioCodec = 'aac' | 'alac' | 'mp3' | 'flac' | 'vorbis' | 'opus' | 'wav' | 'aiff';
 
 /** All valid audio codec values */
 export const AUDIO_CODECS: readonly AudioCodec[] = [
@@ -35,11 +47,57 @@ export const AUDIO_CODECS: readonly AudioCodec[] = [
   'alac',
   'mp3',
   'flac',
-  'ogg',
+  'vorbis',
   'opus',
   'wav',
   'aiff',
 ] as const;
+
+/**
+ * Audio file containers podkit recognises.
+ *
+ * Container is the on-disk packaging — distinct from the audio stream
+ * codec inside it. Most codecs have a single canonical container (see
+ * `CODEC_CANONICAL_CONTAINER`). The OGG container in particular can hold
+ * Vorbis, Opus, FLAC, or Speex, which is why podkit names container and
+ * codec on separate axes.
+ *
+ * Declared today as part of the codec/container design principle but not
+ * yet enforced by the sync planner. Reserved for the container-aware sync
+ * work tracked in the Phase 2/3 PRD.
+ */
+export type AudioContainer = 'mp4' | 'mp3' | 'flac' | 'ogg' | 'wav' | 'aiff';
+
+/** All valid container values */
+export const AUDIO_CONTAINERS: readonly AudioContainer[] = [
+  'mp4',
+  'mp3',
+  'flac',
+  'ogg',
+  'wav',
+  'aiff',
+] as const;
+
+/**
+ * Canonical container for each audio codec.
+ *
+ * "Canonical" = the container that podkit produces when transcoding, and
+ * the container podkit assumes a device accepts a codec in when no
+ * `containerConstraints` override is set on the device preset.
+ *
+ * Non-canonical combinations (e.g. FLAC-in-OGG, Opus-in-`.ogg`) exist in
+ * the wild but are rare. Phase 2 introduces planner handling for them.
+ */
+export const CODEC_CANONICAL_CONTAINER: Record<AudioCodec, AudioContainer> = {
+  aac: 'mp4',
+  alac: 'mp4',
+  mp3: 'mp3',
+  flac: 'flac',
+  vorbis: 'ogg',
+  opus: 'ogg',
+  wav: 'wav',
+  aiff: 'aiff',
+};
 
 /**
  * Audio normalization mode the device supports.
@@ -61,6 +119,22 @@ export interface DeviceCapabilities {
   artworkMaxResolution: number | null;
   /** Audio codecs the device can play natively without transcoding */
   supportedAudioCodecs: AudioCodec[];
+  /**
+   * Per-codec container constraints.
+   *
+   * Optional. When set for a codec, restricts the set of containers podkit
+   * will pass through to the device for that codec. When omitted, the
+   * device is assumed to accept the codec only in its canonical container
+   * (see `CODEC_CANONICAL_CONTAINER`).
+   *
+   * Example: a device that accepts FLAC in both native `.flac` and
+   * OGG-FLAC `.ogg` declares `{ flac: ['flac', 'ogg'] }`.
+   *
+   * Declared today; sync-planner enforcement lands in Phase 2 of the
+   * container-aware sync work. Until then, the field is parsed but not
+   * acted on.
+   */
+  containerConstraints?: Partial<Record<AudioCodec, AudioContainer[]>>;
   /** Whether the device supports video playback */
   supportsVideo: boolean;
   /** Audio normalization mode the device supports */

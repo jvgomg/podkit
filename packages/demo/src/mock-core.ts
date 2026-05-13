@@ -2216,7 +2216,7 @@ export const DEVICE_PRESETS: Record<string, any> = {
   'echo-mini': {
     artworkSources: ['embedded'],
     artworkMaxResolution: 127,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'wav'],
     supportsVideo: false,
     audioNormalization: 'none',
     supportsAlbumArtistBrowsing: true,
@@ -2224,7 +2224,7 @@ export const DEVICE_PRESETS: Record<string, any> = {
   rockbox: {
     artworkSources: ['sidecar', 'embedded'],
     artworkMaxResolution: 320,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus', 'wav', 'aiff'],
     supportsVideo: false,
     audioNormalization: 'replaygain',
     supportsAlbumArtistBrowsing: true,

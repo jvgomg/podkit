@@ -88,7 +88,7 @@ async function createTestConfig(
   quality = 'high'
 ): Promise<string> {
   const configPath = join(configDir, 'config.toml');
-  const content = `version = 1
+  const content = `version = 2
 
 [music.${collectionName}]
 path = "${sourceDir}"

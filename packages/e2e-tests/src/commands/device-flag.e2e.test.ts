@@ -48,7 +48,7 @@ describe('global --device flag', () => {
         const tempDir = await mkdtemp(join(tmpdir(), 'podkit-path-test-'));
         tempDirs.push(tempDir);
         const configPath = join(tempDir, 'config.toml');
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         // Using --device with an absolute path should work
         const result = await runCli([
@@ -73,7 +73,7 @@ describe('global --device flag', () => {
       const tempDir = await mkdtemp(join(tmpdir(), 'podkit-dot-test-'));
       tempDirs.push(tempDir);
       const configPath = join(tempDir, 'config.toml');
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       // Use ./relative/path style - should be treated as path
       const result = await runCli([
@@ -99,7 +99,7 @@ describe('global --device flag', () => {
       const configPath = join(tempDir, 'config.toml');
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.some]
 volumeUuid = "test-uuid"
@@ -134,7 +134,7 @@ volumeName = "Some Device"
       const configPath = join(tempDir, 'config.toml');
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.terapod]
 volumeUuid = "ABC-123-UUID"
@@ -167,7 +167,7 @@ volumeName = "Terapod"
       const configPath = join(tempDir, 'config.toml');
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.realdevice]
 volumeUuid = "real-uuid"
@@ -196,7 +196,7 @@ volumeName = "Real"
       const configPath = join(tempDir, 'config.toml');
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.terapod]
 volumeUuid = "tera-uuid"
@@ -236,7 +236,7 @@ volumeName = "Terapod"
         const configPath = join(tempDir, 'config.toml');
         await writeFile(
           configPath,
-          `version = 1
+          `version = 2
 
 [music.main]
 path = "${sourcePath}"
@@ -276,7 +276,7 @@ music = "main"
         const configPath = join(tempDir, 'config.toml');
         await writeFile(
           configPath,
-          `version = 1
+          `version = 2
 
 [music.main]
 path = "${sourcePath}"
@@ -312,7 +312,7 @@ music = "main"
         const configPath = join(tempDir, 'config.toml');
         await writeFile(
           configPath,
-          `version = 1
+          `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -344,7 +344,7 @@ volumeName = "Test iPod"
       const configPath = join(tempDir, 'config.toml');
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.newipod]
 volumeUuid = "new-uuid"

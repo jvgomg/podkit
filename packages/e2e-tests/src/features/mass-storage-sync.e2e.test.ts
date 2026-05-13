@@ -242,7 +242,7 @@ async function writeEchoMiniConfig(
     ? `pathTemplate = ${JSON.stringify(options.pathTemplate)}`
     : '';
 
-  const content = `version = 1
+  const content = `version = 2
 
 quality = "${quality}"
 artwork = ${artwork}
@@ -997,7 +997,7 @@ describe('mass-storage sync: echo-mini device', () => {
       // Configure codec preference with opus first, but echo-mini does NOT
       // support opus (its codec list: aac, alac, mp3, flac, ogg, wav).
       // The resolver should fall back to aac.
-      const content = `version = 1
+      const content = `version = 2
 
 quality = "low"
 artwork = false

@@ -15,8 +15,8 @@ describe('runMigrations', () => {
     expect(result.applied.length).toBeGreaterThanOrEqual(1);
     expect(result.applied[0]!.fromVersion).toBe(0);
     expect(result.applied[0]!.toVersion).toBe(1);
-    // Result should contain version = 1
-    expect(result.content).toContain('version = 1');
+    // Result should be bumped to the current version
+    expect(result.content).toContain(`version = ${CURRENT_CONFIG_VERSION}`);
     // Original content should be preserved
     expect(result.content).toContain('quality = "high"');
   });

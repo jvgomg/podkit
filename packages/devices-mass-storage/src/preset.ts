@@ -83,7 +83,7 @@ export interface DefinePresetOptions {
  * const myDap = definePreset({
  *   id: 'my-dap',
  *   extends: 'generic',
- *   capabilities: { supportedAudioCodecs: ['aac', 'mp3', 'flac', 'ogg'] },
+ *   capabilities: { supportedAudioCodecs: ['aac', 'mp3', 'flac', 'vorbis'] },
  *   contentPaths: { musicDir: 'MUSIC' },
  * });
  *
@@ -115,6 +115,7 @@ export function definePreset(
     artworkSources: caps.artworkSources ?? base.artworkSources,
     artworkMaxResolution: caps.artworkMaxResolution ?? base.artworkMaxResolution,
     supportedAudioCodecs: caps.supportedAudioCodecs ?? base.supportedAudioCodecs,
+    containerConstraints: caps.containerConstraints ?? base.containerConstraints,
     supportsVideo: caps.supportsVideo ?? base.supportsVideo,
     audioNormalization: caps.audioNormalization ?? base.audioNormalization,
     supportsAlbumArtistBrowsing:

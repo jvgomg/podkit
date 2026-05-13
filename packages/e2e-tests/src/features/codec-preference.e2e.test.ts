@@ -113,7 +113,7 @@ async function writeCodecConfig(
   // Use artworkSources = ["sidecar"] to avoid the embedded artwork code path,
   // which causes FFmpeg to try embedding mjpeg in OGG containers (unsupported).
   // artwork = false disables artwork syncing entirely.
-  const content = `version = 1
+  const content = `version = 2
 
 quality = "${quality}"
 artwork = false

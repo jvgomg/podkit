@@ -30,7 +30,7 @@ async function makeConfig(
 describe('podkit collection music (e2e)', () => {
   it('lists tracks in JSON against real fixtures', async () => {
     const { configPath, cleanup } = await makeConfig(
-      `version = 1\n\n[music.main]\npath = "${getFixturesDir()}"\n\n[defaults]\nmusic = "main"\n`
+      `version = 2\n\n[music.main]\npath = "${getFixturesDir()}"\n\n[defaults]\nmusic = "main"\n`
     );
     try {
       const { result, json } = await runCliJson<Array<{ title?: string; artist?: string }>>([
@@ -54,7 +54,7 @@ describe('podkit collection music (e2e)', () => {
   }, 30000);
 
   it('exits 1 with an error when no music collection is configured', async () => {
-    const { configPath, cleanup } = await makeConfig(`version = 1\n`);
+    const { configPath, cleanup } = await makeConfig(`version = 2\n`);
     try {
       const result = await runCli(['--config', configPath, 'collection', 'music', '--tracks']);
       expect(result.exitCode).toBe(1);
@@ -75,7 +75,7 @@ describe('podkit collection video (e2e)', () => {
     'lists videos in JSON against real fixtures',
     async () => {
       const { configPath, cleanup } = await makeConfig(
-        `version = 1\n\n[video.main]\npath = "${getVideoFixturesDir()}"\n\n[defaults]\nvideo = "main"\n`
+        `version = 2\n\n[video.main]\npath = "${getVideoFixturesDir()}"\n\n[defaults]\nvideo = "main"\n`
       );
       try {
         const { result, json } = await runCliJson<Array<{ title?: string }>>([

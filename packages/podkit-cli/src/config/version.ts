@@ -10,7 +10,7 @@
 import { parse as parseTOML } from 'smol-toml';
 
 /** Current config version. Bump this when adding a new migration. */
-export const CURRENT_CONFIG_VERSION = 1;
+export const CURRENT_CONFIG_VERSION = 2;
 
 /**
  * Read the version field from raw TOML content.

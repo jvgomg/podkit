@@ -63,7 +63,7 @@ export interface GetCapabilitiesOptions {
  * const identity = identify({ vendorId: '0x071b', productId: '0x3203' });
  * if (identity) {
  *   const caps = getCapabilities(identity, { presets: BUILT_IN_PRESETS });
- *   // → { supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'], ... }
+ *   // → { supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'wav'], ... }
  * }
  * ```
  */

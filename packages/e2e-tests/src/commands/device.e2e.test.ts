@@ -28,7 +28,7 @@ describe('podkit device add', () => {
     it('adds device with existing database', async () => {
       await withTarget(async (target) => {
         // Create minimal config
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         const result = await runCli([
           '--config',
@@ -53,7 +53,7 @@ describe('podkit device add', () => {
 
     it('outputs JSON with device info', async () => {
       await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         const { result, json } = await runCliJson<{
           success: boolean;
@@ -83,7 +83,7 @@ describe('podkit device add', () => {
 
     it('sets first device as default', async () => {
       await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         await runCli([
           '--config',
@@ -105,7 +105,7 @@ describe('podkit device add', () => {
 
     it('rejects invalid device name', async () => {
       await withTarget(async (target) => {
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         const result = await runCli([
           '--config',
@@ -129,7 +129,7 @@ describe('podkit device add', () => {
         // Create config with existing device
         await writeFile(
           configPath,
-          `version = 1
+          `version = 2
 
 [devices.existing]
 volumeUuid = "test-uuid"
@@ -171,7 +171,7 @@ volumeName = "test"
           }
         }
 
-        await writeFile(configPath, 'version = 1\n');
+        await writeFile(configPath, 'version = 2\n');
 
         const result = await runCli([
           '--config',
@@ -201,7 +201,7 @@ volumeName = "test"
     });
 
     it('offers to initialize and succeeds with --yes', async () => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const result = await runCli([
         '--config',
@@ -224,7 +224,7 @@ volumeName = "test"
     });
 
     it('outputs JSON with initialized flag', async () => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const { result, json } = await runCliJson<{
         success: boolean;
@@ -252,7 +252,7 @@ volumeName = "test"
 
   describe('error handling', () => {
     it('fails when path does not exist', async () => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const result = await runCli([
         '--config',
@@ -290,7 +290,7 @@ describe('podkit device reset', () => {
       // Add a device to config
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -326,7 +326,7 @@ volumeName = "Test iPod"
     await withTarget(async (target) => {
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -353,7 +353,7 @@ volumeName = "Test iPod"
     await withTarget(async (target) => {
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -385,7 +385,7 @@ volumeName = "Test iPod"
     await withTarget(async (target) => {
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -417,7 +417,7 @@ volumeName = "Test iPod"
 
   describe('error handling', () => {
     it('fails when device not found in config', async () => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const result = await runCli([
         '--config',
@@ -442,7 +442,7 @@ volumeName = "Test iPod"
 
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.uninitipod]
 volumeUuid = "test-uuid"
@@ -475,7 +475,7 @@ volumeName = "Uninitialized iPod"
 
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.uninitipod]
 volumeUuid = "test-uuid"
@@ -519,7 +519,7 @@ describe('podkit device init', () => {
 
     await writeFile(
       configPath,
-      `version = 1
+      `version = 2
 
 [devices.emptyipod]
 volumeUuid = "test-uuid"
@@ -548,7 +548,7 @@ volumeName = "Empty iPod"
     await withTarget(async (target) => {
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -575,7 +575,7 @@ volumeName = "Test iPod"
     await withTarget(async (target) => {
       await writeFile(
         configPath,
-        `version = 1
+        `version = 2
 
 [devices.testipod]
 volumeUuid = "test-uuid"
@@ -605,7 +605,7 @@ volumeName = "Test iPod"
 
     await writeFile(
       configPath,
-      `version = 1
+      `version = 2
 
 [devices.newipod]
 volumeUuid = "test-uuid"
@@ -647,7 +647,7 @@ describe('podkit doctor with readiness', () => {
 
   it('shows readiness checks before database checks on healthy device', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
       // --no-system: focus on device-scope behaviour; system checks (FFmpeg,
       // libusb) are environment-coupled and have their own unit coverage.
       const result = await runCli([
@@ -671,7 +671,7 @@ describe('podkit doctor with readiness', () => {
 
   it('shows readiness in JSON output', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
       const { result, json } = await runCliJson<{
         healthy: boolean;
         readiness?: {
@@ -709,7 +709,7 @@ describe('podkit doctor with readiness', () => {
   });
 
   it('shows readiness failures and skips DB checks when no database', async () => {
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
 
     // Create iPod structure without database
     const ipodPath = join(tempDir, 'no-db-ipod');
@@ -730,7 +730,7 @@ describe('podkit doctor with readiness', () => {
   });
 
   it('JSON output shows readiness failure when no database', async () => {
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
 
     const ipodPath = join(tempDir, 'no-db-ipod-json');
     await mkdir(join(ipodPath, 'iPod_Control', 'iTunes'), { recursive: true });
@@ -760,7 +760,7 @@ describe('podkit doctor with readiness', () => {
   });
 
   it('shows readiness failure when iPod_Control is missing', async () => {
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
 
     // Create empty directory (no iPod structure at all)
     const emptyPath = join(tempDir, 'empty-device');
@@ -795,7 +795,7 @@ describe('podkit doctor with readiness', () => {
 
   it('shows readiness with SysInfo missing but database present', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       // Delete SysInfo to simulate missing SysInfo on an otherwise healthy device
       const sysInfoPath = join(target.path, 'iPod_Control', 'Device', 'SysInfo');
@@ -847,7 +847,7 @@ describe('podkit doctor --repair', () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), 'podkit-doctor-repair-'));
     configPath = join(tempDir, 'config.toml');
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
   });
 
   it('accepts sysinfo-extended as a valid repair check ID', async () => {
@@ -888,7 +888,7 @@ describe('podkit device init with readiness', () => {
   });
 
   it('initializes device that has no database', async () => {
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
 
     // Create empty directory (no iPod structure)
     const ipodPath = join(tempDir, 'empty-ipod');
@@ -911,7 +911,7 @@ describe('podkit device init with readiness', () => {
 
   it('rejects init on already initialized device without --force', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const result = await runCli([
         '--config',
@@ -932,7 +932,7 @@ describe('podkit device init with readiness', () => {
 
   it('force reinitializes already initialized device', async () => {
     await withTarget(async (target) => {
-      await writeFile(configPath, 'version = 1\n');
+      await writeFile(configPath, 'version = 2\n');
 
       const result = await runCli([
         '--config',
@@ -952,7 +952,7 @@ describe('podkit device init with readiness', () => {
   });
 
   it('JSON output includes readiness level when available', async () => {
-    await writeFile(configPath, 'version = 1\n');
+    await writeFile(configPath, 'version = 2\n');
 
     const ipodPath = join(tempDir, 'new-ipod');
     await mkdir(ipodPath, { recursive: true });

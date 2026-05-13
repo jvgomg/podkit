@@ -11,10 +11,16 @@
 export type {
   DeviceArtworkSource,
   AudioCodec,
+  AudioContainer,
   AudioNormalizationMode,
   DeviceCapabilities,
 } from './capabilities.js';
-export { ARTWORK_SOURCES, AUDIO_CODECS } from './capabilities.js';
+export {
+  ARTWORK_SOURCES,
+  AUDIO_CODECS,
+  AUDIO_CONTAINERS,
+  CODEC_CANONICAL_CONTAINER,
+} from './capabilities.js';
 
 export type {
   UsbFingerprint,

@@ -1057,7 +1057,7 @@ supportedAudioCodecs = ["wav", "aiff", "mp3"]
 [devices.echo]
 type = "echo-mini"
 path = "/mnt/echo"
-supportedAudioCodecs = ["aac", "mp3", "flac", "ogg"]
+supportedAudioCodecs = ["aac", "mp3", "flac", "vorbis"]
 `)
           );
 

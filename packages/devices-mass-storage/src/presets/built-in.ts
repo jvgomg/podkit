@@ -45,7 +45,9 @@ export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
   'echo-mini': {
     artworkSources: ['embedded'],
     artworkMaxResolution: 127,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'wav'],
+    // Vorbis (not Opus) — Echo Mini firmware hides `.opus` files from both
+    // library and folder browser (firsthand-confirmed, devices/echo-mini.md).
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'wav'],
     supportsVideo: false,
     audioNormalization: 'none',
     supportsAlbumArtistBrowsing: true,
@@ -58,7 +60,7 @@ export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
   rockbox: {
     artworkSources: ['sidecar', 'embedded'],
     artworkMaxResolution: 320,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
+    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus', 'wav', 'aiff'],
     supportsVideo: false,
     audioNormalization: 'replaygain',
     supportsAlbumArtistBrowsing: true,

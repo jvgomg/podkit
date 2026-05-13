@@ -122,6 +122,6 @@ function normaliseCodec(raw: string): AudioCodec | undefined {
   if (lower.includes('wav') || lower.includes('lpcm') || lower.includes('pcm')) return 'wav';
   if (lower.includes('flac')) return 'flac';
   if (lower.includes('opus')) return 'opus';
-  if (lower.includes('ogg') || lower.includes('vorbis')) return 'ogg';
+  if (lower.includes('vorbis') || lower.includes('ogg')) return 'vorbis';
   return undefined;
 }

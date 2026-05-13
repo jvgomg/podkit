@@ -142,7 +142,7 @@ describe('validateCapabilityOverrides — supportedAudioCodecs', () => {
     // can play. Podkit's planner is the gate that refuses to USE wav/aiff
     // as device-output on mass-storage; see MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS.
     const result = validateCapabilityOverrides({
-      supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'ogg', 'opus', 'wav', 'aiff'],
+      supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus', 'wav', 'aiff'],
     });
     expect(result.ok).toBe(true);
   });

@@ -252,7 +252,7 @@ describe('compilation albums via Subsonic', () => {
 
         await writeFile(
           configPath,
-          `version = 1
+          `version = 2
 
 [music.main]
 type = "subsonic"
