@@ -9,7 +9,7 @@ sidebar:
 
 ## Status
 
-**Proposed**
+**Accepted**
 
 ## Context
 

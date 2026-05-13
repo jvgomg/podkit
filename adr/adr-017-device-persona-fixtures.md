@@ -9,7 +9,7 @@ sidebar:
 
 ## Status
 
-**Proposed**
+**Accepted**
 
 ## Context
 
@@ -268,7 +268,7 @@ Five to six states ship as the bootstrap set:
 | `no-sg-perms` | `/dev/sg*` not readable by the test user; SCSI probe fails |
 | `corrupt-configfs` | `configfs` mount missing or unwritable; gadget setup blocked |
 
-### Phase 5 expansion (9 additional personas)
+### Phase 5 expansion (12 additional personas)
 
 The following personas are planned for subsequent delivery. They extend coverage to SCSI-fallback generations, alternative firmwares, and additional rejection cases:
 
