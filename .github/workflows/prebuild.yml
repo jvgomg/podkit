@@ -171,7 +171,7 @@ jobs:
         run: |
           apk add --no-cache \
             bash build-base cmake pkgconf python3 curl \
-            glib-dev gdk-pixbuf-dev \
+            glib-dev gdk-pixbuf-dev eudev-dev \
             libplist-dev libffi-dev sqlite-dev \
             libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
             intltool autoconf automake libtool gtk-doc \
@@ -246,7 +246,7 @@ jobs:
               set -e
               apk add --no-cache \
                 bash build-base cmake pkgconf python3 curl git \
-                glib-dev gdk-pixbuf-dev \
+                glib-dev gdk-pixbuf-dev eudev-dev \
                 libplist-dev libffi-dev sqlite-dev \
                 libpng-dev libjpeg-turbo-dev tiff-dev libxml2-dev \
                 intltool autoconf automake libtool gtk-doc \
