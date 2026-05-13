@@ -4,7 +4,7 @@ title: Per-content-type collections (TV/movies)
 tier: 1
 status: not-drafted
 last-updated: 2026-05-11
-user-stories-addressed: [US-04, US-10, US-21, US-22]
+user-stories-addressed: [US-04, US-10, US-21, US-22, US-27, US-28]
 depends-on:
   features: [sources-and-collections, selector-pipeline]
 depended-on-by-features: [audiobook-content-type, podcast-content-type]

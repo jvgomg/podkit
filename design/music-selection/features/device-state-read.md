@@ -4,7 +4,7 @@ title: Device state read + OTG protection
 tier: 3
 status: not-drafted
 last-updated: 2026-05-11
-user-stories-addressed: [US-17, US-25]
+user-stories-addressed: [US-17, US-25, US-28]
 depends-on:
   features: [sources-and-collections, track-identity]
 depended-on-by-features: [smart-selection]

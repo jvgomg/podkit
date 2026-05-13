@@ -70,6 +70,8 @@ toward "yes").
 | [US-24](us-24-pre-flight-validation.md) | Pre-flight validation | P1 | open | in | diagnostics-ux |
 | [US-25](us-25-track-removal-warning.md) | Track removal warning | P1 | open | in | device-state |
 | [US-26](us-26-config-migration-friendliness.md) | Config migration friendliness | P1 | open | in | diagnostics-ux |
+| [US-27](us-27-manual-video-curation.md) | Manual video curation | P2 | open | in | multi-content-type |
+| [US-28](us-28-movies-fresh-unwatched.md) | Fresh unwatched movies | P2 | open | in | multi-content-type |
 
 ## Archived (solved / out-of-scope)
 
@@ -81,6 +83,95 @@ See [`archive/`](archive/).
 
 US-13 (originally "two devices, same rules") was folded into US-02 during
 the first restructure pass — same scenario, different framing.
+
+## Personas
+
+Concrete user archetypes that drive the story set. Fun first names plus
+a one-line strap line let us refer to them in shorthand
+("Curator Casey would want…") while still being clear about who we're
+designing for.
+
+### Quick-start Quinn — *the user who plugs in their iPod and wants their whole music library on it without learning anything new*
+
+- **Setup:** one large iPod (Classic-class, ~160 GB). One local music
+  directory. No external server.
+- **Tech level:** low. Doesn't want to write filters, collections, or
+  playlists to start.
+- **Goals:** point podkit at the music folder, plug in the iPod, sync.
+  Get on with their life. Trust that the default behaviour is sensible.
+- **Drives:** US-01, US-18, US-19, US-26.
+
+### Two-device Theo — *the user who has a big "everything" iPod and a smaller "favourites" one, with the same curation rule applied to both*
+
+- **Setup:** two iPods of different capacities. One source (local or
+  Subsonic — doesn't really care). Wants the big one to get most/all of
+  the library and the small one to get a curated subset (genre, rating,
+  or a "favourites" playlist).
+- **Tech level:** medium. Comfortable writing a small bit of config to
+  express the subset rule.
+- **Goals:** define the favourites rule once and apply it to both
+  devices without copy-pasting. Tweak per-device occasionally without
+  fragmenting their config.
+- **Drives:** US-02, US-06, US-09, US-11, US-23.
+
+### Curator Casey — *the multi-iPod Subsonic curator who gives each device a distinct purpose (relaxed / gym / fresh)*
+
+- **Setup:** three or more smaller iPods, each with its own purpose
+  ("relaxed listening", "gym / high-energy", "fresh discoveries").
+  Music lives in Subsonic (Navidrome). Curation happens in Subsonic
+  playlists.
+- **Tech level:** high. Maintains several collections; thinks of
+  iPods as themed devices, not as one-size-fits-all.
+- **Goals:** each iPod reflects its theme via a Subsonic-curated
+  playlist (or set of playlists). Updating a theme in Subsonic flows
+  through to the device. Strict semantics where appropriate (gym iPod
+  = only high-energy tracks).
+- **Drives:** US-02, US-05, US-06, US-07, US-08, US-11, US-12, US-17.
+
+### Hand-pick Hank — *the video user who wants to manually choose specific movies and TV seasons, with no automation*
+
+- **Setup:** iPod 5G or Classic with video. One source for TV, one for
+  movies. Specific shows and seasons in mind; specific movies they
+  want to watch.
+- **Tech level:** medium. Comfortable enumerating items in config; not
+  comfortable with rotation logic deciding for them.
+- **Goals:** spell out exactly what should be on the device. Trust that
+  podkit will not silently swap things in or out. Updates are
+  deliberate edits to the list.
+- **Drives:** US-04, US-27.
+
+### Rotation Robin — *the video user whose iPod is a queue of fresh unwatched movies and the next N unwatched episodes per TV show*
+
+- **Setup:** iPod with video. TV source + movies source. Watches on the
+  device and expects what they've watched to rotate out.
+- **Tech level:** medium-high. Comfortable with selection rules that
+  consume device state (watched / unwatched).
+- **Goals:** the iPod is always full of stuff they haven't seen yet.
+  After a flight where they watched three episodes and a movie, the
+  next sync rotates in fresh content automatically.
+- **Drives:** US-04, US-10, US-28. (Depends on device state read for
+  watched flags.)
+
+### Audiobook Ada — *the user whose iPod is a queue of unfinished audiobooks, rotating as they finish them*
+
+- **Setup:** a smaller iPod dedicated (mostly) to audiobooks. Source
+  is a directory of audiobook files (M4B / MP3 chapters).
+- **Tech level:** medium.
+- **Goals:** the device shows only books they haven't finished. When a
+  book finishes, it drops off; new books rotate in. Progress is
+  preserved across syncs.
+- **Drives:** US-21, plus depends on device-state-read for progress.
+
+### Podcast Penny — *the user whose iPod is the last N unplayed episodes per podcast feed*
+
+- **Setup:** an iPod (any class) for spoken-word commuting. Subscribes
+  to a handful of podcast feeds via RSS / OPML.
+- **Tech level:** medium.
+- **Goals:** their iPod always has the latest N episodes of each feed
+  they care about; played episodes rotate out. Doesn't have to manage
+  the queue manually.
+- **Drives:** US-22, plus depends on device-state-read for played
+  state.
 
 ## Themes
 

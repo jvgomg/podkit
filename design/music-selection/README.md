@@ -82,42 +82,44 @@ A separate **track identity** primitive sits between collections and the
 active source whenever cross-source matching is needed (cross-source
 playlists, self-healing sync, source ↔ device matching).
 
+## How this workspace works
+
+This workspace follows the conventions documented in
+[`../README.md`](../README.md) — directory layout, frontmatter, status
+values, bidirectional-link discipline. The bidirectional-link lint
+config is in [`.lint.yaml`](.lint.yaml); run it from the repo root:
+
+```bash
+bun run scripts/lint-frontmatter-links.ts design/music-selection/.lint.yaml
+```
+
 ## Where to read more
 
-### Principles
-Discrete design rules that have emerged during shaping.
-See [`principles/README.md`](principles/README.md) for the full index.
+Each area below has its own README. Follow whichever matches what
+you're looking for; the indexes will route you to the specific files.
 
-### Features (sub-PRDs)
-Discrete chunks of work, each its own PRD when drafted. Currently inventory
-only — sub-PRDs are drafted ad hoc as we discuss them.
-See [`features/README.md`](features/README.md).
-
-### Open questions
-Decisions still to be made; flagged so they are not lost.
-See [`open-questions/README.md`](open-questions/README.md).
-**Most foundational open question:** whether to decouple sources from
-collections at all. See
-[`open-questions/source-collection-decoupling.md`](open-questions/source-collection-decoupling.md).
-
-### Spikes
-Technical investigations that resolve hard unknowns ahead of feature work.
-See [`spikes/README.md`](spikes/README.md).
-
-### User stories
-The set of user-facing scenarios driving the design — ranked by priority,
-mapped to features / principles / open questions / spikes.
-See [`user-stories/README.md`](user-stories/README.md).
-
-### Specs
-Living end-state documents (config schema, canonical terminology).
-See [`specs/README.md`](specs/README.md). When in doubt about what to call
-something, [`specs/terminology.md`](specs/terminology.md) is the
-canonical reference.
-
-### Roadmap
-Tier-ordered plan for how the work sequences.
-See [`roadmap.md`](roadmap.md).
+- **[`user-stories/`](user-stories/README.md)** — user-facing scenarios
+  driving the design. Personas, themes, the ranked story index. Start
+  here if you want to understand *who* and *why*.
+- **[`principles/`](principles/README.md)** — design rules that
+  constrain how features are built. Start here if a feature decision
+  feels like it should be guided by a rule.
+- **[`features/`](features/README.md)** — sub-PRDs (stub or drafted).
+  Start here if you want to know what's being built and how the pieces
+  depend on each other.
+- **[`open-questions/`](open-questions/README.md)** — decisions still to
+  be made. Start here if something in the design feels uncertain.
+  **Most foundational:**
+  [source-collection-decoupling](open-questions/source-collection-decoupling.md).
+- **[`spikes/`](spikes/README.md)** — technical investigations that
+  resolve hard unknowns ahead of feature work. Start here when a
+  feature claims to depend on research.
+- **[`specs/`](specs/README.md)** — living end-state documents: the
+  agreed config schema, the canonical terminology vocabulary. When in
+  doubt about what to call something, look in
+  [`specs/terminology.md`](specs/terminology.md) first.
+- **[`roadmap.md`](roadmap.md)** — tier-ordered sequencing of features.
+  Start here if you want to know what gets built when.
 
 ## What is in scope
 
