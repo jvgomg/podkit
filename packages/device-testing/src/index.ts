@@ -18,14 +18,31 @@
  */
 
 import { localLinuxRunner } from './runners/local-linux.js';
+import { limaTestVmRunner } from './runners/lima-test-vm.js';
 import { registerRunner } from './runners/registry.js';
 
 // Personas
 export type { DevicePersona, DoctorOutput } from './personas/types.js';
 export { personas } from './personas/index.js';
 
+// Persona sidecar (JSON serialisation consumed by the FunctionFS daemon)
+export type {
+  PersonaSidecarV1,
+  SidecarPersona,
+  SidecarUsbDescriptor,
+  SidecarMassStorageBackingFile,
+} from './personas/sidecar.js';
+export {
+  SIDECAR_SCHEMA_VERSION,
+  serializeSidecar,
+  parseSidecar,
+  parseHexId,
+  toHex16,
+} from './personas/sidecar.js';
+export { buildSidecar, toSidecarPersona } from './personas/sidecar-build.js';
+
 // System states
-export type { SystemState } from './system-states/types.js';
+export type { SystemState, SystemStateId } from './system-states/types.js';
 export {
   systemStates,
   healthy,
@@ -42,6 +59,60 @@ export type { RunnerId, RunOpts, RunResult, TestRuntime } from './runtime.js';
 // Runners
 export { localLinuxRunner } from './runners/local-linux.js';
 export { registerRunner, getRunner, listRunners } from './runners/registry.js';
+
+// Lima test-VM binary transfer (TASK-322.03)
+export type { TransferBinaryOpts, TransferBinaryResult } from './runners/lima-test-vm-binary.js';
+export {
+  transferBinary,
+  transferGpodTool,
+  DEFAULT_PODKIT_VM_PATH,
+  DEFAULT_GPOD_TOOL_VM_PATH,
+} from './runners/lima-test-vm-binary.js';
+
+// Lima test-VM snapshot helpers (TASK-322.02)
+export type { SnapshotOpts, ListSnapshotsOpts } from './runners/lima-test-vm-snapshots.js';
+export {
+  createSnapshot,
+  restoreSnapshot,
+  deleteSnapshot,
+  snapshotExists,
+  listSnapshots,
+} from './runners/lima-test-vm-snapshots.js';
+
+// Lima test-VM state orchestration (TASK-322.02)
+export type { ApplyStateOpts, ApplyStateResult } from './runners/lima-test-vm-state.js';
+export { applyState } from './runners/lima-test-vm-state.js';
+
+// Lima test-VM TestRuntime (TASK-322.04)
+export type {
+  CreateLimaTestVmRuntimeOpts,
+  EnsurePersonaSidecarOpts,
+  EnsurePersonaSidecarResult,
+  StageBackingFileOpts,
+  ResetBackingFileOpts,
+  StartDaemonOpts,
+  StopDaemonOpts,
+} from './runners/lima-test-vm.js';
+export {
+  limaTestVmRunner,
+  createLimaTestVmRuntime,
+  ensurePersonaSidecar,
+  stageBackingFile,
+  resetBackingFile,
+  startDaemonForPersona,
+  stopDaemon,
+  instanceStatus,
+  resolveDefaultPodkitBinary,
+  resolveDefaultDummyHcdDaemonBinary,
+  resolveDefaultGpodToolBinary,
+  LIMA_TEST_VM_NAME,
+  SIDECAR_VM_PATH,
+  BASE_HEALTHY_SNAPSHOT,
+  DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
+} from './runners/lima-test-vm.js';
+
+// local-linux runner constants (TASK-322.04)
+export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';
 
 // Subprocess (capture + replay framework)
 export type {
@@ -60,3 +131,4 @@ export {
 
 // Auto-register built-in runners on first import.
 registerRunner(localLinuxRunner);
+registerRunner(limaTestVmRunner);

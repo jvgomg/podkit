@@ -1,0 +1,16 @@
+{
+  "extends": "../../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "noEmit": true,
+    "moduleResolution": "bundler",
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": [
+    "src/**/*",
+    "src/types.d.ts",
+    "../../../packages/device-testing/src/personas/sidecar.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

@@ -4,7 +4,7 @@ title: 'orphan-files-mass-storage: detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
-updated_date: '2026-05-13 18:05'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - doctor
@@ -12,7 +12,8 @@ labels:
   - mass-storage
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
 priority: medium
 ordinal: 18000
 ---
@@ -58,3 +59,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #11 Check is mass-storage-only (applicableTo: ['mass-storage']); iPod devices skip it
 - [ ] #12 iPod-flavoured orphan-files check is NOT applied to mass-storage devices (verified by absence of 'orphan-files' in JSON checks[])
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Tier-3 assertions need TASK-322.05.01 (FunctionFS descriptor handshake) so the synthesised echo-mini-style persona enumerates as a USB mass-storage device. Tier-1 fake-injected coverage is independent.
+<!-- SECTION:NOTES:END -->

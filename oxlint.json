@@ -43,6 +43,12 @@
       }
     },
     {
+      "files": ["**/tools/device-testing/dummy-hcd/src/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
       "files": ["**/demo/build.ts", "**/demo/src/**/*.ts"],
       "rules": {
         "no-console": "off"

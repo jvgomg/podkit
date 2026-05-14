@@ -4,14 +4,15 @@ title: 'orphan-files (iPod): detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
-updated_date: '2026-05-13 18:04'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - doctor
   - orphans
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
 priority: medium
 ordinal: 17000
 ---
@@ -58,3 +59,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #13 Repair preserves library-referenced files (asserted by re-running diff after repair)
 - [ ] #14 Check is iPod-only (applicableTo: ['ipod']); mass-storage devices use orphan-files-mass-storage instead
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Tier-3 assertions need TASK-322.05.01 (FunctionFS descriptor handshake) so the synthesised iPod persona enumerates and the device-scope orphan-files check has a target. Tier-1 fake-injected coverage is independent.
+<!-- SECTION:NOTES:END -->

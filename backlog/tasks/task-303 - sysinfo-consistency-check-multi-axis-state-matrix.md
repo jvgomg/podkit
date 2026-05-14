@@ -4,14 +4,15 @@ title: 'sysinfo-consistency check: multi-axis state matrix'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:22'
-updated_date: '2026-05-13 18:04'
+updated_date: '2026-05-14 19:22'
 labels:
   - testing
   - doctor
   - sysinfo
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
 priority: medium
 ordinal: 15000
 ---
@@ -61,3 +62,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #14 Repair (--repair sysinfo-consistency) overwrites the on-disk file from live USB; subsequent doctor run reports pass
 - [ ] #15 Repair --dry-run prints planned action without modifying the file
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** The sysinfo-consistency check compares on-disk persona data to **live** USB descriptor data — Tier-3 assertions here need TASK-322.05.01 (FunctionFS descriptor handshake) so the live USB layer actually returns a descriptor for the synthesised persona. Tier-1 fake-injected coverage is independent and can land first.
+<!-- SECTION:NOTES:END -->

@@ -156,8 +156,25 @@
       "cache": false,
       "outputs": []
     },
+    "@podkit/device-testing#test:tier3": {
+      "dependsOn": ["build", "^build"],
+      "cache": true,
+      "inputs": [
+        "src/tier3/**",
+        "src/personas/**",
+        "src/system-states/**",
+        "src/runners/**",
+        "src/runtime.ts",
+        "src/subprocess.ts",
+        "$TURBO_ROOT$/tools/device-testing/**",
+        "package.json",
+        "bunfig.toml"
+      ],
+      "outputs": []
+    },
     "@podkit/device-testing#build:linux-prebuild": {
       "dependsOn": [],
+      "env": ["PODKIT_HOST_ARCH"],
       "inputs": [
         "$TURBO_ROOT$/packages/libgpod-node/native/**",
         "$TURBO_ROOT$/packages/libgpod-node/binding.gyp",
@@ -174,8 +191,21 @@
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**"
       ]
     },
+    "@podkit/device-testing#build:dummy-hcd-daemon": {
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/src/**",
+        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/scripts/build.sh",
+        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/package.json",
+        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/tsconfig.json",
+        "$TURBO_ROOT$/packages/device-testing/src/personas/sidecar.ts",
+        "scripts/build-dummy-hcd-daemon.sh"
+      ],
+      "outputs": ["$TURBO_ROOT$/tools/device-testing/dummy-hcd/dist/dummy-hcd-daemon-linux-*"]
+    },
     "@podkit/device-testing#build:linux-binary": {
       "dependsOn": ["@podkit/device-testing#build:linux-prebuild", "^build"],
+      "env": ["PODKIT_HOST_ARCH"],
       "inputs": [
         "$TURBO_ROOT$/packages/*/src/**",
         "!$TURBO_ROOT$/packages/*/src/**/*.test.ts",

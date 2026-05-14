@@ -1,0 +1,199 @@
+# Lima VM: Test VM (Debian 12.10 — minimal, binary-only)
+#
+# Role: run Tier 3 integration tests from ADR-016 against the statically-linked
+# podkit linux-x64 binary produced by the builder VM (tools/device-testing/lima/
+# builder.yaml). This VM is deliberately stripped of all development tooling
+# so that dev libraries on PATH cannot mask binary linkage problems — the
+# cornerstone of ADR-016's builder/test-VM split.
+#
+# Boots as Lima instance name: `podkit-test-vm`.
+#
+# What this VM HAS:
+#   - Debian 12.10 (pinned via explicit cloud-image URL — same point release
+#     as builder.yaml and abi-verify.yaml; bump deliberately and in sync)
+#   - `ffmpeg` (apt) — the only system runtime dep podkit users install
+#   - `libgpod4` + `libgpod-common` + `libglib2.0-0` (apt, runtime-only) —
+#     required by the `gpod-tool` test helper. These are NOT -dev packages;
+#     they are the same shared libraries an end-user with libgpod-using
+#     applications would already have. ADR-016 §"Snapshot-based state
+#     layering" names `base-no-libgpod` as a snapshot, which implies libgpod
+#     IS in the base VM and is removed for that snapshot — TASK-322.02 lands
+#     the snapshot setter.
+#   - Kernel modules loaded at boot via /etc/modules-load.d/podkit-test-vm.conf:
+#     `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`
+#   - configfs auto-mounted at /sys/kernel/config (kernel default on Debian 12;
+#     an explicit /etc/fstab line is added as a belt-and-braces measure)
+#   - /usr/local/bin/podkit — empty placeholder; populated by TASK-322.03's
+#     binary transfer step (limactl copy from the host's turbo cache)
+#   - /usr/local/bin/gpod-tool — populated by a placeholder provision step
+#     that expects a host-side binary at /tmp/gpod-tool. TASK-322.03 will
+#     refine the transfer contract once the host-side gpod-tool linux build
+#     pipeline lands. See README §"gpod-tool sourcing" for the current
+#     handoff contract.
+#
+# What this VM explicitly DOES NOT have:
+#   - NO Bun, NO Node, NO npm/npx
+#   - NO `mounts:` entry exposing the host source tree (mounts: [] below)
+#   - NO node_modules
+#   - NO build-essential, pkg-config, cmake, meson, ninja
+#   - NO `-dev` packages (no libgpod-dev, no libglib2.0-dev, no libplist-dev)
+#   - NO source tree visible inside the VM
+#
+# libgpod runtime rationale: the podkit binary statically links libgpod, so
+# `ldd /usr/local/bin/podkit` must NOT reference any libgpod symbols. The
+# runtime libgpod present in this VM exists solely for gpod-tool (the test
+# helper that populates iPod databases). A linkage regression that makes the
+# podkit binary dynamically depend on libgpod will still surface here because
+# the runtime libgpod ABI in this VM is Debian 12.10's, not the static build's.
+#
+# Usage (manual):
+#   limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
+#   # TASK-322.03 will provide a transferBinary helper; manually for now:
+#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-test-vm:/tmp/podkit
+#   limactl shell podkit-test-vm -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+#   limactl shell podkit-test-vm -- /usr/local/bin/podkit --version
+#   limactl stop podkit-test-vm
+#
+# Verifying the binary-only invariant:
+#   limactl shell podkit-test-vm -- which bun node npm   # must return empty
+#   limactl shell podkit-test-vm -- ls /workspaces /Users 2>/dev/null   # must be empty
+#   limactl shell podkit-test-vm -- dpkg -l | grep -E '\-dev '         # must be empty
+
+images:
+  # Debian 12.10 point release. Pinned in sync with builder.yaml and
+  # abi-verify.yaml — bumping requires updating all three files plus a
+  # re-run of the ABI spike to confirm the static binary still loads.
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
+    arch: 'aarch64'
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'
+    arch: 'x86_64'
+
+# No host mount. The binary is delivered via `limactl copy` by TASK-322.03.
+# Lima's default $HOME mount would re-introduce dev-library shadowing risk
+# (the host's node_modules, libgpod-dev, Bun install, etc. would all become
+# visible). ADR-016 §"Builder/test VM split" forbids it.
+mounts: []
+
+# Modest sizing — this VM only runs the compiled binary, not a build.
+cpus: 2
+memory: '2GiB'
+disk: '6GiB'
+
+provision:
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      echo "=== Installing minimal runtime packages (no -dev, no toolchain) ==="
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update
+      # ffmpeg                — the one system runtime dep podkit users install
+      # libgpod4              — runtime-only libgpod (test helper gpod-tool needs it)
+      # libgpod-common        — udev rules + data files shipped with libgpod runtime
+      # libglib2.0-0          — runtime glib (depended on by libgpod4; explicit for clarity)
+      # ca-certificates       — boot-time TLS for apt + limactl ssh
+      # kmod                  — modprobe, lsmod, depmod (boot-time module loading)
+      # NO build-essential, NO pkg-config, NO any -dev packages.
+      apt-get install -y --no-install-recommends \
+        ffmpeg \
+        libgpod4 \
+        libgpod-common \
+        libglib2.0-0 \
+        ca-certificates \
+        kmod
+
+      echo "=== Configuring kernel modules to load at boot ==="
+      # USB gadget stack: dummy_hcd provides a virtual USB host controller in
+      # the kernel; libcomposite + usb_f_mass_storage + usb_f_fs provide the
+      # gadget function modules that the FunctionFS daemon (TASK-322.05) uses
+      # to synthesize iPod-shaped USB devices.
+      install -d /etc/modules-load.d
+      # Write via printf — heredocs inside an indented YAML `|` block scalar
+      # would either need column-0 bodies (breaking yaml indent) or `<<-EOF`
+      # with tabs (mixed-style and error-prone). printf produces clean output
+      # with no leading whitespace; systemd-modules-load is whitespace-strict.
+      printf '%s\n' \
+        '# Loaded by systemd-modules-load.service at boot.' \
+        '# Required by the Tier 3 FunctionFS USB gadget daemon (ADR-016).' \
+        'dummy_hcd' \
+        'libcomposite' \
+        'usb_f_mass_storage' \
+        'usb_f_fs' \
+        > /etc/modules-load.d/podkit-test-vm.conf
+
+      # Best-effort modprobe during provisioning so the modules are available
+      # immediately without a reboot. The `|| echo` is what keeps `set -e` from
+      # aborting the script if a module fails to load (e.g. an image variant
+      # missing dummy_hcd); the boot-time loader catches the real run.
+      for mod in dummy_hcd libcomposite usb_f_mass_storage usb_f_fs; do
+        modprobe "$mod" || echo "WARN: modprobe $mod failed during provisioning; will retry on boot via modules-load.d"
+      done
+
+      echo "=== Ensuring configfs is mounted at /sys/kernel/config ==="
+      # configfs is enabled in Debian 12's stock kernel and is normally
+      # auto-mounted by systemd. Add an explicit fstab entry as a safety net
+      # so a regression in systemd's configfs.mount unit does not silently
+      # break the gadget setup.
+      if ! grep -q '/sys/kernel/config' /etc/fstab; then
+        # printf — see modules-load.d note above for why heredoc is avoided.
+        # mount -a rejects fstab lines with leading whitespace.
+        printf '%s\n' 'configfs /sys/kernel/config configfs defaults 0 0' \
+          >> /etc/fstab
+      fi
+      mkdir -p /sys/kernel/config
+      mountpoint -q /sys/kernel/config || mount -t configfs configfs /sys/kernel/config
+
+      echo "=== Verifying /usr/local/bin is writable for binary transfer ==="
+      # TASK-322.03 will limactl-copy the compiled podkit binary here.
+      install -d -m 0755 /usr/local/bin
+      test -w /usr/local/bin
+
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      # gpod-tool sourcing (interim contract; refined by TASK-322.03)
+      #
+      # gpod-tool is built by tools/gpod-tool/Makefile and dynamically links
+      # libgpod-1.0 + glib-2.0. The host-side build artefact for Linux x64/arm64
+      # is not yet wired up — TASK-322.03 will produce it from @podkit/gpod-testing
+      # build outputs and ship it into the VM via limactl copy alongside the
+      # podkit binary.
+      #
+      # Interim handoff: developers wanting to populate gpod-tool today can
+      # `limactl copy <gpod-tool-linux> podkit-test-vm:/tmp/gpod-tool` after
+      # boot, then `limactl shell podkit-test-vm -- sudo install -m 0755
+      # /tmp/gpod-tool /usr/local/bin/gpod-tool`. The provisioning step below
+      # picks the file up automatically if it is staged BEFORE first boot
+      # (e.g. via a pre-boot `limactl copy` in TASK-322.03's transferBinary).
+      if [ -f /tmp/gpod-tool ]; then
+        install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
+        echo "Installed gpod-tool from /tmp/gpod-tool"
+      else
+        echo "NOTE: /tmp/gpod-tool not staged at boot — TASK-322.03 will copy it later."
+      fi
+
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      echo "=== Verifying the binary-only invariant ==="
+      # Hard guards: if any of these fire, provisioning has regressed and the
+      # VM cannot be trusted to surface binary linkage problems.
+      ! command -v bun  >/dev/null 2>&1 || { echo "FATAL: bun present in test VM"; exit 1; }
+      ! command -v node >/dev/null 2>&1 || { echo "FATAL: node present in test VM"; exit 1; }
+      ! command -v npm  >/dev/null 2>&1 || { echo "FATAL: npm present in test VM"; exit 1; }
+
+      # No -dev packages of any kind. Match every installed package whose name
+      # ends in `-dev`, plus build-essential and pkg-config (toolchain meta).
+      DEV_PKGS=$(dpkg-query -W -f='${db:Status-Status} ${Package}\n' 2>/dev/null \
+        | awk '$1=="installed" && ($2 ~ /-dev$/ || $2=="build-essential" || $2=="pkg-config") {print $2}')
+      if [ -n "$DEV_PKGS" ]; then
+        echo "FATAL: dev package(s) found in test VM — provisioning regression:"
+        echo "$DEV_PKGS"
+        exit 1
+      fi
+      echo "OK: no Bun/Node/npm/dev packages present."

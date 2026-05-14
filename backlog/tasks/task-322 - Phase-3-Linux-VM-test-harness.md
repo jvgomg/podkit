@@ -4,7 +4,7 @@ title: 'Phase 3: Linux VM test harness'
 status: To Do
 assignee: []
 created_date: '2026-05-11 22:56'
-updated_date: '2026-05-12 11:53'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - vm-coverage
@@ -57,3 +57,9 @@ Subtasks deliver each component.
 - [ ] #7 Auto-skip path logs a clear warning when no runner is available; does not fail the overall test suite
 - [ ] #8 Test VM ships only the statically-linked podkit binary + ffmpeg + gpod-tool (test-time dep) + kernel modules — no Bun, no Node, no -dev packages, no source tree
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Phase 3 status (2026-05-14):** Subtasks 322.01-322.06 implemented; the harness scaffolding is in place and tests auto-skip on macOS without Lima. AC #2 (`bun run test` on mac with Lima passes Tier 3 end-to-end against 3 starter personas) is BLOCKED at the FunctionFS descriptor handshake — see TASK-322.05.01. Doctor-vs-state assertions in TASK-322.06 are BLOCKED on TASK-333 (system-only doctor invocation). Phase 3 completion requires both follow-up tasks to land. Phases 4 + 5 (TASK-324 persona expansion) are independent and can proceed in parallel.
+<!-- SECTION:NOTES:END -->

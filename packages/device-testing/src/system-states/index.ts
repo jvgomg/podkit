@@ -13,9 +13,9 @@
  * @module
  */
 
-import type { SystemState } from './types.js';
+import type { SystemState, SystemStateId } from './types.js';
 
-export type { SystemState } from './types.js';
+export type { SystemState, SystemStateId } from './types.js';
 
 export { healthy } from './healthy.js';
 export { noFfmpeg } from './no-ffmpeg.js';
@@ -37,7 +37,7 @@ import { corruptConfigfs } from './corrupt-configfs.js';
  * Used by Tier 1 injectable mocks and Tier 3 VM snapshot management.
  * Do not mutate at runtime — all states are read-only fixtures.
  */
-export const systemStates: Map<string, SystemState> = new Map<string, SystemState>([
+export const systemStates: Map<SystemStateId, SystemState> = new Map<SystemStateId, SystemState>([
   ['healthy', healthy],
   ['no-ffmpeg', noFfmpeg],
   ['no-libgpod', noLibgpod],

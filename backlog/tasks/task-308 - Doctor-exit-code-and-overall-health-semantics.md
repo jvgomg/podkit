@@ -4,14 +4,16 @@ title: Doctor exit code and overall-health semantics
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:24'
-updated_date: '2026-05-13 18:05'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - doctor
   - exit-codes
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-333
+  - TASK-322.05.01
 priority: medium
 ordinal: 20000
 ---
@@ -59,3 +61,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #12 Repair commands: success=true → exit 0; success=false → exit 1; --dry-run with success=true → exit 0
 - [ ] #13 JSON output's healthy boolean exactly mirrors the exit code (healthy=true iff exit 0) for diagnostics mode
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Once TASK-333 lands, the warn-counts-as-unhealthy decision must apply consistently to `--scope system` (system-checks-only doctor invocations). Add exit-code assertions for the new mode to the existing matrix. TASK-322.05.01 closes the descriptor handshake so device-scope assertions against synthesised personas work end-to-end.
+<!-- SECTION:NOTES:END -->

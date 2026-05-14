@@ -20,9 +20,16 @@ describe('@podkit/device-testing scaffold', () => {
     expect(listRunners().map((r) => r.id)).toContain('local-linux');
   });
 
+  it('auto-registers the lima-test-vm runner', () => {
+    const runner = getRunner('lima-test-vm');
+    expect(runner).toBeDefined();
+    expect(runner?.id).toBe('lima-test-vm');
+    expect(listRunners().map((r) => r.id)).toContain('lima-test-vm');
+  });
+
   it('getRunner returns undefined for an unregistered id', () => {
-    expect(getRunner('lima-test-vm')).toBeUndefined();
-    expect(listRunners().length).toBe(1);
+    expect(getRunner('does-not-exist')).toBeUndefined();
+    expect(listRunners().length).toBe(2);
   });
 
   it('local-linux isAvailable reflects host platform', async () => {

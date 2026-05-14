@@ -1,0 +1,54 @@
+[Unit]
+# dummy-hcd-daemon@<persona-id>.service
+#
+# systemd instance template — one running unit per active persona. The Tier
+# 3 test runner (`@podkit/device-testing`'s lima-test-vm runner) starts and
+# stops these units between tests:
+#
+#   systemctl start dummy-hcd-daemon@ipod-video-5g-iflash-1tb.service
+#   …run tests…
+#   systemctl stop  dummy-hcd-daemon@ipod-video-5g-iflash-1tb.service
+#
+# The `%i` instance specifier expands to the persona id passed via `@<id>`,
+# so the runner never edits this file — only the systemctl invocation
+# changes per test.
+#
+# Lifecycle in this unit:
+#   - ExecStart loads /var/device-testing/personas.json, configures the
+#     gadget, mounts FunctionFS, binds UDC, runs the ep0 loop.
+#   - ExecStop sends SIGTERM; the daemon's signal handler tears the
+#     gadget down before exiting (see main.ts).
+#   - On crash, Restart=on-failure brings the daemon back so a single
+#     transient kernel hiccup does not poison the test run.
+#
+# This unit is installed by the runner's `prepare()` step (TASK-322.04) at
+# `/etc/systemd/system/dummy-hcd-daemon@.service`, then activated via
+# `systemctl daemon-reload && systemctl start dummy-hcd-daemon@<id>.service`.
+Description=podkit dummy-hcd FunctionFS daemon (persona: %i)
+After=sys-kernel-config.mount systemd-modules-load.service
+Wants=systemd-modules-load.service
+Documentation=file:///usr/local/share/doc/podkit/dummy-hcd-daemon.README.md
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/dummy-hcd-daemon --persona %i --sidecar /var/device-testing/personas.json
+# SIGTERM triggers the signal handler in main.ts, which destroys the gadget
+# tree, unmounts FunctionFS, and exits 0. Give it 10 s before SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=10
+# Restart on failure but back off so a stuck-in-error loop doesn't burn
+# the test VM.
+Restart=on-failure
+RestartSec=2
+
+# Logging — journald captures both stdout and stderr; the runner inspects
+# the journal with `journalctl -u dummy-hcd-daemon@%i.service`.
+StandardOutput=journal
+StandardError=journal
+
+# Privileges: configfs writes, mounting FunctionFS, binding the UDC all
+# require root. The test VM runs as root for tests anyway, so no
+# capability dropping here.
+
+[Install]
+WantedBy=multi-user.target

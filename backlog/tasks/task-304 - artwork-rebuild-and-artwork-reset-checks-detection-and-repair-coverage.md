@@ -4,14 +4,15 @@ title: 'artwork-rebuild and artwork-reset checks: detection and repair coverage'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:22'
-updated_date: '2026-05-13 18:04'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - doctor
   - artwork
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
 priority: medium
 ordinal: 16000
 ---
@@ -61,3 +62,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #14 artwork-reset --dry-run prints planned action without modifying files
 - [ ] #15 Both checks include scope: 'device' and applicableTo includes 'ipod' only (mass-storage devices skip them)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Tier-3 assertions need TASK-322.05.01 (FunctionFS descriptor handshake) so the synthesised persona enumerates as a USB device and the device-scope artwork check has a target. Tier-1 fake-injected coverage is independent.
+<!-- SECTION:NOTES:END -->

@@ -4,13 +4,15 @@ title: 'System-scope diagnostic checks: host environment permutations'
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:21'
-updated_date: '2026-05-13 18:04'
+updated_date: '2026-05-14 19:22'
 labels:
   - testing
   - doctor
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
+  - TASK-333
 priority: medium
 ordinal: 13000
 ---
@@ -66,3 +68,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #15 udev-rule on macOS reports skip (not applicable to platform)
 - [ ] #16 All four checks include scope: 'system' in their JSON output
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Tier-1 unit-test coverage (the injectable-fake path) is independent and can land first. Tier-3 assertions (the `*.linux.tier3.test.ts` files) require TASK-322.05.01 (FunctionFS descriptor handshake) for the synthesised device to enumerate, and TASK-333 (Doctor system-only mode) if the test wants to run doctor without first running `device add`. Do NOT scaffold skipped tests for the blocked paths — split the work so Tier-1 lands now, Tier-3 lands after the dependencies.
+<!-- SECTION:NOTES:END -->

@@ -53,8 +53,11 @@ esac
 
 # Resolve the absolute path of the repo inside the VM. Lima mounts $HOME
 # transparently, so the host path is reachable as-is from inside the VM.
+# NOTE: Lima 2.x requires `--workdir` to appear BEFORE the instance name, and
+# does NOT use `--` as a separator (it would be passed to the command and
+# bash would reject it as an invalid option).
 log "running build-linux-glibc.sh inside '$VM_NAME'..."
-limactl shell "$VM_NAME" --workdir "$REPO_ROOT" -- bash -c '
+limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
   set -euo pipefail
   export PATH="/usr/local/bin:$PATH"
   export STATIC_DEPS_DIR="${STATIC_DEPS_DIR:-$HOME/.cache/podkit-static-deps}"

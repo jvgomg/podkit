@@ -51,3 +51,9 @@ SCRATCH.md
 
 .claude/worktrees
 branding/
+
+# Bun --compile temp files (occasionally orphaned with 000 perms after kill -9)
+*.bun-build
+
+# Locally-built native bindings (published via prebuild.yml CI, never committed)
+packages/libgpod-node/prebuilds/

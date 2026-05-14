@@ -4,14 +4,15 @@ title: Readiness pipeline stage coverage
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:21'
-updated_date: '2026-05-13 18:04'
+updated_date: '2026-05-14 19:22'
 labels:
   - testing
   - doctor
   - readiness
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-322.05.01
 priority: medium
 ordinal: 14000
 ---
@@ -68,3 +69,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #20 readiness.level is correctly derived from the worst non-skipped stage (e.g. mount fail → needs-init regardless of sysinfo)
 - [ ] #21 readiness output is identical between text and JSON modes for the same fixture (modulo formatting)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** Readiness pipeline is device-scope, not system-scope, so it always requires a real device. The Tier-3 assertions in this task therefore depend on TASK-322.05.01 (FunctionFS descriptor handshake) so the synthesised persona actually enumerates as a USB device. Tier-1 fake-injected coverage of each stage is independent and can land first.
+<!-- SECTION:NOTES:END -->

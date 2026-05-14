@@ -4,14 +4,16 @@ title: Doctor CLI flag matrix
 status: To Do
 assignee: []
 created_date: '2026-05-08 07:23'
-updated_date: '2026-05-13 18:05'
+updated_date: '2026-05-14 19:23'
 labels:
   - testing
   - doctor
   - cli
   - vm-coverage
 milestone: m-19
-dependencies: []
+dependencies:
+  - TASK-333
+  - TASK-322.05.01
 priority: medium
 ordinal: 19000
 ---
@@ -69,4 +71,12 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [ ] #13 Without --json, output is human-readable: includes 'podkit doctor —' header, 'Device Readiness' section, 'Database Health' section, 'All checks passed.' or 'N issue(s) found.' summary, optional 'Issues:' detail block
 - [ ] #14 Repair flag --repair sysinfo-extended runs without -c (no source collection required) since it only needs writable-device
 - [ ] #15 Repair flag --repair udev-rule (system-scope, no requirements) runs without -d at all (system repair); device argument should not be required
+- [ ] #16 --scope <system|device|all> flag (delivered by TASK-333) is covered in the matrix: each value × {--json on/off, --no-system on/off}, asserting the right checks[] subset
+- [ ] #17 --scope system without -d exits 0 with system-scope checks; --scope device without -d errors the same way --repair does today
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Dependency notes (added 2026-05-14):** TASK-333 adds a `--scope` flag that this matrix must cover; the matrix expansion lives here, the flag itself lives there. TASK-322.05.01 closes the descriptor handshake so the Tier-3 invocations of `doctor --device` against synthesised personas resolve a live device end-to-end.
+<!-- SECTION:NOTES:END -->

@@ -1,0 +1,224 @@
+#!/usr/bin/env bun
+/**
+ * dummy-hcd daemon entry point.
+ *
+ * Boots the FunctionFS userspace daemon that synthesises an iPod-shaped USB
+ * device on Linux `dummy_hcd` for the named persona. Runs inside the
+ * `podkit-test-vm` Lima VM (see `tools/device-testing/lima/test-vm.yaml`)
+ * after being delivered as a `bun build --compile` binary at
+ * `/usr/local/bin/dummy-hcd-daemon`.
+ *
+ * Lifecycle:
+ *
+ *   1. Parse `--persona <id>` and other flags.
+ *   2. Load + validate the JSON sidecar produced by the lima-test-vm runner.
+ *   3. Look up the named persona; fail clearly if missing.
+ *   4. (--dry-run only) Print a summary and exit 0.
+ *   5. Build the configfs gadget tree from the persona descriptor.
+ *   6. Mount FunctionFS, open ep0, start the event loop.
+ *   7. Bind the gadget to the first UDC.
+ *   8. On SIGINT/SIGTERM: tear everything down in reverse order, exit 0.
+ *
+ * Failure modes:
+ *
+ *   - Missing sidecar / persona       → exit 2 with a descriptive error
+ *   - configfs not mounted / no UDC   → exit 3 (kernel not ready)
+ *   - FunctionFS mount/open failed    → exit 4
+ *   - Unhandled exception in loop     → exit 1
+ *
+ * @module
+ */
+
+import { readFileSync } from 'node:fs';
+
+import {
+  parseSidecar,
+  type SidecarPersona,
+} from '../../../../packages/device-testing/src/personas/sidecar.js';
+
+import { parseArgs, type CliOptions } from './cli.js';
+import { attachUdc, createGadget, destroyGadget } from './gadget.js';
+import { runFunctionFs, type FunctionFsHandle } from './functionfs.js';
+
+const EXIT_OK = 0;
+const EXIT_UNEXPECTED = 1;
+const EXIT_BAD_INPUT = 2;
+const EXIT_KERNEL_NOT_READY = 3;
+const EXIT_FFS_FAILED = 4;
+
+/** Daemon entry. Returns the process exit code; never throws to the caller. */
+export async function runDaemon(argv: readonly string[]): Promise<number> {
+  const parsed = parseArgs(argv);
+  if (parsed.kind === 'help') {
+    process.stdout.write(parsed.usage);
+    return EXIT_OK;
+  }
+  if (parsed.kind === 'error') {
+    process.stderr.write(`error: ${parsed.message}\n\n${parsed.usage}`);
+    return EXIT_BAD_INPUT;
+  }
+  const opts = parsed.options;
+
+  let sidecarJson: string;
+  try {
+    sidecarJson = readFileSync(opts.sidecar, 'utf8');
+  } catch (err) {
+    process.stderr.write(`error: cannot read sidecar at ${opts.sidecar}: ${describe(err)}\n`);
+    return EXIT_BAD_INPUT;
+  }
+
+  let persona: SidecarPersona;
+  try {
+    const sidecar = parseSidecar(sidecarJson);
+    const entry = sidecar.personas[opts.persona];
+    if (!entry) {
+      const available = Object.keys(sidecar.personas).join(', ') || '(none)';
+      process.stderr.write(
+        `error: persona "${opts.persona}" not in sidecar (${opts.sidecar}).\n` +
+          `available: ${available}\n`
+      );
+      return EXIT_BAD_INPUT;
+    }
+    persona = entry;
+  } catch (err) {
+    process.stderr.write(`error: invalid sidecar: ${describe(err)}\n`);
+    return EXIT_BAD_INPUT;
+  }
+
+  if (opts.dryRun) {
+    printSummary(opts, persona);
+    return EXIT_OK;
+  }
+
+  return runWithGadget(opts, persona);
+}
+
+function printSummary(opts: CliOptions, persona: SidecarPersona): void {
+  console.log(`dummy-hcd daemon (dry-run)`);
+  console.log(`  persona:       ${persona.id} — ${persona.description}`);
+  console.log(`  sidecar:       ${opts.sidecar}`);
+  console.log(`  gadget-name:   ${opts.gadgetName}`);
+  console.log(`  ffs-mount:     ${opts.ffsMount}`);
+  console.log(
+    `  vendor/product: ${persona.usbDescriptor.vendorId}/${persona.usbDescriptor.productId}`
+  );
+  console.log(
+    `  sys-info-xml:  ${persona.sysInfoExtendedXml ? `${persona.sysInfoExtendedXml.length} bytes` : '(none)'}`
+  );
+  console.log(
+    `  mass-storage:  ${persona.massStorageBackingFile ? persona.massStorageBackingFile.vmPath : '(none)'}`
+  );
+}
+
+async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise<number> {
+  const bindFfs = persona.sysInfoExtendedXml !== undefined;
+  const bindMassStorage = persona.massStorageBackingFile !== undefined;
+  if (!bindFfs && !bindMassStorage) {
+    process.stderr.write(
+      `error: persona "${persona.id}" has neither sysInfoExtendedXml nor ` +
+        `massStorageBackingFile — nothing for the daemon to do.\n`
+    );
+    return EXIT_BAD_INPUT;
+  }
+
+  let gadgetPath: string | null = null;
+  let ffsInstance: string | null = null;
+  let ffs: FunctionFsHandle | null = null;
+
+  const teardown = async (signal: string): Promise<number> => {
+    console.log(`[shutdown] received ${signal}, tearing down...`);
+    try {
+      if (ffs) await ffs.shutdown();
+    } catch (err) {
+      console.error(`[shutdown] ffs.shutdown failed: ${describe(err)}`);
+    }
+    if (gadgetPath && ffsInstance) {
+      destroyGadget(gadgetPath, ffsInstance, (m) => console.error(`[shutdown] ${m}`));
+    }
+    return EXIT_OK;
+  };
+
+  let resolveDone: (code: number) => void;
+  const donePromise = new Promise<number>((resolve) => {
+    resolveDone = resolve;
+  });
+
+  const installSignal = (signal: 'SIGINT' | 'SIGTERM'): void => {
+    process.on(signal, () => {
+      teardown(signal)
+        .then((code) => resolveDone(code))
+        .catch((err) => {
+          console.error(`[shutdown] unexpected: ${describe(err)}`);
+          resolveDone(EXIT_UNEXPECTED);
+        });
+    });
+  };
+  installSignal('SIGINT');
+  installSignal('SIGTERM');
+
+  try {
+    const gadget = createGadget({
+      name: opts.gadgetName,
+      persona,
+      bindFfs,
+      bindMassStorage,
+    });
+    gadgetPath = gadget.gadgetPath;
+    ffsInstance = gadget.ffsInstance;
+
+    if (bindFfs) {
+      ffs = await runFunctionFs({
+        ffsMount: opts.ffsMount,
+        ffsInstance: gadget.ffsInstance,
+        sysInfoExtendedXml: persona.sysInfoExtendedXml!,
+      });
+    }
+
+    // Bind to UDC last — descriptors must be in place before enumeration.
+    const udc = attachUdc(gadget.gadgetPath);
+    console.log(`[ready] gadget ${persona.id} bound to UDC ${udc}`);
+
+    // Wait until a signal arrives.
+    const code = await donePromise;
+    return code;
+  } catch (err) {
+    const message = describe(err);
+    process.stderr.write(`error: ${message}\n`);
+    if (gadgetPath && ffsInstance) {
+      destroyGadget(gadgetPath, ffsInstance, (m) => console.error(`[shutdown] ${m}`));
+    }
+    if (/no UDC|configfs|ENOENT.*usb_gadget/.test(message)) {
+      return EXIT_KERNEL_NOT_READY;
+    }
+    if (/functionfs/i.test(message)) {
+      return EXIT_FFS_FAILED;
+    }
+    return EXIT_UNEXPECTED;
+  }
+}
+
+function describe(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// ---------------------------------------------------------------------------
+// Entry
+// ---------------------------------------------------------------------------
+
+// When compiled with `bun build --compile`, this file is the entry. We
+// guard the call so unit tests can import `runDaemon` without booting it.
+const isEntry =
+  // Bun-compiled binaries set this property.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (globalThis as any).Bun?.main === import.meta.path ||
+  process.argv[1]?.endsWith('main.ts') ||
+  process.argv[1]?.endsWith('dummy-hcd-daemon');
+
+if (isEntry) {
+  runDaemon(process.argv.slice(2))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`fatal: ${describe(err)}`);
+      process.exit(EXIT_UNEXPECTED);
+    });
+}

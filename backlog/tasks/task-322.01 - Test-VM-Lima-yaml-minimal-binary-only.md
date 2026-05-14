@@ -1,10 +1,10 @@
 ---
 id: TASK-322.01
 title: 'Test VM Lima yaml (minimal, binary-only)'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-12 08:18'
-updated_date: '2026-05-12 11:58'
+updated_date: '2026-05-13 22:48'
 labels:
   - testing
   - vm-coverage
@@ -65,3 +65,52 @@ This VM is separate from:
 - [ ] #11 gpod-tool binary is present in the VM (installed from @podkit/gpod-testing artefact, not from source build)
 - [ ] #12 `which bun node npm` returns nothing in the test VM (no Node, no Bun, no npm)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation (2026-05-13)
+
+Files added/modified:
+- `tools/device-testing/lima/test-vm.yaml` (new) — Debian 12.10 minimal test VM
+- `tools/device-testing/lima/README.md` — added "Test VM (`test-vm.yaml`)" section, updated split table, added boot step to Quick start
+
+### Key decisions
+
+1. **Image pinning**: same explicit `cloud.debian.org/.../20250316-2053/...qcow2` URLs as `builder.yaml` and `abi-verify.yaml`. Bumping requires updating all three files in lockstep.
+2. **Sizing**: `cpus: 2`, `memory: 2GiB`, `disk: 6GiB` — matches `abi-verify.yaml` (also Tier-3-philosophy) except disk is 6 vs 5 GiB (extra GB for snapshots and the backing-file image landed in TASK-322.02).
+3. **`mounts: []`** — explicit empty list. No host source tree exposure.
+4. **Kernel modules** loaded via `/etc/modules-load.d/podkit-test-vm.conf` (systemd-modules-load reads this at boot). Best-effort `modprobe` during provisioning, with a graceful warning if the kernel happens to lack the modules at provision time (the modules-load.d file picks them up on subsequent boots).
+5. **configfs**: added explicit `/etc/fstab` entry plus runtime `mount -t configfs` as a safety net even though Debian 12 auto-mounts via systemd.
+6. **gpod-tool sourcing**: scaffolded the placeholder contract requested in the task brief — provisioning step copies `/tmp/gpod-tool` → `/usr/local/bin/gpod-tool` if staged before boot. README documents the interim handoff and notes TASK-322.03 will replace it with `transferBinary`.
+7. **libgpod runtime present, libgpod-dev absent**: `libgpod4` + `libgpod-common` + `libglib2.0-0` are installed for `gpod-tool`'s benefit only. The task spec said "ffmpeg only" for system packages but `gpod-tool` is dynamically linked against libgpod, so runtime libgpod is mandatory; this is consistent with ADR-016 (the `base-no-libgpod` snapshot in §"Snapshot-based state layering" implies libgpod IS in the base). No `-dev` packages — strictly runtime libs an end-user would already have.
+8. **Hard guards**: a third provisioning step `exit 1`s if `bun`, `node`, `npm`, or any `-dev` package was somehow installed. Catches future provisioning regressions.
+
+### Acceptance criteria status
+
+Inspection-only (verified by reading the yaml):
+- AC #5 (no Bun/Node/npm/source) — yaml installs none; provisioning guard refuses to come up if they appear
+- AC #6 (no `mounts:` exposing host) — `mounts: []`
+- AC #7 (`/usr/local/bin/podkit` path writable, binary absent) — `install -d -m 0755 /usr/local/bin; test -w /usr/local/bin`; no podkit copy in the yaml
+- AC #9 (Debian point release pinned) — explicit qcow2 URL with `20250316-2053`
+- AC #10 (disk 6 GiB) — `disk: '6GiB'`
+- AC #11 (gpod-tool from artefact, not source build) — placeholder copy from `/tmp/gpod-tool`; no compiler installed so source build is impossible
+- AC #12 (no bun/node/npm) — provisioning guard fails otherwise
+
+Boot-time verification (human at phase checkpoint):
+- AC #1 (boots cleanly) — needs `limactl start`
+- AC #2 (ffmpeg in VM) — needs runtime check
+- AC #3 (4 kernel modules loadable) — needs runtime `modprobe`
+- AC #4 (configfs mounted at `/sys/kernel/config`) — needs runtime check
+- AC #8 (README documents split) — done, but include in human review
+
+### Validation performed
+
+- `bun ... js-yaml.load(...)` parses the yaml cleanly (6 top-level keys, 3 provision steps, 2 images, `mounts: []`)
+- `limactl validate tools/device-testing/lima/test-vm.yaml` → `OK`
+
+### Open questions
+
+- The `task-322.01` brief says "ffmpeg only" — I installed libgpod runtime + glib runtime as a hard prerequisite for gpod-tool. This is consistent with ADR-016 (the `base-no-libgpod` snapshot implies libgpod is in the base). Worth confirming with the human at boot.
+- TASK-322.03 will need to: (a) build gpod-tool for Linux x64/arm64, (b) decide whether to stage to `/tmp/gpod-tool` pre-boot or `limactl copy + install` post-boot. The placeholder supports both.
+<!-- SECTION:NOTES:END -->

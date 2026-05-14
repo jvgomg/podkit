@@ -49,7 +49,7 @@ fi
 # will produce). Lima may run an arm64 image on Apple Silicon and an x64
 # image on Intel — `compile.sh` picks the right prebuild from /podkit's
 # packages/libgpod-node/prebuilds based on `process.arch`.
-TARGET_ARCH="$(limactl shell "$VM_NAME" -- bash -c "uname -m")"
+TARGET_ARCH="$(limactl shell "$VM_NAME" bash -c "uname -m")"
 case "$TARGET_ARCH" in
   x86_64)  NODE_ARCH=x64 ;;
   aarch64) NODE_ARCH=arm64 ;;
@@ -60,7 +60,8 @@ case "$TARGET_ARCH" in
 esac
 
 log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
-limactl shell "$VM_NAME" --workdir "$REPO_ROOT" -- bash -c '
+# Lima 2.x: --workdir BEFORE instance, no `--` separator.
+limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
   set -euo pipefail
   export PATH="/usr/local/bin:$HOME/.bun/bin:$PATH"
 

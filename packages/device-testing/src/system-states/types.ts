@@ -11,11 +11,26 @@
  */
 
 /**
+ * Stable union of all registered `SystemState` ids.
+ *
+ * Kept in sync with `packages/device-testing/src/system-states/index.ts`. Used
+ * by the snapshot orchestrator (`lima-test-vm-state.ts`) and the in-VM
+ * `apply-state.sh` script — both consume this exact set.
+ */
+export type SystemStateId =
+  | 'healthy'
+  | 'no-ffmpeg'
+  | 'no-libgpod'
+  | 'no-udev'
+  | 'no-sg-perms'
+  | 'corrupt-configfs';
+
+/**
  * Stable, registry-keyed fixture describing one host-environment state.
  */
 export interface SystemState {
   /** Stable identifier (used as the QEMU snapshot name `base-${id}`). */
-  id: string;
+  id: SystemStateId;
   description: string;
   /** Schema version; bump on any breaking field change. */
   schemaVersion: number;

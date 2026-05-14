@@ -10,7 +10,7 @@ Also see [packages/device-testing/README.md](../packages/device-testing/README.m
 
 - **`DevicePersona` registry** — typed fixtures describing real or synthetic devices (USB descriptors, SCSI VPD payloads, host-OS probe outputs, expected capabilities).
 - **`SystemState` registry** — typed fixtures describing host-environment configurations (FFmpeg present/missing, udev rule installed/absent, SCSI permissions, etc.).
-- **`TestRuntime` interface + runners** — abstraction over "where does the test execute?" (`local-linux` for Linux hosts; `lima-test-vm` for macOS dev hosts, forthcoming in TASK-322).
+- **`TestRuntime` interface + runners** — abstraction over "where does the test execute?" (`local-linux` for Linux hosts; `lima-test-vm` for macOS dev hosts, landed in TASK-322).
 - **Subprocess snapshot framework** — `CapturingSubprocessRunner` and `ReplaySubprocessRunner` for deterministic subprocess testing.
 
 The package ships no production code. It is a `devDependency` of packages that write device tests, never a runtime dependency.
@@ -21,7 +21,7 @@ The package ships no production code. It is a `devDependency` of packages that w
 |------|-----------|-------------|----------------------|
 | **T1** unit | Injectable TypeScript fakes | Always, every host | `*.test.ts` (no special tag) |
 | **T2** native subprocess | Real subprocesses on the host | Always; skipped on wrong OS | `*.darwin.test.ts` / `*.linux.test.ts` |
-| **T3** Linux VM | Full stack against `dummy_hcd` USB gadget | macOS + Lima, or Linux | `*.linux.tier3.test.ts` (forthcoming, TASK-322) |
+| **T3** Linux VM | Full stack against `dummy_hcd` USB gadget | macOS + Lima with `PODKIT_DEVTEST_RUN_TIER3=1` | `*.tier3.test.ts` |
 
 See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for why three tiers are needed and why Docker is not suitable for Tier 3.
 
@@ -42,24 +42,26 @@ The full TypeScript interface lives in [`packages/device-testing/src/personas/ty
 | `expectedCapabilities` / `expectedReadiness` / `expectedDoctorOutput` | typed | Golden-file assertions built into the fixture |
 | `provenance` | object | Links to `provenance.md`; records hardware serial, capture date, operator |
 
-### Starter persona set (v1)
+### Starter persona set
 
-Three personas ship with Phase 1 (TASK-321.02, forthcoming):
+TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starters. The 3 starter aliases (used by the Tier-3 baseline tests) map to:
 
-| ID | Device | Inquiry path |
-|----|--------|-------------|
-| `ipod-video-5g-fresh` | iPod 5G Video (MA147, iFlash mod) | SCSI fallback |
-| `ipod-nano-7g-populated` | iPod nano 7G, ~5 000 tracks | USB inquiry |
-| `echo-mini-empty` | FiiO Snowsky Echo Mini DAP | Mass-storage preset |
+| Starter alias (Tier-3 spec) | Captured persona ID | Inquiry path |
+|-----------------------------|---------------------|-------------|
+| `ipod-video-5g-fresh` | `ipod-video-5g-iflash-1tb` | SCSI fallback |
+| `ipod-nano-7g-populated` | `ipod-nano-7g-space-gray` | USB inquiry |
+| `echo-mini-empty` | `echo-mini` | Mass-storage preset |
 
-The registry lives in `src/personas/` (individual subdirectories) and is populated via TASK-321.02.
+The mapping lives in `packages/device-testing/src/tier3/tier3-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
 
 ### Capture flow (human-in-the-loop)
 
+See [`documents/persona-capture-playbook.md`](../documents/persona-capture-playbook.md) for the full step-by-step (the playbook supersedes the auto-capture script originally planned in TASK-321.02). High-level:
+
 1. Plug the physical device into the Mac.
-2. Run `bun run packages/device-testing/scripts/capture-persona.ts --persona <id>` (forthcoming in TASK-321.02). The script captures `system_profiler SPUSBDataType -json`, `diskutil list -plist`, and USB descriptor fields automatically and prompts for the mount path.
+2. Run the macOS-side capture commands documented in the playbook (`system_profiler SPUSBDataType -json`, `diskutil list -plist`, USB descriptor fields).
 3. For the Linux-side capture (`lsblk -J`): connect the device to a Linux machine or pass it through Lima USB passthrough; run the lsblk capture step inside the VM.
-4. Commit the captured payloads alongside an auto-generated `provenance.md` (hardware serial, capture date, operator, script version).
+4. Commit the captured payloads alongside a hand-written `provenance.md` per the playbook template (hardware serial, capture date, operator).
 
 **When to capture a new persona:** when adding support for a new device family, when changing the `DevicePersona` schema (re-capture to populate new fields), or when touching device-identification logic and you want a new fixture to pin regression coverage.
 
@@ -105,7 +107,7 @@ Auto-register pattern: importing `@podkit/device-testing` registers `local-linux
 | `*.test.ts` | Any OS | None (default) |
 | `*.darwin.test.ts` | macOS only | `describe.skipIf(process.platform !== 'darwin')` |
 | `*.linux.test.ts` | Linux only | `describe.skipIf(process.platform !== 'linux')` |
-| `*.linux.tier3.test.ts` | Linux or macOS + Lima | Skip if `lima-test-vm` unavailable (forthcoming) |
+| `*.tier3.test.ts` | Linux or macOS + Lima | Skip unless `PODKIT_DEVTEST_RUN_TIER3=1` AND `lima-test-vm` runner is available |
 
 See [agents/testing.md](testing.md) §"Per-OS Test Tagging" for the exact `describe.skipIf` pattern and the `console.log` placement that makes skips visible in CI output.
 
@@ -148,7 +150,7 @@ Single source of truth: `tools/prebuild/build-linux-glibc.sh`.
 |------|---------|
 | `tools/device-testing/lima/builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
 | `tools/device-testing/lima/abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
-| `tools/device-testing/lima/test-vm.yaml` | Test VM (forthcoming, TASK-322.01) — kernel modules + gpod-tool; runs T3 tests |
+| `tools/device-testing/lima/test-vm.yaml` | Test VM (`podkit-test-vm`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
 
 For the full operator manual, see [`tools/device-testing/lima/README.md`](../tools/device-testing/lima/README.md).
 
@@ -162,7 +164,62 @@ mise run device-testing:build-linux   # turbo-cached; invokes builder VM
 
 ## Where to write a Tier 3 test
 
-**TBD — forthcoming in TASK-322.** Test file placement, the `withTier3` helper, and the `testVm` fixture will be documented once the `lima-test-vm` runner lands. Reserve `*.linux.tier3.test.ts` filename pattern; do not create T3 test files before TASK-322.
+Tier-3 infrastructure landed in TASK-322. Reference implementation:
+`packages/device-testing/src/tier3/personas-baseline.tier3.test.ts`.
+
+**Filename:** `*.tier3.test.ts` (consumed by the `test:tier3` turbo task in
+`@podkit/device-testing#test:tier3`).
+
+**Imports:**
+- `limaTestVmRunner` from `../runners/lima-test-vm.js` — the `TestRuntime`
+  implementation that executes commands inside `podkit-test-vm`.
+- `resolveTier3Availability`, `groupPersonasByState`, `TIER3_WARM_TIMEOUT_MS`,
+  `TIER3_COLD_TIMEOUT_MS` from `./tier3-runtime-setup.js`.
+- `withPersona`, `runJsonCommand` from `./persona-fixture.js`.
+
+**Suite shape** — gate, prepare/teardown, then one `describe` per state group:
+
+```ts
+const tier3Available = await resolveTier3Availability();
+const groups = groupPersonasByState(resolveStarterPersonas());
+
+describe.skipIf(!tier3Available)('my Tier-3 suite', () => {
+  beforeAll(() => limaTestVmRunner.prepare(),  TIER3_COLD_TIMEOUT_MS);
+  afterAll(()  => limaTestVmRunner.teardown(), TIER3_COLD_TIMEOUT_MS);
+
+  for (const group of groups) {
+    describe(`SystemState: ${group.state.id}`, () => {
+      beforeAll(() => limaTestVmRunner.applyState(group.state), TIER3_COLD_TIMEOUT_MS);
+      for (const persona of group.personas) {
+        it('exercises X', async () => {
+          const result = await withPersona({ persona }, () =>
+            runJsonCommand(limaTestVmRunner, '/usr/local/bin/podkit …', TIER3_WARM_TIMEOUT_MS)
+          );
+          // assertions on result.parsed / result.exitCode
+        }, TIER3_WARM_TIMEOUT_MS);
+      }
+    });
+  }
+});
+```
+
+**Running Tier-3 locally:**
+
+```bash
+mise run device-testing:build-linux        # builds podkit + dummy-hcd-daemon
+mise run device-testing:transfer-binary    # copies both into podkit-test-vm
+PODKIT_DEVTEST_RUN_TIER3=1 bun run test --filter @podkit/device-testing
+```
+
+Without `PODKIT_DEVTEST_RUN_TIER3=1`, Tier-3 suites skip with a single
+stderr warning explaining the gate. The env-var gate exists because VM
+availability is necessary but not sufficient — the daemon's systemd unit
+must be installed, the FunctionFS descriptor handshake must work
+(TASK-322.05.01), the binary must be at the expected path.
+
+**Do NOT add skipped tests for assertions blocked on a dep task** — pause
+that stream of work in code and document the dependency in the backlog
+task. The reference test file documents this convention in its header.
 
 ## Cross-references
 

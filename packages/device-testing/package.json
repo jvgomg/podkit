@@ -20,10 +20,13 @@
     "test": "bun test",
     "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "test:tier3": "bun test src/tier3 --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
     "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",
-    "build:linux-binary": "bash scripts/build-linux-binary.sh"
+    "build:linux-binary": "bash scripts/build-linux-binary.sh",
+    "build:dummy-hcd-daemon": "bash scripts/build-dummy-hcd-daemon.sh",
+    "transfer-binary": "bun run scripts/transfer-binary.ts"
   },
   "dependencies": {
     "@podkit/core": "workspace:*",
