@@ -115,7 +115,23 @@ interface RepairOutput {
   details?: Record<string, unknown>;
 }
 
+/**
+ * JSON envelope for `podkit doctor --scope system`. Distinct from
+ * `DoctorOutput` because mountPoint / deviceModel / deviceType / readiness
+ * are inapplicable when no device is resolved — emitting them as
+ * placeholders would be misleading.
+ */
+interface SystemDoctorOutput {
+  success: true;
+  status: 'ok' | 'issues-found';
+  healthy: boolean;
+  scope: 'system';
+  checks: DoctorCheckOutput[];
+}
+
 // ── Options ─────────────────────────────────────────────────────────────────
+
+export type DoctorScope = 'system' | 'device' | 'all';
 
 interface DoctorOptions {
   repair?: string;
@@ -128,6 +144,31 @@ interface DoctorOptions {
    * etc.) when the user wants device-only diagnostics.
    */
   system?: boolean;
+  /**
+   * Limits which check groups run. `'system'` skips device resolution and
+   * runs only host-environment checks; `'device'` requires `-d` and skips
+   * system checks; `'all'` (default) preserves the legacy combined run and
+   * honours `--no-system`.
+   */
+  scope?: DoctorScope;
+}
+
+/**
+ * Resolve the effective diagnostic scopes from the parsed flag combination.
+ *
+ * `--scope` is the new primary control; the legacy `--no-system` flag only
+ * applies when `--scope` is `'all'` (i.e. the default). The result is the
+ * exact list passed to `core.runDiagnostics({ scopes })`.
+ *
+ * Exported for unit-test coverage of the flag matrix (TASK-333 AC #6).
+ */
+export function resolveDoctorScopes(
+  options: Pick<DoctorOptions, 'scope' | 'system'>
+): ReadonlyArray<'system' | 'device'> {
+  const scope: DoctorScope = options.scope ?? 'all';
+  if (scope === 'system') return ['system'];
+  if (scope === 'device') return ['device'];
+  return options.system === false ? ['device'] : ['system', 'device'];
 }
 
 // ── Suggested actions ────────────────────────────────────────────────────────
@@ -234,11 +275,39 @@ export const doctorCommand = new Command('doctor')
   .option('--dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
   .option('--no-system', 'skip system-scope checks (FFmpeg, SCSI transport, udev rule, etc.)')
+  .addOption(
+    new Option(
+      '--scope <scope>',
+      'restrict checks: system-only (no device required), device-only (requires -d), or all'
+    )
+      .choices(['system', 'device', 'all'])
+      .default('all')
+  )
   .action(async (options: DoctorOptions) => {
     const { config, globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
     await runAction(out, async () => {
+      const scope: DoctorScope = options.scope ?? 'all';
+
+      // System-only mode: no device or registered config required. Repair
+      // owns its own scope detection (system-scope repairs already bypass
+      // device resolution today), so --repair always falls through.
+      if (scope === 'system' && !options.repair) {
+        await runSystemOnlyDoctor(out, options);
+        return;
+      }
+
+      // Device-only mode without a repair must have an explicit device —
+      // mirror the message style used by --repair to keep UX consistent.
+      if (scope === 'device' && !options.repair && !globalOpts.device) {
+        throw new CliError({
+          message:
+            'Doctor --scope device requires an explicit device. Use -d <name|path> to specify which iPod to check.',
+          code: DoctorErrorCodes.DEVICE_REQUIRED,
+        });
+      }
+
       // Repair mode: validate requirements before resolving device
       if (options.repair) {
         // Look up the check
@@ -355,10 +424,7 @@ async function runDoctorDiagnostics(
 
   const { config, globalOpts } = getContext();
   const isMassStorage = deviceConfig?.type !== undefined && deviceConfig.type !== 'ipod';
-  const includeSystem = options.system !== false;
-  const scopes: ReadonlyArray<'system' | 'device'> = includeSystem
-    ? ['system', 'device']
-    : ['device'];
+  const scopes = resolveDoctorScopes(options);
 
   // Mass-storage devices: resolve content paths and run applicable checks
   if (isMassStorage) {
@@ -799,6 +865,98 @@ async function runDoctorDiagnostics(
   if (!healthy) {
     // Diagnostic ran cleanly but found problems — exit 2 distinguishes
     // this from a command error (exit 1).
+    out.setExitCode(2);
+  }
+}
+
+// ── System-only diagnostics (no device required) ────────────────────────────
+
+/**
+ * Run only system-scope checks. Skips device resolution, readiness, and
+ * database health — callable on a machine with no iPod plugged in, which
+ * is the entry point for Tier-3 baseline assertions (see TASK-322.06).
+ *
+ * Exported for unit-test injection: tests pass a `loadCore` stub to assert
+ * which scopes are forwarded to `runDiagnostics`.
+ */
+export async function runSystemOnlyDoctor(
+  out: OutputContext,
+  _options: DoctorOptions,
+  deps: DoctorDeps = {}
+): Promise<void> {
+  const core = await loadCoreOrFail(deps, DoctorErrorCodes.CORE_LOAD_FAILED);
+
+  // mountPoint is empty: the only checks that run are system-scope, none of
+  // which read it. The internal IpodDatabase.open attempt fails silently
+  // (see runDiagnostics) and the system checks proceed without a db handle.
+  const report = await core.runDiagnostics({
+    mountPoint: '',
+    deviceType: 'ipod',
+    scopes: ['system'],
+  });
+
+  const checksOutput: DoctorCheckOutput[] = report.checks.map((c) => ({
+    id: c.id,
+    name: c.name,
+    status: c.status,
+    summary: c.summary,
+    repairable: c.repairable,
+    details: c.details,
+    docsUrl: c.docsUrl,
+  }));
+
+  const healthy = report.healthy;
+  const output: SystemDoctorOutput = {
+    success: true,
+    status: healthy ? 'ok' : 'issues-found',
+    healthy,
+    scope: 'system',
+    checks: checksOutput,
+  };
+
+  out.result<SystemDoctorOutput>(output, () => {
+    out.print('podkit doctor — system checks');
+
+    if (report.checks.length === 0) {
+      out.newline();
+      out.print('  No system checks are registered.');
+    } else {
+      out.newline();
+      out.print('System');
+      for (const check of report.checks) {
+        const sym = stageMarker(check.status);
+        out.print(`  ${sym} ${check.name}    ${check.summary}`);
+      }
+    }
+
+    out.newline();
+    if (healthy) {
+      out.success('All checks passed.');
+    } else {
+      const issueCount = report.checks.filter(
+        (c) => c.status === 'fail' || c.status === 'warn'
+      ).length;
+      out.error(`${issueCount || 1} issue${issueCount === 1 ? '' : 's'} found.`);
+    }
+
+    const issues: ReadinessIssue[] = [];
+    for (const check of report.checks) {
+      if (check.status !== 'fail' && check.status !== 'warn') continue;
+      issues.push({
+        marker: stageMarker(check.status),
+        label: check.name,
+        summary: check.summary,
+        details: [],
+        docsUrl: check.docsUrl,
+      });
+    }
+    if (issues.length > 0) {
+      out.newline();
+      printIssues(out, issues);
+    }
+  });
+
+  if (!healthy) {
     out.setExitCode(2);
   }
 }

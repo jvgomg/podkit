@@ -1,15 +1,20 @@
 ---
 id: TASK-333
 title: 'Doctor: system-only invocation mode (no device required)'
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-14 19:21'
+updated_date: '2026-05-14 20:13'
 labels:
   - doctor
   - cli
   - vm-coverage
 milestone: m-19
 dependencies: []
+modified_files:
+  - packages/podkit-cli/src/commands/doctor.ts
+  - packages/podkit-cli/src/commands/doctor.test.ts
+  - agents/testing.md
 priority: high
 ordinal: 21000
 ---
@@ -49,13 +54,19 @@ When `--scope system` is in effect:
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 --scope <system|device|all> flag added to doctor command; default is 'all' (current behaviour)
-- [ ] #2 --scope system runs only system-scope checks without requiring a device (no DEVICE_NOT_RESOLVED error)
-- [ ] #3 --scope system + --json emits valid JSON containing only system-scope checks[] entries and an overall healthy boolean
-- [ ] #4 --scope device requires -d/--device; error message matches the existing 'device required' style
-- [ ] #5 --scope all (default) behaviour is byte-identical to today's output for the same fixture
-- [ ] #6 Unit tests cover all three --scope values × --json on/off × --no-system on/off, asserting the right checks[] subset is run
-- [ ] #7 TASK-307 acceptance criteria are extended in the same PR (or a follow-up commit) to cover the new flag
-- [ ] #8 Doctor exit code under --scope system follows TASK-308 semantics applied to the system-check subset (warn-counts-as-unhealthy decision applies consistently)
-- [ ] #9 podkit doctor --scope system --json on a freshly-booted machine with no configured device exits 0 and emits a doctor report with all system checks; documented in agents/testing.md or equivalent
+- [x] #1 --scope <system|device|all> flag added to doctor command; default is 'all' (current behaviour)
+- [x] #2 --scope system runs only system-scope checks without requiring a device (no DEVICE_NOT_RESOLVED error)
+- [x] #3 --scope system + --json emits valid JSON containing only system-scope checks[] entries and an overall healthy boolean
+- [x] #4 --scope device requires -d/--device; error message matches the existing 'device required' style
+- [x] #5 --scope all (default) behaviour is byte-identical to today's output for the same fixture
+- [x] #6 Unit tests cover all three --scope values × --json on/off × --no-system on/off, asserting the right checks[] subset is run
+- [x] #7 TASK-307 acceptance criteria are extended in the same PR (or a follow-up commit) to cover the new flag
+- [x] #8 Doctor exit code under --scope system follows TASK-308 semantics applied to the system-check subset (warn-counts-as-unhealthy decision applies consistently)
+- [x] #9 podkit doctor --scope system --json on a freshly-booted machine with no configured device exits 0 and emits a doctor report with all system checks; documented in agents/testing.md or equivalent
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added `--scope <system|device|all>` to `podkit doctor`. Default `all` keeps legacy output byte-identical. `--scope system` skips device resolution and exits 0/2 based on the system-scope subset of `runDiagnostics`. `--scope device` requires `-d` (DEVICE_REQUIRED). Exported `resolveDoctorScopes()` and `runSystemOnlyDoctor()` for unit-test injection. New unit tests cover the scope × no-system matrix and assert that `runDiagnostics` receives `scopes: ['system']` with an empty mountPoint. Documented the invocation in agents/testing.md.
+<!-- SECTION:FINAL_SUMMARY:END -->

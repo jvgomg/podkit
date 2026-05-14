@@ -90,6 +90,23 @@ bun test packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
 
 For Tier 3: **lands in TASK-322**. Future commands will include `mise run device-testing:test-vm` and related tasks.
 
+### Quick-reference: doctor invocations for state assertions
+
+`podkit doctor` exposes a `--scope` flag (TASK-333) that picks which check
+groups run:
+
+```bash
+podkit doctor --scope system --json   # System-scope checks only; no device required.
+podkit doctor --scope device -d <…>   # Device-scope checks only; requires -d.
+podkit doctor                          # Default: --scope all (legacy behaviour).
+```
+
+`--scope system` skips device resolution entirely — it works on a
+freshly-booted machine with no configured device and exits 0 when all
+host-environment checks pass. Tier-3 baseline tests use it to compare a
+SystemState snapshot's `expectedDoctorSystemOutput` against the live VM.
+`--no-system` continues to work but applies only when `--scope` is `all`.
+
 ### Cross-references
 
 - [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — architecture decision and tier definitions
