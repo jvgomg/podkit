@@ -59,27 +59,51 @@ case "$TARGET_ARCH" in
     ;;
 esac
 
-log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
+# Build inside a VM-local copy of the source tree, NOT against the macOS-
+# mounted repo. An earlier version of this script ran `bun install` directly
+# in $REPO_ROOT (which Lima mounts read-write from macOS) and symlink-
+# redirected node_modules to a /tmp path inside the VM. Both the symlink
+# creation and the `mv node_modules /tmp/...-saved` happened in the host-
+# mounted tree, leaving the host with a broken symlink to a VM-only path and
+# the macOS-side node_modules destroyed (moved into the VM's tmpfs). Use a
+# fully VM-local checkout to make the host tree untouchable by the build.
+VM_SRC=/tmp/podkit-builder-src
+VM_BIN_DIR="$VM_SRC/packages/podkit-cli/bin"
+
+log "rsyncing source to '${VM_NAME}:${VM_SRC}'..."
 # Lima 2.x: --workdir BEFORE instance, no `--` separator.
-limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
+# Excludes match the macOS-side files that must NOT leak into the VM build
+# (node_modules clobbered native bindings; .turbo cached host-arch hashes;
+# dist/.git/bin add weight without value to the build).
+limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c "
+  set -uo pipefail
+  mkdir -p '$VM_SRC'
+  # Exit 24 ('some files vanished before they could be transferred') is a
+  # benign race: bun build --compile and similar tools occasionally drop
+  # short-lived temp files during the rsync window. Tolerate 24, fail any
+  # other non-zero exit. *.bun-build is excluded outright as defence in
+  # depth — it's the most common offender.
+  rsync -a --delete \
+    --exclude node_modules \
+    --exclude .turbo \
+    --exclude dist \
+    --exclude .git \
+    --exclude 'packages/podkit-cli/bin' \
+    --exclude 'packages/demo/bin' \
+    --exclude 'packages/ipod-db/fixtures/databases' \
+    --exclude 'tools/libgpod-macos/build' \
+    --exclude '*.bun-build' \
+    --exclude '*.img' \
+    --exclude 'src-tauri/target' \
+    '$REPO_ROOT/' '$VM_SRC/'
+  rc=\$?
+  if [ \"\$rc\" -ne 0 ] && [ \"\$rc\" -ne 24 ]; then exit \"\$rc\"; fi
+"
+
+log "compiling podkit binary inside '$VM_NAME' (target=linux-${NODE_ARCH})..."
+limactl shell --workdir "$VM_SRC" "$VM_NAME" bash -c '
   set -euo pipefail
   export PATH="/usr/local/bin:$HOME/.bun/bin:$PATH"
-
-  # node_modules outside the host mount so we never clobber macOS-installed
-  # binaries when running `bun install`. The mount is rw, but Bun rebuilds
-  # native modules per platform; isolating per-VM avoids that.
-  if [ ! -d /tmp/podkit-builder-nm ]; then
-    mkdir -p /tmp/podkit-builder-nm
-  fi
-  # Symlink node_modules into a VM-local dir so install does not write
-  # back into the host source tree.
-  if [ -L node_modules ]; then rm node_modules; fi
-  if [ -d node_modules ] && [ ! -L node_modules ]; then
-    mv node_modules /tmp/podkit-builder-nm-host-saved 2>/dev/null || true
-  fi
-  if [ ! -e node_modules ]; then
-    ln -s /tmp/podkit-builder-nm node_modules
-  fi
 
   bun install --frozen-lockfile --ignore-scripts
 
@@ -98,13 +122,14 @@ limactl shell --workdir "$REPO_ROOT" "$VM_NAME" bash -c '
   fi
 '
 
-# Rename the binary to a platform-tagged path so the macOS-side build does
-# not collide with it.
-SRC="$CLI_BIN_DIR/podkit"
+# Copy the compiled binary from the VM-local build tree back to the host.
+# The libgpod-node prebuild .node file is NOT copied back — it was written
+# to the host by `build-linux-prebuild.sh` (the prerequisite turbo task)
+# before the rsync above carried it into the VM-local checkout, so the host
+# tree already has the canonical copy at its turbo-cache-output path.
+mkdir -p "$CLI_BIN_DIR"
 DEST="$CLI_BIN_DIR/podkit-linux-${NODE_ARCH}"
-if [ ! -f "$SRC" ]; then
-  echo "ERROR: expected $SRC after VM compile, not found." >&2
-  exit 1
-fi
-mv "$SRC" "$DEST"
+log "copying ${VM_NAME}:${VM_BIN_DIR}/podkit → ${DEST}..."
+limactl copy "${VM_NAME}:${VM_BIN_DIR}/podkit" "$DEST"
+chmod +x "$DEST"
 log "produced $DEST"
