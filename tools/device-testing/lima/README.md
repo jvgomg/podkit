@@ -109,6 +109,19 @@ exercises gpod-tool absence, not podkit's own linkage.
 
 ### Snapshot lifecycle and reprovisioning
 
+> **Apple Silicon note (TASK-322.02.01):** the test VM is pinned to
+> `vmType: vz` in `test-vm.yaml`. Lima 2.x's `vz` driver does not implement
+> `limactl snapshot` — every call returns `unimplemented`. The orchestrator
+> in `lima-test-vm-snapshots.ts` detects this and silently degrades to
+> running `apply-state.sh` for every group restore. Measured cost on
+> aarch64 is sub-2-second per state flip (~740ms reinstall, ~860ms
+> purge+install), which is acceptable at the current matrix size — see
+> ADR-016 §"Test speed strategy" for the full decision record.
+>
+> When the harness eventually runs on a Linux host or a `vmType: qemu`
+> VM, the snapshot fast path automatically takes over — the code path
+> below describes that future-but-also-Linux-host behaviour.
+
 The test VM uses **named QEMU snapshots** for state layering (ADR-016
 §"Snapshot-based state layering" / TASK-322.02). One snapshot per registered
 `SystemState`, tagged `base-<state-id>`:

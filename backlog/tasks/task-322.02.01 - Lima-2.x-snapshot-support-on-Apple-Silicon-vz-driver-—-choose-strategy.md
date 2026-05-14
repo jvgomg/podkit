@@ -1,9 +1,10 @@
 ---
 id: TASK-322.02.01
 title: Lima 2.x snapshot support on Apple Silicon (vz driver) — choose strategy
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-14 19:29'
+updated_date: '2026-05-14 20:41'
 labels:
   - testing
   - vm-coverage
@@ -11,6 +12,10 @@ labels:
   - tier-3
 milestone: m-19
 dependencies: []
+modified_files:
+  - adr/adr-016-linux-vm-test-harness.md
+  - tools/device-testing/lima/test-vm.yaml
+  - tools/device-testing/lima/README.md
 parent_task_id: TASK-322.02
 priority: medium
 ordinal: 21500
@@ -51,9 +56,37 @@ Resolve the snapshot-strategy gap surfaced on 2026-05-14 during the first end-to
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Decision recorded in an ADR (or appended to ADR-016) on which snapshot mechanism Tier-3 will use
-- [ ] #2 Measured wall-time of applyState() under the chosen mechanism on Apple Silicon
-- [ ] #3 Test VM yaml updated to specify the chosen driver explicitly (no implicit reliance on the user's default)
+- [x] #1 Decision recorded in an ADR (or appended to ADR-016) on which snapshot mechanism Tier-3 will use
+- [x] #2 Measured wall-time of applyState() under the chosen mechanism on Apple Silicon
+- [x] #3 Test VM yaml updated to specify the chosen driver explicitly (no implicit reliance on the user's default)
 - [ ] #4 The `unimplemented` fallback in lima-test-vm-snapshots.ts is removed (or its scope is documented as a contingency for non-Apple-Silicon hosts)
-- [ ] #5 tools/device-testing/lima/README.md documents the snapshot strategy and any platform-specific guidance
+- [x] #5 tools/device-testing/lima/README.md documents the snapshot strategy and any platform-specific guidance
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Decision: stay with `apply-state.sh`-every-time on Apple Silicon `vz`.**
+
+Measurements on `podkit-test-vm` (aarch64, Debian 12.10, package cache warm):
+- `apt-get install --reinstall ffmpeg` → **740ms**
+- `apt-get purge libgpod4 libgpod-common && apt-get install …` → **860ms total** (purge 412ms, install 444ms)
+
+Current matrix: 6 SystemStates. Even at the worst case (~1s per state restore, ~6 restores per full pass) the state-mutation overhead is well inside the test budget.
+
+Lima docs (`/lima-vm/lima` via Context7) confirm snapshots are QEMU-only in 2.x; `vz` snapshot support is not on the near-term roadmap. The existing `isSnapshotUnsupported()` fallback in `lima-test-vm-snapshots.ts` is kept — it lets the snapshot fast path light up automatically on Linux hosts or a future `vmType: qemu` opt-in without test-code changes (so AC #4 is intentionally NOT done — the fallback is now documented as a contingency, not a defect).
+
+**Rejected alternatives** (rationale in the ADR appendix):
+- Switch to `vmType: qemu`: +25s cold-boot tax for no per-test win at current scale.
+- Out-of-band `qemu-img snapshot`: pause/resume + file-locking complexity.
+- APFS snapshots: leaks macOS tooling through the Lima abstraction.
+- Wait for upstream Lima VZ snapshots: not blocking.
+
+**Revisit trigger:** doctor matrix > 20 states OR per-state apt-replay cost > 5s.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Resolved the snapshot-strategy gap in favour of staying with `apply-state.sh`-every-time on Apple Silicon `vz`. Measured per-state mutation cost (~740–860ms) is sub-2-second on the warm-cache test VM, well inside the test budget for the current 6-state matrix. ADR-016 §"Test speed strategy" appendix records the decision and the rejected alternatives. `test-vm.yaml` now pins `vmType: vz` explicitly so the choice is not implicit. `lima/README.md` documents the Apple-Silicon caveat at the top of the snapshot-lifecycle section. The `isSnapshotUnsupported()` fallback in `lima-test-vm-snapshots.ts` is retained: it makes the snapshot fast path light up automatically on Linux hosts or a future `vmType: qemu` opt-in. Revisit trigger noted: matrix > 20 states OR per-state cost > 5s.
+<!-- SECTION:FINAL_SUMMARY:END -->

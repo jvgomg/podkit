@@ -59,6 +59,14 @@
 #   limactl shell podkit-test-vm -- ls /workspaces /Users 2>/dev/null   # must be empty
 #   limactl shell podkit-test-vm -- dpkg -l | grep -E '\-dev '         # must be empty
 
+# Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s
+# for `qemu` on aarch64 hosts, and the Tier-3 state-mutation path uses
+# `apply-state.sh` (sub-2-second per flip — see ADR-016 §"Test speed
+# strategy" / TASK-322.02.01) rather than `limactl snapshot`, which is
+# QEMU-only in Lima 2.x. Explicit pinning prevents implicit reliance on
+# the user's default driver.
+vmType: 'vz'
+
 images:
   # Debian 12.10 point release. Pinned in sync with builder.yaml and
   # abi-verify.yaml — bumping requires updating all three files plus a

@@ -169,10 +169,27 @@ Tier 3 tests can be slow if every test restores a VM snapshot independently. To 
 
 **Group tests by required `SystemState`:** the test orchestrator collects all tests that require the same `SystemState`, restores the snapshot once for that group, then runs all tests in the group sequentially against that single restored state. Snapshot restore happens once per group, not once per test.
 
+**Snapshot mechanism on Apple Silicon (revised 2026-05-14, TASK-322.02.01):**
+
+The original plan called for `limactl snapshot apply` for ~1s-per-group restores. Surveying the deployed harness:
+
+- Lima 2.1.1's default driver on Apple Silicon is `vz` (Apple Virtualization framework). `limactl snapshot {create,apply,delete}` exits with `level=fatal msg=unimplemented` on `vz` — snapshots are QEMU-only in Lima 2.x.
+- Measured `apply-state.sh` cost on `podkit-test-vm` (aarch64, podkit-builder cache warm): single-package reinstall is **~740ms**; package-pair purge+install is **~860ms**. Even the worst state flip (libgpod purge + udev rule rewrite + modprobe) is sub-2-second.
+- The doctor matrix currently has 6 states. Sequential per-group `applyState` at ~1s/state is ~6s of state-change overhead per full pass — negligible against the cold-start budget.
+
+**Decision:** stay with `apply-state.sh`-every-time on Apple Silicon `vz`. The existing `isSnapshotUnsupported()` fallback in `packages/device-testing/src/runners/lima-test-vm-snapshots.ts` is the right shape — it lets the code path stay snapshot-aware so future Lima releases (or a `vmType: qemu` opt-in) automatically pick it up. Rejected alternatives:
+
+- **Switch test VM to `vmType: qemu`** — adds ~25s to cold-start boot, and `qemu-img snapshot apply` on the same VM measured at ~800ms for our disk size — no net win at current matrix size.
+- **Out-of-band `qemu-img snapshot`** — requires VM pause/resume coordination and risks file-locking conflicts with Lima's lifecycle.
+- **APFS snapshots of the VZ disk image** — leaks macOS-specific tools (`tmutil` / `apfsctl`) through the Lima abstraction.
+- **Wait for upstream VZ snapshot support** — not on Lima's near-term roadmap and not a blocker now.
+
+Revisit when the doctor matrix grows past ~20 states or the state flips touch packages large enough that the apt-replay cost exceeds ~5s.
+
 **Future optimisations (documented, not implemented now):**
 
 - **Parallel VM execution:** run multiple VM instances concurrently, each handling a different `SystemState` group. Requires a second Lima instance or QEMU instance per parallel slot. Documented as a scaling option when the test matrix outgrows sequential-per-group.
-- **Prebuilt snapshot caching:** ship pre-snapshotted VM disk images as CI artefacts (or store them in a Lima-compatible registry). Eliminates the one-time snapshot-creation cost on first-run developer onboarding.
+- **Prebuilt snapshot caching:** ship pre-snapshotted VM disk images as CI artefacts (or store them in a Lima-compatible registry). Eliminates the one-time snapshot-creation cost on first-run developer onboarding (only viable if/when the underlying driver supports snapshots).
 
 ### Mass storage backing file
 
