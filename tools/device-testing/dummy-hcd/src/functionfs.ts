@@ -1,42 +1,33 @@
 /**
- * FunctionFS ep0 event loop — the actual SETUP-packet handler.
+ * FunctionFS ep0 event loop — descriptor handshake + SETUP-packet handler.
  *
- * # Implementation status
+ * # Flow
  *
- * **Scaffold.** This module mounts FunctionFS via the `mount` command-line
- * tool, opens ep0 with `fs.open`/`fs.read`, decodes each SETUP packet using
- * the pure logic in `protocol.ts`, and writes the response bytes back to
- * ep0. It does **NOT** yet write the initial FunctionFS USB descriptor /
- * strings tables (which require `FUNCTIONFS_DESCRIPTORS_MAGIC_V2` headers
- * plus the in-band `usb_functionfs_descs_head_v2` struct on first write).
+ *   1. Mount FunctionFS at `ffsMount` against the `ffsInstance` source.
+ *   2. Open ep0 read+write.
+ *   3. Write the descriptor table (one `write(ep0_fd, …)` — magic detected
+ *      by the kernel inside the buffer; no ioctl). See `descriptors.ts`.
+ *   4. Write the strings table (second `write(ep0_fd, …)`).
+ *   5. Start the ep0 read loop, then call the caller-supplied `attachUdc`
+ *      hook. The UDC write is what causes the kernel to emit
+ *      `FUNCTIONFS_BIND` — so the read loop must already be live to
+ *      observe it.
+ *   6. Resolve the returned `FunctionFsHandle` only after BIND is observed
+ *      (or a watchdog timeout fires). Callers therefore know the gadget
+ *      enumerated successfully before they continue.
  *
- * The descriptor handshake is the only piece left between "the daemon
- * starts and STALLs every transfer" and "the daemon actually answers
- * SETUP packets". The handshake is ~100 lines of byte-packing and is
- * straightforward to add once we can verify against a live `dummy_hcd` —
- * which means inside the test VM, not on this macOS dev host.
+ * The handshake bytes are built in `descriptors.ts` and verified by
+ * `__tests__/descriptors.test.ts` on the macOS dev host; this module owns
+ * only the I/O sequencing.
  *
- * # Why scaffold-now
+ * # SIGINT path
  *
- * 1. **No kernel access on macOS.** macOS has no `configfs`, no
- *    `dummy_hcd`, and no FunctionFS — there is no way to validate the
- *    descriptor handshake locally. Adding speculative code that we cannot
- *    exercise would just be more surface for a typo. The agent guide
- *    in TASK-322.05 explicitly authorises a scaffold here.
+ * The ep0 read loop runs in the background; SIGINT/SIGTERM calls
+ * `shutdown()` which closes the fd and unmounts FunctionFS. The systemd
+ * unit relies on this for clean restart between tests.
  *
- * 2. **The protocol layer is fully testable.** All the wire-shape work
- *    (paging, SETUP decoding, short-read termination) lives in
- *    `protocol.ts` and has unit-test coverage. The descriptor handshake
- *    is opaque byte-packing — it can be unit-tested without a kernel, and
- *    will be in a follow-up task once we have a live test VM to verify
- *    against.
- *
- * 3. **Clean SIGINT path.** The scaffold runs an `ep0` read loop in the
- *    background; SIGINT/SIGTERM closes the fd and exits cleanly. This is
- *    necessary for AC #6 (systemd cleanly restarts the daemon between
- *    tests) and is end-to-end testable today via `--dry-run + signal`.
- *
- * @see protocol.ts
+ * @see protocol.ts — SETUP-packet decoding + page payloads
+ * @see descriptors.ts — descriptor + strings table byte-packing
  * @see https://www.kernel.org/doc/html/latest/usb/functionfs.html
  * @module
  */
@@ -45,6 +36,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as fsp from 'node:fs/promises';
 
+import { buildDescriptorsBuffer, buildStringsBuffer } from './descriptors.js';
 import { classifyRequest, getPagePayload, PAGE_SIZE, parseSetupPacket } from './protocol.js';
 
 // ---------------------------------------------------------------------------
@@ -77,6 +69,20 @@ export interface FunctionFsOpts {
   sysInfoExtendedXml: string;
   /** Logger; defaults to console.log. */
   log?: (message: string) => void;
+  /**
+   * Called after the descriptor handshake completes and the ep0 read loop
+   * is running, but before `runFunctionFs` returns. The kernel only emits
+   * `FUNCTIONFS_BIND` once the gadget is enabled, so this hook MUST bind
+   * the parent gadget to a UDC. Returns the UDC name for logging.
+   */
+  attachUdc: () => string;
+  /**
+   * Milliseconds to wait for the kernel to emit `FUNCTIONFS_BIND` after
+   * `attachUdc()`. Bind fires immediately on the UDC write under
+   * `dummy_hcd`; the watchdog only catches a kernel/driver wedge. Default
+   * 10s — generous enough that an overloaded test VM doesn't flake.
+   */
+  bindTimeoutMs?: number;
 }
 
 /** Outcome of the ep0 event loop. Resolves when the loop terminates. */
@@ -88,12 +94,25 @@ export interface FunctionFsHandle {
 }
 
 /**
- * Mount FunctionFS at `ffsMount`, open ep0, run the SETUP-packet event
- * loop. Returns a handle whose `shutdown()` is wired into the daemon's
- * signal-handler chain.
+ * Mount FunctionFS at `ffsMount`, open ep0, write the descriptor + strings
+ * tables, start the ep0 read loop, and bind the parent gadget to a UDC via
+ * `opts.attachUdc()`. Returns the handle ONLY after the kernel emits
+ * `FUNCTIONFS_BIND` on ep0 (or a watchdog timeout fires).
+ *
+ * The order matters:
+ *
+ *   1. Descriptors must be on ep0 before UDC binding — binding earlier
+ *      causes the kernel to STALL enumeration.
+ *   2. UDC binding must happen before we await BIND — the BIND event is
+ *      what the kernel emits in response to UDC binding.
+ *
+ * Owning both phases inside `runFunctionFs` keeps the cross-step coupling
+ * (descriptors → UDC bind → BIND event) inside one function, where it can
+ * be reasoned about without consulting the daemon entry point.
  */
 export async function runFunctionFs(opts: FunctionFsOpts): Promise<FunctionFsHandle> {
   const log = opts.log ?? ((m: string) => console.log(`[ffs] ${m}`));
+  const bindTimeoutMs = opts.bindTimeoutMs ?? 10_000;
   await fsp.mkdir(opts.ffsMount, { recursive: true });
 
   // Mount FunctionFS. The instance name (ffsInstance) is supplied as the
@@ -107,25 +126,41 @@ export async function runFunctionFs(opts: FunctionFsOpts): Promise<FunctionFsHan
     );
   }
 
-  // TODO(TASK-322.05.01): write the descriptor handshake to ep0
-  // before reading. The handshake is a plain `ep0.write(buffer)` whose first
-  // 4 bytes are FUNCTIONFS_DESCRIPTORS_MAGIC_V2 (0x00000003 LE) followed by
-  // struct usb_functionfs_descs_head_v2 + endpoint descriptor table, then a
-  // second write for the strings table. NO ioctl is involved — the kernel
-  // detects the magic inside the buffer. Deferred only because the byte
-  // layout is opaque and we cannot verify it without a live `dummy_hcd`
-  // kernel instance to observe the resulting USB enumeration.
-  //
-  // When the handshake lands, this function MUST NOT return until the
-  // FUNCTIONFS_BIND event arrives on ep0 (or a timeout). Otherwise
-  // `attachUdc()` in main.ts runs before the kernel accepts the descriptors
-  // and enumeration fails. Signal readiness from the loop via an awaited
-  // promise resolved on the first FUNCTIONFS_BIND event.
-
   const ep0 = await fsp.open(`${opts.ffsMount}/ep0`, 'r+');
-  let running = true;
-  let donePromise: Promise<void> | null = null;
 
+  // FunctionFS descriptor handshake — plain writes to ep0. The kernel
+  // detects FUNCTIONFS_DESCRIPTORS_MAGIC_V2 inside the buffer and parses
+  // the in-band `usb_functionfs_descs_head_v2`. See descriptors.ts for the
+  // exact layout (verified by descriptors.test.ts on macOS).
+  try {
+    const descriptors = buildDescriptorsBuffer();
+    await ep0.write(descriptors);
+    log(`wrote descriptor table (${descriptors.byteLength} bytes)`);
+    const strings = buildStringsBuffer();
+    await ep0.write(strings);
+    log(`wrote strings table (${strings.byteLength} bytes)`);
+  } catch (err) {
+    await ep0.close().catch(() => {});
+    spawnSync('umount', [opts.ffsMount]);
+    throw new Error(`runFunctionFs: descriptor handshake failed: ${describe(err)}`);
+  }
+
+  // BIND-readiness signal. Resolved by the event loop on the first
+  // FUNCTIONFS_BIND event; rejected by the watchdog on timeout.
+  let resolveBind: () => void;
+  let rejectBind: (err: Error) => void;
+  const bindReady = new Promise<void>((resolve, reject) => {
+    resolveBind = resolve;
+    rejectBind = reject;
+  });
+  let bound = false;
+  const onBind = (): void => {
+    if (bound) return;
+    bound = true;
+    resolveBind();
+  };
+
+  let running = true;
   const loop = async (): Promise<void> => {
     const buf = Buffer.allocUnsafe(PAGE_SIZE + 32);
     while (running) {
@@ -141,40 +176,79 @@ export async function runFunctionFs(opts: FunctionFsOpts): Promise<FunctionFsHan
         // FunctionFS closed.
         return;
       }
-      // ep0 emits one `struct usb_functionfs_event` per read once the
-      // descriptor handshake completes — never raw 8-byte SETUP packets.
-      // The struct is 12 bytes packed: bytes 0..7 are `union u` (which for
-      // SETUP events contains the 8-byte SETUP packet), byte 8 is `type`,
-      // bytes 9..11 are padding. Pre-handshake the kernel sends nothing,
-      // so this branch only fires once the follow-up lands.
+      // ep0 emits one `struct usb_functionfs_event` per read. The struct
+      // is 12 bytes packed: bytes 0..7 are `union u` (SETUP packet for
+      // SETUP events), byte 8 is `type`, bytes 9..11 are padding.
       if (read.bytesRead >= FFS_EVENT_SIZE) {
         const eventType = buf[FFS_EVENT_TYPE_OFFSET]!;
-        handleEvent(eventType, buf, opts, log, ep0);
+        handleEvent(eventType, buf, opts, log, ep0, onBind);
       } else {
         log(`ignoring ${read.bytesRead}-byte short ep0 read (expected ${FFS_EVENT_SIZE})`);
       }
     }
   };
 
-  donePromise = loop();
+  const donePromise = loop();
+
+  // Bind the gadget AFTER the read loop is live but BEFORE we wait for
+  // BIND. The kernel sends the BIND event the moment the UDC write
+  // completes — if we attached before starting the read loop we'd race
+  // the event into a buffer we weren't yet polling.
+  let udcName: string;
+  try {
+    udcName = opts.attachUdc();
+    log(`attached to UDC ${udcName}`);
+  } catch (err) {
+    running = false;
+    await ep0.close().catch(() => {});
+    spawnSync('umount', [opts.ffsMount]);
+    throw new Error(`runFunctionFs: attachUdc failed: ${describe(err)}`);
+  }
+
+  // Watchdog: if BIND doesn't arrive promptly something is wrong on the
+  // kernel side (dummy_hcd misconfigured, gadget already in use, etc).
+  const timer = setTimeout(() => {
+    rejectBind(
+      new Error(
+        `runFunctionFs: FUNCTIONFS_BIND not observed within ${bindTimeoutMs}ms after UDC bind`
+      )
+    );
+  }, bindTimeoutMs);
+
+  try {
+    await bindReady;
+  } catch (err) {
+    clearTimeout(timer);
+    running = false;
+    await ep0.close().catch(() => {});
+    spawnSync('umount', [opts.ffsMount]);
+    throw err;
+  }
+  clearTimeout(timer);
 
   return {
     async shutdown(): Promise<void> {
       if (!running) return;
       running = false;
+      // `umount -l` (lazy) frees the FunctionFS mount even when ep0 is
+      // still held by our pending read. Without it the read awaits an
+      // event that the kernel won't emit until the gadget is unbound,
+      // which the caller is about to do — but the caller's UDC write
+      // can block on FunctionFS state, so we break the cycle here by
+      // lazily detaching the mount. The process exits shortly anyway;
+      // the deferred close happens when the OS reclaims our FDs.
       try {
-        await ep0.close();
-      } catch {
-        // already closed
-      }
-      try {
-        spawnSync('umount', [opts.ffsMount]);
+        spawnSync('umount', ['-l', opts.ffsMount]);
       } catch {
         // best-effort
       }
+      // Best-effort close; do NOT await — pending reads can keep this
+      // promise unresolved indefinitely and the lazy umount above has
+      // already detached the kernel-side mount.
+      ep0.close().catch(() => {});
     },
     async done(): Promise<void> {
-      if (donePromise) await donePromise;
+      await donePromise;
     },
   };
 }
@@ -188,11 +262,13 @@ function handleEvent(
   buf: Buffer,
   opts: FunctionFsOpts,
   log: (m: string) => void,
-  ep0: fsp.FileHandle
+  ep0: fsp.FileHandle,
+  onBind: () => void
 ): void {
   switch (eventType) {
     case FFS_EVENT_BIND:
       log('event: BIND (descriptors accepted)');
+      onBind();
       return;
     case FFS_EVENT_UNBIND:
       log('event: UNBIND');

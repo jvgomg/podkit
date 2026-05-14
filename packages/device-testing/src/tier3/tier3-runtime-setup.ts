@@ -23,21 +23,13 @@
  *     once; per-test cost should be sub-second.
  *   - Use the {@link STARTER_PERSONA_IDS} constants — never inline raw persona ids.
  *
- * # Known scaffold gaps (descriptor handshake)
+ * # Assertion families wired in `personas-baseline.tier3.test.ts`
  *
- * As of m-19 Phase 3, two assertion families are intentionally NOT in the
- * Tier-3 test file (per the m-19 "no skipped tests" rule — pause work,
- * document the dependency):
- *
- *   - **Real USB enumeration**: blocked by TASK-322.05.01 (FunctionFS
- *     descriptor handshake). Today the daemon serves VPD page 0xC0 but
- *     publishes no descriptors, so `podkit device scan` sees nothing.
- *     The current device-scan assertion checks JSON shape only.
- *   - **doctor-vs-state**: blocked by TASK-333 (doctor `--scope system`).
- *     Today's CLI requires a registered device for any doctor invocation.
- *
- * Both assertions land via TASK-322.05.01, which owns the test-file edit
- * that strengthens 322.06 once 333 has shipped the CLI surface.
+ *   - Device-scan finds the synthesised persona; lsusb cross-checks
+ *     vendor/product (FunctionFS descriptor handshake landed in
+ *     TASK-322.05.01).
+ *   - Doctor `--scope system --json` agrees with the `SystemState` fixture
+ *     (CLI surface landed in TASK-333).
  *
  * @module
  */

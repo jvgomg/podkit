@@ -152,15 +152,37 @@ export function attachUdc(gadgetPath: string): string {
 }
 
 /**
- * Best-effort teardown of the configfs tree. Designed for signal handlers:
+ * Unbind the gadget from its UDC without removing the configfs tree.
+ *
+ * Writes an empty string to `<gadgetPath>/UDC`. The kernel emits
+ * `FUNCTIONFS_UNBIND` on ep0 in response, which is what unblocks the
+ * FunctionFS read loop in `functionfs.ts`. Splitting this step out of
+ * `destroyGadget` lets the daemon's signal handler unbind first (so the
+ * read loop drains) and remove the configfs tree afterwards (when the
+ * `functions/ffs.*` directory is no longer busy).
+ */
+export function unbindGadget(
+  gadgetPath: string,
+  onWarn: (message: string) => void = () => {}
+): void {
+  tryWrite(`${gadgetPath}/UDC`, '', onWarn);
+}
+
+/**
+ * Best-effort removal of the configfs tree. Idempotent and never throws:
  * every step is wrapped in try/catch so a partial gadget never blocks the
  * daemon's exit path. Logs warnings via `onWarn` for visibility.
+ *
+ * Callers should `unbindGadget()` first — rmdir on `functions/ffs.<name>`
+ * fails with EBUSY while FunctionFS is still mounted, so the teardown
+ * sequence is: unbind UDC → close + umount FunctionFS → destroy tree.
  */
 export function destroyGadget(
   gadgetPath: string,
   ffsInstance: string,
   onWarn: (message: string) => void = () => {}
 ): void {
+  // Write UDC='' is idempotent — fine to call again if unbindGadget already did.
   tryWrite(`${gadgetPath}/UDC`, '', onWarn);
   tryUnlink(`${gadgetPath}/configs/c.1/ffs.${ffsInstance}`, onWarn);
   tryUnlink(`${gadgetPath}/configs/c.1/mass_storage.0`, onWarn);

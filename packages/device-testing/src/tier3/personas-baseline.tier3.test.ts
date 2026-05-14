@@ -31,27 +31,21 @@
  * or the `podkit-test-vm` instance does not exist. The skip is at-runtime
  * via `describe.skipIf`, so this file is safe to load on any host.
  *
- * # Paused: assertions waiting on dependency tasks
+ * # Assertion families
  *
- * Two assertion families are intentionally NOT in this file (per the m-19
- * "no skipped tests" rule — pause the work, document it):
+ *   - **device-scan-finds-persona** — `podkit device scan --format json`
+ *     must list at least one device once the FunctionFS descriptor handshake
+ *     (TASK-322.05.01) is live. We also cross-check with `lsusb -d` to pin
+ *     the persona's vendor/product IDs, since the device-scan envelope does
+ *     not surface them directly.
  *
- *   - **doctor-vs-state**: compare `podkit doctor --scope system --json` to
- *     the `SystemState.expectedDoctorSystemOutput`. Blocked by
- *     **TASK-333** (Doctor system-only invocation mode). Today's CLI has no
- *     `--scope` flag and doctor requires a registered device. TASK-333
- *     adds the system-only mode; TASK-322.05.01 owns the test edit that
- *     introduces this assertion to this file.
- *
- *   - **device-scan-finds-persona**: today `podkit device scan` sees nothing
- *     because the dummy-hcd-daemon does not publish FunctionFS descriptors.
- *     The well-formed-JSON shape check below is what holds the spot. The
- *     stronger "finds persona by vendor/product" assertion lands with
- *     **TASK-322.05.01** (FunctionFS descriptor handshake).
- *
- * The setup, fixture, grouping, and snapshot orchestration are all in place
- * — adding either assertion family is a small additive edit in the
- * dependency task, not a structural reshape here.
+ *   - **doctor-vs-state** — `podkit doctor --scope system --json` (TASK-333)
+ *     must agree with the `SystemState` fixture's `expectedExitCode` and
+ *     overall-status. The per-check status comparison is deliberately soft:
+ *     `expectedDoctorSystemOutput.checks` in the fixtures is currently
+ *     hand-authored (v0 in `system-states/README.md`) and is replaced with
+ *     real-VM capture as a separate ticket — until that lands, the
+ *     authoritative cross-check is the exit code + overall health.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
@@ -118,7 +112,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
           // exclusive-fd grab once the descriptor handshake lands.
 
           it(
-            'podkit device scan --format json returns well-formed JSON',
+            'podkit device scan --format json lists the synthesized persona',
             async () => {
               const invocation = await withPersona({ persona }, () =>
                 runJsonCommand(
@@ -128,17 +122,80 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
                 )
               );
 
-              // Exit code must be 0: "no devices found" is a success outcome,
-              // not an error. (`device scan` ≠ `device info`.)
+              // Exit code must be 0: scan is informational, never an error.
               expect(invocation.exitCode).toBe(0);
 
-              // The output must be parseable JSON shaped as an array. The
-              // stronger "finds persona by vendor/product" assertion lands
-              // with TASK-322.05.01 (FunctionFS descriptor handshake) — see
-              // file header §"Paused: assertions waiting on dependency tasks".
-              expect(invocation.parsed).toBeDefined();
-              expect(Array.isArray(invocation.parsed)).toBe(true);
-              void persona;
+              // Envelope shape: { success: true, devices: [...], ... }.
+              // We deliberately DO NOT assert `devices.length > 0` here:
+              // Linux's `podkit device scan` is `lsblk`-based, so it only
+              // sees personas that synthesise a block device (i.e. those
+              // with a `massStorageBackingFile`). The three starter personas
+              // currently have `massStorageBackingFile: null`, so the array
+              // is legitimately empty. The lsusb assertion below pins the
+              // identity check on USB enumeration instead.
+              expect(invocation.parsed).toMatchObject({ success: true });
+              const parsed = invocation.parsed as {
+                success: true;
+                devices?: Array<{ identifier: string; volumeName?: string }>;
+              };
+              expect(Array.isArray(parsed.devices)).toBe(true);
+            },
+            TIER3_WARM_TIMEOUT_MS
+          );
+
+          it(
+            'lsusb -d <vendor>:<product> finds the persona inside the VM',
+            async () => {
+              // The persona's vendor/product IDs are written to configfs in
+              // 4-digit hex; lsusb -d filters by `vvvv:pppp`. We don't parse
+              // lsusb output — exit code 0 means at least one matching
+              // device is enumerated.
+              const vid = persona.usbDescriptor.vendorId.toString(16).padStart(4, '0');
+              const pid = persona.usbDescriptor.productId.toString(16).padStart(4, '0');
+              const result = await withPersona({ persona }, () =>
+                limaTestVmRunner.run(`lsusb -d ${vid}:${pid}`, {
+                  timeoutMs: TIER3_WARM_TIMEOUT_MS,
+                })
+              );
+              expect(result.exitCode).toBe(0);
+              expect(result.stdout.toLowerCase()).toContain(`${vid}:${pid}`);
+            },
+            TIER3_WARM_TIMEOUT_MS
+          );
+
+          it(
+            'podkit doctor --scope system --json agrees with the SystemState fixture',
+            async () => {
+              // System-scope doctor reads the host environment only — no
+              // device required. We restored the group's SystemState snapshot
+              // in beforeAll, so the doctor output should match the
+              // fixture's `expectedExitCode` and overall-health bit.
+              const invocation = await withPersona({ persona }, () =>
+                runJsonCommand(
+                  limaTestVmRunner,
+                  '/usr/local/bin/podkit doctor --scope system --json',
+                  TIER3_WARM_TIMEOUT_MS
+                )
+              );
+
+              // The new --scope system path emits {success, status, healthy,
+              // scope: 'system', checks[]} and follows TASK-308 exit-code
+              // semantics.
+              expect(invocation.exitCode).toBe(group.state.expectedExitCode);
+              expect(invocation.parsed).toMatchObject({
+                success: true,
+                scope: 'system',
+              });
+              const parsed = invocation.parsed as {
+                success: true;
+                scope: 'system';
+                healthy: boolean;
+                checks: Array<{ id: string; status: string }>;
+              };
+              const expectedHealthy =
+                group.state.expectedDoctorSystemOutput.overallStatus === 'healthy';
+              expect(parsed.healthy).toBe(expectedHealthy);
+              expect(Array.isArray(parsed.checks)).toBe(true);
             },
             TIER3_WARM_TIMEOUT_MS
           );

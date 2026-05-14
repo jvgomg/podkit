@@ -37,7 +37,7 @@ import {
 } from '../../../../packages/device-testing/src/personas/sidecar.js';
 
 import { parseArgs, type CliOptions } from './cli.js';
-import { attachUdc, createGadget, destroyGadget } from './gadget.js';
+import { attachUdc, createGadget, destroyGadget, unbindGadget } from './gadget.js';
 import { runFunctionFs, type FunctionFsHandle } from './functionfs.js';
 
 const EXIT_OK = 0;
@@ -125,8 +125,28 @@ async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise
   let ffsInstance: string | null = null;
   let ffs: FunctionFsHandle | null = null;
 
+  let teardownStarted = false;
   const teardown = async (signal: string): Promise<number> => {
+    if (teardownStarted) {
+      // Both SIGINT and SIGTERM can fire on the same process exit; the
+      // second one would re-write `UDC=''` and try to rmdir an already-
+      // empty tree. All steps are idempotent but this guard keeps the
+      // log clean and saves a couple of kernel round-trips.
+      return EXIT_OK;
+    }
+    teardownStarted = true;
     console.log(`[shutdown] received ${signal}, tearing down...`);
+    // Order matters:
+    //   1. Unbind UDC — kernel emits FUNCTIONFS_UNBIND on ep0, which is what
+    //      lets the FFS read loop drain. Without this, ep0.close() can
+    //      block on a pending read and the gadget stays bound.
+    //   2. Shut down FFS — close ep0, umount the mountpoint. After UDC is
+    //      unbound the FFS function is no longer in use, so umount succeeds.
+    //   3. destroyGadget — rmdir the configfs tree. Skipping step 1 means
+    //      rmdir `functions/ffs.*` fails with EBUSY.
+    if (gadgetPath) {
+      unbindGadget(gadgetPath, (m) => console.error(`[shutdown] ${m}`));
+    }
     try {
       if (ffs) await ffs.shutdown();
     } catch (err) {
@@ -167,16 +187,23 @@ async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise
     ffsInstance = gadget.ffsInstance;
 
     if (bindFfs) {
+      // `runFunctionFs` owns the descriptor handshake → UDC bind → BIND
+      // event sequence. It calls our `attachUdc` callback at the correct
+      // point and only returns after the kernel confirms enumeration.
       ffs = await runFunctionFs({
         ffsMount: opts.ffsMount,
         ffsInstance: gadget.ffsInstance,
         sysInfoExtendedXml: persona.sysInfoExtendedXml!,
+        attachUdc: () => attachUdc(gadget.gadgetPath),
       });
+      console.log(`[ready] gadget ${persona.id} bound (FunctionFS + UDC)`);
+    } else {
+      // Mass-storage-only personas have no FunctionFS endpoint; the kernel
+      // still enumerates them from the configfs tree alone, so a direct
+      // UDC bind is sufficient.
+      const udc = attachUdc(gadget.gadgetPath);
+      console.log(`[ready] gadget ${persona.id} bound to UDC ${udc} (mass-storage only)`);
     }
-
-    // Bind to UDC last — descriptors must be in place before enumeration.
-    const udc = attachUdc(gadget.gadgetPath);
-    console.log(`[ready] gadget ${persona.id} bound to UDC ${udc}`);
 
     // Wait until a signal arrives.
     const code = await donePromise;

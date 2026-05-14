@@ -127,3 +127,7 @@ declare class TextEncoder {
 declare class TextDecoder {
   decode(input?: Uint8Array): string;
 }
+
+// Timer globals — used by the FunctionFS BIND watchdog.
+declare function setTimeout(handler: () => void, timeoutMs?: number): unknown;
+declare function clearTimeout(handle: unknown): void;
