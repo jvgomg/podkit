@@ -8,6 +8,11 @@
  * `stageBackingFile()` from the test explicitly when the persona has a
  * `massStorageBackingFile` and the test exercises it.
  *
+ * Personas without a daemon payload (`sysInfoExtendedXml === null &&
+ * massStorageBackingFile === null`) never reach this fixture: they are
+ * filtered at grouping time inside `groupPersonasByState()`. See
+ * TASK-322.06.01 and `tier3-runtime-setup.ts#hasDaemonPayload`.
+ *
  * # Known scaffold gap (descriptor handshake)
  *
  * The FunctionFS daemon's descriptor handshake is deferred to TASK-322.05.01.

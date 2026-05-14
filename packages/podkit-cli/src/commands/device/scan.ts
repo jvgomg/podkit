@@ -23,7 +23,9 @@ import {
   redactPaths,
   formatIFlashMountExplanation,
 } from './shared.js';
-import type { DeviceScanOutput } from './output-types.js';
+import type { DeviceScanOutput, DeviceScanSuccess } from './output-types.js';
+
+type DeviceScanDeviceEntry = NonNullable<DeviceScanSuccess['devices']>[number];
 
 /**
  * Generate a diagnostic report for troubleshooting.
@@ -333,10 +335,11 @@ export async function runDeviceScan(
     }
   }
 
-  const devices = ipods.map((d, i) => {
+  const blockDevices: DeviceScanDeviceEntry[] = ipods.map((d, i) => {
     const readiness = readinessResults[i];
     const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
     const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
+    const matchedUsb = findMatchingUsbIpod(d.identifier);
     return {
       volumeName: d.volumeName,
       volumeUuid: d.volumeUuid,
@@ -346,6 +349,17 @@ export async function runDeviceScan(
       ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
       ...(configuredAs ? { configuredAs } : {}),
       ...(bestModel ? { model: bestModel } : {}),
+      ...(matchedUsb
+        ? {
+            usbDescriptor: {
+              vendorId: matchedUsb.device.vendorId,
+              productId: matchedUsb.device.productId,
+              ...(matchedUsb.device.serialNumber
+                ? { serialNumber: matchedUsb.device.serialNumber }
+                : {}),
+            },
+          }
+        : {}),
       ...(readiness
         ? {
             readiness: {
@@ -362,6 +376,49 @@ export async function runDeviceScan(
         : {}),
     };
   });
+
+  // USB-only iPods: Apple-vendor USB descriptors with no joinable lsblk entry.
+  // These appear for personas synthesised inside the Tier-3 VM that have no
+  // block device (massStorageBackingFile: null) and for iPods in restore mode
+  // (6G in particular). They share the same JSON shape as block-device-bound
+  // entries, but with `usbOnly: true`, no `mountPoint`, and empty string
+  // identifier/volumeUuid (size 0). The render layer continues to use the
+  // separate `usbOnlyIpods` list — only the JSON envelope is unified here.
+  const usbOnlyDevices: DeviceScanDeviceEntry[] = usbOnlyIpods.map((r) => {
+    const usbReadiness = manager.isSupported ? createUsbOnlyReadinessResult(r) : undefined;
+    const modelDisplayName = r.model?.displayName;
+    return {
+      volumeName: modelDisplayName ?? '',
+      volumeUuid: '',
+      identifier: '',
+      size: 0,
+      isMounted: false,
+      usbOnly: true,
+      usbDescriptor: {
+        vendorId: r.device.vendorId,
+        productId: r.device.productId,
+        ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
+      },
+      ...(r.model ? { model: r.model } : {}),
+      ...(r.notSupportedReason ? { notSupportedReason: r.notSupportedReason } : {}),
+      ...(usbReadiness
+        ? {
+            readiness: {
+              level: usbReadiness.level,
+              stages: usbReadiness.stages.map((s) => ({
+                stage: s.stage,
+                status: s.status,
+                summary: s.summary,
+                ...(s.details ? { details: s.details } : {}),
+              })),
+              ...(usbReadiness.summary ? { summary: usbReadiness.summary } : {}),
+            },
+          }
+        : {}),
+    };
+  });
+
+  const devices: DeviceScanDeviceEntry[] = [...blockDevices, ...usbOnlyDevices];
 
   const hasAnyDevices =
     ipods.length > 0 ||

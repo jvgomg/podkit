@@ -10,13 +10,14 @@
  * message).
  */
 
-import { describe, it, expect } from 'bun:test';
+import { describe, it, expect, beforeEach } from 'bun:test';
 import {
   createSnapshot,
   restoreSnapshot,
   deleteSnapshot,
   snapshotExists,
   listSnapshots,
+  resetSnapshotUnsupportedWarning,
 } from './lima-test-vm-snapshots.js';
 import type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '../subprocess.js';
 
@@ -370,5 +371,101 @@ describe('snapshot helpers: limactl missing', () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('brew install lima');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot-unsupported warning (TASK-335 Change 3)
+// ---------------------------------------------------------------------------
+
+describe('snapshot-unsupported warning', () => {
+  beforeEach(() => {
+    resetSnapshotUnsupportedWarning();
+  });
+
+  it('emits a warning the first time isSnapshotUnsupported returns true (via createSnapshot)', async () => {
+    const warnings: string[] = [];
+    const warn = (msg: string) => warnings.push(msg);
+    const { runner } = makeScriptedRunner([fail(1, 'level=fatal msg=unimplemented')]);
+
+    await createSnapshot({ vmName: 'vm', snapshotName: 'base-healthy', subprocess: runner, warn });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('[lima-test-vm]');
+    expect(warnings[0]).toContain('vz');
+    expect(warnings[0]).toContain('apply-state.sh');
+    expect(warnings[0]).toContain('TASK-322.02.01');
+  });
+
+  it('is silent on subsequent unimplemented hits in the same session', async () => {
+    const warnings: string[] = [];
+    const warn = (msg: string) => warnings.push(msg);
+
+    // First call — emits warning
+    const { runner: r1 } = makeScriptedRunner([fail(1, 'level=fatal msg=unimplemented')]);
+    await createSnapshot({ vmName: 'vm', snapshotName: 'base-healthy', subprocess: r1, warn });
+
+    // Second call — should be silent
+    const { runner: r2 } = makeScriptedRunner([fail(1, 'level=fatal msg=unimplemented')]);
+    await createSnapshot({ vmName: 'vm', snapshotName: 'base-healthy', subprocess: r2, warn });
+
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('emits again after resetSnapshotUnsupportedWarning()', async () => {
+    const warnings: string[] = [];
+    const warn = (msg: string) => warnings.push(msg);
+
+    // First hit
+    const { runner: r1 } = makeScriptedRunner([fail(1, 'level=fatal msg=unimplemented')]);
+    await createSnapshot({ vmName: 'vm', snapshotName: 'base-healthy', subprocess: r1, warn });
+    expect(warnings).toHaveLength(1);
+
+    // Reset
+    resetSnapshotUnsupportedWarning();
+
+    // Second hit — should emit again
+    const { runner: r2 } = makeScriptedRunner([fail(1, 'level=fatal msg=unimplemented')]);
+    await createSnapshot({ vmName: 'vm', snapshotName: 'base-healthy', subprocess: r2, warn });
+    expect(warnings).toHaveLength(2);
+  });
+
+  it('emits warning via snapshotExists (listSnapshotsSafe path) on vz', async () => {
+    const warnings: string[] = [];
+    const warn = (msg: string) => warnings.push(msg);
+    const { runner } = makeScriptedRunner([
+      fail(
+        1,
+        'level=warning msg="`limactl snapshot` is experimental"\nlevel=fatal msg=unimplemented'
+      ),
+    ]);
+
+    const exists = await snapshotExists({
+      vmName: 'vm',
+      snapshotName: 'base-healthy',
+      subprocess: runner,
+      warn,
+    });
+
+    expect(exists).toBe(false);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('TASK-322.02.01');
+  });
+
+  it('does NOT emit warning for normal (non-unimplemented) limactl failures', async () => {
+    const warnings: string[] = [];
+    const warn = (msg: string) => warnings.push(msg);
+    const { runner } = makeScriptedRunner([fail(1, 'instance "vm" not found')]);
+
+    // snapshotExists returns false for missing instance — no warning
+    const exists = await snapshotExists({
+      vmName: 'vm',
+      snapshotName: 'base-healthy',
+      subprocess: runner,
+      warn,
+    });
+
+    expect(exists).toBe(false);
+    expect(warnings).toHaveLength(0);
   });
 });

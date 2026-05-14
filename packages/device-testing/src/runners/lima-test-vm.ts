@@ -50,6 +50,7 @@ import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
 import { restoreSnapshot, snapshotExists } from './lima-test-vm-snapshots.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
+import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -529,6 +530,13 @@ export interface CreateLimaTestVmRuntimeOpts {
    */
   resolveDummyHcdDaemonBinary?: () => string;
   /**
+   * Resolver for the dummy-hcd-daemon systemd unit file path on the host.
+   * Defaults to `tools/device-testing/dummy-hcd/dummy-hcd-daemon@.service`;
+   * tests inject a synthetic path so the sha256 is deterministic and the
+   * runner does not couple to repo bytes.
+   */
+  resolveDummyHcdDaemonUnit?: () => string;
+  /**
    * Resolver for the gpod-tool binary path. Defaults to
    * `PODKIT_GPOD_TOOL_BINARY` env var; absent → skip the transfer (warn only).
    */
@@ -548,6 +556,7 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
   const resolvePodkitBinary = opts.resolvePodkitBinary ?? (() => resolveDefaultPodkitBinary());
   const resolveDummyHcdDaemonBinary =
     opts.resolveDummyHcdDaemonBinary ?? (() => resolveDefaultDummyHcdDaemonBinary());
+  const resolveDummyHcdDaemonUnit = opts.resolveDummyHcdDaemonUnit;
   const resolveGpodToolBinary =
     opts.resolveGpodToolBinary ?? (() => resolveDefaultGpodToolBinary());
 
@@ -632,7 +641,19 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
         );
       }
 
-      // 5. Emit the persona sidecar. Idempotent: byte-identical payload for
+      // 5. Install the dummy-hcd-daemon systemd template. Mandatory: without
+      //    it, every `startDaemonForPersona` later in the test would fail
+      //    with `Unit dummy-hcd-daemon@<id>.service not found`. The helper
+      //    sha256-skips when the unit is already up-to-date, and only runs
+      //    `systemctl daemon-reload` when the contents actually change.
+      const hostUnitPath = resolveDummyHcdDaemonUnit?.();
+      await transferSystemdUnit({
+        vmName,
+        ...(hostUnitPath !== undefined ? { hostUnitPath } : {}),
+        subprocess,
+      });
+
+      // 6. Emit the persona sidecar. Idempotent: byte-identical payload for
       //    a fixed registry, so re-running prepare() is a no-op for the daemon.
       await ensurePersonaSidecar({
         vmName,

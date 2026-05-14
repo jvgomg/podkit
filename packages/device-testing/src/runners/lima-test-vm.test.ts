@@ -103,6 +103,8 @@ let tmpRoot: string;
 let podkitBinary: string;
 let podkitSha: string;
 let daemonBinary: string;
+let daemonUnit: string;
+let daemonUnitSha: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-runner-'));
@@ -113,6 +115,11 @@ beforeEach(() => {
 
   daemonBinary = path.join(tmpRoot, 'dummy-hcd-daemon');
   fs.writeFileSync(daemonBinary, Buffer.from('fake-daemon-binary'));
+
+  daemonUnit = path.join(tmpRoot, 'dummy-hcd-daemon@.service');
+  const unitBytes = Buffer.from('[Unit]\nDescription=fake-systemd-unit\n');
+  fs.writeFileSync(daemonUnit, unitBytes);
+  daemonUnitSha = createHash('sha256').update(unitBytes).digest('hex');
 });
 
 afterEach(() => {
@@ -198,12 +205,14 @@ describe('runtime.prepare', () => {
     // Calls in order:
     //  1. instanceStatus → running
     //  2. transferBinary probe (sha256sum) → match → skip
-    //  3. ensurePersonaSidecar: limactl copy
-    //  4. ensurePersonaSidecar: sudo install
-    //  5. ensurePersonaSidecar: rm -f temp
+    //  3. transferSystemdUnit probe → match → skip
+    //  4. ensurePersonaSidecar: limactl copy
+    //  5. ensurePersonaSidecar: sudo install
+    //  6. ensurePersonaSidecar: rm -f temp
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
       ok(podkitSha), // sha256 match → skip
+      ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
       ok(), // rm temp
@@ -213,6 +222,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'), // not present → skip
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => undefined, // not configured → skip
       personas: [], // empty registry → tiny sidecar
     });
@@ -236,6 +246,7 @@ describe('runtime.prepare', () => {
       listJsonStopped(),
       ok(), // limactl start
       ok(podkitSha), // sha256 match → skip
+      ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
       ok(), // rm temp
@@ -245,6 +256,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => undefined,
       personas: [],
     });
@@ -260,6 +272,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => undefined,
       personas: [],
     });
@@ -276,13 +289,15 @@ describe('runtime.prepare', () => {
   });
 
   it('transfers the dummy-hcd-daemon when the host binary exists', async () => {
-    // After boot-check, podkit probe, daemon probe, sidecar copy/install/cleanup.
+    // After boot-check, podkit probe, daemon probe, systemd unit probe,
+    // sidecar copy/install/cleanup.
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
       ok(podkitSha), // podkit sha match → skip
       // dummy-hcd-daemon transfer: probe → match (use same fake sha) so we
       // skip copy. To make this deterministic, compute the daemon sha.
       ok(createHash('sha256').update(fs.readFileSync(daemonBinary)).digest('hex')),
+      ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // sidecar copy
       ok(), // sidecar install
       ok(), // sidecar cleanup
@@ -292,6 +307,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => daemonBinary,
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => undefined,
       personas: [],
     });
@@ -316,6 +332,7 @@ describe('runtime.prepare', () => {
       ok(podkitSha), // podkit skip
       // No further calls — gpod-tool throws synchronously (missing file)
       // BEFORE issuing any limactl call.
+      ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // sidecar copy
       ok(), // sidecar install
       ok(), // sidecar cleanup
@@ -325,6 +342,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => ghostGpodTool,
       personas: [],
     });
@@ -339,6 +357,7 @@ describe('runtime.prepare', () => {
       subprocess: runner,
       resolvePodkitBinary: () => path.join(tmpRoot, 'no-such-podkit'),
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
       resolveGpodToolBinary: () => undefined,
       personas: [],
     });
@@ -351,6 +370,51 @@ describe('runtime.prepare', () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('cannot read podkit binary');
+  });
+
+  it('installs the dummy-hcd-daemon systemd unit (probe → copy → install → reload)', async () => {
+    // VM has a different sha for the unit, so the helper must do the full
+    // copy + install + daemon-reload + cleanup sequence.
+    const { runner, calls } = makeScriptedRunner([
+      listJsonRunning(),
+      ok(podkitSha), // podkit skip
+      ok('deadbeef'), // systemd unit probe — wrong sha
+      ok(), // limactl copy host → /tmp
+      ok(), // sudo install -m 0644
+      ok(), // sudo systemctl daemon-reload
+      ok(), // rm -f /tmp
+      ok(), // sidecar copy
+      ok(), // sidecar install
+      ok(), // sidecar cleanup
+    ]);
+
+    const runtime = createLimaTestVmRuntime({
+      subprocess: runner,
+      resolvePodkitBinary: () => podkitBinary,
+      resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
+      resolveDummyHcdDaemonUnit: () => daemonUnit,
+      resolveGpodToolBinary: () => undefined,
+      personas: [],
+    });
+
+    await runtime.prepare();
+
+    // A daemon-reload call must have run as part of the systemd unit install.
+    const reloadCall = calls.find(
+      (c) =>
+        c.args[0] === 'shell' && c.args.includes('systemctl') && c.args.includes('daemon-reload')
+    );
+    expect(reloadCall).toBeDefined();
+
+    // The install target must be /etc/systemd/system/dummy-hcd-daemon@.service.
+    const installCall = calls.find(
+      (c) =>
+        c.args.includes('install') &&
+        c.args.includes('-m') &&
+        c.args.includes('0644') &&
+        c.args.includes('/etc/systemd/system/dummy-hcd-daemon@.service')
+    );
+    expect(installCall).toBeDefined();
   });
 });
 

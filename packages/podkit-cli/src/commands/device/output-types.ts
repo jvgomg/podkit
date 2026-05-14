@@ -288,18 +288,65 @@ export type DeviceDefaultOutput = DeviceDefaultSuccess | DeviceDefaultErrorOutpu
 
 // ── scan ────────────────────────────────────────────────────────────────────
 
+/**
+ * USB descriptor surfaced on `device scan --format json` entries.
+ *
+ * Both fields are bare lower-case hex (no `0x` prefix) — the canonical
+ * {@link UsbFingerprint} shape used throughout `@podkit/device-types`.
+ */
+export interface DeviceScanUsbDescriptor {
+  /** USB vendor ID (bare lower-case hex, e.g. `"05ac"`). */
+  vendorId: string;
+  /** USB product ID (bare lower-case hex, e.g. `"1209"`). */
+  productId: string;
+  /** USB serial number string, when reported by the device. */
+  serialNumber?: string;
+}
+
 export interface DeviceScanSuccess {
   success: true;
+  /**
+   * Recognised devices found on the host.
+   *
+   * Block-device-bound iPods (the historical case) carry `volumeUuid`,
+   * `identifier`, `size`, `isMounted`, and optionally `mountPoint`. USB-only
+   * iPods — devices that present an Apple-vendor USB descriptor without any
+   * lsblk/diskutil mount path (e.g. iPod 6G in restore mode, FunctionFS
+   * personas before they mount a backing image) — appear with
+   * `usbOnly: true`, an absent `mountPoint`, and the `usbDescriptor` field
+   * populated.
+   */
   devices?: Array<{
     volumeName: string;
+    /** Volume UUID — empty string for USB-only entries that have no filesystem. */
     volumeUuid: string;
+    /** Device identifier (e.g. `"sdb1"`) — empty string for USB-only entries. */
     identifier: string;
+    /** Device size in bytes — `0` for USB-only entries. */
     size: number;
     isMounted: boolean;
     mountPoint?: string;
     configuredAs?: string;
+    /**
+     * `true` when the entry was discovered via the USB walk and has no
+     * mounted block device. Absent for block-device-bound entries. Consumers
+     * can also check `mountPoint === undefined && identifier === ''`.
+     */
+    usbOnly?: boolean;
+    /**
+     * USB descriptor for the device. Populated for USB-only entries and may
+     * also be populated for block-device entries when the USB descriptor was
+     * available alongside the mount.
+     */
+    usbDescriptor?: DeviceScanUsbDescriptor;
     /** Best available model (deviceModel ?? usbModel) */
     model?: DeviceModelOutput;
+    /**
+     * Reason the device is not supported by podkit. Populated when
+     * `classifyAsIpod` recognised the device as a known-unsupported iPod
+     * family member (touch, iPhone, iPad, nano 6G/7G, shuffle 3G/4G).
+     */
+    notSupportedReason?: string;
     readiness?: {
       level: string;
       stages: Array<{

@@ -6,7 +6,12 @@
  *   1. Detect Tier-3 availability via the `lima-test-vm` runner's
  *      `isAvailable()`. The test files use the cached boolean to
  *      `describe.skipIf` themselves on hosts without Lima.
- *   2. Group personas by required `SystemState`. Tier-3 tests are organised so
+ *   2. Group personas by required `SystemState`, filtering out any persona
+ *      that has no daemon payload (`sysInfoExtendedXml === null &&
+ *      massStorageBackingFile === null`). Filtering at grouping time keeps
+ *      `withPersona()` from being called for personas the daemon's sidecar
+ *      builder also drops — see TASK-322.06.01 and the mirror logic in
+ *      `personas/sidecar-build.ts`. Tier-3 tests are organised so
  *      `applyState()` runs once per group, not once per test (the cornerstone
  *      of ADR-016 §"Test speed strategy").
  *   3. Resolve the starter persona list (TASK-321.02 captured personas).
@@ -121,15 +126,88 @@ export function resolveSystemStateForPersona(persona: DevicePersona): SystemStat
 }
 
 /**
+ * Returns `true` when `persona` has data the dummy-hcd-daemon can serve.
+ *
+ * The daemon's personas sidecar drops any persona where both
+ * `sysInfoExtendedXml` and `massStorageBackingFile` are `null` (see
+ * `personas/sidecar-build.ts`). Calling `withPersona()` for such a persona
+ * exits the daemon with `persona "<id>" not in sidecar`, which would fail
+ * every test in the persona's group.
+ *
+ * {@link groupPersonasByState} uses this gate to drop the persona at
+ * grouping time instead of letting it reach `withPersona()`. This is the
+ * interim safety belt described in TASK-322.06.01 — TASK-324 will capture
+ * real backing-file payloads for the affected personas, at which point this
+ * filter becomes a no-op for the starter set but remains as a tripwire for
+ * future bare personas.
+ */
+export function hasDaemonPayload(persona: DevicePersona): boolean {
+  return persona.sysInfoExtendedXml !== null || persona.massStorageBackingFile !== null;
+}
+
+/**
+ * Tracks personas that have already triggered a "no daemon payload" warning
+ * in this session. Keyed by persona id so the dedupe is per-persona, not
+ * per-process — adding a new bare persona later in the same `bun test` run
+ * still emits its warning. Reset via {@link resetTier3PersonaSkipWarnings}
+ * for parallel test isolation.
+ */
+const tier3PersonaSkipWarningsEmitted = new Set<string>();
+
+/**
+ * Reset the once-per-session per-persona skip warnings emitted by
+ * {@link groupPersonasByState}. Tests only — never call from production.
+ */
+export function resetTier3PersonaSkipWarnings(): void {
+  tier3PersonaSkipWarningsEmitted.clear();
+}
+
+/**
+ * Build the "persona dropped" stderr line for a persona that fails
+ * {@link hasDaemonPayload}. Exported so the unit tests can assert against
+ * the exact text (AC #6 — TASK-324 must appear).
+ */
+export function formatPersonaSkipWarning(persona: DevicePersona): string {
+  const nullFields: string[] = [];
+  if (persona.sysInfoExtendedXml === null) nullFields.push('sysInfoExtendedXml=null');
+  if (persona.massStorageBackingFile === null) nullFields.push('massStorageBackingFile=null');
+  return (
+    `[tier-3] persona '${persona.id}' has no daemon payload (` +
+    nullFields.join(', ') +
+    `); skipping — see TASK-324 for the capture work`
+  );
+}
+
+/**
  * Group `personas` by their required `SystemState`. The returned array's
  * entries iterate in a stable order: groups appear in the order their first
  * persona was inserted.
+ *
+ * Personas where {@link hasDaemonPayload} is `false` are dropped before
+ * grouping — see the module header and TASK-322.06.01. The first time a
+ * given persona is dropped in this session, `warn` is called with a single
+ * line naming the persona id, the null fields, and the TASK-324 reference.
+ * Subsequent calls in the same session are silent for that persona.
+ *
+ * `warn` is a DI seam so tests can capture output; the default routes to
+ * `console.warn` (which writes to stderr).
  */
 export function groupPersonasByState(
-  personas: Iterable<DevicePersona>
+  personas: Iterable<DevicePersona>,
+  warn: (msg: string) => void = (msg) => {
+    // eslint-disable-next-line no-console
+    console.warn(msg);
+  }
 ): readonly PersonaStateGroup[] {
   const groups = new Map<SystemStateId, { state: SystemState; personas: DevicePersona[] }>();
   for (const persona of personas) {
+    if (!hasDaemonPayload(persona)) {
+      if (!tier3PersonaSkipWarningsEmitted.has(persona.id)) {
+        tier3PersonaSkipWarningsEmitted.add(persona.id);
+        warn(formatPersonaSkipWarning(persona));
+      }
+      continue;
+    }
     const state = resolveSystemStateForPersona(persona);
     const existing = groups.get(state.id);
     if (existing) {

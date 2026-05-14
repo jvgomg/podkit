@@ -4,7 +4,7 @@ title: 'Phase 5: persona registry expansion'
 status: To Do
 assignee: []
 created_date: '2026-05-11 22:56'
-updated_date: '2026-05-13 22:30'
+updated_date: '2026-05-14 22:38'
 labels:
   - testing
   - vm-coverage
@@ -67,4 +67,11 @@ Rolling parent task for expanding the persona registry beyond what landed in TAS
 - [ ] #5 Rejection-case personas (shuffle, non-ipod, plus existing touch 5G + 5 Sony Walkmans) use the canonical ReadinessLevel: 'unsupported' shape once TASK-331 lands
 - [ ] #6 documents/test-devices.md updated with each new capture's date and persona ID
 - [ ] #7 Each new persona has a provenance.md following the persona-capture-playbook template
+- [ ] #8 echo-mini persona gets either sysInfoExtendedXml (if the device answers VPD 0xC0) OR a FAT32 massStorageBackingFile so Tier-3's withPersona({ persona: echo-mini }) does not fail-fast on 'persona not in sidecar'. Capture-state-and-rationale recorded in provenance.md. Removes the TASK-322.06.01 filter need for this persona (the filter stays as a tripwire for future bare personas).
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**echo-mini Tier-3 gap (2026-05-14):** Post-Phase-3 reflection surfaced that the current echo-mini persona has both `sysInfoExtendedXml: null` AND `massStorageBackingFile: null`, so the dummy-hcd-daemon rejects it with 'persona not in sidecar' and every test in the echo-mini Tier-3 group fails. Interim safety belt is **TASK-322.06.01** (filter personas without daemon payload at grouping time). The real fix — capturing/synthesising mass-storage data for echo-mini — lives in this task and is added as a new AC.
+<!-- SECTION:NOTES:END -->

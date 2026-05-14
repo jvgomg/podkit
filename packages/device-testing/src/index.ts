@@ -69,6 +69,17 @@ export {
   DEFAULT_GPOD_TOOL_VM_PATH,
 } from './runners/lima-test-vm-binary.js';
 
+// Lima test-VM systemd unit installer (TASK-322.04.01)
+export type {
+  TransferSystemdUnitOpts,
+  TransferSystemdUnitResult,
+} from './runners/lima-test-vm-systemd.js';
+export {
+  transferSystemdUnit,
+  resolveDefaultDummyHcdDaemonUnit,
+  DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH,
+} from './runners/lima-test-vm-systemd.js';
+
 // Lima test-VM snapshot helpers (TASK-322.02)
 export type { SnapshotOpts, ListSnapshotsOpts } from './runners/lima-test-vm-snapshots.js';
 export {

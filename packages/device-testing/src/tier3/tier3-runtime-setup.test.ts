@@ -26,8 +26,11 @@ import {
   resolveStarterPersonas,
   resolveSystemStateForPersona,
   groupPersonasByState,
+  hasDaemonPayload,
   resolveTier3Availability,
   resetTier3SkipWarning,
+  resetTier3PersonaSkipWarnings,
+  formatPersonaSkipWarning,
 } from './tier3-runtime-setup.js';
 import { personas as defaultRegistry } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
@@ -92,20 +95,42 @@ describe('resolveSystemStateForPersona', () => {
 });
 
 describe('groupPersonasByState', () => {
-  it('groups all 3 starter personas under the `healthy` state today', () => {
-    const groups = groupPersonasByState(resolveStarterPersonas());
+  beforeEach(() => {
+    resetTier3PersonaSkipWarnings();
+  });
+
+  it('groups the daemon-payload starter personas under the `healthy` state today', () => {
+    // `echo-mini` has neither `sysInfoExtendedXml` nor
+    // `massStorageBackingFile` until TASK-324 captures real data, so the
+    // grouper filters it. The other two starter personas survive.
+    const groups = groupPersonasByState(resolveStarterPersonas(), () => {});
     expect(groups).toHaveLength(1);
     expect(groups[0]!.state.id).toBe('healthy');
-    expect(groups[0]!.personas).toHaveLength(3);
+    expect(groups[0]!.personas.map((p) => p.id)).toEqual([
+      'ipod-video-5g-iflash-1tb',
+      'ipod-nano-7g-space-gray',
+    ]);
+  });
+
+  it('drops `echo-mini` from the starter set today (TASK-324 canary)', () => {
+    // Canary: once TASK-324 captures echo-mini's mass-storage backing file,
+    // this assertion flips to expect inclusion. Treat the flip as the
+    // signal that the gate is back to being a tripwire-only filter.
+    const warnings: string[] = [];
+    const groups = groupPersonasByState(resolveStarterPersonas(), (m) => warnings.push(m));
+    const idsInGroups = groups.flatMap((g) => g.personas.map((p) => p.id));
+    expect(idsInGroups).not.toContain('echo-mini');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("'echo-mini'");
+    expect(warnings[0]).toContain('TASK-324');
   });
 
   it('preserves insertion order across personas within a group', () => {
     const personas = resolveStarterPersonas();
-    const [group] = groupPersonasByState(personas);
+    const [group] = groupPersonasByState(personas, () => {});
     expect(group!.personas.map((p) => p.id)).toEqual([
       'ipod-video-5g-iflash-1tb',
       'ipod-nano-7g-space-gray',
-      'echo-mini',
     ]);
   });
 
@@ -113,30 +138,168 @@ describe('groupPersonasByState', () => {
     expect(groupPersonasByState([])).toEqual([]);
   });
 
-  // Forward-compat: when a future persona's resolveSystemStateForPersona
-  // returns a non-healthy state, it should land in its own group. We exercise
-  // that with a synthetic persona pair until the registry contains a real
-  // case. The helper that selects state by persona is intentionally
-  // overridable via the function signature.
   it('forms one group per distinct state id', () => {
-    const synthA: DevicePersona = makeFakePersona('synth-a');
-    const synthB: DevicePersona = makeFakePersona('synth-b');
+    // Two synthetic personas with daemon payload so they survive the filter
+    // — today every persona maps to healthy, so they bucket together.
+    const synthA = makeFakePersona('synth-a', { sysInfoExtendedXml: '<xml/>' });
+    const synthB = makeFakePersona('synth-b', { sysInfoExtendedXml: '<xml/>' });
 
-    // Manually construct two pseudo-groups by calling group with two
-    // personas, then post-checking. We can't override
-    // resolveSystemStateForPersona without DI, so we exercise the grouping
-    // mechanic by mocking through the function's semantics: since today
-    // every persona maps to healthy, two personas → one group with both.
-    const groups = groupPersonasByState([synthA, synthB]);
+    const groups = groupPersonasByState([synthA, synthB], () => {});
     expect(groups).toHaveLength(1);
     expect(groups[0]!.personas.map((p) => p.id)).toEqual(['synth-a', 'synth-b']);
-    // The grouping mechanic itself is what matters; that this happens to
-    // bucket into one group today is a property of the resolver, not the
-    // grouper. The resolver's tests above pin that behaviour.
   });
 });
 
-function makeFakePersona(id: string): DevicePersona {
+// ---------------------------------------------------------------------------
+// Daemon-payload filter (TASK-322.06.01)
+// ---------------------------------------------------------------------------
+
+describe('hasDaemonPayload', () => {
+  it('returns false when both fields are null', () => {
+    expect(hasDaemonPayload(makeFakePersona('bare'))).toBe(false);
+  });
+
+  it('returns true when only `sysInfoExtendedXml` is set', () => {
+    expect(hasDaemonPayload(makeFakePersona('xml-only', { sysInfoExtendedXml: '<xml/>' }))).toBe(
+      true
+    );
+  });
+
+  it('returns true when only `massStorageBackingFile` is set', () => {
+    expect(
+      hasDaemonPayload(
+        makeFakePersona('backing-only', {
+          massStorageBackingFile: {
+            synthesis: { sizeMiB: 1, filesystem: 'FAT32', label: 'X', files: [] },
+            resetStrategy: 'copy-on-write',
+          } as unknown as DevicePersona['massStorageBackingFile'],
+        })
+      )
+    ).toBe(true);
+  });
+
+  it('returns true when both are set', () => {
+    expect(
+      hasDaemonPayload(
+        makeFakePersona('both', {
+          sysInfoExtendedXml: '<xml/>',
+          massStorageBackingFile: {
+            synthesis: { sizeMiB: 1, filesystem: 'FAT32', label: 'X', files: [] },
+            resetStrategy: 'copy-on-write',
+          } as unknown as DevicePersona['massStorageBackingFile'],
+        })
+      )
+    ).toBe(true);
+  });
+});
+
+describe('groupPersonasByState daemon-payload filter', () => {
+  beforeEach(() => {
+    resetTier3PersonaSkipWarnings();
+  });
+
+  it('excludes a synthetic persona with both fields null', () => {
+    const warnings: string[] = [];
+    const groups = groupPersonasByState([makeFakePersona('bare')], (m) => warnings.push(m));
+    expect(groups).toEqual([]);
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('includes a synthetic persona with only `sysInfoExtendedXml` set', () => {
+    const warnings: string[] = [];
+    const groups = groupPersonasByState(
+      [makeFakePersona('xml-only', { sysInfoExtendedXml: '<xml/>' })],
+      (m) => warnings.push(m)
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.personas.map((p) => p.id)).toEqual(['xml-only']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('includes a synthetic persona with only `massStorageBackingFile` set', () => {
+    const warnings: string[] = [];
+    const groups = groupPersonasByState(
+      [
+        makeFakePersona('backing-only', {
+          massStorageBackingFile: {
+            synthesis: { sizeMiB: 1, filesystem: 'FAT32', label: 'X', files: [] },
+            resetStrategy: 'copy-on-write',
+          } as unknown as DevicePersona['massStorageBackingFile'],
+        }),
+      ],
+      (m) => warnings.push(m)
+    );
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.personas.map((p) => p.id)).toEqual(['backing-only']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('warning text names the persona id, the null fields, and references TASK-324', () => {
+    const warnings: string[] = [];
+    groupPersonasByState([makeFakePersona('drop-me')], (m) => warnings.push(m));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("'drop-me'");
+    expect(warnings[0]).toContain('sysInfoExtendedXml=null');
+    expect(warnings[0]).toContain('massStorageBackingFile=null');
+    expect(warnings[0]).toContain('TASK-324');
+  });
+
+  it('emits one warning per excluded persona on first invocation', () => {
+    const warnings: string[] = [];
+    groupPersonasByState(
+      [makeFakePersona('drop-a'), makeFakePersona('drop-b'), makeFakePersona('drop-c')],
+      (m) => warnings.push(m)
+    );
+    expect(warnings).toHaveLength(3);
+    expect(warnings[0]).toContain("'drop-a'");
+    expect(warnings[1]).toContain("'drop-b'");
+    expect(warnings[2]).toContain("'drop-c'");
+  });
+
+  it('subsequent calls in the same session do not re-emit for the same persona', () => {
+    const warnings: string[] = [];
+    const bare = makeFakePersona('repeat-me');
+    groupPersonasByState([bare], (m) => warnings.push(m));
+    groupPersonasByState([bare], (m) => warnings.push(m));
+    groupPersonasByState([bare], (m) => warnings.push(m));
+    expect(warnings).toHaveLength(1);
+  });
+
+  it('dedupe key is the persona id (different ids both emit)', () => {
+    const warnings: string[] = [];
+    groupPersonasByState([makeFakePersona('alpha')], (m) => warnings.push(m));
+    groupPersonasByState([makeFakePersona('beta')], (m) => warnings.push(m));
+    // Re-emit alpha — should be silent on second call.
+    groupPersonasByState([makeFakePersona('alpha')], (m) => warnings.push(m));
+    expect(warnings).toHaveLength(2);
+    expect(warnings[0]).toContain("'alpha'");
+    expect(warnings[1]).toContain("'beta'");
+  });
+
+  it('resetTier3PersonaSkipWarnings restores fresh emission state', () => {
+    const warnings: string[] = [];
+    const bare = makeFakePersona('cycle-me');
+    groupPersonasByState([bare], (m) => warnings.push(m));
+    expect(warnings).toHaveLength(1);
+
+    resetTier3PersonaSkipWarnings();
+
+    groupPersonasByState([bare], (m) => warnings.push(m));
+    expect(warnings).toHaveLength(2);
+  });
+});
+
+describe('formatPersonaSkipWarning', () => {
+  it('lists every null field in the message body', () => {
+    const msg = formatPersonaSkipWarning(makeFakePersona('zonked'));
+    expect(msg).toContain("'zonked'");
+    expect(msg).toContain('sysInfoExtendedXml=null');
+    expect(msg).toContain('massStorageBackingFile=null');
+    expect(msg).toContain('TASK-324');
+  });
+});
+
+function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): DevicePersona {
   return {
     id,
     description: id,
@@ -162,6 +325,7 @@ function makeFakePersona(id: string): DevicePersona {
     } as unknown as DevicePersona['expectedReadiness'],
     expectedDoctorOutput: {},
     provenance: { provenanceDoc: '', source: 'synthesised' },
+    ...overrides,
   };
 }
 

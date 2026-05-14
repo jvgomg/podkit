@@ -1,11 +1,23 @@
 /**
  * Linux device manager implementation
  *
- * Uses lsblk for device enumeration and udisksctl/mount for
+ * Uses lsblk for block-device enumeration and udisksctl/mount for
  * mounting and unmounting devices.
  *
  * Required: lsblk (from util-linux)
  * Optional: udisksctl (from udisks2) for unprivileged mount/eject
+ *
+ * ## USB-only devices
+ *
+ * `findIpodDevices()` returns only iPods that lsblk sees as mounted block
+ * devices. The complementary USB-walk path that surfaces vendor-only Apple
+ * devices (iPod 6G in restore mode, FunctionFS-synthesised Tier-3 personas
+ * with `massStorageBackingFile: null`) lives in
+ * `../usb-enumeration.ts` (`enumerateUsb`, which reads
+ * `/sys/bus/usb/devices/` directly) and is composed with `findIpodDevices()`
+ * by the `device scan` CLI runner. See TASK-334 for the rationale: the join
+ * happens at the scan layer so the same composition works on macOS, where
+ * the USB walk reads `system_profiler` output.
  */
 
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';

@@ -31,6 +31,18 @@ import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js
 import { limactlError, runLimactl, type LimactlResult } from './lima-limactl.js';
 
 // ---------------------------------------------------------------------------
+// Snapshot-unsupported warning (once-per-process, mirrors skipWarningEmitted
+// in tier3-runtime-setup.ts)
+// ---------------------------------------------------------------------------
+
+let snapshotUnsupportedWarningEmitted = false;
+
+/** Reset the once-per-session snapshot-unsupported warning. Tests only — never call from production. */
+export function resetSnapshotUnsupportedWarning(): void {
+  snapshotUnsupportedWarningEmitted = false;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -45,12 +57,19 @@ export interface SnapshotOpts {
    * leave this unset — tests inject a scripted runner.
    */
   subprocess?: SubprocessRunner;
+  /**
+   * Warning emitter DI seam. Used by tests to capture the snapshot-unsupported
+   * warning without touching stderr. Defaults to `console.warn`.
+   */
+  warn?: (msg: string) => void;
 }
 
 /** Options for `listSnapshots`. */
 export interface ListSnapshotsOpts {
   vmName: string;
   subprocess?: SubprocessRunner;
+  /** Warning emitter DI seam — see {@link SnapshotOpts.warn}. */
+  warn?: (msg: string) => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +102,7 @@ export async function createSnapshot(opts: SnapshotOpts): Promise<void> {
     snapshotName,
   ]);
   if (result.exitCode !== 0) {
-    if (isSnapshotUnsupported(result)) return;
+    if (isSnapshotUnsupported(result, opts.warn)) return;
     throw limactlError(`failed to create snapshot '${snapshotName}' on ${vmName}`, result);
   }
 }
@@ -112,7 +131,7 @@ export async function restoreSnapshot(opts: SnapshotOpts): Promise<void> {
     // `snapshotExists() === false` first and gone through the slow path,
     // so reaching this case here would imply a stale check; treat as a
     // no-op rather than fail the run.
-    if (isSnapshotUnsupported(result)) return;
+    if (isSnapshotUnsupported(result, opts.warn)) return;
     throw limactlError(`failed to restore snapshot '${snapshotName}' on ${vmName}`, result);
   }
 }
@@ -157,6 +176,7 @@ export async function snapshotExists(opts: SnapshotOpts): Promise<boolean> {
   const tags = await listSnapshotsSafe({
     vmName: opts.vmName,
     subprocess: opts.subprocess,
+    warn: opts.warn,
   });
   if (tags === null) return false;
   return tags.includes(opts.snapshotName);
@@ -201,7 +221,7 @@ async function listSnapshotsSafe(opts: ListSnapshotsOpts): Promise<string[] | nu
   const result = await runLimactl(subprocess, ['snapshot', 'list', opts.vmName, '--quiet']);
   if (result.exitCode !== 0) {
     if (isInstanceMissing(result)) return null;
-    if (isSnapshotUnsupported(result)) return null;
+    if (isSnapshotUnsupported(result, opts.warn)) return null;
     throw limactlError(`failed to list snapshots on ${opts.vmName}`, result);
   }
   return parseSnapshotList(result.stdout);
@@ -216,14 +236,30 @@ async function listSnapshotsSafe(opts: ListSnapshotsOpts): Promise<string[] | nu
  * warning). Detecting this lets the orchestrator degrade to
  * apply-state.sh-every-time rather than fail every Tier-3 test. See
  * TASK-322.02 implementation notes for the architecture-level discussion.
+ *
+ * Emits a single stderr warning the first time this returns true in the
+ * process lifetime. Subsequent calls are silent. `warn` is a DI seam for
+ * tests; production callers leave it unset (defaults to console.warn).
  */
-function isSnapshotUnsupported(result: LimactlResult): boolean {
+function isSnapshotUnsupported(
+  result: LimactlResult,
+  warn: (msg: string) => void = (msg) => {
+    // eslint-disable-next-line no-console
+    console.warn(msg);
+  }
+): boolean {
   const haystack = `${result.stderr}\n${result.stdout}`.toLowerCase();
-  return (
+  const unsupported =
     haystack.includes('unimplemented') ||
     haystack.includes('not supported') ||
-    haystack.includes('not implemented')
-  );
+    haystack.includes('not implemented');
+  if (unsupported && !snapshotUnsupportedWarningEmitted) {
+    snapshotUnsupportedWarningEmitted = true;
+    warn(
+      '[lima-test-vm] snapshot driver unimplemented (vz); using apply-state.sh fallback — see TASK-322.02.01'
+    );
+  }
+  return unsupported;
 }
 
 function isInstanceMissing(result: LimactlResult): boolean {

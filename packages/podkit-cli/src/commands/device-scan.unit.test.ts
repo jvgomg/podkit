@@ -203,4 +203,89 @@ describe('runDeviceScan', () => {
     // --report writes plain text (the diagnostic report), not JSON.
     expect(stdout.text()).toContain('test-1.2.3');
   });
+
+  it('emits USB-only iPods into the JSON devices array (TASK-334)', async () => {
+    // Regression for TASK-334: a USB-walk-only Apple device (no lsblk entry)
+    // must surface in `--format json` output as a USB-only iPod entry so
+    // downstream consumers (Tier-3 tests, automation) can assert on its
+    // vendor/product descriptor without falling back to `lsusb` cross-checks.
+    //
+    // The fake `enumerateUsb` returns an Apple iPod video 5G descriptor with
+    // no `diskIdentifier`; the fake `findIpodDevices` returns nothing, so
+    // there is no joinable block device. The scan envelope must contain a
+    // single `usbOnly: true` device with the expected vendor/product IDs and
+    // the iPod 5G video model details from the classifier.
+    const ctx = makeContext();
+    const { out, stdout, exitCode } = makeOut();
+
+    // The classifier in `@podkit/core` is the real one in the production
+    // build but we inject a tiny fake that mirrors what `classifyAsIpod`
+    // would return for an Apple iPod 5G video descriptor — keeps the test
+    // hermetic and avoids pulling the full devices-ipod table into the unit.
+    type EnumeratedUsbDevice = Parameters<
+      typeof import('@podkit/core').classifyUsbDevices
+    >[0][number];
+    type RecognizedDevice = ReturnType<typeof import('@podkit/core').classifyUsbDevices>[number];
+
+    const fakeDevice: EnumeratedUsbDevice = {
+      vendorId: '05ac',
+      productId: '1209',
+      // No bus/devnum/serial — typical of the Tier-3 FunctionFS persona
+      // before the descriptor handshake completes.
+    };
+
+    const fakeIpodModel = {
+      displayName: 'iPod video (5th Generation)',
+      generationId: 'video_5g',
+      checksumType: 'hash58',
+      source: 'usb',
+    } as const;
+
+    const fakeClassification: RecognizedDevice = {
+      kind: 'ipod',
+      device: fakeDevice,
+      model: fakeIpodModel,
+      supported: true,
+    } as unknown as RecognizedDevice;
+
+    const deps: DeviceScanDeps = {
+      loadCore: async () =>
+        fakeCore({
+          enumerateUsb: (async () => [fakeDevice]) as typeof import('@podkit/core').enumerateUsb,
+          classifyUsbDevices: (() => [
+            fakeClassification,
+          ]) as typeof import('@podkit/core').classifyUsbDevices,
+          createUsbOnlyReadinessResult: (() => ({
+            level: 'unknown',
+            stages: [],
+            usbModel: fakeIpodModel,
+          })) as typeof import('@podkit/core').createUsbOnlyReadinessResult,
+        }),
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [],
+        }),
+    };
+
+    await runScan(ctx, {}, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<DeviceScanOutput>();
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.devices).toHaveLength(1);
+    const usbOnly = result.devices![0]!;
+    expect(usbOnly.usbOnly).toBe(true);
+    expect(usbOnly.isMounted).toBe(false);
+    expect(usbOnly.mountPoint).toBeUndefined();
+    expect(usbOnly.identifier).toBe('');
+    expect(usbOnly.volumeUuid).toBe('');
+    expect(usbOnly.size).toBe(0);
+    expect(usbOnly.usbDescriptor).toEqual({ vendorId: '05ac', productId: '1209' });
+    expect(usbOnly.volumeName).toBe('iPod video (5th Generation)');
+    expect(usbOnly.model?.displayName).toBe('iPod video (5th Generation)');
+    expect(usbOnly.model?.generationId).toBe('video_5g');
+    expect(usbOnly.model?.source).toBe('usb');
+  });
 });

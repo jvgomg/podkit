@@ -34,10 +34,10 @@
  * # Assertion families
  *
  *   - **device-scan-finds-persona** — `podkit device scan --format json`
- *     must list at least one device once the FunctionFS descriptor handshake
- *     (TASK-322.05.01) is live. We also cross-check with `lsusb -d` to pin
- *     the persona's vendor/product IDs, since the device-scan envelope does
- *     not surface them directly.
+ *     must list the persona as a USB-only iPod with a matching
+ *     `usbDescriptor.vendorId` / `usbDescriptor.productId`. The Linux USB-walk
+ *     path (TASK-334) surfaces vendor-only devices in the scan envelope, so
+ *     no `lsusb -d` cross-check is required.
  *
  *   - **doctor-vs-state** — `podkit doctor --scope system --json` (TASK-333)
  *     must agree with the `SystemState` fixture's `expectedExitCode` and
@@ -126,39 +126,31 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
               expect(invocation.exitCode).toBe(0);
 
               // Envelope shape: { success: true, devices: [...], ... }.
-              // We deliberately DO NOT assert `devices.length > 0` here:
-              // Linux's `podkit device scan` is `lsblk`-based, so it only
-              // sees personas that synthesise a block device (i.e. those
-              // with a `massStorageBackingFile`). The three starter personas
-              // currently have `massStorageBackingFile: null`, so the array
-              // is legitimately empty. The lsusb assertion below pins the
-              // identity check on USB enumeration instead.
               expect(invocation.parsed).toMatchObject({ success: true });
               const parsed = invocation.parsed as {
                 success: true;
-                devices?: Array<{ identifier: string; volumeName?: string }>;
+                devices?: Array<{
+                  identifier?: string;
+                  volumeName?: string;
+                  usbOnly?: boolean;
+                  usbDescriptor?: { vendorId?: string; productId?: string };
+                }>;
               };
               expect(Array.isArray(parsed.devices)).toBe(true);
-            },
-            TIER3_WARM_TIMEOUT_MS
-          );
 
-          it(
-            'lsusb -d <vendor>:<product> finds the persona inside the VM',
-            async () => {
-              // The persona's vendor/product IDs are written to configfs in
-              // 4-digit hex; lsusb -d filters by `vvvv:pppp`. We don't parse
-              // lsusb output — exit code 0 means at least one matching
-              // device is enumerated.
+              // TASK-334: the Linux USB-walk path surfaces vendor-only personas
+              // in the scan envelope. The three starter personas have
+              // `massStorageBackingFile: null`, so they appear as USB-only
+              // entries with `usbOnly: true` and a matching usbDescriptor.
               const vid = persona.usbDescriptor.vendorId.toString(16).padStart(4, '0');
               const pid = persona.usbDescriptor.productId.toString(16).padStart(4, '0');
-              const result = await withPersona({ persona }, () =>
-                limaTestVmRunner.run(`lsusb -d ${vid}:${pid}`, {
-                  timeoutMs: TIER3_WARM_TIMEOUT_MS,
-                })
+              const matchingDevice = (parsed.devices ?? []).find(
+                (d) =>
+                  d.usbDescriptor?.vendorId?.toLowerCase() === vid &&
+                  d.usbDescriptor?.productId?.toLowerCase() === pid
               );
-              expect(result.exitCode).toBe(0);
-              expect(result.stdout.toLowerCase()).toContain(`${vid}:${pid}`);
+              expect(matchingDevice).toBeDefined();
+              expect(matchingDevice?.usbOnly).toBe(true);
             },
             TIER3_WARM_TIMEOUT_MS
           );
