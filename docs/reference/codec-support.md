@@ -96,7 +96,7 @@ The `.m4a` and `.ogg` extensions can hold multiple codecs. podkit inspects the a
 
 ## Planned improvements
 
-podkit's current model treats codec compatibility as the sole gate. It does not yet enforce container compatibility separately — for example, a device that supports `flac` as a codec is assumed to accept FLAC only in its native `.flac` container, not in OGG-FLAC. In practice this assumption holds for the devices podkit currently supports; the wider container-axis enforcement (and a `containerConstraints` field for devices with unusual container support) is planned for a future release. See the [container-aware sync](../../backlog/docs/) PRD for details.
+podkit's current model treats codec compatibility as the sole gate. It does not yet enforce container compatibility separately — for example, a device that supports `flac` as a codec is assumed to accept FLAC only in its native `.flac` container, not in OGG-FLAC. In practice this assumption holds for the devices podkit currently supports; the wider container-axis enforcement (and a `containerConstraints` field for devices with unusual container support) is planned for a future release. The container-aware sync PRD lives in `backlog/docs/doc-037` in the source repo.
 
 ## How podkit detects source codecs
 
