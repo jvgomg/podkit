@@ -599,6 +599,7 @@ export type {
   ClassifyUsbDevicesOptions,
   IpodClassification,
   MassStorageClassification,
+  UnsupportedDeviceClassification,
 } from './device/index.js';
 export { classifyUsbDevices } from './device/index.js';
 

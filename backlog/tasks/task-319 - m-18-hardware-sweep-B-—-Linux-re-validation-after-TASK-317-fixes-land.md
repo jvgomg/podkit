@@ -4,6 +4,7 @@ title: m-18 hardware sweep B' — Linux re-validation after TASK-317 fixes land
 status: To Do
 assignee: []
 created_date: '2026-05-09 20:32'
+updated_date: '2026-05-15 00:16'
 labels:
   - device-capability-architecture
   - hardware-validation
@@ -112,13 +113,14 @@ See AC list. Each AC pointers back to the relevant TASK-317 sub-task; the parent
 
 - [ ] #1 Pre-flight on linka: rsync + `bun install && bun run build --filter podkit` clean. Smoke `node packages/podkit-cli/dist/main.js --version` prints non-empty version.
 - [ ] #2 TASK-317.11 verified on linka: nano 3G alone, nano 3G + nano 2G simultaneously, replug cycles — single entry per device, no double-counts, no phantoms.
-- [ ] #3 TASK-317.12 verified on linka: nano 4G HFS+ refused at add and warned at scan with the documented messaging. nano 3G FAT32 regression intact.
-- [ ] #4 TASK-317.13 verified on linka: rule install + replug grants both USB and SCSI access without sudo from an SSH session. Repair succeeds via USB on nano 3G; SCSI fallback succeeds on nano 2G or mini 2G.
-- [ ] #5 TASK-317.14 verified on linka: pre-rule-install error naming both transports + remediation hint reproduced; post-rule-install success path describes which transport succeeded.
-- [ ] #6 TASK-317.15 verified on linka: no synthetic volumeUuids generated; FAT32 identity stored cleanly; defensive refusal for any non-HFS+ missing-UUID case.
-- [ ] #7 Echo Mini end-to-end on Linux: scan + add + doctor + sync --dry-run + eject. Mass-storage preset capabilities respected.
-- [ ] #8 Per-iPod routine A–H from TASK-313 §3 completed for at least nano 3G + nano 2G + nano 4G (refused) + Echo Mini. iPod 5G TERAPOD + nano 7G + iPhone covered if portable to linka.
-- [ ] #9 Timing comparison vs macOS: USB inquiry + SCSI inquiry + repair sysinfo-extended wall-clock recorded for at least nano 3G and nano 2G; compared against TASK-312 baselines.
-- [ ] #10 `documents/test-devices.md` updated with all linka observations from this re-sweep.
-- [ ] #11 Final summary written naming any new findings + linking to fixes that landed since TASK-313.
+- [ ] #3 TASK-317.12 verified on linka: nano 4G HFS+ refused at `device add` (non-zero exit + JSON code `UNSUPPORTED_FILESYSTEM_ON_LINUX` + documented message); nano 4G HFS+ at `device scan` shows the ⚠ warning with three detail lines, no `Skipped` rows, no `device init` suggestion; nano 7G #2 HFS+ same refusal; nano 3G FAT32 regression intact.
+- [ ] #4 TASK-317.12 macOS spot-check: nano 4G + nano 7G #2 HFS+ continue to add + scan + sync cleanly on macOS (refusal is Linux-gated).
+- [ ] #5 TASK-317.13 verified on linka: rule install + replug grants both USB and SCSI access without sudo from an SSH session. Repair succeeds via USB on nano 3G; SCSI fallback succeeds on nano 2G or mini 2G.
+- [ ] #6 TASK-317.14 verified on linka: pre-rule-install error naming both transports + remediation hint reproduced; post-rule-install success path describes which transport succeeded.
+- [ ] #7 TASK-317.15 verified on linka: no synthetic volumeUuids generated; FAT32 identity stored cleanly; defensive refusal for any non-HFS+ missing-UUID case.
+- [ ] #8 Echo Mini end-to-end on Linux: scan + add + doctor + sync --dry-run + eject. Mass-storage preset capabilities respected.
+- [ ] #9 Per-iPod routine A–H from TASK-313 §3 completed for at least nano 3G + nano 2G + nano 4G (refused) + Echo Mini. iPod 5G TERAPOD + nano 7G + iPhone covered if portable to linka.
+- [ ] #10 Timing comparison vs macOS: USB inquiry + SCSI inquiry + repair sysinfo-extended wall-clock recorded for at least nano 3G and nano 2G; compared against TASK-312 baselines.
+- [ ] #11 `documents/test-devices.md` updated with all linka observations from this re-sweep.
+- [ ] #12 Final summary written naming any new findings + linking to fixes that landed since TASK-313.
 <!-- AC:END -->

@@ -23,6 +23,77 @@ async function ffmpegEncoders(subprocess: SubprocessRunner): Promise<string> {
   return result.stdout;
 }
 
+/**
+ * Pure check logic — accepts an injected subprocess runner and platform string
+ * for unit testing. Exported so Tier-1 tests can drive the matrix without
+ * spawning real ffmpeg.
+ */
+export async function checkVideoEncoderForRunner(
+  subprocess: SubprocessRunner = defaultSubprocessRunner,
+  platform: NodeJS.Platform = process.platform
+): Promise<CheckResult> {
+  let encoders: string;
+  try {
+    encoders = await ffmpegEncoders(subprocess);
+  } catch {
+    return {
+      status: 'skip',
+      summary: 'FFmpeg not available (see FFmpeg check)',
+      repairable: false,
+    };
+  }
+
+  const hasLibx264 = encoders.includes('libx264');
+  const hasVideoToolbox = encoders.includes('h264_videotoolbox');
+  const isDarwin = platform === 'darwin';
+
+  // libx264 works everywhere and is the universal fallback. VideoToolbox is
+  // only used on macOS, but its absence isn't fatal — libx264 covers it.
+  if (hasLibx264) {
+    return {
+      status: 'pass',
+      summary:
+        isDarwin && hasVideoToolbox ? 'libx264 + h264_videotoolbox available' : 'libx264 available',
+      repairable: false,
+      details: { libx264: true, h264_videotoolbox: hasVideoToolbox, platform },
+    };
+  }
+
+  // No libx264. macOS may still get by with VideoToolbox, but we'd rather
+  // libx264 be installed for fallback consistency.
+  if (isDarwin && hasVideoToolbox) {
+    return {
+      status: 'warn',
+      summary: 'h264_videotoolbox only — libx264 missing (recommended for fallback)',
+      repairable: false,
+      details: {
+        libx264: false,
+        h264_videotoolbox: true,
+        platform,
+        repairAdvice:
+          'Install libx264 so video transcoding works without hardware acceleration:\n' +
+          '    brew install x264 && brew reinstall ffmpeg',
+      },
+    };
+  }
+
+  return {
+    status: 'fail',
+    summary: 'No H.264 encoder available — video transcoding will fail',
+    repairable: false,
+    details: {
+      libx264: false,
+      h264_videotoolbox: hasVideoToolbox,
+      platform,
+      repairAdvice:
+        'Install an H.264 encoder:\n' +
+        '    macOS:         brew install ffmpeg (includes libx264)\n' +
+        '    Debian/Ubuntu: sudo apt install ffmpeg (libx264 enabled by default)\n' +
+        '    Alpine:        apk add ffmpeg (libx264 in main repo)',
+    },
+  };
+}
+
 export const videoEncoderCheck: DiagnosticCheck = {
   id: 'video-encoder',
   name: 'Video Encoder (H.264)',
@@ -30,67 +101,6 @@ export const videoEncoderCheck: DiagnosticCheck = {
   scope: 'system',
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
-    let encoders: string;
-    try {
-      encoders = await ffmpegEncoders(defaultSubprocessRunner);
-    } catch {
-      return {
-        status: 'skip',
-        summary: 'FFmpeg not available (see FFmpeg check)',
-        repairable: false,
-      };
-    }
-
-    const hasLibx264 = encoders.includes('libx264');
-    const hasVideoToolbox = encoders.includes('h264_videotoolbox');
-    const isDarwin = process.platform === 'darwin';
-
-    // libx264 works everywhere and is the universal fallback. VideoToolbox is
-    // only used on macOS, but its absence isn't fatal — libx264 covers it.
-    if (hasLibx264) {
-      return {
-        status: 'pass',
-        summary:
-          isDarwin && hasVideoToolbox
-            ? 'libx264 + h264_videotoolbox available'
-            : 'libx264 available',
-        repairable: false,
-        details: { libx264: true, h264_videotoolbox: hasVideoToolbox, platform: process.platform },
-      };
-    }
-
-    // No libx264. macOS may still get by with VideoToolbox, but we'd rather
-    // libx264 be installed for fallback consistency.
-    if (isDarwin && hasVideoToolbox) {
-      return {
-        status: 'warn',
-        summary: 'h264_videotoolbox only — libx264 missing (recommended for fallback)',
-        repairable: false,
-        details: {
-          libx264: false,
-          h264_videotoolbox: true,
-          platform: process.platform,
-          repairAdvice:
-            'Install libx264 so video transcoding works without hardware acceleration:\n' +
-            '    brew install x264 && brew reinstall ffmpeg',
-        },
-      };
-    }
-
-    return {
-      status: 'fail',
-      summary: 'No H.264 encoder available — video transcoding will fail',
-      repairable: false,
-      details: {
-        libx264: false,
-        h264_videotoolbox: hasVideoToolbox,
-        platform: process.platform,
-        repairAdvice:
-          'Install an H.264 encoder:\n' +
-          '    macOS:         brew install ffmpeg (includes libx264)\n' +
-          '    Debian/Ubuntu: sudo apt install ffmpeg (libx264 enabled by default)\n' +
-          '    Alpine:        apk add ffmpeg (libx264 in main repo)',
-      },
-    };
+    return checkVideoEncoderForRunner(defaultSubprocessRunner, process.platform);
   },
 };

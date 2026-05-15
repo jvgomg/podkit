@@ -192,7 +192,10 @@ export { resolveUsbDeviceFromPath, hasCompleteUsbFingerprint } from './usb-path-
 export type { RecognizedDevice, ClassifyUsbDevicesOptions } from './classify.js';
 export { classifyUsbDevices } from './classify.js';
 export type { IpodClassification } from '@podkit/devices-ipod';
-export type { MassStorageClassification } from '@podkit/devices-mass-storage';
+export type {
+  MassStorageClassification,
+  UnsupportedDeviceClassification,
+} from '@podkit/devices-mass-storage';
 
 // Device enumeration framework (provider-based)
 export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';

@@ -1,5 +1,6 @@
 import type { ReadinessLevel, ReadinessStage, ReadinessStageResult } from './types.js';
 import { STAGE_ORDER } from './types.js';
+import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from '@podkit/devices-ipod';
 
 export function skipRemaining(stages: ReadinessStageResult[], fromIndex: number): void {
   for (let i = fromIndex; i < STAGE_ORDER.length; i++) {
@@ -98,12 +99,81 @@ const READINESS_RULES: ReadinessRule[] = [
   },
 ];
 
-export function determineLevel(stages: ReadinessStageResult[]): ReadinessLevel {
+/**
+ * Result of the readiness cascade. When `level === 'unsupported'`, the
+ * `unsupportedReason` field carries the canonical human-readable text.
+ */
+export interface DetermineLevelResult {
+  level: ReadinessLevel;
+  unsupportedReason?: string;
+}
+
+/**
+ * USB descriptor inputs that let the cascade detect "recognised but not
+ * supported" devices. When present, the unsupported short-circuit runs
+ * before stage rules so the cascade does not collapse to `'unknown'` or a
+ * stage-level fail for a device whose USB identity is already a known
+ * rejection.
+ */
+export interface DetermineLevelContext {
+  /** Bare-hex Apple vendor ID (`05ac`) if known; lower-case, no `0x`. */
+  vendorId?: string;
+  /** Bare-hex product ID for the unsupported-table lookup. */
+  productId?: string;
+  /**
+   * Pre-computed rejection reason from a non-Apple classifier (mass-storage
+   * vendor with no preset). Wins over the Apple table lookup because the
+   * classifier owns the wording for non-Apple devices.
+   */
+  unsupportedReason?: string;
+}
+
+const APPLE_VENDOR_ID = '05ac';
+
+function normaliseHex(id: string): string {
+  return id.toLowerCase().replace(/^0x/, '');
+}
+
+/**
+ * Compute the readiness level for a completed stage list.
+ *
+ * Two overloads — the legacy stages-only form preserves backwards-compatible
+ * `ReadinessLevel` returns for existing call sites; the contextual form
+ * returns a `DetermineLevelResult` so the unsupported reason can be
+ * surfaced alongside `level: 'unsupported'`.
+ */
+export function determineLevel(stages: ReadinessStageResult[]): ReadinessLevel;
+export function determineLevel(
+  stages: ReadinessStageResult[],
+  context: DetermineLevelContext
+): DetermineLevelResult;
+export function determineLevel(
+  stages: ReadinessStageResult[],
+  context?: DetermineLevelContext
+): ReadinessLevel | DetermineLevelResult {
+  // ── Unsupported short-circuit ──────────────────────────────────────────
+  if (context) {
+    let reason: string | undefined = context.unsupportedReason;
+    if (!reason && context.productId !== undefined) {
+      const isApple =
+        context.vendorId === undefined || normaliseHex(context.vendorId) === APPLE_VENDOR_ID;
+      if (isApple) {
+        const pid = normaliseHex(context.productId);
+        reason = lookupUnsupportedReason(pid) ?? lookupIosRangeFallbackReason(pid) ?? undefined;
+      }
+    }
+    if (reason) {
+      return { level: 'unsupported', unsupportedReason: reason };
+    }
+  }
+
   const byStage = new Map(stages.map((s) => [s.stage, s]));
 
   for (const rule of READINESS_RULES) {
-    if (rule.match(byStage)) return rule.level;
+    if (rule.match(byStage)) {
+      return context ? { level: rule.level } : rule.level;
+    }
   }
 
-  return 'unknown';
+  return context ? { level: 'unknown' } : 'unknown';
 }

@@ -38,6 +38,13 @@ export {
   type ClassifiableUsbDevice as MassStorageClassifiableUsbDevice,
 } from './classify.js';
 
+// Recognised-but-unsupported classifier (Sony Walkman, …)
+export {
+  classifyAsUnsupportedDevice,
+  UNSUPPORTED_VENDORS,
+  type UnsupportedDeviceClassification,
+} from './unsupported.js';
+
 // Provider
 export { createMassStorageProvider } from './provider.js';
 

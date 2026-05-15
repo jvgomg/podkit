@@ -25,6 +25,7 @@ import type {
   ReadinessResult,
   ReadinessStageResult,
   RecognizedDevice,
+  UnsupportedDeviceClassification,
 } from '@podkit/core';
 
 import { bold, formatBytes, formatNumber } from '../output/index.js';
@@ -34,6 +35,7 @@ import {
   formatIssueLines,
   formatReadinessLevel,
   formatReadinessSummaryLines,
+  formatUnsupportedReason,
 } from './readiness-display.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -83,6 +85,14 @@ export interface DeviceScanInput {
   usbOnlyIpods: IpodClassification<EnumeratedUsbDevice>[];
   /** Mass-storage devices recognised by `classifyAsMassStorage`. */
   massStorageDevices: MassStorageRecognized[];
+  /**
+   * Vendor-recognised but no preset registered (Sony Walkman, …). Rendered
+   * as USB-only entries with `level: 'unsupported'` + the canonical reason.
+   * Optional for backwards compatibility with older callers; new callers
+   * should pass through any `kind: 'unsupported'` classifications from
+   * `classifyUsbDevices`.
+   */
+  unsupportedDevices?: UnsupportedDeviceClassification<EnumeratedUsbDevice>[];
   /** Devices in the user's config that were NOT seen during the scan. */
   configuredDevices: ConfiguredDeviceSummary[];
   /** Whether the platform's device manager supports enumeration. */
@@ -109,15 +119,19 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
     ipods,
     usbOnlyIpods,
     massStorageDevices,
+    unsupportedDevices,
     configuredDevices,
     isSupportedPlatform,
     createUsbOnlyReadinessResult,
   } = input;
 
+  const unsupportedList = unsupportedDevices ?? [];
+
   const hasAnyDevices =
     ipods.length > 0 ||
     usbOnlyIpods.length > 0 ||
     massStorageDevices.length > 0 ||
+    unsupportedList.length > 0 ||
     configuredDevices.length > 0;
 
   if (!hasAnyDevices) {
@@ -145,12 +159,18 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
     pushMassStorageRow(lines, recognised);
   }
 
+  // Recognised-but-unsupported (Sony Walkman, …).
+  for (const recognised of unsupportedList) {
+    pushUnsupportedRow(lines, recognised);
+  }
+
   // No-detected-devices footer (only when configured devices exist alongside
   // an otherwise-empty bus, on a supported platform).
   if (
     ipods.length === 0 &&
     usbOnlyIpods.length === 0 &&
     massStorageDevices.length === 0 &&
+    unsupportedList.length === 0 &&
     isSupportedPlatform
   ) {
     lines.push('No iPod devices found.');
@@ -231,6 +251,20 @@ function pushUsbOnlyIpodRow(
   lines.push('');
 }
 
+function pushUnsupportedRow(
+  lines: string[],
+  recognised: UnsupportedDeviceClassification<EnumeratedUsbDevice>
+): void {
+  const label = recognised.family ?? 'Unsupported device';
+  const vid = recognised.device.vendorId;
+  const pid = recognised.device.productId;
+  lines.push(`  ${bold(label)} (USB ${vid}:${pid})`);
+  lines.push('');
+  lines.push('  This device is not supported by podkit.');
+  lines.push(`  ${recognised.reason}`);
+  lines.push('');
+}
+
 function pushMassStorageRow(lines: string[], recognised: MassStorageRecognized): void {
   const presetDisplayName = getDeviceTypeDisplayName(recognised.presetId);
   if (recognised.device.diskIdentifier) {
@@ -263,6 +297,9 @@ function pushReadinessBlock(
       parts.push(`${formatBytes(readiness.summary.freeBytes)} free`);
     }
     lines.push(`  Ready — ${parts.join(', ')}`);
+  } else if (readiness.level === 'unsupported') {
+    lines.push(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
+    lines.push(`  ${formatUnsupportedReason(readiness.unsupportedReason)}`);
   } else {
     lines.push(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
   }

@@ -28,6 +28,29 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   const { device } = input;
   const stages: ReadinessStageResult[] = [];
 
+  // Unsupported short-circuit. When the caller has already classified the
+  // device as "recognised but not supported" (Apple unsupported-PID table,
+  // iOS range fallback, non-Apple USB with no preset), don't run the rest
+  // of the cascade — there's nothing for the stage probes to discover.
+  if (input.unsupportedReason) {
+    stages.push({
+      stage: 'usb',
+      status: 'fail',
+      summary: 'Device not supported',
+      details: {
+        identifier: device.identifier,
+        unsupportedReason: input.unsupportedReason,
+      },
+    });
+    skipRemaining(stages, 1);
+    return {
+      level: 'unsupported',
+      stages,
+      unsupportedReason: input.unsupportedReason,
+      ...(input.usbModel ? { usbModel: input.usbModel } : {}),
+    };
+  }
+
   // Stage 1: USB Connected
   // If we have a PlatformDeviceInfo, the device was discovered by the OS
   stages.push({
@@ -186,6 +209,36 @@ export function createUsbOnlyReadinessResult(
   classification: IpodClassification<EnumeratedUsbDevice>
 ): ReadinessResult {
   const { device, model } = classification;
+
+  // Unsupported short-circuit: an Apple-vendor PID that lives in the
+  // unsupported-PID table (or the iOS range fallback) is classified with
+  // `supported: false` and a canonical `notSupportedReason`. Surface the
+  // new level + reason instead of pretending the device only needs a
+  // partition table.
+  if (classification.supported === false && classification.notSupportedReason) {
+    const reason = classification.notSupportedReason;
+    const stages: ReadinessStageResult[] = [
+      {
+        stage: 'usb',
+        status: 'fail',
+        summary: 'Device not supported',
+        details: {
+          vendorId: device.vendorId,
+          productId: device.productId,
+          modelName: model?.displayName,
+          unsupportedReason: reason,
+        },
+      },
+    ];
+    skipRemaining(stages, 1);
+    return {
+      level: 'unsupported',
+      stages,
+      unsupportedReason: reason,
+      ...(model ? { usbModel: model } : {}),
+    };
+  }
+
   const stages: ReadinessStageResult[] = [
     {
       stage: 'usb',

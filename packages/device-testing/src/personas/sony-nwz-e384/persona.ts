@@ -77,12 +77,15 @@ export const sonyNwzE384: DevicePersona = {
   // embedded only).
   expectedCapabilities: null,
 
-  // Provisional rejection-pattern stub mirrors the touch 5G shape. `ReadinessLevel`
-  // does not include 'unsupported'; using 'unknown' for now. Re-derive
-  // during compute-expected pass when the mass-storage rejection path's
-  // exact return shape is confirmed.
+  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded a canonical
+  // reason from the mass-storage classifier's vendor-recognised-but-no-preset
+  // table (`packages/devices-mass-storage/src/unsupported.ts`). The exact
+  // reason text comes from the Sony entry's `reason(vendorId, productId)`
+  // template — keep this string in sync with that table.
   expectedReadiness: {
-    level: 'unknown',
+    level: 'unsupported',
+    unsupportedReason:
+      'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
     stages: [
       {
         stage: 'usb',
@@ -90,7 +93,7 @@ export const sonyNwzE384: DevicePersona = {
         summary: 'Device not supported',
         details: {
           unsupportedReason:
-            'Sony Walkman NWZ-E380 series is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
+            'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
         },
       },
     ],

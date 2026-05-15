@@ -101,6 +101,7 @@ export async function runDeviceInit(
 
   // Run readiness check to determine device state
   let readinessLevel: ReadinessLevel | undefined;
+  let readinessUnsupportedReason: string | undefined;
   if (manager.isSupported) {
     try {
       const ipods = await manager.findIpodDevices();
@@ -108,6 +109,7 @@ export async function runDeviceInit(
       if (matchingIpod) {
         const readiness = await checkReadiness({ device: matchingIpod });
         readinessLevel = readiness.level;
+        readinessUnsupportedReason = readiness.unsupportedReason;
       }
     } catch {
       // Fall through to legacy hasDatabase check if readiness fails
@@ -190,6 +192,22 @@ export async function runDeviceInit(
             'Hardware error detected. Check that the device is properly connected and the cable is working.',
           code: DeviceErrorCodes.HARDWARE_ERROR,
           details: { readinessLevel },
+        });
+      }
+      case 'unsupported': {
+        const reason =
+          readinessUnsupportedReason ?? 'This device is not on podkit’s supported-device list.';
+        throw new CliError({
+          message: `Device is not supported by podkit. ${reason}`,
+          code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+          details: { readinessLevel, unsupportedReason: readinessUnsupportedReason },
+          printText: (o) => {
+            o.error('Device is not supported by podkit.');
+            o.newline();
+            o.print(reason);
+            o.newline();
+            o.print('See: https://jvgomg.github.io/podkit/devices/supported-devices');
+          },
         });
       }
       default:

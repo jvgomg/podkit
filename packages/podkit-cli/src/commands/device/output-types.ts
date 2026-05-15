@@ -157,6 +157,8 @@ export interface DeviceInfoSuccess {
     }>;
     model?: DeviceModelOutput;
     summary?: { trackCount: number; freeBytes?: number; totalBytes?: number };
+    /** Canonical rejection reason; only set when level === 'unsupported'. */
+    unsupportedReason?: string;
   };
 }
 

@@ -103,6 +103,8 @@ interface DoctorOutput {
       summary: string;
       details?: Record<string, unknown>;
     }>;
+    /** Canonical rejection reason; only set when level === 'unsupported'. */
+    unsupportedReason?: string;
   };
   checks: DoctorCheckOutput[];
 }
@@ -284,136 +286,160 @@ export const doctorCommand = new Command('doctor')
       .default('all')
   )
   .action(async (options: DoctorOptions) => {
-    const { config, globalOpts } = getContext();
+    const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-
-    await runAction(out, async () => {
-      const scope: DoctorScope = options.scope ?? 'all';
-
-      // System-only mode: no device or registered config required. Repair
-      // owns its own scope detection (system-scope repairs already bypass
-      // device resolution today), so --repair always falls through.
-      if (scope === 'system' && !options.repair) {
-        await runSystemOnlyDoctor(out, options);
-        return;
-      }
-
-      // Device-only mode without a repair must have an explicit device —
-      // mirror the message style used by --repair to keep UX consistent.
-      if (scope === 'device' && !options.repair && !globalOpts.device) {
-        throw new CliError({
-          message:
-            'Doctor --scope device requires an explicit device. Use -d <name|path> to specify which iPod to check.',
-          code: DoctorErrorCodes.DEVICE_REQUIRED,
-        });
-      }
-
-      // Repair mode: validate requirements before resolving device
-      if (options.repair) {
-        // Look up the check
-        const core = await loadCoreOrFail({}, DoctorErrorCodes.CORE_LOAD_FAILED);
-        const { getDiagnosticCheck, getDiagnosticCheckIds } = core;
-
-        const check = getDiagnosticCheck(options.repair);
-        if (!check) {
-          const available = getDiagnosticCheckIds();
-          throw new CliError({
-            message: `Unknown check ID: "${options.repair}". Available checks: ${available.join(', ')}`,
-            code: DoctorErrorCodes.UNKNOWN_CHECK,
-            details: { checkId: options.repair, available },
-          });
-        }
-
-        if (!check.repair) {
-          throw new CliError({
-            message: `Check "${options.repair}" does not support automatic repair.`,
-            code: DoctorErrorCodes.CHECK_NOT_REPAIRABLE,
-            details: { checkId: options.repair },
-          });
-        }
-
-        // System-level repairs (scope === 'system' with no requirements) don't need a device.
-        // Run them immediately without device resolution or database access.
-        const isSystemRepair = check.scope === 'system' && check.repair.requirements.length === 0;
-
-        if (isSystemRepair) {
-          await runSystemRepair(check, options, out);
-          return;
-        }
-
-        // Map domain requirements to CLI validation
-        if (!globalOpts.device) {
-          throw new CliError({
-            message:
-              'Repair requires an explicit device. Use -d <name|path> to specify which iPod to repair.',
-            code: DoctorErrorCodes.DEVICE_REQUIRED,
-          });
-        }
-
-        const needsSource = check.repair.requirements.includes('source-collection');
-        if (needsSource && !options.collection) {
-          const available = Object.keys(config.music ?? {});
-          const hint =
-            available.length > 0 ? ` Available collections: ${available.join(', ')}` : '';
-          throw new CliError({
-            message: `Repair "${options.repair}" requires a source collection. Use -c <name> to specify.${hint}`,
-            code: DoctorErrorCodes.COLLECTION_REQUIRED,
-            details: { checkId: options.repair, available },
-          });
-        }
-
-        // Resolve device and run repair
-        const resolved = await resolveDevice(out);
-        if ('error' in resolved) {
-          throw new CliError({
-            message: resolved.error,
-            code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
-          });
-        }
-
-        const isMassStorage =
-          resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
-        if (isMassStorage) {
-          // Check if this repair check applies to mass-storage
-          const applicableTypes = check.applicableTo ?? ['ipod'];
-          if (!applicableTypes.includes('mass-storage')) {
-            throw new CliError({
-              message: `Repair "${options.repair}" is not available for mass-storage devices.`,
-              code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
-              details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type },
-            });
-          }
-          await runMassStorageRepair(
-            resolved.path,
-            resolved.deviceConfig!,
-            check,
-            options,
-            out,
-            config
-          );
-          return;
-        }
-
-        await runRepair(resolved.path, check, options, out, config);
-        return;
-      }
-
-      // Diagnostic-only mode
-      const resolved = await resolveDevice(out);
-      if ('error' in resolved) {
-        throw new CliError({
-          message: resolved.error,
-          code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
-        });
-      }
-
-      await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options);
-    });
+    await runAction(out, () => runDoctorAction(options, out));
   });
+
+/**
+ * Body of the `podkit doctor` action callback, extracted so the flag-matrix
+ * tests (TASK-307) can drive it in-process with stubbed deps. Production goes
+ * through `.action()` above; tests construct their own `OutputContext` (with
+ * `BufferSink` + `BufferExitCodeSink`) and pass injectable deps.
+ *
+ * The flow is unchanged from the previous inline body — this function is a
+ * pure extraction.
+ */
+export async function runDoctorAction(
+  options: DoctorOptions,
+  out: OutputContext,
+  deps: DoctorDeps = {}
+): Promise<void> {
+  const { config, globalOpts } = getContext();
+  const scope: DoctorScope = options.scope ?? 'all';
+
+  // System-only mode: no device or registered config required. Repair
+  // owns its own scope detection (system-scope repairs already bypass
+  // device resolution today), so --repair always falls through.
+  if (scope === 'system' && !options.repair) {
+    await runSystemOnlyDoctor(out, options, deps);
+    return;
+  }
+
+  // Device-only mode without a repair must have an explicit device —
+  // mirror the message style used by --repair to keep UX consistent.
+  if (scope === 'device' && !options.repair && !globalOpts.device) {
+    throw new CliError({
+      message:
+        'Doctor --scope device requires an explicit device. Use -d <name|path> to specify which iPod to check.',
+      code: DoctorErrorCodes.DEVICE_REQUIRED,
+    });
+  }
+
+  // Repair mode: validate requirements before resolving device
+  if (options.repair) {
+    // Look up the check
+    const core = await loadCoreOrFail(deps, DoctorErrorCodes.CORE_LOAD_FAILED);
+    const { getDiagnosticCheck, getDiagnosticCheckIds } = core;
+
+    const check = getDiagnosticCheck(options.repair);
+    if (!check) {
+      const available = getDiagnosticCheckIds();
+      throw new CliError({
+        message: `Unknown check ID: "${options.repair}". Available checks: ${available.join(', ')}`,
+        code: DoctorErrorCodes.UNKNOWN_CHECK,
+        details: { checkId: options.repair, available },
+      });
+    }
+
+    if (!check.repair) {
+      throw new CliError({
+        message: `Check "${options.repair}" does not support automatic repair.`,
+        code: DoctorErrorCodes.CHECK_NOT_REPAIRABLE,
+        details: { checkId: options.repair },
+      });
+    }
+
+    // System-level repairs (scope === 'system' with no requirements) don't need a device.
+    // Run them immediately without device resolution or database access.
+    const isSystemRepair = check.scope === 'system' && check.repair.requirements.length === 0;
+
+    if (isSystemRepair) {
+      await runSystemRepair(check, options, out);
+      return;
+    }
+
+    // Map domain requirements to CLI validation
+    if (!globalOpts.device) {
+      throw new CliError({
+        message:
+          'Repair requires an explicit device. Use -d <name|path> to specify which iPod to repair.',
+        code: DoctorErrorCodes.DEVICE_REQUIRED,
+      });
+    }
+
+    const needsSource = check.repair.requirements.includes('source-collection');
+    if (needsSource && !options.collection) {
+      const available = Object.keys(config.music ?? {});
+      const hint = available.length > 0 ? ` Available collections: ${available.join(', ')}` : '';
+      throw new CliError({
+        message: `Repair "${options.repair}" requires a source collection. Use -c <name> to specify.${hint}`,
+        code: DoctorErrorCodes.COLLECTION_REQUIRED,
+        details: { checkId: options.repair, available },
+      });
+    }
+
+    // Resolve device and run repair
+    const resolved = await resolveDevice(out, deps);
+    if ('error' in resolved) {
+      throw new CliError({
+        message: resolved.error,
+        code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
+      });
+    }
+
+    const isMassStorage =
+      resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
+    if (isMassStorage) {
+      // Check if this repair check applies to mass-storage
+      const applicableTypes = check.applicableTo ?? ['ipod'];
+      if (!applicableTypes.includes('mass-storage')) {
+        throw new CliError({
+          message: `Repair "${options.repair}" is not available for mass-storage devices.`,
+          code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
+          details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type },
+        });
+      }
+      await runMassStorageRepair(
+        resolved.path,
+        resolved.deviceConfig!,
+        check,
+        options,
+        out,
+        config
+      );
+      return;
+    }
+
+    await runRepair(resolved.path, check, options, out, config);
+    return;
+  }
+
+  // Diagnostic-only mode
+  const resolved = await resolveDevice(out, deps);
+  if ('error' in resolved) {
+    throw new CliError({
+      message: resolved.error,
+      code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
+    });
+  }
+
+  await runDoctorDiagnostics(resolved.path, resolved.deviceConfig, out, options, deps);
+}
 
 // ── Diagnostics ─────────────────────────────────────────────────────────────
 
-async function runDoctorDiagnostics(
+/**
+ * Run iPod / mass-storage diagnostics for a resolved device path.
+ *
+ * Exported for Tier-1 unit tests (TASK-308) — production callers go through
+ * the Commander action above. Tests pass `deps.loadCore` to inject a fake
+ * `@podkit/core` module and `deps.getDeviceManager` for the readiness path.
+ * For iPod tests that need to drive past `core.IpodDatabase.open`, supply a
+ * fake `IpodDatabase` on the stubbed core module — the function calls
+ * `core.IpodDatabase.open(devicePath)` and only reads `.getInfo()` + `.close()`.
+ */
+export async function runDoctorDiagnostics(
   devicePath: string,
   deviceConfig: DeviceConfig | undefined,
   out: OutputContext,
@@ -617,6 +643,9 @@ async function runDoctorDiagnostics(
           summary: s.summary,
           details: s.details,
         })),
+        ...(readinessResult.unsupportedReason
+          ? { unsupportedReason: readinessResult.unsupportedReason }
+          : {}),
       }
     : undefined;
 
@@ -647,6 +676,28 @@ async function runDoctorDiagnostics(
     readiness: readinessOutput,
     checks: checksOutput,
   };
+
+  // Unsupported short-circuit: the device is recognised but podkit refuses
+  // to operate on it. Skip the rest of the rendering — there's no useful
+  // database section, no repair to suggest. Render a focused message and
+  // emit exit 1 (distinguished from exit 2 "issues found"; this is
+  // closer to a hard rejection than a fixable issue).
+  if (readinessResult?.level === 'unsupported') {
+    out.result<DoctorOutput>(output, () => {
+      out.print(`podkit doctor — checking iPod at ${devicePath}`);
+      out.newline();
+      out.error('Device is not supported by podkit.');
+      if (readinessResult.unsupportedReason) {
+        out.newline();
+        out.print(readinessResult.unsupportedReason);
+      }
+      out.newline();
+      out.print('See: https://jvgomg.github.io/podkit/devices/supported-devices');
+    });
+    opened?.ipod?.close();
+    out.setExitCode(1);
+    return;
+  }
 
   // CSV format: dump orphan file list and exit
   if (options.format === 'csv') {

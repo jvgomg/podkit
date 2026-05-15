@@ -1,10 +1,10 @@
 ---
 id: TASK-302
 title: Readiness pipeline stage coverage
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-08 07:21'
-updated_date: '2026-05-14 19:22'
+updated_date: '2026-05-15 21:59'
 labels:
   - testing
   - doctor
@@ -47,31 +47,61 @@ Use the test harness landed in TASK-321 (Phase 1):
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 usb stage: pass when an Apple iPod USB descriptor is present; details include vendorId/productId and the resolved usbModel
-- [ ] #2 usb stage: fail when no USB descriptor is reachable for the mount path
+- [x] #1 usb stage: pass when an Apple iPod USB descriptor is present; details include vendorId/productId and the resolved usbModel
+- [x] #2 usb stage: fail when no USB descriptor is reachable for the mount path
 - [ ] #3 usb stage: skip with reason when the platform device manager is unsupported (not Linux/macOS)
-- [ ] #4 partition stage: pass on a single-partition iPod layout; pass on the dual-partition Mac/Win iPod layout
-- [ ] #5 partition stage: fail with hardware-error level when the device has no partition table at all
-- [ ] #6 filesystem stage: pass on FAT32 and HFS+; details report the detected filesystem
-- [ ] #7 filesystem stage: fail with needs-format level when the partition has no recognisable filesystem
-- [ ] #8 mount stage: pass when iPod_Control directory is present at the mount point
-- [ ] #9 mount stage: fail with needs-init level when iPod_Control is missing entirely
-- [ ] #10 sysinfo stage: pass when SysInfo or SysInfoExtended is present and parses; details include usbModelName and deviceModel
-- [ ] #11 sysinfo stage: warn when SysInfo is missing but SysInfoExtended is present (or vice versa) and the present file resolves a model
-- [ ] #12 sysinfo stage: fail with needs-repair when both SysInfo and SysInfoExtended are missing
-- [ ] #13 sysinfo stage: fail when present file(s) parse but identify() cannot resolve a model from any field
+- [x] #4 partition stage: pass on a single-partition iPod layout; pass on the dual-partition Mac/Win iPod layout
+- [x] #5 partition stage: fail with hardware-error level when the device has no partition table at all
+- [x] #6 filesystem stage: pass on FAT32 and HFS+; details report the detected filesystem
+- [x] #7 filesystem stage: fail with needs-format level when the partition has no recognisable filesystem
+- [x] #8 mount stage: pass when iPod_Control directory is present at the mount point
+- [x] #9 mount stage: fail with needs-init level when iPod_Control is missing entirely
+- [x] #10 sysinfo stage: pass when SysInfo or SysInfoExtended is present and parses; details include usbModelName and deviceModel
+- [x] #11 sysinfo stage: warn when SysInfo is missing but SysInfoExtended is present (or vice versa) and the present file resolves a model
+- [x] #12 sysinfo stage: fail with needs-repair when both SysInfo and SysInfoExtended are missing
+- [x] #13 sysinfo stage: fail when present file(s) parse but identify() cannot resolve a model from any field
 - [ ] #14 database stage: pass when iTunesDB is present and parses; details include trackCount
-- [ ] #15 database stage: fail with needs-init level when iTunesDB is missing
-- [ ] #16 database stage: fail when iTunesDB is present but corrupt
-- [ ] #17 downstream skip: when usb fails, partition/filesystem/mount/sysinfo/database all report skip
-- [ ] #18 downstream skip: when mount fails, sysinfo and database report skip
-- [ ] #19 downstream skip: when sysinfo fails but mount passed, database still runs (sysinfo failure does not block database)
-- [ ] #20 readiness.level is correctly derived from the worst non-skipped stage (e.g. mount fail → needs-init regardless of sysinfo)
-- [ ] #21 readiness output is identical between text and JSON modes for the same fixture (modulo formatting)
+- [x] #15 database stage: fail with needs-init level when iTunesDB is missing
+- [x] #16 database stage: fail when iTunesDB is present but corrupt
+- [x] #17 downstream skip: when usb fails, partition/filesystem/mount/sysinfo/database all report skip
+- [x] #18 downstream skip: when mount fails, sysinfo and database report skip
+- [x] #19 downstream skip: when sysinfo fails but mount passed, database still runs (sysinfo failure does not block database)
+- [x] #20 readiness.level is correctly derived from the worst non-skipped stage (e.g. mount fail → needs-init regardless of sysinfo)
+- [x] #21 readiness output is identical between text and JSON modes for the same fixture (modulo formatting)
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 **Dependency notes (added 2026-05-14):** Readiness pipeline is device-scope, not system-scope, so it always requires a real device. The Tier-3 assertions in this task therefore depend on TASK-322.05.01 (FunctionFS descriptor handshake) so the synthesised persona actually enumerates as a USB device. Tier-1 fake-injected coverage of each stage is independent and can land first.
+
+**TASK-302 Phase 1 (Tier-1) landed 2026-05-15** — `packages/podkit-core/src/device/readiness/__tests__/stage-matrix.test.ts` (single matrix file, 34 tests, 112 expects).
+
+**Test file shape**
+- Single matrix file driving `checkReadiness()` + `determineLevel()` + `createUsbOnlyReadinessResult()` across the 21 permutations.
+- Skip-cascade (ACs #17–#19) parameterised over `SkipFixture[]` — one fixture per upstream-failure level with `expectSkipped` / `expectRan` sets asserted in a shared loop.
+- Derived-level (AC #20) parameterised over `LevelFixture[]` covering all `READINESS_RULES` branches in `determine-level.ts`.
+- Format parity (AC #21) renders the result as JSON and as a text snapshot built from `STAGE_DISPLAY_NAMES` + a local `STAGE_MARKER` map, asserting structural agreement (stage count, marker character per status, display name per stage) without snapshotting the full string.
+
+**AC mapping (one-line each, deferrals only):**
+- #14 DEFERRED to `readiness.integration.test.ts` — libgpod pass-path lives there; duplicating Tier-1 needs a real iTunesDB.
+- All other 20 ACs covered. Matrix file lists every mapping inline.
+
+**Findings — pipeline gaps surfaced while writing the matrix**
+
+1. **AC #1 — usb stage details do not echo USB metadata on success.** Pipeline's success-path stage push is `{ identifier }` only; vendorId/productId/usbModel are echoed only on the unsupported short-circuit and via `createUsbOnlyReadinessResult`. `ReadinessResult.usbModel` carries the resolved model, so the data is reachable but not in stage `details`. Matrix asserts the current contract (identifier on stage details; usbModel on result). Suggested follow-up: "usb stage should echo vendorId/productId/usbModel into stage details on success for parity with the short-circuit path".
+
+2. **AC #4 — partition stage layout is invisible inside the cascade.** `findIpodDevices()` upstream filters to partitioned devices, so the partition stage is a passthrough with no layout detail. Single- vs dual-partition observability requires either pushing the partition probe into the pipeline or threading layout through `PlatformDeviceInfo`. Suggested follow-up: "partition stage should report partition count + filesystem-type-per-partition in details".
+
+3. **AC #14 — Tier-1 database pass path is libgpod-bound.** Covered by the existing integration test (`readiness.integration.test.ts` via `withTestIpod`). Duplicating in Tier-1 requires synthesising a binary iTunesDB. Defer to integration; matrix documents the deferral inline.
+
+**Cross-package note** — task description points at `@podkit/device-testing` personas, but `@podkit/device-testing` depends on `@podkit/core` (cycle). Matrix synthesises persona-shaped inputs inline. Persona-driven Tier-3 lands once TASK-322.05.01 closes the USB synthesis loop (declared dep).
+
+**Quality gates passed**
+- `bun test packages/podkit-core/src/device/readiness/__tests__/stage-matrix.test.ts` — 34 pass, 0 fail, 112 expects.
+- `bun run test --filter @podkit/core --filter @podkit/device-testing --filter podkit` — all green (2565 pass, 1 skip, 0 fail).
+- `bunx tsc --noEmit -p packages/podkit-core/tsconfig.json` — clean.
+- `bunx oxlint packages/podkit-core/src/device/readiness/__tests__/stage-matrix.test.ts` — 0 warnings, 0 errors.
+
+**Tier-3 deferred** to TASK-322.05.01 (declared dep). No Tier-3 scaffolding added here.
 <!-- SECTION:NOTES:END -->

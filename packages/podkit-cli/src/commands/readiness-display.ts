@@ -42,9 +42,25 @@ export function formatReadinessLevel(level: ReadinessLevel, deviceName: string):
       return 'Needs partitioning \u2014 see: podkit device init';
     case 'hardware-error':
       return 'Hardware error \u2014 device may be disconnected or failing';
+    case 'unsupported':
+      return 'Not supported \u2014 podkit cannot operate on this device';
     default:
       return 'Unknown state';
   }
+}
+
+/**
+ * Render a one-liner for an `unsupported` readiness result.
+ *
+ * Doctor / device info / device scan all share the same prompt so users see
+ * a consistent message regardless of where the rejection surfaces. The
+ * reason text comes from `ReadinessResult.unsupportedReason` (canonical
+ * source \u2014 Apple unsupported-PID table or non-Apple classifier).
+ */
+export function formatUnsupportedReason(reason: string | undefined): string {
+  return reason
+    ? `Reason: ${reason}`
+    : 'Reason: this device is not on podkit\u2019s supported-device list.';
 }
 
 // ── Issue type ──────────────────────────────────────────────────────────────

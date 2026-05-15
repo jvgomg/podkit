@@ -1,9 +1,10 @@
 ---
 id: TASK-317.12
 title: Refuse HFS+ iPods on Linux at `device add`; warn at `device scan`
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 20:30'
+updated_date: '2026-05-15 00:16'
 labels:
   - device-capability-architecture
   - linux
@@ -91,10 +92,72 @@ Other readiness-stage checks are skipped with a clear reason (not "previous chec
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 `podkit device add` against an HFS+ iPod on Linux refuses with a clear message naming the filesystem, explaining the limitation, pointing at a docs link, and noting that macOS supports HFS+. Exit code non-zero. Structured JSON error code (e.g. `unsupported-filesystem-on-linux`) for scripted callers.
-- [ ] #2 `podkit device scan` against an HFS+ iPod on Linux renders the device with a clear `Filesystem not supported on Linux` warning instead of running readiness stages. Wording matches the description. No destructive remediation suggested.
-- [ ] #3 Docs page (or clearly-anchored section) at the linked URL covers: FAT32 supported, HFS+ refused on Linux, why (RW + identity), pointer to external tools for reformatting. Title + URL stable enough that the in-CLI link won't break.
-- [ ] #4 macOS behaviour unchanged: HFS+ iPods continue to add/scan/sync as today. The refusal is gated to `process.platform === 'linux'`.
+- [x] #1 `podkit device add` against an HFS+ iPod on Linux refuses with a clear message naming the filesystem, explaining the limitation, pointing at a docs link, and noting that macOS supports HFS+. Exit code non-zero. Structured JSON error code (e.g. `unsupported-filesystem-on-linux`) for scripted callers.
+- [x] #2 `podkit device scan` against an HFS+ iPod on Linux renders the device with a clear `Filesystem not supported on Linux` warning instead of running readiness stages. Wording matches the description. No destructive remediation suggested.
+- [x] #3 Docs page (or clearly-anchored section) at the linked URL covers: FAT32 supported, HFS+ refused on Linux, why (RW + identity), pointer to external tools for reformatting. Title + URL stable enough that the in-CLI link won't break.
+- [x] #4 macOS behaviour unchanged: HFS+ iPods continue to add/scan/sync as today. The refusal is gated to `process.platform === 'linux'`.
 - [ ] #5 Real-hardware verification: linka + nano 4G (HFS+) refused at add and warned at scan; linka + nano 3G (FAT32) works as before; macOS regression on the full m-18 inventory unchanged. Documented in TASK-313 successor / Linux re-sweep task.
-- [ ] #6 Tests added: unit tests for the platform-gated refusal logic; integration test that exercises a Linux-platform mock with an HFS+ filesystem fixture and asserts on the message wording + exit code.
+- [x] #6 Tests added: unit tests for the platform-gated refusal logic; integration test that exercises a Linux-platform mock with an HFS+ filesystem fixture and asserts on the message wording + exit code.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Implemented in worktree `worktree-agent-a9bfc1d0cce752a3f` (uncommitted, awaiting human commit). 18 files, 854 LOC additions.
+
+**Architecture**
+- New `packages/podkit-core/src/device/filesystem-policy.ts` — single source of truth: `isFilesystemUnsupportedHere(fstype, platform)`, `formatHfsplusOnLinuxRefusal(opts)`, `makeHfsplusOnLinuxUnsupportedReason(opts)`, `LINUX_FILESYSTEMS_DOCS_URL`. All user-facing wording centralised here.
+- Linux platform manager (`platforms/linux.ts`): `fstype` plumbed through `PlatformDeviceInfo`. lsblk UUID-required filter loosened to keep partitions with known fstype but blank UUID — required so HFS+ iPods (UUID blank per kernel limitation) reach the refusal path.
+- Readiness pipeline: new `'unsupported'` level + `ReadinessUnsupportedReason` discriminated payload in `readiness/types.ts`. Pipeline early-returns for HFS+/Linux without invented "Skipped — previous check failed" rows. Discriminator (`kind`) extension-friendly for TASK-331's later iPod-touch / Sony-Walkman cases.
+- CLI `device add` (`commands/device/add.ts`): refusal injected in BOTH iPod branches (explicit `--path` + scan-found) BEFORE any state mutation. New error code `UNSUPPORTED_FILESYSTEM_ON_LINUX`. Path normalization (trailing-slash strip) on the explicit-path lookup.
+- CLI `device scan` rendering (`device-scan-render.ts`): new `pushUnsupportedRow` helper renders the three documented warning lines under a ⚠ headline; no iPod-init suggestion for unsupported devices.
+- Docs: new `docs/devices/linux-filesystems.md` page covering FAT32 supported / HFS+ refused / why / how to reformat (external tools).
+
+**Decisions diverging from the original brief**
+1. Renamed type `UnsupportedReason` → `ReadinessUnsupportedReason` to avoid collision with existing `UnsupportedReason` ('ios_device' | 'buttonless_shuffle' | …) in `device-validation.ts`.
+2. TASK-331's `'unsupported'` readiness level was supposed to land first but is still To Do. Added the minimum surface here; the discriminator makes TASK-331's extension a non-breaking add.
+3. Loosened `parseLsblkJson` UUID-required filter to keep partitions with known fstype + blank UUID. Narrower than removing the filter entirely.
+
+**Reviewer feedback absorbed by team-lead**
+- Trailing-slash normalization on `--path` lookup in `device/add.ts:451-465`.
+- `details.platform` literal `'linux'` → use the in-scope `platform` variable in both refusal sites.
+- Removed `void opts.mountPath;` no-op in `filesystem-policy.ts`.
+- Trimmed JSDoc on `pushUnsupportedRow` in `device-scan-render.ts`.
+
+**Quality gates** (worktree, 2026-05-15)
+- `bun run build --filter @podkit/core --filter podkit` — green (`@podkit/docs-site` build fails on a pre-existing broken link in `docs/reference/codec-support.md`; main has fix `0a0501a`, this branch lacks it; unrelated).
+- `bun run test:unit --filter @podkit/core --filter podkit` — 2477 + 1180 tests pass, 0 fail.
+- `bun run test:integration --filter @podkit/core --filter podkit` — 67 + 12 tests pass, 0 fail.
+
+**AC #5 (real-hardware)** intentionally NOT checked — DEFERRED to TASK-319 (Linux re-sweep). Cannot run from macOS. Will validate on linka with nano 4G HFS+, nano 7G #2 HFS+ (refusals), nano 3G FAT32 (regression), and macOS regression on full m-18 inventory.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Single PR (uncommitted in `worktree-agent-a9bfc1d0cce752a3f`) refusing HFS+ iPods on Linux at `device add` and surfacing a clear filesystem-not-supported warning at `device scan`. macOS unchanged.
+
+**Shipped**
+- `packages/podkit-core/src/device/filesystem-policy.ts` — single source of truth (`isFilesystemUnsupportedHere`, `formatHfsplusOnLinuxRefusal`, `makeHfsplusOnLinuxUnsupportedReason`, `LINUX_FILESYSTEMS_DOCS_URL`).
+- `packages/podkit-core/src/device/platforms/linux.ts` — `fstype` plumbed through `PlatformDeviceInfo`; lsblk filter loosened to keep partitions with known fstype but blank UUID.
+- `packages/podkit-core/src/device/readiness/{types,index}.ts` — new `'unsupported'` readiness level + `ReadinessUnsupportedReason` discriminated payload; pipeline early-returns without invented "Skipped" rows.
+- `packages/podkit-cli/src/commands/device/add.ts` — refusal in BOTH iPod branches before any state mutation, with trailing-slash path normalization on the explicit-`--path` lookup; new `UNSUPPORTED_FILESYSTEM_ON_LINUX` error code.
+- `packages/podkit-cli/src/commands/device-scan-render.ts` — new `pushUnsupportedRow` helper; suppresses the iPod-init suggestion for unsupported devices.
+- `docs/devices/linux-filesystems.md` — new docs page at the canonical URL embedded in the refusal message.
+- Tests: `filesystem-policy.test.ts`, `readiness.test.ts` (4 new), `device-add.unit.test.ts` (4 new), `device-scan-render.unit.test.ts` (3 new), `linux.test.ts` (HFS+ fixture).
+- Changeset: `.changeset/refuse-hfsplus-on-linux.md` — minor bump for `podkit` + `@podkit/core`.
+
+**ACs satisfied**: 1, 2, 3, 4, 6 (code + tests). AC #5 (real-hardware) tracked under TASK-319 AC #3 (linka nano 4G + nano 7G #2 HFS+ refusals + nano 3G FAT32 regression + macOS spot-check).
+
+**Quality gates**: build + 3,657 unit tests + 79 integration tests all green for `@podkit/core` + `podkit`.
+
+**Decisions**
+- No `--force` override — refusal absolute on Linux per "policy decision" framing.
+- TASK-331's `'unsupported'` readiness level was supposed to land first but is To Do; added the minimum surface here, discriminated `kind` makes TASK-331's extension non-breaking.
+- Type renamed `UnsupportedReason` → `ReadinessUnsupportedReason` to dodge collision with existing core type.
+- lsblk UUID filter narrowly widened (kept partitions with known fstype + blank UUID) — narrower than removing the filter entirely.
+
+**Reviewer feedback absorbed by team-lead** (no second worker pass): trailing-slash path normalization; `details.platform` literal `'linux'` → in-scope `platform` variable; removed `void opts.mountPath;` no-op; trimmed verbose JSDoc.
+
+**Hardware verification deferred** to TASK-319 (Linux re-sweep) — verified explicitly in updated AC #3 of that task.
+<!-- SECTION:FINAL_SUMMARY:END -->

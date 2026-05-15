@@ -22,6 +22,14 @@ export type ReadinessLevel =
   | 'needs-format'
   | 'needs-partition'
   | 'hardware-error'
+  /**
+   * The device was recognised (Apple-vendor unsupported PID, non-Apple USB
+   * with no preset, …) but podkit explicitly refuses to operate on it.
+   * Distinct from `'unknown'`, which means the pipeline could not identify
+   * the device at all. The canonical rejection text lives in
+   * `ReadinessResult.unsupportedReason`.
+   */
+  | 'unsupported'
   | 'unknown';
 
 export interface ReadinessResult {
@@ -31,6 +39,13 @@ export interface ReadinessResult {
   usbModel?: IpodModel;
   /** Model from SysInfo/SysInfoExtended (has color, capacity, model number) */
   deviceModel?: IpodModel;
+  /**
+   * Canonical human-readable rejection reason. Set only when
+   * `level === 'unsupported'`. Pulled from the iPod unsupported-PID table,
+   * the iOS-range fallback, or (for non-Apple mass-storage) the
+   * vendor-with-no-preset path.
+   */
+  unsupportedReason?: string;
   summary?: {
     trackCount: number;
     freeBytes?: number;
@@ -58,6 +73,14 @@ export interface ReadinessInput {
    * the handle's lifecycle — readiness will not close it.
    */
   ipod?: IpodDatabase;
+  /**
+   * Optional rejection signal threaded from the iPod / mass-storage
+   * classifier when the device was recognised but is explicitly not
+   * supported by podkit (Apple unsupported-PID table, iOS range fallback,
+   * non-Apple USB with no preset). Sets `level = 'unsupported'` short-circuit
+   * and surfaces the canonical reason on the result.
+   */
+  unsupportedReason?: string;
 }
 
 // ── SysInfo check result ─────────────────────────────────────────────────────

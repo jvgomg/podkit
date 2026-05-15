@@ -215,6 +215,7 @@ export async function runDeviceScan(
   type RecognizedDevice = Awaited<ReturnType<typeof classifyUsbDevices>>[number];
   type IpodRecognized = Extract<RecognizedDevice, { kind: 'ipod' }>;
   type MassStorageRecognized = Extract<RecognizedDevice, { kind: 'mass-storage' }>;
+  type UnsupportedRecognized = Extract<RecognizedDevice, { kind: 'unsupported' }>;
 
   let ipods: Awaited<ReturnType<typeof manager.findIpodDevices>> = [];
   let recognizedDevices: RecognizedDevice[] = [];
@@ -234,6 +235,12 @@ export async function runDeviceScan(
   );
   const massStorageList = recognizedDevices.filter(
     (d): d is MassStorageRecognized => d.kind === 'mass-storage'
+  );
+  // Vendor-recognised but no preset (Sony Walkman, …). Surfaced as USB-only
+  // entries with `level: 'unsupported'` so the user gets a clear rejection
+  // message instead of the device silently vanishing from the scan.
+  const unsupportedRecognizedList = recognizedDevices.filter(
+    (d): d is UnsupportedRecognized => d.kind === 'unsupported'
   );
 
   const ipodUsbByDisk = new Map<string, IpodRecognized>();
@@ -272,6 +279,13 @@ export async function runDeviceScan(
           device: ipod,
           usbConnection: matchedUsb?.device,
           usbModel: matchedUsb?.model,
+          // Thread the rejection reason so the readiness cascade returns
+          // `level: 'unsupported'` for recognised-but-rejected iPods (touch,
+          // iPhone, nano 6G/7G, …) rather than running the rest of the
+          // pipeline against a device that will never mount in disk mode.
+          ...(matchedUsb && matchedUsb.supported === false && matchedUsb.notSupportedReason
+            ? { unsupportedReason: matchedUsb.notSupportedReason }
+            : {}),
         })
       );
     }
@@ -418,12 +432,49 @@ export async function runDeviceScan(
     };
   });
 
-  const devices: DeviceScanDeviceEntry[] = [...blockDevices, ...usbOnlyDevices];
+  // Vendor-recognised, no-preset devices (Sony Walkman, …) — rendered as
+  // USB-only entries with an `unsupported` readiness level + canonical reason.
+  const unsupportedDevices: DeviceScanDeviceEntry[] = unsupportedRecognizedList.map((r) => ({
+    volumeName: r.family ?? '',
+    volumeUuid: '',
+    identifier: '',
+    size: 0,
+    isMounted: false,
+    usbOnly: true,
+    usbDescriptor: {
+      vendorId: r.device.vendorId,
+      productId: r.device.productId,
+      ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
+    },
+    notSupportedReason: r.reason,
+    readiness: {
+      level: 'unsupported',
+      stages: [
+        {
+          stage: 'usb',
+          status: 'fail',
+          summary: 'Device not supported',
+          details: {
+            vendorId: r.device.vendorId,
+            productId: r.device.productId,
+            unsupportedReason: r.reason,
+          },
+        },
+      ],
+    },
+  }));
+
+  const devices: DeviceScanDeviceEntry[] = [
+    ...blockDevices,
+    ...usbOnlyDevices,
+    ...unsupportedDevices,
+  ];
 
   const hasAnyDevices =
     ipods.length > 0 ||
     usbOnlyIpods.length > 0 ||
     massStorageList.length > 0 ||
+    unsupportedRecognizedList.length > 0 ||
     configuredDevices.length > 0;
 
   // Handle --report flag: generate diagnostic report instead of normal output
@@ -474,6 +525,7 @@ export async function runDeviceScan(
     ipods: ipodRows,
     usbOnlyIpods,
     massStorageDevices: massStorageList,
+    unsupportedDevices: unsupportedRecognizedList,
     configuredDevices,
     isSupportedPlatform: manager.isSupported,
     createUsbOnlyReadinessResult,

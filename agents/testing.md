@@ -107,6 +107,59 @@ host-environment checks pass. Tier-3 baseline tests use it to compare a
 SystemState snapshot's `expectedDoctorSystemOutput` against the live VM.
 `--no-system` continues to work but applies only when `--scope` is `all`.
 
+### Doctor exit-code & overall-health semantics
+
+Locked in by [TASK-308](../backlog/tasks/) (m-19 Phase 5a). The rule is
+single-sentence simple: doctor is **healthy iff readiness reached `ready` AND
+every applicable check finished `pass` or `skip`**. Any `warn` or `fail` on a
+check flips `healthy` to `false`. The JSON envelope's `healthy` boolean
+mirrors the exit code: `healthy === true` iff exit code `0`.
+
+| Exit code | Meaning |
+|-----------|---------|
+| `0` | Clean run — every check passed or skipped; readiness was `ready`. JSON: `success: true, healthy: true, status: 'ok'`. |
+| `1` | Command error before/around the diagnostic. CLI threw a typed `CliError` (e.g. `DEVICE_NOT_RESOLVED`, `REPAIR_FAILED`, `CORE_LOAD_FAILED`, `UNSUPPORTED_DEVICE`). JSON: `success: false, error, code`. Repair failures land here. Hard device rejections (`readiness.level === 'unsupported'`) also land here — the doctor short-circuits before running any checks, so "issues found" (exit 2) would be misleading. See [TASK-331](../backlog/tasks/). |
+| `2` | Diagnostic ran cleanly but found issues — at least one check is `fail` or `warn`, or readiness was non-`ready`. JSON: `success: true, healthy: false, status: 'issues-found'`. |
+
+Doctor's `CliError` exit code default is `1` (set in `runAction`); the
+`process.exitCode = 2` line in `runDoctorDiagnostics` / `runSystemOnlyDoctor`
+distinguishes "found problems" from "command failed". JSON consumers should
+prefer branching on `success` + `healthy` rather than the numeric exit code
+where possible.
+
+**Decision: `warn` counts as unhealthy.** A `warn` from any in-scope check
+sets `healthy = false` and flips the exit code to `2`. We picked this over
+"warn ≡ healthy" because:
+
+1. Warn states are real issues the user should see and act on — e.g.
+   inquiry-methods warn on macOS without libusb means SCSI fallback paths
+   only; codec-encoders warn on macOS with only `h264_videotoolbox` means
+   software-only transcoding. Surfacing them is the point.
+2. Silently passing on warns defeats doctor's discipline-of-signal purpose.
+   If `podkit doctor && podkit sync` returns clean but the next sync skips
+   half the library because of an unreported encoder warning, doctor failed
+   its job.
+3. Preserving the current behaviour avoids backwards-compat churn for
+   existing users who already script around exit codes (`if podkit doctor;
+   then podkit sync; fi`).
+4. Easier to relax later (warn → healthy) than to tighten (would surprise
+   scripts that today rely on warn = unhealthy).
+
+This decision applies consistently across the three doctor invocation
+modes: legacy `--scope all`, `--scope system` (system checks only;
+[TASK-333](../backlog/tasks/)), and `--scope device`. `--no-system` is
+the legacy spelling of "exclude system-scope checks from `--scope all`";
+it does not change the rule, only the set of checks weighed against it.
+
+The matrix is pinned in
+[`packages/podkit-cli/src/commands/doctor-exit-code.test.ts`](../packages/podkit-cli/src/commands/doctor-exit-code.test.ts).
+Each numbered AC in TASK-308 has a matching `describe` block. The
+canonical numeric exit-code constants live in
+[`packages/podkit-cli/src/commands/error-codes.ts`](../packages/podkit-cli/src/commands/error-codes.ts)
+and the per-command code unions next to them. Tier-3 invocations of
+`--scope system` (which assert the same rule against a live VM) are
+deferred to the next Tier-3 sweep and noted in the task's AC list.
+
 ### Cross-references
 
 - [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — architecture decision and tier definitions

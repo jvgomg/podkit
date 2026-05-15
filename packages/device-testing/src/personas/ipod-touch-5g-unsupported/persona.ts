@@ -58,13 +58,14 @@ export const ipodTouch5gUnsupported: DevicePersona = {
 
   expectedCapabilities: null,
 
-  // Provisional. `ReadinessLevel` does not include an 'unsupported' value
-  // (schema followup tracked under TASK-331); using 'unknown' until the
-  // compute-expected pass confirms what the cascade returns for an
-  // unsupported-PID device. The reason text below is the canonical message
-  // from `packages/devices-ipod/src/tables/unsupported.ts`.
+  // TASK-331 added `'unsupported'` to ReadinessLevel + exposed the canonical
+  // reason text as a top-level field on the result. The fail `usb` stage
+  // mirrors what `checkReadiness({ unsupportedReason })` emits for an
+  // unsupported-PID device, so this fixture is the byte-for-byte expected
+  // result the determineLevel cascade produces today.
   expectedReadiness: {
-    level: 'unknown',
+    level: 'unsupported',
+    unsupportedReason,
     stages: [
       {
         stage: 'usb',

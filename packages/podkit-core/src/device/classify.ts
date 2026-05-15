@@ -16,7 +16,9 @@
 import { classifyAsIpod, type IpodClassification } from '@podkit/devices-ipod';
 import {
   classifyAsMassStorage,
+  classifyAsUnsupportedDevice,
   type MassStorageClassification,
+  type UnsupportedDeviceClassification,
 } from '@podkit/devices-mass-storage';
 import type { MassStoragePreset } from '@podkit/devices-mass-storage';
 import type { EnumeratedUsbDevice } from './usb-enumeration.js';
@@ -27,12 +29,13 @@ import type { EnumeratedUsbDevice } from './usb-enumeration.js';
  * A USB device recognised by one of the per-domain classifiers.
  *
  * The `kind` discriminator is forwarded from the matching classifier
- * (`'ipod'` or `'mass-storage'`); narrow on it to access kind-specific
- * fields.
+ * (`'ipod'`, `'mass-storage'`, or `'unsupported'`); narrow on it to access
+ * kind-specific fields.
  */
 export type RecognizedDevice =
   | IpodClassification<EnumeratedUsbDevice>
-  | MassStorageClassification<EnumeratedUsbDevice>;
+  | MassStorageClassification<EnumeratedUsbDevice>
+  | UnsupportedDeviceClassification<EnumeratedUsbDevice>;
 
 /**
  * Options for `classifyUsbDevices`.
@@ -77,6 +80,14 @@ export function classifyUsbDevices(
     const massStorage = classifyAsMassStorage(device, options.massStoragePresets);
     if (massStorage) {
       results.push(massStorage);
+      continue;
+    }
+    // Final fallback: vendor-recognised but no preset yet (Sony Walkman, …).
+    // Returns a tagged `'unsupported'` classification so consumers can surface
+    // the canonical rejection reason rather than silently dropping the device.
+    const unsupported = classifyAsUnsupportedDevice(device);
+    if (unsupported) {
+      results.push(unsupported);
       continue;
     }
   }
