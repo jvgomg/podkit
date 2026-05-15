@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+<key>AppleDRMVersion</key>
+<dict>
+<key>Minimum</key>
+<integer>0</integer>
+<key>Maximum</key>
+<integer>4</integer>
+<key>Format</key>
+<integer>2</integer>
+</dict>
+<key>AudioCodecs</key>
+<dict>
+<key>AIFF</key>
+<dict>
+<key>Mono</key>
+<true/>
+<key>Stereo</key>
+<true/>
+<key>Multichannel</key>
+<false/>
+<key>MaximumSampleRate<

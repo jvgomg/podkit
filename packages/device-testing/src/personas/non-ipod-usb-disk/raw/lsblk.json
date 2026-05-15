@@ -1,0 +1,39 @@
+{
+  "blockdevices": [
+    {
+      "name": "sdb",
+      "maj:min": "8:16",
+      "rm": true,
+      "size": "14.4G",
+      "ro": false,
+      "type": "disk",
+      "mountpoint": null,
+      "tran": "usb",
+      "vendor": "SanDisk ",
+      "model": "Cruzer Blade    ",
+      "serial": "4C530001071224119242",
+      "rev": "1.00",
+      "ptuuid": "deadbeef",
+      "pttype": "dos",
+      "hotplug": true,
+      "removable": true,
+      "children": [
+        {
+          "name": "sdb1",
+          "maj:min": "8:17",
+          "rm": true,
+          "size": "14.4G",
+          "ro": false,
+          "type": "part",
+          "mountpoint": "/media/usb/CRUZER",
+          "fstype": "vfat",
+          "label": "CRUZER",
+          "uuid": "DEAD-BEEF",
+          "parttype": "0x0c",
+          "parttypename": "W95 FAT32 (LBA)",
+          "partuuid": "deadbeef-01"
+        }
+      ]
+    }
+  ]
+}

@@ -4,7 +4,7 @@ title: 'Phase 5: persona registry expansion'
 status: To Do
 assignee: []
 created_date: '2026-05-11 22:56'
-updated_date: '2026-05-14 22:38'
+updated_date: '2026-05-15 22:26'
 labels:
   - testing
   - vm-coverage
@@ -62,8 +62,8 @@ Rolling parent task for expanding the persona registry beyond what landed in TAS
 <!-- AC:BEGIN -->
 - [ ] #1 State variants captured: ipod-video-5g-corrupt-db (deliberately corrupted iTunesDB) and echo-mini-populated (content-loaded), with provenance.md cross-referencing the empty-state siblings already in the registry
 - [ ] #2 Firmware variant captured: ipod-classic-rockbox (Rockbox-installed iPod) — coordinate with user before installing
-- [ ] #3 Synthesised rejection personas committed: ipod-shuffle-not-supported and non-ipod-usb-disk, each with synthesis recipe in provenance.md
-- [ ] #4 Synthetic error-path persona committed: malformed-sysinfo with a deliberately-corrupted SysInfoExtended XML payload, exercising the parser's error path
+- [x] #3 Synthesised rejection personas committed: ipod-shuffle-not-supported and non-ipod-usb-disk, each with synthesis recipe in provenance.md
+- [x] #4 Synthetic error-path persona committed: malformed-sysinfo with a deliberately-corrupted SysInfoExtended XML payload, exercising the parser's error path
 - [ ] #5 Rejection-case personas (shuffle, non-ipod, plus existing touch 5G + 5 Sony Walkmans) use the canonical ReadinessLevel: 'unsupported' shape once TASK-331 lands
 - [ ] #6 documents/test-devices.md updated with each new capture's date and persona ID
 - [ ] #7 Each new persona has a provenance.md following the persona-capture-playbook template
@@ -74,4 +74,18 @@ Rolling parent task for expanding the persona registry beyond what landed in TAS
 
 <!-- SECTION:NOTES:BEGIN -->
 **echo-mini Tier-3 gap (2026-05-14):** Post-Phase-3 reflection surfaced that the current echo-mini persona has both `sysInfoExtendedXml: null` AND `massStorageBackingFile: null`, so the dummy-hcd-daemon rejects it with 'persona not in sidecar' and every test in the echo-mini Tier-3 group fails. Interim safety belt is **TASK-322.06.01** (filter personas without daemon payload at grouping time). The real fix — capturing/synthesising mass-storage data for echo-mini — lives in this task and is added as a new AC.
+
+**2026-05-15 — TASK-324 AFK half landed (synthesised personas).**
+
+Three synthesised personas added under `packages/device-testing/src/personas/`:
+
+1. `ipod-shuffle-not-supported/` — Apple unsupported-PID (shuffle 3G `0x05ac:0x1302`); all host probes `null`; pure synthesis from `tables/unsupported.ts`.
+2. `non-ipod-usb-disk/` — SanDisk Cruzer Blade `0x0781:0x5567`; ships synthesised `system-profiler.json` / `diskutil.plist` / `lsblk.json` because the non-Apple rejection runs at the mass-storage classifier on populated probe data. Required adding a SanDisk entry to `UNSUPPORTED_VENDORS` in `packages/devices-mass-storage/src/unsupported.ts`.
+3. `malformed-sysinfo/` — real iPod 5G Video USB identity + `head -c 500` truncation of the iPod 5G SIE XML. Pins `parsePlist` partial-read failure (`needs-repair` per `determineLevel`).
+
+Registry: wired into `packages/device-testing/src/personas/index.ts` (16 entries → 17). Tests: `rejection-personas.test.ts` extended with shuffle + cruzer specs; new `malformed-sysinfo.test.ts` calls `parsePlist` (added `@podkit/ipod-firmware` as devDependency).
+
+AC #3 and AC #4 ticked. ACs #1 (state variants), #2 (Rockbox), #5 (sweep readiness shape — already done for shuffle/cruzer; sony+touch already done elsewhere), #6 (test-devices.md per-capture timestamps), #7 (HITL provenance docs), #8 (echo-mini sidecar payload) still need physical hardware and remain open.
+
+Docs: `documents/test-devices.md` gets a new "Synthesised personas" section. `agents/device-testing.md` gets a "Synthesised personas" subsection under the persona registry table.
 <!-- SECTION:NOTES:END -->

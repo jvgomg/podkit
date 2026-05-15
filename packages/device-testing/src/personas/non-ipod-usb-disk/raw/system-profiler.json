@@ -1,0 +1,41 @@
+{
+  "_name": "Cruzer Blade",
+  "bcd_device": "1.00",
+  "bus_power": "500",
+  "bus_power_used": "200",
+  "device_speed": "high_speed",
+  "extra_current_used": "0",
+  "location_id": "0x04200000 / 21",
+  "manufacturer": "SanDisk",
+  "Media": [
+    {
+      "_name": "SanDisk Cruzer Blade Media",
+      "bsd_name": "disk7",
+      "Logical Unit": 0,
+      "partition_map_type": "master_boot_record_partition_map_type",
+      "removable_media": "yes",
+      "size": "15.45 GB",
+      "size_in_bytes": 15446937600,
+      "smart_status": "Verified",
+      "USB Interface": 0,
+      "volumes": [
+        {
+          "_name": "CRUZER",
+          "bsd_name": "disk7s1",
+          "file_system": "MS-DOS FAT32",
+          "free_space": "15.4 GB",
+          "free_space_in_bytes": 15440000000,
+          "iocontent": "DOS_FAT_32",
+          "mount_point": "/Volumes/CRUZER",
+          "size": "15.44 GB",
+          "size_in_bytes": 15446925312,
+          "volume_uuid": "00000000-0000-0000-0000-DEADBEEFCAFE",
+          "writable": "yes"
+        }
+      ]
+    }
+  ],
+  "product_id": "0x5567",
+  "serial_num": "4C530001071224119242",
+  "vendor_id": "0x0781  (SanDisk Corp.)"
+}

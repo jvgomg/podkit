@@ -54,6 +54,18 @@ TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starter
 
 The mapping lives in `packages/device-testing/src/tier3/tier3-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
 
+### Synthesised personas (no hardware)
+
+Three personas exist that have no physical-hardware capture — they exercise rejection / error paths that cannot be driven from real devices alone:
+
+| Persona ID | Purpose |
+|------------|---------|
+| `ipod-shuffle-not-supported` | Apple unsupported-PID rejection (shuffle 3G `0x05ac:0x1302`). |
+| `non-ipod-usb-disk` | Non-Apple vendor-no-preset rejection (SanDisk Cruzer Blade `0x0781:0x5567`). |
+| `malformed-sysinfo` | SIE-parser error path. Real iPod 5G USB identity + deliberately-truncated SIE XML. |
+
+Each has a `provenance.md` documenting its synthesis recipe (no `raw/` capture session). Smoke tests in `src/personas/rejection-personas.test.ts` and `src/personas/malformed-sysinfo.test.ts` pin the fixture shapes.
+
 ### Capture flow (human-in-the-loop)
 
 See [`documents/persona-capture-playbook.md`](../documents/persona-capture-playbook.md) for the full step-by-step (the playbook supersedes the auto-capture script originally planned in TASK-321.02). High-level:

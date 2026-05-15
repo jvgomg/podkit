@@ -33,6 +33,7 @@
     "@podkit/device-types": "workspace:*"
   },
   "devDependencies": {
+    "@podkit/ipod-firmware": "workspace:*",
     "@types/bun": "latest"
   }
 }

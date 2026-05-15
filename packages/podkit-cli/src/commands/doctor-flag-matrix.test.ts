@@ -1280,3 +1280,234 @@ describe('AC #17: --scope device requires -d; --scope system runs without -d', (
     expect(exitCode.get()).toBeUndefined();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TASK-305 — orphan-files (iPod) CLI rendering coverage
+//
+// The check-level matrix in `packages/podkit-core/src/diagnostics/checks/
+// orphans-matrix.test.ts` pins AC #1..#5, #10..#14. The CLI-rendering ACs
+// land here because the CSV escape branch and the verbose orphan summary
+// live in `commands/doctor.ts` (escapeCsvField, printOrphanSummary — both
+// internal; we drive them through the public `runDoctorDiagnostics`).
+//
+// AC mapping:
+//   AC #6  — CSV escape: commas + quotes
+//   AC #7  — verbose text groups orphans by F* directory
+//   AC #8  — verbose text groups orphans by extension
+//   AC #9  — verbose text lists the 10 largest orphans, descending
+//
+// @see backlog/tasks/task-305 - orphan-files-iPod-detection-and-repair-coverage.md
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Variant of `makeOut` that allows the verbose level to be set — needed for
+ * AC #7..#9 where the orphan summary only renders at verbose1+.
+ */
+function makeVerboseOut(level: number): {
+  out: OutputContext;
+  stdout: BufferSink;
+  stderr: BufferSink;
+} {
+  const stdout = new BufferSink();
+  const stderr = new BufferSink();
+  return {
+    out: new OutputContext({
+      mode: 'text',
+      quiet: false,
+      verbose: level,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout,
+      stderr,
+      exitCode: new BufferExitCodeSink(),
+    }),
+    stdout,
+    stderr,
+  };
+}
+
+describe('TASK-305 AC #6: --format csv escapes commas AND quotes', () => {
+  it('quotes a path containing a comma and a path containing a double-quote', async () => {
+    const ctx = makeContext({ device: 'ipod' });
+    const { out, stdout } = makeOut('text');
+
+    const fakeCore = makeFakeCore({
+      report: {
+        checks: [
+          {
+            id: 'orphan-files',
+            name: 'Orphans',
+            status: 'warn',
+            summary: '3 orphan files',
+            repairable: true,
+            hasRepair: true,
+            repairOnly: false,
+            scope: 'device',
+            details: {
+              orphans: [
+                { path: '/iPod_Control/Music/F00/plain.mp3', size: 100 },
+                { path: '/iPod_Control/Music/F00/has, comma.m4a', size: 200 },
+                {
+                  path: '/iPod_Control/Music/F01/has "quoted" name.m4a',
+                  size: 300,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+
+    await runWithContext(ctx, () =>
+      runAction(out, () =>
+        runDoctorDiagnostics(
+          '/tmp/ipod-test-305-ac6',
+          undefined,
+          out,
+          { format: 'csv' },
+          {
+            loadCore: async () => fakeCore as typeof import('@podkit/core'),
+            getDeviceManager: () => fakeManager(),
+          }
+        )
+      )
+    );
+
+    const lines = stdout.lines();
+    // Header.
+    expect(lines[0]).toBe('path,size');
+    // Plain path: no quoting.
+    expect(lines[1]).toBe('/iPod_Control/Music/F00/plain.mp3,100');
+    // Comma in path: whole field wrapped in double-quotes.
+    expect(lines[2]).toBe('"/iPod_Control/Music/F00/has, comma.m4a",200');
+    // Quote in path: wrapped AND each internal quote doubled per RFC 4180.
+    expect(lines[3]).toBe('"/iPod_Control/Music/F01/has ""quoted"" name.m4a",300');
+  });
+});
+
+describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
+  // Construct an orphan set that exercises all three groupings deterministically.
+  //
+  // - 2 F* directories (F00, F01) → AC #7 byDir grouping
+  // - 3 extensions (.m4a, .mp3, .flac) → AC #8 byExt grouping
+  // - 12 orphans total, sizes 1..12 KiB → AC #9 top-10-largest descending
+  function buildOrphans(): Array<{ path: string; size: number }> {
+    return [
+      // F00: 4 m4a + 2 mp3 + 1 flac (7 entries)
+      { path: '/iPod_Control/Music/F00/a.m4a', size: 1 * 1024 },
+      { path: '/iPod_Control/Music/F00/b.m4a', size: 2 * 1024 },
+      { path: '/iPod_Control/Music/F00/c.m4a', size: 3 * 1024 },
+      { path: '/iPod_Control/Music/F00/d.m4a', size: 4 * 1024 },
+      { path: '/iPod_Control/Music/F00/e.mp3', size: 5 * 1024 },
+      { path: '/iPod_Control/Music/F00/f.mp3', size: 6 * 1024 },
+      { path: '/iPod_Control/Music/F00/g.flac', size: 7 * 1024 },
+      // F01: 2 m4a + 1 mp3 + 2 flac (5 entries)
+      { path: '/iPod_Control/Music/F01/h.m4a', size: 8 * 1024 },
+      { path: '/iPod_Control/Music/F01/i.m4a', size: 9 * 1024 },
+      { path: '/iPod_Control/Music/F01/j.mp3', size: 10 * 1024 },
+      { path: '/iPod_Control/Music/F01/k.flac', size: 11 * 1024 },
+      { path: '/iPod_Control/Music/F01/l.flac', size: 12 * 1024 },
+    ];
+  }
+
+  async function runVerboseDoctor(): Promise<string> {
+    const ctx = makeContext({ device: 'ipod', json: false });
+    const { out, stdout } = makeVerboseOut(1);
+
+    const fakeCore = makeFakeCore({
+      report: {
+        checks: [
+          {
+            id: 'orphan-files',
+            name: 'Orphans',
+            status: 'warn',
+            summary: '12 orphan files (78.0 KB wasted)',
+            repairable: true,
+            hasRepair: true,
+            repairOnly: false,
+            scope: 'device',
+            details: {
+              orphanCount: 12,
+              totalFiles: 12,
+              wastedBytes: 78 * 1024,
+              wastedFormatted: '78.0 KB',
+              orphans: buildOrphans(),
+            },
+          },
+        ],
+      },
+    });
+
+    await runWithContext(ctx, () =>
+      runAction(out, () =>
+        runDoctorDiagnostics(
+          '/tmp/ipod-test-305-verbose',
+          undefined,
+          out,
+          {},
+          {
+            loadCore: async () => fakeCore as typeof import('@podkit/core'),
+            getDeviceManager: () => fakeManager(),
+          }
+        )
+      )
+    );
+
+    return stdout.text();
+  }
+
+  it('AC #7: groups orphans by F* directory with count and total size', async () => {
+    const text = await runVerboseDoctor();
+
+    // The "By directory:" section appears verbatim.
+    expect(text).toContain('By directory:');
+    // F00 has 7 entries totaling (1+2+3+4+5+6+7) KiB = 28 KiB → "28.0 KB".
+    expect(text).toMatch(/F00\s+7 files\s+28\.0 KB/);
+    // F01 has 5 entries totaling (8+9+10+11+12) KiB = 50 KiB → "50.0 KB".
+    expect(text).toMatch(/F01\s+5 files\s+50\.0 KB/);
+  });
+
+  it('AC #8: groups orphans by file extension with count and total size', async () => {
+    const text = await runVerboseDoctor();
+
+    expect(text).toContain('By extension:');
+    // .m4a × 6 = (1+2+3+4+8+9) KiB = 27 KiB → "27.0 KB"
+    expect(text).toMatch(/\.m4a\s+6 files\s+27\.0 KB/);
+    // .mp3 × 3 = (5+6+10) KiB = 21 KiB → "21.0 KB"
+    expect(text).toMatch(/\.mp3\s+3 files\s+21\.0 KB/);
+    // .flac × 3 = (7+11+12) KiB = 30 KiB → "30.0 KB"
+    expect(text).toMatch(/\.flac\s+3 files\s+30\.0 KB/);
+  });
+
+  it('AC #9: lists the 10 largest orphans, descending by size', async () => {
+    const text = await runVerboseDoctor();
+
+    expect(text).toContain('Largest orphans:');
+
+    // Extract just the "Largest orphans:" block.
+    const startIdx = text.indexOf('Largest orphans:');
+    expect(startIdx).toBeGreaterThanOrEqual(0);
+    // Capture the next ~12 lines worth.
+    const block = text.slice(startIdx).split('\n').slice(1, 13);
+
+    // The first 10 lines under the header are the orphan rows.
+    const rows = block.filter((l) => /\d+\.\d KB/.test(l));
+    expect(rows.length).toBe(10);
+
+    // Parse size from each row and assert descending order.
+    const sizes = rows.map((l) => {
+      const m = l.match(/(\d+(?:\.\d+)?)\s*KB/);
+      return m ? Number(m[1]) : NaN;
+    });
+    for (let i = 1; i < sizes.length; i++) {
+      expect(sizes[i]!).toBeLessThanOrEqual(sizes[i - 1]!);
+    }
+    // Top row is the 12-KiB orphan (the largest); 11th-largest (3 KiB) is
+    // excluded — verifies the 10-cap.
+    expect(sizes[0]).toBe(12);
+    expect(sizes[9]).toBe(3);
+    // The two smallest (1 KiB, 2 KiB) must not appear in the top-10 block.
+    expect(rows.find((l) => /^\s*1\.0 KB/.test(l.trim().replace(/^\s+/, '')))).toBeUndefined();
+  });
+});

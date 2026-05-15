@@ -24,6 +24,9 @@ import { sonyNwA1000 } from './sony-nw-a1000/persona.js';
 import { sonyNwA3000 } from './sony-nw-a3000/persona.js';
 import { sonyNwA1200 } from './sony-nw-a1200/persona.js';
 import { sonyNwHd5 } from './sony-nw-hd5/persona.js';
+import { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
+import { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
+import { malformedSysinfo } from './malformed-sysinfo/persona.js';
 
 export type { DevicePersona } from './types.js';
 
@@ -41,6 +44,9 @@ export { sonyNwA1000 } from './sony-nw-a1000/persona.js';
 export { sonyNwA3000 } from './sony-nw-a3000/persona.js';
 export { sonyNwA1200 } from './sony-nw-a1200/persona.js';
 export { sonyNwHd5 } from './sony-nw-hd5/persona.js';
+export { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
+export { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
+export { malformedSysinfo } from './malformed-sysinfo/persona.js';
 
 /** Registry of device personas, keyed by `DevicePersona.id`. */
 export const personas = new Map<string, DevicePersona>([
@@ -58,4 +64,8 @@ export const personas = new Map<string, DevicePersona>([
   [sonyNwA3000.id, sonyNwA3000],
   [sonyNwA1200.id, sonyNwA1200],
   [sonyNwHd5.id, sonyNwHd5],
+  // TASK-324 Phase 5 — synthesised rejection / error-path personas.
+  [ipodShuffleNotSupported.id, ipodShuffleNotSupported],
+  [nonIpodUsbDisk.id, nonIpodUsbDisk],
+  [malformedSysinfo.id, malformedSysinfo],
 ]);

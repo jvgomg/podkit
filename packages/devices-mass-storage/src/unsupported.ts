@@ -83,6 +83,17 @@ export const UNSUPPORTED_VENDORS: ReadonlyArray<UnsupportedVendorEntry> = [
     reason: (vendorId, productId) =>
       `Sony Walkman is not yet supported by podkit — no preset registered for USB 0x${vendorId}:0x${productId}.`,
   },
+  {
+    vendorId: '0781', // SanDisk Corp.
+    family: 'SanDisk USB storage',
+    // Generic flash drives are not music players; podkit explicitly refuses
+    // to operate on them so users plugging the wrong USB stick into a
+    // `podkit sync` invocation get a clear rejection rather than silent
+    // probing of an unrelated filesystem. The matching `non-ipod-usb-disk`
+    // persona pins this path in test.
+    reason: (vendorId, productId) =>
+      `Non-Apple USB storage device (SanDisk); podkit has no preset for this vendor (USB 0x${vendorId}:0x${productId}).`,
+  },
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

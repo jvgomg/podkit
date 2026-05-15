@@ -2,7 +2,22 @@
 
 Hardware devices available for testing podkit's device identification and sync functionality. This document is updated as devices are tested and new data is captured.
 
-Last updated: 2026-05-13 (TASK-321.02 persona-capture sweep — Mac probes captured for all iPods + Echo Mini + new Sony Walkman NWZ-E384 added)
+Last updated: 2026-05-15 (TASK-324 Phase 5 — three synthesised personas added: `ipod-shuffle-not-supported`, `non-ipod-usb-disk`, `malformed-sysinfo`; physical inventory unchanged)
+
+## Synthesised personas (no hardware)
+
+In addition to the hardware-captured personas documented below, three
+synthesised personas live in `packages/device-testing/src/personas/` and
+exercise paths that cannot be tested from physical inventory alone:
+
+| Persona ID | Created | Purpose |
+|------------|---------|---------|
+| `ipod-shuffle-not-supported` | 2026-05-15 | Apple unsupported-PID rejection (shuffle 3G `0x05ac:0x1302`). User does not own a shuffle — pure synthesis from `packages/devices-ipod/src/tables/unsupported.ts`. |
+| `non-ipod-usb-disk` | 2026-05-15 | Non-Apple vendor-no-preset rejection (SanDisk Cruzer Blade `0x0781:0x5567`). Pairs with the SanDisk entry added to `UNSUPPORTED_VENDORS` in `packages/devices-mass-storage/src/unsupported.ts`. |
+| `malformed-sysinfo` | 2026-05-15 | SIE-parser error path. Real iPod 5G Video USB identity + deliberately-truncated SIE XML (`head -c 500` of the iPod 5G fixture). |
+
+Each persona has a `provenance.md` documenting its synthesis recipe. See
+the `Source: synthesised (no hardware)` header on those files.
 
 ## Device Collection
 
