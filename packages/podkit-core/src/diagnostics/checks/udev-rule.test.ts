@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'bun:test';
 import {
+  checkUdevRule,
   udevRuleCheck,
   udevRuleRepair,
   runUdevRuleInstall,
@@ -14,6 +15,7 @@ import {
   UDEV_RULE_CONTENT,
   type SudoExecutor,
   type FsOps,
+  type ReadFileFn,
 } from './udev-rule.js';
 import type { RepairContext } from '../types.js';
 
@@ -68,8 +70,8 @@ describe('udevRuleCheck metadata', () => {
     expect(udevRuleCheck.id).toBe('udev-rule');
   });
 
-  it('is repairOnly', () => {
-    expect(udevRuleCheck.repairOnly).toBe(true);
+  it('is no longer repairOnly (detection logic now exists)', () => {
+    expect(udevRuleCheck.repairOnly).toBeUndefined();
   });
 
   it('has system scope', () => {
@@ -89,14 +91,145 @@ describe('udevRuleCheck metadata', () => {
     expect(udevRuleCheck.repair?.requirements).toEqual([]);
   });
 
-  it('check() returns skip', async () => {
-    const result = await udevRuleCheck.check(stubCtx);
-    expect(result.status).toBe('skip');
-    expect(result.repairable).toBe(false);
-  });
-
   it('repair description mentions udev rule', () => {
     expect(udevRuleRepair.description.toLowerCase()).toContain('udev');
+  });
+});
+
+// ── Detection (check() — TASK-336) ───────────────────────────────────────────
+
+/**
+ * Build an in-memory readFile fake. If `content` is undefined the fake
+ * rejects with ENOENT (mirrors `fs.promises.readFile` for a missing path).
+ * If `errno` is set, the fake rejects with a fabricated errno error.
+ */
+function makeReadFile(opts: { content?: string; errno?: string }): ReadFileFn {
+  return async (_path: string) => {
+    if (opts.errno !== undefined) {
+      const err = new Error(`simulated ${opts.errno}`) as NodeJS.ErrnoException;
+      err.code = opts.errno;
+      throw err;
+    }
+    if (opts.content === undefined) {
+      const err = new Error('ENOENT: no such file') as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return opts.content;
+  };
+}
+
+describe('checkUdevRule — detection (TASK-336)', () => {
+  it('returns skip on darwin without reading the file', async () => {
+    let readCalls = 0;
+    const result = await checkUdevRule({
+      platform: 'darwin',
+      readFile: async (_p) => {
+        readCalls += 1;
+        return UDEV_RULE_CONTENT;
+      },
+    });
+    expect(result.status).toBe('skip');
+    expect(result.summary).toBe('not applicable to platform');
+    expect(result.repairable).toBe(false);
+    expect(readCalls).toBe(0);
+  });
+
+  it('returns skip on win32 without reading the file', async () => {
+    const result = await checkUdevRule({
+      platform: 'win32',
+      readFile: makeReadFile({ content: UDEV_RULE_CONTENT }),
+    });
+    expect(result.status).toBe('skip');
+  });
+
+  it('returns pass on Linux when content matches UDEV_RULE_CONTENT exactly', async () => {
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: makeReadFile({ content: UDEV_RULE_CONTENT }),
+    });
+    expect(result.status).toBe('pass');
+    expect(result.summary).toBe('iPod udev rule installed');
+    expect(result.repairable).toBe(false);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+  });
+
+  it('returns fail+repairable on Linux when the rule file is absent (ENOENT)', async () => {
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: makeReadFile({ content: undefined }),
+    });
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('iPod udev rule not installed');
+    expect(result.repairable).toBe(true);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+  });
+
+  it('returns warn+repairable on Linux when the rule file is stale', async () => {
+    const staleContent = `# old podkit udev rule (vendor only)
+ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac", MODE="0660"
+`;
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: makeReadFile({ content: staleContent }),
+    });
+    expect(result.status).toBe('warn');
+    expect(result.summary).toContain('stale');
+    expect(result.repairable).toBe(true);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+    expect(typeof result.details?.['diff']).toBe('string');
+    expect(result.details?.['diff']).toContain('bytes');
+  });
+
+  it('returns fail (not repairable) on Linux when the rule file cannot be read (EACCES)', async () => {
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: makeReadFile({ errno: 'EACCES' }),
+    });
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('cannot read iPod udev rule');
+    expect(result.repairable).toBe(false);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+    expect(result.details?.['errno']).toBe('EACCES');
+  });
+
+  it('treats stale single-byte difference as stale', async () => {
+    // Mutate one character to confirm the comparison is exact, not approximate.
+    const almostMatching = UDEV_RULE_CONTENT.replace('05ac', '05AC');
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: makeReadFile({ content: almostMatching }),
+    });
+    expect(result.status).toBe('warn');
+  });
+
+  it('honours a custom path option', async () => {
+    let observedPath = '';
+    const result = await checkUdevRule({
+      platform: 'linux',
+      path: '/tmp/some-other-path.rules',
+      readFile: async (p) => {
+        observedPath = p;
+        return UDEV_RULE_CONTENT;
+      },
+    });
+    expect(observedPath).toBe('/tmp/some-other-path.rules');
+    expect(result.details?.['path']).toBe('/tmp/some-other-path.rules');
+  });
+});
+
+describe('udevRuleCheck.check() production binding', () => {
+  it('delegates to checkUdevRule (skip on non-Linux without touching fs)', async () => {
+    // Sanity check on the production binding: on non-Linux the registered
+    // check() must return skip even though it uses the real fs reader —
+    // skip path runs before any fs access.
+    if (process.platform === 'linux') {
+      // Skip on Linux to avoid touching the host filesystem from a Tier-1 test.
+      return;
+    }
+    const result = await udevRuleCheck.check(stubCtx);
+    expect(result.status).toBe('skip');
+    expect(result.summary).toBe('not applicable to platform');
   });
 });
 

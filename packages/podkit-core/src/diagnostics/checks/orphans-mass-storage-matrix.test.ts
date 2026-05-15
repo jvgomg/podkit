@@ -153,8 +153,10 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       expect(result.status).toBe('pass');
       expect(result.summary).toContain('2 files');
       expect(result.repairable).toBe(false);
-      // pass-path does not populate details.orphanCount today — pin that.
-      expect(result.details?.orphanCount).toBeUndefined();
+      // Pass path emits zero-valued details for JSON-consumer symmetry.
+      expect(result.details?.orphanCount).toBe(0);
+      expect(result.details?.wastedBytes).toBe(0);
+      expect(result.details?.orphans).toEqual([]);
     });
 
     // AC #2

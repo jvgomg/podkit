@@ -58,6 +58,19 @@ describe('parseLsblkJson', () => {
       isMounted: true,
       mountPoint: '/media/user/TERAPOD',
       mediaType: '',
+      filesystem: 'vfat',
+      partitionLayout: {
+        partitionCount: 1,
+        partitions: [
+          {
+            index: 1,
+            filesystem: 'vfat',
+            sizeBytes: 500106813440,
+            identifier: 'sda1',
+            volumeUuid: '1234-5678',
+          },
+        ],
+      },
     });
   });
 

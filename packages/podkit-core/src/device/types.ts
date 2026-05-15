@@ -33,6 +33,66 @@ export interface PlatformDeviceInfo {
   mountPoint?: string;
   /** Media type if known (e.g., "iPod") */
   mediaType?: string;
+  /**
+   * Filesystem type for this partition as reported by the platform probe.
+   * Linux: `fstype` from `lsblk` (e.g. `"vfat"`, `"hfsplus"`). macOS:
+   * "File System Personality" / "Type (Bundle)" from `diskutil info` (e.g.
+   * `"MS-DOS FAT32"`, `"Apple_HFS"`). Treat as opaque and lower-case for
+   * comparison.
+   */
+  filesystem?: string;
+  /**
+   * Partition layout of the whole disk this partition belongs to. Surfaced
+   * from `lsblk -J` on Linux and `diskutil list -plist` on macOS during
+   * device enumeration. Used by the readiness pipeline's partition-stage
+   * details to make single- vs dual-partition iPod layouts observable
+   * (TASK-338).
+   *
+   * Cross-platform asymmetry: Linux populates `filesystem` from `fstype`
+   * (e.g. `"vfat"`, `"hfsplus"`); macOS populates it from diskutil's
+   * "File System Personality" / "Type (Bundle)" (e.g. `"MS-DOS FAT32"`,
+   * `"Apple_HFS"`). Consumers should treat the string as opaque and lower-case
+   * for comparison.
+   */
+  partitionLayout?: PartitionLayout;
+}
+
+/**
+ * Whole-disk partition layout, attached to each partition-scoped
+ * `PlatformDeviceInfo` in `partitionLayout`. Every sibling partition on the
+ * same physical disk shares the same `PartitionLayout` payload — consumers
+ * locate their own partition via `partitions[].identifier`.
+ */
+export interface PartitionLayout {
+  /** Number of partitions found on the whole disk. */
+  partitionCount: number;
+  /** Per-partition info. Order matches the partition table. */
+  partitions: PartitionLayoutEntry[];
+}
+
+/**
+ * One row in `PartitionLayout.partitions`. Mirrors the persona shape in
+ * `@podkit/device-testing` (`DevicePersona.partitionLayout`) but uses the
+ * field names of the underlying OS probe (`filesystem`, `sizeBytes`)
+ * rather than the persona's higher-level labels (`type`, `sizeMiB`).
+ */
+export interface PartitionLayoutEntry {
+  /** 1-based partition index in the partition table. */
+  index: number;
+  /**
+   * Filesystem type string as reported by the platform probe. Linux:
+   * `fstype` from `lsblk` (e.g. `"vfat"`, `"hfsplus"`). macOS: "File System
+   * Personality" / "Type (Bundle)" from `diskutil info` (e.g.
+   * `"MS-DOS FAT32"`, `"Apple_HFS"`). `null` when the partition has no
+   * recognised filesystem (e.g. firmware partition, free space).
+   */
+  filesystem: string | null;
+  /** Partition size in bytes. */
+  sizeBytes: number;
+  /** Partition identifier, e.g. `"sda1"` (Linux) or `"disk5s2"` (macOS). */
+  identifier?: string;
+  /** Volume UUID, when present in the partition table. */
+  volumeUuid?: string;
 }
 
 /**

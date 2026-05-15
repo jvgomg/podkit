@@ -140,9 +140,10 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
 
       expect(result.status).toBe('pass');
       expect(result.repairable).toBe(false);
-      // No details object on the empty-pass path — orphanCount semantics =
-      // "no orphans found" inferred from status=pass + no details.
-      expect(result.details).toBeUndefined();
+      // Pass path emits zero-valued details for JSON-consumer symmetry.
+      expect(result.details?.orphanCount).toBe(0);
+      expect(result.details?.wastedBytes).toBe(0);
+      expect(result.details?.orphans).toEqual([]);
     });
   });
 
@@ -166,8 +167,10 @@ describe('orphanFilesCheck — TASK-305 matrix', () => {
       expect(result.status).toBe('pass');
       expect(result.repairable).toBe(false);
       expect(result.summary).toContain('3 files');
-      // Pass path returns no details object — wastedBytes implicitly 0.
-      expect(result.details).toBeUndefined();
+      // Pass path emits zero-valued details for JSON-consumer symmetry.
+      expect(result.details?.orphanCount).toBe(0);
+      expect(result.details?.wastedBytes).toBe(0);
+      expect(result.details?.orphans).toEqual([]);
     });
   });
 

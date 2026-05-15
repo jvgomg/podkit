@@ -10,6 +10,8 @@ import { join } from 'node:path';
 import type {
   DeviceManager,
   PlatformDeviceInfo,
+  PartitionLayout,
+  PartitionLayoutEntry,
   EjectResult,
   MountResult,
   EjectOptions,
@@ -43,6 +45,49 @@ async function execCommand(
       stderr: err instanceof Error ? err.message : String(err),
       code: 1,
     };
+  }
+}
+
+/**
+ * Group user-visible partition entries by their whole-disk identifier and
+ * attach a shared `PartitionLayout` payload to every sibling. macOS's
+ * `diskutil list` enumerates user-visible partitions only — firmware
+ * partitions, EFI service slices, and free space are filtered out by
+ * `getPlatformDeviceInfo`. This means `partitionCount` reflects the
+ * mountable / volume-owning partitions, not the kernel's full partition
+ * table. Documented asymmetry vs Linux's `parseLsblkJson`, which surfaces
+ * every partition the kernel sees.
+ */
+function attachMacPartitionLayouts(devices: PlatformDeviceInfo[]): void {
+  const byWholeDisk = new Map<string, PlatformDeviceInfo[]>();
+  for (const device of devices) {
+    const wholeDisk = device.identifier.replace(/s\d+$/, '');
+    let bucket = byWholeDisk.get(wholeDisk);
+    if (!bucket) {
+      bucket = [];
+      byWholeDisk.set(wholeDisk, bucket);
+    }
+    bucket.push(device);
+  }
+
+  for (const siblings of byWholeDisk.values()) {
+    // Sort by trailing partition number so `index` reflects partition order.
+    siblings.sort((a, b) => {
+      const ai = Number(a.identifier.match(/s(\d+)$/)?.[1] ?? 0);
+      const bi = Number(b.identifier.match(/s(\d+)$/)?.[1] ?? 0);
+      return ai - bi;
+    });
+    const partitions: PartitionLayoutEntry[] = siblings.map((sib, i) => ({
+      index: i + 1,
+      filesystem: sib.filesystem ?? null,
+      sizeBytes: sib.size,
+      identifier: sib.identifier,
+      ...(sib.volumeUuid ? { volumeUuid: sib.volumeUuid } : {}),
+    }));
+    const layout: PartitionLayout = { partitionCount: partitions.length, partitions };
+    for (const sib of siblings) {
+      sib.partitionLayout = layout;
+    }
   }
 }
 
@@ -351,6 +396,15 @@ export class MacOSDeviceManager implements DeviceManager {
       }
     }
 
+    // Attach per-disk partition layout. Group surfaced partitions by their
+    // whole-disk identifier (disk5s2 → disk5), then attach a `PartitionLayout`
+    // payload describing every sibling we saw on the same disk. macOS doesn't
+    // expose the kernel's full partition table here (firmware partitions, free
+    // space, EFI service partitions are filtered out by `getPlatformDeviceInfo`),
+    // so the layout reflects the *user-visible* partitions only. Documented
+    // asymmetry vs Linux, which surfaces the full table from `lsblk`.
+    attachMacPartitionLayouts(devices);
+
     this._listDevicesCache = { result: devices, expiresAt: now + 1000 };
     return devices;
   }
@@ -474,6 +528,14 @@ Replace diskXsY with your actual device identifier`;
     // Get media type
     const mediaType = info['Media Type'] || '';
 
+    // Capture the filesystem string. diskutil reports it via "File System
+    // Personality" (e.g. "MS-DOS FAT32") for mounted volumes and "Type
+    // (Bundle)" (e.g. "Apple_HFS", "Windows_FAT_32") for the partition entry
+    // regardless of mount state. Prefer the more user-friendly Personality
+    // when available, fall back to Type (Bundle) so unmounted partitions
+    // still carry filesystem info.
+    const filesystem = info['File System Personality'] || info['Type (Bundle)'] || undefined;
+
     return {
       identifier: diskId,
       volumeName,
@@ -483,6 +545,7 @@ Replace diskXsY with your actual device identifier`;
       isMounted,
       mountPoint: isMounted ? mountPoint : undefined,
       mediaType,
+      ...(filesystem ? { filesystem } : {}),
     };
   }
 

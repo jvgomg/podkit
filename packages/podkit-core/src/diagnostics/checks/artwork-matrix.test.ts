@@ -421,9 +421,10 @@ describe('AC#3 — healthy ArtworkDB with N entries → pass', () => {
     expect(result.status).toBe('pass');
     expect(result.repairable).toBe(false);
     expect(result.details?.totalEntries).toBe(N);
-    // corruptEntries is omitted on the pass path (only present on fail) — so
-    // either undefined or 0 is acceptable here; pin the absence.
-    expect(result.details?.corruptEntries).toBeUndefined();
+    // Pass path now emits zero-valued fields for JSON-consumer symmetry.
+    expect(result.details?.corruptEntries).toBe(0);
+    expect(result.details?.healthyEntries).toBe(N);
+    expect(result.details?.corruptPercent).toBe(0);
     const formats = result.details?.formats as Array<{ id: number; entries: number }>;
     expect(formats).toHaveLength(1);
     expect(formats[0]!.id).toBe(1028);

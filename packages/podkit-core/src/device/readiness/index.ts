@@ -52,21 +52,34 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   }
 
   // Stage 1: USB Connected
-  // If we have a PlatformDeviceInfo, the device was discovered by the OS
+  // If we have a PlatformDeviceInfo, the device was discovered by the OS.
+  // Mirror the unsupported-path stage shape: surface vendorId/productId/
+  // usbModel into the stage details so JSON consumers reading
+  // `result.stages[0].details` see the same information as the
+  // unsupported-path push (TASK-338). The data is reachable via
+  // `input.usbConnection` (UsbFingerprint) and `input.usbModel` (IpodModel).
   stages.push({
     stage: 'usb',
     status: 'pass',
     summary: 'Device visible to OS',
-    details: { identifier: device.identifier },
+    details: {
+      identifier: device.identifier,
+      ...(input.usbConnection?.vendorId ? { vendorId: input.usbConnection.vendorId } : {}),
+      ...(input.usbConnection?.productId ? { productId: input.usbConnection.productId } : {}),
+      ...(input.usbModel ? { usbModel: input.usbModel.displayName } : {}),
+    },
   });
 
   // Stage 2: Partitioned
-  // findIpodDevices only returns partitioned devices
+  // findIpodDevices only returns partitioned devices. Surface the partition
+  // layout collected by the platform probe (lsblk on Linux, diskutil on
+  // macOS) so JSON consumers can render "iPod with single partition (FAT32,
+  // 32GB)" without re-probing the kernel (TASK-338).
   stages.push({
     stage: 'partition',
     status: 'pass',
     summary: 'Partition table present',
-    details: { identifier: device.identifier },
+    details: buildPartitionStageDetails(device),
   });
 
   // Stage 3: Has Filesystem
@@ -193,6 +206,49 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   }
 
   return { level, stages, usbModel: input.usbModel, deviceModel, summary };
+}
+
+// ── Stage detail helpers ──────────────────────────────────────────────────────
+
+/**
+ * Build the partition-stage `details` payload from a platform-probed device.
+ *
+ * The platform probe (`lsblk -J` on Linux, `diskutil list -plist` on macOS)
+ * already enumerated the whole-disk partition layout into
+ * `PlatformDeviceInfo.partitionLayout`. We thread it into the stage details
+ * verbatim — no re-probing — so JSON consumers can render layout-aware
+ * messages ("iPod with single partition (FAT32, 32GB)").
+ *
+ * Cross-platform asymmetry: Linux's `lsblk` surfaces the kernel's full
+ * partition table (including firmware partitions and unformatted slices, so
+ * `partitionCount` can exceed the user-visible volume count). macOS's
+ * `diskutil list` enumerates user-visible partitions only — firmware
+ * partitions and free space are filtered out — so `partitionCount` reflects
+ * the volume-owning partitions only. The `filesystem` strings also differ
+ * by platform (Linux: `"vfat"`, `"hfsplus"`; macOS: `"MS-DOS FAT32"`,
+ * `"Apple_HFS"`). Both are documented inline at the
+ * `PartitionLayout` / `PlatformDeviceInfo.filesystem` type definitions.
+ *
+ * Falls back to the historical `{ identifier }` shape when no layout was
+ * captured by the probe — preserves the existing contract for callers that
+ * synthesise a `PlatformDeviceInfo` without going through `listDevices()`.
+ */
+function buildPartitionStageDetails(device: ReadinessInput['device']): Record<string, unknown> {
+  const layout = device.partitionLayout;
+  if (!layout) {
+    return { identifier: device.identifier };
+  }
+  return {
+    identifier: device.identifier,
+    partitionCount: layout.partitionCount,
+    partitions: layout.partitions.map((p) => ({
+      index: p.index,
+      filesystem: p.filesystem,
+      sizeBytes: p.sizeBytes,
+      ...(p.identifier ? { identifier: p.identifier } : {}),
+      ...(p.volumeUuid ? { volumeUuid: p.volumeUuid } : {}),
+    })),
+  };
 }
 
 // ── USB-only readiness result ─────────────────────────────────────────────────

@@ -1,8 +1,19 @@
 /**
- * udev-rule repair-only diagnostic check.
+ * udev-rule diagnostic check.
  *
- * Installs the podkit udev rule to `/etc/udev/rules.d/` so that Linux users
- * can access iPod SCSI devices without sudo. Invocable via:
+ * Detects whether the podkit udev rule is installed at
+ * `/etc/udev/rules.d/91-podkit-ipod-scsi.rules` so that Linux users can
+ * access iPod SCSI devices without sudo. Reports:
+ *
+ *   - pass: rule installed with the canonical content
+ *   - warn: rule installed but the contents differ (stale rule from an
+ *     older podkit version, or hand-edited)
+ *   - fail (repairable): rule absent — repair will install it
+ *   - fail (not repairable): rule present but unreadable (permissions,
+ *     I/O error)
+ *   - skip: not applicable to the platform (anything other than Linux)
+ *
+ * Invocable as a repair via:
  *
  *   podkit doctor --repair udev-rule
  *
@@ -19,7 +30,8 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, unlinkSync } from 'node:fs';
+import { readFile as readFileNative, writeFileSync, unlinkSync } from 'node:fs';
+import { promisify } from 'node:util';
 import type {
   DiagnosticCheck,
   CheckResult,
@@ -29,6 +41,8 @@ import type {
   RepairResult,
   DiagnosticRepair,
 } from '../types.js';
+
+const readFileAsync = promisify(readFileNative);
 
 // ── Rule content ─────────────────────────────────────────────────────────────
 
@@ -81,6 +95,117 @@ export type SudoExecutor = (args: string[]) => SudoResult;
 export interface FsOps {
   writeFile(path: string, content: string): void;
   unlink(path: string): void;
+}
+
+/**
+ * Injectable file reader for the detection path. Mirrors the
+ * `SubprocessRunner` pattern used by sibling system-scope checks: the
+ * production binding passes `defaultReadFile` (fs.promises.readFile); tests
+ * pass a fake.
+ */
+export type ReadFileFn = (path: string) => Promise<string>;
+
+/**
+ * Production read-file implementation — UTF-8 string read with the standard
+ * Node `fs.promises.readFile`. Errors propagate (caller catches and maps to
+ * `fail` / `skip` per the detection contract).
+ */
+export const defaultReadFile: ReadFileFn = async (path: string) => {
+  const buf = await readFileAsync(path);
+  return buf.toString('utf8');
+};
+
+// ── Pure detection logic (injectable for tests) ───────────────────────────────
+
+/** Options accepted by the pure detection function. */
+export interface UdevRuleCheckOptions {
+  /** Platform under test. Default: `process.platform`. */
+  platform?: NodeJS.Platform;
+  /** Path read by the check. Default: `TARGET_PATH`. */
+  path?: string;
+  /** Injectable file reader. Default: `defaultReadFile`. */
+  readFile?: ReadFileFn;
+}
+
+/**
+ * Pure detection — accepts an injected reader so Tier-1 tests don't touch
+ * the host filesystem. Mirrors `checkInquiryMethods(probe, platform)` in
+ * `inquiry-methods.ts`.
+ *
+ * On non-Linux platforms, returns `skip` without consulting the reader.
+ */
+export async function checkUdevRule(opts: UdevRuleCheckOptions = {}): Promise<CheckResult> {
+  const platform = opts.platform ?? process.platform;
+  const path = opts.path ?? TARGET_PATH;
+  const readFile = opts.readFile ?? defaultReadFile;
+
+  if (platform !== 'linux') {
+    return {
+      status: 'skip',
+      summary: 'not applicable to platform',
+      repairable: false,
+    };
+  }
+
+  let content: string;
+  try {
+    content = await readFile(path);
+  } catch (err) {
+    const errno = (err as NodeJS.ErrnoException).code;
+    if (errno === 'ENOENT') {
+      return {
+        status: 'fail',
+        summary: 'iPod udev rule not installed',
+        repairable: true,
+        details: { path },
+      };
+    }
+    return {
+      status: 'fail',
+      summary: 'cannot read iPod udev rule',
+      repairable: false,
+      details: {
+        path,
+        errno: errno ?? 'UNKNOWN',
+        message: err instanceof Error ? err.message : String(err),
+      },
+    };
+  }
+
+  if (content === UDEV_RULE_CONTENT) {
+    return {
+      status: 'pass',
+      summary: 'iPod udev rule installed',
+      repairable: false,
+      details: { path },
+    };
+  }
+
+  return {
+    status: 'warn',
+    summary: 'iPod udev rule is stale (different vendor/product set)',
+    repairable: true,
+    details: {
+      path,
+      diff: describeStale(content, UDEV_RULE_CONTENT),
+    },
+  };
+}
+
+/**
+ * Build a one-line description of how the installed rule differs from the
+ * canonical content. Intentionally terse — this string lands in the doctor
+ * JSON's `details.diff` field, not a full diff viewer.
+ */
+function describeStale(installed: string, canonical: string): string {
+  const installedLen = installed.length;
+  const canonicalLen = canonical.length;
+  const installedLines = installed.split('\n').length;
+  const canonicalLines = canonical.split('\n').length;
+  return (
+    `installed ${installedLen} bytes / ${installedLines} lines, ` +
+    `expected ${canonicalLen} bytes / ${canonicalLines} lines`
+  );
 }
 
 // ── Pure install logic (injectable for tests) ─────────────────────────────────
@@ -222,22 +347,18 @@ export const udevRuleRepair: DiagnosticRepair = {
 // ── Exported check object ─────────────────────────────────────────────────────
 
 /**
- * Repair-only check that exposes the udev rule install action.
- * Detection is not needed: the repair is idempotent and safe to run at any time.
+ * Detection + repair for the podkit udev rule. The production `check()`
+ * binding uses the default file reader; tests pass a fake reader via
+ * `checkUdevRule()` directly.
  */
 export const udevRuleCheck: DiagnosticCheck = {
   id: 'udev-rule',
   name: 'udev Rule (Linux SCSI Access)',
   scope: 'system',
   applicableTo: ['ipod', 'mass-storage'],
-  repairOnly: true,
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
-    return {
-      status: 'skip',
-      summary: 'udev-rule is a repair-only action (run with --repair udev-rule)',
-      repairable: false,
-    };
+    return checkUdevRule();
   },
 
   repair: udevRuleRepair,

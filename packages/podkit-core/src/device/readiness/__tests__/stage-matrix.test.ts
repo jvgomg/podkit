@@ -18,15 +18,15 @@
  * Persona-driven equivalents land at Tier-3 once TASK-322.05.01 closes the
  * USB synthesis loop (per the task's own deps).
  *
- * **Findings surfaced while writing this test (see task notes):**
+ * **Findings (resolved by TASK-338, 2026-05-16):**
  *
- * - AC #1 — usb-stage success path does NOT echo vendorId/productId/usbModel
- *   in `details`; only `identifier`. The pipeline plumbs `usbModel` through
- *   `ReadinessResult` but not into the stage. Asserted at the result level.
- * - AC #4 — partition stage always passes for any device that arrives in
- *   `checkReadiness()`; single-vs-dual-partition layout is not observable
- *   from inside the cascade (the partition probe lives upstream in
- *   `findIpodDevices`). Both layouts behave identically through the pipeline.
+ * - AC #1 — usb-stage success path now echoes vendorId/productId/usbModel
+ *   into `details`, mirroring the unsupported-path shape on
+ *   `createUsbOnlyReadinessResult`. Tests below assert the richer shape.
+ * - AC #4 — partition stage emits `{ partitionCount, partitions: [...] }`
+ *   sourced from `PlatformDeviceInfo.partitionLayout` (populated by the
+ *   `lsblk -J` / `diskutil list -plist` probes upstream). Single- vs
+ *   dual-partition layouts are now distinguishable from inside the cascade.
  * - AC #5 — "no partition table at all" surfaces via
  *   `createUsbOnlyReadinessResult`, NOT the main cascade. Asserted there.
  *
@@ -160,13 +160,12 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#1 usb passes for a discovered device; result.usbModel surfaces the resolved model', async () => {
+  it('#1 usb passes for a discovered device; details echo vendorId/productId/usbModel (TASK-338 — matching the unsupported-path shape)', async () => {
     // The usb stage always passes for any PlatformDeviceInfo that reaches
     // the pipeline (the device manager only surfaces partitioned devices).
-    // FINDING: the success-path `details` only carry `identifier`; vendorId/
-    // productId/usbModel are exposed on ReadinessResult.usbModel instead.
-    // We assert that contract here — change the test if the pipeline ever
-    // starts echoing vendor metadata into stage details.
+    // TASK-338: pass-path details now mirror the unsupported-path push —
+    // identifier + vendorId + productId + usbModel — so JSON consumers see
+    // the same information regardless of which branch fired.
     const usbModel = makeIpodModel();
     const result = await checkReadiness({
       device: makeDevice({ mountPoint: dir }),
@@ -176,7 +175,24 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('pass');
     expect(usb?.details?.identifier).toBe('disk6s2');
+    expect(usb?.details?.vendorId).toBe('0x05ac');
+    expect(usb?.details?.productId).toBe('0x1207');
+    expect(usb?.details?.usbModel).toBe('iPod video 5th generation');
     expect(result.usbModel).toEqual(usbModel);
+  });
+
+  it('#1 usb pass-path details omit USB fields when no usbConnection/usbModel was threaded', async () => {
+    // Defensive: the pipeline accepts a `PlatformDeviceInfo` without any
+    // upstream USB data (e.g. legacy callers, doctor running on a
+    // mounted-only volume). Stage details should fall back to identifier-only
+    // and not emit `undefined` placeholders.
+    const result = await checkReadiness({ device: makeDevice({ mountPoint: dir }) });
+    const usb = result.stages.find((s) => s.stage === 'usb');
+    expect(usb?.status).toBe('pass');
+    expect(usb?.details?.identifier).toBe('disk6s2');
+    expect(usb?.details).not.toHaveProperty('vendorId');
+    expect(usb?.details).not.toHaveProperty('productId');
+    expect(usb?.details).not.toHaveProperty('usbModel');
   });
 
   it('#2 usb fails (and downstream stages skip) when caller threads unsupportedReason', async () => {
@@ -227,20 +243,99 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
   });
   afterEach(() => fs.rmSync(dir, { recursive: true, force: true }));
 
-  it('#4 partition passes for any PlatformDeviceInfo (single- or dual-partition layouts behave identically through the cascade)', async () => {
-    // FINDING: the partition stage is a no-op assertion inside the cascade
-    // — `findIpodDevices` only surfaces partitioned devices. Single-vs-dual
-    // partition observability requires probing layouts upstream, which is
-    // not part of the readiness pipeline today. Tracking as a deferred
-    // follow-up (see task notes).
-    const single = await checkReadiness({
+  it('#4 partition passes for a single-partition iPod layout; details echo partitionCount=1 + per-partition filesystem/size (TASK-338)', async () => {
+    // Single-partition layout (typical FAT32 iPod 5G / nano on macOS Win-style
+    // formatting). The `partitionLayout` payload was populated by the
+    // platform probe upstream; the partition stage threads it into details
+    // verbatim without re-probing.
+    const result = await checkReadiness({
+      device: makeDevice({
+        mountPoint: dir,
+        identifier: 'sda1',
+        partitionLayout: {
+          partitionCount: 1,
+          partitions: [
+            {
+              index: 1,
+              filesystem: 'vfat',
+              sizeBytes: 32 * 1024 * 1024 * 1024,
+              identifier: 'sda1',
+              volumeUuid: 'ABCD-EF01',
+            },
+          ],
+        },
+      }),
+    });
+    const partition = result.stages.find((s) => s.stage === 'partition');
+    expect(partition?.status).toBe('pass');
+    expect(partition?.details?.partitionCount).toBe(1);
+    expect(partition?.details?.partitions).toEqual([
+      {
+        index: 1,
+        filesystem: 'vfat',
+        sizeBytes: 32 * 1024 * 1024 * 1024,
+        identifier: 'sda1',
+        volumeUuid: 'ABCD-EF01',
+      },
+    ]);
+  });
+
+  it('#4 partition passes for a dual-partition iPod layout (firmware + FAT32) — both partitions visible in stage details', async () => {
+    // Dual-partition layout (iPod 5G Mac formatting: HFS-wrapped firmware
+    // partition + main media partition). Both partitions are visible in
+    // `partitionLayout.partitions` even though only the second has a UUID;
+    // the kernel still reports the firmware slice.
+    const result = await checkReadiness({
+      device: makeDevice({
+        mountPoint: dir,
+        identifier: 'disk6s2',
+        partitionLayout: {
+          partitionCount: 2,
+          partitions: [
+            { index: 1, filesystem: null, sizeBytes: 80 * 1024 * 1024, identifier: 'disk6s1' },
+            {
+              index: 2,
+              filesystem: 'MS-DOS FAT32',
+              sizeBytes: 30 * 1024 * 1024 * 1024,
+              identifier: 'disk6s2',
+              volumeUuid: 'ABC-123-UUID',
+            },
+          ],
+        },
+      }),
+    });
+    const partition = result.stages.find((s) => s.stage === 'partition');
+    expect(partition?.status).toBe('pass');
+    expect(partition?.details?.partitionCount).toBe(2);
+    const partitions = partition?.details?.partitions as Array<Record<string, unknown>>;
+    expect(partitions).toHaveLength(2);
+    expect(partitions[0]).toEqual({
+      index: 1,
+      filesystem: null,
+      sizeBytes: 80 * 1024 * 1024,
+      identifier: 'disk6s1',
+    });
+    expect(partitions[1]).toEqual({
+      index: 2,
+      filesystem: 'MS-DOS FAT32',
+      sizeBytes: 30 * 1024 * 1024 * 1024,
+      identifier: 'disk6s2',
+      volumeUuid: 'ABC-123-UUID',
+    });
+  });
+
+  it('#4 partition pass-path falls back to identifier-only when no layout was captured by the probe (legacy/synthesised PlatformDeviceInfo)', async () => {
+    // Callers that synthesise a `PlatformDeviceInfo` outside `listDevices()`
+    // (e.g. older doctor flows, tests that pre-date TASK-338) won't carry a
+    // `partitionLayout` field. The pipeline preserves the historical
+    // `{ identifier }` shape so existing JSON consumers don't see a sudden
+    // schema break.
+    const result = await checkReadiness({
       device: makeDevice({ mountPoint: dir, identifier: 'sda1' }),
     });
-    const dual = await checkReadiness({
-      device: makeDevice({ mountPoint: dir, identifier: 'disk6s2' }),
-    });
-    expect(single.stages.find((s) => s.stage === 'partition')?.status).toBe('pass');
-    expect(dual.stages.find((s) => s.stage === 'partition')?.status).toBe('pass');
+    const partition = result.stages.find((s) => s.stage === 'partition');
+    expect(partition?.status).toBe('pass');
+    expect(partition?.details).toEqual({ identifier: 'sda1' });
   });
 
   it('#5 partition fails (and yields needs-partition) via createUsbOnlyReadinessResult when no disk representation exists', () => {

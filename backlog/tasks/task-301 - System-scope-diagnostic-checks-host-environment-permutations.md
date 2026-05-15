@@ -4,7 +4,7 @@ title: 'System-scope diagnostic checks: host environment permutations'
 status: Done
 assignee: []
 created_date: '2026-05-08 07:21'
-updated_date: '2026-05-15 00:02'
+updated_date: '2026-05-15 23:32'
 labels:
   - testing
   - doctor
@@ -61,15 +61,13 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [x] #8 video-encoder returns pass when libx264 is available
 - [x] #9 video-encoder returns warn on macOS when only h264_videotoolbox is available (no libx264)
 - [x] #10 video-encoder returns fail when no H.264 encoder is available
-- [ ] #11 udev-rule (Linux) returns pass when /etc/udev/rules.d/<podkit-rule> exists with expected contents — DEFERRED to TASK-336 (udev-rule check has no detection logic today; repairOnly: true)
-- [ ] #12 udev-rule (Linux) returns fail+repairable when the rule file is absent — DEFERRED to TASK-336
-- [ ] #13 udev-rule (Linux) returns warn when the rule file exists but contents are stale (different vendor/product set) — DEFERRED to TASK-336
-- [ ] #14 udev-rule (Linux) repair installs the rule and a second doctor run reports pass; dry-run prints the action without writing — DEFERRED to TASK-336
+- [x] #11 udev-rule (Linux) returns pass when /etc/udev/rules.d/<podkit-rule> exists with expected contents — covered in TASK-336
+- [x] #12 udev-rule (Linux) returns fail+repairable when the rule file is absent — covered in TASK-336
+- [x] #13 udev-rule (Linux) returns warn when the rule file exists but contents are stale (different vendor/product set) — covered in TASK-336
+- [x] #14 udev-rule (Linux) repair installs the rule and a second doctor run reports pass; dry-run prints the action without writing — covered in TASK-336
 - [x] #15 udev-rule on macOS reports skip (not applicable to platform)
 - [x] #16 All four checks include scope: 'system' in their JSON output
 <!-- AC:END -->
-
-
 
 ## Implementation Notes
 
@@ -115,4 +113,8 @@ Per TASK-321.08 sweep + task description, Tier-3 (`*.linux.tier3.test.ts`) is in
 
 **Matrix visibility**
 All four checks exercise their state matrix in a single file (`system-scope-matrix.test.ts`) per the task brief preference. Per-check unit-test files (`inquiry-methods.test.ts`, `codec-encoders.test.ts`, `udev-rule.test.ts`) remain untouched — they're already green and provide complementary coverage.
+
+## udev-rule detection landed via TASK-336 (2026-05-16)
+
+ACs #11–#14 (deferred at Tier-1 land time per Finding E) are now covered. TASK-336 added `checkUdevRule()` with an injectable `readFile` seam, dropped `repairOnly: true`, and migrated the four `DEFERRED` placeholders in `system-scope-matrix.test.ts` into proper assertions. AC #14 round-trip drives `runUdevRuleInstall` against an in-memory FS and re-runs `check()` to assert pass. See TASK-336 for full implementation notes.
 <!-- SECTION:NOTES:END -->

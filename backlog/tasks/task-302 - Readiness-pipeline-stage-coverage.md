@@ -4,7 +4,7 @@ title: Readiness pipeline stage coverage
 status: Done
 assignee: []
 created_date: '2026-05-08 07:21'
-updated_date: '2026-05-15 21:59'
+updated_date: '2026-05-15 23:35'
 labels:
   - testing
   - doctor
@@ -89,9 +89,9 @@ Use the test harness landed in TASK-321 (Phase 1):
 
 **Findings — pipeline gaps surfaced while writing the matrix**
 
-1. **AC #1 — usb stage details do not echo USB metadata on success.** Pipeline's success-path stage push is `{ identifier }` only; vendorId/productId/usbModel are echoed only on the unsupported short-circuit and via `createUsbOnlyReadinessResult`. `ReadinessResult.usbModel` carries the resolved model, so the data is reachable but not in stage `details`. Matrix asserts the current contract (identifier on stage details; usbModel on result). Suggested follow-up: "usb stage should echo vendorId/productId/usbModel into stage details on success for parity with the short-circuit path".
+1. **AC #1 — usb stage details do not echo USB metadata on success.** [Now closed by TASK-338, 2026-05-16.] Pipeline's success-path stage push was `{ identifier }` only; vendorId/productId/usbModel were echoed only on the unsupported short-circuit and via `createUsbOnlyReadinessResult`. TASK-338 mirrored the unsupported-path push onto the pass path — usb stage details now emit `{ identifier, vendorId, productId, usbModel }` consistently.
 
-2. **AC #4 — partition stage layout is invisible inside the cascade.** `findIpodDevices()` upstream filters to partitioned devices, so the partition stage is a passthrough with no layout detail. Single- vs dual-partition observability requires either pushing the partition probe into the pipeline or threading layout through `PlatformDeviceInfo`. Suggested follow-up: "partition stage should report partition count + filesystem-type-per-partition in details".
+2. **AC #4 — partition stage layout is invisible inside the cascade.** [Now closed by TASK-338, 2026-05-16.] `findIpodDevices()` upstream filters to partitioned devices, so the partition stage was a passthrough with no layout detail. TASK-338 threaded `partitionLayout` through `PlatformDeviceInfo` (populated by `lsblk -J` on Linux and `diskutil list -plist` on macOS) and emits `{ partitionCount, partitions: [{ index, filesystem, sizeBytes }] }` in the partition-stage details on the pass path.
 
 3. **AC #14 — Tier-1 database pass path is libgpod-bound.** Covered by the existing integration test (`readiness.integration.test.ts` via `withTestIpod`). Duplicating in Tier-1 requires synthesising a binary iTunesDB. Defer to integration; matrix documents the deferral inline.
 

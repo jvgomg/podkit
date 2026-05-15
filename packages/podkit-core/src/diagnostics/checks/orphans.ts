@@ -132,6 +132,7 @@ export const orphanFilesCheck: DiagnosticCheck = {
         status: 'pass',
         summary: `All ${diskFiles.length} file${diskFiles.length === 1 ? '' : 's'} on disk are referenced by tracks`,
         repairable: false,
+        details: { orphanCount: 0, wastedBytes: 0, orphans: [] },
       };
     }
 

@@ -25,6 +25,8 @@ import { join, resolve } from 'node:path';
 import type {
   DeviceManager,
   PlatformDeviceInfo,
+  PartitionLayout,
+  PartitionLayoutEntry,
   EjectResult,
   MountResult,
   EjectOptions,
@@ -113,6 +115,31 @@ export function collectPartitions(devices: LsblkDevice[]): LsblkDevice[] {
 }
 
 /**
+ * Build a `PartitionLayout` payload describing every partition on a whole
+ * disk. Includes partitions without a UUID (firmware, free space, etc.) so
+ * the layout reflects the partition table as the kernel sees it. The
+ * returned layout is intentionally a snapshot of the disk; sibling
+ * `PlatformDeviceInfo` entries reference the same payload.
+ */
+function buildPartitionLayout(diskChildren: LsblkDevice[] | undefined): PartitionLayout {
+  const partitions: PartitionLayoutEntry[] = [];
+  let index = 1;
+  for (const child of diskChildren ?? []) {
+    if (child.type !== 'part') continue;
+    const entry: PartitionLayoutEntry = {
+      index,
+      filesystem: child.fstype ?? null,
+      sizeBytes: child.size ?? 0,
+      identifier: child.name,
+      ...(child.uuid ? { volumeUuid: child.uuid } : {}),
+    };
+    partitions.push(entry);
+    index += 1;
+  }
+  return { partitionCount: partitions.length, partitions };
+}
+
+/**
  * Parse lsblk JSON output into PlatformDeviceInfo array.
  *
  * Exported for unit testing — this is a pure function with no I/O.
@@ -132,35 +159,81 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
     return [];
   }
 
-  const partitions = collectPartitions(parsed.blockdevices);
   const devices: PlatformDeviceInfo[] = [];
 
-  for (const part of partitions) {
-    // Skip partitions without UUID (not user-formatted partitions)
-    if (!part.uuid) {
-      continue;
+  // Walk disks so we can compute a per-disk partitionLayout payload once
+  // and attach it to every emitted sibling partition. Loop-device children
+  // are skipped here for the same reason `collectPartitions` skips them.
+  function walk(nodes: LsblkDevice[]): void {
+    for (const node of nodes) {
+      if (node.type === 'disk' && node.children?.length) {
+        const layout = buildPartitionLayout(node.children);
+        for (const part of node.children) {
+          if (part.type !== 'part') continue;
+          // Skip partitions without UUID (not user-formatted partitions) —
+          // they're still represented in `layout.partitions` so consumers
+          // see the full partition table.
+          if (!part.uuid) continue;
+
+          // Handle both old "mountpoint" (string) and new "mountpoints" (array) formats.
+          const rawMount =
+            part.mountpoint ??
+            part.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
+            null;
+          const isMounted = rawMount !== null && rawMount !== '';
+
+          devices.push({
+            identifier: part.name,
+            volumeName: part.label ?? '',
+            volumeUuid: part.uuid,
+            size: part.size ?? 0,
+            blockSizeBytes: part['phy-sec'] ?? undefined,
+            isMounted,
+            mountPoint: isMounted ? (rawMount ?? undefined) : undefined,
+            mediaType: '',
+            ...(part.fstype ? { filesystem: part.fstype } : {}),
+            partitionLayout: layout,
+          });
+        }
+      } else if (node.type === 'part' && node.uuid) {
+        // Top-level "part" entries (rare — lsblk normally nests under a disk).
+        // Synthesise a single-partition layout so callers always have one.
+        const rawMount =
+          node.mountpoint ??
+          node.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
+          null;
+        const isMounted = rawMount !== null && rawMount !== '';
+        devices.push({
+          identifier: node.name,
+          volumeName: node.label ?? '',
+          volumeUuid: node.uuid,
+          size: node.size ?? 0,
+          blockSizeBytes: node['phy-sec'] ?? undefined,
+          isMounted,
+          mountPoint: isMounted ? (rawMount ?? undefined) : undefined,
+          mediaType: '',
+          ...(node.fstype ? { filesystem: node.fstype } : {}),
+          partitionLayout: {
+            partitionCount: 1,
+            partitions: [
+              {
+                index: 1,
+                filesystem: node.fstype ?? null,
+                sizeBytes: node.size ?? 0,
+                identifier: node.name,
+                ...(node.uuid ? { volumeUuid: node.uuid } : {}),
+              },
+            ],
+          },
+        });
+      }
+      if (node.children && node.type !== 'loop' && node.type !== 'disk') {
+        walk(node.children);
+      }
     }
-
-    // Handle both old "mountpoint" (string) and new "mountpoints" (array) formats.
-    // Newer kernels (5.14+ / util-linux 2.38+) use the array form.
-    const rawMount =
-      part.mountpoint ??
-      part.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
-      null;
-    const isMounted = rawMount !== null && rawMount !== '';
-
-    devices.push({
-      identifier: part.name,
-      volumeName: part.label ?? '',
-      volumeUuid: part.uuid,
-      size: part.size ?? 0,
-      blockSizeBytes: part['phy-sec'] ?? undefined,
-      isMounted,
-      mountPoint: isMounted ? (rawMount ?? undefined) : undefined,
-      mediaType: '',
-    });
   }
 
+  walk(parsed.blockdevices);
   return devices;
 }
 

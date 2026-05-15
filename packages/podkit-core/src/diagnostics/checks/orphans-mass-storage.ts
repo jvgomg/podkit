@@ -246,6 +246,7 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         status: 'pass',
         summary: `All ${totalFiles} file${totalFiles === 1 ? '' : 's'} on disk are tracked in the manifest`,
         repairable: false,
+        details: { orphanCount: 0, wastedBytes: 0, orphans: [] },
       };
     }
 

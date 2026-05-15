@@ -27,7 +27,16 @@ import { describe, it, expect } from 'bun:test';
 import { checkInquiryMethods, inquiryMethodsCheck, type ProbeFn } from './inquiry-methods.js';
 import { checkEncoderAvailability, codecEncodersCheck } from './codec-encoders.js';
 import { checkVideoEncoderForRunner, videoEncoderCheck } from './video-encoder.js';
-import { udevRuleCheck } from './udev-rule.js';
+import {
+  checkUdevRule,
+  runUdevRuleInstall,
+  udevRuleCheck,
+  UDEV_RULE_CONTENT,
+  TARGET_PATH,
+  type FsOps,
+  type ReadFileFn,
+  type SudoExecutor,
+} from './udev-rule.js';
 
 // ── Supporting types ──────────────────────────────────────────────────────────
 
@@ -408,36 +417,196 @@ describe('video-encoder — host environment matrix (TASK-301)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // udev-rule (AC #11..#15, plus AC #16 contribution)
 //
-// The current udevRuleCheck is `repairOnly: true` and its `check()` always
-// returns `skip` — there is no detection logic for "rule present", "rule
-// absent", or "rule stale". ACs #11..#14 therefore have no implementation to
-// drive. They are documented as DEFERRED here; if/when detection lands the
-// failing tests below will need updating.
-//
-// AC #15 (udev-rule on macOS reports skip) is asserted via the check's
-// scope/skip behaviour. We assert `skip` rather than registry-absent because
-// the check is registered on all platforms — see diagnostics/index.ts.
+// AC #11..#14 detection coverage landed in TASK-336 once `udevRuleCheck` got
+// rule-presence and staleness detection. Each AC is driven through the pure
+// `checkUdevRule()` function with an injectable `readFile` fake so the test
+// never touches the host filesystem. AC #14 (round-trip) drives the repair
+// against an in-memory FS, then re-runs `check()` against the same store.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('udev-rule — host environment matrix (TASK-301)', () => {
-  it('AC#15 udev-rule check returns skip on macOS (registered on all platforms; skip is the platform-aware signal)', async () => {
-    const result = await udevRuleCheck.check(stubCtx);
+/** In-memory readFile fake. `undefined` content → ENOENT. */
+function readFileFromMap(map: Map<string, string>): ReadFileFn {
+  return async (path: string) => {
+    const content = map.get(path);
+    if (content === undefined) {
+      const err = new Error(`ENOENT: ${path}`) as NodeJS.ErrnoException;
+      err.code = 'ENOENT';
+      throw err;
+    }
+    return content;
+  };
+}
 
-    expect(result.status).toBe('skip');
+describe('udev-rule — host environment matrix (TASK-301 ACs #11–#15, via TASK-336)', () => {
+  it('AC#11 Linux: rule present + content matches → pass', async () => {
+    const fs = new Map<string, string>([[TARGET_PATH, UDEV_RULE_CONTENT]]);
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: readFileFromMap(fs),
+    });
+
+    expect(result.status).toBe('pass');
+    expect(result.summary).toBe('iPod udev rule installed');
     expect(result.repairable).toBe(false);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
   });
 
-  it('AC#15 udev-rule check returns skip on Linux too (repair-only — detection lives in the repair)', async () => {
-    // The pure check() doesn't read process.platform; same result on Linux.
-    const result = await udevRuleCheck.check(stubCtx);
+  it('AC#12 Linux: rule absent → fail + repairable', async () => {
+    const fs = new Map<string, string>();
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: readFileFromMap(fs),
+    });
+
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('iPod udev rule not installed');
+    expect(result.repairable).toBe(true);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+  });
+
+  it('AC#13 Linux: rule present + content stale → warn + repairable', async () => {
+    const stale = `# stale podkit udev rule (older vendor set)
+ACTION=="add", SUBSYSTEM=="scsi_generic", ATTRS{idVendor}=="05ac"
+`;
+    const fs = new Map<string, string>([[TARGET_PATH, stale]]);
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile: readFileFromMap(fs),
+    });
+
+    expect(result.status).toBe('warn');
+    expect(result.summary).toContain('stale');
+    expect(result.repairable).toBe(true);
+    expect(result.details?.['path']).toBe(TARGET_PATH);
+    expect(typeof result.details?.['diff']).toBe('string');
+  });
+
+  it('AC#13 Linux: rule unreadable (EACCES) → fail (not repairable)', async () => {
+    const readFile: ReadFileFn = async (_p) => {
+      const err = new Error('EACCES: permission denied') as NodeJS.ErrnoException;
+      err.code = 'EACCES';
+      throw err;
+    };
+    const result = await checkUdevRule({
+      platform: 'linux',
+      readFile,
+    });
+
+    expect(result.status).toBe('fail');
+    expect(result.summary).toBe('cannot read iPod udev rule');
+    expect(result.repairable).toBe(false);
+    expect(result.details?.['errno']).toBe('EACCES');
+  });
+
+  it('AC#14 round-trip: repair installs the rule, then a second check() returns pass', async () => {
+    // In-memory filesystem: starts empty (rule absent).
+    const fs = new Map<string, string>();
+    const readFile = readFileFromMap(fs);
+
+    // 1) First check — rule is absent.
+    const before = await checkUdevRule({ platform: 'linux', readFile });
+    expect(before.status).toBe('fail');
+    expect(before.repairable).toBe(true);
+
+    // 2) Drive the repair against the same in-memory FS. The repair writes to
+    //    a temp path then `sudo cp`s to TARGET_PATH; the FsOps + executor
+    //    fakes route both writes back into the same map so a subsequent
+    //    check() will see the installed rule.
+    const fsOps: FsOps = {
+      writeFile: (path, content) => {
+        fs.set(path, content);
+      },
+      unlink: (path) => {
+        fs.delete(path);
+      },
+    };
+    const executor: SudoExecutor = (args) => {
+      if (args[0] === 'cp' && args.length === 3) {
+        const src = args[1]!;
+        const dst = args[2]!;
+        const content = fs.get(src);
+        if (content !== undefined) {
+          fs.set(dst, content);
+        }
+        return { code: 0, stderr: '' };
+      }
+      // udevadm control --reload / trigger — succeed silently.
+      return { code: 0, stderr: '' };
+    };
+
+    const repairResult = await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: false,
+      executor,
+      fsOps,
+    });
+    expect(repairResult.success).toBe(true);
+
+    // 3) Second check — rule is now present and matches canonical content.
+    const after = await checkUdevRule({ platform: 'linux', readFile });
+    expect(after.status).toBe('pass');
+    expect(after.summary).toBe('iPod udev rule installed');
+    expect(after.repairable).toBe(false);
+  });
+
+  it('AC#14 dry-run prints the action without writing the rule', async () => {
+    const fs = new Map<string, string>();
+    let writes = 0;
+    const fsOps: FsOps = {
+      writeFile: () => {
+        writes += 1;
+      },
+      unlink: () => {
+        writes += 1;
+      },
+    };
+    let executorCalls = 0;
+    const executor: SudoExecutor = () => {
+      executorCalls += 1;
+      return { code: 0, stderr: '' };
+    };
+
+    const repairResult = await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: true,
+      executor,
+      fsOps,
+    });
+    expect(repairResult.success).toBe(true);
+    expect(repairResult.summary).toContain(TARGET_PATH);
+    expect(writes).toBe(0);
+    expect(executorCalls).toBe(0);
+
+    // Filesystem is still empty → check() still reports fail.
+    const after = await checkUdevRule({
+      platform: 'linux',
+      readFile: readFileFromMap(fs),
+    });
+    expect(after.status).toBe('fail');
+  });
+
+  it('AC#15 udev-rule check returns skip on macOS (not applicable to platform)', async () => {
+    let readCalls = 0;
+    const result = await checkUdevRule({
+      platform: 'darwin',
+      readFile: async () => {
+        readCalls += 1;
+        return UDEV_RULE_CONTENT;
+      },
+    });
     expect(result.status).toBe('skip');
+    expect(result.summary).toBe('not applicable to platform');
+    expect(result.repairable).toBe(false);
+    // Skip path is returned without reading the file.
+    expect(readCalls).toBe(0);
   });
 
-  // Document the deferred ACs in-test so anyone touching this matrix later
-  // sees the gap immediately rather than scrolling through backlog notes.
-  it('AC#11..#14 DEFERRED — udevRuleCheck is repairOnly; no rule-presence detection logic exists today', () => {
-    expect(udevRuleCheck.repairOnly).toBe(true);
+  it('udev-rule shows up in the doctor JSON contract (registered, has repair, system-scope)', () => {
+    expect(udevRuleCheck.id).toBe('udev-rule');
+    expect(udevRuleCheck.scope).toBe('system');
     expect(udevRuleCheck.repair).toBeDefined();
+    // No longer repairOnly — detection logic is now wired up.
+    expect(udevRuleCheck.repairOnly).toBeUndefined();
   });
 });
 

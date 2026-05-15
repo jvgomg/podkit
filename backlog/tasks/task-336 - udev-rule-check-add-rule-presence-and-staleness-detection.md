@@ -1,9 +1,10 @@
 ---
 id: TASK-336
 title: 'udev-rule check: add rule-presence and staleness detection'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-15 00:02'
+updated_date: '2026-05-15 23:32'
 labels:
   - doctor
   - linux
@@ -11,6 +12,10 @@ labels:
 milestone: m-19
 dependencies:
   - TASK-301
+modified_files:
+  - packages/podkit-core/src/diagnostics/checks/udev-rule.ts
+  - packages/podkit-core/src/diagnostics/checks/udev-rule.test.ts
+  - packages/podkit-core/src/diagnostics/checks/system-scope-matrix.test.ts
 priority: low
 ordinal: 22000
 ---
@@ -60,10 +65,57 @@ The check today only knows how to *install* the rule (via `--repair udev-rule`).
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 udevRuleCheck.check() reads /etc/udev/rules.d/91-podkit-ipod-scsi.rules and returns pass/fail/warn/skip per the rules in the description
-- [ ] #2 Detection happens through an injectable fs seam so Tier-1 tests don't touch the host filesystem
-- [ ] #3 Repair-side behaviour is unchanged: --repair udev-rule still installs the rule, --dry-run still prints without writing
-- [ ] #4 TASK-301 ACs #11-#14 are covered by new tests in system-scope-matrix.test.ts; deferral notes on TASK-301 removed
-- [ ] #5 macOS platform branch returns skip via check() (not via repairOnly)
-- [ ] #6 All existing udev-rule tests still pass (no regression in the repair-side coverage)
+- [x] #1 udevRuleCheck.check() reads /etc/udev/rules.d/91-podkit-ipod-scsi.rules and returns pass/fail/warn/skip per the rules in the description
+- [x] #2 Detection happens through an injectable fs seam so Tier-1 tests don't touch the host filesystem
+- [x] #3 Repair-side behaviour is unchanged: --repair udev-rule still installs the rule, --dry-run still prints without writing
+- [x] #4 TASK-301 ACs #11-#14 are covered by new tests in system-scope-matrix.test.ts; deferral notes on TASK-301 removed
+- [x] #5 macOS platform branch returns skip via check() (not via repairOnly)
+- [x] #6 All existing udev-rule tests still pass (no regression in the repair-side coverage)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Landed 2026-05-16
+
+**Files touched**
+- `packages/podkit-core/src/diagnostics/checks/udev-rule.ts` — dropped `repairOnly: true`, added `checkUdevRule()` pure detection function with injectable `readFile` seam (`ReadFileFn`), exported `defaultReadFile` for production use. The `udevRuleCheck.check()` binding now delegates to `checkUdevRule()` with default options. Repair-side path (`runUdevRuleInstall`, `udevRuleRepair`) is untouched.
+- `packages/podkit-core/src/diagnostics/checks/udev-rule.test.ts` — flipped the `repairOnly` metadata assertion (now expects `undefined`), removed the “check() returns skip” catch-all, added 8 detection tests covering all four states (pass / fail-absent / warn-stale / fail-unreadable) plus skip-on-darwin, skip-on-win32, custom path, and a near-miss byte-level stale check. Added a production-binding sanity test (skips on Linux to keep Tier-1 hermetic).
+- `packages/podkit-core/src/diagnostics/checks/system-scope-matrix.test.ts` — replaced the three `DEFERRED` placeholder tests with seven proper assertions: AC#11 pass, AC#12 fail+repairable, AC#13 warn+repairable (stale) + EACCES variant, AC#14 round-trip (in-memory FS — repair installs, check re-runs, asserts pass), AC#14 dry-run (verifies no writes + check still fails), AC#15 skip-on-macOS. The new matrix-level "doctor JSON contract" test verifies the check is registered, has a repair, declares `scope: 'system'`, and is no longer `repairOnly`.
+
+**DI seam shape**
+
+Mirrors `checkInquiryMethods(probe, platform)` in `inquiry-methods.ts`:
+```
+checkUdevRule(opts?: { platform?, path?, readFile? }): Promise<CheckResult>
+```
+Defaults to `process.platform` + `TARGET_PATH` + `defaultReadFile` (a `promisify`d `fs.readFile`). Tests pass an in-memory `Map<string, string>` reader.
+
+**Stale-diff text shape**
+
+`details.diff` is intentionally terse: `"installed N bytes / M lines, expected N' bytes / M' lines"`. Not a full diff — just enough signal for `--json` consumers to spot the drift without bloating the doctor output. Future work could promote this to a structured diff if the JSON contract needs it.
+
+**Repair-side invariance verified**
+
+The repair tests (`describe('runUdevRuleInstall ...')`) were not touched. All 15 pre-existing repair-side assertions still pass. The round-trip test in `system-scope-matrix.test.ts` re-exercises `runUdevRuleInstall` against in-memory FsOps/executor fakes and confirms the produced filesystem state drives `check()` to pass.
+
+**Test count**
+
+- `udev-rule.test.ts`: 31 pass / 65 expects (was 23 pass / 38 expects — net +8 tests).
+- `system-scope-matrix.test.ts`: 28 pass / 96 expects (was 23 pass / 65 expects — net +5 tests, with the three deferred placeholders replaced by seven assertions).
+
+**Quality gates**
+- `bun test packages/podkit-core/src/diagnostics/checks/udev-rule.test.ts` — 31 pass / 0 fail
+- `bun test packages/podkit-core/src/diagnostics/checks/system-scope-matrix.test.ts` — 28 pass / 0 fail
+- `bun run test:unit --filter @podkit/core` — 2639 pass / 1 fail / 1 skip. The 1 fail (`parseLsblkJson > parses a single partition with all fields`) is pre-existing and unrelated to this work: it tracks an active WIP edit to `packages/podkit-core/src/device/platforms/{linux,macos}.ts` that lives in the user's working tree on a separate change.
+- `bunx tsc --noEmit -p packages/podkit-core/tsconfig.json` — one pre-existing error in `macos.ts` (same WIP). Files touched by TASK-336 type-check cleanly.
+- `bunx oxlint` on `udev-rule.ts`, `udev-rule.test.ts`, `system-scope-matrix.test.ts` — 0 warnings, 0 errors.
+
+**AC closure**
+- AC#1 — `udevRuleCheck.check()` reads the rule path and returns pass/fail/warn/skip per spec. Done.
+- AC#2 — Injectable `readFile: ReadFileFn` seam threaded through `checkUdevRule()`; tests use in-memory map readers. Done.
+- AC#3 — Repair-side path verified unchanged: `udevRuleRepair`, `runUdevRuleInstall`, `--dry-run`, and all 15 pre-existing repair tests still pass. Done.
+- AC#4 — TASK-301 ACs #11–#14 ticked; the in-test `DEFERRED` comment block + placeholder test removed; cross-reference back to TASK-336 appended to TASK-301 notes. Done.
+- AC#5 — macOS skip path returned from `checkUdevRule({ platform: 'darwin' })` (and `'win32'`) before any fs access. Verified by an assertion that the injected reader is never called on non-Linux. Done.
+- AC#6 — Repair-side tests (`runUdevRuleInstall on non-Linux` / `dry-run` / `success` / `failure paths` describes) remain unchanged and green. Done.
+<!-- SECTION:NOTES:END -->

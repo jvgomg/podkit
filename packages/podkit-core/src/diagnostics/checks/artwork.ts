@@ -96,6 +96,9 @@ export const artworkRebuildCheck: DiagnosticCheck = {
         repairable: false,
         details: {
           totalEntries: totalMHNI,
+          corruptEntries: 0,
+          healthyEntries: totalMHNI,
+          corruptPercent: 0,
           formats: formats.map((f) => ({
             id: f.formatId,
             slotSize: f.slotSize,
