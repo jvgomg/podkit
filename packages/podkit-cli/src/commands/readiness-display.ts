@@ -43,7 +43,13 @@ export function formatReadinessLevel(level: ReadinessLevel, deviceName: string):
     case 'needs-format':
       return 'Needs formatting \u2014 device has no recognized filesystem';
     case 'needs-partition':
-      return 'Needs partitioning \u2014 see: podkit device init';
+      // `podkit device init` is the wrong remediation here: it does not
+      // partition or format, and it requires the device to be already
+      // mounted. Point at the docs instead \u2014 the troubleshooting page
+      // covers the external tools (iPod Reset Utility, parted/gparted,
+      // mkfs.vfat, Rockbox utility) that actually do this work.
+      // TODO: replace with central DOCS_URLS const
+      return 'No mountable partition detected \u2014 see: https://docs.podkit.app/devices/troubleshooting';
     case 'hardware-error':
       return 'Hardware error \u2014 device may be disconnected or failing';
     case 'unsupported':

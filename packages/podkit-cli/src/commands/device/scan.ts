@@ -224,7 +224,13 @@ export async function runDeviceScan(
   const confirmFn = deps.confirm ?? confirm;
 
   const core = await loadCoreOrFail(deps, DeviceErrorCodes.CORE_LOAD_FAILED);
-  const { checkReadiness, enumerateUsb, classifyUsbDevices, createUsbOnlyReadinessResult } = core;
+  const {
+    checkReadiness,
+    enumerateUsb,
+    classifyUsbDevices,
+    createUsbOnlyReadinessResult,
+    reconcileIpodDiscovery,
+  } = core;
   const manager = (deps.getDeviceManager ?? core.getDeviceManager)();
 
   // Enumerate the USB bus and classify the result. `enumerateUsb` returns
@@ -244,11 +250,10 @@ export async function runDeviceScan(
     recognizedDevices = classifyUsbDevices(enumerated);
   }
 
-  // Correlate recognised USB devices with disk iPods by
-  // diskIdentifier ↔ identifier. USB diskIdentifier is the whole-disk BSD name
-  // (e.g., "disk5"); PlatformDeviceInfo.identifier is the partition (e.g.,
-  // "disk5s2"). Only iPod-classified entries can correlate to a disk iPod —
-  // mass-storage entries render as their own scan group.
+  // Split the classified-USB stream by kind. Only the iPod-shaped entries
+  // feed into reconciliation against the block-device side; mass-storage
+  // entries render as their own scan group, and vendor-recognised-but-rejected
+  // entries surface as USB-only rows with `level: 'unsupported'`.
   const ipodRecognizedList = recognizedDevices.filter(
     (d): d is IpodRecognized => d.kind === 'ipod'
   );
@@ -262,27 +267,32 @@ export async function runDeviceScan(
     (d): d is UnsupportedRecognized => d.kind === 'unsupported'
   );
 
-  const ipodUsbByDisk = new Map<string, IpodRecognized>();
-  for (const r of ipodRecognizedList) {
-    if (r.device.diskIdentifier) {
-      ipodUsbByDisk.set(r.device.diskIdentifier, r);
-    }
-  }
+  // Reconcile the two pipelines into one record per physical iPod. The
+  // primitive is pure (no I/O, no platform branches) — block-side
+  // `usbFingerprint` is populated by Linux's `findIpodDevices` from sysfs,
+  // USB-side `diskIdentifier` is populated by both macOS (system_profiler
+  // `bsd_name`) and Linux. Match priority: serial number → whole-disk
+  // identifier (partition suffix stripped on both sides) → emit-separate.
+  // Pre-fix, the ad-hoc disk-name correlation here produced a double-entry
+  // on Linux (linka repro): the same iPod rendered as both a mounted row
+  // and a phantom "USB only" row claiming the device needed partitioning.
+  const reconciled = reconcileIpodDiscovery(ipods, ipodRecognizedList);
 
-  function findMatchingUsbIpod(identifier: string): IpodRecognized | undefined {
-    const wholeDisk = identifier.replace(/s\d+$/, '');
-    return ipodUsbByDisk.get(wholeDisk);
+  // Per-block-record matched USB classification, indexed by block-device
+  // index for the readiness pipeline and the JSON envelope. Records without
+  // a `block` side are USB-only iPods rendered separately.
+  const matchedUsbByBlockIndex = new Map<number, IpodRecognized>();
+  for (let i = 0; i < ipods.length; i++) {
+    const record = reconciled.find((r) => r.block === ipods[i]);
+    if (record?.usb) matchedUsbByBlockIndex.set(i, record.usb);
   }
+  const usbOnlyIpods: IpodRecognized[] = reconciled
+    .filter((r) => r.matchedBy === 'usb-only' && r.usb)
+    .map((r) => r.usb!);
 
-  // USB-only iPods = iPod-classified devices without a matched disk
-  const matchedIpodDiskIds = new Set<string>();
-  for (const ipod of ipods) {
-    const wholeDisk = ipod.identifier.replace(/s\d+$/, '');
-    if (ipodUsbByDisk.has(wholeDisk)) matchedIpodDiskIds.add(wholeDisk);
+  function findMatchingUsbIpod(blockIndex: number): IpodRecognized | undefined {
+    return matchedUsbByBlockIndex.get(blockIndex);
   }
-  const usbOnlyIpods = ipodRecognizedList.filter(
-    (r) => !r.device.diskIdentifier || !matchedIpodDiskIds.has(r.device.diskIdentifier)
-  );
 
   // Gather configured devices not found in the scan
   const detectedUuids = new Set(ipods.map((d) => d.volumeUuid?.toUpperCase()).filter(Boolean));
@@ -291,8 +301,9 @@ export async function runDeviceScan(
   // Run readiness pipeline on each iPod (only on supported platforms)
   const readinessResults: ReadinessResult[] = [];
   if (manager.isSupported) {
-    for (const ipod of ipods) {
-      const matchedUsb = findMatchingUsbIpod(ipod.identifier);
+    for (let i = 0; i < ipods.length; i++) {
+      const ipod = ipods[i]!;
+      const matchedUsb = findMatchingUsbIpod(i);
       readinessResults.push(
         await checkReadiness({
           device: ipod,
@@ -382,7 +393,7 @@ export async function runDeviceScan(
     const readiness = readinessResults[i];
     const configuredAs = findConfiguredDeviceName(d, config.devices ?? {});
     const bestModel = readiness?.deviceModel ?? readiness?.usbModel;
-    const matchedUsb = findMatchingUsbIpod(d.identifier);
+    const matchedUsb = findMatchingUsbIpod(i);
     return {
       volumeName: d.volumeName,
       volumeUuid: d.volumeUuid,
@@ -531,7 +542,7 @@ export async function runDeviceScan(
 
   const ipodRows: DeviceScanIpodRow[] = ipods.map((device, i) => {
     const readiness = readinessResults[i];
-    const matchedUsb = findMatchingUsbIpod(device.identifier);
+    const matchedUsb = findMatchingUsbIpod(i);
     const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
     return {
       device: {

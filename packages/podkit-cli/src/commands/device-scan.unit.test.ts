@@ -7,7 +7,13 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import type { DeviceManager } from '@podkit/core';
+import type {
+  DeviceManager,
+  EnumeratedUsbDevice,
+  IpodClassification,
+  PlatformDeviceInfo,
+} from '@podkit/core';
+import { reconcileIpodDiscovery } from '@podkit/core';
 import {
   runDeviceScan,
   type DeviceScanDeps,
@@ -93,6 +99,10 @@ const fakeCore = (
     classifyUsbDevices: () => [],
     createUsbOnlyReadinessResult: () => ({ level: 'unknown', stages: [] }),
     interpretError: () => ({ explanation: 'stub' }),
+    // The runner reads the real reconcile primitive off the loaded core. The
+    // primitive is pure, so passing it through unstubbed gives unit tests the
+    // real merge behaviour while keeping every other dep injectable.
+    reconcileIpodDiscovery,
     ...overrides,
   }) as typeof import('@podkit/core');
 
@@ -287,5 +297,139 @@ describe('runDeviceScan', () => {
     expect(usbOnly.model?.displayName).toBe('iPod video (5th Generation)');
     expect(usbOnly.model?.generationId).toBe('video_5g');
     expect(usbOnly.model?.source).toBe('usb');
+  });
+
+  // ── Linka regression — TASK-317.11 #2 ─────────────────────────────────────
+  describe('linka double-entry regression', () => {
+    /**
+     * The linka repro (Linux nano 3G FAT32): both the block-device pipeline
+     * (`findIpodDevices` → /dev/sdc1) and the USB-inquiry pipeline
+     * (`enumerateUsb` + `classifyUsbDevices`) independently identify the
+     * same physical iPod. Pre-fix: rendered as two entries — a fully-green
+     * mounted row plus a phantom "USB only" row claiming the device needed
+     * partitioning. Post-fix: one row, no phantom remediation.
+     */
+    const NANO_3G_BLOCK: PlatformDeviceInfo = {
+      identifier: 'sdc1',
+      volumeName: 'IPOD',
+      volumeUuid: '1234-5678',
+      size: 7_950_000_000,
+      isMounted: true,
+      mountPoint: '/media/james/IPOD',
+      usbFingerprint: {
+        vendorId: '05ac',
+        productId: '1262',
+        serialNumber: 'NANO3G-LINKA-SERIAL',
+      },
+    };
+
+    const NANO_3G_USB: IpodClassification<EnumeratedUsbDevice> = {
+      kind: 'ipod',
+      device: {
+        vendorId: '05ac',
+        productId: '1262',
+        serialNumber: 'NANO3G-LINKA-SERIAL',
+      },
+      supported: true,
+      model: {
+        displayName: 'iPod nano 8GB Black (3rd Generation)',
+        generationId: 'nano_3g',
+        checksumType: 'none',
+        source: 'usb',
+      },
+    };
+
+    it('produces one entry in DeviceScanInput.ipods and no usbOnly when both pipelines see the same iPod', async () => {
+      const ctx = makeContext();
+      const { out, stdout, exitCode } = makeOut();
+
+      const deps: DeviceScanDeps = {
+        loadCore: async () =>
+          fakeCore({
+            enumerateUsb: (async () => [
+              NANO_3G_USB.device,
+            ]) as typeof import('@podkit/core').enumerateUsb,
+            classifyUsbDevices: (() => [
+              NANO_3G_USB,
+            ]) as typeof import('@podkit/core').classifyUsbDevices,
+            checkReadiness: (async () => ({
+              level: 'ready',
+              stages: [
+                { stage: 'usb', status: 'pass', summary: 'USB present' },
+                { stage: 'partition', status: 'pass', summary: 'partitioned' },
+                { stage: 'filesystem', status: 'pass', summary: 'FAT32' },
+                { stage: 'mount', status: 'pass', summary: '/media/james/IPOD' },
+                { stage: 'sysinfo', status: 'pass', summary: 'present' },
+                { stage: 'database', status: 'pass', summary: '11 tracks' },
+              ],
+              summary: { trackCount: 11, freeBytes: 7_300_000_000 },
+              deviceModel: NANO_3G_USB.model,
+            })) as typeof import('@podkit/core').checkReadiness,
+          }),
+        getDeviceManager: () =>
+          fakeManager({
+            isSupported: true,
+            findIpodDevices: async () => [NANO_3G_BLOCK],
+          }),
+      };
+
+      await runScan(ctx, {}, out, deps);
+      expect(exitCode.get()).toBeUndefined();
+      const result = stdout.json<DeviceScanOutput>();
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+
+      // The reconciled scan must surface exactly one device entry — the
+      // mounted block-side row. The USB-only "phantom" entry that the
+      // pre-fix ad-hoc correlation produced must not appear.
+      expect(result.devices).toHaveLength(1);
+      const only = result.devices![0]!;
+      expect(only.isMounted).toBe(true);
+      expect(only.identifier).toBe('sdc1');
+      expect(only.usbOnly).toBeUndefined();
+      // The merged record carries the USB descriptor surfaced by reconciliation.
+      expect(only.usbDescriptor).toEqual({
+        vendorId: '05ac',
+        productId: '1262',
+        serialNumber: 'NANO3G-LINKA-SERIAL',
+      });
+    });
+
+    it('still surfaces a USB-only entry when the block pipeline cannot see the device', async () => {
+      // Counterpart: when only the USB-inquiry side identifies the iPod
+      // (e.g. iOS device, restore-mode iPod), the USB-only group still
+      // renders. Reconciliation must not drop unmatched USB records.
+      const ctx = makeContext();
+      const { out, stdout, exitCode } = makeOut();
+
+      const usbOnlyTouch: IpodClassification<EnumeratedUsbDevice> = {
+        kind: 'ipod',
+        device: { vendorId: '05ac', productId: '12aa' },
+        supported: false,
+        notSupportedReason: 'iPod touch uses a proprietary sync protocol',
+      };
+
+      const deps: DeviceScanDeps = {
+        loadCore: async () =>
+          fakeCore({
+            enumerateUsb: (async () => [
+              usbOnlyTouch.device,
+            ]) as typeof import('@podkit/core').enumerateUsb,
+            classifyUsbDevices: (() => [
+              usbOnlyTouch,
+            ]) as typeof import('@podkit/core').classifyUsbDevices,
+          }),
+        getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+      };
+
+      await runScan(ctx, {}, out, deps);
+      expect(exitCode.get()).toBeUndefined();
+      const result = stdout.json<DeviceScanOutput>();
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.devices).toHaveLength(1);
+      expect(result.devices![0]!.usbOnly).toBe(true);
+      expect(result.devices![0]!.usbDescriptor?.productId).toBe('12aa');
+    });
   });
 });

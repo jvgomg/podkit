@@ -612,6 +612,10 @@ export type {
 } from './device/index.js';
 export { classifyUsbDevices } from './device/index.js';
 
+// Discovery reconciliation (USB-inquiry + block-device → one record per iPod)
+export type { ReconciledIpodRecord } from './device/index.js';
+export { reconcileIpodDiscovery } from './device/index.js';
+
 // Device enumeration framework
 export type { EnumeratedDevice, EnumerateOptions } from './device/index.js';
 export { enumerateConnectedDevices } from './device/index.js';

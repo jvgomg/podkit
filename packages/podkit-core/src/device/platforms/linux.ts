@@ -244,16 +244,28 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
 /**
  * Strip partition suffix from a block device name to get the base disk name.
  *
- * Linux uses two naming conventions for partitions:
- * - Standard (base ends in letter): `sdb1` → `sdb`, `sda2` → `sda`
- * - NVMe/Synology/eMMC (base ends in digit): `nvme0n1p2` → `nvme0n1`, `usb1p2` → `usb1`, `mmcblk0p1` → `mmcblk0`
+ * Handles the three conventions encountered across the platforms podkit
+ * targets — Linux block devices and macOS BSD names. Reconciliation between
+ * the USB-inquiry pipeline (which carries macOS `bsd_name` from
+ * `system_profiler`) and the block-device pipeline routes through here too,
+ * which is why the macOS branch lives in this otherwise-Linux file.
  *
- * When the base disk name ends in a digit, partitions use a `p` separator
- * before the partition number. This function handles both conventions.
+ * - macOS BSD: `disk2s1` → `disk2`, `disk5s2` → `disk5`
+ * - Linux NVMe/Synology/eMMC (base ends in digit): `nvme0n1p2` → `nvme0n1`,
+ *   `mmcblk0p1` → `mmcblk0`, `usb1p2` → `usb1`
+ * - Linux SCSI/IDE/virtio (base ends in letter): `sdb1` → `sdb`,
+ *   `vdb2` → `vdb`
  *
  * Bare disk names without a partition suffix pass through unchanged.
  */
 export function stripPartitionSuffix(name: string): string {
+  // macOS: `disk<N>s<M>` → `disk<N>`. Guard with `disk\d+` prefix to avoid
+  // spurious matches against Linux names ending in `s\d+`.
+  const macMatch = name.match(/^(.*?)s\d+$/);
+  if (macMatch && macMatch[1] && /^disk\d+$/.test(macMatch[1])) {
+    return macMatch[1];
+  }
+
   // Convention 1: NVMe, eMMC, Synology USB, and similar devices where
   // the base disk name ends in a digit and partitions use a "p" separator.
   // Examples: nvme0n1p2 → nvme0n1, usb1p2 → usb1, mmcblk0p1 → mmcblk0
@@ -456,10 +468,13 @@ export class LinuxDeviceManager implements DeviceManager {
     const ipods: PlatformDeviceInfo[] = [];
 
     for (const device of devices) {
-      // Check USB identity — most reliable for unmounted devices
+      // Check USB identity — most reliable for unmounted devices.
+      // Carry the fingerprint forward on the device record so the discovery
+      // reconciliation step (`reconcileIpodDiscovery`) can fold this entry
+      // with the matching USB-inquiry record by serial number.
       const usb = findUsbIdentity(device.identifier);
       if (usb?.vendorId === '05ac') {
-        ipods.push(device);
+        ipods.push({ ...device, usbFingerprint: usb });
         continue;
       }
 
@@ -467,7 +482,7 @@ export class LinuxDeviceManager implements DeviceManager {
       if (device.isMounted && device.mountPoint) {
         const ipodControlPath = join(device.mountPoint, 'iPod_Control');
         if (existsSync(ipodControlPath)) {
-          ipods.push(device);
+          ipods.push(usb ? { ...device, usbFingerprint: usb } : device);
           continue;
         }
       }
@@ -475,7 +490,7 @@ export class LinuxDeviceManager implements DeviceManager {
       // Volume name heuristics (supplementary)
       const volumeName = device.volumeName.toUpperCase();
       if (volumeName.includes('IPOD') || volumeName.includes('POD') || volumeName === 'TERAPOD') {
-        ipods.push(device);
+        ipods.push(usb ? { ...device, usbFingerprint: usb } : device);
       }
     }
 

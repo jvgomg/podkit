@@ -206,6 +206,11 @@ export type {
   UnsupportedDeviceClassification,
 } from '@podkit/devices-mass-storage';
 
+// Discovery reconciliation — folds USB-inquiry + block-device records into
+// a single record per physical iPod for `device scan` rendering.
+export type { ReconciledIpodRecord } from './reconcile.js';
+export { reconcileIpodDiscovery } from './reconcile.js';
+
 // Device enumeration framework (provider-based)
 export type { EnumeratedDevice, EnumerateOptions } from './enumeration.js';
 export { enumerateConnectedDevices } from './enumeration.js';

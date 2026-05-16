@@ -16,7 +16,13 @@
  */
 
 import { describe, expect, it } from 'bun:test';
-import { classifyUsbDevices, type EnumeratedUsbDevice } from '@podkit/core';
+import {
+  classifyUsbDevices,
+  reconcileIpodDiscovery,
+  type EnumeratedUsbDevice,
+  type IpodClassification,
+  type PlatformDeviceInfo,
+} from '@podkit/core';
 
 // ── Realistic Mac-with-CalDigit-dock fixture ────────────────────────────────
 
@@ -119,5 +125,88 @@ describe('device scan integration — USB enumeration → classification', () =>
     expect(b).toHaveLength(2);
     expect(a.map((r) => r.device.productId)).toEqual(['1260', '1263']);
     expect(b.map((r) => r.device.productId)).toEqual(['1260', '1263']);
+  });
+});
+
+// ── Linka discovery reconciliation regression — TASK-317.11 #2 ──────────────
+
+describe('device scan integration — discovery reconciliation', () => {
+  /**
+   * The linka regression: feed `reconcileIpodDiscovery` the realistic
+   * input shapes that the two pipelines actually produce — block-side
+   * `PlatformDeviceInfo` populated by `LinuxDeviceManager.findIpodDevices`
+   * (with `usbFingerprint` lifted off sysfs), USB-side `IpodClassification`
+   * from the real `classifyUsbDevices` composer — and assert that the same
+   * physical iPod folds into one record.
+   */
+  it('produces one merged record for the linka FAT32 nano 3G repro', () => {
+    const blockSide: PlatformDeviceInfo = {
+      identifier: 'sdc1',
+      volumeName: 'IPOD',
+      volumeUuid: '1234-5678',
+      size: 7_950_000_000,
+      isMounted: true,
+      mountPoint: '/media/james/IPOD',
+      usbFingerprint: {
+        vendorId: '05ac',
+        productId: '1262',
+        serialNumber: 'NANO3G-LINKA-SERIAL',
+        bus: 1,
+        devnum: 4,
+      },
+    };
+
+    const usbSide: IpodClassification<EnumeratedUsbDevice>[] = classifyUsbDevices([
+      {
+        vendorId: '05ac',
+        productId: '1262',
+        serialNumber: 'NANO3G-LINKA-SERIAL',
+        bus: 1,
+        devnum: 4,
+      },
+    ]).filter((d): d is IpodClassification<EnumeratedUsbDevice> => d.kind === 'ipod');
+
+    const reconciled = reconcileIpodDiscovery([blockSide], usbSide);
+
+    // One record, folded by serial — pre-fix this would have been two.
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]!.matchedBy).toBe('serial');
+    expect(reconciled[0]!.block).toBe(blockSide);
+    expect(reconciled[0]!.usb).toBe(usbSide[0]);
+  });
+
+  it('keeps an unmatched iOS USB device as a USB-only record alongside a matched iPod', () => {
+    // Realistic mixed scan with two devices on the bus: one classic iPod
+    // matched by serial, plus an unmatched iPod touch (USB-only — iOS uses
+    // a proprietary sync protocol and never produces a block device).
+    const blockSide: PlatformDeviceInfo[] = [
+      {
+        identifier: 'sdc1',
+        volumeName: 'IPOD',
+        volumeUuid: '1234-5678',
+        size: 7_950_000_000,
+        isMounted: true,
+        mountPoint: '/media/james/IPOD',
+        usbFingerprint: {
+          vendorId: '05ac',
+          productId: '1262',
+          serialNumber: 'NANO3G',
+        },
+      },
+    ];
+
+    const usbSide: IpodClassification<EnumeratedUsbDevice>[] = classifyUsbDevices([
+      { vendorId: '05ac', productId: '1262', serialNumber: 'NANO3G' },
+      { vendorId: '05ac', productId: '12aa' }, // iPod touch — unsupported
+    ]).filter((d): d is IpodClassification<EnumeratedUsbDevice> => d.kind === 'ipod');
+
+    const reconciled = reconcileIpodDiscovery(blockSide, usbSide);
+
+    expect(reconciled).toHaveLength(2);
+    const merged = reconciled.find((r) => r.matchedBy === 'serial');
+    const usbOnly = reconciled.find((r) => r.matchedBy === 'usb-only');
+    expect(merged).toBeDefined();
+    expect(usbOnly).toBeDefined();
+    expect(usbOnly!.usb!.device.productId).toBe('12aa');
   });
 });

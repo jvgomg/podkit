@@ -5,6 +5,7 @@
  * discovering iPod devices.
  */
 
+import type { UsbFingerprint } from '@podkit/device-types';
 import type { DeviceAssessment } from './assessment.js';
 
 /**
@@ -55,6 +56,18 @@ export interface PlatformDeviceInfo {
    * for comparison.
    */
   partitionLayout?: PartitionLayout;
+  /**
+   * USB fingerprint for the underlying physical device, when the platform
+   * surfaces it cheaply during enumeration.
+   *
+   * Populated by the Linux device manager (read from sysfs alongside the
+   * partition info that produces this record). Currently absent on macOS,
+   * which relies on `diskIdentifier` matching against the USB enumeration
+   * stream for reconciliation. Used by `reconcileIpodDiscovery` to fold a
+   * single physical iPod's block-device + USB-inquiry records into one
+   * entry.
+   */
+  usbFingerprint?: UsbFingerprint;
 }
 
 /**

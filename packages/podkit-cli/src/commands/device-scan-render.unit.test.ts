@@ -263,4 +263,24 @@ describe('renderDeviceScan', () => {
       expect(stripAnsi(lines.join('\n'))).toContain('Unknown iPod (USB only)');
     });
   });
+
+  describe('needs-partition remediation copy (TASK-317.11 #3)', () => {
+    it('points at docs, not at the destructive `device init` command', () => {
+      // The supported USB-only iPod (PID 1209) renders with the synthetic
+      // `needs-partition` readiness produced by `fakeCreateUsbOnlyReadinessResult`.
+      // The remediation line must be the new docs-pointing copy — not the
+      // old "Needs partitioning — see: podkit device init" wording, which
+      // misled users to a command that does not partition and requires the
+      // device to already be mounted.
+      const usbOnly = classifyIpod({
+        vendorId: '05ac',
+        productId: '1209',
+      });
+      const output = renderDeviceScan(emptyInput({ usbOnlyIpods: [usbOnly] })).join('\n');
+      expect(output).toContain(
+        'No mountable partition detected — see: https://docs.podkit.app/devices/troubleshooting'
+      );
+      expect(output).not.toContain('Needs partitioning — see: podkit device init');
+    });
+  });
 });
