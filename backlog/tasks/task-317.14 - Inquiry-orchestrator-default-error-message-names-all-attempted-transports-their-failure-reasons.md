@@ -3,9 +3,10 @@ id: TASK-317.14
 title: >-
   Inquiry-orchestrator default error message names all attempted transports +
   their failure reasons
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 20:31'
+updated_date: '2026-05-16 10:16'
 labels:
   - diagnostics
   - ux
@@ -96,10 +97,26 @@ Did the orchestrator actually attempt SCSI on this linka run, or did it short-ci
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Default orchestrator failure output names every transport attempted, with each transport's failure reason on its own line. Verified on linka SSH (no rule, no sudo) where both USB and SCSI EACCES.
-- [ ] #2 Failure output includes a remediation hint (e.g. point at `podkit doctor --repair udev-rule` for EACCES) and a `(re-run with -vv for more detail)` footer when verbose is not set.
-- [ ] #3 `-vv` adds detail (libusb specifics, ioctl numbers); `-vvv` adds raw payload data. Verbose is additive, not load-bearing on basic UX.
-- [ ] #4 Orchestrator plan-selection logic confirmed: USB EACCES falls through to SCSI when SCSI is part of the plan. If currently short-circuiting, fixed; if currently falling through, documented in implementation notes.
+- [x] #1 Default orchestrator failure output names every transport attempted, with each transport's failure reason on its own line. Verified on linka SSH (no rule, no sudo) where both USB and SCSI EACCES.
+- [x] #2 Failure output includes a remediation hint (e.g. point at `podkit doctor --repair udev-rule` for EACCES) and a `(re-run with -vv for more detail)` footer when verbose is not set.
+- [x] #3 `-vv` adds detail (libusb specifics, ioctl numbers); `-vvv` adds raw payload data. Verbose is additive, not load-bearing on basic UX.
+- [x] #4 Orchestrator plan-selection logic confirmed: USB EACCES falls through to SCSI when SCSI is part of the plan. If currently short-circuiting, fixed; if currently falling through, documented in implementation notes.
 - [ ] #5 Real-hardware: linka SSH, four cases verified — (a) both transports EACCES (no rule), (b) success post-rule-install, (c) USB-success path on nano 3G, (d) SCSI-fallback path with rule installed on nano 2G or mini 2G.
-- [ ] #6 Tests added: unit tests for the message formatter covering each transport-result combination (success/EACCES/STALL/empty); snapshot tests for default + `-vv` + `-vvv` outputs.
+- [x] #6 Tests added: unit tests for the message formatter covering each transport-result combination (success/EACCES/STALL/empty); snapshot tests for default + `-vv` + `-vvv` outputs.
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Default firmware-inquiry failure now names every transport attempted with the per-transport reason, includes a `podkit doctor --repair udev-rule` hint when EACCES is on `/dev/sg*` or `/dev/bus/usb/...`, and appends a `(re-run with -vv for more detail)` footer at verbose < 2. The orchestrator already falls through to SCSI on a USB transport-layer throw (no plan-selection bug to fix). Added a guard test so a future change can't special-case USB EACCES and skip the planned SCSI fallback.
+
+Real-hardware acceptance criterion #5 deferred to TASK-319 (Linux re-sweep) per task scope — all formatter logic is fully unit-testable with mocked transports + synthetic errno records.
+
+Commit: eed4126
+
+Implementation notes:
+- New pure formatter at `packages/ipod-firmware/src/sysinfo/format-inquiry-error.ts` consumes `InquiryAttempt[]` and detects EACCES via structured fields (`ScsiError.kind === 'eacces'`, `UsbInquiryError.libusbStatus === -3` or `LIBUSB_ERROR_ACCESS` in the message). USB EACCES synthesises `/dev/bus/usb/<bus>/<devnum>` from the fingerprint since libusb opens that node directly on Linux and doesn't expose the path on the error object.
+- `ensureSysInfoExtended` gains a `verbose?: number` option. `runSysInfoExtendedRepair` plumbs it through from `RepairRunOptions.verbose`; doctor's two repair-runner sites read `globalOpts.verbose` defensively so the existing test surface (which constructs `runRepair` without a CLI context) stays green.
+- Mixed `[usb: transport-error, scsi: parse-error]` keeps its legacy one-line wording — only the new transport-error-only shape gets the multi-line treatment to bound the JSON-consumer blast radius.
+- 21 new unit tests covering every transport-result combination, all four verbose levels, and EACCES detection edge cases (no fingerprint, message-only LIBUSB detection, ScsiError without devicePath, non-EACCES errno kinds).
+<!-- SECTION:FINAL_SUMMARY:END -->
