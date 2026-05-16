@@ -20,17 +20,9 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
 export const sonyNwzE384: DevicePersona = {
   id: 'sony-nwz-e384',
@@ -54,8 +46,8 @@ export const sonyNwzE384: DevicePersona = {
   sysInfoExtendedXml: null,
 
   lsblkJson: null,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // MBR (2048-byte sectors). FAT32 starts at sector 5 — only 10 KiB

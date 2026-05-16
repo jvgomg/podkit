@@ -13,18 +13,10 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const sysInfoExtendedXml = readFileSync(join(here, 'raw/sysinfo-extended.xml'), 'utf8');
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
 export const ipodMini2gPink: DevicePersona = {
   id: 'ipod-mini-2g-pink',
@@ -46,8 +38,8 @@ export const ipodMini2gPink: DevicePersona = {
   sysInfoExtendedXml,
 
   lsblkJson: null,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // MBR has a single FAT32 entry starting at sector 80325. Sectors 0..80324

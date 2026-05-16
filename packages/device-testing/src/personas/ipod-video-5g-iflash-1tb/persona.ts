@@ -16,18 +16,10 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const sysInfoExtendedXml = readFileSync(join(here, 'raw/sysinfo-extended.xml'), 'utf8');
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
 export const ipodVideo5gIflash1tb: DevicePersona = {
   id: 'ipod-video-5g-iflash-1tb',
@@ -48,8 +40,8 @@ export const ipodVideo5gIflash1tb: DevicePersona = {
   sysInfoExtendedXml,
 
   lsblkJson: null,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // MBR (2048-byte sectors). FAT32 starts at sector 48195. Sectors

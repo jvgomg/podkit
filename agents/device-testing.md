@@ -66,6 +66,70 @@ Three personas exist that have no physical-hardware capture — they exercise re
 
 Each has a `provenance.md` documenting its synthesis recipe (no `raw/` capture session). Smoke tests in `src/personas/rejection-personas.test.ts` and `src/personas/malformed-sysinfo.test.ts` pin the fixture shapes.
 
+### Raw-fixture imports (do not `readFileSync` at module-eval)
+
+Every persona's raw fixtures (XML, plist, JSON, lsblk dumps, etc.) are
+imported directly with Bun's import-attribute syntax:
+
+```ts
+import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import diskutilPlist       from './raw/diskutil.plist'      with { type: 'text' };
+import systemProfilerJson  from './raw/system-profiler.json' with { type: 'json' };
+import lsblkJson           from './raw/lsblk.json'          with { type: 'json' };
+
+export const myPersona: DevicePersona = {
+  // ...
+  sysInfoExtendedXml,
+  systemProfilerJson,
+  diskutilPlist,
+  lsblkJson,
+  // null fields stay plain — no import needed.
+};
+```
+
+The Bun bundler inlines the file's contents as a string or object literal
+directly into `dist/index.js` at build time. At dev time (running TS
+directly), Bun's loader resolves the file without ever calling
+`fs.readFileSync`. Either way, module-eval performs zero filesystem I/O.
+
+This matters because importing `personas` from outside `@podkit/device-testing`
+used to crash with `ENOENT`: the bundler doesn't copy `raw/` directories
+into `dist/`, and even before bundling the persona registry coupled its
+load order to filesystem state. The smoke test
+[`src/personas/no-fs-at-load.test.ts`](../packages/device-testing/src/personas/no-fs-at-load.test.ts)
+pins the contract by spawning a subprocess that patches `fs.readFileSync`
+before importing the registry and asserts the call count stays at zero.
+
+**Why this pattern over alternatives:**
+
+- **Direct `import` (no codegen)** — readers see the actual file the data
+  comes from, not a generated base64 blob. Diffs of raw fixtures are
+  meaningful in code review; the imports themselves never churn.
+- **No build step** between editing a raw fixture and running tests.
+  Just save the file.
+- **Bun-native** — text + JSON loaders ship in the runtime and bundler;
+  no plugin, no preprocessor.
+
+**TypeScript declarations.** TypeScript doesn't ship built-in
+declarations for `*.xml` / `*.plist` / `*.txt` imports. Ambient
+declarations live in
+[`packages/device-testing/src/personas/text-imports.d.ts`](../packages/device-testing/src/personas/text-imports.d.ts)
+and apply to every persona in the registry. JSON imports are handled by
+`resolveJsonModule: true` in the workspace `tsconfig.json`.
+
+**When you add a new persona:**
+
+1. Drop the raw capture files in `src/personas/<id>/raw/` as usual.
+2. In `persona.ts`, `import` each raw fixture directly with the
+   appropriate `with { type: ... }` attribute (`text` for XML / plist /
+   any string blob, `json` for JSON).
+3. Assign the imported binding to the matching `DevicePersona` field
+   (no getter wrapper needed — the import already evaluates to the
+   final value).
+4. Never call `readFileSync` at module top level. Never resolve paths
+   relative to `import.meta.url` for raw fixtures — the bundler will
+   collapse the URL and the resolution will silently break.
+
 ### Capture flow (human-in-the-loop)
 
 See [`documents/persona-capture-playbook.md`](../documents/persona-capture-playbook.md) for the full step-by-step (the playbook supersedes the auto-capture script originally planned in TASK-321.02). High-level:

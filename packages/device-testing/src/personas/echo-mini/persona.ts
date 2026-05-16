@@ -25,21 +25,13 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 // LUN 0 (ECHO MINI firmware FAT32). LUN 1 (Echo SD exFAT) is captured in
 // `raw/lsblk-lun1.json` — referenced in provenance, not in this field because
 // the schema is single-LUN-flat. See provenance "Schema followups".
-const lsblkJsonRaw = JSON.parse(readFileSync(join(here, 'raw/lsblk-lun0.json'), 'utf8')) as object;
+import lsblkJson from './raw/lsblk-lun0.json' with { type: 'json' };
 
 export const echoMini: DevicePersona = {
   id: 'echo-mini',
@@ -62,9 +54,9 @@ export const echoMini: DevicePersona = {
 
   sysInfoExtendedXml: null,
 
-  lsblkJson: lsblkJsonRaw,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  lsblkJson,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // Schema's `partitions` array doesn't have a LUN field; entries here are

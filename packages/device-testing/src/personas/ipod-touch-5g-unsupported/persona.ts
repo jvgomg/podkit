@@ -17,16 +17,8 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
 const unsupportedReason =
   "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
@@ -49,7 +41,7 @@ export const ipodTouch5gUnsupported: DevicePersona = {
   sysInfoExtendedXml: null,
 
   lsblkJson: null,
-  systemProfilerJson: systemProfilerJsonRaw,
+  systemProfilerJson,
   diskutilPlist: null,
 
   partitionLayout: { partitions: [] },

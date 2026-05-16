@@ -707,12 +707,11 @@ describe('AC #9: human-mode issue count', () => {
 
     expect(exitCode.get()).toBe(2);
     const txt = stdout.text() + stderr.text();
-    // The text-mode summary line uses "fail" count specifically (see
-    // doctor.ts ~line 770). We assert the unhealthy state surfaced both
-    // checks in the rendered output rather than the exact integer count
-    // — the decision treats warn as unhealthy but the printed count
-    // currently tracks fails only. This keeps the assertion robust if the
-    // printed text is reworded.
+    // The text-mode summary line counts both fail AND warn checks (fixed
+    // 2026-05-16: previously only counted fails, causing a mismatch
+    // between exit code 2 and "All checks passed." when only warns exist).
+    // 1 fail + 1 warn → "2 issues found."
+    expect(txt).toContain('2 issues found.');
     expect(txt).toContain('Artwork rebuild');
     expect(txt).toContain('Orphan files');
   });

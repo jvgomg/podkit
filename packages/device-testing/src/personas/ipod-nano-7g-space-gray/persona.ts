@@ -15,18 +15,10 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const sysInfoExtendedXml = readFileSync(join(here, 'raw/sysinfo-extended.xml'), 'utf8');
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
+import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
 export const ipodNano7gSpaceGray: DevicePersona = {
   id: 'ipod-nano-7g-space-gray',
@@ -47,8 +39,8 @@ export const ipodNano7gSpaceGray: DevicePersona = {
   sysInfoExtendedXml,
 
   lsblkJson: null,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // Single MBR partition at sector 63 (4096-byte sectors). Only ~252 KiB

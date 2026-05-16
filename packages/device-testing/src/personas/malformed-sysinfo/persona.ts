@@ -28,19 +28,13 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
 // Deliberately-truncated SIE XML. Source: first 500 bytes of
 // `packages/device-testing/src/personas/ipod-video-5g-iflash-1tb/raw/sysinfo-extended.xml`.
 // The cut lands mid-element (`<key>MaximumSampleRate<` — incomplete tag),
 // which is the exact failure shape a partial USB read would produce on a
 // flaky device.
-const sysInfoExtendedXml = readFileSync(join(here, 'raw/sysinfo-extended.xml'), 'utf8');
+import sysInfoExtendedXml from './raw/sysinfo-extended.xml' with { type: 'text' };
 
 export const malformedSysinfo: DevicePersona = {
   id: 'malformed-sysinfo',

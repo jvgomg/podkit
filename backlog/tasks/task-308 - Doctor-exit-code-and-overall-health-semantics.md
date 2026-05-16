@@ -4,7 +4,7 @@ title: Doctor exit code and overall-health semantics
 status: Done
 assignee: []
 created_date: '2026-05-08 07:24'
-updated_date: '2026-05-14 23:43'
+updated_date: '2026-05-16 00:28'
 labels:
   - testing
   - doctor
@@ -62,8 +62,6 @@ Use the test harness landed in TASK-321 (Phase 1):
 - [x] #13 JSON output's healthy boolean exactly mirrors the exit code (healthy=true iff exit 0) for diagnostics mode
 <!-- AC:END -->
 
-
-
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
@@ -107,4 +105,11 @@ Quality gates:
 - `cd packages/podkit-core && bun test` → 2467 pass, 1 skip, 0 fail
 - `bunx tsc --noEmit` in podkit-cli → 0 errors in new/modified files (unrelated TASK-331 pre-existing errors in doctor.ts ~line 661 + scan files)
 - `bunx oxlint packages/podkit-cli/src/commands/doctor-exit-code.test.ts packages/podkit-cli/src/commands/doctor.ts` → 0 warnings, 0 errors
+
+**2026-05-16 — AC #9 latent UX inconsistency resolved:**
+The "fail-only count" gap noted in AC #9 is now fixed. `doctor.ts` summary-line rendering (iPod path, ~line 820) updated to count both `fail` AND `warn` checks — matching the existing mass-storage and system-only paths which already counted both. Before: `issueCount` only accumulated `c.status === 'fail'`, so a warn-only failure produced exit 2 but printed "All checks passed." After: `issueCount` accumulates `c.status === 'fail' || c.status === 'warn'`, so the same fixture prints "1 issue found." (or "N issues found."). AC #9 test assertion updated from a "contains both check names" check to also assert `'2 issues found.'` for the 1-fail + 1-warn fixture. 30 tests, all green. Files touched: `packages/podkit-cli/src/commands/doctor.ts`, `packages/podkit-cli/src/commands/doctor-exit-code.test.ts`.
+
+**Persona registry packaging gap — resolved (m-19 polish, follow-up to this task).** The line in the implementation notes above ("the bundled `@podkit/device-testing/dist/index.js` eagerly evaluates every persona's `readFileSync` on raw XML/plist files that the bundler does not copy") no longer applies. The fix: each persona's raw fixtures are now inlined as base64-encoded string literals in a sibling `raw.generated.ts` module produced by `packages/device-testing/scripts/generate-raw-fixtures.ts` (wired as the package's `prebuild` step), and persona modules wrap raw-fixture fields in cached getters (`src/personas/lazy.ts`). A subprocess smoke test in `src/personas/no-fs-at-load.test.ts` pins zero `fs.readFileSync` calls at module-eval. External consumers can now import `personas` from `@podkit/device-testing` without filesystem fragility. Pattern documented in `agents/device-testing.md` §"Lazy raw-fixture pattern".
+
+**2026-05-16 — Persona registry packaging: codegen replaced with Bun import attributes.** The base64 codegen path documented in the previous note has been removed. Raw fixtures are now imported directly via `with { type: 'text' }` (XML/plist) and `with { type: 'json' }` (JSON) — Bun's bundler inlines the file contents as string/object literals at build time, and at dev time Bun's loader resolves them without `fs.readFileSync`. Files deleted: `packages/device-testing/scripts/generate-raw-fixtures.ts`, `packages/device-testing/src/personas/lazy.ts`, all 16 `src/personas/*/raw.generated.ts` files, plus the `generate:raw-fixtures` + `prebuild` scripts in `package.json`. Ambient declarations for `*.xml` / `*.plist` / `*.txt` live in `packages/device-testing/src/personas/text-imports.d.ts` (JSON is covered by `resolveJsonModule`). The `no-fs-at-load.test.ts` smoke test contract is unchanged and still passes (zero `fs.readFileSync` calls during persona registry import). Pattern documented in `agents/device-testing.md` §"Raw-fixture imports".
 <!-- SECTION:NOTES:END -->

@@ -819,10 +819,14 @@ export async function runDoctorDiagnostics(
     } else {
       let issueCount = 0;
       if (readinessResult) {
-        issueCount += readinessResult.stages.filter((s) => s.status === 'fail').length;
+        issueCount += readinessResult.stages.filter(
+          (s) => s.status === 'fail' || s.status === 'warn'
+        ).length;
       }
       if (report) {
-        issueCount += report.checks.filter((c) => c.status === 'fail' && !c.repairOnly).length;
+        issueCount += report.checks.filter(
+          (c) => (c.status === 'fail' || c.status === 'warn') && !c.repairOnly
+        ).length;
       }
       if (issueCount === 0) issueCount = 1;
       out.error(`${issueCount} issue${issueCount === 1 ? '' : 's'} found.`);

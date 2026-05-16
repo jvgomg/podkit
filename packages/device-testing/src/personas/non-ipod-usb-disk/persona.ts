@@ -23,18 +23,10 @@
  * @module
  */
 
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
-
 import type { DevicePersona } from '../types.js';
-
-const here = dirname(fileURLToPath(import.meta.url));
-const diskutilPlistRaw = readFileSync(join(here, 'raw/diskutil.plist'), 'utf8');
-const systemProfilerJsonRaw = JSON.parse(
-  readFileSync(join(here, 'raw/system-profiler.json'), 'utf8')
-) as object;
-const lsblkJsonRaw = JSON.parse(readFileSync(join(here, 'raw/lsblk.json'), 'utf8')) as object;
+import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
+import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
+import lsblkJson from './raw/lsblk.json' with { type: 'json' };
 
 // Canonical reason string — must match the SanDisk entry in
 // `packages/devices-mass-storage/src/unsupported.ts`'s `UNSUPPORTED_VENDORS`
@@ -62,9 +54,9 @@ export const nonIpodUsbDisk: DevicePersona = {
 
   sysInfoExtendedXml: null,
 
-  lsblkJson: lsblkJsonRaw,
-  systemProfilerJson: systemProfilerJsonRaw,
-  diskutilPlist: diskutilPlistRaw,
+  lsblkJson,
+  systemProfilerJson,
+  diskutilPlist,
 
   partitionLayout: {
     // Single MBR/FAT32 partition — the typical out-of-box layout for a
