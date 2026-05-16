@@ -33,6 +33,7 @@ describe('doctor --repair .choices()', () => {
       'orphan-files-mass-storage',
       'sysinfo-consistency',
       'sysinfo-extended',
+      'sysinfo-modelnum-mismatch',
       'udev-rule',
     ]);
   });

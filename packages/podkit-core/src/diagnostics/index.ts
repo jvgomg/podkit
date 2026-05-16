@@ -21,6 +21,7 @@ import { orphanFilesCheck } from './checks/orphans.js';
 import { orphanFilesMassStorageCheck } from './checks/orphans-mass-storage.js';
 import { sysInfoExtendedCheck } from './checks/sysinfo-extended.js';
 import { sysinfoConsistencyCheck } from './checks/sysinfo-consistency.js';
+import { sysinfoModelnumMismatchCheck } from './checks/sysinfo-modelnum-mismatch.js';
 import { udevRuleCheck } from './checks/udev-rule.js';
 import { videoEncoderCheck } from './checks/video-encoder.js';
 import type {
@@ -58,6 +59,7 @@ const CHECKS: DiagnosticCheck[] = [
   orphanFilesMassStorageCheck,
   sysInfoExtendedCheck,
   sysinfoConsistencyCheck,
+  sysinfoModelnumMismatchCheck,
   udevRuleCheck,
 ];
 

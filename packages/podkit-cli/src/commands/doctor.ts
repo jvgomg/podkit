@@ -271,6 +271,7 @@ export const doctorCommand = new Command('doctor')
       'orphan-files-mass-storage',
       'sysinfo-consistency',
       'sysinfo-extended',
+      'sysinfo-modelnum-mismatch',
       'udev-rule',
     ])
   )
@@ -870,10 +871,12 @@ export async function runDoctorDiagnostics(
 
         // Check-specific failure-explanation copy. Route by check id — the
         // previous unconditional fall-through made every failing check show
-        // artwork wording (TASK-317.02 Bug 3).
-        if (check.status === 'fail' && check.details) {
+        // artwork wording (TASK-317.02 Bug 3). Some checks (notably
+        // sysinfo-modelnum-mismatch) surface a `warn` rather than `fail` —
+        // the gate below accepts both and lets the per-id branches decide.
+        if ((check.status === 'fail' || check.status === 'warn') && check.details) {
           const d = check.details as Record<string, unknown>;
-          if (check.id === 'artwork-rebuild') {
+          if (check.id === 'artwork-rebuild' && check.status === 'fail') {
             if (d.totalEntries !== undefined) {
               const total = (d.totalEntries as number).toLocaleString();
               const corrupt = (d.corruptEntries as number).toLocaleString();
@@ -886,12 +889,22 @@ export async function runDoctorDiagnostics(
             }
             details.push('The artwork database is out of sync with the thumbnail files.');
             details.push('Affected tracks display wrong or missing artwork on the iPod.');
-          } else if (check.id === 'sysinfo-consistency') {
+          } else if (check.id === 'sysinfo-consistency' && check.status === 'fail') {
             details.push(
               "The on-disk SysInfoExtended doesn't match the live device — likely a stale file copied from a different iPod."
             );
             details.push(
               'Run `podkit doctor --repair sysinfo-consistency` to refresh it from USB firmware.'
+            );
+          } else if (check.id === 'sysinfo-modelnum-mismatch') {
+            details.push(
+              'The on-disk SysInfo file claims a different model than the firmware reports.'
+            );
+            details.push(
+              'This usually means SysInfo was manually edited or copied from another iPod.'
+            );
+            details.push(
+              'Run `podkit doctor --repair sysinfo-modelnum-mismatch` to refresh it from firmware.'
             );
           }
         }
