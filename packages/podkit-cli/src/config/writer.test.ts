@@ -10,6 +10,7 @@ import {
   addDevice,
   updateDevice,
 } from './writer.js';
+import { loadConfigFile } from './loader.js';
 
 describe('config writer - collection functions', () => {
   let tempDir: string;
@@ -710,5 +711,51 @@ quality = "low"
     // ipod1 should have medium
     const ipod1Section = content.split('[devices.ipod2]')[0];
     expect(ipod1Section).toContain('quality = "medium"');
+  });
+
+  // ---------------------------------------------------------------------------
+  // DeviceConfig.unsupported — rich shape serialisation (TASK-317.03 follow-up)
+  // ---------------------------------------------------------------------------
+
+  it('serialises unsupported as a TOML inline table', () => {
+    const confirmedAt = '2026-05-16T11:30:00.000Z';
+    const result = addDevice(
+      'touchok',
+      {
+        volumeUuid: 'TOUCH-UUID',
+        volumeName: 'TOUCH',
+        unsupported: { kind: 'ios-device', confirmedAt },
+      },
+      { configPath }
+    );
+
+    expect(result.success).toBe(true);
+    const content = fs.readFileSync(configPath, 'utf-8');
+    expect(content).toContain(
+      `unsupported = { kind = "ios-device", confirmedAt = "${confirmedAt}" }`
+    );
+    // Must not be a bare boolean.
+    expect(content).not.toContain('unsupported = true');
+  });
+
+  it('round-trips unsupported inline table through the loader', () => {
+    const confirmedAt = '2026-05-16T12:00:00.000Z';
+    addDevice(
+      'nanotest',
+      {
+        volumeUuid: 'NANO-UUID',
+        volumeName: 'NANO',
+        unsupported: { kind: 'unsupported-device', confirmedAt },
+      },
+      { configPath }
+    );
+
+    // addDevice creates the file with the version header already present;
+    // load it directly to round-trip through the parser.
+    const loaded = loadConfigFile(configPath);
+    expect(loaded?.devices?.nanotest?.unsupported).toEqual({
+      kind: 'unsupported-device',
+      confirmedAt,
+    });
   });
 });

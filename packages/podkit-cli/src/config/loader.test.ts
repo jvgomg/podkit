@@ -905,6 +905,106 @@ skipUpgrades = "yes"
         expect(() => loadConfigFile(configPath)).toThrow(/Invalid type for "skipUpgrades"/);
       });
 
+      // -----------------------------------------------------------------------
+      // DeviceConfig.unsupported — rich shape (TASK-317.03 follow-up)
+      // -----------------------------------------------------------------------
+
+      it('parses device unsupported as a rich inline-table object', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.touch1g]
+volumeUuid = "TOUCH-UUID"
+volumeName = "TOUCH"
+unsupported = { kind = "ios-device", confirmedAt = "2026-05-16T11:30:00.000Z" }
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.touch1g?.unsupported).toEqual({
+          kind: 'ios-device',
+          confirmedAt: '2026-05-16T11:30:00.000Z',
+        });
+      });
+
+      it('silently coerces legacy unsupported = true to the rich shape', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.olddevice]
+volumeUuid = "OLD-UUID"
+volumeName = "OLD"
+unsupported = true
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.olddevice?.unsupported).toEqual({
+          kind: 'unsupported-device',
+          confirmedAt: new Date(0).toISOString(),
+        });
+      });
+
+      it('does not set unsupported when legacy unsupported = false', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.supported]
+volumeUuid = "SUP-UUID"
+volumeName = "SUPPORTED"
+unsupported = false
+`)
+        );
+
+        const result = loadConfigFile(configPath);
+        expect(result?.devices?.supported?.unsupported).toBeUndefined();
+      });
+
+      it('throws on an invalid unsupported.kind value', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.bad]
+volumeUuid = "BAD-UUID"
+unsupported = { kind = "totally-made-up", confirmedAt = "2026-05-16T11:30:00.000Z" }
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid "unsupported.kind" value/);
+      });
+
+      it('throws on an invalid unsupported.confirmedAt value', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.bad]
+volumeUuid = "BAD-UUID"
+unsupported = { kind = "ios-device", confirmedAt = "not-a-date" }
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid "unsupported.confirmedAt"/);
+      });
+
+      it('throws when unsupported is a string (not bool or table)', () => {
+        const configPath = path.join(tempDir, 'config.toml');
+        fs.writeFileSync(
+          configPath,
+          v(`
+[devices.bad]
+volumeUuid = "BAD-UUID"
+unsupported = "yes"
+`)
+        );
+
+        expect(() => loadConfigFile(configPath)).toThrow(/Invalid type for "unsupported"/);
+      });
+
       it('parses device transferMode', () => {
         const configPath = path.join(tempDir, 'config.toml');
         fs.writeFileSync(

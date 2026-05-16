@@ -1254,7 +1254,7 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     expect(exitCode.get()).toBeUndefined();
   });
 
-  it('persists unsupported: true when the user accepts the warn-allow prompt (TASK-317.03)', async () => {
+  it('persists unsupported rich shape when the user accepts the warn-allow prompt (TASK-317.03)', async () => {
     const ctx = makeContext({ device: 'touchok', json: true, configPath: tempConfig });
     const { out, stdout, exitCode } = makeOut(true);
 
@@ -1304,9 +1304,14 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     const result = stdout.json<AddOutputSuccess>();
     expect(result.success).toBe(true);
 
-    // Re-load the config to assert the unsupported flag landed.
+    // Re-load the config to assert the rich unsupported shape landed.
     const { readFileSync } = await import('node:fs');
     const text = readFileSync(tempConfig, 'utf-8');
-    expect(text).toContain('unsupported = true');
+    // Must be a TOML inline table, not a bare boolean.
+    expect(text).toContain('unsupported = {');
+    expect(text).toContain('kind = "ios-device"');
+    expect(text).toMatch(/confirmedAt = "\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z"/);
+    // Confirm the kind comes from the assessment (ios-device, not the fallback).
+    expect(text).not.toContain('unsupported = true');
   });
 });

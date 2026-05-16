@@ -628,7 +628,12 @@ export async function runDeviceAdd(
     const isFirstDevice = deviceCount === 0;
     const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
     const deviceConfig: DeviceConfig = { volumeUuid, volumeName };
-    if (recordUnsupported) deviceConfig.unsupported = true;
+    if (recordUnsupported) {
+      deviceConfig.unsupported = {
+        kind: assessment.model?.unsupportedReason?.kind ?? 'unsupported-device',
+        confirmedAt: new Date().toISOString(),
+      };
+    }
     if (options.quality) deviceConfig.quality = options.quality as any;
     if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
     if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
@@ -1071,7 +1076,12 @@ export async function runDeviceAdd(
     volumeUuid: ipod.volumeUuid,
     volumeName: ipod.volumeName,
   };
-  if (recordUnsupportedScan) deviceConfig.unsupported = true;
+  if (recordUnsupportedScan) {
+    deviceConfig.unsupported = {
+      kind: assessment?.model?.unsupportedReason?.kind ?? 'unsupported-device',
+      confirmedAt: new Date().toISOString(),
+    };
+  }
   if (options.quality) deviceConfig.quality = options.quality as any;
   if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
   if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;

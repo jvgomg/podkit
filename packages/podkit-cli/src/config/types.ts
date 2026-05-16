@@ -50,6 +50,7 @@ import type {
   DeviceArtworkSource,
   TranscodeTargetCodec,
 } from '@podkit/core';
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 
 /**
  * Codec preference configuration
@@ -173,8 +174,20 @@ export interface DeviceConfig {
    * future runs render the canonical unsupported-device message but skip
    * the prompt; commands that gate on support (`sync`, `doctor` mutating
    * repairs) still refuse.
+   *
+   * The `kind` captures which unsupported-reason class triggered the prompt
+   * so a future reader (or `podkit doctor`) can tell why the device was
+   * confirmed. The `confirmedAt` ISO 8601 timestamp records when.
    */
-  unsupported?: boolean;
+  unsupported?: {
+    /**
+     * The kind of unsupported reason at the time the user confirmed. Pinned
+     * to `ReadinessUnsupportedReason['kind']` so the union stays in sync.
+     */
+    kind: ReadinessUnsupportedReason['kind'];
+    /** ISO 8601 timestamp of when the user said "Add anyway? [y/N] → y". */
+    confirmedAt: string;
+  };
   /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
   /** Audio transcoding quality preset (overrides quality) */
@@ -446,8 +459,13 @@ export interface ConfigFileDevice {
   volumeName?: string;
   type?: string;
   path?: string;
-  /** See `DeviceConfig.unsupported`. */
-  unsupported?: boolean;
+  /**
+   * See `DeviceConfig.unsupported`. Stored as an inline TOML table:
+   * `unsupported = { kind = "ios-device", confirmedAt = "2026-05-16T11:30:00.000Z" }`.
+   * Legacy boolean `true` is silently coerced to
+   * `{ kind: 'unsupported-device', confirmedAt: <epoch> }` on load.
+   */
+  unsupported?: boolean | { kind?: string; confirmedAt?: string };
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;

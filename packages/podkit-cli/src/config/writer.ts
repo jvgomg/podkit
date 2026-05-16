@@ -116,7 +116,11 @@ export function addDevice(
     lines.push(`volumeName = "${device.volumeName}"`);
   }
   if (device.unsupported !== undefined) {
-    lines.push(`unsupported = ${device.unsupported}`);
+    // Serialise as a TOML inline table:
+    // unsupported = { kind = "ios-device", confirmedAt = "2026-05-16T11:30:00.000Z" }
+    lines.push(
+      `unsupported = { kind = "${device.unsupported.kind}", confirmedAt = "${device.unsupported.confirmedAt}" }`
+    );
   }
 
   if (device.quality !== undefined) {

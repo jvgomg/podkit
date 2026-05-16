@@ -51,6 +51,15 @@ import {
   ARTWORK_SOURCES,
   CODEC_METADATA,
 } from './types.js';
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
+
+/** Valid `ReadinessUnsupportedReason['kind']` values (kept in sync with the union). */
+const READINESS_UNSUPPORTED_KINDS: ReadinessUnsupportedReason['kind'][] = [
+  'filesystem-unsupported-on-linux',
+  'unsupported-device',
+  'unsupported-preset',
+  'ios-device',
+];
 import { DEFAULT_CONFIG, DEFAULT_CONFIG_PATH, ENV_KEYS } from './defaults.js';
 import { readConfigVersion, checkConfigVersion } from './version.js';
 import { normalizeContentPaths, validateContentPaths } from '@podkit/core';
@@ -700,17 +709,67 @@ function parseDevices(
       device.path = rawDevice.path.trim();
     }
 
-    // Parse optional `unsupported` flag — records the user's explicit
+    // Parse optional `unsupported` object — records the user's explicit
     // "add this device anyway" choice from `podkit device add` on a
     // generation podkit does not officially support. See TASK-317.03.
+    //
+    // Expected TOML shape (inline table):
+    //   unsupported = { kind = "ios-device", confirmedAt = "2026-05-16T11:30:00.000Z" }
+    //
+    // Legacy boolean `true` (from before this richer shape existed) is silently
+    // coerced to `{ kind: 'unsupported-device', confirmedAt: <epoch> }`.
     if (rawDevice.unsupported !== undefined) {
-      if (typeof rawDevice.unsupported !== 'boolean') {
+      if (typeof rawDevice.unsupported === 'boolean') {
+        if (rawDevice.unsupported) {
+          // Backwards-compat coercion: old `unsupported = true` → rich shape
+          device.unsupported = {
+            kind: 'unsupported-device',
+            confirmedAt: new Date(0).toISOString(),
+          };
+        }
+        // `unsupported = false` → leave unset (no-op)
+      } else if (typeof rawDevice.unsupported === 'object' && rawDevice.unsupported !== null) {
+        const raw = rawDevice.unsupported;
+
+        // Validate `kind`
+        if (!raw.kind || typeof raw.kind !== 'string') {
+          throw new Error(
+            `Invalid "unsupported.kind" in [devices.${name}]. ` +
+              `Expected a string kind value, got ${JSON.stringify(raw.kind)}.`
+          );
+        }
+        if (!(READINESS_UNSUPPORTED_KINDS as string[]).includes(raw.kind)) {
+          throw new Error(
+            `Invalid "unsupported.kind" value "${raw.kind}" in [devices.${name}]. ` +
+              `Valid values: ${READINESS_UNSUPPORTED_KINDS.join(', ')}`
+          );
+        }
+
+        // Validate `confirmedAt` as ISO 8601
+        if (!raw.confirmedAt || typeof raw.confirmedAt !== 'string') {
+          throw new Error(
+            `Invalid "unsupported.confirmedAt" in [devices.${name}]. ` +
+              `Expected an ISO 8601 timestamp string.`
+          );
+        }
+        const parsed = new Date(raw.confirmedAt);
+        if (isNaN(parsed.getTime()) || parsed.toISOString() !== raw.confirmedAt) {
+          throw new Error(
+            `Invalid "unsupported.confirmedAt" value "${raw.confirmedAt}" in [devices.${name}]. ` +
+              `Must be a valid ISO 8601 timestamp (e.g. "2026-05-16T11:30:00.000Z").`
+          );
+        }
+
+        device.unsupported = {
+          kind: raw.kind as ReadinessUnsupportedReason['kind'],
+          confirmedAt: raw.confirmedAt,
+        };
+      } else {
         throw new Error(
           `Invalid type for "unsupported" in [devices.${name}]. ` +
-            `Expected boolean, got ${typeof rawDevice.unsupported}.`
+            `Expected an inline table { kind, confirmedAt }, got ${typeof rawDevice.unsupported}.`
         );
       }
-      device.unsupported = rawDevice.unsupported;
     }
 
     // Parse optional quality
