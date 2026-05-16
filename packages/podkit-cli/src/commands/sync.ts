@@ -782,7 +782,7 @@ export async function runSync(
   // Refuse cleanly before any heavy work (FFmpeg detect, DB open, planning)
   // when the cascade resolves to an unsupported generation. No track plan,
   // no DB open. Uses the same primitive (`assessIpodIdentity` →
-  // `makeUnsupportedReasonFromAssessment`) as `device add` / `device info` /
+  // `assessment.model?.unsupportedReason`) as `device add` / `device info` /
   // `doctor` so wording stays consistent.
   //
   // Also honours the `unsupported: true` opt-in flag persisted at `device add`
@@ -797,9 +797,9 @@ export async function runSync(
       // Assessment is best-effort — a failure here lets the normal sync path
       // continue and surface its own error. The cascade refusal we care
       // about (a known unsupported generation) only fires when assessment
-      // actually returns a model with `notSupportedReason`.
+      // actually returns a model with `unsupportedReason`.
     }
-    const syncUnsupportedReason = core.makeUnsupportedReasonFromAssessment(syncAssessment);
+    const syncUnsupportedReason = syncAssessment?.model?.unsupportedReason;
     if (syncUnsupportedReason || deviceConfig?.unsupported) {
       const reason = syncUnsupportedReason ?? {
         kind: 'unsupported-device' as const,

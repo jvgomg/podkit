@@ -252,7 +252,10 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
     // TASK-317.03: doctor calls assessIpodIdentity to thread the cascade
     // unsupported reason into checkReadiness, AND runRepair calls it to
     // refuse mutating repairs on unsupported devices. Stub returns "no
-    // model" so it's a no-op for the existing fixtures.
+    // model" so the cascade refusal short-circuit is a no-op for the
+    // existing fixtures; consumers read `assessment.model?.unsupportedReason`
+    // directly (no bridge function), so the absent model means
+    // `unsupportedReason` is undefined.
     assessIpodIdentity: async () => ({
       model: null,
       capabilities: null,
@@ -263,7 +266,6 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
       usbFingerprint: null,
       sysInfoModelNumber: undefined,
     }),
-    makeUnsupportedReasonFromAssessment: () => undefined,
     DOCS_URLS: {
       supportedDevices: 'https://jvgomg.github.io/podkit/devices/supported-devices',
       linuxFilesystems: 'https://jvgomg.github.io/podkit/devices/linux-filesystems',

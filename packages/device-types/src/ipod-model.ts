@@ -10,6 +10,8 @@
  * @module
  */
 
+import type { ReadinessUnsupportedReason } from './unsupported-reason.js';
+
 // ── ChecksumType ────────────────────────────────────────────────────────────
 
 /** Checksum type required for iPod database */
@@ -72,10 +74,11 @@ export type IpodModelSource = 'usb' | 'sysinfo' | 'serial';
  * and a generic displayName. SysInfo/serial yields richer data including
  * color, capacity, and model number.
  *
- * When `notSupportedReason` is present, the device was identified but podkit
+ * When `unsupportedReason` is present, the device was identified but podkit
  * cannot sync to it (libgpod unsupported, iTunes authentication required, or
  * Apple proprietary sync protocol). Callers should surface this to the user
- * rather than attempting a sync.
+ * rather than attempting a sync. The payload is the same shape the readiness
+ * pipeline + CLI consume — no bridge function required.
  */
 export interface IpodModel {
   /** Best available human-readable name (e.g., "iPod nano 4GB Silver (2nd Generation)") */
@@ -95,7 +98,9 @@ export interface IpodModel {
   /**
    * When present, this device is identified but cannot be synced by podkit.
    * Populated when `IpodGeneration.supported === false` or the USB product ID
-   * appears in UNSUPPORTED_IPOD_PRODUCT_IDS.
+   * appears in UNSUPPORTED_IPOD_PRODUCT_IDS. The shape is the canonical
+   * {@link ReadinessUnsupportedReason} — readiness, CLI errors, and JSON
+   * envelopes all consume it directly.
    */
-  readonly notSupportedReason?: string;
+  readonly unsupportedReason?: ReadinessUnsupportedReason;
 }

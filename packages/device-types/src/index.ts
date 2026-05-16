@@ -42,4 +42,6 @@ export type {
 } from './ipod-model.js';
 export { IPOD_GENERATION_IDS } from './ipod-model.js';
 
+export type { ReadinessUnsupportedReason } from './unsupported-reason.js';
+
 export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';

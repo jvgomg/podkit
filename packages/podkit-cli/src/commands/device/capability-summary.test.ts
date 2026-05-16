@@ -182,7 +182,7 @@ describe('assertAssessmentSupported', () => {
     expect(stderr.text()).toBe('');
   });
 
-  it('returns silently when notSupportedReason is absent', () => {
+  it('returns silently when unsupportedReason is absent', () => {
     const { out, stdout, stderr } = makeOut();
     const assessment = {
       model: { displayName: 'iPod video', generationId: 'video_g5' },
@@ -192,13 +192,17 @@ describe('assertAssessmentSupported', () => {
     expect(stderr.text()).toBe('');
   });
 
-  it('throws CliError with UNSUPPORTED_DEVICE when notSupportedReason is present', () => {
+  it('throws CliError with UNSUPPORTED_DEVICE when unsupportedReason is present', () => {
     const { out, stdout, stderr } = makeOut();
     const assessment = {
       model: {
         displayName: 'iPod nano 6G',
         generationId: 'nano_6',
-        notSupportedReason: 'iPod nano (6th Generation) is not supported by podkit.',
+        unsupportedReason: {
+          kind: 'unsupported-device',
+          headline: 'iPod nano (6th Generation) is not supported by podkit.',
+          docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
+        },
       },
     } as unknown as IpodIdentityAssessment;
 
@@ -231,8 +235,12 @@ describe('confirmUnsupportedDeviceAdd', () => {
         generationId: 'nano_7g',
         checksumType: 'hashAB',
         source: 'usb',
-        notSupportedReason:
-          'iPod nano (7th Generation) is not supported by podkit (this generation cannot sync).',
+        unsupportedReason: {
+          kind: 'unsupported-device',
+          headline:
+            'iPod nano (7th Generation) is not supported by podkit (this generation cannot sync).',
+          docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
+        },
         ...overrides,
       },
       capabilities: null,
@@ -245,7 +253,7 @@ describe('confirmUnsupportedDeviceAdd', () => {
     };
   }
 
-  it('returns "supported" without prompting when assessment has no notSupportedReason', async () => {
+  it('returns "supported" without prompting when assessment has no unsupportedReason', async () => {
     const { out } = makeOut();
     let calls = 0;
     const decision = await confirmUnsupportedDeviceAdd(

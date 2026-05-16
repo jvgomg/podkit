@@ -16,6 +16,7 @@ import { identify } from './identity.js';
 import { lookupByFamilyId, lookupByUsbId } from './lookups.js';
 import { lookupByLibgpodName } from './tables/libgpod-mapping.js';
 import { GENERATIONS } from './tables/generations.js';
+import { buildUnsupportedReason } from './build-unsupported-reason.js';
 import type { IpodModel, IpodGenerationId } from './types.js';
 
 // =============================================================================
@@ -53,16 +54,18 @@ export interface ResolveModelInput {
  */
 function synthesizeFromGeneration(genId: IpodGenerationId): IpodModel {
   const gen = GENERATIONS[genId];
+  const unsupportedReason = gen.supported
+    ? undefined
+    : buildUnsupportedReason(
+        `${gen.displayName} is not supported by podkit (libgpod cannot sync this generation).`,
+        genId
+      );
   return {
     displayName: gen.displayName,
     generationId: genId,
     checksumType: gen.checksumType,
     source: 'usb',
-    ...(gen.supported
-      ? {}
-      : {
-          notSupportedReason: `${gen.displayName} is not supported by podkit (libgpod cannot sync this generation).`,
-        }),
+    ...(unsupportedReason ? { unsupportedReason } : {}),
   };
 }
 

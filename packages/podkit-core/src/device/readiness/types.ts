@@ -1,4 +1,9 @@
-import type { IpodModel } from '@podkit/devices-ipod';
+import type { IpodModel, ReadinessUnsupportedReason } from '@podkit/device-types';
+
+// Re-export so existing `import { ReadinessUnsupportedReason } from './types.js'`
+// call sites inside core continue to compile. The canonical home is
+// `@podkit/device-types` — that's where new code should import it from.
+export type { ReadinessUnsupportedReason } from '@podkit/device-types';
 
 // ── Stage identifiers ────────────────────────────────────────────────────────
 
@@ -31,34 +36,6 @@ export type ReadinessLevel =
    */
   | 'unsupported'
   | 'unknown';
-
-/**
- * Structured payload describing why a device is rejected. Carries
- * machine-readable fields so JSON consumers can render rich diagnostics
- * and the CLI can emit a multi-line message without parsing strings.
- *
- * The `kind` discriminator lets renderers branch on rejection class
- * (filesystem policy, unsupported model, missing preset, iOS device)
- * while keeping the payload extension-friendly.
- */
-export interface ReadinessUnsupportedReason {
-  /** Rejection class. New variants can be added as podkit grows policies. */
-  kind:
-    | 'filesystem-unsupported-on-linux'
-    | 'unsupported-device'
-    | 'unsupported-preset'
-    | 'ios-device';
-  /** Single-line headline shown first (e.g. "Filesystem not supported on Linux"). */
-  headline: string;
-  /** Optional indented detail lines rendered under the headline. */
-  details?: string[];
-  /** Optional documentation link the user can follow. */
-  docsUrl?: string;
-  /** Filesystem string (when kind === 'filesystem-unsupported-on-linux'). */
-  filesystem?: string;
-  /** Mount path (when kind === 'filesystem-unsupported-on-linux'). */
-  path?: string;
-}
 
 export interface ReadinessResult {
   level: ReadinessLevel;

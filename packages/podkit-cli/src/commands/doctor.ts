@@ -595,7 +595,7 @@ export async function runDoctorDiagnostics(
   let readinessUnsupported: import('@podkit/core').ReadinessUnsupportedReason | undefined;
   try {
     const doctorAssessment = await core.assessIpodIdentity(devicePath);
-    readinessUnsupported = core.makeUnsupportedReasonFromAssessment(doctorAssessment);
+    readinessUnsupported = doctorAssessment?.model?.unsupportedReason;
   } catch {
     // Assessment is best-effort — readiness still runs without the gate.
   }
@@ -1194,7 +1194,7 @@ export async function runRepair(
   // not safe.
   try {
     const refusalAssessment = await core.assessIpodIdentity(devicePath);
-    const refusalReason = core.makeUnsupportedReasonFromAssessment(refusalAssessment);
+    const refusalReason = refusalAssessment?.model?.unsupportedReason;
     if (refusalReason) {
       throw new CliError({
         message: refusalReason.headline,

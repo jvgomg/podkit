@@ -170,7 +170,7 @@ describe('resolveIpodModel — libgpodGeneration axis', () => {
     // The lookup returns nano_7g (unsupported).
     if (model !== null) {
       expect(model.generationId).toBe('nano_7g');
-      expect(model.notSupportedReason).toBeDefined();
+      expect(model.unsupportedReason).toBeDefined();
     }
     // Both null and a valid unsupported model are acceptable for 'unknown'.
   });
@@ -283,24 +283,53 @@ describe('resolveIpodModel — cascade priority', () => {
 // =============================================================================
 
 describe('resolveIpodModel — unsupported generations', () => {
-  it('returns a model with notSupportedReason for nano_7g (familyId 18)', () => {
+  it('returns a model with unsupportedReason for nano_7g (familyId 18)', () => {
     const model = resolveIpodModel({ familyId: 18 });
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('nano_7g');
-    expect(model!.notSupportedReason).toBeDefined();
-    expect(model!.notSupportedReason).toMatch(/nano.*7/i);
+    expect(model!.unsupportedReason).toBeDefined();
+    expect(model!.unsupportedReason!.headline).toMatch(/nano.*7/i);
+    expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
+    expect(model!.unsupportedReason!.docsUrl).toContain('supported-devices');
   });
 
-  it('returns a model with notSupportedReason for nano_6g via libgpod axis', () => {
+  it('returns a model with unsupportedReason for nano_6g via libgpod axis', () => {
     const model = resolveIpodModel({ libgpodGeneration: 'nano_6' });
     expect(model).not.toBeNull();
     expect(model!.generationId).toBe('nano_6g');
-    expect(model!.notSupportedReason).toBeDefined();
+    expect(model!.unsupportedReason).toBeDefined();
+    expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
   });
 
-  it('returns a model without notSupportedReason for a supported generation', () => {
+  it('returns a model without unsupportedReason for a supported generation', () => {
     const model = resolveIpodModel({ familyId: 15 }); // nano_4g, supported
     expect(model).not.toBeNull();
-    expect(model!.notSupportedReason).toBeUndefined();
+    expect(model!.unsupportedReason).toBeUndefined();
+  });
+
+  // ─── Kind discriminator selection (moved from the deleted bridge tests) ──
+  //
+  // resolveIpodModel goes through `synthesizeFromGeneration` for the
+  // generation-only axes (productId/familyId/libgpodGeneration), which
+  // emits the generic "not supported by podkit" headline. The richer
+  // table-derived wording (`identify({from:'usb'})`) is exercised in
+  // `identity.test.ts`. Here we pin the discriminator selection.
+
+  it('maps iPod touch generations to kind=ios-device (via familyId axis)', () => {
+    // touch_2g → familyId 27 (the firmware FamilyID for the touch 2G).
+    const model = resolveIpodModel({ familyId: 27 });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('touch_2g');
+    expect(model!.unsupportedReason).toBeDefined();
+    expect(model!.unsupportedReason!.kind).toBe('ios-device');
+    expect(model!.unsupportedReason!.docsUrl).toContain('supported-devices');
+  });
+
+  it('maps shuffle 3G (PID 0x1302) to kind=unsupported-device', () => {
+    const model = resolveIpodModel({ productId: '0x1302' });
+    expect(model).not.toBeNull();
+    expect(model!.generationId).toBe('shuffle_3g');
+    expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
+    expect(model!.unsupportedReason!.headline).toMatch(/shuffle/i);
   });
 });

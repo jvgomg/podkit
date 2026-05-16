@@ -164,7 +164,11 @@ describe('runSync: validation + deps seam', () => {
               generationId: 'nano_7g',
               checksumType: 'hashAB',
               source: 'usb',
-              notSupportedReason: 'iPod nano (7th Generation) is not supported by podkit.',
+              unsupportedReason: {
+                kind: 'unsupported-device',
+                headline: 'iPod nano (7th Generation) is not supported by podkit.',
+                docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices',
+              },
             },
             capabilities: null,
             needsChecksum: true,

@@ -2553,14 +2553,6 @@ export const defaultSubprocessRunner = {
   },
 };
 
-// Unsupported-reason builders — stubs; demo never hits these paths.
-export function makeUnsupportedReasonFromModel(_model: any): any {
-  return { kind: 'unsupported-model', headline: 'demo stub' };
-}
-export function makeUnsupportedReasonFromAssessment(_assessment: any): any {
-  return { kind: 'unsupported-model', headline: 'demo stub' };
-}
-
 // reconcileIpodDiscovery — stub; demo never calls real device enumeration.
 export function reconcileIpodDiscovery(_blockDevices: any[], _usbClassified: any[]): any[] {
   return [];

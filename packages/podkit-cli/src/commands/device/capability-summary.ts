@@ -16,7 +16,7 @@
  */
 
 import type { DeviceCapabilities, IpodIdentityAssessment } from '@podkit/core';
-import { DOCS_URLS, makeUnsupportedReasonFromAssessment } from '@podkit/core';
+import { DOCS_URLS } from '@podkit/core';
 import { CliError } from '../../errors.js';
 import type { OutputContext } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
@@ -126,8 +126,9 @@ export type UnsupportedAddDecision = 'supported' | 'add-anyway' | 'cancelled';
  * On confirmation the caller writes `unsupported: true` in the device config so
  * future runs (`sync`, mutating `doctor` repairs) can still refuse.
  *
- * Wording is centralised: the canonical headline + docs URL come from the
- * `@podkit/core` bridge function. No user-facing copy mentions `libgpod`.
+ * Wording is centralised: the canonical headline + docs URL are baked into
+ * `IpodModel.unsupportedReason` by `@podkit/devices-ipod`'s cascade resolver.
+ * No user-facing copy mentions `libgpod`.
  *
  * Behaviour:
  * - Supported device → returns `'supported'` immediately (no prompt).
@@ -145,7 +146,7 @@ export async function confirmUnsupportedDeviceAdd(
     confirmFn: (msg: string) => Promise<boolean>;
   }
 ): Promise<UnsupportedAddDecision> {
-  const reason = makeUnsupportedReasonFromAssessment(assessment);
+  const reason = assessment?.model?.unsupportedReason;
   if (!reason) return 'supported';
 
   // Render canonical message regardless of text/JSON mode — text consumers
@@ -181,13 +182,13 @@ export async function confirmUnsupportedDeviceAdd(
  * migrate to the warn-allow flow.
  *
  * Still throws `UNSUPPORTED_DEVICE` if the assessment carries a refusal;
- * still avoids mentioning `libgpod` (wording comes from the bridge).
+ * still avoids mentioning `libgpod` (wording comes from the cascade resolver).
  */
 export function assertAssessmentSupported(
   out: OutputContext,
   assessment: IpodIdentityAssessment | null | undefined
 ): void {
-  const reason = makeUnsupportedReasonFromAssessment(assessment);
+  const reason = assessment?.model?.unsupportedReason;
   if (!reason) return;
 
   if (out.isText) {
