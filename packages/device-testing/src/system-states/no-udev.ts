@@ -53,7 +53,7 @@ export const noUdev: SystemState = {
       {
         id: 'udev-rule',
         status: 'fail',
-        summary: 'podkit udev rule not found at /etc/udev/rules.d/91-podkit-ipod-scsi.rules',
+        summary: 'podkit udev rule not found at /etc/udev/rules.d/91-podkit-ipod.rules',
       },
       {
         id: 'configfs-mount',

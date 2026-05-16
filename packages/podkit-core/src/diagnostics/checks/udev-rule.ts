@@ -2,8 +2,9 @@
  * udev-rule diagnostic check.
  *
  * Detects whether the podkit udev rule is installed at
- * `/etc/udev/rules.d/91-podkit-ipod-scsi.rules` so that Linux users can
- * access iPod SCSI devices without sudo. Reports:
+ * `/etc/udev/rules.d/91-podkit-ipod.rules` so that Linux users can access
+ * iPod SCSI generic nodes (/dev/sgN) AND USB bus device nodes
+ * (/dev/bus/usb/<bus>/<dev>) without sudo. Reports:
  *
  *   - pass: rule installed with the canonical content
  *   - warn: rule installed but the contents differ (stale rule from an
@@ -22,9 +23,14 @@
  * rather than trying to use sudo -A or askpass helpers — keep it simple.
  *
  * Rule content is embedded as a string constant (the single source of truth
- * is packages/podkit-cli/share/91-podkit-ipod-scsi.rules; this module keeps
- * the content in sync). The embedded string avoids any runtime filesystem
+ * is packages/podkit-cli/share/91-podkit-ipod.rules; this module keeps the
+ * content in sync). The embedded string avoids any runtime filesystem
  * dependency on the share/ directory.
+ *
+ * Legacy filename: earlier podkit versions installed this rule as
+ * `91-podkit-ipod-scsi.rules` (SCSI-only coverage). The repair removes that
+ * legacy file on install so users upgrading from an older podkit don't end
+ * up with both files loaded by udev.
  *
  * Linux-only: returns an immediate non-success on other platforms.
  */
@@ -48,37 +54,102 @@ const readFileAsync = promisify(readFileNative);
 
 /**
  * Canonical udev rule content. This is the single source of truth —
- * kept in sync with packages/podkit-cli/share/91-podkit-ipod-scsi.rules.
+ * kept in sync with packages/podkit-cli/share/91-podkit-ipod.rules.
  *
  * Embedded here as a string constant so the repair works in any runtime
  * environment (standalone binary, workspace, test) without requiring the
  * share/ directory to be on the filesystem.
+ *
+ * Attribute case matters:
+ *   - SCSI generic match uses ATTRS{idVendor} (plural) to walk the parent
+ *     USB chain (scsi_generic itself has no idVendor attribute).
+ *   - USB match uses ATTR{idVendor} (singular) — the USB device node
+ *     exposes idVendor directly.
  */
-export const UDEV_RULE_CONTENT = `# podkit — udev rule for SCSI access to Apple iPod devices.
+export const UDEV_RULE_CONTENT = `# podkit — udev rule for unprivileged access to Apple iPod devices.
 #
-# Grants unprivileged access to the SCSI generic (/dev/sgN) nodes that
-# correspond to Apple-vendor iPod USB devices, so podkit can issue SCSI VPD
-# inquiries to read SysInfoExtended without sudo.
+# Grants two kinds of unprivileged access for Apple-vendor (05ac) USB devices:
+#
+#   1. SCSI generic (/dev/sgN) — used by \`podkit doctor --repair
+#      sysinfo-extended\` to issue SCSI VPD inquiries that read
+#      SysInfoExtended without sudo.
+#
+#   2. USB bus device nodes (/dev/bus/usb/<bus>/<dev>) — used by the
+#      libusb-based firmware inquiry path (USB control transfers to
+#      Apple's iPod-Information descriptor 0xfa). Without this, libusb
+#      \`O_RDWR\` open fails with EACCES from SSH sessions, headless boxes,
+#      Docker containers, and CI runners (systemd-logind's \`uaccess\`
+#      grants /dev/bus/usb to active console seats only).
 #
 # Install:
-#   sudo cp 91-podkit-ipod-scsi.rules /etc/udev/rules.d/
+#   sudo cp 91-podkit-ipod.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload && sudo udevadm trigger
 #   (then unplug and replug your iPod)
 #
 # Uninstall:
-#   sudo rm /etc/udev/rules.d/91-podkit-ipod-scsi.rules
+#   sudo rm /etc/udev/rules.d/91-podkit-ipod.rules
 #   sudo udevadm control --reload && sudo udevadm trigger
 #
+# (Earlier podkit versions installed this rule as
+# \`91-podkit-ipod-scsi.rules\`. The doctor repair removes that legacy
+# filename automatically. If you installed it manually, also
+# \`sudo rm /etc/udev/rules.d/91-podkit-ipod-scsi.rules\`.)
+#
+# Attribute case matters for the two match clauses:
+#
+#   - SCSI generic: ATTRS{idVendor} (plural — walks the parent USB chain
+#     because scsi_generic itself has no idVendor attribute).
+#   - USB device:   ATTR{idVendor}  (singular — the USB device node
+#     exposes idVendor directly).
+#
+# (We do not test ENV{ID_MODEL} or ATTRS{model} — Apple's \`model\` field
+# is space-padded to 16 chars by SCSI INQUIRY, and ENV{ID_MODEL} is not
+# always set on scsi_generic events. Apple-vendor on scsi_generic is
+# iPod-only in practice — Apple keyboards / trackpads / etc. don't
+# expose scsi_generic.)
+#
 # Cross-distro coverage:
-#   GROUP="plugdev"  — Debian / Ubuntu / Mint
-#   TAG+="uaccess"  — Arch / Fedora / NixOS / openSUSE (modern systemd-udevd)
+#   GROUP="plugdev"    — Debian / Ubuntu / Mint: plugdev is the standard
+#                        group for user-pluggable hardware; desktop users
+#                        are typically already members.
+#   TAG+="uaccess"     — Arch / Fedora / NixOS / openSUSE and any modern
+#                        systemd-udevd: grants access to the
+#                        currently-logged-in console user via ACL, with
+#                        no group membership required.
+#
+# Both can coexist — systemd-udevd processes uaccess regardless of GROUP.
+# See also: 91-podkit-ipod-scsi-narrow.rules for a product-ID-restricted
+# variant (SCSI only).
 
+# SCSI generic (sg) access for SCSI VPD INQUIRY commands.
 ACTION=="add|change", SUBSYSTEM=="scsi_generic", \\
   ATTRS{idVendor}=="05ac", \\
   MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+# USB bus device access for libusb-based firmware inquiry.
+ACTION=="add|change", SUBSYSTEM=="usb", \\
+  ATTR{idVendor}=="05ac", \\
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
 `;
 
-export const TARGET_PATH = '/etc/udev/rules.d/91-podkit-ipod-scsi.rules';
+/**
+ * Canonical install path for the udev rule.
+ *
+ * Renamed from `91-podkit-ipod-scsi.rules` to `91-podkit-ipod.rules` when
+ * USB-subsystem coverage was added — the rule covers more than SCSI now.
+ * See `LEGACY_TARGET_PATHS` for the legacy filename(s) the install path
+ * cleans up on upgrade.
+ */
+export const TARGET_PATH = '/etc/udev/rules.d/91-podkit-ipod.rules';
+
+/**
+ * Legacy install paths for the udev rule. The install path removes any of
+ * these that exist so users upgrading from an older podkit don't end up
+ * with two podkit rule files loaded by udev.
+ */
+export const LEGACY_TARGET_PATHS: readonly string[] = [
+  '/etc/udev/rules.d/91-podkit-ipod-scsi.rules',
+];
 
 // ── Injectable executor type ──────────────────────────────────────────────────
 
@@ -239,15 +310,20 @@ export async function runUdevRuleInstall(opts: {
       success: true,
       summary: [
         `Would write rule to ${TARGET_PATH} (sudo required).`,
+        `Would remove any legacy rule file(s): ${LEGACY_TARGET_PATHS.join(', ')}.`,
         `Would run: sudo udevadm control --reload && sudo udevadm trigger`,
-        `Rule uses GROUP="plugdev" + TAG+="uaccess" for cross-distro coverage.`,
+        `Rule grants /dev/sg* and /dev/bus/usb access via GROUP="plugdev" + TAG+="uaccess".`,
       ].join('\n'),
-      details: { targetPath: TARGET_PATH, dryRun: true },
+      details: {
+        targetPath: TARGET_PATH,
+        legacyPaths: [...LEGACY_TARGET_PATHS],
+        dryRun: true,
+      },
     };
   }
 
   // Write rule to a temp file (no sudo needed for /tmp), then sudo cp to target.
-  const tmpPath = `/tmp/91-podkit-ipod-scsi.rules.${process.pid}`;
+  const tmpPath = `/tmp/91-podkit-ipod.rules.${process.pid}`;
 
   try {
     fsOps.writeFile(tmpPath, UDEV_RULE_CONTENT);
@@ -279,6 +355,24 @@ export async function runUdevRuleInstall(opts: {
     /* ignore */
   }
 
+  // Clean up any legacy rule files left by older podkit installs. We do not
+  // fail the repair if cleanup fails — the new rule is already in place and
+  // a stale legacy file with the same matches is harmless (udev merges).
+  // We report which files were removed in `details.legacyRemoved` so the
+  // operator can see what changed.
+  const legacyRemoved: string[] = [];
+  for (const legacyPath of LEGACY_TARGET_PATHS) {
+    // `rm -f` is a no-op when the file doesn't exist (exit 0). We treat a
+    // non-zero exit as "file existed but cleanup failed" — surfaced in
+    // details, not fatal.
+    const rmResult = executor(['rm', '-f', legacyPath]);
+    if (rmResult.code === 0) {
+      // We can't tell from `rm -f` alone whether the file existed, but
+      // recording the path-attempted is fine for the success path.
+      legacyRemoved.push(legacyPath);
+    }
+  }
+
   // Reload udev rules
   const reloadResult = executor(['udevadm', 'control', '--reload']);
   if (reloadResult.code !== 0) {
@@ -302,7 +396,7 @@ export async function runUdevRuleInstall(opts: {
   return {
     success: true,
     summary: `Rule installed at ${TARGET_PATH}. Unplug and replug your iPod for the rule to take effect.`,
-    details: { targetPath: TARGET_PATH },
+    details: { targetPath: TARGET_PATH, legacyCleanupAttempted: legacyRemoved },
   };
 }
 
@@ -331,7 +425,7 @@ const productionFsOps: FsOps = {
 // ── Exported repair object ─────────────────────────────────────────────────────
 
 export const udevRuleRepair: DiagnosticRepair = {
-  description: 'Install the podkit udev rule to grant SCSI access without sudo',
+  description: 'Install the podkit udev rule to grant SCSI and USB iPod access without sudo',
   requirements: [], // no source-collection or writable-device needed
 
   async run(_ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
@@ -353,7 +447,7 @@ export const udevRuleRepair: DiagnosticRepair = {
  */
 export const udevRuleCheck: DiagnosticCheck = {
   id: 'udev-rule',
-  name: 'udev Rule (Linux SCSI Access)',
+  name: 'udev Rule (Linux SCSI + USB Access)',
   scope: 'system',
   applicableTo: ['ipod', 'mass-storage'],
 

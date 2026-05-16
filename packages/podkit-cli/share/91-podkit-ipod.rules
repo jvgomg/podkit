@@ -1,0 +1,64 @@
+# podkit — udev rule for unprivileged access to Apple iPod devices.
+#
+# Grants two kinds of unprivileged access for Apple-vendor (05ac) USB devices:
+#
+#   1. SCSI generic (/dev/sgN) — used by `podkit doctor --repair
+#      sysinfo-extended` to issue SCSI VPD inquiries that read
+#      SysInfoExtended without sudo.
+#
+#   2. USB bus device nodes (/dev/bus/usb/<bus>/<dev>) — used by the
+#      libusb-based firmware inquiry path (USB control transfers to
+#      Apple's iPod-Information descriptor 0xfa). Without this, libusb
+#      `O_RDWR` open fails with EACCES from SSH sessions, headless boxes,
+#      Docker containers, and CI runners (systemd-logind's `uaccess`
+#      grants /dev/bus/usb to active console seats only).
+#
+# Install:
+#   sudo cp 91-podkit-ipod.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload && sudo udevadm trigger
+#   (then unplug and replug your iPod)
+#
+# Uninstall:
+#   sudo rm /etc/udev/rules.d/91-podkit-ipod.rules
+#   sudo udevadm control --reload && sudo udevadm trigger
+#
+# (Earlier podkit versions installed this rule as
+# `91-podkit-ipod-scsi.rules`. The doctor repair removes that legacy
+# filename automatically. If you installed it manually, also
+# `sudo rm /etc/udev/rules.d/91-podkit-ipod-scsi.rules`.)
+#
+# Attribute case matters for the two match clauses:
+#
+#   - SCSI generic: ATTRS{idVendor} (plural — walks the parent USB chain
+#     because scsi_generic itself has no idVendor attribute).
+#   - USB device:   ATTR{idVendor}  (singular — the USB device node
+#     exposes idVendor directly).
+#
+# (We do not test ENV{ID_MODEL} or ATTRS{model} — Apple's `model` field
+# is space-padded to 16 chars by SCSI INQUIRY, and ENV{ID_MODEL} is not
+# always set on scsi_generic events. Apple-vendor on scsi_generic is
+# iPod-only in practice — Apple keyboards / trackpads / etc. don't
+# expose scsi_generic.)
+#
+# Cross-distro coverage:
+#   GROUP="plugdev"    — Debian / Ubuntu / Mint: plugdev is the standard
+#                        group for user-pluggable hardware; desktop users
+#                        are typically already members.
+#   TAG+="uaccess"     — Arch / Fedora / NixOS / openSUSE and any modern
+#                        systemd-udevd: grants access to the
+#                        currently-logged-in console user via ACL, with
+#                        no group membership required.
+#
+# Both can coexist — systemd-udevd processes uaccess regardless of GROUP.
+# See also: 91-podkit-ipod-scsi-narrow.rules for a product-ID-restricted
+# variant (SCSI only).
+
+# SCSI generic (sg) access for SCSI VPD INQUIRY commands.
+ACTION=="add|change", SUBSYSTEM=="scsi_generic", \
+  ATTRS{idVendor}=="05ac", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"
+
+# USB bus device access for libusb-based firmware inquiry.
+ACTION=="add|change", SUBSYSTEM=="usb", \
+  ATTR{idVendor}=="05ac", \
+  MODE="0660", GROUP="plugdev", TAG+="uaccess"

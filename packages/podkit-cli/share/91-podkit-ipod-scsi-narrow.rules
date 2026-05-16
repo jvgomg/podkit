@@ -1,9 +1,14 @@
 # podkit — udev rule for SCSI access to Apple iPod devices (product-ID-narrowed variant).
 #
-# This is the security-conscious alternative to 91-podkit-ipod-scsi.rules.
-# It restricts access by product ID to the known iPod USB product ID ranges,
+# This is the security-conscious alternative to 91-podkit-ipod.rules. It
+# restricts access by product ID to the known iPod USB product ID ranges,
 # rather than all Apple-vendor SCSI generic devices. Install this if you
 # prefer principle-of-least-privilege over operational convenience.
+#
+# Note: this narrow variant covers SCSI generic only (it does not grant
+# /dev/bus/usb access for libusb-based firmware inquiry). If you also need
+# USB inquiry without sudo, additionally install 91-podkit-ipod.rules or
+# add a SUBSYSTEM=="usb" clause for each product ID.
 #
 # Trade-off: if you connect a new iPod model whose product ID is not listed
 # here, it will fall back to the root:disk 0660 default (i.e. sudo required).

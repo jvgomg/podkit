@@ -6,12 +6,16 @@
  */
 
 import { describe, it, expect } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import {
   checkUdevRule,
   udevRuleCheck,
   udevRuleRepair,
   runUdevRuleInstall,
   TARGET_PATH,
+  LEGACY_TARGET_PATHS,
   UDEV_RULE_CONTENT,
   type SudoExecutor,
   type FsOps,
@@ -244,12 +248,97 @@ describe('UDEV_RULE_CONTENT', () => {
     expect(UDEV_RULE_CONTENT).toContain('TAG+="uaccess"');
   });
 
-  it('matches Apple vendor ID 05ac', () => {
+  // ── SCSI generic clause (TASK-292.12) ─────────────────────────────────────
+
+  it('targets scsi_generic subsystem (SCSI VPD inquiry path)', () => {
+    expect(UDEV_RULE_CONTENT).toContain('SUBSYSTEM=="scsi_generic"');
+  });
+
+  it('SCSI clause uses ATTRS{idVendor} (plural — walks parent USB chain)', () => {
+    // scsi_generic itself has no idVendor attribute; the parent USB device
+    // does. ATTRS{} traverses; ATTR{} (singular) does not.
     expect(UDEV_RULE_CONTENT).toContain('ATTRS{idVendor}=="05ac"');
   });
 
-  it('targets scsi_generic subsystem', () => {
-    expect(UDEV_RULE_CONTENT).toContain('SUBSYSTEM=="scsi_generic"');
+  it('SCSI clause grants MODE=0660 plugdev + uaccess', () => {
+    // Find the SCSI block (multi-line continuation in the canonical content).
+    const scsiClause = UDEV_RULE_CONTENT.split('\n\n').find((block) =>
+      block.includes('SUBSYSTEM=="scsi_generic"')
+    );
+    expect(scsiClause).toBeDefined();
+    expect(scsiClause).toContain('ATTRS{idVendor}=="05ac"');
+    expect(scsiClause).toContain('MODE="0660"');
+    expect(scsiClause).toContain('GROUP="plugdev"');
+    expect(scsiClause).toContain('TAG+="uaccess"');
+  });
+
+  // ── USB clause (TASK-317.13) ──────────────────────────────────────────────
+
+  it('targets usb subsystem (libusb firmware-inquiry path)', () => {
+    // The USB clause must be present so /dev/bus/usb/<bus>/<dev> for
+    // Apple-vendor devices is operator-accessible without sudo.
+    expect(UDEV_RULE_CONTENT).toContain('SUBSYSTEM=="usb"');
+  });
+
+  it('USB clause uses ATTR{idVendor} (singular — USB device exposes it directly)', () => {
+    // The case distinction matters for udev matching: ATTRS{} (plural)
+    // walks the parent chain, ATTR{} (singular) reads the device's own
+    // attribute. The USB device itself has idVendor so we use the
+    // singular form. Asserting both clauses' attribute form here.
+    const usbClause = UDEV_RULE_CONTENT.split('\n\n').find((block) =>
+      block.includes('SUBSYSTEM=="usb"')
+    );
+    expect(usbClause).toBeDefined();
+    expect(usbClause).toContain('ATTR{idVendor}=="05ac"');
+    // Important: must NOT use ATTRS{} for the USB device clause — that
+    // would silently match parent USB hubs/buses too.
+    expect(usbClause).not.toContain('ATTRS{idVendor}');
+  });
+
+  it('USB clause grants MODE=0660 plugdev + uaccess', () => {
+    const usbClause = UDEV_RULE_CONTENT.split('\n\n').find((block) =>
+      block.includes('SUBSYSTEM=="usb"')
+    );
+    expect(usbClause).toBeDefined();
+    expect(usbClause).toContain('ATTR{idVendor}=="05ac"');
+    expect(usbClause).toContain('MODE="0660"');
+    expect(usbClause).toContain('GROUP="plugdev"');
+    expect(usbClause).toContain('TAG+="uaccess"');
+  });
+
+  it('contains exactly two ATTR/ATTRS idVendor clauses (one SCSI, one USB)', () => {
+    // Defensive: catch accidental duplication or accidental deletion of a
+    // clause by counting idVendor matches across the whole content.
+    const matches = UDEV_RULE_CONTENT.match(/ATTRS?\{idVendor\}=="05ac"/g) ?? [];
+    expect(matches).toHaveLength(2);
+  });
+});
+
+// ── In-source content matches the shipped share file (byte-for-byte) ──────
+
+describe('UDEV_RULE_CONTENT matches the canonical shipped rule file', () => {
+  it('byte-for-byte matches packages/podkit-cli/share/91-podkit-ipod.rules', async () => {
+    // The shipped rule file at packages/podkit-cli/share/91-podkit-ipod.rules
+    // is the canonical reference for users who install manually; the
+    // in-source UDEV_RULE_CONTENT is the canonical reference for the
+    // doctor repair. They must be identical so manual installs and repair
+    // installs match exactly (idempotence + staleness detection).
+    const here = dirname(fileURLToPath(import.meta.url));
+    const shipped = resolve(here, '../../../../podkit-cli/share/91-podkit-ipod.rules');
+    const fileContent = await readFile(shipped, 'utf8');
+    expect(fileContent).toBe(UDEV_RULE_CONTENT);
+  });
+});
+
+// ── Legacy filename cleanup (TASK-317.13) ─────────────────────────────────
+
+describe('LEGACY_TARGET_PATHS', () => {
+  it('includes the pre-rename SCSI-only filename so upgrades clean it up', () => {
+    expect(LEGACY_TARGET_PATHS).toContain('/etc/udev/rules.d/91-podkit-ipod-scsi.rules');
+  });
+
+  it('does not include the current TARGET_PATH (would self-delete)', () => {
+    expect(LEGACY_TARGET_PATHS).not.toContain(TARGET_PATH);
   });
 });
 
@@ -361,6 +450,100 @@ describe('runUdevRuleInstall success', () => {
 });
 
 // ── Failure paths ─────────────────────────────────────────────────────────────
+
+// ── Legacy filename cleanup on install (TASK-317.13) ──────────────────────
+
+describe('runUdevRuleInstall legacy filename cleanup', () => {
+  it('issues an rm -f for each legacy path during install', async () => {
+    const calls: string[][] = [];
+    const trackingExecutor: SudoExecutor = (args) => {
+      calls.push(args);
+      return { code: 0, stderr: '' };
+    };
+    await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: false,
+      executor: trackingExecutor,
+      fsOps: noopFsOps,
+    });
+    // Expect one `rm -f <legacy>` call per LEGACY_TARGET_PATHS entry.
+    for (const legacy of LEGACY_TARGET_PATHS) {
+      const matched = calls.find((a) => a[0] === 'rm' && a.includes('-f') && a.includes(legacy));
+      expect(matched).toBeDefined();
+    }
+  });
+
+  it('uses rm -f (not rm) so a missing legacy file is not an error', async () => {
+    const calls: string[][] = [];
+    const trackingExecutor: SudoExecutor = (args) => {
+      calls.push(args);
+      return { code: 0, stderr: '' };
+    };
+    await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: false,
+      executor: trackingExecutor,
+      fsOps: noopFsOps,
+    });
+    const rmCalls = calls.filter((a) => a[0] === 'rm');
+    for (const args of rmCalls) {
+      expect(args).toContain('-f');
+    }
+  });
+
+  it('cleanup runs AFTER the new rule is in place (sudo cp first, then rm)', async () => {
+    // Order matters: if rm runs first and cp fails, the user loses the old
+    // rule and gets nothing. So cp the new file first, only then clean up.
+    const ordered: string[] = [];
+    const trackingExecutor: SudoExecutor = (args) => {
+      if (args[0] === 'cp') ordered.push('cp');
+      else if (args[0] === 'rm') ordered.push('rm');
+      else if (args[0] === 'udevadm') ordered.push(`udevadm:${args[1]}`);
+      return { code: 0, stderr: '' };
+    };
+    await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: false,
+      executor: trackingExecutor,
+      fsOps: noopFsOps,
+    });
+    const firstCp = ordered.indexOf('cp');
+    const firstRm = ordered.indexOf('rm');
+    expect(firstCp).toBeGreaterThanOrEqual(0);
+    expect(firstRm).toBeGreaterThan(firstCp);
+  });
+
+  it('does NOT run legacy cleanup when sudo cp fails (atomicity)', async () => {
+    // If the new rule install fails, do not touch the legacy file.
+    const calls: string[][] = [];
+    const failingCpExecutor: SudoExecutor = (args) => {
+      calls.push(args);
+      if (args[0] === 'cp') return { code: 1, stderr: 'permission denied' };
+      return { code: 0, stderr: '' };
+    };
+    await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: false,
+      executor: failingCpExecutor,
+      fsOps: noopFsOps,
+    });
+    const rmCalls = calls.filter((a) => a[0] === 'rm');
+    expect(rmCalls).toHaveLength(0);
+  });
+
+  it('mentions legacy filename(s) in the dry-run summary', async () => {
+    const result = await runUdevRuleInstall({
+      platform: 'linux',
+      dryRun: true,
+      executor: succeedingExecutor,
+      fsOps: noopFsOps,
+    });
+    expect(result.success).toBe(true);
+    for (const legacy of LEGACY_TARGET_PATHS) {
+      expect(result.summary).toContain(legacy);
+    }
+  });
+});
 
 describe('runUdevRuleInstall failure paths', () => {
   it('returns success=false when writeFile fails', async () => {
