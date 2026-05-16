@@ -124,12 +124,26 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
               syncTagMissingTransfer,
             };
 
-            // iPod-specific model and validation info
+            // iPod-specific model and validation info.
+            //
+            // The `name` field is fed from the cascade-resolved display name
+            // (`assessIpodIdentity` — composes SysInfoExtended + classic
+            // SysInfo + USB) when available, falling back to libgpod's view
+            // only when the cascade is empty. Pre-TASK-317.03 this used
+            // libgpod's `info.device.modelName` directly, which lost the
+            // capacity/colour suffix and could leak generic strings.
             if (openedDeviceResult.ipod) {
               const info = openedDeviceResult.ipod.getInfo();
               const deviceValidation = validateDevice(info.device, resolveResult.path);
+              let cascadeDisplayName: string | undefined;
+              try {
+                const assessment = await core.assessIpodIdentity(resolveResult.path);
+                cascadeDisplayName = assessment.model?.displayName;
+              } catch {
+                // Cascade assessment is best-effort — fall back to libgpod.
+              }
               liveStatus.model = {
-                name: info.device.modelName,
+                name: cascadeDisplayName ?? info.device.modelName,
                 number: info.device.modelNumber,
                 generation: info.device.generation,
                 capacity: info.device.capacity,

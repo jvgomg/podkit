@@ -700,6 +700,19 @@ function parseDevices(
       device.path = rawDevice.path.trim();
     }
 
+    // Parse optional `unsupported` flag — records the user's explicit
+    // "add this device anyway" choice from `podkit device add` on a
+    // generation podkit does not officially support. See TASK-317.03.
+    if (rawDevice.unsupported !== undefined) {
+      if (typeof rawDevice.unsupported !== 'boolean') {
+        throw new Error(
+          `Invalid type for "unsupported" in [devices.${name}]. ` +
+            `Expected boolean, got ${typeof rawDevice.unsupported}.`
+        );
+      }
+      device.unsupported = rawDevice.unsupported;
+    }
+
     // Parse optional quality
     if (rawDevice.quality !== undefined) {
       if (typeof rawDevice.quality !== 'string') {

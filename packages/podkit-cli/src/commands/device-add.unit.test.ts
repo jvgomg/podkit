@@ -400,12 +400,46 @@ describe('runDeviceAdd: iPod flow', () => {
     const { out, stdout, exitCode } = makeOut();
     const deps: DeviceAddDeps = {
       getDeviceManager: () => fakeManager({ isSupported: true }),
+      // Stub core so enumerateUsb returns no devices — the iOS-unsupported
+      // detection path stays inert and the legacy "no iPod found" path runs.
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          enumerateUsb: async () => [],
+          classifyUsbDevices: () => [],
+        } as typeof real;
+      },
     };
     await runAdd(ctx, { type: 'ipod' }, out, deps);
     expect(exitCode.get()).toBe(1);
     const err = stdout.json<AddOutputError>();
     // The runner may also report a mass-storage hint here; either path is "not found".
     expect(err.error.toLowerCase()).toMatch(/no ipod|detected.*device/);
+  });
+
+  it('surfaces the canonical iOS unsupported message when an iPod touch is on USB but no disk (TASK-317.03)', async () => {
+    const ctx = makeContext({ device: 'd' });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      getDeviceManager: () => fakeManager({ isSupported: true, findIpodDevices: async () => [] }),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        // Real classifier handles the iPod touch 5G PID 0x12a0 path.
+        return {
+          ...real,
+          enumerateUsb: async () => [{ vendorId: '05ac', productId: '12a0' }] as never,
+        } as typeof real;
+      },
+    };
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError & { details?: { unsupported?: { kind?: string } } }>();
+    expect(err.code).toBe('UNSUPPORTED_DEVICE');
+    // Canonical message — never mentions libgpod (TASK-317.03 wording rule).
+    expect(err.error.toLowerCase()).not.toContain('libgpod');
+    expect(err.error.toLowerCase()).toContain('proprietary sync protocol');
+    expect(err.details?.unsupported?.kind).toBe('ios-device');
   });
 });
 
@@ -1168,9 +1202,11 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     }
   });
 
-  it('blocks add when cascade reveals an unsupported generation', async () => {
-    const ctx = makeContext({ device: 'd', json: true, configPath: tempConfig });
-    const { out, stdout, exitCode } = makeOut(true);
+  it('cancels add when user declines the warn-allow prompt on an unsupported generation (TASK-317.03)', async () => {
+    // Per TASK-317.03 the runner now warns + prompts instead of hard-refusing.
+    // No --yes here; supply confirm that returns false → cancellation.
+    const ctx = makeContext({ device: 'touchcancel', json: true, configPath: tempConfig });
+    const { out, exitCode } = makeOut(true);
 
     const unsupportedAssessment: IpodIdentityAssessment = {
       model: {
@@ -1178,8 +1214,7 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
         generationId: 'touch_1g',
         checksumType: 'none',
         source: 'usb',
-        notSupportedReason:
-          'iPod touch (1st Generation) is not supported by podkit (libgpod cannot sync this generation).',
+        notSupportedReason: 'iPod touch (1st generation) uses Apple’s proprietary sync protocol.',
       },
       capabilities: null,
       needsChecksum: false,
@@ -1191,6 +1226,53 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     };
 
     const deps: DeviceAddDeps = {
+      confirm: async () => false,
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'disk1s2',
+              volumeName: 'TOUCH',
+              volumeUuid: 'TOUCH-UUID',
+              size: 0,
+              isMounted: true,
+              mountPoint: '/Volumes/TOUCH',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => unsupportedAssessment,
+      ipodDatabase: FAKE_IPOD_DB,
+    };
+
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
+    // Cancellation is not an error — exit code stays unset (0).
+    expect(exitCode.get()).toBeUndefined();
+  });
+
+  it('persists unsupported: true when the user accepts the warn-allow prompt (TASK-317.03)', async () => {
+    const ctx = makeContext({ device: 'touchok', json: true, configPath: tempConfig });
+    const { out, stdout, exitCode } = makeOut(true);
+
+    const unsupportedAssessment: IpodIdentityAssessment = {
+      model: {
+        displayName: 'iPod touch (1st Generation)',
+        generationId: 'touch_1g',
+        checksumType: 'none',
+        source: 'usb',
+        notSupportedReason: 'iPod touch (1st generation) is unsupported.',
+      },
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'missing',
+      existing: null,
+      usbFingerprint: NANO_2G_USB,
+      sysInfoModelNumber: undefined,
+    };
+
+    const deps: DeviceAddDeps = {
+      // --yes flips the default to accept; no confirm prompt fires.
       getDeviceManager: () =>
         fakeManager({
           isSupported: true,
@@ -1210,9 +1292,13 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
     };
 
     await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
-    expect(exitCode.get()).toBe(1);
-    const err = stdout.json<AddOutputError>();
-    expect(err.code).toBe('UNSUPPORTED_DEVICE');
-    expect(err.error).toContain('not supported');
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccess>();
+    expect(result.success).toBe(true);
+
+    // Re-load the config to assert the unsupported flag landed.
+    const { readFileSync } = await import('node:fs');
+    const text = readFileSync(tempConfig, 'utf-8');
+    expect(text).toContain('unsupported = true');
   });
 });

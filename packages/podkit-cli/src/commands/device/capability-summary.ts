@@ -6,13 +6,17 @@
  * on <gen>" tail on negative bullets); the mass-storage variant uses a tabular
  * "Audio Codecs: ... Artwork: ..." layout.
  *
- * Also hosts `assertAssessmentSupported`, the throw helper used by `add.ts` to
- * reject known-unsupported iPod generations early.
+ * Also hosts `confirmUnsupportedDeviceAdd`, the prompt-style gate used by
+ * `add.ts` to surface the canonical message for known-unsupported iPod
+ * generations and offer the user an explicit "Add anyway?" choice
+ * (TASK-317.03 warn-allow flow). The legacy `assertAssessmentSupported`
+ * remains as a thin compat shim for transitional callers.
  *
  * @module
  */
 
 import type { DeviceCapabilities, IpodIdentityAssessment } from '@podkit/core';
+import { DOCS_URLS, makeUnsupportedReasonFromAssessment } from '@podkit/core';
 import { CliError } from '../../errors.js';
 import type { OutputContext } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
@@ -99,33 +103,104 @@ export function printCapabilitySummary(
 }
 
 // =============================================================================
-// assertAssessmentSupported
+// confirmUnsupportedDeviceAdd  (TASK-317.03 — warn-allow flow)
 // =============================================================================
 
 /**
- * Throw `UNSUPPORTED_DEVICE` if the cascade-derived assessment carries
- * `notSupportedReason`.
+ * Result of {@link confirmUnsupportedDeviceAdd}.
  *
- * The cascade resolver attaches `notSupportedReason` for generations podkit
- * does not support (touch_*, nano_6, shuffle_3g/4g). Both add-flow paths
- * (`--path` and `--device`) gate on this; this helper hosts the shared
- * error-shape and the docs link.
+ * - `'supported'`: the assessment resolves to a supported model. Caller
+ *   continues the normal add flow.
+ * - `'add-anyway'`: the device is unsupported, the user confirmed they want
+ *   to add it anyway. Caller should persist with `unsupported: true`.
+ * - `'cancelled'`: the device is unsupported and the user declined. Caller
+ *   should print a "Cancelled." message and return without writing config.
+ */
+export type UnsupportedAddDecision = 'supported' | 'add-anyway' | 'cancelled';
+
+/**
+ * Prompt-style gate for the cascade-derived "device is unsupported" signal.
+ *
+ * Replaces the previous throw-style `assertAssessmentSupported` (TASK-317.03):
+ * `podkit device add` now warns and offers to proceed instead of hard-refusing.
+ * On confirmation the caller writes `unsupported: true` in the device config so
+ * future runs (`sync`, mutating `doctor` repairs) can still refuse.
+ *
+ * Wording is centralised: the canonical headline + docs URL come from the
+ * `@podkit/core` bridge function. No user-facing copy mentions `libgpod`.
+ *
+ * Behaviour:
+ * - Supported device → returns `'supported'` immediately (no prompt).
+ * - JSON mode → still prompts via the injected `confirmFn` (callers wire
+ *   `autoConfirm` from `--yes`); in JSON mode without `--yes` the conventional
+ *   choice is to default to N (decline). Tests pass `confirmFn` explicitly.
+ * - `autoConfirm` (`--yes`) → defaults to ACCEPT (`'add-anyway'`) without
+ *   reading from stdin, matching the brief.
+ */
+export async function confirmUnsupportedDeviceAdd(
+  out: OutputContext,
+  assessment: IpodIdentityAssessment | null | undefined,
+  opts: {
+    autoConfirm: boolean;
+    confirmFn: (msg: string) => Promise<boolean>;
+  }
+): Promise<UnsupportedAddDecision> {
+  const reason = makeUnsupportedReasonFromAssessment(assessment);
+  if (!reason) return 'supported';
+
+  // Render canonical message regardless of text/JSON mode — text consumers
+  // get the friendly block, JSON consumers can scrape the same lines from
+  // stderr (this is informational; the structured payload also goes onto
+  // the device-add JSON output via the persisted `unsupported: true` flag).
+  if (out.isText) {
+    out.newline();
+    out.warn(reason.headline);
+    if (reason.details) {
+      for (const line of reason.details) {
+        out.print(`  ${line}`);
+      }
+    }
+    out.print(`  See: ${reason.docsUrl ?? DOCS_URLS.supportedDevices}`);
+    out.newline();
+  }
+
+  // `--yes` flips the default to accept. Otherwise prompt with default N.
+  if (opts.autoConfirm) return 'add-anyway';
+
+  const accepted = await opts.confirmFn('Add anyway? [y/N]');
+  return accepted ? 'add-anyway' : 'cancelled';
+}
+
+// =============================================================================
+// LEGACY assertAssessmentSupported — kept as a thin compat shim
+// =============================================================================
+
+/**
+ * @deprecated Use {@link confirmUnsupportedDeviceAdd} instead. This helper
+ * exists only so transitional call sites can keep compiling while they
+ * migrate to the warn-allow flow.
+ *
+ * Still throws `UNSUPPORTED_DEVICE` if the assessment carries a refusal;
+ * still avoids mentioning `libgpod` (wording comes from the bridge).
  */
 export function assertAssessmentSupported(
   out: OutputContext,
   assessment: IpodIdentityAssessment | null | undefined
 ): void {
-  if (!assessment?.model?.notSupportedReason) return;
+  const reason = makeUnsupportedReasonFromAssessment(assessment);
+  if (!reason) return;
 
-  const message = assessment.model.notSupportedReason;
   if (out.isText) {
     out.newline();
-    out.error(`Error: ${message}`);
-    out.print('  See: https://jvgomg.github.io/podkit/devices/supported-devices');
+    out.error(`Error: ${reason.headline}`);
+    out.print(`  See: ${reason.docsUrl ?? DOCS_URLS.supportedDevices}`);
   }
   throw new CliError({
-    message,
+    message: reason.headline,
     code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-    details: { generation: assessment.model.generationId },
+    details: {
+      generation: assessment?.model?.generationId,
+      unsupported: reason,
+    },
   });
 }

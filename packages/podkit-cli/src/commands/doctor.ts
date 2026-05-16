@@ -579,9 +579,25 @@ export async function runDoctorDiagnostics(
     };
   }
 
+  // Thread the cascade-derived unsupported reason into the readiness call
+  // so `runDoctor` short-circuits with `level: 'unsupported'` for
+  // recognised-but-rejected generations (touch_*, nano 6/7, shuffle 3/4, iOS).
+  // Pre-TASK-317.03 readiness would happily traverse the rest of the pipeline
+  // for these devices and then suggest mutating repairs against them.
+  let readinessUnsupported: import('@podkit/core').ReadinessUnsupportedReason | undefined;
+  try {
+    const doctorAssessment = await core.assessIpodIdentity(devicePath);
+    readinessUnsupported = core.makeUnsupportedReasonFromAssessment(doctorAssessment);
+  } catch {
+    // Assessment is best-effort — readiness still runs without the gate.
+  }
+
   let readinessResult: ReadinessResult | undefined;
   try {
-    readinessResult = await core.checkReadiness({ device: deviceInfo });
+    readinessResult = await core.checkReadiness({
+      device: deviceInfo,
+      ...(readinessUnsupported ? { unsupported: readinessUnsupported } : {}),
+    });
   } catch {
     // Readiness check failed — proceed without it
   }
@@ -1154,6 +1170,41 @@ export async function runRepair(
       message: err instanceof Error ? err.message : 'Failed to load podkit-core',
       code: DoctorErrorCodes.CORE_LOAD_FAILED,
     });
+  }
+
+  // TASK-317.03: refuse mutating repairs on cascade-unsupported devices.
+  // Even when the user explicitly typed `--repair sysinfo-extended -d ...`,
+  // applying state-mutating repairs to a generation podkit does not support
+  // (hashAB nano 6/7, shuffle 3/4, iOS) risks corrupting on-device state —
+  // particularly the SQLite-based generations where libgpod's writes are
+  // not safe.
+  try {
+    const refusalAssessment = await core.assessIpodIdentity(devicePath);
+    const refusalReason = core.makeUnsupportedReasonFromAssessment(refusalAssessment);
+    if (refusalReason) {
+      throw new CliError({
+        message: refusalReason.headline,
+        code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
+        details: {
+          checkId: check.id,
+          unsupported: refusalReason,
+          ...(refusalAssessment?.model?.generationId
+            ? { generation: refusalAssessment.model.generationId }
+            : {}),
+        },
+        printText: (o) => {
+          o.error(refusalReason.headline);
+          if (refusalReason.details) {
+            for (const line of refusalReason.details) o.print(`  ${line}`);
+          }
+          o.print(`See: ${refusalReason.docsUrl ?? core.DOCS_URLS.supportedDevices}`);
+        },
+      });
+    }
+  } catch (err) {
+    // Re-throw the CliError above; swallow only the best-effort assessment
+    // I/O errors so we don't block repair on transient disk reads.
+    if (err instanceof CliError) throw err;
   }
 
   // Open the iPod database only when this repair declares it needs it.

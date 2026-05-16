@@ -115,6 +115,9 @@ export function addDevice(
   if (device.volumeName) {
     lines.push(`volumeName = "${device.volumeName}"`);
   }
+  if (device.unsupported !== undefined) {
+    lines.push(`unsupported = ${device.unsupported}`);
+  }
 
   if (device.quality !== undefined) {
     lines.push(`quality = "${device.quality}"`);

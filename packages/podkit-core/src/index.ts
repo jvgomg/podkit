@@ -639,6 +639,14 @@ export type {
 } from './device/index.js';
 export { assessIpodIdentity, ensureSysInfoExtendedAndReassess } from './device/index.js';
 
+// Bridge: cascade-resolved IpodModel → typed ReadinessUnsupportedReason
+// Used by every command that gates on unsupported-device status to avoid
+// re-implementing the wording and discriminator selection.
+export {
+  makeUnsupportedReasonFromModel,
+  makeUnsupportedReasonFromAssessment,
+} from './device/index.js';
+
 // Mass-storage device assessment (symmetric to assessIpodIdentity)
 export type { MassStorageAssessment, AssessMassStorageDeviceOptions } from './device/index.js';
 export { assessMassStorageDevice } from './device/index.js';

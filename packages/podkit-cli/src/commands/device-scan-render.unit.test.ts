@@ -262,6 +262,37 @@ describe('renderDeviceScan', () => {
       const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
       expect(stripAnsi(lines.join('\n'))).toContain('Unknown iPod (USB only)');
     });
+
+    it('renders "iOS device" label for an iOS-range PID with no model (TASK-317.03 #4)', () => {
+      // PID 0x12ad is in the iOS-range catch (0x1290–0x12af) but not in
+      // IPOD_USB_IDS — the classifier returns supported=false with a
+      // notSupportedReason but no model. The renderer should NOT collapse
+      // that to "Unknown iPod" — it should derive a friendly "iOS device"
+      // label from the PID range so the user sees what podkit recognised.
+      const synthetic: IpodClassification<EnumeratedUsbDevice> = {
+        kind: 'ipod',
+        device: { vendorId: '05ac', productId: '12ad' },
+        supported: false,
+        notSupportedReason:
+          "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol.",
+      };
+      const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
+      const output = stripAnsi(lines.join('\n'));
+      expect(output).toContain('iOS device (USB only)');
+      expect(output).not.toContain('Unknown iPod (USB only)');
+    });
+
+    it('renders the resolved model name for a known iPod touch PID (TASK-317.03 #4)', () => {
+      // The known iPod touch 5G PID 0x12a0 IS in IPOD_USB_IDS — the
+      // classifier returns a model with displayName. The renderer must
+      // surface that name verbatim, not "Unknown iPod".
+      const usbOnly = classifyIpod({ vendorId: '05ac', productId: '12a0' });
+      const output = stripAnsi(
+        renderDeviceScan(emptyInput({ usbOnlyIpods: [usbOnly] })).join('\n')
+      );
+      expect(output).toContain(`${usbOnly.model!.displayName} (USB only)`);
+      expect(output).not.toContain('Unknown iPod (USB only)');
+    });
   });
 
   describe('needs-partition remediation copy (TASK-317.11 #3)', () => {

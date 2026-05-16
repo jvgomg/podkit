@@ -32,7 +32,7 @@ import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation } from './shared.js';
 import type { DeviceAddOutput } from './output-types.js';
-import { printCapabilitySummary, assertAssessmentSupported } from './capability-summary.js';
+import { printCapabilitySummary, confirmUnsupportedDeviceAdd } from './capability-summary.js';
 
 const SYSINFO_MISSING_PROMPT_LINES = [
   'SysInfo/SysInfoExtended is missing — required for syncing this iPod.',
@@ -513,8 +513,18 @@ export async function runDeviceAdd(
     // Cascade-driven identity assessment (no writes, no prompts).
     let assessment: IpodIdentityAssessment = await assessIdentity(explicitPath);
 
-    // Block known-unsupported generations early.
-    assertAssessmentSupported(out, assessment);
+    // Known-unsupported generations: warn-and-allow (TASK-317.03). The user
+    // gets the canonical message and an explicit Y/n prompt; `--yes` flips
+    // the default to accept. On confirmation we persist `unsupported: true`.
+    const unsupportedDecision = await confirmUnsupportedDeviceAdd(out, assessment, {
+      autoConfirm,
+      confirmFn,
+    });
+    if (unsupportedDecision === 'cancelled') {
+      out.print('Cancelled. No changes made.');
+      return;
+    }
+    const recordUnsupported = unsupportedDecision === 'add-anyway';
 
     const identityDisplayName = assessment.model?.displayName ?? 'Unknown iPod';
 
@@ -618,6 +628,7 @@ export async function runDeviceAdd(
     const isFirstDevice = deviceCount === 0;
     const configPath = configResult.configPath ?? DEFAULT_CONFIG_PATH;
     const deviceConfig: DeviceConfig = { volumeUuid, volumeName };
+    if (recordUnsupported) deviceConfig.unsupported = true;
     if (options.quality) deviceConfig.quality = options.quality as any;
     if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
     if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;
@@ -740,6 +751,58 @@ export async function runDeviceAdd(
   const ipods = await manager.findIpodDevices();
 
   if (ipods.length === 0) {
+    // Disk scan found nothing. Before the generic "no iPod found" message,
+    // enrich the surface by consulting the USB bus directly: an iPod touch
+    // (or any iOS device) has no mass-storage mount, so disk scan never sees
+    // it. The USB classifier maps Apple-vendor unsupported PIDs to the
+    // canonical reason payload — surface that instead of leaving the user
+    // staring at "make sure your iPod is connected".
+    let iosUnsupportedReason: import('@podkit/core').ReadinessUnsupportedReason | undefined;
+    let iosUnsupportedDisplay: string | undefined;
+    try {
+      const coreMod = await loadCore();
+      const enumerated = await coreMod.enumerateUsb();
+      const classified = coreMod.classifyUsbDevices(enumerated);
+      const unsupportedIpod = classified.find(
+        (c): c is Extract<typeof c, { kind: 'ipod' }> => c.kind === 'ipod' && c.supported === false
+      );
+      if (unsupportedIpod) {
+        iosUnsupportedDisplay =
+          unsupportedIpod.model?.displayName ??
+          (parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) >= 0x1290 &&
+          parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) <= 0x12af
+            ? 'iOS device'
+            : 'Unsupported iPod');
+        iosUnsupportedReason = {
+          kind:
+            parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) >= 0x1290 &&
+            parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) <= 0x12af
+              ? 'ios-device'
+              : 'unsupported-device',
+          headline:
+            unsupportedIpod.notSupportedReason ??
+            `${iosUnsupportedDisplay} is not supported by podkit.`,
+          docsUrl: DOCS_URLS.supportedDevices,
+        };
+      }
+    } catch {
+      // USB enumeration is best-effort; fall through.
+    }
+
+    if (iosUnsupportedReason) {
+      const lines = [iosUnsupportedReason.headline];
+      if (iosUnsupportedReason.details) lines.push(...iosUnsupportedReason.details);
+      lines.push(`  See: ${iosUnsupportedReason.docsUrl ?? DOCS_URLS.supportedDevices}`);
+      throw new CliError({
+        message: lines.join('\n'),
+        code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
+        details: {
+          model: iosUnsupportedDisplay,
+          unsupported: iosUnsupportedReason,
+        },
+      });
+    }
+
     // No iPod found via the manager. Ask each device provider whether it sees
     // an attached device it can describe an "add me" hint for — currently only
     // mass-storage providers implement describeAddIntent, but the contract is
@@ -911,9 +974,20 @@ export async function runDeviceAdd(
     assessment = await assessIdentity(ipod.mountPoint);
   }
 
-  // Block known-unsupported generations early — touch_*, nano_6, shuffle_3g/4g.
-  // The cascade-resolved model carries `notSupportedReason` for these.
-  assertAssessmentSupported(out, assessment);
+  // Known-unsupported generations (touch_*, nano_6/7, shuffle_3g/4g, iOS): warn-allow.
+  // The cascade-resolved model carries `notSupportedReason`; we surface the
+  // canonical message and prompt explicitly. On confirmation we mark the
+  // persisted device with `unsupported: true` so `sync` + mutating
+  // `doctor --repair` flows can still refuse.
+  const scanUnsupportedDecision = await confirmUnsupportedDeviceAdd(out, assessment, {
+    autoConfirm,
+    confirmFn,
+  });
+  if (scanUnsupportedDecision === 'cancelled') {
+    out.print('Cancelled. No changes made.');
+    return;
+  }
+  const recordUnsupportedScan = scanUnsupportedDecision === 'add-anyway';
 
   // Render identity to the user before any prompts. Cascade-derived display
   // name; USB product ID is enough for the nano 2G "empty SysInfo" case.
@@ -997,6 +1071,7 @@ export async function runDeviceAdd(
     volumeUuid: ipod.volumeUuid,
     volumeName: ipod.volumeName,
   };
+  if (recordUnsupportedScan) deviceConfig.unsupported = true;
   if (options.quality) deviceConfig.quality = options.quality as any;
   if (options.audioQuality) deviceConfig.audioQuality = options.audioQuality as any;
   if (options.videoQuality) deviceConfig.videoQuality = options.videoQuality as any;

@@ -778,6 +778,63 @@ export async function runSync(
     });
   }
 
+  // ----- Unsupported-device gate (TASK-317.03) -----
+  // Refuse cleanly before any heavy work (FFmpeg detect, DB open, planning)
+  // when the cascade resolves to an unsupported generation. No track plan,
+  // no DB open. Uses the same primitive (`assessIpodIdentity` →
+  // `makeUnsupportedReasonFromAssessment`) as `device add` / `device info` /
+  // `doctor` so wording stays consistent.
+  //
+  // Also honours the `unsupported: true` opt-in flag persisted at `device add`
+  // — that flag records the user's choice for visibility, but sync still
+  // refuses because libgpod cannot produce a valid iTunesDB for these
+  // generations regardless of consent.
+  if (isIpodDevice) {
+    let syncAssessment: import('@podkit/core').IpodIdentityAssessment | null = null;
+    try {
+      syncAssessment = await core.assessIpodIdentity(devicePath);
+    } catch {
+      // Assessment is best-effort — a failure here lets the normal sync path
+      // continue and surface its own error. The cascade refusal we care
+      // about (a known unsupported generation) only fires when assessment
+      // actually returns a model with `notSupportedReason`.
+    }
+    const syncUnsupportedReason = core.makeUnsupportedReasonFromAssessment(syncAssessment);
+    if (syncUnsupportedReason || deviceConfig?.unsupported) {
+      const reason = syncUnsupportedReason ?? {
+        kind: 'unsupported-device' as const,
+        headline:
+          'This device is recorded as unsupported in config. ' + 'podkit cannot sync to it.',
+        docsUrl: core.DOCS_URLS.supportedDevices,
+      };
+      const lines = [reason.headline];
+      if (reason.details) lines.push(...reason.details);
+      lines.push(`See: ${reason.docsUrl ?? core.DOCS_URLS.supportedDevices}`);
+      throw new CliError({
+        message: lines.join('\n'),
+        code: SyncErrorCodes.DEVICE_UNSUPPORTED,
+        details: {
+          dryRun,
+          device: devicePath,
+          unsupported: reason,
+          ...(syncAssessment?.model?.generationId
+            ? { generation: syncAssessment.model.generationId }
+            : {}),
+        },
+        printText: (o) => {
+          o.newline();
+          o.error(reason.headline);
+          if (reason.details) {
+            for (const line of reason.details) {
+              o.print(`  ${line}`);
+            }
+          }
+          o.print(`See: ${reason.docsUrl ?? core.DOCS_URLS.supportedDevices}`);
+        },
+      });
+    }
+  }
+
   // ----- Check FFmpeg availability -----
   const transcoder = core.createFFmpegTranscoder();
   let transcoderCapabilities: import('@podkit/core').TranscoderCapabilities | undefined;

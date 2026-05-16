@@ -160,19 +160,48 @@ export async function openDevice(
   const isIpod = !deviceType || deviceType === 'ipod';
 
   if (isIpod) {
-    // iPod: open database, derive capabilities via identifyCapabilities
+    // iPod: open database, derive capabilities via identifyCapabilities.
     const ipod = await core.IpodDatabase.open(path);
     const ipodDeviceInfo = ipod.getInfo().device;
 
-    // Resolve libgpod device info → IpodModel → DeviceCapabilities
-    const model = resolveIpodModel({
+    // Cascade-driven identity (TASK-317.03). Compose the full bag from every
+    // axis available — SysInfoExtended on disk (firewireGuid + serial +
+    // modelNumStr) and the live USB descriptor — rather than relying solely
+    // on libgpod's view. Resolves the "Could not identify iPod model from
+    // libgpod data" warning on devices where SIE is present and accurate.
+    let identityBag: Parameters<typeof resolveIpodModel>[0] = {
       modelNumStr: ipodDeviceInfo.modelNumber ?? undefined,
       libgpodGeneration: ipodDeviceInfo.generation,
-    });
+    };
+    try {
+      const sie = core.readSysInfoExtended(path);
+      if (sie?.present) {
+        identityBag = {
+          ...identityBag,
+          modelNumStr: sie.identity.modelNumStr ?? identityBag.modelNumStr,
+          serialNumber: sie.identity.serialNumber ?? identityBag.serialNumber,
+          familyId: sie.identity.familyId ?? identityBag.familyId,
+        };
+      }
+    } catch {
+      // SIE read is best-effort; absence is the normal pre-init state.
+    }
+    try {
+      const usb = await core.resolveUsbDeviceFromPath(path);
+      if (usb && core.hasCompleteUsbFingerprint(usb)) {
+        identityBag = { ...identityBag, productId: usb.productId };
+      }
+    } catch {
+      // USB resolution unavailable on this platform — fall back to disk + libgpod.
+    }
+
+    const model = resolveIpodModel(identityBag);
     if (!model) {
+      // Neutral wording — no `libgpod` leakage in user-facing copy.
       throw new Error(
-        `Could not identify iPod model from libgpod data (generation="${ipodDeviceInfo.generation}"). ` +
-          `Try specifying --type ipod or reconnecting the device.`
+        'Could not identify iPod model from device data. ' +
+          'Try reconnecting the device, or run `podkit doctor --repair sysinfo-extended` ' +
+          'to refresh the on-disk identity files from USB firmware.'
       );
     }
     const capabilities = core.identifyCapabilities(model);

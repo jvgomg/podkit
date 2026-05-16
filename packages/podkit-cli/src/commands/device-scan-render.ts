@@ -235,7 +235,14 @@ function pushUsbOnlyIpodRow(
   recognised: IpodRecognized,
   createUsbOnlyReadinessResult: (classification: IpodRecognized) => ReadinessResult
 ): void {
-  const label = recognised.model?.displayName ?? 'Unknown iPod';
+  // Header label preference (TASK-317.03 sub-behaviour #4):
+  //   1. resolved cascade model name (`iPod touch 5th generation`, …)
+  //   2. friendly fallback for iOS-range PIDs not in IPOD_USB_IDS
+  //      (modern iPhone/iPad PIDs that classify as "iOS device")
+  //   3. defensive `Unknown iPod`
+  // No PID-only "Unknown iPod" rows when the classifier already knows
+  // enough to call it an iOS device.
+  const label = recognised.model?.displayName ?? deriveUsbOnlyLabel(recognised);
   lines.push(`  ${bold(label)} (USB only)`);
   lines.push('');
 
@@ -249,6 +256,20 @@ function pushUsbOnlyIpodRow(
     pushReadinessBlock(lines, readiness.stages, readiness, label);
   }
   lines.push('');
+}
+
+/**
+ * Fallback header label for a USB-only iPod when the cascade model is
+ * absent. `classifyAsIpod` returns no model for unsupported PIDs in the iOS
+ * range (0x1290–0x12af) catch-all — render them as `iOS device` rather than
+ * `Unknown iPod`.
+ */
+function deriveUsbOnlyLabel(recognised: IpodRecognized): string {
+  const pid = parseInt(recognised.device.productId.replace(/^0x/i, ''), 16);
+  if (Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af) {
+    return 'iOS device';
+  }
+  return 'Unknown iPod';
 }
 
 function pushUnsupportedRow(

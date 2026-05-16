@@ -166,6 +166,15 @@ export interface DeviceConfig {
   type?: DeviceType;
   /** Mount point path for mass-storage devices (alternative to volumeUuid; if both are set, volumeUuid takes precedence) */
   path?: string;
+  /**
+   * Persists the user's explicit "add this device anyway" choice from
+   * `podkit device add` on a generation podkit does not officially support
+   * (hashAB nano 6G/7G, shuffle 3G/4G, iOS — see TASK-317.03). When set,
+   * future runs render the canonical unsupported-device message but skip
+   * the prompt; commands that gate on support (`sync`, `doctor` mutating
+   * repairs) still refuse.
+   */
+  unsupported?: boolean;
   /** Unified quality preset (sets both audio and video) */
   quality?: QualityPreset;
   /** Audio transcoding quality preset (overrides quality) */
@@ -437,6 +446,8 @@ export interface ConfigFileDevice {
   volumeName?: string;
   type?: string;
   path?: string;
+  /** See `DeviceConfig.unsupported`. */
+  unsupported?: boolean;
   quality?: string;
   audioQuality?: string;
   videoQuality?: string;

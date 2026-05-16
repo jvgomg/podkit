@@ -153,4 +153,104 @@ describe('runDeviceInfo', () => {
       await rm(mount, { recursive: true, force: true });
     }
   });
+
+  it('TASK-317.03 — uses cascade displayName in `liveStatus.model.name`, NOT libgpod modelName', async () => {
+    // The cascade `assessIpodIdentity` returns a richer display name (with
+    // capacity + colour) than libgpod's plain modelName. Pre-TASK-317.03
+    // `info` rendered libgpod's view directly; we now thread the cascade
+    // through whenever assessIpodIdentity returns a model.
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const mount = await mkdtemp(join(tmpdir(), 'info-cascade-'));
+
+    try {
+      const ctx = makeContext();
+      ctx.globalOpts.device = mount;
+
+      const { out, stdout, exitCode } = makeOut();
+
+      const fakeIpod = {
+        getInfo: () => ({
+          device: {
+            modelName: 'iPod nano 3rd generation', // libgpod-derived
+            modelNumber: 'MA978',
+            generation: 'nano_3g',
+            capacity: 8,
+          },
+        }),
+        close: () => {},
+      };
+
+      const deps: DeviceInfoDeps = {
+        loadCore: async () =>
+          ({
+            isMusicMediaType: () => true,
+            isVideoMediaType: () => false,
+            checkReadiness: async () => ({
+              level: 'ready',
+              stages: [
+                { stage: 'usb', status: 'pass', summary: 'connected' },
+                { stage: 'database', status: 'pass', summary: 'ok' },
+              ],
+            }),
+            IpodError: class IpodError extends Error {},
+            getDeviceManager: () => fakeManager(),
+            // Cascade returns a richer display name than libgpod's modelName.
+            assessIpodIdentity: async () => ({
+              model: {
+                displayName: 'iPod nano 8GB Black (3rd Generation)',
+                generationId: 'nano_3g',
+                checksumType: 'none',
+                source: 'serial',
+                color: 'Black',
+                capacityGb: 8,
+              },
+              capabilities: null,
+              needsChecksum: false,
+              checksumType: 'none',
+              firmwareInquiry: 'present',
+              existing: null,
+              usbFingerprint: null,
+              sysInfoModelNumber: 'MA978',
+            }),
+            validateDevice: () => ({
+              supported: true,
+              issues: [],
+              warnings: [],
+              capabilities: { artwork: true, video: false, podcast: true },
+            }),
+          }) as unknown as typeof import('@podkit/core'),
+        getDeviceManager: () => fakeManager({ isSupported: true }),
+        // Stub openDevice so we don't load native libgpod.
+        openDevice: async () =>
+          ({
+            adapter: { getTracks: () => [], close: () => {} } as never,
+            capabilities: {
+              artworkSources: ['database'],
+              artworkMaxResolution: 176,
+              supportedAudioCodecs: ['aac', 'mp3'],
+              supportsVideo: true,
+              audioNormalization: 'soundcheck',
+              supportsAlbumArtistBrowsing: false,
+            },
+            deviceSupportsAlac: false,
+            isIpodDevice: true,
+            ipod: fakeIpod as never,
+          }) as never,
+      };
+
+      await run(ctx, out, deps);
+      expect(exitCode.get()).toBeUndefined();
+      const text = stdout.text();
+      // The cascade displayName MUST appear; libgpod's plainer name MUST NOT
+      // be the source-of-truth in the live-status `model.name` field.
+      const json = JSON.parse(text) as {
+        status?: { model?: { name?: string } };
+      };
+      expect(json.status?.model?.name).toBe('iPod nano 8GB Black (3rd Generation)');
+    } finally {
+      await rm(mount, { recursive: true, force: true });
+    }
+  });
 });

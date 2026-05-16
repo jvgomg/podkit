@@ -161,6 +161,12 @@ export type {
 } from './ipod-identity.js';
 export { assessIpodIdentity, ensureSysInfoExtendedAndReassess } from './ipod-identity.js';
 
+// Bridge: cascade-resolved IpodModel → typed ReadinessUnsupportedReason
+export {
+  makeUnsupportedReasonFromModel,
+  makeUnsupportedReasonFromAssessment,
+} from './unsupported-reason.js';
+
 // Mass-storage device assessment (symmetric to assessIpodIdentity)
 export type {
   MassStorageAssessment,

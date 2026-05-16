@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import type { DeviceCapabilities, IpodIdentityAssessment } from '@podkit/core';
-import { printCapabilitySummary, assertAssessmentSupported } from './capability-summary.js';
+import {
+  printCapabilitySummary,
+  assertAssessmentSupported,
+  confirmUnsupportedDeviceAdd,
+} from './capability-summary.js';
 import { OutputContext } from '../../output/index.js';
 import { CliError } from '../../errors.js';
 import { BufferSink } from '../../test-utils/buffer-sink.js';
@@ -210,5 +214,114 @@ describe('assertAssessmentSupported', () => {
     expect((caught as CliError).message).toContain('iPod nano (6th Generation)');
     expect(stderr.text()).toContain('iPod nano (6th Generation) is not supported');
     expect(stdout.text()).toContain('https://jvgomg.github.io/podkit/devices/supported-devices');
+  });
+});
+
+// =============================================================================
+// confirmUnsupportedDeviceAdd (TASK-317.03 — warn-allow flow)
+// =============================================================================
+
+describe('confirmUnsupportedDeviceAdd', () => {
+  function makeUnsupportedAssessment(
+    overrides: Partial<NonNullable<IpodIdentityAssessment['model']>> = {}
+  ): IpodIdentityAssessment {
+    return {
+      model: {
+        displayName: 'iPod nano (7th Generation)',
+        generationId: 'nano_7g',
+        checksumType: 'hashAB',
+        source: 'usb',
+        notSupportedReason:
+          'iPod nano (7th Generation) is not supported by podkit (this generation cannot sync).',
+        ...overrides,
+      },
+      capabilities: null,
+      needsChecksum: true,
+      checksumType: 'hashAB',
+      firmwareInquiry: 'present',
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    };
+  }
+
+  it('returns "supported" without prompting when assessment has no notSupportedReason', async () => {
+    const { out } = makeOut();
+    let calls = 0;
+    const decision = await confirmUnsupportedDeviceAdd(
+      out,
+      {
+        model: { displayName: 'nano 4G', generationId: 'nano_4g', source: 'usb' },
+      } as unknown as IpodIdentityAssessment,
+      {
+        autoConfirm: false,
+        confirmFn: async () => {
+          calls += 1;
+          return false;
+        },
+      }
+    );
+    expect(decision).toBe('supported');
+    expect(calls).toBe(0);
+  });
+
+  it('returns "supported" for null / undefined assessments', async () => {
+    const { out } = makeOut();
+    expect(
+      await confirmUnsupportedDeviceAdd(out, null, {
+        autoConfirm: false,
+        confirmFn: async () => false,
+      })
+    ).toBe('supported');
+    expect(
+      await confirmUnsupportedDeviceAdd(out, undefined, {
+        autoConfirm: false,
+        confirmFn: async () => false,
+      })
+    ).toBe('supported');
+  });
+
+  it('returns "add-anyway" without prompting when autoConfirm is true (--yes flips default)', async () => {
+    const { out, stderr } = makeOut();
+    let calls = 0;
+    const decision = await confirmUnsupportedDeviceAdd(out, makeUnsupportedAssessment(), {
+      autoConfirm: true,
+      confirmFn: async () => {
+        calls += 1;
+        return false;
+      },
+    });
+    expect(decision).toBe('add-anyway');
+    expect(calls).toBe(0);
+    // Canonical message is rendered to stderr (warn) regardless of autoConfirm.
+    expect(stderr.text()).toContain('iPod nano (7th Generation) is not supported');
+  });
+
+  it('returns "cancelled" when user declines the prompt', async () => {
+    const { out } = makeOut();
+    const decision = await confirmUnsupportedDeviceAdd(out, makeUnsupportedAssessment(), {
+      autoConfirm: false,
+      confirmFn: async () => false,
+    });
+    expect(decision).toBe('cancelled');
+  });
+
+  it('returns "add-anyway" when user accepts the prompt', async () => {
+    const { out } = makeOut();
+    const decision = await confirmUnsupportedDeviceAdd(out, makeUnsupportedAssessment(), {
+      autoConfirm: false,
+      confirmFn: async () => true,
+    });
+    expect(decision).toBe('add-anyway');
+  });
+
+  it('NEVER mentions libgpod in user-facing copy (TASK-317.03 wording)', async () => {
+    const { out, stdout, stderr } = makeOut();
+    await confirmUnsupportedDeviceAdd(out, makeUnsupportedAssessment(), {
+      autoConfirm: true,
+      confirmFn: async () => true,
+    });
+    const all = stdout.text() + '\n' + stderr.text();
+    expect(all.toLowerCase()).not.toContain('libgpod');
   });
 });

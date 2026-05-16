@@ -86,6 +86,8 @@ function fakeManager(): DeviceManager {
     isSupported: true,
     findIpodDevices: async () => [],
     findByVolumeUuid: async () => null,
+    getUuidForMountPoint: async () => null,
+    listDevices: async () => [],
   } as unknown as DeviceManager;
 }
 
@@ -140,5 +142,55 @@ describe('runSync: validation + deps seam', () => {
     const err = stdout.json<ErrJson>();
     expect(err.code).toBe(SyncErrorCodes.CORE_LOAD_FAILED);
     expect(err.error).toContain('mock failure');
+  });
+
+  it('refuses cleanly with DEVICE_UNSUPPORTED when cascade resolves to an unsupported generation (TASK-317.03)', async () => {
+    const ctx = makeContext(sharedSourceDir);
+    const { out, stdout, exitCode } = makeOut();
+
+    // Use a real core import but stub `assessIpodIdentity` to return an
+    // unsupported generation. The runner gates on this BEFORE any FFmpeg
+    // detection, DB open, or track-plan generation.
+    let openedDevice = false;
+    const deps: SyncDeps = {
+      getDeviceManager: () => fakeManager(),
+      loadCore: async () => {
+        const real = await import('@podkit/core');
+        return {
+          ...real,
+          assessIpodIdentity: async () => ({
+            model: {
+              displayName: 'iPod nano (7th Generation)',
+              generationId: 'nano_7g',
+              checksumType: 'hashAB',
+              source: 'usb',
+              notSupportedReason: 'iPod nano (7th Generation) is not supported by podkit.',
+            },
+            capabilities: null,
+            needsChecksum: true,
+            checksumType: 'hashAB',
+            firmwareInquiry: 'present',
+            existing: null,
+            usbFingerprint: null,
+            sysInfoModelNumber: undefined,
+          }),
+          // Detect track-plan execution by spying on FFmpeg detect.
+          createFFmpegTranscoder: () => {
+            openedDevice = true;
+            return real.createFFmpegTranscoder();
+          },
+        } as typeof real;
+      },
+    };
+
+    await runWithContext(ctx, () => runAction(out, () => runSync({ dryRun: true }, out, deps)));
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<ErrJson>();
+    expect(err.code).toBe(SyncErrorCodes.DEVICE_UNSUPPORTED);
+    expect(err.error).toContain('iPod nano (7th Generation) is not supported');
+    // Wording NEVER mentions libgpod (TASK-317.03 rule).
+    expect(err.error.toLowerCase()).not.toContain('libgpod');
+    // No track plan generated.
+    expect(openedDevice).toBe(false);
   });
 });

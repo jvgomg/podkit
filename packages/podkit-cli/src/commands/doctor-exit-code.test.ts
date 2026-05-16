@@ -247,6 +247,31 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
           { stage: 'database', status: 'pass', summary: 'ok' },
         ],
       },
+    // TASK-317.03: doctor calls assessIpodIdentity to thread the cascade
+    // unsupported reason into checkReadiness, AND runRepair calls it to
+    // refuse mutating repairs on unsupported devices. Stub returns "no
+    // model" so it's a no-op for the existing fixtures.
+    assessIpodIdentity: async () => ({
+      model: null,
+      capabilities: null,
+      needsChecksum: false,
+      checksumType: undefined,
+      firmwareInquiry: 'unwritable' as const,
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    }),
+    makeUnsupportedReasonFromAssessment: () => undefined,
+    DOCS_URLS: {
+      supportedDevices: 'https://jvgomg.github.io/podkit/devices/supported-devices',
+      linuxFilesystems: 'https://jvgomg.github.io/podkit/devices/linux-filesystems',
+      troubleshooting: 'https://jvgomg.github.io/podkit/devices/troubleshooting',
+      artworkRepair: 'https://jvgomg.github.io/podkit/troubleshooting/artwork-repair',
+      macosMounting: 'https://jvgomg.github.io/podkit/troubleshooting/macos-mounting',
+      soundCheck: 'https://jvgomg.github.io/podkit/user-guide/syncing/sound-check',
+      userGuideConfiguration: 'https://jvgomg.github.io/podkit/user-guide/configuration',
+      cleanArtists: 'https://jvgomg.github.io/podkit/reference/clean-artists',
+    },
     resolveUsbDeviceFromPath: async () => null,
     identifyCapabilities: () => fakeCapabilities,
     IpodDeviceAdapter: FakeIpodDeviceAdapter,
@@ -1151,6 +1176,47 @@ describe('TASK-331: readiness level=unsupported', () => {
     expect(payload.readiness?.unsupported?.headline).toBe(headline);
     expect(payload.readiness?.unsupported?.kind).toBe('unsupported-preset');
     expect(exitCode.get()).toBe(1);
+  });
+
+  it('TASK-317.03 — suppresses mutating repair suggestions on unsupported devices', async () => {
+    // The unsupported short-circuit must skip the repair-action assembly so
+    // the user does not see "podkit device init" as a remediation for a
+    // device that running init on would corrupt (hashAB nano, …).
+    const ctx = makeContext({ device: 'unsupported-touch' });
+    const { out, stderr, stdout } = makeOut();
+    const headline =
+      "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
+    const unsupported = { kind: 'ios-device' as const, headline };
+    const fakeCore = makeFakeCore({
+      readiness: {
+        level: 'unsupported',
+        unsupported,
+        stages: [
+          { stage: 'usb', status: 'fail', summary: 'Device not supported' },
+          { stage: 'database', status: 'fail', summary: 'iTunesDB not found' },
+        ],
+      },
+    });
+
+    await runDoctor(
+      ctx,
+      '/tmp/touch-5g',
+      undefined,
+      {},
+      {
+        loadCore: async () => fakeCore as typeof import('@podkit/core'),
+        getDeviceManager: () => fakeManager(),
+      },
+      out
+    );
+
+    // Combined text+stderr must NOT propose mutating commands.
+    const all = stderr.text() + '\n' + stdout.text();
+    expect(all).not.toContain('podkit device init');
+    expect(all).not.toContain('--repair sysinfo-extended');
+    expect(all).not.toContain('--repair sysinfo-consistency');
+    // Wording must NOT mention libgpod (TASK-317.03 rule).
+    expect(all.toLowerCase()).not.toContain('libgpod');
   });
 
   it('readiness=unknown (no descriptor) is NOT collapsed into unsupported', async () => {
