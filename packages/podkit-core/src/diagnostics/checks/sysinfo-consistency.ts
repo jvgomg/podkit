@@ -263,6 +263,7 @@ export const sysinfoConsistencyCheck: DiagnosticCheck = {
   id: 'sysinfo-consistency',
   name: 'SysInfoExtended consistency with device',
   scope: 'device',
+  category: 'database',
   applicableTo: ['ipod'],
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {

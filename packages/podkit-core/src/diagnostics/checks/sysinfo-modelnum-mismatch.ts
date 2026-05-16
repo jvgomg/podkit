@@ -427,6 +427,7 @@ export const sysinfoModelnumMismatchCheck: DiagnosticCheck = {
   id: 'sysinfo-modelnum-mismatch',
   name: 'SysInfo ModelNumStr vs firmware identity',
   scope: 'device',
+  category: 'database',
   applicableTo: ['ipod'],
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {

@@ -81,6 +81,22 @@ interface DoctorCheckOutput {
   repairable: boolean;
   details?: Record<string, unknown>;
   docsUrl?: string;
+  /**
+   * Top-level grouping the renderer used:
+   * - `'system'` → host environment (FFmpeg encoders, transports, udev).
+   * - `'device'` → device-specific health (database, manifest, sysinfo).
+   * Mirrors the underlying `DiagnosticCheck.scope`.
+   */
+  scope?: 'system' | 'device';
+  /**
+   * Finer-grained grouping for device-scope checks:
+   * - `'readiness'` → connectivity / format / mount prerequisites.
+   * - `'database'` → on-device data-store health.
+   * Undefined (or omitted) for system-scope checks. Optional on legacy
+   * device-scope checks — consumers should default missing values to
+   * `'database'` for rendering. Forwarded from `DiagnosticCheck.category`.
+   */
+  category?: 'readiness' | 'database';
 }
 
 interface DoctorOutput {
@@ -476,6 +492,8 @@ export async function runDoctorDiagnostics(
       repairable: c.repairable,
       details: c.details,
       docsUrl: c.docsUrl,
+      scope: c.scope,
+      ...(c.category ? { category: c.category } : {}),
     }));
 
     const output: DoctorOutput = {
@@ -493,19 +511,17 @@ export async function runDoctorDiagnostics(
     out.result<DoctorOutput>(output, () => {
       out.print(`podkit doctor \u2014 ${label} at ${devicePath}`);
 
-      if (report.checks.length === 0) {
+      const visibleChecks = report.checks.filter((c) => !c.repairOnly);
+
+      if (visibleChecks.length === 0) {
         out.newline();
         out.print('  No health checks are currently available for this device.');
         out.print('  Run `podkit sync --dry-run` to verify your collection configuration.');
       } else {
-        out.newline();
-        out.print('Device Health');
-
-        for (const check of report.checks) {
-          if (check.repairOnly) continue;
-          const sym = stageMarker(check.status);
-          out.print(`  ${sym} ${check.name}    ${check.summary}`);
-        }
+        // Unified section structure \u2014 same as the iPod path, so users see a
+        // consistent System / Device Readiness / Database Health layout
+        // regardless of which device is plugged in. Empty sections omitted.
+        printGroupedChecks(out, visibleChecks);
       }
 
       out.newline();
@@ -674,6 +690,8 @@ export async function runDoctorDiagnostics(
         repairable: c.repairable,
         details: c.details,
         docsUrl: c.docsUrl,
+        scope: c.scope,
+        ...(c.category ? { category: c.category } : {}),
       }))
     : [];
 
@@ -824,6 +842,11 @@ export async function runDoctorDiagnostics(
     } else {
       for (const check of report.checks) {
         if (check.repairOnly || check.scope === 'system') continue;
+        // Device-scope checks tagged readiness are surfaced by the dedicated
+        // readiness pipeline above on the iPod path; skip them here to avoid
+        // double rendering. Anything else (category 'database' or unset)
+        // belongs in Database Health.
+        if (check.category === 'readiness') continue;
         const sym = stageMarker(check.status);
         out.print(`  ${sym} ${check.name}    ${check.summary}`);
 
@@ -1003,6 +1026,8 @@ export async function runSystemOnlyDoctor(
     repairable: c.repairable,
     details: c.details,
     docsUrl: c.docsUrl,
+    scope: c.scope,
+    ...(c.category ? { category: c.category } : {}),
   }));
 
   const healthy = report.healthy;
@@ -1487,6 +1512,81 @@ async function runMassStorageRepair(
       out.success('Repair complete. Run `podkit doctor` to verify.');
     }
   });
+}
+
+// ── Grouped check rendering ─────────────────────────────────────────────────
+
+/**
+ * Shape of a check the grouped renderer expects. Compatible with both
+ * `DiagnosticReport['checks'][number]` and `DoctorCheckOutput`.
+ */
+interface GroupedRenderableCheck {
+  id: string;
+  name: string;
+  status: 'pass' | 'fail' | 'warn' | 'skip';
+  summary: string;
+  scope?: 'system' | 'device';
+  category?: 'readiness' | 'database';
+  repairOnly?: boolean;
+  details?: Record<string, unknown>;
+}
+
+/**
+ * Render checks under the unified `System` / `Device Readiness` / `Database Health`
+ * structure. Empty sections are omitted.
+ *
+ * Categorisation rules:
+ * - `scope === 'system'` → "System".
+ * - `scope === 'device'` + `category === 'readiness'` → "Device Readiness".
+ * - `scope === 'device'` + `category === 'database'` (or unset) → "Database Health".
+ *
+ * Used directly by the mass-storage doctor path; the iPod path renders
+ * "Device Readiness" from its dedicated readiness-stage pipeline and
+ * delegates "System" + "Database Health" inline (so it can interleave
+ * extra orphan-summary detail). The categorisation rules above stay
+ * consistent across both paths. (TASK-317.08)
+ */
+export function printGroupedChecks(
+  out: OutputContext,
+  checks: ReadonlyArray<GroupedRenderableCheck>
+): void {
+  const systemChecks = checks.filter((c) => !c.repairOnly && c.scope === 'system');
+  const readinessChecks = checks.filter(
+    (c) => !c.repairOnly && c.scope === 'device' && c.category === 'readiness'
+  );
+  const databaseChecks = checks.filter(
+    (c) =>
+      !c.repairOnly &&
+      c.scope === 'device' &&
+      (c.category === 'database' || c.category === undefined)
+  );
+
+  if (systemChecks.length > 0) {
+    out.newline();
+    out.print('System');
+    for (const check of systemChecks) {
+      const sym = stageMarker(check.status);
+      out.print(`  ${sym} ${check.name}    ${check.summary}`);
+    }
+  }
+
+  if (readinessChecks.length > 0) {
+    out.newline();
+    out.print('Device Readiness');
+    for (const check of readinessChecks) {
+      const sym = stageMarker(check.status);
+      out.print(`  ${sym} ${check.name}    ${check.summary}`);
+    }
+  }
+
+  if (databaseChecks.length > 0) {
+    out.newline();
+    out.print('Database Health');
+    for (const check of databaseChecks) {
+      const sym = stageMarker(check.status);
+      out.print(`  ${sym} ${check.name}    ${check.summary}`);
+    }
+  }
 }
 
 // ── Orphan file helpers ────────────────────────────────────────────────────

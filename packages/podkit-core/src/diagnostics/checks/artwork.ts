@@ -32,6 +32,7 @@ export const artworkRebuildCheck: DiagnosticCheck = {
   id: 'artwork-rebuild',
   name: 'Artwork Integrity',
   applicableTo: ['ipod'],
+  category: 'database',
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {
     if (!ctx.db) {

@@ -32,7 +32,9 @@ describe('inquiryMethodsCheck metadata', () => {
     expect(inquiryMethodsCheck.id).toBe('inquiry-methods');
     expect(inquiryMethodsCheck.name).toBe('iPod Firmware Inquiry Methods');
     expect(inquiryMethodsCheck.scope).toBe('system');
-    expect(inquiryMethodsCheck.applicableTo).toEqual(['ipod', 'mass-storage']);
+    // TASK-317.08: iPod-only — the SCSI/USB inquiry transports it probes are
+    // specific to iPod firmware, so it must not run on mass-storage devices.
+    expect(inquiryMethodsCheck.applicableTo).toEqual(['ipod']);
     expect(inquiryMethodsCheck.repair).toBeUndefined();
   });
 });

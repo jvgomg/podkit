@@ -146,6 +146,19 @@ export interface DiagnosticCheck {
    * 'device' = device-specific health (default).
    */
   scope?: 'system' | 'device';
+  /**
+   * Finer-grained grouping for device-scope checks, controlling which
+   * subsection the renderer puts them in:
+   * - 'readiness' = device connectivity / filesystem / format prerequisites
+   *   that must hold before any database work is meaningful.
+   * - 'database' = database-health checks that read/write the on-device
+   *   data store (iTunesDB for iPods, mass-storage manifest, etc.).
+   *
+   * Ignored for system-scope checks (those always render under "System").
+   * Optional for backward compatibility — device-scope checks without a
+   * category default to 'database' rendering.
+   */
+  category?: 'readiness' | 'database';
   /** Run the check */
   check(ctx: DiagnosticContext): Promise<CheckResult>;
   /** If this check can auto-repair, how */
@@ -171,6 +184,12 @@ export interface DiagnosticReport {
       hasRepair: boolean;
       repairOnly: boolean;
       scope: 'system' | 'device';
+      /**
+       * Subsection for device-scope checks ('readiness' | 'database').
+       * Undefined for system-scope checks. Optional on legacy device-scope
+       * checks — the renderer defaults missing values to 'database'.
+       */
+      category?: 'readiness' | 'database';
     } & CheckResult
   >;
   /** Overall health: true if all checks passed */

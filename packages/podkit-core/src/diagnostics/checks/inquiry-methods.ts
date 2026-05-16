@@ -93,7 +93,11 @@ export const inquiryMethodsCheck: DiagnosticCheck = {
   id: 'inquiry-methods',
   name: 'iPod Firmware Inquiry Methods',
   scope: 'system',
-  applicableTo: ['ipod', 'mass-storage'],
+  // iPod-only: this check probes the SCSI/USB transports used exclusively
+  // by iPod firmware inquiry. Surfacing it under "System" on a mass-storage
+  // device (e.g. Echo Mini) would mislead users into thinking iPodDriver.kext
+  // matters for their device. (TASK-317.08)
+  applicableTo: ['ipod'],
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {
     return checkInquiryMethods();

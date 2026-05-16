@@ -165,12 +165,15 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
 
     for (const check of applicable) {
       const result = await check.check(ctx);
+      const scope = check.scope ?? 'device';
       checks.push({
         id: check.id,
         name: check.name,
         hasRepair: check.repair !== undefined,
         repairOnly: check.repairOnly ?? false,
-        scope: check.scope ?? 'device',
+        scope,
+        // Only device-scope checks carry a category; for system-scope it's omitted
+        ...(scope === 'device' && check.category ? { category: check.category } : {}),
         ...result,
       });
     }
