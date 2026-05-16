@@ -82,21 +82,13 @@ interface DoctorCheckOutput {
   details?: Record<string, unknown>;
   docsUrl?: string;
   /**
-   * Top-level grouping the renderer used:
+   * Section the renderer puts this check under. Mirrors the underlying
+   * `DiagnosticCheck.scope`:
    * - `'system'` → host environment (FFmpeg encoders, transports, udev).
-   * - `'device'` → device-specific health (database, manifest, sysinfo).
-   * Mirrors the underlying `DiagnosticCheck.scope`.
+   * - `'device-readiness'` → connectivity / format / mount prerequisites.
+   * - `'database-health'` → on-device data-store health.
    */
-  scope?: 'system' | 'device';
-  /**
-   * Finer-grained grouping for device-scope checks:
-   * - `'readiness'` → connectivity / format / mount prerequisites.
-   * - `'database'` → on-device data-store health.
-   * Undefined (or omitted) for system-scope checks. Optional on legacy
-   * device-scope checks — consumers should default missing values to
-   * `'database'` for rendering. Forwarded from `DiagnosticCheck.category`.
-   */
-  category?: 'readiness' | 'database';
+  scope: 'system' | 'device-readiness' | 'database-health';
 }
 
 interface DoctorOutput {
@@ -183,11 +175,12 @@ interface DoctorOptions {
  */
 export function resolveDoctorScopes(
   options: Pick<DoctorOptions, 'scope' | 'system'>
-): ReadonlyArray<'system' | 'device'> {
+): ReadonlyArray<'system' | 'device-readiness' | 'database-health'> {
   const scope: DoctorScope = options.scope ?? 'all';
+  const deviceScopes = ['device-readiness', 'database-health'] as const;
   if (scope === 'system') return ['system'];
-  if (scope === 'device') return ['device'];
-  return options.system === false ? ['device'] : ['system', 'device'];
+  if (scope === 'device') return deviceScopes;
+  return options.system === false ? deviceScopes : ['system', ...deviceScopes];
 }
 
 // ── Suggested actions ────────────────────────────────────────────────────────
@@ -493,7 +486,6 @@ export async function runDoctorDiagnostics(
       details: c.details,
       docsUrl: c.docsUrl,
       scope: c.scope,
-      ...(c.category ? { category: c.category } : {}),
     }));
 
     const output: DoctorOutput = {
@@ -691,7 +683,6 @@ export async function runDoctorDiagnostics(
         details: c.details,
         docsUrl: c.docsUrl,
         scope: c.scope,
-        ...(c.category ? { category: c.category } : {}),
       }))
     : [];
 
@@ -784,7 +775,7 @@ export async function runDoctorDiagnostics(
   }
   if (report) {
     for (const check of report.checks) {
-      if (!check.repairable || check.repairOnly || check.scope === 'system') continue;
+      if (!check.repairable || check.repairOnly || check.scope !== 'database-health') continue;
       if (check.status !== 'fail' && check.status !== 'warn') continue;
       const diagCheck = getDiagnosticCheck(check.id);
       if (!diagCheck?.repair) continue;
@@ -841,12 +832,11 @@ export async function runDoctorDiagnostics(
       }
     } else {
       for (const check of report.checks) {
-        if (check.repairOnly || check.scope === 'system') continue;
-        // Device-scope checks tagged readiness are surfaced by the dedicated
-        // readiness pipeline above on the iPod path; skip them here to avoid
-        // double rendering. Anything else (category 'database' or unset)
-        // belongs in Database Health.
-        if (check.category === 'readiness') continue;
+        if (check.repairOnly) continue;
+        // Only database-health checks render here. Device-readiness checks are
+        // surfaced by the dedicated readiness pipeline above on the iPod path;
+        // system-scope checks render in the "System" section.
+        if (check.scope !== 'database-health') continue;
         const sym = stageMarker(check.status);
         out.print(`  ${sym} ${check.name}    ${check.summary}`);
 
@@ -903,7 +893,7 @@ export async function runDoctorDiagnostics(
     // Database health issues
     if (report) {
       for (const check of report.checks) {
-        if (check.repairOnly || check.scope === 'system') continue;
+        if (check.repairOnly || check.scope !== 'database-health') continue;
         if (check.status !== 'fail' && check.status !== 'warn') continue;
 
         const details: string[] = [];
@@ -1027,7 +1017,6 @@ export async function runSystemOnlyDoctor(
     details: c.details,
     docsUrl: c.docsUrl,
     scope: c.scope,
-    ...(c.category ? { category: c.category } : {}),
   }));
 
   const healthy = report.healthy;
@@ -1525,8 +1514,7 @@ interface GroupedRenderableCheck {
   name: string;
   status: 'pass' | 'fail' | 'warn' | 'skip';
   summary: string;
-  scope?: 'system' | 'device';
-  category?: 'readiness' | 'database';
+  scope: 'system' | 'device-readiness' | 'database-health';
   repairOnly?: boolean;
   details?: Record<string, unknown>;
 }
@@ -1535,31 +1523,24 @@ interface GroupedRenderableCheck {
  * Render checks under the unified `System` / `Device Readiness` / `Database Health`
  * structure. Empty sections are omitted.
  *
- * Categorisation rules:
+ * Categorisation is a direct branch on `scope`, with no defaulting:
  * - `scope === 'system'` → "System".
- * - `scope === 'device'` + `category === 'readiness'` → "Device Readiness".
- * - `scope === 'device'` + `category === 'database'` (or unset) → "Database Health".
+ * - `scope === 'device-readiness'` → "Device Readiness".
+ * - `scope === 'database-health'` → "Database Health".
  *
  * Used directly by the mass-storage doctor path; the iPod path renders
  * "Device Readiness" from its dedicated readiness-stage pipeline and
  * delegates "System" + "Database Health" inline (so it can interleave
  * extra orphan-summary detail). The categorisation rules above stay
- * consistent across both paths. (TASK-317.08)
+ * consistent across both paths.
  */
 export function printGroupedChecks(
   out: OutputContext,
   checks: ReadonlyArray<GroupedRenderableCheck>
 ): void {
   const systemChecks = checks.filter((c) => !c.repairOnly && c.scope === 'system');
-  const readinessChecks = checks.filter(
-    (c) => !c.repairOnly && c.scope === 'device' && c.category === 'readiness'
-  );
-  const databaseChecks = checks.filter(
-    (c) =>
-      !c.repairOnly &&
-      c.scope === 'device' &&
-      (c.category === 'database' || c.category === undefined)
-  );
+  const readinessChecks = checks.filter((c) => !c.repairOnly && c.scope === 'device-readiness');
+  const databaseChecks = checks.filter((c) => !c.repairOnly && c.scope === 'database-health');
 
   if (systemChecks.length > 0) {
     out.newline();

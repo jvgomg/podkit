@@ -98,12 +98,18 @@ export interface RunDiagnosticsInput {
    */
   liveIdentity?: import('./types.js').LiveDeviceIdentity;
   /**
-   * Restrict to checks of these scopes. Default: both `'system'` and
-   * `'device'`. Pass `['device']` to skip host-environment checks (FFmpeg,
-   * libusb availability, etc.) — useful for tests and any caller that
-   * wants device-only diagnostics.
+   * Restrict to checks of these scopes. Default: all three scopes.
+   *
+   * Pass `['system']` to skip device-touching checks (useful when no iPod
+   * is plugged in). Pass `['device-readiness', 'database-health']` to skip
+   * host-environment checks (FFmpeg, libusb availability, etc.) — useful
+   * for tests and any caller that wants device-only diagnostics.
+   *
+   * The CLI's user-facing `--scope device` flag maps to both device-side
+   * scopes here; the 3-way split is for renderer/grouping purposes only,
+   * the CLI scope flag continues to expose the original 2-way split.
    */
-  scopes?: ReadonlyArray<'system' | 'device'>;
+  scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
 }
 
 /**
@@ -120,14 +126,16 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
   const { mountPoint, deviceType } = input;
 
   // Resolve iPod database: use provided handle, or open internally for backward compat.
-  // Skip when scopes does not include 'device' — system-only runs have no need for the DB.
+  // Skip when scopes does not include any device-side scope — system-only runs
+  // have no need for the DB.
   let db = input.db;
   let ownedDb = false;
-  const allowedScopesEarly: ReadonlyArray<'system' | 'device'> = input.scopes ?? [
-    'system',
-    'device',
-  ];
-  if (deviceType === 'ipod' && !db && allowedScopesEarly.includes('device')) {
+  const allowedScopesEarly: ReadonlyArray<'system' | 'device-readiness' | 'database-health'> =
+    input.scopes ?? ['system', 'device-readiness', 'database-health'];
+  const wantsDeviceSide =
+    allowedScopesEarly.includes('device-readiness') ||
+    allowedScopesEarly.includes('database-health');
+  if (deviceType === 'ipod' && !db && wantsDeviceSide) {
     try {
       db = await IpodDatabase.open(mountPoint);
       ownedDb = true;
@@ -150,30 +158,26 @@ export async function runDiagnostics(input: RunDiagnosticsInput): Promise<Diagno
       input.deviceModel ?? (db ? (db.getInfo().device.modelName ?? 'Unknown') : 'Unknown');
 
     // Filter checks by device type (default applicableTo is ['ipod'])
-    // and by scope (default: include both system and device).
+    // and by scope (default: include all three).
     // When running system-only, bypass the device-type filter: a system-scope check
     // must run regardless of which device is attached (or declared).
-    const allowedScopes: ReadonlyArray<'system' | 'device'> = allowedScopesEarly;
+    const allowedScopes = allowedScopesEarly;
     const isSystemOnly = allowedScopes.length === 1 && allowedScopes[0] === 'system';
     const applicable = CHECKS.filter((c) => {
       const types = c.applicableTo ?? ['ipod'];
-      const scope = c.scope ?? 'device';
-      return (isSystemOnly || types.includes(deviceType)) && allowedScopes.includes(scope);
+      return (isSystemOnly || types.includes(deviceType)) && allowedScopes.includes(c.scope);
     });
 
     const checks: DiagnosticReport['checks'] = [];
 
     for (const check of applicable) {
       const result = await check.check(ctx);
-      const scope = check.scope ?? 'device';
       checks.push({
         id: check.id,
         name: check.name,
         hasRepair: check.repair !== undefined,
         repairOnly: check.repairOnly ?? false,
-        scope,
-        // Only device-scope checks carry a category; for system-scope it's omitted
-        ...(scope === 'device' && check.category ? { category: check.category } : {}),
+        scope: check.scope,
         ...result,
       });
     }

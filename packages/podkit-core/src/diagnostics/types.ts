@@ -141,24 +141,20 @@ export interface DiagnosticCheck {
    */
   applicableTo?: ReadonlyArray<DiagnosticDeviceType>;
   /**
-   * Output section this check belongs to.
-   * 'system' = host environment (e.g. FFmpeg encoders).
-   * 'device' = device-specific health (default).
-   */
-  scope?: 'system' | 'device';
-  /**
-   * Finer-grained grouping for device-scope checks, controlling which
-   * subsection the renderer puts them in:
-   * - 'readiness' = device connectivity / filesystem / format prerequisites
-   *   that must hold before any database work is meaningful.
-   * - 'database' = database-health checks that read/write the on-device
-   *   data store (iTunesDB for iPods, mass-storage manifest, etc.).
+   * Output section this check belongs to. Required — the compiler enforces
+   * that every check declares which section it renders into, so the doctor
+   * renderer can branch on this discriminator directly with no defaulting.
    *
-   * Ignored for system-scope checks (those always render under "System").
-   * Optional for backward compatibility — device-scope checks without a
-   * category default to 'database' rendering.
+   * - `'system'` = host environment (FFmpeg encoders, SCSI transports,
+   *   udev rules, etc.). Renders under "System".
+   * - `'device-readiness'` = device connectivity / filesystem / format
+   *   prerequisites that must hold before any database work is meaningful.
+   *   Renders under "Device Readiness".
+   * - `'database-health'` = checks that read/write the on-device data store
+   *   (iTunesDB for iPods, mass-storage manifest, etc.). Renders under
+   *   "Database Health".
    */
-  category?: 'readiness' | 'database';
+  scope: 'system' | 'device-readiness' | 'database-health';
   /** Run the check */
   check(ctx: DiagnosticContext): Promise<CheckResult>;
   /** If this check can auto-repair, how */
@@ -183,13 +179,11 @@ export interface DiagnosticReport {
       name: string;
       hasRepair: boolean;
       repairOnly: boolean;
-      scope: 'system' | 'device';
       /**
-       * Subsection for device-scope checks ('readiness' | 'database').
-       * Undefined for system-scope checks. Optional on legacy device-scope
-       * checks — the renderer defaults missing values to 'database'.
+       * Which section the renderer puts this check under. Three-way
+       * discriminator that mirrors `DiagnosticCheck.scope`.
        */
-      category?: 'readiness' | 'database';
+      scope: 'system' | 'device-readiness' | 'database-health';
     } & CheckResult
   >;
   /** Overall health: true if all checks passed */

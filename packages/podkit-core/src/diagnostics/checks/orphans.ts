@@ -93,7 +93,7 @@ export const orphanFilesCheck: DiagnosticCheck = {
   id: 'orphan-files',
   name: 'Orphan Files',
   applicableTo: ['ipod'],
-  category: 'database',
+  scope: 'database-health',
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {
     if (!ctx.db) {

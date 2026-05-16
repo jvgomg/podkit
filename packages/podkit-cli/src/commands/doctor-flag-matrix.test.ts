@@ -51,7 +51,7 @@ interface FakeCheckResult {
   repairable: boolean;
   hasRepair: boolean;
   repairOnly: boolean;
-  scope: 'system' | 'device';
+  scope: 'system' | 'device-readiness' | 'database-health';
   details?: Record<string, unknown>;
   docsUrl?: string;
 }
@@ -65,7 +65,7 @@ interface FakeRepairResult {
 interface FakeCheckDefinition {
   id: string;
   name: string;
-  scope?: 'system' | 'device';
+  scope?: 'system' | 'device-readiness' | 'database-health';
   applicableTo?: ReadonlyArray<'ipod' | 'mass-storage'>;
   repair?: {
     description: string;
@@ -106,7 +106,9 @@ interface FakeCoreOptions {
     checks: FakeCheckResult[];
     healthy?: boolean;
     /** Capture the scopes argument forwarded to runDiagnostics. */
-    captureScopes?: (scopes: ReadonlyArray<'system' | 'device'>) => void;
+    captureScopes?: (
+      scopes: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>
+    ) => void;
   };
   /** Result returned from `core.checkReadiness`. */
   readiness?: FakeReadiness;
@@ -259,11 +261,11 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
     getDiagnosticCheck: (id: string) => registry.find((c) => c.id === id),
     getDiagnosticCheckIds: () => checkIds,
     runDiagnostics: async (input: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint: string;
       deviceType: string;
     }) => {
-      const scopes = input.scopes ?? ['system', 'device'];
+      const scopes = input.scopes ?? ['system', 'device-readiness', 'database-health'];
       opts.report?.captureScopes?.(scopes);
       // Trigger probe spies only when the scope is actually requested.
       if (scopes.includes('system')) opts.onProbe?.('ffmpeg');
@@ -659,7 +661,7 @@ describe('AC #8: --no-system skips system-scope checks and their probes', () => 
             repairable: false,
             hasRepair: false,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
           },
         ],
       },
@@ -721,7 +723,7 @@ describe('AC #9: --no-system produces a strict subset of checks[]', () => {
         repairable: false,
         hasRepair: false,
         repairOnly: false,
-        scope: 'device',
+        scope: 'database-health',
       },
     ];
   }
@@ -796,7 +798,7 @@ describe('AC #10: --format csv on doctor (no --repair)', () => {
             repairable: true,
             hasRepair: true,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
             details: {
               orphans: [
                 { path: '/iPod_Control/Music/F00/abc.mp3', size: 12345 },
@@ -846,7 +848,7 @@ describe('AC #10: --format csv on doctor (no --repair)', () => {
             repairable: true,
             hasRepair: true,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
             details: {
               orphans: [{ path: '/iPod_Control/Music/F00/abc.mp3', size: 12345 }],
             },
@@ -906,7 +908,7 @@ describe('AC #11: --format csv with no orphans', () => {
             repairable: false,
             hasRepair: false,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
             details: { orphans: [] },
           },
         ],
@@ -950,7 +952,7 @@ describe('AC #12: --json output is exactly one JSON document', () => {
             repairable: false,
             hasRepair: false,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
           },
         ],
       },
@@ -999,7 +1001,7 @@ describe('AC #13: human-readable output structure', () => {
             repairable: false,
             hasRepair: false,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
           },
         ],
       },
@@ -1042,7 +1044,7 @@ describe('AC #13: human-readable output structure', () => {
             repairable: true,
             hasRepair: true,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
           },
         ],
       },
@@ -1134,15 +1136,23 @@ afterAll(() => {
 
 type Scope = 'system' | 'device' | 'all';
 
+type InternalScope = 'system' | 'device-readiness' | 'database-health';
+
 interface MatrixCase {
   scope: Scope;
   json: boolean;
   noSystem: boolean;
   /** Scopes we expect `core.runDiagnostics` to receive. */
-  expected: ReadonlyArray<'system' | 'device'>;
+  expected: ReadonlyArray<InternalScope>;
   /** Whether the case requires `-d`. */
   needsDevice: boolean;
 }
+
+// The CLI's `--scope device` continues to map to "all device-side scopes",
+// which now expands to the 3-way internal union's device-readiness +
+// database-health pair. The user-facing scope flag is unchanged.
+const DEVICE_INTERNAL: ReadonlyArray<InternalScope> = ['device-readiness', 'database-health'];
+const ALL_INTERNAL: ReadonlyArray<InternalScope> = ['system', ...DEVICE_INTERNAL];
 
 // 3 (scope) × 2 (json) × 2 (no-system) = 12 cells. `--scope system` ignores
 // `--no-system` (scope=system overrides); `--scope device` always uses
@@ -1154,15 +1164,15 @@ const matrixCases: MatrixCase[] = [
   { scope: 'system', json: true, noSystem: true, expected: ['system'], needsDevice: false },
   { scope: 'system', json: false, noSystem: true, expected: ['system'], needsDevice: false },
   // --scope device × {json on/off} × {no-system on/off}
-  { scope: 'device', json: true, noSystem: false, expected: ['device'], needsDevice: true },
-  { scope: 'device', json: false, noSystem: false, expected: ['device'], needsDevice: true },
-  { scope: 'device', json: true, noSystem: true, expected: ['device'], needsDevice: true },
-  { scope: 'device', json: false, noSystem: true, expected: ['device'], needsDevice: true },
+  { scope: 'device', json: true, noSystem: false, expected: DEVICE_INTERNAL, needsDevice: true },
+  { scope: 'device', json: false, noSystem: false, expected: DEVICE_INTERNAL, needsDevice: true },
+  { scope: 'device', json: true, noSystem: true, expected: DEVICE_INTERNAL, needsDevice: true },
+  { scope: 'device', json: false, noSystem: true, expected: DEVICE_INTERNAL, needsDevice: true },
   // --scope all × {json on/off} × {no-system on/off}
-  { scope: 'all', json: true, noSystem: false, expected: ['system', 'device'], needsDevice: true },
-  { scope: 'all', json: false, noSystem: false, expected: ['system', 'device'], needsDevice: true },
-  { scope: 'all', json: true, noSystem: true, expected: ['device'], needsDevice: true },
-  { scope: 'all', json: false, noSystem: true, expected: ['device'], needsDevice: true },
+  { scope: 'all', json: true, noSystem: false, expected: ALL_INTERNAL, needsDevice: true },
+  { scope: 'all', json: false, noSystem: false, expected: ALL_INTERNAL, needsDevice: true },
+  { scope: 'all', json: true, noSystem: true, expected: DEVICE_INTERNAL, needsDevice: true },
+  { scope: 'all', json: false, noSystem: true, expected: DEVICE_INTERNAL, needsDevice: true },
 ];
 
 describe('AC #16: --scope × --json × --no-system cross-product', () => {
@@ -1174,7 +1184,7 @@ describe('AC #16: --scope × --json × --no-system cross-product', () => {
         json: c.json,
       });
       const { out } = makeOut(c.json ? 'json' : 'text');
-      const capturedScopes: ReadonlyArray<'system' | 'device'>[] = [];
+      const capturedScopes: ReadonlyArray<InternalScope>[] = [];
       const fakeCore = makeFakeCore({
         report: {
           checks: [
@@ -1196,7 +1206,7 @@ describe('AC #16: --scope × --json × --no-system cross-product', () => {
               repairable: false,
               hasRepair: false,
               repairOnly: false,
-              scope: 'device',
+              scope: 'database-health',
             },
           ],
           captureScopes: (s) => capturedScopes.push(s),
@@ -1343,7 +1353,7 @@ describe('TASK-305 AC #6: --format csv escapes commas AND quotes', () => {
             repairable: true,
             hasRepair: true,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
             details: {
               orphans: [
                 { path: '/iPod_Control/Music/F00/plain.mp3', size: 100 },
@@ -1426,7 +1436,7 @@ describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
             repairable: true,
             hasRepair: true,
             repairOnly: false,
-            scope: 'device',
+            scope: 'database-health',
             details: {
               orphanCount: 12,
               totalFiles: 12,

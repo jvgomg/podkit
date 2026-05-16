@@ -1,10 +1,13 @@
 /**
  * Renderer-level tests for the unified `System` / `Device Readiness` /
- * `Database Health` section structure (TASK-317.08).
+ * `Database Health` section structure.
  *
  * Drives `printGroupedChecks` with synthetic check fixtures so we can pin
  * grouping, ordering, and empty-section omission without bootstrapping a
  * real device or the full `runDoctorDiagnostics` pipeline.
+ *
+ * After the scope-collapse refactor (Approach A), every check declares one of
+ * three required scopes — there is no defaulting and no `category` field.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -36,8 +39,7 @@ interface FakeCheck {
   name: string;
   status: 'pass' | 'fail' | 'warn' | 'skip';
   summary: string;
-  scope?: 'system' | 'device';
-  category?: 'readiness' | 'database';
+  scope: 'system' | 'device-readiness' | 'database-health';
   repairOnly?: boolean;
 }
 
@@ -59,16 +61,14 @@ describe('printGroupedChecks — section ordering', () => {
         name: 'USB Connection',
         status: 'pass',
         summary: 'ok',
-        scope: 'device',
-        category: 'readiness',
+        scope: 'device-readiness',
       },
       {
         id: 'artwork-rebuild',
         name: 'Artwork Integrity',
         status: 'pass',
         summary: 'ok',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
     ];
 
@@ -94,8 +94,7 @@ describe('printGroupedChecks — empty section omission', () => {
         name: 'Orphan Files',
         status: 'pass',
         summary: 'no orphans',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
     ];
 
@@ -136,8 +135,7 @@ describe('printGroupedChecks — empty section omission', () => {
         name: 'SysInfoExtended',
         status: 'skip',
         summary: 'repair-only',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
         repairOnly: true,
       },
     ];
@@ -153,16 +151,15 @@ describe('printGroupedChecks — empty section omission', () => {
 });
 
 describe('printGroupedChecks — categorisation rules', () => {
-  it('treats device-scope checks without a category as database-health', () => {
+  it('routes database-health checks into the Database Health section', () => {
     const { out, stdout } = makeTextOutput();
     const checks: FakeCheck[] = [
       {
-        id: 'legacy-check',
-        name: 'Legacy Check',
+        id: 'orphan-files',
+        name: 'Orphan Files',
         status: 'pass',
         summary: 'ok',
-        scope: 'device',
-        // category: undefined — pre-TASK-317.08 device-scope checks
+        scope: 'database-health',
       },
     ];
 
@@ -171,10 +168,10 @@ describe('printGroupedChecks — categorisation rules', () => {
 
     expect(text).toContain('Database Health');
     expect(text).not.toContain('Device Readiness');
-    expect(text).toContain('Legacy Check');
+    expect(text).toContain('Orphan Files');
   });
 
-  it('skips repairOnly checks even when scope + category are set', () => {
+  it('skips repairOnly checks even when scope is set', () => {
     const { out, stdout } = makeTextOutput();
     const checks: FakeCheck[] = [
       {
@@ -182,8 +179,7 @@ describe('printGroupedChecks — categorisation rules', () => {
         name: 'Artwork Reset',
         status: 'skip',
         summary: 'repair-only',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
         repairOnly: true,
       },
       {
@@ -191,8 +187,7 @@ describe('printGroupedChecks — categorisation rules', () => {
         name: 'Artwork Integrity',
         status: 'pass',
         summary: 'ok',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
     ];
 
@@ -210,7 +205,7 @@ describe('printGroupedChecks — mass-storage scenario (Echo Mini)', () => {
     const { out, stdout } = makeTextOutput();
     // Mirrors the post-fix Echo Mini state described in the task:
     // - Codec Encoders + Video Encoder (system)
-    // - Orphan Files (Mass Storage) (device + database)
+    // - Orphan Files (Mass Storage) (database-health)
     // - iPod Firmware Inquiry Methods is NOT applicable → not in the input
     const checks: FakeCheck[] = [
       {
@@ -232,8 +227,7 @@ describe('printGroupedChecks — mass-storage scenario (Echo Mini)', () => {
         name: 'Orphan Files (Mass Storage)',
         status: 'pass',
         summary: 'no orphans',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
     ];
 
@@ -249,7 +243,7 @@ describe('printGroupedChecks — mass-storage scenario (Echo Mini)', () => {
     // applicableTo gates it out before the renderer runs.
     expect(text).not.toContain('iPod Firmware Inquiry');
 
-    // No Device Readiness because mass-storage has no readiness-category checks today
+    // No Device Readiness because mass-storage has no device-readiness checks today
     expect(text).not.toContain('Device Readiness');
 
     // Database Health with the mass-storage orphan check
@@ -274,16 +268,14 @@ describe('printGroupedChecks — status markers', () => {
         name: 'B fail',
         status: 'fail',
         summary: 'broken',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
       {
         id: 'c',
         name: 'C warn',
         status: 'warn',
         summary: 'partial',
-        scope: 'device',
-        category: 'database',
+        scope: 'database-health',
       },
     ];
 

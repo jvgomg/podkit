@@ -94,7 +94,7 @@ describe('sysinfoConsistencyCheck metadata', () => {
   it('has correct id, scope and applicableTo', () => {
     expect(sysinfoConsistencyCheck.id).toBe('sysinfo-consistency');
     expect(sysinfoConsistencyCheck.name).toBe('SysInfoExtended consistency with device');
-    expect(sysinfoConsistencyCheck.scope).toBe('device');
+    expect(sysinfoConsistencyCheck.scope).toBe('database-health');
     expect(sysinfoConsistencyCheck.applicableTo).toEqual(['ipod']);
     expect(sysinfoConsistencyCheck.repair).toBeDefined();
   });

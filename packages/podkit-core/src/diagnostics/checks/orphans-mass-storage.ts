@@ -220,7 +220,7 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
   id: 'orphan-files-mass-storage',
   name: 'Orphan Files (Mass Storage)',
   applicableTo: ['mass-storage'],
-  category: 'database',
+  scope: 'database-health',
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {
     if (!ctx.contentPaths) {

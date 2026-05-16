@@ -1,14 +1,16 @@
 /**
- * Cross-cutting metadata matrix for diagnostic checks (TASK-317.08).
+ * Cross-cutting scope matrix for diagnostic checks.
  *
- * Pins the `scope` / `category` / `applicableTo` declaration on every
- * registered check so the doctor renderer can group them consistently:
+ * Pins the `scope` / `applicableTo` declaration on every registered check so
+ * the doctor renderer can group them consistently:
  *
- * - System-scope checks render under "System".
- * - Device-scope + `category: 'readiness'` checks render under "Device
- *   Readiness".
- * - Device-scope + `category: 'database'` (or unset for legacy checks)
- *   render under "Database Health".
+ * - `scope: 'system'` → renders under "System".
+ * - `scope: 'device-readiness'` → renders under "Device Readiness".
+ * - `scope: 'database-health'` → renders under "Database Health".
+ *
+ * `scope` is a required field on `DiagnosticCheck` — every check must declare
+ * which section it renders into, with no default fallback (Approach A from
+ * the TASK-317.08 follow-up).
  *
  * Also enforces the iPod-only gating for `iPod Firmware Inquiry Methods`
  * so it doesn't surface on Echo Mini / other mass-storage devices where
@@ -34,8 +36,7 @@ import type { DiagnosticCheck } from '../types.js';
 
 interface Expectation {
   check: DiagnosticCheck;
-  scope: 'system' | 'device';
-  category?: 'readiness' | 'database';
+  scope: 'system' | 'device-readiness' | 'database-health';
   applicableTo?: ReadonlyArray<'ipod' | 'mass-storage'>;
 }
 
@@ -65,28 +66,17 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
     scope: 'system',
     applicableTo: ['ipod'],
   },
-  // Device-scope, category: database (iPod)
-  { check: artworkRebuildCheck, scope: 'device', category: 'database', applicableTo: ['ipod'] },
-  { check: artworkResetCheck, scope: 'device', category: 'database', applicableTo: ['ipod'] },
-  { check: orphanFilesCheck, scope: 'device', category: 'database', applicableTo: ['ipod'] },
-  { check: sysInfoExtendedCheck, scope: 'device', category: 'database', applicableTo: ['ipod'] },
-  {
-    check: sysinfoConsistencyCheck,
-    scope: 'device',
-    category: 'database',
-    applicableTo: ['ipod'],
-  },
-  {
-    check: sysinfoModelnumMismatchCheck,
-    scope: 'device',
-    category: 'database',
-    applicableTo: ['ipod'],
-  },
-  // Device-scope, category: database (mass-storage)
+  // Database-health (iPod)
+  { check: artworkRebuildCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: artworkResetCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: orphanFilesCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: sysInfoExtendedCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: sysinfoConsistencyCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  { check: sysinfoModelnumMismatchCheck, scope: 'database-health', applicableTo: ['ipod'] },
+  // Database-health (mass-storage)
   {
     check: orphanFilesMassStorageCheck,
-    scope: 'device',
-    category: 'database',
+    scope: 'database-health',
     applicableTo: ['mass-storage'],
   },
 ];
@@ -95,27 +85,14 @@ const EXPECTATIONS: ReadonlyArray<Expectation> = [
 // Per-check metadata assertions
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('TASK-317.08 — every check declares scope + category + applicableTo correctly', () => {
+describe('diagnostic check scope matrix — every check declares scope + applicableTo correctly', () => {
   for (const exp of EXPECTATIONS) {
     describe(exp.check.id, () => {
       it(`has scope: '${exp.scope}'`, () => {
-        // System checks set `scope: 'system'` explicitly; device-scope
-        // checks may set 'device' explicitly or omit it (default = 'device').
-        const scope = exp.check.scope ?? 'device';
-        expect(scope).toBe(exp.scope);
+        // scope is required — compile-time enforced — so this is a direct
+        // pin against the value the check declared in its module.
+        expect(exp.check.scope).toBe(exp.scope);
       });
-
-      if (exp.scope === 'device') {
-        it(`has category: '${exp.category}'`, () => {
-          expect(exp.check.category).toBe(exp.category);
-        });
-      } else {
-        // System-scope checks should NOT declare a category — it's
-        // ignored for them and would only confuse JSON consumers.
-        it('does not declare a category (system-scope)', () => {
-          expect(exp.check.category).toBeUndefined();
-        });
-      }
 
       if (exp.applicableTo) {
         it(`has applicableTo: [${exp.applicableTo.map((t) => `'${t}'`).join(', ')}]`, () => {
@@ -127,10 +104,10 @@ describe('TASK-317.08 — every check declares scope + category + applicableTo c
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// iPod-specific system check exclusion (TASK-317.08 AC #4)
+// iPod-specific system check exclusion
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('TASK-317.08 — iPod Firmware Inquiry Methods does not apply to mass-storage', () => {
+describe('iPod Firmware Inquiry Methods does not apply to mass-storage', () => {
   it('inquiry-methods is scoped to iPod devices only', () => {
     expect(inquiryMethodsCheck.applicableTo).toEqual(['ipod']);
   });

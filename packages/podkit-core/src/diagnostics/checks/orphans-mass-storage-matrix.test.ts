@@ -507,13 +507,13 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
       // The registered check resolves by id.
       expect(getDiagnosticCheck('orphan-files-mass-storage')).toBe(orphanFilesMassStorageCheck);
 
-      // Drive runDiagnostics for an iPod with scopes=['device'] and assert the
-      // mass-storage orphan check is NOT present in the report.
+      // Drive runDiagnostics for an iPod with the device-side scopes and
+      // assert the mass-storage orphan check is NOT present in the report.
       const ipodReport = await runDiagnostics({
         mountPoint: tempDir, // arbitrary — iPod-scoped checks will skip on absence of DB
         deviceType: 'ipod',
         // No db provided — checks that need it should skip gracefully.
-        scopes: ['device'],
+        scopes: ['device-readiness', 'database-health'],
       });
       const ids = ipodReport.checks.map((c) => c.id);
       expect(ids).not.toContain('orphan-files-mass-storage');
@@ -530,7 +530,7 @@ describe('orphan-files-mass-storage — preset × content-path × override matri
         mountPoint: tempDir,
         deviceType: 'mass-storage',
         contentPaths: cp,
-        scopes: ['device'],
+        scopes: ['device-readiness', 'database-health'],
       });
       const ids = msReport.checks.map((c) => c.id);
       expect(ids).not.toContain('orphan-files');

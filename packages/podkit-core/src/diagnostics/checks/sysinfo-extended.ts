@@ -137,7 +137,7 @@ export const sysInfoExtendedCheck: DiagnosticCheck = {
   id: 'sysinfo-extended',
   name: 'SysInfoExtended',
   applicableTo: ['ipod'],
-  category: 'database',
+  scope: 'database-health',
   repairOnly: true,
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {

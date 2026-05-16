@@ -1,10 +1,12 @@
 /**
  * Unit tests for runDiagnostics runner — system-scope filter bypass and
- * db-open guard (TASK-335 Changes 1 & 2).
+ * db-open guard (originally TASK-335 Changes 1 & 2, updated for the 3-way
+ * scope union refactor).
  *
  * Strategy: use an injected `db` (or none) and verify the filter behaviour
  * and db-open guard without touching the real IpodDatabase or the filesystem.
- * The filter predicate is also exercised in isolation to verify Change 1.
+ * The filter predicate is also exercised in isolation to verify the
+ * system-only bypass.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -15,10 +17,12 @@ import type { DiagnosticCheck } from './types.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
+type DiagnosticScope = 'system' | 'device-readiness' | 'database-health';
+
 function makeFakeCheck(
   id: string,
   applicableTo: string[],
-  scope: 'system' | 'device' = 'system'
+  scope: DiagnosticScope = 'system'
 ): DiagnosticCheck {
   return {
     id,
@@ -47,10 +51,10 @@ function makeStubDb() {
 }
 
 // ---------------------------------------------------------------------------
-// Change 1: system-scope filter bypass
+// system-scope filter bypass
 // ---------------------------------------------------------------------------
 
-describe('runDiagnostics — system-scope filter bypass (Change 1)', () => {
+describe('runDiagnostics — system-scope filter bypass', () => {
   it('returns system-scope checks for ipod deviceType when scopes = [system]', async () => {
     // The real registry has system-scope checks (codec-encoders, udev-rule, etc.)
     // that declare applicableTo: ['ipod', 'mass-storage']. With scopes=['system']
@@ -63,45 +67,42 @@ describe('runDiagnostics — system-scope filter bypass (Change 1)', () => {
     });
 
     expect(report.checks.length).toBeGreaterThan(0);
-    // All returned checks must be system-scope (no device-scope ones leak through)
+    // All returned checks must be system-scope (no device-side ones leak through)
     for (const c of report.checks) {
       expect(c.scope).toBe('system');
     }
   });
 
-  // Verify the isSystemOnly predicate in isolation — this is the exact logic
-  // added in Change 1 and covers the future case of a mass-storage-only
-  // system-scope check being registered.
+  // Verify the isSystemOnly predicate in isolation — covers the future case
+  // of a mass-storage-only system-scope check being registered.
   it('filter predicate: isSystemOnly bypasses applicableTo for mass-storage+system check', () => {
     const check = makeFakeCheck('fake-system-ms', ['mass-storage'], 'system');
     const types = (check.applicableTo ?? ['ipod']) as string[];
-    const scope = check.scope ?? 'device';
 
-    const allowedScopes: ReadonlyArray<'system' | 'device'> = ['system'];
+    const allowedScopes: ReadonlyArray<DiagnosticScope> = ['system'];
     const isSystemOnly = allowedScopes.length === 1 && allowedScopes[0] === 'system';
     const deviceType: string = 'ipod';
 
-    // Change 1 predicate
-    const result = (isSystemOnly || types.includes(deviceType)) && allowedScopes.includes(scope);
+    const result =
+      (isSystemOnly || types.includes(deviceType)) && allowedScopes.includes(check.scope);
     expect(result).toBe(true);
   });
 
   it('filter predicate: without isSystemOnly, mass-storage+system check is skipped for ipod', () => {
     const check = makeFakeCheck('fake-system-ms', ['mass-storage'], 'system');
     const types = (check.applicableTo ?? ['ipod']) as string[];
-    const scope = check.scope ?? 'device';
 
-    const allowedScopes: ReadonlyArray<'system' | 'device'> = ['system'];
+    const allowedScopes: ReadonlyArray<DiagnosticScope> = ['system'];
     const deviceType: string = 'ipod';
 
     // Old predicate without bypass
-    const result = types.includes(deviceType) && allowedScopes.includes(scope);
+    const result = types.includes(deviceType) && allowedScopes.includes(check.scope);
     expect(result).toBe(false);
   });
 
-  it('device-scope check is excluded when scopes = [system]', async () => {
-    // The real registry has device-scope checks. When scopes=['system'],
-    // none of the device-scope checks should appear in the report.
+  it('device-side checks are excluded when scopes = [system]', async () => {
+    // The real registry has device-side checks. When scopes=['system'],
+    // none of them should appear in the report.
     const report = await runDiagnostics({
       mountPoint: '/fake/mount',
       deviceType: 'ipod',
@@ -110,21 +111,21 @@ describe('runDiagnostics — system-scope filter bypass (Change 1)', () => {
     });
 
     for (const c of report.checks) {
-      expect(c.scope).not.toBe('device');
+      expect(c.scope).toBe('system');
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// Change 2: db-open guard
-// When scopes does not include 'device', IpodDatabase.open must NOT be called.
-// We verify this by passing a non-existent mountPoint with no injected db:
-// if the guard is absent, IpodDatabase.open() would be attempted and would
-// throw (caught internally). If the guard works, no error should occur and
-// system-scope checks should still produce results.
+// db-open guard
+// When scopes does not include any device-side scope, IpodDatabase.open
+// must NOT be called. We verify this by passing a non-existent mountPoint
+// with no injected db: if the guard is absent, IpodDatabase.open() would
+// be attempted and would throw (caught internally). If the guard works, no
+// error should occur and system-scope checks should still produce results.
 // ---------------------------------------------------------------------------
 
-describe('runDiagnostics — db-open guard (Change 2)', () => {
+describe('runDiagnostics — db-open guard', () => {
   it('completes without error when scopes=[system] and no db is injected (non-existent mount)', async () => {
     // /nonexistent/mount does not exist — IpodDatabase.open() would fail on it.
     // With the guard in place, open() is never called so this succeeds.
@@ -159,7 +160,7 @@ describe('runDiagnostics — db-open guard (Change 2)', () => {
     const report = await runDiagnostics({
       mountPoint: '/nonexistent/mount/point',
       deviceType: 'mass-storage',
-      scopes: ['system', 'device'],
+      scopes: ['system', 'device-readiness', 'database-health'],
     });
 
     // Should complete without error — open() is only for ipod
@@ -181,10 +182,22 @@ describe('runDiagnostics — db-open guard (Change 2)', () => {
       mountPoint: '/fake/mount',
       deviceType: 'ipod',
       db,
-      scopes: ['system', 'device'],
+      scopes: ['system', 'device-readiness', 'database-health'],
     });
 
     // close() must NOT be called for externally-injected db
     expect(closeCalled).toBe(false);
+  });
+
+  it('opens the DB when scopes include a device-side scope (database-health)', async () => {
+    // No db injected, non-existent mount → open() is attempted and fails
+    // silently (caught internally). The report should still complete with
+    // no db and Unknown model, confirming the open path was hit.
+    const report = await runDiagnostics({
+      mountPoint: '/nonexistent/mount/point',
+      deviceType: 'ipod',
+      scopes: ['database-health'],
+    });
+    expect(report.deviceModel).toBe('Unknown');
   });
 });

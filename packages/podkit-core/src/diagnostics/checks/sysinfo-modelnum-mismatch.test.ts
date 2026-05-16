@@ -131,7 +131,7 @@ const NANO_2G_USB_MODEL: IpodModel = {
 describe('sysinfoModelnumMismatchCheck metadata', () => {
   it('has the expected id, scope, applicableTo, and repair shape', () => {
     expect(sysinfoModelnumMismatchCheck.id).toBe('sysinfo-modelnum-mismatch');
-    expect(sysinfoModelnumMismatchCheck.scope).toBe('device');
+    expect(sysinfoModelnumMismatchCheck.scope).toBe('database-health');
     expect(sysinfoModelnumMismatchCheck.applicableTo).toEqual(['ipod']);
     expect(sysinfoModelnumMismatchCheck.repair).toBeDefined();
   });

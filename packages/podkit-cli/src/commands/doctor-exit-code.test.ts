@@ -54,7 +54,7 @@ interface FakeCheck {
   repairable: boolean;
   hasRepair: boolean;
   repairOnly: boolean;
-  scope: 'system' | 'device';
+  scope: 'system' | 'device-readiness' | 'database-health';
   details?: Record<string, unknown>;
 }
 
@@ -176,7 +176,9 @@ interface FakeCoreOptions {
     /** Override healthy explicitly; default follows the every-pass-or-skip rule. */
     healthy?: boolean;
     /** Capture the scopes argument passed to runDiagnostics. */
-    captureScopes?: (scopes: ReadonlyArray<'system' | 'device'>) => void;
+    captureScopes?: (
+      scopes: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>
+    ) => void;
   };
   /** Result returned from core.checkReadiness. */
   readiness?: FakeReadiness;
@@ -279,12 +281,14 @@ function makeFakeCore(opts: FakeCoreOptions = {}): unknown {
       open: async () => fakeIpod,
     },
     runDiagnostics: async (input: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint: string;
       deviceType: string;
     }) => {
       if (opts.diagnosticsThrows) throw new Error('synthetic diagnostics failure');
-      opts.report?.captureScopes?.(input.scopes ?? ['system', 'device']);
+      opts.report?.captureScopes?.(
+        input.scopes ?? ['system', 'device-readiness', 'database-health']
+      );
       const checks = opts.report?.checks ?? [];
       const healthy =
         opts.report?.healthy ?? checks.every((c) => c.status === 'pass' || c.status === 'skip');
@@ -314,7 +318,7 @@ function check(partial: Partial<FakeCheck> & { id: string; status: CheckStatus }
     repairable: false,
     hasRepair: false,
     repairOnly: false,
-    scope: 'device',
+    scope: 'database-health',
     ...partial,
   };
 }
@@ -348,8 +352,8 @@ describe('AC #2: readiness ready + every check pass', () => {
         checks: [
           check({ id: 'codec-encoders', status: 'pass', scope: 'system' }),
           check({ id: 'inquiry-methods', status: 'pass', scope: 'system' }),
-          check({ id: 'artwork-rebuild', status: 'pass', scope: 'device' }),
-          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'device' }),
+          check({ id: 'artwork-rebuild', status: 'pass', scope: 'database-health' }),
+          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'database-health' }),
         ],
       },
     });
@@ -379,7 +383,7 @@ describe('AC #2: readiness ready + every check pass', () => {
       report: {
         checks: [
           check({ id: 'codec-encoders', status: 'pass', scope: 'system' }),
-          check({ id: 'orphan-files-mass-storage', status: 'pass', scope: 'device' }),
+          check({ id: 'orphan-files-mass-storage', status: 'pass', scope: 'database-health' }),
         ],
       },
     });
@@ -416,10 +420,10 @@ describe('AC #3: readiness ready + one device check fails', () => {
           check({
             id: 'artwork-rebuild',
             status: 'fail',
-            scope: 'device',
+            scope: 'database-health',
             summary: 'Artwork DB has corrupt entries',
           }),
-          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'device' }),
+          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'database-health' }),
         ],
       },
     });
@@ -461,7 +465,7 @@ describe('AC #4: readiness ready + one device check warns', () => {
           check({
             id: 'orphan-files',
             status: 'warn',
-            scope: 'device',
+            scope: 'database-health',
             summary: '127 orphan files (4.2 MiB)',
           }),
         ],
@@ -492,7 +496,7 @@ describe('AC #5: system-check warn with and without --no-system', () => {
   it('legacy --scope all + system check warn → healthy=false, exit 2', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
-    const capturedScopes: ReadonlyArray<'system' | 'device'>[] = [];
+    const capturedScopes: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>[] = [];
     const fakeCore = makeFakeCore({
       report: {
         checks: [
@@ -502,7 +506,7 @@ describe('AC #5: system-check warn with and without --no-system', () => {
             scope: 'system',
             summary: 'libusb missing — falling back to SCSI',
           }),
-          check({ id: 'artwork-rebuild', status: 'pass', scope: 'device' }),
+          check({ id: 'artwork-rebuild', status: 'pass', scope: 'database-health' }),
         ],
         captureScopes: (s) => capturedScopes.push(s),
       },
@@ -523,19 +527,20 @@ describe('AC #5: system-check warn with and without --no-system', () => {
     const payload = stdout.json<DoctorJsonOutput>();
     expect(payload.healthy).toBe(false);
     expect(exitCode.get()).toBe(2);
-    // Should have requested both scopes
-    expect(capturedScopes[0]).toEqual(['system', 'device']);
+    // Should have requested all three scopes
+    expect(capturedScopes[0]).toEqual(['system', 'device-readiness', 'database-health']);
   });
 
   it('--no-system excludes the system warn from the run → healthy=true, exit unset', async () => {
     const ctx = makeContext({ device: 'ipod' });
     const { out, stdout, exitCode } = makeOut();
-    const capturedScopes: ReadonlyArray<'system' | 'device'>[] = [];
-    // With --no-system, runDiagnostics receives ['device'] — so the system
-    // warn is never present in the report. The CLI computes healthy=true.
+    const capturedScopes: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>[] = [];
+    // With --no-system, runDiagnostics receives the two device-side scopes
+    // — so the system warn is never present in the report. The CLI computes
+    // healthy=true.
     const fakeCore = makeFakeCore({
       report: {
-        checks: [check({ id: 'artwork-rebuild', status: 'pass', scope: 'device' })],
+        checks: [check({ id: 'artwork-rebuild', status: 'pass', scope: 'database-health' })],
         captureScopes: (s) => capturedScopes.push(s),
       },
     });
@@ -555,7 +560,7 @@ describe('AC #5: system-check warn with and without --no-system', () => {
     const payload = stdout.json<DoctorJsonOutput>();
     expect(payload.healthy).toBe(true);
     expect(exitCode.get()).toBeUndefined();
-    expect(capturedScopes[0]).toEqual(['device']);
+    expect(capturedScopes[0]).toEqual(['device-readiness', 'database-health']);
   });
 });
 
@@ -615,7 +620,7 @@ describe('AC #7: readiness ready + every check skips', () => {
         checks: [
           check({ id: 'codec-encoders', status: 'skip', scope: 'system' }),
           check({ id: 'video-encoder', status: 'skip', scope: 'system' }),
-          check({ id: 'artwork-rebuild', status: 'skip', scope: 'device' }),
+          check({ id: 'artwork-rebuild', status: 'skip', scope: 'database-health' }),
         ],
       },
     });
@@ -703,17 +708,17 @@ describe('AC #9: human-mode issue count', () => {
             id: 'artwork-rebuild',
             name: 'Artwork rebuild',
             status: 'fail',
-            scope: 'device',
+            scope: 'database-health',
             summary: 'broken',
           }),
           check({
             id: 'orphan-files',
             name: 'Orphan files',
             status: 'warn',
-            scope: 'device',
+            scope: 'database-health',
             summary: '5 orphans',
           }),
-          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'device' }),
+          check({ id: 'sysinfo-consistency', status: 'pass', scope: 'database-health' }),
         ],
       },
     });
@@ -748,14 +753,14 @@ describe('AC #10: mass-storage with no orphans + --no-system', () => {
   it('Echo Mini, orphan-files-mass-storage pass, --no-system → healthy=true, exit unset', async () => {
     const ctx = makeContext({ device: 'echo' });
     const { out, stdout, exitCode } = makeOut();
-    const capturedScopes: ReadonlyArray<'system' | 'device'>[] = [];
+    const capturedScopes: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>[] = [];
     const fakeCore = makeFakeCore({
       report: {
         checks: [
           check({
             id: 'orphan-files-mass-storage',
             status: 'pass',
-            scope: 'device',
+            scope: 'database-health',
             summary: 'No orphan files',
           }),
         ],
@@ -778,7 +783,7 @@ describe('AC #10: mass-storage with no orphans + --no-system', () => {
     const payload = stdout.json<DoctorJsonOutput>();
     expect(payload.healthy).toBe(true);
     expect(exitCode.get()).toBeUndefined();
-    expect(capturedScopes[0]).toEqual(['device']);
+    expect(capturedScopes[0]).toEqual(['device-readiness', 'database-health']);
   });
 });
 
@@ -794,7 +799,7 @@ describe('AC #11: mass-storage with orphans (warn)', () => {
           check({
             id: 'orphan-files-mass-storage',
             status: 'warn',
-            scope: 'device',
+            scope: 'database-health',
             summary: '12 orphan files',
           }),
         ],
@@ -919,7 +924,7 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'artwork-rebuild', status: 'fail', scope: 'device' })],
+          checks: [check({ id: 'artwork-rebuild', status: 'fail', scope: 'database-health' })],
         },
       });
       await runDoctor(
@@ -940,7 +945,7 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'orphan-files', status: 'warn', scope: 'device' })],
+          checks: [check({ id: 'orphan-files', status: 'warn', scope: 'database-health' })],
         },
       });
       await runDoctor(
@@ -982,7 +987,7 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'artwork-rebuild', status: 'pass', scope: 'device' })],
+          checks: [check({ id: 'artwork-rebuild', status: 'pass', scope: 'database-health' })],
         },
       });
       await runDoctor(
@@ -1032,7 +1037,7 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'artwork-rebuild', status: 'skip', scope: 'device' })],
+          checks: [check({ id: 'artwork-rebuild', status: 'skip', scope: 'database-health' })],
         },
       });
       await runDoctor(
@@ -1053,7 +1058,9 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'orphan-files-mass-storage', status: 'pass', scope: 'device' })],
+          checks: [
+            check({ id: 'orphan-files-mass-storage', status: 'pass', scope: 'database-health' }),
+          ],
         },
       });
       await runDoctor(
@@ -1074,7 +1081,9 @@ const matrixCases: MatrixCase[] = [
       const { out, stdout, exitCode } = makeOut();
       const fakeCore = makeFakeCore({
         report: {
-          checks: [check({ id: 'orphan-files-mass-storage', status: 'warn', scope: 'device' })],
+          checks: [
+            check({ id: 'orphan-files-mass-storage', status: 'warn', scope: 'database-health' }),
+          ],
         },
       });
       await runDoctor(

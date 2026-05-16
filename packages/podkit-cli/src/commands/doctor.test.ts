@@ -136,10 +136,17 @@ describe('doctor --scope option', () => {
 // outcome pair (json true/false ⇒ identical scopes).
 
 describe('resolveDoctorScopes()', () => {
+  // The user-facing `--scope` flag still accepts `system | device | all`.
+  // After the 3-way scope refactor, `device` expands to both device-side
+  // internal scopes (`device-readiness` + `database-health`).
+  type InternalScope = 'system' | 'device-readiness' | 'database-health';
+  const DEVICE: ReadonlyArray<InternalScope> = ['device-readiness', 'database-health'];
+  const ALL: ReadonlyArray<InternalScope> = ['system', ...DEVICE];
+
   const cases: Array<{
     scope: 'system' | 'device' | 'all' | undefined;
     system: boolean | undefined;
-    expected: ReadonlyArray<'system' | 'device'>;
+    expected: ReadonlyArray<InternalScope>;
     label: string;
   }> = [
     { scope: 'system', system: undefined, expected: ['system'], label: '--scope system' },
@@ -150,43 +157,43 @@ describe('resolveDoctorScopes()', () => {
       expected: ['system'],
       label: '--scope system + --no-system (scope wins)',
     },
-    { scope: 'device', system: undefined, expected: ['device'], label: '--scope device' },
-    { scope: 'device', system: true, expected: ['device'], label: '--scope device (system=true)' },
+    { scope: 'device', system: undefined, expected: DEVICE, label: '--scope device' },
+    { scope: 'device', system: true, expected: DEVICE, label: '--scope device (system=true)' },
     {
       scope: 'device',
       system: false,
-      expected: ['device'],
+      expected: DEVICE,
       label: '--scope device + --no-system',
     },
     {
       scope: 'all',
       system: undefined,
-      expected: ['system', 'device'],
+      expected: ALL,
       label: '--scope all (default)',
     },
     {
       scope: 'all',
       system: true,
-      expected: ['system', 'device'],
+      expected: ALL,
       label: '--scope all + system=true',
     },
-    { scope: 'all', system: false, expected: ['device'], label: '--scope all + --no-system' },
+    { scope: 'all', system: false, expected: DEVICE, label: '--scope all + --no-system' },
     {
       scope: undefined,
       system: undefined,
-      expected: ['system', 'device'],
+      expected: ALL,
       label: 'unset scope (legacy default)',
     },
     {
       scope: undefined,
       system: true,
-      expected: ['system', 'device'],
+      expected: ALL,
       label: 'unset scope + system=true (legacy)',
     },
     {
       scope: undefined,
       system: false,
-      expected: ['device'],
+      expected: DEVICE,
       label: 'unset scope + --no-system (legacy)',
     },
   ];
@@ -208,7 +215,7 @@ interface FakeCheckResult {
   repairable: boolean;
   hasRepair: boolean;
   repairOnly: boolean;
-  scope: 'system' | 'device';
+  scope: 'system' | 'device-readiness' | 'database-health';
   details?: Record<string, unknown>;
   docsUrl?: string;
 }
@@ -216,14 +223,14 @@ interface FakeCheckResult {
 function makeFakeCore(opts: {
   checks: FakeCheckResult[];
   capture: {
-    scopes?: ReadonlyArray<'system' | 'device'>;
+    scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
     mountPoint?: string;
     deviceType?: string;
   };
 }): unknown {
   return {
     runDiagnostics: async (input: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint: string;
       deviceType: string;
     }) => {
@@ -264,7 +271,7 @@ function makeTestOutputContext(): { out: OutputContext; exitSink: BufferExitCode
 describe('runSystemOnlyDoctor()', () => {
   it.concurrent('forwards scopes=[system] and an empty mountPoint to runDiagnostics', async () => {
     const capture: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint?: string;
       deviceType?: string;
     } = {};
@@ -301,7 +308,7 @@ describe('runSystemOnlyDoctor()', () => {
 
   it.concurrent('sets exit code 2 when a system check fails', async () => {
     const capture: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint?: string;
       deviceType?: string;
     } = {};
@@ -335,7 +342,7 @@ describe('runSystemOnlyDoctor()', () => {
 
   it.concurrent('sets exit code 2 when a system check warns', async () => {
     const capture: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint?: string;
       deviceType?: string;
     } = {};
@@ -370,7 +377,7 @@ describe('runSystemOnlyDoctor()', () => {
 
   it.concurrent('emits JSON envelope containing only system checks + healthy flag', async () => {
     const capture: {
-      scopes?: ReadonlyArray<'system' | 'device'>;
+      scopes?: ReadonlyArray<'system' | 'device-readiness' | 'database-health'>;
       mountPoint?: string;
       deviceType?: string;
     } = {};

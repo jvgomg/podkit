@@ -26,7 +26,7 @@ export const artworkResetCheck: DiagnosticCheck = {
   id: 'artwork-reset',
   name: 'Artwork Reset',
   applicableTo: ['ipod'],
-  category: 'database',
+  scope: 'database-health',
   repairOnly: true,
 
   async check(_ctx: DiagnosticContext): Promise<CheckResult> {

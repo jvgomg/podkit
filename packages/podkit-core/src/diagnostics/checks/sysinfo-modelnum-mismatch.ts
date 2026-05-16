@@ -278,7 +278,7 @@ export async function runSysinfoModelnumRepair(
   ctx: RepairContext,
   options: RepairRunOptions | undefined,
   fs: {
-    existsSync: typeof existsSync;
+    existsSync: (path: string) => boolean;
     readFileSync: (path: string, enc: 'utf-8') => string;
     writeFileSync: (path: string, data: string, enc: 'utf-8') => void;
     copyFileSync: (src: string, dest: string) => void;
@@ -426,8 +426,7 @@ export async function runSysinfoModelnumRepair(
 export const sysinfoModelnumMismatchCheck: DiagnosticCheck = {
   id: 'sysinfo-modelnum-mismatch',
   name: 'SysInfo ModelNumStr vs firmware identity',
-  scope: 'device',
-  category: 'database',
+  scope: 'database-health',
   applicableTo: ['ipod'],
 
   async check(ctx: DiagnosticContext): Promise<CheckResult> {

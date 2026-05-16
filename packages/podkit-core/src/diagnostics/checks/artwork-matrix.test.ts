@@ -316,16 +316,14 @@ describe('AC#15 — both artwork checks are iPod-only device-scope', () => {
     expect(artworkResetCheck.applicableTo).toEqual(['ipod']);
   });
 
-  // Both checks intentionally omit `scope:` — the registry default is 'device'.
-  // The runner in diagnostics/index.ts resolves `c.scope ?? 'device'`. Pin
-  // the resolved value rather than the raw declaration so the contract sticks
-  // even if a default ever changes.
-  it('artworkRebuildCheck resolves to scope=device (default)', () => {
-    expect(artworkRebuildCheck.scope ?? 'device').toBe('device');
+  // Both checks declare scope: 'database-health' explicitly — the field is
+  // required on every DiagnosticCheck (Approach A, no defaulting).
+  it('artworkRebuildCheck declares scope=database-health', () => {
+    expect(artworkRebuildCheck.scope).toBe('database-health');
   });
 
-  it('artworkResetCheck resolves to scope=device (default)', () => {
-    expect(artworkResetCheck.scope ?? 'device').toBe('device');
+  it('artworkResetCheck declares scope=database-health', () => {
+    expect(artworkResetCheck.scope).toBe('database-health');
   });
 
   it('artworkRebuildCheck has a repair (rebuild) with source-collection requirement', () => {
