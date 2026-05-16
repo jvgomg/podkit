@@ -1,10 +1,10 @@
 ---
 id: TASK-322.01
 title: 'Test VM Lima yaml (minimal, binary-only)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-12 08:18'
-updated_date: '2026-05-13 22:48'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

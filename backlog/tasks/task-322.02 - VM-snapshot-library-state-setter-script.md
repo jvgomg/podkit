@@ -1,10 +1,10 @@
 ---
 id: TASK-322.02
 title: VM snapshot library + state-setter script
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-12 08:18'
-updated_date: '2026-05-14 19:30'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

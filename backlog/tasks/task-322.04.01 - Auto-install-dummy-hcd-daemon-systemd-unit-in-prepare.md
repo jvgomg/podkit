@@ -1,10 +1,10 @@
 ---
 id: TASK-322.04.01
 title: Auto-install dummy-hcd-daemon systemd unit in prepare()
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-14 22:37'
-updated_date: '2026-05-14 22:47'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

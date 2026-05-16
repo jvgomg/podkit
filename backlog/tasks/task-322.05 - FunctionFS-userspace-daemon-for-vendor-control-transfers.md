@@ -1,10 +1,10 @@
 ---
 id: TASK-322.05
 title: FunctionFS userspace daemon for vendor control transfers
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-12 09:35'
-updated_date: '2026-05-13 23:21'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

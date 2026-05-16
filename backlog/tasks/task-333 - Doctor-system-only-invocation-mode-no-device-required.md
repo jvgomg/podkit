@@ -1,10 +1,10 @@
 ---
 id: TASK-333
 title: 'Doctor: system-only invocation mode (no device required)'
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-14 19:21'
-updated_date: '2026-05-14 20:13'
+updated_date: '2026-05-16 00:39'
 labels:
   - doctor
   - cli

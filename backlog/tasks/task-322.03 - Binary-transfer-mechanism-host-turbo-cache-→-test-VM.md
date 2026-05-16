@@ -1,10 +1,10 @@
 ---
 id: TASK-322.03
 title: Binary transfer mechanism (host turbo cache → test VM)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-12 08:19'
-updated_date: '2026-05-13 22:54'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

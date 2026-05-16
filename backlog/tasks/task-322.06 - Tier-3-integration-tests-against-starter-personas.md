@@ -1,10 +1,10 @@
 ---
 id: TASK-322.06
 title: Tier 3 integration tests against starter personas
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-12 09:35'
-updated_date: '2026-05-14 19:30'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

@@ -1,10 +1,10 @@
 ---
 id: TASK-322.05.01
 title: FunctionFS descriptor handshake — close USB synthesis loop (live-VM)
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-14 19:22'
-updated_date: '2026-05-14 20:44'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage

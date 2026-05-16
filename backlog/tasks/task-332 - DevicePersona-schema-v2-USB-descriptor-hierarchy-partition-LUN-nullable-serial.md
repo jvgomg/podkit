@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-05-13 22:31'
+updated_date: '2026-05-16 00:40'
 labels:
   - testing
   - vm-coverage
@@ -135,3 +136,9 @@ Sony NW-HD5 advertises `iSerialNumber = 0` on USB (no serial-descriptor index as
 - [ ] #9 ADR-017 either updated in place (recommended — single source of truth) or supplemented with an addendum documenting the v2 schema
 - [ ] #10 TASK-322.05 (FunctionFS daemon) becomes implementable against the new schema — cross-link this ticket from there
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**Drift note (2026-05-16):** Description says "Block TASK-322.05 (FunctionFS daemon) on this" but TASK-322.05 + TASK-322.05.01 are now both Done. The daemon shipped using the current flat `usbDescriptor` shape, which was sufficient for two of the three starter personas (ipod-video-5g, ipod-nano-7g) to enumerate end-to-end via FunctionFS. The schema-v2 work in this task is still valuable for: (a) the echo-mini dual-LUN gap (Gap 2 in this description), (b) future devices that need richer descriptor data, (c) the sony-nw-hd5 null-serial cleanup (Gap 3). It is no longer a hard blocker on 322.05's daemon.
+<!-- SECTION:NOTES:END -->

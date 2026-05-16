@@ -1,10 +1,10 @@
 ---
 id: TASK-322.02.01
 title: Lima 2.x snapshot support on Apple Silicon (vz driver) — choose strategy
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-14 19:29'
-updated_date: '2026-05-14 20:41'
+updated_date: '2026-05-16 00:39'
 labels:
   - testing
   - vm-coverage
