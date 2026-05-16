@@ -3,10 +3,10 @@ id: TASK-317.04
 title: >-
   New diagnostic: detect SysInfo ModelNumStr vs firmware serial mismatch +
   repair
-status: In Progress
+status: Done
 assignee: []
 created_date: '2026-05-09 15:21'
-updated_date: '2026-05-16 10:50'
+updated_date: '2026-05-16 11:18'
 labels:
   - doctor
   - diagnostics

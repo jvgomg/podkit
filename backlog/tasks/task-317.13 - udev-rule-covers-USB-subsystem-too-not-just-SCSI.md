@@ -1,9 +1,10 @@
 ---
 id: TASK-317.13
 title: 'udev rule covers USB subsystem too, not just SCSI'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 20:30'
+updated_date: '2026-05-16 11:18'
 labels:
   - linux
   - udev

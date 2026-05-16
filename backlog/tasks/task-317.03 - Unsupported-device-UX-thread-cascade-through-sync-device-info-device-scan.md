@@ -1,10 +1,10 @@
 ---
 id: TASK-317.03
 title: 'Unsupported-device UX + thread cascade through sync, device info, device scan'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 15:20'
-updated_date: '2026-05-09 15:42'
+updated_date: '2026-05-16 11:18'
 labels:
   - ux
   - safety
