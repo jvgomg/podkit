@@ -8,6 +8,7 @@ import { checkDatabase } from './stages/database.js';
 import { skipRemaining, determineLevel } from './determine-level.js';
 import type { ReadinessInput, ReadinessResult, ReadinessStageResult } from './types.js';
 import type { IpodModel } from '@podkit/devices-ipod';
+import { isFilesystemUnsupportedHere, formatHfsplusOnLinuxRefusal } from '../filesystem-policy.js';
 
 export { checkIpodStructure } from './stages/mount.js';
 export { checkSysInfo } from './stages/sysinfo.js';
@@ -83,6 +84,34 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   });
 
   // Stage 3: Has Filesystem
+  //
+  // Refuse HFS+ iPods on Linux up-front: the kernel hfsplus driver is
+  // read-only on journaled volumes (the iPod default), udev/blkid don't
+  // surface a UUID, and udisksctl picks a generic `/media/$USER/disk` mount
+  // point. Trying to "make it work" patches three friction points without
+  // fixing any of them; refusing cleanly with a docs link is the policy.
+  // See `filesystem-policy.ts` and TASK-317.12.
+  if (isFilesystemUnsupportedHere(device.filesystem, input.platform)) {
+    stages.push({
+      stage: 'filesystem',
+      status: 'fail',
+      summary: `${device.filesystem} is not supported on Linux`,
+      details: {
+        filesystem: device.filesystem,
+        platform: input.platform ?? process.platform,
+        unsupported: true,
+      },
+    });
+    // Deliberately do NOT push placeholder "Skipped — previous check failed"
+    // rows for mount/sysinfo/database — TASK-317.12 calls those out as
+    // misleading wording (the cause is the filesystem, not a prior failure).
+    return {
+      level: 'unsupported',
+      stages,
+      unsupportedReason: formatHfsplusOnLinuxRefusal().join('\n'),
+      ...(input.usbModel ? { usbModel: input.usbModel } : {}),
+    };
+  }
   // If we have a volumeName, the filesystem is recognized
   if (device.volumeName) {
     stages.push({

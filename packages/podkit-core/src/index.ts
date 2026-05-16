@@ -585,6 +585,13 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './device/index.js';
 
+// Cross-platform filesystem policy (HFS+-on-Linux refusal — TASK-317.12)
+export {
+  isFilesystemUnsupportedHere,
+  formatHfsplusOnLinuxRefusal,
+  LINUX_FILESYSTEMS_DOCS_URL,
+} from './device/index.js';
+
 // USB enumeration
 export type { EnumeratedUsbDevice } from './device/index.js';
 export { enumerateUsb } from './device/index.js';

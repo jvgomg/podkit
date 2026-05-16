@@ -482,6 +482,71 @@ describe('checkReadiness', () => {
     });
   });
 
+  describe('HFS+ on Linux refusal (TASK-317.12)', () => {
+    it('returns level "unsupported" for HFS+ on Linux with the canonical reason text', async () => {
+      const device = createDevice({
+        mountPoint: tmpDir,
+        filesystem: 'hfsplus',
+      });
+      const result = await checkReadiness({ device, platform: 'linux' });
+      expect(result.level).toBe('unsupported');
+      // Main's API surfaces the reason as a `\n`-joined multi-line string in
+      // `unsupportedReason`, not a discriminated-union payload — assert the
+      // canonical refusal text appears verbatim.
+      expect(result.unsupportedReason).toContain(
+        'Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.'
+      );
+      expect(result.unsupportedReason).toContain('reformat it to FAT32');
+      expect(result.unsupportedReason).toContain(
+        'https://docs.podkit.app/devices/linux-filesystems'
+      );
+    });
+
+    it('does NOT push placeholder "Skipped — previous check failed" rows', async () => {
+      const device = createDevice({
+        mountPoint: tmpDir,
+        filesystem: 'hfsplus',
+      });
+      const result = await checkReadiness({ device, platform: 'linux' });
+      // Should have only usb + partition + filesystem (the latter as fail).
+      // Critically, no `mount`/`sysinfo`/`database` skip rows — those would
+      // render as misleading "Skipped — previous check failed" lines.
+      expect(result.stages.map((s) => s.stage)).toEqual(['usb', 'partition', 'filesystem']);
+      const fsStage = result.stages.find((s) => s.stage === 'filesystem');
+      expect(fsStage?.status).toBe('fail');
+      expect(fsStage?.summary).toContain('hfsplus');
+      // No rows say the misleading "Skipped — previous check failed" text.
+      for (const stage of result.stages) {
+        expect(stage.summary).not.toContain('previous check failed');
+      }
+    });
+
+    it('does NOT refuse HFS+ on macOS — refusal is Linux-only', async () => {
+      createIpodStructure(tmpDir);
+      const device = createDevice({
+        mountPoint: tmpDir,
+        filesystem: 'hfsplus',
+      });
+      const result = await checkReadiness({ device, platform: 'darwin' });
+      // Pipeline runs to completion as if filesystem were absent — no
+      // `unsupported` short-circuit fires.
+      expect(result.level).not.toBe('unsupported');
+      expect(result.unsupportedReason).toBeUndefined();
+      expect(result.stages.map((s) => s.stage)).toContain('mount');
+    });
+
+    it('does NOT refuse VFAT on Linux', async () => {
+      createIpodStructure(tmpDir);
+      const device = createDevice({
+        mountPoint: tmpDir,
+        filesystem: 'vfat',
+      });
+      const result = await checkReadiness({ device, platform: 'linux' });
+      expect(result.level).not.toBe('unsupported');
+      expect(result.unsupportedReason).toBeUndefined();
+    });
+  });
+
   describe('SysInfo behavior', () => {
     it('fails for missing SysInfo and SysInfoExtended but continues to database check (non-blocking)', async () => {
       createIpodStructure(tmpDir);

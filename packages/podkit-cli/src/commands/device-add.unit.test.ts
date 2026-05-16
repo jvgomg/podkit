@@ -410,6 +410,225 @@ describe('runDeviceAdd: iPod flow', () => {
 });
 
 // =============================================================================
+// HFS+ on Linux refusal (TASK-317.12)
+// =============================================================================
+
+describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'device-add-hfsplus-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  interface AddOutputErrorWithDetails extends AddOutputError {
+    details?: { filesystem?: string; platform?: string; path?: string };
+  }
+
+  it('refuses with UNSUPPORTED_FILESYSTEM_ON_LINUX when --path points at HFS+ on Linux', async () => {
+    const ctx = makeContext({ device: 'nano4g' });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          listDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: '',
+              volumeUuid: '',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'hfsplus',
+            },
+          ],
+        }),
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: dir }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('UNSUPPORTED_FILESYSTEM_ON_LINUX');
+    expect(err.error).toContain(
+      'Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.'
+    );
+    expect(err.error).toContain('To use this iPod with podkit on Linux, reformat it to FAT32.');
+    expect(err.error).toContain('https://docs.podkit.app/devices/linux-filesystems');
+    expect(err.error).toContain(
+      '(podkit fully supports HFS+ iPods on macOS — this is a Linux-only limitation.)'
+    );
+    expect(err.details?.filesystem).toBe('hfsplus');
+    expect(err.details?.platform).toBe('linux');
+    expect(err.details?.path).toBe(dir);
+  });
+
+  it('refuses scan-found HFS+ iPod on Linux before any mount attempt', async () => {
+    const ctx = makeContext({ device: 'nano4g' });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: '',
+              volumeUuid: '',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: '/media/james/disk',
+              filesystem: 'hfsplus',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+          mount: async () => {
+            throw new Error('mount() should not be called for HFS+ on Linux');
+          },
+        }),
+      assessIdentity: async () => {
+        throw new Error('assessIdentity() should not be called for HFS+ on Linux');
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod' }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('UNSUPPORTED_FILESYSTEM_ON_LINUX');
+    expect(err.details?.filesystem).toBe('hfsplus');
+    expect(err.details?.path).toBe('/media/james/disk');
+  });
+
+  it('does NOT refuse HFS+ on macOS (refusal is Linux-only)', async () => {
+    // The runner falls through to identity assessment + DB init. To avoid
+    // those touching real disks/USB, stub assessIdentity + ipodDatabase.
+    // The only assertion that matters here is that no
+    // UNSUPPORTED_FILESYSTEM_ON_LINUX error is raised.
+    const ctx = makeContext({ device: 'macipod', configPath: join(dir, 'config.toml') });
+    const { out, stdout } = makeOut();
+
+    const stubModel: IpodModel = {
+      displayName: 'iPod 5G Video',
+      generationId: 'video_5g',
+      checksumType: 'none',
+      source: 'usb',
+    };
+    const stubAssessment: IpodIdentityAssessment = {
+      model: stubModel,
+      capabilities: {
+        artworkSources: ['database'],
+        artworkMaxResolution: 320,
+        supportedAudioCodecs: ['aac', 'mp3'],
+        supportsVideo: true,
+        audioNormalization: 'soundcheck',
+        supportsAlbumArtistBrowsing: false,
+      },
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'present',
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    };
+    const deps: DeviceAddDeps = {
+      platform: 'darwin',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          listDevices: async () => [
+            {
+              identifier: 'disk6s2',
+              volumeName: 'TERAPOD',
+              volumeUuid: 'AAAA-BBBB',
+              size: 80_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'hfsplus',
+            },
+          ],
+          findIpodDevices: async () => [],
+        }),
+      assessIdentity: async () => stubAssessment,
+      ipodDatabase: {
+        hasDatabase: async () => true,
+        open: async () => ({ trackCount: 0, close: () => {} }),
+        initializeIpod: async () => ({ close: () => {} }),
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: dir, yes: true }, out, deps);
+    // No assertion on success/failure — only that the HFS+-on-Linux refusal
+    // does NOT fire on macOS.
+    const text = stdout.text();
+    expect(text).not.toContain('UNSUPPORTED_FILESYSTEM_ON_LINUX');
+    expect(text).not.toContain('podkit does not support on Linux');
+  });
+
+  it('does NOT refuse VFAT on Linux (only HFS+ is the policy)', async () => {
+    const ctx = makeContext({ device: 'fatipod', configPath: join(dir, 'config.toml') });
+    const { out, stdout, exitCode } = makeOut();
+
+    const stubModel: IpodModel = {
+      displayName: 'iPod nano (3rd Generation)',
+      generationId: 'nano_3g',
+      checksumType: 'none',
+      source: 'usb',
+    };
+    const stubAssessment: IpodIdentityAssessment = {
+      model: stubModel,
+      capabilities: {
+        artworkSources: ['database'],
+        artworkMaxResolution: 176,
+        supportedAudioCodecs: ['aac', 'mp3'],
+        supportsVideo: true,
+        audioNormalization: 'soundcheck',
+        supportsAlbumArtistBrowsing: false,
+      },
+      needsChecksum: false,
+      checksumType: 'none',
+      firmwareInquiry: 'present',
+      existing: null,
+      usbFingerprint: null,
+      sysInfoModelNumber: undefined,
+    };
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          listDevices: async () => [
+            {
+              identifier: 'sdb2',
+              volumeName: 'IPOD',
+              volumeUuid: 'AAAA-BBBB',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'vfat',
+            },
+          ],
+          findIpodDevices: async () => [],
+        }),
+      assessIdentity: async () => stubAssessment,
+      ipodDatabase: {
+        hasDatabase: async () => true,
+        open: async () => ({ trackCount: 0, close: () => {} }),
+        initializeIpod: async () => ({ close: () => {} }),
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: dir, yes: true }, out, deps);
+    const text = stdout.text();
+    expect(text).not.toContain('UNSUPPORTED_FILESYSTEM_ON_LINUX');
+    expect(exitCode.get()).toBeUndefined();
+  });
+});
+
+// =============================================================================
 // AC #1 + #5: enumeration with mocked USB walk (verbatim from prior file)
 // =============================================================================
 

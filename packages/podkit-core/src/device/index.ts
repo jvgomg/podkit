@@ -143,6 +143,13 @@ export {
   STAGE_DISPLAY_NAMES,
 } from './readiness.js';
 
+// Cross-platform filesystem policy (HFS+-on-Linux refusal — TASK-317.12)
+export {
+  isFilesystemUnsupportedHere,
+  formatHfsplusOnLinuxRefusal,
+  LINUX_FILESYSTEMS_DOCS_URL,
+} from './filesystem-policy.js';
+
 // iPod identity assessment (cascade-resolved model + capabilities + inquiry state)
 export type {
   IpodIdentityAssessment,

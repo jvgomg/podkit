@@ -81,6 +81,13 @@ export interface ReadinessInput {
    * and surfaces the canonical reason on the result.
    */
   unsupportedReason?: string;
+  /**
+   * Platform override for filesystem-policy checks (TASK-317.12). Defaults to
+   * `process.platform`. Production code never sets this — it exists so tests
+   * can exercise the HFS+-on-Linux refusal from a macOS or Linux runner
+   * without mutating `process.platform`.
+   */
+  platform?: NodeJS.Platform | string;
 }
 
 // ── SysInfo check result ─────────────────────────────────────────────────────

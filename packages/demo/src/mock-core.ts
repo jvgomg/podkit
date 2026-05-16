@@ -2402,6 +2402,21 @@ export function getChecksumTypeByModelNumber(_modelNumStr: string): string | und
   return undefined;
 }
 
+// HFS+-on-Linux filesystem policy stubs (TASK-317.12). No-ops in demo mode —
+// the demo never runs real disk operations, so the refusal can never fire.
+export function isFilesystemUnsupportedHere(
+  _filesystem: string | undefined | null,
+  _platform?: string
+): boolean {
+  return false;
+}
+
+export function formatHfsplusOnLinuxRefusal(): string[] {
+  return [];
+}
+
+export const LINUX_FILESYSTEMS_DOCS_URL = 'https://docs.podkit.app/devices/linux-filesystems';
+
 export function identify(_input: any): any {
   return undefined;
 }

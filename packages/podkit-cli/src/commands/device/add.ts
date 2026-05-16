@@ -21,6 +21,8 @@ import {
   assessIpodIdentity,
   ensureSysInfoExtendedAndReassess,
   assessMassStorageDevice,
+  isFilesystemUnsupportedHere,
+  formatHfsplusOnLinuxRefusal,
 } from '@podkit/core';
 import type { IpodIdentityAssessment } from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
@@ -128,6 +130,12 @@ export interface DeviceAddDeps {
   confirm?: (msg: string) => Promise<boolean>;
   loadCore?: () => Promise<typeof import('@podkit/core')>;
   /**
+   * Override for `process.platform`. Tests use this to exercise the
+   * HFS+-on-Linux refusal (TASK-317.12) from a macOS or Linux test runner
+   * without mutating the global `process` object.
+   */
+  platform?: NodeJS.Platform | string;
+  /**
    * Override the cascade-driven identity assessment — tests inject the
    * model + capabilities + firmware-inquiry state without writing a synthetic
    * mount-point fixture. Production uses `assessIpodIdentity` from
@@ -171,6 +179,7 @@ export async function runDeviceAdd(
   const confirmFn = deps.confirm ?? confirm;
   const loadCore = deps.loadCore ?? (() => import('@podkit/core'));
   const assessIdentity = deps.assessIdentity ?? assessIpodIdentity;
+  const platform = deps.platform ?? process.platform;
 
   // Require --device flag
   if (!name) {
@@ -434,6 +443,31 @@ export async function runDeviceAdd(
         message: `Path not found: ${explicitPath}`,
         code: DeviceErrorCodes.PATH_NOT_FOUND,
       });
+    }
+
+    // Refuse HFS+ iPods on Linux up-front — before any state-mutating work
+    // (volumeUuid lookup, DB init, config save). See TASK-317.12 +
+    // `filesystem-policy.ts` for the policy rationale.
+    if (manager.isSupported) {
+      const platformDevices = await manager.listDevices();
+      // Normalize trailing slashes — `--path /media/x/disk/` from shell completion
+      // must still match `/media/x/disk` returned by lsblk.
+      const stripSlash = (p: string) => p.replace(/\/+$/, '') || p;
+      const wantPath = stripSlash(explicitPath);
+      const matching = platformDevices.find(
+        (d) => d.mountPoint && stripSlash(d.mountPoint) === wantPath
+      );
+      if (matching && isFilesystemUnsupportedHere(matching.filesystem, platform)) {
+        throw new CliError({
+          message: formatHfsplusOnLinuxRefusal().join('\n'),
+          code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
+          details: {
+            filesystem: matching.filesystem,
+            platform,
+            path: explicitPath,
+          },
+        });
+      }
     }
 
     // Cascade-driven identity assessment (no writes, no prompts).
@@ -730,6 +764,20 @@ export async function runDeviceAdd(
   }
 
   let ipod = ipods[0]!;
+
+  // Refuse HFS+ iPods on Linux up-front — before mount attempts, identity
+  // assessment, or any state-mutating work. See TASK-317.12.
+  if (isFilesystemUnsupportedHere(ipod.filesystem, platform)) {
+    throw new CliError({
+      message: formatHfsplusOnLinuxRefusal().join('\n'),
+      code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
+      details: {
+        filesystem: ipod.filesystem,
+        platform,
+        path: ipod.mountPoint ?? `/dev/${ipod.identifier}`,
+      },
+    });
+  }
 
   // Handle unmounted device: assess, attempt mount, guide user if sudo required
   if (!ipod.isMounted) {
