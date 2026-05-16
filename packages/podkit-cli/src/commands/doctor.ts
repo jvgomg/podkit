@@ -1046,6 +1046,14 @@ async function runSystemRepair(
 ): Promise<void> {
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
+  // Tests can invoke this helper directly without bootstrapping the CLI
+  // context — read verbose defensively so we don't break that surface.
+  let verbose = 0;
+  try {
+    verbose = getContext().globalOpts.verbose ?? 0;
+  } catch {
+    /* no CLI context (test path) — default to 0 */
+  }
 
   if (!dryRun) {
     out.print(`Repairing ${check.id}: ${repair.description}...`);
@@ -1064,7 +1072,7 @@ async function runSystemRepair(
 
   let result: Awaited<ReturnType<typeof repair.run>>;
   try {
-    result = await repair.run(stubCtx, { dryRun });
+    result = await repair.run(stubCtx, { dryRun, verbose });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new CliError({
@@ -1116,6 +1124,14 @@ export async function runRepair(
 ): Promise<void> {
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
+  // Tests construct an ad-hoc `runRepair` call without bootstrapping the CLI
+  // context. Read verbose defensively so the test surface stays unchanged.
+  let verbose = 0;
+  try {
+    verbose = getContext().globalOpts.verbose ?? 0;
+  } catch {
+    /* test path — no CLI context, default to 0 */
+  }
 
   let core: typeof import('@podkit/core');
   try {
@@ -1205,6 +1221,7 @@ export async function runRepair(
       };
       result = await repair.run(ctx, {
         dryRun,
+        verbose,
         signal: shutdown.signal,
         onProgress: (progress) => {
           if (!out.isText) return;

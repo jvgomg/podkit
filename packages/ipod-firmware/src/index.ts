@@ -110,3 +110,10 @@ export {
   type ReadFromUsbFn,
   type EnsureSysInfoExtendedOptions,
 } from './sysinfo/index.js';
+
+// Inquiry-error formatter (pure function) — exposed for callers that want to
+// surface the multi-transport failure detail without going through ensure.
+export {
+  formatInquiryError,
+  type FormatInquiryErrorOptions,
+} from './sysinfo/format-inquiry-error.js';

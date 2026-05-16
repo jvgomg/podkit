@@ -21,6 +21,7 @@ import {
 import { readSysInfoExtended, validateXml } from './read.js';
 import { writeSysInfoExtended } from './write.js';
 import type { SysInfoExtendedResult, SysInfoIdentity } from './read.js';
+import { formatInquiryError } from './format-inquiry-error.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -73,6 +74,13 @@ export interface EnsureSysInfoExtendedOptions {
    * repair would report success without rewriting anything.
    */
   force?: boolean;
+  /**
+   * Caller's verbosity level (CLI `-v` accumulator, `0..3`). Forwarded to
+   * {@link formatInquiryError} so the failure message can include or omit
+   * transport-specific detail and the `(re-run with -vv …)` footer.
+   * Defaults to `0`.
+   */
+  verbose?: number;
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -96,14 +104,13 @@ async function inquireViaOrchestrator(
 
 /**
  * Build a user-facing error message describing exactly which transports were
- * attempted. The orchestrator returns `null` for several distinct reasons —
- * "no transport available", "USB threw", "SCSI threw", "both threw",
- * "transport returned unparseable bytes", and combinations of the above —
- * and the historical error string misleadingly always blamed USB even when
- * SCSI was the only path tried.
+ * attempted, the per-transport failure reason, and a remediation hint when
+ * one applies.
  *
- * The returned message names which transports threw and which returned
- * unparseable data, so the user can tell whether the device responded at all.
+ * Delegated to {@link formatInquiryError} — kept as a thin shim so the call
+ * site stays readable and so we can fold in mixed-outcome cases (parse-error
+ * after transport-error) here while the pure formatter focuses on transport
+ * errors and the universal "no transports available" case.
  *
  * Note on the mixed-outcome branch: the only mixed shape that arises in
  * practice is `[usb: transport-error, scsi: parse-error]`. Per orchestrator
@@ -112,8 +119,16 @@ async function inquireViaOrchestrator(
  * `[usb: parse-error, scsi: transport-error]` shape is unreachable from the
  * `usb-then-scsi` plan. Single-transport plans (`usb-only`, `scsi-only`)
  * cannot produce mixed shapes by definition.
+ *
+ * The single mixed shape is folded into a one-line legacy-style message so
+ * existing JSON consumers keep their wording; the new transport-error-only
+ * shape is the one this task improves.
  */
-function buildTransportErrorMessage(attempts: InquiryAttempt[]): string {
+function buildTransportErrorMessage(
+  attempts: InquiryAttempt[],
+  fingerprint: UsbFingerprint | undefined,
+  verbose: number
+): string {
   if (attempts.length === 0) {
     return 'Could not read device identity: no firmware inquiry transport is available on this system';
   }
@@ -125,13 +140,18 @@ function buildTransportErrorMessage(attempts: InquiryAttempt[]): string {
     attempts.filter((a) => a.outcome === 'parse-error').map((a) => a.transport.toUpperCase())
   );
 
+  // Pure-parse-failure shapes keep their concise one-line form. They have no
+  // per-transport detail to surface and no remediation hint applies.
   if (transportErrored.length === 0 && parseFailed.length > 0) {
     return `Could not read device identity: ${joinAnd(parseFailed)} returned data but it could not be parsed`;
   }
-  if (parseFailed.length === 0) {
-    return `Could not read device identity from ${joinAnd(transportErrored)}`;
+  // Mixed transport-error + parse-error keeps its legacy wording so existing
+  // JSON consumers and tests stay green; the actionable hint case is always
+  // transport-error-only.
+  if (parseFailed.length > 0) {
+    return `Could not read device identity: ${joinAnd(transportErrored)} failed and ${joinAnd(parseFailed)} returned data that could not be parsed`;
   }
-  return `Could not read device identity: ${joinAnd(transportErrored)} failed and ${joinAnd(parseFailed)} returned data that could not be parsed`;
+  return formatInquiryError(attempts, { verbose, ...(fingerprint ? { fingerprint } : {}) });
 }
 
 function unique(xs: string[]): string[] {
@@ -170,7 +190,7 @@ export async function ensureSysInfoExtended(
   fp: UsbFingerprint,
   options?: EnsureSysInfoExtendedOptions
 ): Promise<SysInfoExtendedResult> {
-  const { readFromUsb, inquireOptions, force } = options ?? {};
+  const { readFromUsb, inquireOptions, force, verbose } = options ?? {};
 
   // Step 1: Check if file already exists. When `force` is set, skip the
   // short-circuit so the consistency repair can refresh a stale on-disk file
@@ -217,7 +237,7 @@ export async function ensureSysInfoExtended(
       identity: {},
       error: readFromUsb
         ? 'Could not read device identity from USB'
-        : buildTransportErrorMessage(attempts),
+        : buildTransportErrorMessage(attempts, fp, verbose ?? 0),
     };
   }
 

@@ -332,4 +332,37 @@ describe('inquireFirmwareDetailed', () => {
     expect(detailed.plan).toBe('scsi-only');
     expect(detailed.attempts).toEqual([{ transport: 'scsi', outcome: 'success' }]);
   });
+
+  it('falls through to SCSI when USB hits EACCES (permission wall must not short-circuit the planned fallback)', async () => {
+    // TASK-317.14: a USB EACCES is a transport-layer error like any other;
+    // the orchestrator must keep going so the SCSI signal is collected. The
+    // user later sees both transports named in the formatted failure message.
+    // This guards against any future change that special-cases EACCES on
+    // USB and bypasses SCSI (which would defeat the udev-rule fix story for
+    // pre-5G iPods that only respond on SCSI).
+    const usbEacces = new Error(
+      'device.open failed: LIBUSB_ERROR_ACCESS, Permission denied'
+    ) as Error & { errno?: number };
+    usbEacces.errno = -3;
+    const usb = mock<UsbTransport>(async () => {
+      throw usbEacces;
+    });
+    const scsi = mock<ScsiTransport>(async () => {
+      throw new Error('scsi also dead');
+    });
+
+    const detailed = await inquireFirmwareDetailed(fp, {
+      transports: { usb, scsi },
+      availability: avail(true, true),
+    });
+
+    expect(detailed.firmware).toBeNull();
+    expect(detailed.plan).toBe('usb-then-scsi');
+    // SCSI was attempted — not short-circuited by the USB permission wall.
+    expect(usb).toHaveBeenCalledTimes(1);
+    expect(scsi).toHaveBeenCalledTimes(1);
+    expect(detailed.attempts).toHaveLength(2);
+    expect(detailed.attempts[0]).toMatchObject({ transport: 'usb', outcome: 'transport-error' });
+    expect(detailed.attempts[1]).toMatchObject({ transport: 'scsi', outcome: 'transport-error' });
+  });
 });

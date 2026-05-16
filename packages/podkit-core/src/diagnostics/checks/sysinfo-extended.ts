@@ -82,7 +82,13 @@ export async function runSysInfoExtendedRepair(
       bus: usbDevice.bus,
       devnum: usbDevice.devnum,
     },
-    force ? { force: true } : undefined
+    // Plumb the caller's verbose level through to the orchestrator-failure
+    // formatter so the resulting `result.error` includes the per-transport
+    // detail the user asked for via -vv / -vvv.
+    {
+      ...(force ? { force: true } : {}),
+      ...(options?.verbose !== undefined ? { verbose: options.verbose } : {}),
+    }
   );
 
   if (!result.present) {

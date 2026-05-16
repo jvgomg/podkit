@@ -117,6 +117,15 @@ export interface RepairRunOptions {
   onProgress?: (progress: Record<string, unknown>) => void;
   /** Abort signal for cancellation */
   signal?: AbortSignal;
+  /**
+   * Caller's verbosity level (CLI `-v` accumulator, `0..3`). Repairs may use
+   * this to decide how much per-transport / per-step detail to surface in
+   * their `summary`. Defaults to `0` when omitted.
+   *
+   * Today only the `sysinfo-extended` repair consults this — the orchestrator
+   * failure message includes more transport-specific detail at `-vv`+.
+   */
+  verbose?: number;
 }
 
 // ── Diagnostic check ─────────────────────────────────────────────────────────

@@ -104,7 +104,7 @@ describe('ensureSysInfoExtended → orchestrator integration', () => {
     }
   });
 
-  it('returns the all-transport-error message when USB throws and SCSI throws', async () => {
+  it('returns the multi-line all-transport-error message naming each transport when USB throws and SCSI throws', async () => {
     const dir = tmpdir();
     try {
       const usb: UsbTransport = async () => {
@@ -123,7 +123,15 @@ describe('ensureSysInfoExtended → orchestrator integration', () => {
 
       expect(result.present).toBe(false);
       expect(result.source).toBe('unavailable');
-      expect(result.error).toBe('Could not read device identity from USB and SCSI');
+      // TASK-317.14: default output names every transport attempted, surfaces
+      // each per-transport reason on its own line, and includes the
+      // re-run-with-verbose footer when verbose is not set.
+      expect(result.error).toContain('Could not read device identity from USB or SCSI:');
+      expect(result.error).toContain('USB:');
+      expect(result.error).toContain('usb dead');
+      expect(result.error).toContain('SCSI:');
+      expect(result.error).toContain('scsi dead');
+      expect(result.error).toContain('(re-run with -vv for more detail)');
 
       // No file written.
       expect(fs.existsSync(path.join(dir, 'iPod_Control', 'Device', 'SysInfoExtended'))).toBe(
