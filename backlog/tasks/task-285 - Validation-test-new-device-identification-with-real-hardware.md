@@ -1,9 +1,10 @@
 ---
 id: TASK-285
 title: 'Validation: test new device identification with real hardware'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-02 15:33'
+updated_date: '2026-05-16 15:36'
 labels: []
 milestone: m-18
 dependencies: []
@@ -31,3 +32,9 @@ Includes: per-device validation (clear data, scan, info, doctor, repair, sync dr
 - [ ] #6 Inquiry method matrix confirmed with final implementation
 - [ ] #7 Supported devices documentation updated with verified data
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Superseded by the P0–P4 split (TASK-291 / 292 / 293 / 294 / 295) which redesigned m-18 device identification around the cascade primitive, USB+SCSI inquiry orchestrator, devices-ipod + devices-mass-storage extraction, and the wider hygiene cluster (TASK-317 + subtasks). Real-hardware validation now lives in TASK-312 (macOS sweep — done), TASK-313 (linka sweep — partial), and TASK-319 (linka re-sweep after hygiene fixes — pending).
+<!-- SECTION:FINAL_SUMMARY:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-287
 title: Implement device identification from spec
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-02 15:44'
+updated_date: '2026-05-16 15:36'
 labels: []
 milestone: m-18
 dependencies:
@@ -28,3 +29,9 @@ The spec document (in backlog/docs/) contains the agreed design — follow it. R
 - [ ] #5 Existing tests pass, new tests cover inquiry codepaths
 - [ ] #6 Package organisation improved per spec — no bolt-on code
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Superseded by the P0–P4 split. The implementation spec referenced here was effectively replaced by the per-phase architecture (P0 spike, P1 ipod-firmware delivery, P2 USB inquiry consolidation, P3 devices-ipod + devices-mass-storage extraction, P4 unification + cleanup). All shipped. See TASK-291 through TASK-295.
+<!-- SECTION:FINAL_SUMMARY:END -->

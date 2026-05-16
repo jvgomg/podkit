@@ -1,9 +1,10 @@
 ---
 id: TASK-288
 title: UX design and implementation for device identification commands
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-02 15:44'
+updated_date: '2026-05-16 15:36'
 labels: []
 milestone: m-18
 dependencies:
@@ -35,3 +36,9 @@ Consider: progressive disclosure (basic info by default, detail with -v), consis
 - [ ] #5 Consistent terminology for identification strategies across all commands
 - [ ] #6 Implementation complete with tests
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Superseded by the TASK-317 hygiene cluster — UX work landed across .01 (scan refactor), .02 (doctor repair correctness), .03 (unsupported-device cascade), .04 (sysinfo modelnum mismatch), .08 (doctor consistent sections), .11 (discovery reconciliation), .12 (HFS+ refusal), .13 (udev USB rule), .14 (orchestrator error reporting), and .15 (volumeUuid defensive). All shipped May 2026.
+<!-- SECTION:FINAL_SUMMARY:END -->
