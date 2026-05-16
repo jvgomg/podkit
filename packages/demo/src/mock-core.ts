@@ -2552,3 +2552,33 @@ export const defaultSubprocessRunner = {
     return { stdout: '', stderr: '', exitCode: 0 };
   },
 };
+
+// Unsupported-reason builders — stubs; demo never hits these paths.
+export function makeUnsupportedReasonFromModel(_model: any): any {
+  return { kind: 'unsupported-model', headline: 'demo stub' };
+}
+export function makeUnsupportedReasonFromAssessment(_assessment: any): any {
+  return { kind: 'unsupported-model', headline: 'demo stub' };
+}
+
+// reconcileIpodDiscovery — stub; demo never calls real device enumeration.
+export function reconcileIpodDiscovery(_blockDevices: any[], _usbClassified: any[]): any[] {
+  return [];
+}
+
+// Docs URLs — stubs for demo; never shown to users.
+export const DOCS_BASE_URL = 'https://jvgomg.github.io/podkit';
+export function docsUrl(slug: string): string {
+  const normalized = slug.startsWith('/') ? slug : `/${slug}`;
+  return `${DOCS_BASE_URL}${normalized}`;
+}
+export const DOCS_URLS = {
+  supportedDevices: docsUrl('devices/supported-devices'),
+  linuxFilesystems: docsUrl('devices/linux-filesystems'),
+  troubleshooting: docsUrl('devices/troubleshooting'),
+  artworkRepair: docsUrl('troubleshooting/artwork-repair'),
+  macosMounting: docsUrl('troubleshooting/macos-mounting'),
+  soundCheck: docsUrl('user-guide/syncing/sound-check'),
+  userGuideConfiguration: docsUrl('user-guide/configuration'),
+  cleanArtists: docsUrl('reference/clean-artists'),
+} as const;
