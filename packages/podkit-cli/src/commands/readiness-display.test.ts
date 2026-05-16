@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'bun:test';
 import type { ReadinessStageResult } from '@podkit/core';
-import { stageMarker, collectReadinessIssues, formatReadinessLevel } from './readiness-display.js';
+import {
+  stageMarker,
+  collectReadinessIssues,
+  formatReadinessLevel,
+  formatReadinessSummaryLines,
+} from './readiness-display.js';
 
 // ── stageMarker ─────────────────────────────────────────────────────────────
 
@@ -216,5 +221,64 @@ describe('collectReadinessIssues', () => {
     expect(issues).toHaveLength(1);
     expect(issues[0]!.details.join(' ')).toContain('not be initialized');
     expect(issues[0]!.fixCommand).toContain('device init');
+  });
+});
+
+// ── Bug 4: SysInfoExtended status line distinguishes unparseable ───────────
+
+describe('formatReadinessSummaryLines — SysInfoExtended status (Bug 4)', () => {
+  it('renders "present but unparseable" when sysInfoExtendedUnparseable is true', () => {
+    const stages = makeStages([
+      {
+        stage: 'sysinfo',
+        status: 'fail',
+        summary: 'iPod nano (5th gen) — generation mismatch',
+        details: {
+          sysInfoExtendedExists: false,
+          sysInfoExtendedUnparseable: true,
+        },
+      },
+    ]);
+    const lines = formatReadinessSummaryLines(stages);
+    const sub = lines.find((l) => l.includes('SysInfoExtended:'));
+    expect(sub).toBeDefined();
+    expect(sub).toContain('present but unparseable');
+    // Must NOT regress to the misleading "not present" wording.
+    expect(sub).not.toContain('not present');
+  });
+
+  it('renders "not present" when the file is genuinely missing', () => {
+    const stages = makeStages([
+      {
+        stage: 'sysinfo',
+        status: 'fail',
+        summary: 'SysInfo file is empty',
+        details: {
+          sysInfoExtendedExists: false,
+          // sysInfoExtendedUnparseable absent — file truly missing.
+        },
+      },
+    ]);
+    const lines = formatReadinessSummaryLines(stages);
+    const sub = lines.find((l) => l.includes('SysInfoExtended:'));
+    expect(sub).toBeDefined();
+    expect(sub).toContain('not present');
+    expect(sub).not.toContain('unparseable');
+  });
+
+  it('renders "present" when SysInfoExtended is on disk and parseable', () => {
+    const stages = makeStages([
+      {
+        stage: 'sysinfo',
+        status: 'pass',
+        summary: 'iPod mini 4GB Pink (2nd Generation)',
+        details: { sysInfoExtendedExists: true },
+      },
+    ]);
+    const lines = formatReadinessSummaryLines(stages);
+    const sub = lines.find((l) => l.includes('SysInfoExtended:'));
+    expect(sub).toContain('present');
+    expect(sub).not.toContain('unparseable');
+    expect(sub).not.toContain('not present');
   });
 });

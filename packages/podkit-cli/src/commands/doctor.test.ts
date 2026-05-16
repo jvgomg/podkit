@@ -9,8 +9,15 @@
 
 import { describe, it, expect } from 'bun:test';
 import { Command } from 'commander';
-import { doctorCommand, resolveDoctorScopes, runSystemOnlyDoctor } from './doctor.js';
+import {
+  doctorCommand,
+  resolveDoctorScopes,
+  runSystemOnlyDoctor,
+  runRepair,
+  DoctorErrorCodes,
+} from './doctor.js';
 import { OutputContext, BufferExitCodeSink } from '../output/index.js';
+import type { CliError } from '../errors.js';
 
 const repairOption = doctorCommand.options.find((o) => o.long === '--repair');
 if (!repairOption) {
@@ -427,5 +434,156 @@ describe('runSystemOnlyDoctor()', () => {
     expect(payload.mountPoint).toBeUndefined();
     expect(payload.deviceType).toBeUndefined();
     expect(payload.readiness).toBeUndefined();
+  });
+});
+
+// ── Bug 2: runRepair must not open the iTunesDB unless the repair needs it ──
+
+describe('runRepair — database gate (Bug 2: chicken-and-egg)', () => {
+  function makeOut(): OutputContext {
+    const exitSink = new BufferExitCodeSink();
+    const nullSink = { write: () => true };
+    return new OutputContext({
+      mode: 'json',
+      quiet: true,
+      verbose: 0,
+      color: false,
+      tips: false,
+      tty: false,
+      stdout: nullSink,
+      stderr: nullSink,
+      exitCode: exitSink,
+    });
+  }
+
+  // Build a fake `@podkit/core`-shape just rich enough for `runRepair` to
+  // execute. The IpodDatabase.open() stub throws to prove the gate is
+  // working — if the gate fails, the test bubbles IPOD_DATABASE_OPEN_FAILED.
+  function makeFakeCore(opts: { dbThrows?: boolean } = {}) {
+    return {
+      IpodDatabase: {
+        open: async () => {
+          if (opts.dbThrows) {
+            throw new Error("Couldn't find an iPod database on /tmp/fresh-ipod");
+          }
+          return { close: () => {} };
+        },
+      },
+    } as unknown as typeof import('@podkit/core');
+  }
+
+  it('does NOT open the iTunesDB when the repair lacks a database requirement', async () => {
+    let openCalls = 0;
+    const fakeCore = {
+      IpodDatabase: {
+        open: async () => {
+          openCalls += 1;
+          throw new Error("Couldn't find an iPod database");
+        },
+      },
+    } as unknown as typeof import('@podkit/core');
+
+    let repairRan = false;
+    const check = {
+      id: 'sysinfo-extended',
+      name: 'SysInfoExtended',
+      repairOnly: true,
+      repair: {
+        description: 'fake',
+        requirements: ['writable-device'] as const,
+        async run() {
+          repairRan = true;
+          return { success: true, summary: 'ok' };
+        },
+      },
+    } as unknown as Parameters<typeof runRepair>[1];
+
+    await runRepair(
+      '/tmp/fresh-ipod',
+      check,
+      { dryRun: true },
+      makeOut(),
+      // Minimal config — runRepair only reads config.music when the repair
+      // requires a source-collection, which this one doesn't.
+      { music: {} } as unknown as Parameters<typeof runRepair>[4],
+      { loadCore: async () => fakeCore }
+    );
+
+    expect(openCalls).toBe(0);
+    expect(repairRan).toBe(true);
+  });
+
+  it('DOES open the iTunesDB when the repair declares the database requirement', async () => {
+    let openCalls = 0;
+    const fakeCore = {
+      IpodDatabase: {
+        open: async () => {
+          openCalls += 1;
+          return { close: () => {} };
+        },
+      },
+    } as unknown as typeof import('@podkit/core');
+
+    let repairRan = false;
+    const check = {
+      id: 'orphan-files',
+      name: 'Orphan files',
+      repair: {
+        description: 'fake',
+        requirements: ['writable-device', 'database'] as const,
+        async run() {
+          repairRan = true;
+          return { success: true, summary: 'ok' };
+        },
+      },
+    } as unknown as Parameters<typeof runRepair>[1];
+
+    await runRepair(
+      '/tmp/some-ipod',
+      check,
+      { dryRun: true },
+      makeOut(),
+      { music: {} } as unknown as Parameters<typeof runRepair>[4],
+      { loadCore: async () => fakeCore }
+    );
+
+    expect(openCalls).toBe(1);
+    expect(repairRan).toBe(true);
+  });
+
+  it('surfaces the open failure with IPOD_DATABASE_OPEN_FAILED only when the database is required', async () => {
+    // Negative regression: if a repair declares `'database'` and the open
+    // genuinely fails, the user should see the dedicated error code so the
+    // CLI can recommend `podkit device init`.
+    const fakeCore = makeFakeCore({ dbThrows: true });
+    const check = {
+      id: 'orphan-files',
+      name: 'Orphan files',
+      repair: {
+        description: 'fake',
+        requirements: ['writable-device', 'database'] as const,
+        async run() {
+          return { success: true, summary: 'ok' };
+        },
+      },
+    } as unknown as Parameters<typeof runRepair>[1];
+
+    let caught: CliError | undefined;
+    try {
+      await runRepair(
+        '/tmp/some-ipod',
+        check,
+        { dryRun: true },
+        makeOut(),
+        { music: {} } as unknown as Parameters<typeof runRepair>[4],
+        { loadCore: async () => fakeCore }
+      );
+    } catch (err) {
+      caught = err as CliError;
+    }
+    expect(caught).toBeDefined();
+    expect((caught as unknown as { code?: string }).code).toBe(
+      DoctorErrorCodes.IPOD_DATABASE_OPEN_FAILED
+    );
   });
 });

@@ -57,8 +57,23 @@ export async function checkSysInfo(
   const sysInfoExtendedPath = join(mountPoint, SYSINFO_EXTENDED_PATH);
 
   // ── Step 1: Check SysInfoExtended ──────────────────────────────────────
+  //
+  // `readSysInfoExtended` returns:
+  //   - null               → file truly absent (or empty)
+  //   - present + firewireGuid populated → file present and parseable
+  //   - present + no firewireGuid       → file present but XML failed to parse
+  //
+  // The third case used to be conflated with the first by the subsequent
+  // `if (sysInfoExtendedExists && sysInfoExtended.firewireGuid)` branch,
+  // which silently fell through to the classic-SysInfo path and clamped
+  // `sysInfoExtendedExists: false` in details. Downstream the readiness
+  // status line then claimed `SysInfoExtended: not present` — misleading,
+  // because the file is present, only the parse failed. We now retain the
+  // distinction in `sysInfoExtendedUnparseable` so the display can show
+  // "present but unparseable" instead.
   const sysInfoExtended = readSysInfoExtended(mountPoint);
   const sysInfoExtendedExists = sysInfoExtended !== null;
+  const sysInfoExtendedUnparseable = sysInfoExtendedExists && !sysInfoExtended!.firewireGuid;
 
   // Resolve the model from every identifier we got off disk — SysInfo
   // ModelNumStr (most variant-specific), serial-suffix, and FamilyID.
@@ -148,6 +163,13 @@ export async function checkSysInfo(
     return { stage: result };
   }
 
+  // Spread into details whenever a SysInfo-fallback branch fires after the
+  // SysInfoExtended check. When the SysInfoExtended file is on disk but the
+  // XML failed to parse, we keep `sysInfoExtendedExists: false` (the file is
+  // not usable) but flag `sysInfoExtendedUnparseable: true` so the display
+  // layer can render "present but unparseable" instead of "not present".
+  const unparseableDetails = sysInfoExtendedUnparseable ? { sysInfoExtendedUnparseable: true } : {};
+
   if (!fileExists) {
     // Both missing → fail
     return stageOnly({
@@ -159,6 +181,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: false,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         hasModelNum: false,
         checksumType,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
@@ -180,6 +203,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         error: error instanceof Error ? error.message : String(error),
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
@@ -197,6 +221,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     });
@@ -213,6 +238,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     });
@@ -232,6 +258,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
     });
@@ -249,6 +276,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         hasModelNum: false,
         suggestion: SYSINFO_SUGGESTION_REPAIR,
       },
@@ -269,6 +297,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         hasModelNum: true,
         modelNumber,
         checksumType,
@@ -311,6 +340,7 @@ export async function checkSysInfo(
           sysInfoExtendedPath,
           exists: true,
           sysInfoExtendedExists: false,
+          ...unparseableDetails,
           hasModelNum: true,
           modelNumber,
           modelName,
@@ -338,6 +368,7 @@ export async function checkSysInfo(
         sysInfoExtendedPath,
         exists: true,
         sysInfoExtendedExists: false,
+        ...unparseableDetails,
         hasModelNum: true,
         modelNumber,
         modelName,

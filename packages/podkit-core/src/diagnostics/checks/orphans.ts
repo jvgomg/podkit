@@ -156,7 +156,7 @@ export const orphanFilesCheck: DiagnosticCheck = {
 
   repair: {
     description: 'Delete orphaned files not referenced by any track in the database',
-    requirements: ['writable-device'],
+    requirements: ['writable-device', 'database'],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
       const musicDir = join(ctx.mountPoint, 'iPod_Control', 'Music');

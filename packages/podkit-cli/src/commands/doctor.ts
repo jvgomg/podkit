@@ -1092,19 +1092,24 @@ async function runSystemRepair(
 
 // ── Repair ──────────────────────────────────────────────────────────────────
 
-async function runRepair(
+/**
+ * Exported for unit testing. Runs an iPod-scoped repair, opening the iTunesDB
+ * only when the repair declares a `'database'` requirement.
+ */
+export async function runRepair(
   devicePath: string,
   check: NonNullable<ReturnType<typeof import('@podkit/core').getDiagnosticCheck>>,
   options: DoctorOptions,
   out: OutputContext,
-  config: ReturnType<typeof getContext>['config']
+  config: ReturnType<typeof getContext>['config'],
+  deps: { loadCore?: () => Promise<typeof import('@podkit/core')> } = {}
 ): Promise<void> {
   const repair = check.repair!;
   const dryRun = options.dryRun ?? false;
 
   let core: typeof import('@podkit/core');
   try {
-    core = await import('@podkit/core');
+    core = await (deps.loadCore ?? (() => import('@podkit/core')))();
   } catch (err) {
     throw new CliError({
       message: err instanceof Error ? err.message : 'Failed to load podkit-core',
@@ -1112,15 +1117,22 @@ async function runRepair(
     });
   }
 
-  // Open iPod database
-  let db: Awaited<ReturnType<typeof core.IpodDatabase.open>>;
-  try {
-    db = await core.IpodDatabase.open(devicePath);
-  } catch (err) {
-    throw new CliError({
-      message: err instanceof Error ? err.message : 'Failed to open iPod database',
-      code: DoctorErrorCodes.IPOD_DATABASE_OPEN_FAILED,
-    });
+  // Open the iPod database only when this repair declares it needs it.
+  // Repairs that populate identity (sysinfo-extended, sysinfo-consistency)
+  // must run on freshly-formatted iPods that have no database yet — gating
+  // them behind IpodDatabase.open() created the chicken-and-egg failure
+  // surfaced as "Failed to open database: Couldn't find an iPod database".
+  const needsDatabase = repair.requirements.includes('database');
+  let db: Awaited<ReturnType<typeof core.IpodDatabase.open>> | undefined;
+  if (needsDatabase) {
+    try {
+      db = await core.IpodDatabase.open(devicePath);
+    } catch (err) {
+      throw new CliError({
+        message: err instanceof Error ? err.message : 'Failed to open iPod database',
+        code: DoctorErrorCodes.IPOD_DATABASE_OPEN_FAILED,
+      });
+    }
   }
 
   const adapters: import('@podkit/core').CollectionAdapter[] = [];
@@ -1175,28 +1187,31 @@ async function runRepair(
 
     let result: Awaited<ReturnType<typeof repair.run>>;
     try {
-      result = await repair.run(
-        { mountPoint: devicePath, deviceType: 'ipod', db, adapters },
-        {
-          dryRun,
-          signal: shutdown.signal,
-          onProgress: (progress) => {
-            if (!out.isText) return;
-            const p = progress as Record<string, unknown>;
-            if (typeof p.current === 'number' && typeof p.total === 'number') {
-              const pct = Math.round((p.current / p.total) * 100);
-              let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
-              // Append check-specific counters when present
-              if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
-              if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
-              if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
-              process.stderr.write(line);
-            } else if (typeof p.message === 'string') {
-              process.stderr.write(`\r  ${p.message}`);
-            }
-          },
-        }
-      );
+      const ctx: import('@podkit/core').RepairContext = {
+        mountPoint: devicePath,
+        deviceType: 'ipod',
+        adapters,
+        ...(db ? { db } : {}),
+      };
+      result = await repair.run(ctx, {
+        dryRun,
+        signal: shutdown.signal,
+        onProgress: (progress) => {
+          if (!out.isText) return;
+          const p = progress as Record<string, unknown>;
+          if (typeof p.current === 'number' && typeof p.total === 'number') {
+            const pct = Math.round((p.current / p.total) * 100);
+            let line = `\r  ${p.current} / ${p.total}  (${pct}%)`;
+            // Append check-specific counters when present
+            if (typeof p.matched === 'number') line += `  Matched: ${p.matched}`;
+            if (typeof p.noSource === 'number') line += `  No source: ${p.noSource}`;
+            if (typeof p.noArtwork === 'number') line += `  No artwork: ${p.noArtwork}`;
+            process.stderr.write(line);
+          } else if (typeof p.message === 'string') {
+            process.stderr.write(`\r  ${p.message}`);
+          }
+        },
+      });
     } catch (err) {
       // Clear progress line before bubbling
       if (out.isText) {
@@ -1249,7 +1264,7 @@ async function runRepair(
         // Ignore disconnect errors
       }
     }
-    db.close();
+    db?.close();
   }
 }
 

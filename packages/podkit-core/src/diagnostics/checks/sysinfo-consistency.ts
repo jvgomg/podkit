@@ -31,7 +31,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { parsePlist, extractFromPlist, normaliseFireWireGuid } from '@podkit/ipod-firmware';
 import { identify, type IpodModel } from '@podkit/devices-ipod';
-import { sysInfoExtendedCheck } from './sysinfo-extended.js';
+import { sysInfoExtendedCheck, runSysInfoExtendedRepair } from './sysinfo-extended.js';
 import type { DiagnosticCheck, CheckResult, DiagnosticContext } from '../types.js';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -269,8 +269,15 @@ export const sysinfoConsistencyCheck: DiagnosticCheck = {
     return checkSysinfoConsistency(ctx);
   },
 
-  // Re-use the existing sysinfo-extended repair, which fetches fresh data
-  // from USB and overwrites the file. Applies whether the on-disk file is
-  // missing, malformed, or simply stale.
-  repair: sysInfoExtendedCheck.repair,
+  // Re-use the sysinfo-extended repair runner with `force: true` so a stale
+  // on-disk file is re-read from USB and overwritten. Without `force`, the
+  // existing-file short-circuit in `ensureSysInfoExtended` would return
+  // success without touching disk — the original false-success bug.
+  repair: {
+    description: sysInfoExtendedCheck.repair!.description,
+    requirements: sysInfoExtendedCheck.repair!.requirements,
+    async run(ctx, options) {
+      return runSysInfoExtendedRepair(ctx, options, /* force */ true);
+    },
+  },
 };

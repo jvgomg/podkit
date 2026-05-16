@@ -39,7 +39,7 @@ export const artworkResetCheck: DiagnosticCheck = {
 
   repair: {
     description: 'Clear all artwork from the iPod without requiring a source collection',
-    requirements: [],
+    requirements: ['database'],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
       const result = await resetArtworkDatabase(ctx.db!, ctx.mountPoint, {

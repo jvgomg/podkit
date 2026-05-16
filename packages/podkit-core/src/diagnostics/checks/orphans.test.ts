@@ -248,8 +248,12 @@ describe('orphanFilesCheck', () => {
       expect(result.summary).toBe('No orphan files to delete');
     });
 
-    it('should have writable-device requirement', () => {
-      expect(orphanFilesCheck.repair!.requirements).toEqual(['writable-device']);
+    it('should have writable-device + database requirements', () => {
+      // 'database' was added when doctor's repair flow stopped opening the
+      // iTunesDB unconditionally — repairs that read/write tracks must
+      // declare their dependency so the CLI knows to open the database
+      // before invoking them. See `RepairRequirement` in diagnostics/types.ts.
+      expect(orphanFilesCheck.repair!.requirements).toEqual(['writable-device', 'database']);
     });
   });
 });

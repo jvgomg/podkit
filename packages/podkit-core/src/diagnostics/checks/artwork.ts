@@ -136,7 +136,7 @@ export const artworkRebuildCheck: DiagnosticCheck = {
 
   repair: {
     description: 'Rebuild artwork database from source collection',
-    requirements: ['source-collection'],
+    requirements: ['source-collection', 'database'],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
       const result = await rebuildArtworkDatabase(

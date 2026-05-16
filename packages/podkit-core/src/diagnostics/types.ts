@@ -76,8 +76,19 @@ export interface CheckResult {
 
 // ── Repair types ─────────────────────────────────────────────────────────────
 
-/** Domain-level requirements for a repair operation */
-export type RepairRequirement = 'source-collection' | 'writable-device';
+/**
+ * Domain-level requirements for a repair operation.
+ *
+ * - `'source-collection'` — repair reads from a podkit collection adapter
+ *   (e.g. artwork rebuild needs the original cover-art bytes).
+ * - `'writable-device'` — repair writes to the device filesystem.
+ * - `'database'` — repair reads or writes the iTunesDB. Repairs that lack
+ *   this requirement must run on freshly-formatted iPods that have no
+ *   database yet (e.g. `sysinfo-extended` populates identity *before* the
+ *   database makes sense). The CLI uses this to decide whether to call
+ *   `IpodDatabase.open()` before invoking the repair.
+ */
+export type RepairRequirement = 'source-collection' | 'writable-device' | 'database';
 
 export interface RepairContext extends DiagnosticContext {
   /** Source collection adapters (already connected) */

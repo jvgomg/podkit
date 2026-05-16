@@ -110,8 +110,12 @@ describe('artworkResetCheck', () => {
   });
 
   describe('repair', () => {
-    it('should have no requirements', () => {
-      expect(artworkResetCheck.repair!.requirements).toEqual([]);
+    it('should have only the database requirement (no source-collection needed)', () => {
+      // The defining property of artwork-reset vs artwork-rebuild is that
+      // it doesn't need a source collection — it just clears artwork. But
+      // it does need the iTunesDB to enumerate the tracks whose artwork
+      // it's clearing.
+      expect(artworkResetCheck.repair!.requirements).toEqual(['database']);
     });
 
     it('should describe the repair action', () => {

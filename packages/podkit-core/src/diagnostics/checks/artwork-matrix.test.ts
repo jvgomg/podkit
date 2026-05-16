@@ -333,9 +333,12 @@ describe('AC#15 — both artwork checks are iPod-only device-scope', () => {
     expect(artworkRebuildCheck.repair?.requirements).toContain('source-collection');
   });
 
-  it('artworkResetCheck has a repair with no requirements (source-less reset)', () => {
+  it('artworkResetCheck has a repair with only the database requirement (source-less reset)', () => {
+    // The defining property: no source-collection (it just clears artwork).
+    // But the iTunesDB is required to enumerate the tracks whose artwork is
+    // being cleared. See `RepairRequirement` in diagnostics/types.ts.
     expect(artworkResetCheck.repair).toBeDefined();
-    expect(artworkResetCheck.repair?.requirements).toEqual([]);
+    expect(artworkResetCheck.repair?.requirements).toEqual(['database']);
   });
 });
 

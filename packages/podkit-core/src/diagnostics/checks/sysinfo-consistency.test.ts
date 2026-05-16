@@ -98,6 +98,14 @@ describe('sysinfoConsistencyCheck metadata', () => {
     expect(sysinfoConsistencyCheck.applicableTo).toEqual(['ipod']);
     expect(sysinfoConsistencyCheck.repair).toBeDefined();
   });
+
+  it('repair does not require the iTunesDB (Bug 2: stale identity must repair on fresh devices)', () => {
+    // Critical: this repair runs on freshly-formatted iPods that have no
+    // database yet. If `'database'` slips into requirements, the CLI gates
+    // it behind IpodDatabase.open() and the repair fails before the firmware
+    // read even fires.
+    expect(sysinfoConsistencyCheck.repair!.requirements).not.toContain('database');
+  });
 });
 
 // ── File absent ───────────────────────────────────────────────────────────────

@@ -61,6 +61,18 @@ export interface EnsureSysInfoExtendedOptions {
    * {@link readFromUsb} is also supplied.
    */
   inquireOptions?: InquireOptions;
+  /**
+   * When true, always re-read SysInfoExtended from USB firmware and overwrite
+   * the on-disk file even if a parseable copy already exists. Default `false`
+   * preserves the original short-circuit behaviour: an existing on-disk file
+   * is returned without touching USB.
+   *
+   * Used by the `sysinfo-consistency` repair to refresh a stale on-disk file
+   * that disagrees with the live device (e.g. cloned/synced from another
+   * iPod). Without this knob, the existing-file short-circuit means the
+   * repair would report success without rewriting anything.
+   */
+  force?: boolean;
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────────
@@ -158,12 +170,16 @@ export async function ensureSysInfoExtended(
   fp: UsbFingerprint,
   options?: EnsureSysInfoExtendedOptions
 ): Promise<SysInfoExtendedResult> {
-  const { readFromUsb, inquireOptions } = options ?? {};
+  const { readFromUsb, inquireOptions, force } = options ?? {};
 
-  // Step 1: Check if file already exists
-  const existing = readSysInfoExtended(mountPoint);
-  if (existing) {
-    return existing;
+  // Step 1: Check if file already exists. When `force` is set, skip the
+  // short-circuit so the consistency repair can refresh a stale on-disk file
+  // by re-reading from USB and overwriting in step 4.
+  if (!force) {
+    const existing = readSysInfoExtended(mountPoint);
+    if (existing) {
+      return existing;
+    }
   }
 
   // Step 2: Read SysInfoExtended XML.

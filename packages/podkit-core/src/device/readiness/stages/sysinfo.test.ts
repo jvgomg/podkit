@@ -115,3 +115,58 @@ describe('checkSysInfo — SysInfoExtended-present cascade', () => {
     expect(result.stage.summary).toContain('iPod mini');
   });
 });
+
+// ── Bug 4: present-but-unparseable distinguished from missing ───────────────
+
+describe('checkSysInfo — SysInfoExtended unparseable (Bug 4)', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = tmpdir();
+  });
+
+  afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('flags sysInfoExtendedUnparseable when the XML fails to parse but the file exists', async () => {
+    // Truncated/garbage XML: file exists, but parsePlist throws.
+    writeFiles(dir, {
+      SysInfoExtended: '<?xml version="1.0"?><plist version="1.0"><dict><key>Fire',
+      SysInfo: MINI_2G_SYSINFO_TEXT,
+    });
+
+    const result = await checkSysInfo(dir);
+
+    // The downstream consistency check still fails (correct). Only the
+    // status-line wording changes — and the wording is driven by the
+    // sysInfoExtendedUnparseable detail flag added by this fix.
+    expect(result.stage.details?.sysInfoExtendedUnparseable).toBe(true);
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(false);
+  });
+
+  it('does NOT flag unparseable when the file is genuinely missing', async () => {
+    // Only classic SysInfo present — no SysInfoExtended on disk at all.
+    writeFiles(dir, { SysInfo: MINI_2G_SYSINFO_TEXT });
+
+    const result = await checkSysInfo(dir);
+
+    expect(result.stage.details?.sysInfoExtendedUnparseable).toBeUndefined();
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(false);
+  });
+
+  it('does NOT flag unparseable when SysInfoExtended is fully parseable', async () => {
+    // Healthy parseable SysInfoExtended — branch never reaches the
+    // SysInfo-fallback path that emits the unparseable flag.
+    writeFiles(dir, {
+      SysInfoExtended: MINI_2G_SYSINFO_EXTENDED,
+      SysInfo: MINI_2G_SYSINFO_TEXT,
+    });
+
+    const result = await checkSysInfo(dir);
+
+    expect(result.stage.details?.sysInfoExtendedUnparseable).toBeUndefined();
+    // The "exists" flag is set by the SysInfoExtended-success branch.
+    expect(result.stage.details?.sysInfoExtendedExists).toBe(true);
+  });
+});

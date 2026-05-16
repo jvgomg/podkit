@@ -149,11 +149,18 @@ export function formatReadinessSummaryLines(stages: ReadinessStageResult[]): str
     // SysInfoExtended sub-line for checksum devices
     if (stage.stage === 'sysinfo' && stage.status !== 'skip') {
       const present = stage.details?.sysInfoExtendedExists;
+      const unparseable = stage.details?.sysInfoExtendedUnparseable === true;
       const checksumType = stage.details?.checksumType as string | undefined;
       const needsChecksum =
         checksumType === 'hash58' || checksumType === 'hash72' || checksumType === 'hashAB';
       if (present === true) {
         lines.push('    SysInfoExtended: present');
+      } else if (unparseable) {
+        // File is on disk but XML failed to parse. Distinguishing this from a
+        // truly missing file matters because the user's mental model differs
+        // — corruption needs a refresh, missing needs a first write — and
+        // both reach the same `--repair sysinfo-extended` action.
+        lines.push('    SysInfoExtended: present but unparseable');
       } else if (present === false && needsChecksum) {
         lines.push('    SysInfoExtended: missing (required for database checksums)');
       } else if (present === false) {

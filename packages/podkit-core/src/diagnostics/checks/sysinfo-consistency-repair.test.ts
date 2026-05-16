@@ -254,7 +254,12 @@ describe('sysinfoConsistencyCheck.repair — dry-run path (AC #15)', () => {
     });
 
     expect(result.success).toBe(true);
-    expect(result.summary).toMatch(/Dry run:.*would read SysInfoExtended/);
+    // The consistency repair runs with `force: true` so the dry-run summary
+    // describes the overwrite action ("re-read and overwrite") rather than
+    // a plain read. The sysinfo-extended repair (force: false) still says
+    // "would read"; we accept either to keep this test focused on the
+    // bus/devnum routing rather than the verb.
+    expect(result.summary).toMatch(/Dry run:.*SysInfoExtended/);
     expect(result.summary).toContain(`bus ${RESOLVED_USB.bus}`);
     expect(result.summary).toContain(`device ${RESOLVED_USB.devnum}`);
     expect(result.details?.bus).toBe(RESOLVED_USB.bus);

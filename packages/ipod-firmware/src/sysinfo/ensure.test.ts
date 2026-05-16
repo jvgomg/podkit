@@ -105,6 +105,87 @@ describe('ensureSysInfoExtended — fingerprint propagation', () => {
     }
   });
 
+  it('with force: true, re-reads from USB and overwrites an existing on-disk file', async () => {
+    // Bug 1: --repair sysinfo-consistency reported success on a stale on-disk
+    // file because the existing-file short-circuit was unconditional. With
+    // force: true the orchestrator must re-read from USB and rewrite the file.
+    const dir = tmpdir();
+    try {
+      const deviceDir = path.join(dir, 'iPod_Control', 'Device');
+      const sieFile = path.join(deviceDir, 'SysInfoExtended');
+      fs.mkdirSync(deviceDir, { recursive: true });
+
+      // Pre-existing on-disk file with a STALE FireWireGUID.
+      const STALE_GUID = '000A270000DEADBEEF';
+      const stale = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>FireWireGUID</key><string>${STALE_GUID}</string>
+  <key>SerialNumber</key><string>YM5180A4S31</string>
+  <key>FamilyID</key><integer>3</integer>
+</dict>
+</plist>`;
+      fs.writeFileSync(sieFile, stale, 'utf-8');
+
+      // USB returns the FRESH GUID — what the live device actually reports.
+      const FRESH_GUID = '000A270000ABCDEF';
+      const reader: ReadFromUsbFn = () => VALID_XML; // contains FRESH_GUID
+
+      const result = await ensureSysInfoExtended(dir, FINGERPRINT, {
+        readFromUsb: reader,
+        force: true,
+      });
+
+      // The overwrite happened — file content now matches USB, not the stale GUID.
+      expect(result.present).toBe(true);
+      expect(result.source).toBe('usb-read');
+      expect(result.firewireGuid).toBe(FRESH_GUID);
+      const onDisk = fs.readFileSync(sieFile, 'utf-8');
+      expect(onDisk).toContain(FRESH_GUID);
+      expect(onDisk).not.toContain(STALE_GUID);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('without force, the existing-file short-circuit still wins (default behaviour preserved)', async () => {
+    // Symmetric guard: confirm the default path is unchanged. The
+    // sysinfo-extended repair (file genuinely missing) must keep seeing the
+    // fast path; only sysinfo-consistency opts in to force.
+    const dir = tmpdir();
+    try {
+      const deviceDir = path.join(dir, 'iPod_Control', 'Device');
+      const sieFile = path.join(deviceDir, 'SysInfoExtended');
+      fs.mkdirSync(deviceDir, { recursive: true });
+
+      const STALE_GUID = '000A270000DEADBEEF';
+      const stale = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>FireWireGUID</key><string>${STALE_GUID}</string>
+  <key>SerialNumber</key><string>YM5180A4S31</string>
+  <key>FamilyID</key><integer>3</integer>
+</dict>
+</plist>`;
+      fs.writeFileSync(sieFile, stale, 'utf-8');
+
+      let calls = 0;
+      const reader: ReadFromUsbFn = () => {
+        calls += 1;
+        return VALID_XML;
+      };
+
+      // Default force: false — short-circuit returns the existing file.
+      const result = await ensureSysInfoExtended(dir, FINGERPRINT, { readFromUsb: reader });
+      expect(result.source).toBe('existing');
+      expect(calls).toBe(0);
+      // File content unchanged.
+      expect(fs.readFileSync(sieFile, 'utf-8')).toContain(STALE_GUID);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('post-write identity includes ModelNumStr from the classic SysInfo neighbour', async () => {
     // Regression: mini 2G SysInfoExtended lacks ModelNumStr — the variant
     // identifier (capacity + colour) lives in classic SysInfo. Without
