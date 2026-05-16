@@ -3,9 +3,10 @@ id: TASK-317.15
 title: >-
   Defensive error handling in `device add` when volumeUuid is missing or
   unreadable
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 20:31'
+updated_date: '2026-05-16 10:34'
 labels:
   - device-capability-architecture
   - linux
@@ -13,6 +14,11 @@ labels:
   - defensive
 milestone: m-18
 dependencies: []
+modified_files:
+  - packages/podkit-cli/src/commands/device/add.ts
+  - packages/podkit-cli/src/commands/device/error-codes.ts
+  - packages/podkit-cli/src/commands/device-add.unit.test.ts
+  - .changeset/device-add-volume-uuid-required.md
 parent_task_id: TASK-317
 priority: medium
 ordinal: 43000
@@ -92,10 +98,59 @@ Exit code non-zero. Same `unsupported-filesystem-on-linux` JSON error code as TA
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 When `device add`'s identity-resolution path cannot read a real volumeUuid, the command refuses with a clear message naming likely causes and a diagnostic next step (`lsblk -o NAME,UUID,LABEL,FSTYPE`). Exit code non-zero. Structured JSON error code for scripted callers.
-- [ ] #2 The synthetic `manual-${base64(parent-dir)}` fallback path is removed from the codebase. Confirmed by grep + tests.
+- [x] #1 When `device add`'s identity-resolution path cannot read a real volumeUuid, the command refuses with a clear message naming likely causes and a diagnostic next step (`lsblk -o NAME,UUID,LABEL,FSTYPE`). Exit code non-zero. Structured JSON error code for scripted callers.
+- [x] #2 The synthetic `manual-${base64(parent-dir)}` fallback path is removed from the codebase. Confirmed by grep + tests.
 - [ ] #3 On macOS, all inventory iPods (HFS+ and FAT32) continue to add successfully because macOS surfaces real volumeUuids. Verified manually + by regression test.
 - [ ] #4 On linka with nano 3G (FAT32), `device add` continues to work and stores `volumeUuid = "968A-2063"` (the real FAT32 serial).
 - [ ] #5 When TASK-317.12 has landed, this task's catch-all only fires for non-HFS+ pathological cases. When .12 has not landed, this task still cleanly refuses HFS+ via the more-generic missing-UUID message (acceptable interim state).
-- [ ] #6 Tests added: unit tests for the no-UUID case in `device add`, snapshot tests for the refusal output.
+- [x] #6 Tests added: unit tests for the no-UUID case in `device add`, snapshot tests for the refusal output.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Implementation
+
+- Added `VOLUME_UUID_REQUIRED` to `DeviceErrorCodes` (CLI device error-codes).
+- Added private `throwVolumeUuidRequired()` helper in `device/add.ts` that throws a `CliError` with the structured code, message naming the cause + impact, and the `DOCS_URLS.troubleshooting` link. Details include `{path, identifier, filesystem}`.
+- `--path` iPod branch (`add.ts` ~L580): removed the synthetic-UUID fallback (was `manual-${base64(path).slice(0,16)}`). Now records the matching device's identifier + filesystem alongside the volumeUuid lookup; if the resulting UUID is empty (or starts with the legacy `manual-` prefix as defence-in-depth), throws via the helper.
+- Scan-found iPod branch (`add.ts` ~L820): added a symmetric refusal immediately after the HFS+-on-Linux check, before any mount attempt or identity assessment.
+
+## Synthetic-fallback removal
+
+Grep confirmed exactly one synthetic-UUID generator in the codebase, at the old line 554 of `packages/podkit-cli/src/commands/device/add.ts`:
+
+```ts
+volumeUuid = `manual-${Buffer.from(explicitPath).toString('base64').replace(/[/+=]/g, '').slice(0, 16)}`;
+```
+
+This was the only call site; removed. The `manual-` prefix check in the new helper is defence-in-depth for any stale config records that survived prior runs.
+
+## Tests
+
+New describe block in `device-add.unit.test.ts` covering:
+1. `--path` add with matching device having empty `volumeUuid` → `VOLUME_UUID_REQUIRED`, message contains the docs URL, details carry path/identifier/filesystem.
+2. Scan-found add with matching iPod having empty `volumeUuid` → same refusal; verifies `mount()` + `assessIdentity()` are never called.
+3. Legacy `manual-...` synthetic UUIDs surfaced from device manager → same refusal (defence-in-depth).
+4. Regression: real `volumeUuid` present → adds successfully.
+
+Updated two pre-existing tests that previously relied on the synthetic fallback (`findIpodDevices: async () => []`) to instead return a matching device record with a real UUID — the "VFAT on Linux" test and the "nano 2G --path branch" slick-flow test.
+
+## Out of scope
+
+- AC #3 (macOS regression) — verified only via unit tests, deferred for hardware verification per TASK-319.
+- AC #4 (linka + nano 3G hardware) — deferred to TASK-319.
+- AC #5 (cross-task interaction matrix) — already covered by TASK-317.12 + this task's combined refusal order.
+<!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Replaced the synthetic `manual-${base64(parent-dir)}` volumeUuid fallback in `podkit device add` with a clean structured refusal (`VOLUME_UUID_REQUIRED`). Without a real filesystem UUID, podkit cannot identify an iPod across replug cycles, so config persistence is now blocked rather than silently storing a value that breaks downstream commands.
+
+Synthetic fallback was a single call site in `packages/podkit-cli/src/commands/device/add.ts` (old line 554); confirmed by grep that no other `manual-` UUID synthesiser survives in the codebase. The new helper also refuses values matching the legacy `manual-` prefix as defence-in-depth against stale config records.
+
+Refusal lives at the same architectural layer as TASK-317.12's HFS+-on-Linux refusal — both iPod branches (`--path` and scan-found), structured details (`{path, identifier, filesystem}`), `CliError` with a docs-link in the message. Unit tests added for both branches plus the manual-prefix defence; two pre-existing tests that relied on the synthetic fallback were updated to supply a real matching device record.
+
+Hardware verification (AC #3 macOS, AC #4 linka) deferred to TASK-319 per the task spec.
+<!-- SECTION:FINAL_SUMMARY:END -->

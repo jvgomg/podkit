@@ -24,6 +24,7 @@ import {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
   makeHfsplusOnLinuxUnsupportedReason,
+  DOCS_URLS,
 } from '@podkit/core';
 import type { IpodIdentityAssessment } from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
@@ -38,6 +39,40 @@ const SYSINFO_MISSING_PROMPT_LINES = [
   'podkit can read it from the device firmware over USB.',
   'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices',
 ] as const;
+
+/**
+ * Defensive refusal for TASK-317.15: we cannot persist a device that
+ * doesn't carry a real filesystem UUID. podkit identifies iPods by
+ * volumeUuid across replug cycles, so without one, downstream commands
+ * (`podkit doctor -d <name>`, `podkit sync -d <name>`) can't find the
+ * device. The dominant trigger (HFS+ on Linux) is handled explicitly by
+ * TASK-317.12; this is the catch-all for corrupt FAT32 tables, unusual
+ * filesystem layouts, mass-storage with no FS UUID, etc.
+ *
+ * Previously, `device add` silently substituted a synthetic
+ * `manual-<base64-of-mount-path>` UUID, which collided between any two
+ * devices mounted under the same parent dir and didn't survive replug.
+ */
+function throwVolumeUuidRequired(opts: {
+  path: string | undefined;
+  identifier: string;
+  filesystem: string | null | undefined;
+}): never {
+  throw new CliError({
+    message:
+      'Cannot add iPod: this iPod does not have a readable filesystem UUID. ' +
+      'podkit identifies iPods by volume UUID across replug cycles — without one, ' +
+      'commands like `podkit doctor -d <name>` would fail to find the device.\n\n' +
+      'Common causes: corrupt partition table, unusual filesystem layout. ' +
+      `See: ${DOCS_URLS.troubleshooting}`,
+    code: DeviceErrorCodes.VOLUME_UUID_REQUIRED,
+    details: {
+      path: opts.path ?? '(unknown)',
+      identifier: opts.identifier,
+      filesystem: opts.filesystem ?? null,
+    },
+  });
+}
 
 interface AddOptions {
   yes?: boolean;
@@ -540,6 +575,8 @@ export async function runDeviceAdd(
     // Get volume UUID if possible (for macOS)
     let volumeUuid = '';
     let volumeName = explicitPath.split('/').pop() || 'iPod';
+    let matchingIdentifier = 'unknown';
+    let matchingFilesystem: string | null | undefined;
 
     if (manager.isSupported) {
       const ipods = await manager.findIpodDevices();
@@ -547,11 +584,22 @@ export async function runDeviceAdd(
       if (matchingDevice) {
         volumeUuid = matchingDevice.volumeUuid;
         volumeName = matchingDevice.volumeName;
+        matchingIdentifier = matchingDevice.identifier;
+        matchingFilesystem = matchingDevice.filesystem;
       }
     }
 
-    if (!volumeUuid) {
-      volumeUuid = `manual-${Buffer.from(explicitPath).toString('base64').replace(/[/+=]/g, '').slice(0, 16)}`;
+    // TASK-317.15: refuse cleanly when no real filesystem UUID is available.
+    // Replaces the legacy `manual-${base64(path)}` synthetic-UUID fallback,
+    // which collided between any two devices mounted under the same parent
+    // dir and didn't survive replug. The HFS+-on-Linux case is already
+    // caught earlier by TASK-317.12; this is the residual defensive layer.
+    if (!volumeUuid || volumeUuid.startsWith('manual-')) {
+      throwVolumeUuidRequired({
+        path: explicitPath,
+        identifier: matchingIdentifier,
+        filesystem: matchingFilesystem,
+      });
     }
 
     const deviceInfo = {
@@ -786,6 +834,18 @@ export async function runDeviceAdd(
           path,
         }),
       },
+    });
+  }
+
+  // TASK-317.15: refuse cleanly when the scan-found iPod has no readable
+  // filesystem UUID. HFS+ on Linux is already caught above; this is the
+  // catch-all for corrupt FAT32, unusual layouts, etc. Without a real
+  // UUID we cannot identify the device across replug cycles.
+  if (!ipod.volumeUuid || ipod.volumeUuid.startsWith('manual-')) {
+    throwVolumeUuidRequired({
+      path: ipod.mountPoint ?? `/dev/${ipod.identifier}`,
+      identifier: ipod.identifier,
+      filesystem: ipod.filesystem,
     });
   }
 

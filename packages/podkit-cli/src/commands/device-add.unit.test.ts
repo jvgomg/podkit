@@ -611,7 +611,20 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
               filesystem: 'vfat',
             },
           ],
-          findIpodDevices: async () => [],
+          // findIpodDevices is consulted for the volumeUuid lookup in the
+          // --path branch; mirror the listDevices record so TASK-317.15
+          // doesn't refuse on missing UUID.
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdb2',
+              volumeName: 'IPOD',
+              volumeUuid: 'AAAA-BBBB',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'vfat',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
         }),
       assessIdentity: async () => stubAssessment,
       ipodDatabase: {
@@ -625,6 +638,209 @@ describe('runDeviceAdd: HFS+ on Linux refusal (TASK-317.12)', () => {
     const text = stdout.text();
     expect(text).not.toContain('UNSUPPORTED_FILESYSTEM_ON_LINUX');
     expect(exitCode.get()).toBeUndefined();
+  });
+});
+
+// =============================================================================
+// Missing volumeUuid defensive refusal (TASK-317.15)
+// =============================================================================
+
+describe('runDeviceAdd: missing volumeUuid refusal (TASK-317.15)', () => {
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'device-add-no-uuid-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  interface AddOutputErrorWithDetails extends AddOutputError {
+    details?: { path?: string; identifier?: string; filesystem?: string | null };
+  }
+
+  const stubModel: IpodModel = {
+    displayName: 'iPod nano (3rd Generation)',
+    generationId: 'nano_3g',
+    checksumType: 'none',
+    source: 'usb',
+  };
+  const stubAssessment: IpodIdentityAssessment = {
+    model: stubModel,
+    capabilities: {
+      artworkSources: ['database'],
+      artworkMaxResolution: 176,
+      supportedAudioCodecs: ['aac', 'mp3'],
+      supportsVideo: true,
+      audioNormalization: 'soundcheck',
+      supportsAlbumArtistBrowsing: false,
+    },
+    needsChecksum: false,
+    checksumType: 'none',
+    firmwareInquiry: 'present',
+    existing: null,
+    usbFingerprint: null,
+    sysInfoModelNumber: undefined,
+  };
+
+  it('refuses --path add with VOLUME_UUID_REQUIRED when the matching device has no volumeUuid', async () => {
+    const ctx = makeContext({ device: 'mystery', configPath: join(dir, 'config.toml') });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          // Note: HFS+ is caught earlier by TASK-317.12. Use an unusual
+          // filesystem (e.g. exfat) to exercise this catch-all branch.
+          listDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: 'IPOD',
+              volumeUuid: '',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'exfat',
+            },
+          ],
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: 'IPOD',
+              volumeUuid: '',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: dir,
+              filesystem: 'exfat',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => stubAssessment,
+      ipodDatabase: {
+        hasDatabase: async () => true,
+        open: async () => ({ trackCount: 0, close: () => {} }),
+        initializeIpod: async () => ({ close: () => {} }),
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', path: dir, yes: true }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('VOLUME_UUID_REQUIRED');
+    expect(err.error).toContain('does not have a readable filesystem UUID');
+    expect(err.error).toContain('podkit identifies iPods by volume UUID');
+    expect(err.error).toContain('https://jvgomg.github.io/podkit/devices/troubleshooting');
+    expect(err.details?.path).toBe(dir);
+    expect(err.details?.identifier).toBe('sdc2');
+    expect(err.details?.filesystem).toBe('exfat');
+  });
+
+  it('refuses scan-found add with VOLUME_UUID_REQUIRED when the iPod has no volumeUuid', async () => {
+    const ctx = makeContext({ device: 'mystery', configPath: join(dir, 'config.toml') });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: 'IPOD',
+              // Empty UUID — simulates lsblk not surfacing one (corrupt
+              // FAT32 table, unusual layout, mass-storage with no FS UUID).
+              volumeUuid: '',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: '/media/james/IPOD',
+              filesystem: 'vfat',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+          mount: async () => {
+            throw new Error('mount() should not be called when volumeUuid is missing');
+          },
+        }),
+      assessIdentity: async () => {
+        throw new Error('assessIdentity() should not be called when volumeUuid is missing');
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('VOLUME_UUID_REQUIRED');
+    expect(err.error).toContain('does not have a readable filesystem UUID');
+    expect(err.error).toContain('https://jvgomg.github.io/podkit/devices/troubleshooting');
+    expect(err.details?.path).toBe('/media/james/IPOD');
+    expect(err.details?.identifier).toBe('sdc2');
+    expect(err.details?.filesystem).toBe('vfat');
+  });
+
+  it('refuses legacy synthetic `manual-...` UUIDs (defence-in-depth)', async () => {
+    // Even if a stale device record carrying a `manual-` synthetic UUID
+    // somehow reaches this branch (e.g. a buggy probe), refuse rather
+    // than persisting it.
+    const ctx = makeContext({ device: 'mystery', configPath: join(dir, 'config.toml') });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: 'IPOD',
+              volumeUuid: 'manual-L21lZGlhL2phbWVz',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: '/media/james/IPOD',
+              filesystem: 'vfat',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputErrorWithDetails>();
+    expect(err.code).toBe('VOLUME_UUID_REQUIRED');
+  });
+
+  it('adds successfully when a real volumeUuid is present (regression)', async () => {
+    const ctx = makeContext({ device: 'nano3g', configPath: join(dir, 'config.toml') });
+    const { out, stdout, exitCode } = makeOut();
+    const deps: DeviceAddDeps = {
+      platform: 'linux',
+      getDeviceManager: () =>
+        fakeManager({
+          isSupported: true,
+          findIpodDevices: async () => [
+            {
+              identifier: 'sdc2',
+              volumeName: 'IPOD',
+              volumeUuid: '968A-2063',
+              size: 8_000_000_000,
+              isMounted: true,
+              mountPoint: '/media/james/IPOD',
+              filesystem: 'vfat',
+            } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+          ],
+        }),
+      assessIdentity: async () => stubAssessment,
+      ipodDatabase: {
+        hasDatabase: async () => true,
+        open: async () => ({ trackCount: 11, close: () => {} }),
+        initializeIpod: async () => ({ close: () => {} }),
+      },
+    };
+
+    await runAdd(ctx, { type: 'ipod', yes: true }, out, deps);
+    expect(exitCode.get()).toBeUndefined();
+    const result = stdout.json<AddOutputSuccess>();
+    expect(result.success).toBe(true);
   });
 });
 
@@ -908,11 +1124,22 @@ describe('runDeviceAdd: nano 2G slick-flow (cascade + combined prompt)', () => {
 
       let writeCalled = false;
       const deps: DeviceAddDeps = {
-        // Path branch only consults manager for volumeUuid lookup; isSupported=true triggers it.
+        // Path branch consults manager for volumeUuid lookup; supply a real
+        // matching record so TASK-317.15's defensive refusal doesn't fire.
         getDeviceManager: () =>
           fakeManager({
             isSupported: true,
-            findIpodDevices: async () => [],
+            findIpodDevices: async () => [
+              {
+                identifier: 'disk6s2',
+                volumeName: 'PARTY IPOD',
+                volumeUuid: 'NANO-2G-UUID',
+                size: 4_000_000_000,
+                isMounted: true,
+                mountPoint: mountDir,
+                filesystem: 'vfat',
+              } as Awaited<ReturnType<DeviceManager['findIpodDevices']>>[number],
+            ],
           }),
         assessIdentity: async () => makeNano2GAssessment({ firmwareInquiry: 'missing' }),
         ensureSysInfoExtended: async () => {
