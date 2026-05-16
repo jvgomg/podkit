@@ -79,6 +79,12 @@ export async function runCli(args: string[], options: CliOptions = {}): Promise<
       // Ensure consistent output
       NO_COLOR: '1',
       FORCE_COLOR: '0',
+      // E2E dummy-iPod targets are tmpdir-backed and have no real
+      // filesystem UUID. The TASK-317.15 refusal would block every
+      // `device add` against them — opt into the test-only synthetic
+      // UUID hatch instead. See packages/podkit-cli/src/commands/device/add.ts
+      // (`synthesizeTestVolumeUuid`).
+      PODKIT_TEST_SYNTHETIC_VOLUME_UUID: '1',
     };
 
     const child = spawn('node', [cliPath, ...args], {

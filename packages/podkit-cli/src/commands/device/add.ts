@@ -53,6 +53,23 @@ const SYSINFO_MISSING_PROMPT_LINES = [
  * `manual-<base64-of-mount-path>` UUID, which collided between any two
  * devices mounted under the same parent dir and didn't survive replug.
  */
+/**
+ * Test-only escape hatch for the volumeUuid refusal in TASK-317.15. When
+ * `PODKIT_TEST_SYNTHETIC_VOLUME_UUID=1` is set in the environment, this
+ * returns a deterministic synthetic UUID derived from the mount path so
+ * the dummy-iPod e2e target can complete `device add` without a real
+ * filesystem behind it. Returns `undefined` when the env var is not set,
+ * in which case the caller throws `VOLUME_UUID_REQUIRED`.
+ *
+ * Production safety: real users never set this variable. Documented in
+ * `packages/e2e-tests/README.md`.
+ */
+function synthesizeTestVolumeUuid(path: string): string | undefined {
+  if (process.env.PODKIT_TEST_SYNTHETIC_VOLUME_UUID !== '1') return undefined;
+  const slug = Buffer.from(path).toString('base64').replace(/[/+=]/g, '').slice(0, 16);
+  return `test-${slug}`;
+}
+
 function throwVolumeUuidRequired(opts: {
   path: string | undefined;
   identifier: string;
@@ -605,11 +622,16 @@ export async function runDeviceAdd(
     // dir and didn't survive replug. The HFS+-on-Linux case is already
     // caught earlier by TASK-317.12; this is the residual defensive layer.
     if (!volumeUuid || volumeUuid.startsWith('manual-')) {
-      throwVolumeUuidRequired({
-        path: explicitPath,
-        identifier: matchingIdentifier,
-        filesystem: matchingFilesystem,
-      });
+      const syntheticUuid = synthesizeTestVolumeUuid(explicitPath);
+      if (syntheticUuid) {
+        volumeUuid = syntheticUuid;
+      } else {
+        throwVolumeUuidRequired({
+          path: explicitPath,
+          identifier: matchingIdentifier,
+          filesystem: matchingFilesystem,
+        });
+      }
     }
 
     const deviceInfo = {
@@ -910,11 +932,17 @@ export async function runDeviceAdd(
   // catch-all for corrupt FAT32, unusual layouts, etc. Without a real
   // UUID we cannot identify the device across replug cycles.
   if (!ipod.volumeUuid || ipod.volumeUuid.startsWith('manual-')) {
-    throwVolumeUuidRequired({
-      path: ipod.mountPoint ?? `/dev/${ipod.identifier}`,
-      identifier: ipod.identifier,
-      filesystem: ipod.filesystem,
-    });
+    const probePath = ipod.mountPoint ?? `/dev/${ipod.identifier}`;
+    const syntheticUuid = synthesizeTestVolumeUuid(probePath);
+    if (syntheticUuid) {
+      ipod = { ...ipod, volumeUuid: syntheticUuid };
+    } else {
+      throwVolumeUuidRequired({
+        path: probePath,
+        identifier: ipod.identifier,
+        filesystem: ipod.filesystem,
+      });
+    }
   }
 
   // Handle unmounted device: assess, attempt mount, guide user if sudo required
