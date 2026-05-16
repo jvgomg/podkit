@@ -133,6 +133,7 @@ export type {
   ReadinessLevel,
   ReadinessResult,
   ReadinessInput,
+  ReadinessUnsupportedReason,
 } from './readiness.js';
 export {
   checkReadiness,
@@ -147,6 +148,7 @@ export {
 export {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
+  makeHfsplusOnLinuxUnsupportedReason,
   LINUX_FILESYSTEMS_DOCS_URL,
 } from './filesystem-policy.js';
 

@@ -45,8 +45,8 @@ export interface UnsupportedDeviceClassification<
   family?: string;
   /**
    * Canonical rejection text. Always set when `kind === 'unsupported'`; this
-   * is what feeds `ReadinessResult.unsupportedReason` and the doctor's
-   * "device not supported" prompt.
+   * is what feeds the headline of `ReadinessResult.unsupported` (kind:
+   * `'unsupported-preset'`) and the doctor's "device not supported" prompt.
    */
   reason: string;
 }

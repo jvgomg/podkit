@@ -6,7 +6,11 @@
  */
 
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
-import type { ReadinessStageResult, ReadinessLevel } from '@podkit/core';
+import type {
+  ReadinessStageResult,
+  ReadinessLevel,
+  ReadinessUnsupportedReason,
+} from '@podkit/core';
 import type { OutputContext } from '../output/index.js';
 
 // ── Stage marker ────────────────────────────────────────────────────────────
@@ -50,17 +54,33 @@ export function formatReadinessLevel(level: ReadinessLevel, deviceName: string):
 }
 
 /**
- * Render a one-liner for an `unsupported` readiness result.
+ * Render the multi-line rendering of an `unsupported` readiness payload.
  *
  * Doctor / device info / device scan all share the same prompt so users see
  * a consistent message regardless of where the rejection surfaces. The
- * reason text comes from `ReadinessResult.unsupportedReason` (canonical
- * source \u2014 Apple unsupported-PID table or non-Apple classifier).
+ * structured payload comes from `ReadinessResult.unsupported` (canonical
+ * source \u2014 Apple unsupported-PID table, iOS-range fallback, mass-storage
+ * preset registry, or filesystem policy).
+ *
+ * Returns a list of lines: a `Reason: <headline>` first line, then each
+ * `details` entry indented, then a `See: <docsUrl>` footer when set.
  */
-export function formatUnsupportedReason(reason: string | undefined): string {
-  return reason
-    ? `Reason: ${reason}`
-    : 'Reason: this device is not on podkit\u2019s supported-device list.';
+export function formatUnsupportedReasonLines(
+  unsupported: ReadinessUnsupportedReason | undefined
+): string[] {
+  if (!unsupported) {
+    return ['Reason: this device is not on podkit\u2019s supported-device list.'];
+  }
+  const lines: string[] = [`Reason: ${unsupported.headline}`];
+  if (unsupported.details && unsupported.details.length > 0) {
+    for (const line of unsupported.details) {
+      lines.push(`  ${line}`);
+    }
+  }
+  if (unsupported.docsUrl) {
+    lines.push(`See: ${unsupported.docsUrl}`);
+  }
+  return lines;
 }
 
 // ── Issue type ──────────────────────────────────────────────────────────────

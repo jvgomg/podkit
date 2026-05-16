@@ -69,23 +69,29 @@ export const sonyNwzE384: DevicePersona = {
   // embedded only).
   expectedCapabilities: null,
 
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded a canonical
-  // reason from the mass-storage classifier's vendor-recognised-but-no-preset
-  // table (`packages/devices-mass-storage/src/unsupported.ts`). The exact
-  // reason text comes from the Sony entry's `reason(vendorId, productId)`
-  // template — keep this string in sync with that table.
+  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded a structured
+  // payload from the mass-storage classifier's vendor-recognised-but-no-preset
+  // table (`packages/devices-mass-storage/src/unsupported.ts`). The headline
+  // comes from the Sony entry's `reason(vendorId, productId)` template — keep
+  // it in sync with that table.
   expectedReadiness: {
     level: 'unsupported',
-    unsupportedReason:
-      'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
+    unsupported: {
+      kind: 'unsupported-preset',
+      headline:
+        'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
+    },
     stages: [
       {
         stage: 'usb',
         status: 'fail',
         summary: 'Device not supported',
         details: {
-          unsupportedReason:
-            'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
+          unsupported: {
+            kind: 'unsupported-preset',
+            headline:
+              'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
+          },
         },
       },
     ],

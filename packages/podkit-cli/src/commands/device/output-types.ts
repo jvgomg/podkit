@@ -6,6 +6,7 @@
  * for the error variant, on `code` (see `./error-codes.ts`).
  */
 import type { CliErrorOutput } from '../../errors.js';
+import type { ReadinessUnsupportedReason } from '@podkit/core';
 import type { DeviceErrorCode } from './error-codes.js';
 
 /** Serialised iPod model identity for JSON output */
@@ -157,8 +158,8 @@ export interface DeviceInfoSuccess {
     }>;
     model?: DeviceModelOutput;
     summary?: { trackCount: number; freeBytes?: number; totalBytes?: number };
-    /** Canonical rejection reason; only set when level === 'unsupported'. */
-    unsupportedReason?: string;
+    /** Structured rejection payload; only set when level === 'unsupported'. */
+    unsupported?: ReadinessUnsupportedReason;
   };
 }
 

@@ -48,9 +48,12 @@ export function isFilesystemUnsupportedHere(
  * encountered on Linux. Matches the wording mandated by TASK-317.12.
  *
  * Returned as an array of lines so callers can route them through whichever
- * output sink they own (CliError message, scan-render lines, JSON details).
- * Callers that need a single string (e.g. `CliError.message`,
- * `ReadinessResult.unsupportedReason`) join with `\n`.
+ * output sink they own (CliError message text). Callers that need a single
+ * string (e.g. `CliError.message`) join with `\n`.
+ *
+ * For consumers that want the structured payload (the readiness pipeline,
+ * `CliError.details`, JSON envelopes), use
+ * `makeHfsplusOnLinuxUnsupportedReason()` instead.
  */
 export function formatHfsplusOnLinuxRefusal(): string[] {
   return [
@@ -61,4 +64,33 @@ export function formatHfsplusOnLinuxRefusal(): string[] {
     '',
     '(podkit fully supports HFS+ iPods on macOS — this is a Linux-only limitation.)',
   ];
+}
+
+/**
+ * Build the typed `ReadinessUnsupportedReason` for an HFS+ iPod refusal on
+ * Linux. Used by the readiness pipeline and by `device add` to populate
+ * `CliError.details` with a machine-readable payload — the human-readable
+ * message can still be produced by joining `formatHfsplusOnLinuxRefusal()`.
+ *
+ * The `filesystem` and `path` fields are optional so callers without that
+ * context (e.g. tests synthesising a minimal `ReadinessResult`) can omit
+ * them; production call sites always have at least the filesystem string.
+ */
+import type { ReadinessUnsupportedReason } from './readiness/types.js';
+
+export function makeHfsplusOnLinuxUnsupportedReason(
+  options: { filesystem?: string; path?: string } = {}
+): ReadinessUnsupportedReason {
+  return {
+    kind: 'filesystem-unsupported-on-linux',
+    headline:
+      'Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.',
+    details: [
+      'To use this iPod with podkit on Linux, reformat it to FAT32.',
+      '(podkit fully supports HFS+ iPods on macOS — this is a Linux-only limitation.)',
+    ],
+    docsUrl: LINUX_FILESYSTEMS_DOCS_URL,
+    ...(options.filesystem ? { filesystem: options.filesystem } : {}),
+    ...(options.path ? { path: options.path } : {}),
+  };
 }

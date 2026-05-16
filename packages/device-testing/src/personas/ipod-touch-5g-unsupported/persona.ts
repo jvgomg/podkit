@@ -20,8 +20,9 @@
 import type { DevicePersona } from '../types.js';
 import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
-const unsupportedReason =
+const unsupportedHeadline =
   "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
+const unsupported = { kind: 'ios-device', headline: unsupportedHeadline } as const;
 
 export const ipodTouch5gUnsupported: DevicePersona = {
   id: 'ipod-touch-5g-unsupported',
@@ -50,20 +51,20 @@ export const ipodTouch5gUnsupported: DevicePersona = {
 
   expectedCapabilities: null,
 
-  // TASK-331 added `'unsupported'` to ReadinessLevel + exposed the canonical
-  // reason text as a top-level field on the result. The fail `usb` stage
-  // mirrors what `checkReadiness({ unsupportedReason })` emits for an
+  // TASK-331 added `'unsupported'` to ReadinessLevel + exposed the structured
+  // payload as a top-level `unsupported` field on the result. The fail `usb`
+  // stage mirrors what `checkReadiness({ unsupported })` emits for an
   // unsupported-PID device, so this fixture is the byte-for-byte expected
   // result the determineLevel cascade produces today.
   expectedReadiness: {
     level: 'unsupported',
-    unsupportedReason,
+    unsupported,
     stages: [
       {
         stage: 'usb',
         status: 'fail',
         summary: 'Device not supported',
-        details: { unsupportedReason },
+        details: { unsupported },
       },
     ],
   },

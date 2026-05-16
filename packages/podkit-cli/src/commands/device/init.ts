@@ -14,7 +14,7 @@ import {
   formatDeviceLookupMessage,
 } from '../../device-resolver.js';
 import { OutputContext } from '../../output/index.js';
-import type { ReadinessLevel } from '@podkit/core';
+import type { ReadinessLevel, ReadinessUnsupportedReason } from '@podkit/core';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg, type DeviceOpDeps } from './shared.js';
 import type { DeviceInitOutput } from './output-types.js';
@@ -101,7 +101,7 @@ export async function runDeviceInit(
 
   // Run readiness check to determine device state
   let readinessLevel: ReadinessLevel | undefined;
-  let readinessUnsupportedReason: string | undefined;
+  let readinessUnsupported: ReadinessUnsupportedReason | undefined;
   if (manager.isSupported) {
     try {
       const ipods = await manager.findIpodDevices();
@@ -109,7 +109,7 @@ export async function runDeviceInit(
       if (matchingIpod) {
         const readiness = await checkReadiness({ device: matchingIpod });
         readinessLevel = readiness.level;
-        readinessUnsupportedReason = readiness.unsupportedReason;
+        readinessUnsupported = readiness.unsupported;
       }
     } catch {
       // Fall through to legacy hasDatabase check if readiness fails
@@ -195,18 +195,26 @@ export async function runDeviceInit(
         });
       }
       case 'unsupported': {
-        const reason =
-          readinessUnsupportedReason ?? 'This device is not on podkit’s supported-device list.';
+        const headline =
+          readinessUnsupported?.headline ?? 'This device is not on podkit’s supported-device list.';
+        const docsUrl =
+          readinessUnsupported?.docsUrl ??
+          'https://jvgomg.github.io/podkit/devices/supported-devices';
         throw new CliError({
-          message: `Device is not supported by podkit. ${reason}`,
+          message: `Device is not supported by podkit. ${headline}`,
           code: DeviceErrorCodes.UNSUPPORTED_DEVICE,
-          details: { readinessLevel, unsupportedReason: readinessUnsupportedReason },
+          details: { readinessLevel, unsupported: readinessUnsupported },
           printText: (o) => {
             o.error('Device is not supported by podkit.');
             o.newline();
-            o.print(reason);
+            o.print(headline);
+            if (readinessUnsupported?.details) {
+              for (const line of readinessUnsupported.details) {
+                o.print(`  ${line}`);
+              }
+            }
             o.newline();
-            o.print('See: https://jvgomg.github.io/podkit/devices/supported-devices');
+            o.print(`See: ${docsUrl}`);
           },
         });
       }

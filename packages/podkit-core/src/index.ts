@@ -575,6 +575,7 @@ export type {
   ReadinessLevel,
   ReadinessResult,
   ReadinessInput,
+  ReadinessUnsupportedReason,
 } from './device/index.js';
 export {
   checkReadiness,
@@ -589,6 +590,7 @@ export {
 export {
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
+  makeHfsplusOnLinuxUnsupportedReason,
   LINUX_FILESYSTEMS_DOCS_URL,
 } from './device/index.js';
 

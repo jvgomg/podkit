@@ -1,4 +1,9 @@
-import type { ReadinessLevel, ReadinessStage, ReadinessStageResult } from './types.js';
+import type {
+  ReadinessLevel,
+  ReadinessStage,
+  ReadinessStageResult,
+  ReadinessUnsupportedReason,
+} from './types.js';
 import { STAGE_ORDER } from './types.js';
 import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from '@podkit/devices-ipod';
 
@@ -101,11 +106,11 @@ const READINESS_RULES: ReadinessRule[] = [
 
 /**
  * Result of the readiness cascade. When `level === 'unsupported'`, the
- * `unsupportedReason` field carries the canonical human-readable text.
+ * `unsupported` field carries the structured rejection payload.
  */
 export interface DetermineLevelResult {
   level: ReadinessLevel;
-  unsupportedReason?: string;
+  unsupported?: ReadinessUnsupportedReason;
 }
 
 /**
@@ -121,11 +126,12 @@ export interface DetermineLevelContext {
   /** Bare-hex product ID for the unsupported-table lookup. */
   productId?: string;
   /**
-   * Pre-computed rejection reason from a non-Apple classifier (mass-storage
+   * Pre-computed rejection payload from a non-Apple classifier (mass-storage
    * vendor with no preset). Wins over the Apple table lookup because the
-   * classifier owns the wording for non-Apple devices.
+   * classifier owns the wording for non-Apple devices. Accepts either the
+   * structured payload directly or a bare headline string for legacy callers.
    */
-  unsupportedReason?: string;
+  unsupported?: ReadinessUnsupportedReason | string;
 }
 
 const APPLE_VENDOR_ID = '05ac';
@@ -153,17 +159,34 @@ export function determineLevel(
 ): ReadinessLevel | DetermineLevelResult {
   // ── Unsupported short-circuit ──────────────────────────────────────────
   if (context) {
-    let reason: string | undefined = context.unsupportedReason;
-    if (!reason && context.productId !== undefined) {
+    let unsupported: ReadinessUnsupportedReason | undefined;
+    if (context.unsupported !== undefined) {
+      unsupported =
+        typeof context.unsupported === 'string'
+          ? { kind: 'unsupported-device', headline: context.unsupported }
+          : context.unsupported;
+    } else if (context.productId !== undefined) {
       const isApple =
         context.vendorId === undefined || normaliseHex(context.vendorId) === APPLE_VENDOR_ID;
       if (isApple) {
         const pid = normaliseHex(context.productId);
-        reason = lookupUnsupportedReason(pid) ?? lookupIosRangeFallbackReason(pid) ?? undefined;
+        const headline =
+          lookupUnsupportedReason(pid) ?? lookupIosRangeFallbackReason(pid) ?? undefined;
+        if (headline) {
+          // PIDs in 0x1290–0x12af come from `lookupIosRangeFallbackReason` —
+          // treat as `'ios-device'`. Everything else is the explicit Apple
+          // unsupported-PID table (touch_*, nano 6/7, shuffle 3G/4G).
+          const pidNum = parseInt(pid, 16);
+          const isIosRange = Number.isFinite(pidNum) && pidNum >= 0x1290 && pidNum <= 0x12af;
+          unsupported = {
+            kind: isIosRange ? 'ios-device' : 'unsupported-device',
+            headline,
+          };
+        }
       }
     }
-    if (reason) {
-      return { level: 'unsupported', unsupportedReason: reason };
+    if (unsupported) {
+      return { level: 'unsupported', unsupported };
     }
   }
 

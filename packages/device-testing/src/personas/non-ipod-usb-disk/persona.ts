@@ -31,8 +31,12 @@ import lsblkJson from './raw/lsblk.json' with { type: 'json' };
 // Canonical reason string — must match the SanDisk entry in
 // `packages/devices-mass-storage/src/unsupported.ts`'s `UNSUPPORTED_VENDORS`
 // table applied to vendor `0781`, product `5567`.
-const unsupportedReason =
+const unsupportedHeadline =
   'Non-Apple USB storage device (SanDisk); podkit has no preset for this vendor (USB 0x0781:0x5567).';
+const unsupported = {
+  kind: 'unsupported-preset',
+  headline: unsupportedHeadline,
+} as const;
 
 export const nonIpodUsbDisk: DevicePersona = {
   id: 'non-ipod-usb-disk',
@@ -72,13 +76,13 @@ export const nonIpodUsbDisk: DevicePersona = {
 
   expectedReadiness: {
     level: 'unsupported',
-    unsupportedReason,
+    unsupported,
     stages: [
       {
         stage: 'usb',
         status: 'fail',
         summary: 'Device not supported',
-        details: { unsupportedReason },
+        details: { unsupported },
       },
     ],
   },

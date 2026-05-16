@@ -212,9 +212,7 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
                 })),
                 ...(bestModel ? { model: bestModel } : {}),
                 ...(readiness.summary ? { summary: readiness.summary } : {}),
-                ...(readiness.unsupportedReason
-                  ? { unsupportedReason: readiness.unsupportedReason }
-                  : {}),
+                ...(readiness.unsupported ? { unsupported: readiness.unsupported } : {}),
               };
             } catch {
               // Gracefully skip readiness if it fails
@@ -344,8 +342,13 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
 
           // Surface the canonical rejection reason inline so the user does
           // not have to dig into Issues for the most important detail.
-          if (readinessData.level === 'unsupported' && readinessData.unsupportedReason) {
-            out.print(`  Reason:        ${readinessData.unsupportedReason}`);
+          if (readinessData.level === 'unsupported' && readinessData.unsupported) {
+            out.print(`  Reason:        ${readinessData.unsupported.headline}`);
+            if (readinessData.unsupported.details) {
+              for (const line of readinessData.unsupported.details) {
+                out.print(`                 ${line}`);
+              }
+            }
           }
 
           // Collect readiness issues for the Issues zone

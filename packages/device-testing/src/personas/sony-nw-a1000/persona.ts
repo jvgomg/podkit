@@ -83,8 +83,11 @@ export const sonyNwA1000: DevicePersona = {
         status: 'fail',
         summary: 'Device not supported',
         details: {
-          unsupportedReason:
-            'Sony NW-A1000 (SonicStage-era HDD Walkman) is not supported — content layer requires OpenMG/ATRAC encoding authored by SonicStage. Switch device to USB Mass Storage Mode (firmware v2.0+) for folder-browser sync.',
+          unsupported: {
+            kind: 'unsupported-preset',
+            headline:
+              'Sony NW-A1000 (SonicStage-era HDD Walkman) is not supported — content layer requires OpenMG/ATRAC encoding authored by SonicStage. Switch device to USB Mass Storage Mode (firmware v2.0+) for folder-browser sync.',
+          },
         },
       },
     ],

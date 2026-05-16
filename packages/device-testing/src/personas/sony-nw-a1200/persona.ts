@@ -72,8 +72,11 @@ export const sonyNwA1200: DevicePersona = {
         status: 'fail',
         summary: 'Device not supported',
         details: {
-          unsupportedReason:
-            'Sony NW-A1200 (SonicStage/Media Go-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage or Media Go (Windows, discontinued). Same hardware as NW-A1000 (shared USB PID, differs only by HDD capacity); distinct platform from NW-A3000.',
+          unsupported: {
+            kind: 'unsupported-preset',
+            headline:
+              'Sony NW-A1200 (SonicStage/Media Go-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage or Media Go (Windows, discontinued). Same hardware as NW-A1000 (shared USB PID, differs only by HDD capacity); distinct platform from NW-A3000.',
+          },
         },
       },
     ],

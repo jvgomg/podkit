@@ -72,8 +72,11 @@ export const sonyNwHd5: DevicePersona = {
         status: 'fail',
         summary: 'Device not supported',
         details: {
-          unsupportedReason:
-            'Sony NW-HD5 (Network Walkman, 2004–2005 pre-NW-A line) is not supported — OpenMG/ATRAC content requires SonicStage (Windows, discontinued). Additional MACLIST0 integrity records are not authorable from outside SonicStage. USB descriptor "ATRAC HDD" + PID 0x0233 distinguish from later NW-A "HDD WALKMAN" units.',
+          unsupported: {
+            kind: 'unsupported-preset',
+            headline:
+              'Sony NW-HD5 (Network Walkman, 2004–2005 pre-NW-A line) is not supported — OpenMG/ATRAC content requires SonicStage (Windows, discontinued). Additional MACLIST0 integrity records are not authorable from outside SonicStage. USB descriptor "ATRAC HDD" + PID 0x0233 distinguish from later NW-A "HDD WALKMAN" units.',
+          },
         },
       },
     ],

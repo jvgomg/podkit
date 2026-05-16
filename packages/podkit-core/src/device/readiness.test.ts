@@ -483,23 +483,23 @@ describe('checkReadiness', () => {
   });
 
   describe('HFS+ on Linux refusal (TASK-317.12)', () => {
-    it('returns level "unsupported" for HFS+ on Linux with the canonical reason text', async () => {
+    it('returns level "unsupported" for HFS+ on Linux with the structured payload', async () => {
       const device = createDevice({
         mountPoint: tmpDir,
         filesystem: 'hfsplus',
       });
       const result = await checkReadiness({ device, platform: 'linux' });
       expect(result.level).toBe('unsupported');
-      // Main's API surfaces the reason as a `\n`-joined multi-line string in
-      // `unsupportedReason`, not a discriminated-union payload — assert the
-      // canonical refusal text appears verbatim.
-      expect(result.unsupportedReason).toContain(
+      // Discriminated-union payload — kind + headline + details + docsUrl +
+      // filesystem + path. Headline carries the canonical refusal wording.
+      expect(result.unsupported?.kind).toBe('filesystem-unsupported-on-linux');
+      expect(result.unsupported?.headline).toContain(
         'Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.'
       );
-      expect(result.unsupportedReason).toContain('reformat it to FAT32');
-      expect(result.unsupportedReason).toContain(
-        'https://docs.podkit.app/devices/linux-filesystems'
-      );
+      expect(result.unsupported?.details?.join(' ')).toContain('reformat it to FAT32');
+      expect(result.unsupported?.docsUrl).toBe('https://docs.podkit.app/devices/linux-filesystems');
+      expect(result.unsupported?.filesystem).toBe('hfsplus');
+      expect(result.unsupported?.path).toBe(tmpDir);
     });
 
     it('does NOT push placeholder "Skipped — previous check failed" rows', async () => {
@@ -531,7 +531,7 @@ describe('checkReadiness', () => {
       // Pipeline runs to completion as if filesystem were absent — no
       // `unsupported` short-circuit fires.
       expect(result.level).not.toBe('unsupported');
-      expect(result.unsupportedReason).toBeUndefined();
+      expect(result.unsupported).toBeUndefined();
       expect(result.stages.map((s) => s.stage)).toContain('mount');
     });
 
@@ -543,7 +543,7 @@ describe('checkReadiness', () => {
       });
       const result = await checkReadiness({ device, platform: 'linux' });
       expect(result.level).not.toBe('unsupported');
-      expect(result.unsupportedReason).toBeUndefined();
+      expect(result.unsupported).toBeUndefined();
     });
   });
 

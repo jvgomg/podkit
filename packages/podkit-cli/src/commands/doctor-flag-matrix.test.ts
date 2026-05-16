@@ -95,7 +95,7 @@ interface FakeReadiness {
     | 'unsupported'
     | 'unknown';
   stages: FakeReadinessStage[];
-  unsupportedReason?: string;
+  unsupported?: import('@podkit/core').ReadinessUnsupportedReason;
 }
 
 interface FakeCoreOptions {

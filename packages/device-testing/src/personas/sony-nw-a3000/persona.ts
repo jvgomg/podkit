@@ -79,8 +79,11 @@ export const sonyNwA3000: DevicePersona = {
         status: 'fail',
         summary: 'Device not supported',
         details: {
-          unsupportedReason:
-            'Sony NW-A3000 (SonicStage-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage (Windows, discontinued 2008). Distinct PID from NW-A1000 (0x0269 vs 0x026a) — per-model support needed.',
+          unsupported: {
+            kind: 'unsupported-preset',
+            headline:
+              'Sony NW-A3000 (SonicStage-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage (Windows, discontinued 2008). Distinct PID from NW-A1000 (0x0269 vs 0x026a) — per-model support needed.',
+          },
         },
       },
     ],

@@ -26,11 +26,39 @@ export type ReadinessLevel =
    * The device was recognised (Apple-vendor unsupported PID, non-Apple USB
    * with no preset, …) but podkit explicitly refuses to operate on it.
    * Distinct from `'unknown'`, which means the pipeline could not identify
-   * the device at all. The canonical rejection text lives in
-   * `ReadinessResult.unsupportedReason`.
+   * the device at all. The structured rejection payload lives in
+   * `ReadinessResult.unsupported`.
    */
   | 'unsupported'
   | 'unknown';
+
+/**
+ * Structured payload describing why a device is rejected. Carries
+ * machine-readable fields so JSON consumers can render rich diagnostics
+ * and the CLI can emit a multi-line message without parsing strings.
+ *
+ * The `kind` discriminator lets renderers branch on rejection class
+ * (filesystem policy, unsupported model, missing preset, iOS device)
+ * while keeping the payload extension-friendly.
+ */
+export interface ReadinessUnsupportedReason {
+  /** Rejection class. New variants can be added as podkit grows policies. */
+  kind:
+    | 'filesystem-unsupported-on-linux'
+    | 'unsupported-device'
+    | 'unsupported-preset'
+    | 'ios-device';
+  /** Single-line headline shown first (e.g. "Filesystem not supported on Linux"). */
+  headline: string;
+  /** Optional indented detail lines rendered under the headline. */
+  details?: string[];
+  /** Optional documentation link the user can follow. */
+  docsUrl?: string;
+  /** Filesystem string (when kind === 'filesystem-unsupported-on-linux'). */
+  filesystem?: string;
+  /** Mount path (when kind === 'filesystem-unsupported-on-linux'). */
+  path?: string;
+}
 
 export interface ReadinessResult {
   level: ReadinessLevel;
@@ -40,12 +68,12 @@ export interface ReadinessResult {
   /** Model from SysInfo/SysInfoExtended (has color, capacity, model number) */
   deviceModel?: IpodModel;
   /**
-   * Canonical human-readable rejection reason. Set only when
-   * `level === 'unsupported'`. Pulled from the iPod unsupported-PID table,
-   * the iOS-range fallback, or (for non-Apple mass-storage) the
-   * vendor-with-no-preset path.
+   * Structured rejection payload. Set only when `level === 'unsupported'`.
+   * Pulled from the iPod unsupported-PID table, the iOS-range fallback,
+   * the filesystem policy (HFS+ on Linux), or (for non-Apple mass-storage)
+   * the vendor-with-no-preset path.
    */
-  unsupportedReason?: string;
+  unsupported?: ReadinessUnsupportedReason;
   summary?: {
     trackCount: number;
     freeBytes?: number;
@@ -78,9 +106,12 @@ export interface ReadinessInput {
    * classifier when the device was recognised but is explicitly not
    * supported by podkit (Apple unsupported-PID table, iOS range fallback,
    * non-Apple USB with no preset). Sets `level = 'unsupported'` short-circuit
-   * and surfaces the canonical reason on the result.
+   * and surfaces the structured reason on the result.
+   *
+   * Accepts either the structured payload directly or a bare headline
+   * string (legacy callers — wrapped to `kind: 'unsupported-device'`).
    */
-  unsupportedReason?: string;
+  unsupported?: ReadinessUnsupportedReason | string;
   /**
    * Platform override for filesystem-policy checks (TASK-317.12). Defaults to
    * `process.platform`. Production code never sets this — it exists so tests

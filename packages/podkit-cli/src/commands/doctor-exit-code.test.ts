@@ -76,7 +76,7 @@ interface FakeReadiness {
     | 'unsupported'
     | 'unknown';
   stages: FakeReadinessStage[];
-  unsupportedReason?: string;
+  unsupported?: import('@podkit/core').ReadinessUnsupportedReason;
 }
 
 // ── Shared doctor JSON envelope ───────────────────────────────────────────
@@ -90,7 +90,7 @@ interface DoctorJsonOutput {
   readiness?: {
     level: string;
     stages: Array<{ stage: string; status: string }>;
-    unsupportedReason?: string;
+    unsupported?: import('@podkit/core').ReadinessUnsupportedReason;
   };
   checks: Array<{ id: string; status: string; scope?: string }>;
 }
@@ -1080,15 +1080,16 @@ describe('AC #13: healthy boolean mirrors exit code across the full matrix', () 
 // ── TASK-331: readiness=unsupported short-circuit ─────────────────────────
 
 describe('TASK-331: readiness level=unsupported', () => {
-  it('iPod touch 5G — JSON envelope surfaces unsupported + canonical reason, exit 1', async () => {
+  it('iPod touch 5G — JSON envelope surfaces unsupported + structured payload, exit 1', async () => {
     const ctx = makeContext({ device: 'unsupported-touch' });
     const { out, stdout, stderr, exitCode } = makeOut();
-    const reason =
+    const headline =
       "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
+    const unsupported = { kind: 'ios-device' as const, headline };
     const fakeCore = makeFakeCore({
       readiness: {
         level: 'unsupported',
-        unsupportedReason: reason,
+        unsupported,
         stages: [{ stage: 'usb', status: 'fail', summary: 'Device not supported' }],
       },
     });
@@ -1107,7 +1108,8 @@ describe('TASK-331: readiness level=unsupported', () => {
 
     const payload = stdout.json<DoctorJsonOutput>();
     expect(payload.readiness?.level).toBe('unsupported');
-    expect(payload.readiness?.unsupportedReason).toBe(reason);
+    expect(payload.readiness?.unsupported?.kind).toBe('ios-device');
+    expect(payload.readiness?.unsupported?.headline).toBe(headline);
     expect(payload.healthy).toBe(false);
     // Distinct from `exit 2` ("issues found, may be repairable") — exit 1
     // signals a hard rejection: there's nothing the user can do at the CLI.
@@ -1119,15 +1121,16 @@ describe('TASK-331: readiness level=unsupported', () => {
     expect(stderr.text()).toBeDefined();
   });
 
-  it('Sony Walkman — unsupported reason from non-Apple classifier surfaces verbatim, exit 1', async () => {
+  it('Sony Walkman — unsupported payload from non-Apple classifier surfaces verbatim, exit 1', async () => {
     const ctx = makeContext({ device: 'sony' });
     const { out, stdout, exitCode } = makeOut();
-    const reason =
+    const headline =
       'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.';
+    const unsupported = { kind: 'unsupported-preset' as const, headline };
     const fakeCore = makeFakeCore({
       readiness: {
         level: 'unsupported',
-        unsupportedReason: reason,
+        unsupported,
         stages: [{ stage: 'usb', status: 'fail', summary: 'Device not supported' }],
       },
     });
@@ -1145,7 +1148,8 @@ describe('TASK-331: readiness level=unsupported', () => {
     );
 
     const payload = stdout.json<DoctorJsonOutput>();
-    expect(payload.readiness?.unsupportedReason).toBe(reason);
+    expect(payload.readiness?.unsupported?.headline).toBe(headline);
+    expect(payload.readiness?.unsupported?.kind).toBe('unsupported-preset');
     expect(exitCode.get()).toBe(1);
   });
 
@@ -1180,7 +1184,7 @@ describe('TASK-331: readiness level=unsupported', () => {
 
     const payload = stdout.json<DoctorJsonOutput>();
     expect(payload.readiness?.level).toBe('unknown');
-    expect(payload.readiness?.unsupportedReason).toBeUndefined();
+    expect(payload.readiness?.unsupported).toBeUndefined();
     // Exit 1 is reserved for unsupported devices; an unknown-level result
     // must NOT trip the unsupported short-circuit.
     expect(exitCode.get()).not.toBe(1);

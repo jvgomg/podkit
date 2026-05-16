@@ -4,8 +4,8 @@
  * Pins the persona-fixture shape after TASK-331 added `'unsupported'` to
  * `ReadinessLevel`. Both rejection personas must:
  *   1. Declare `expectedReadiness.level === 'unsupported'`
- *   2. Surface the canonical `unsupportedReason` text on the result
- *   3. Have a fail `usb` stage whose `details.unsupportedReason` matches
+ *   2. Surface the structured `unsupported` payload on the result
+ *   3. Have a fail `usb` stage whose `details.unsupported` matches
  *
  * These assertions are intentionally lightweight — Tier 3 still owns
  * end-to-end coverage of the inquiry pipeline. This file's job is to fail
@@ -21,6 +21,7 @@ import { sonyNwzE384 } from './sony-nwz-e384/persona.js';
 import { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
 import { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 import { personas } from './index.js';
+import type { ReadinessUnsupportedReason } from '@podkit/core';
 
 describe('rejection personas: TASK-331 shape', () => {
   describe('ipod-touch-5g-unsupported', () => {
@@ -28,22 +29,26 @@ describe('rejection personas: TASK-331 shape', () => {
       expect(ipodTouch5gUnsupported.expectedReadiness.level).toBe('unsupported');
     });
 
-    it('exposes a canonical unsupportedReason matching the unsupported-PID table', () => {
+    it('exposes a structured unsupported payload matching the unsupported-PID table', () => {
       // The canonical wording comes from
       // `packages/devices-ipod/src/tables/unsupported.ts` —
       // `itouch('5th generation')`.
-      expect(ipodTouch5gUnsupported.expectedReadiness.unsupportedReason).toBe(
+      expect(ipodTouch5gUnsupported.expectedReadiness.unsupported?.headline).toBe(
         "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode."
       );
+      expect(ipodTouch5gUnsupported.expectedReadiness.unsupported?.kind).toBe('ios-device');
     });
 
-    it('keeps the usb-stage fail surface in sync with the top-level reason', () => {
+    it('keeps the usb-stage fail surface in sync with the top-level payload', () => {
       const usbStage = ipodTouch5gUnsupported.expectedReadiness.stages.find(
         (s) => s.stage === 'usb'
       );
       expect(usbStage?.status).toBe('fail');
-      expect(usbStage?.details?.unsupportedReason).toBe(
-        ipodTouch5gUnsupported.expectedReadiness.unsupportedReason
+      const stageUnsupported = usbStage?.details?.unsupported as
+        | ReadinessUnsupportedReason
+        | undefined;
+      expect(stageUnsupported?.headline).toBe(
+        ipodTouch5gUnsupported.expectedReadiness.unsupported?.headline
       );
     });
   });
@@ -57,20 +62,26 @@ describe('rejection personas: TASK-331 shape', () => {
       expect(ipodShuffleNotSupported.expectedReadiness.level).toBe('unsupported');
     });
 
-    it('exposes the canonical shuffle 3G/4G rejection reason (matches tables/unsupported.ts)', () => {
+    it('exposes the canonical shuffle 3G/4G rejection payload (matches tables/unsupported.ts)', () => {
       // SHUFFLE_REASON in `packages/devices-ipod/src/tables/unsupported.ts:35`.
-      expect(ipodShuffleNotSupported.expectedReadiness.unsupportedReason).toBe(
+      expect(ipodShuffleNotSupported.expectedReadiness.unsupported?.headline).toBe(
         'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.'
+      );
+      expect(ipodShuffleNotSupported.expectedReadiness.unsupported?.kind).toBe(
+        'unsupported-device'
       );
     });
 
-    it('keeps the usb-stage fail surface in sync with the top-level reason', () => {
+    it('keeps the usb-stage fail surface in sync with the top-level payload', () => {
       const usbStage = ipodShuffleNotSupported.expectedReadiness.stages.find(
         (s) => s.stage === 'usb'
       );
       expect(usbStage?.status).toBe('fail');
-      expect(usbStage?.details?.unsupportedReason).toBe(
-        ipodShuffleNotSupported.expectedReadiness.unsupportedReason
+      const stageUnsupported = usbStage?.details?.unsupported as
+        | ReadinessUnsupportedReason
+        | undefined;
+      expect(stageUnsupported?.headline).toBe(
+        ipodShuffleNotSupported.expectedReadiness.unsupported?.headline
       );
     });
 
@@ -94,20 +105,24 @@ describe('rejection personas: TASK-331 shape', () => {
       expect(nonIpodUsbDisk.expectedReadiness.level).toBe('unsupported');
     });
 
-    it('exposes the SanDisk vendor-no-preset rejection reason (matches mass-storage table)', () => {
+    it('exposes the SanDisk vendor-no-preset rejection payload (matches mass-storage table)', () => {
       // Canonical wording comes from the SanDisk entry's
       // `reason(vendorId, productId)` template in
       // `packages/devices-mass-storage/src/unsupported.ts`.
-      expect(nonIpodUsbDisk.expectedReadiness.unsupportedReason).toBe(
+      expect(nonIpodUsbDisk.expectedReadiness.unsupported?.headline).toBe(
         'Non-Apple USB storage device (SanDisk); podkit has no preset for this vendor (USB 0x0781:0x5567).'
       );
+      expect(nonIpodUsbDisk.expectedReadiness.unsupported?.kind).toBe('unsupported-preset');
     });
 
-    it('keeps the usb-stage fail surface in sync with the top-level reason', () => {
+    it('keeps the usb-stage fail surface in sync with the top-level payload', () => {
       const usbStage = nonIpodUsbDisk.expectedReadiness.stages.find((s) => s.stage === 'usb');
       expect(usbStage?.status).toBe('fail');
-      expect(usbStage?.details?.unsupportedReason).toBe(
-        nonIpodUsbDisk.expectedReadiness.unsupportedReason
+      const stageUnsupported = usbStage?.details?.unsupported as
+        | ReadinessUnsupportedReason
+        | undefined;
+      expect(stageUnsupported?.headline).toBe(
+        nonIpodUsbDisk.expectedReadiness.unsupported?.headline
       );
     });
 
@@ -136,22 +151,24 @@ describe('rejection personas: TASK-331 shape', () => {
       expect(sonyNwzE384.expectedReadiness.level).toBe('unsupported');
     });
 
-    it('exposes the Sony vendor-no-preset rejection reason', () => {
+    it('exposes the Sony vendor-no-preset rejection payload', () => {
       // Canonical wording comes from
       // `packages/devices-mass-storage/src/unsupported.ts` —
       // the Sony entry's `reason(vendorId, productId)` template applied
       // to `054c:0882`.
-      expect(sonyNwzE384.expectedReadiness.unsupportedReason).toBe(
+      expect(sonyNwzE384.expectedReadiness.unsupported?.headline).toBe(
         'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.'
       );
+      expect(sonyNwzE384.expectedReadiness.unsupported?.kind).toBe('unsupported-preset');
     });
 
-    it('keeps the usb-stage fail surface in sync with the top-level reason', () => {
+    it('keeps the usb-stage fail surface in sync with the top-level payload', () => {
       const usbStage = sonyNwzE384.expectedReadiness.stages.find((s) => s.stage === 'usb');
       expect(usbStage?.status).toBe('fail');
-      expect(usbStage?.details?.unsupportedReason).toBe(
-        sonyNwzE384.expectedReadiness.unsupportedReason
-      );
+      const stageUnsupported = usbStage?.details?.unsupported as
+        | ReadinessUnsupportedReason
+        | undefined;
+      expect(stageUnsupported?.headline).toBe(sonyNwzE384.expectedReadiness.unsupported?.headline);
     });
   });
 });

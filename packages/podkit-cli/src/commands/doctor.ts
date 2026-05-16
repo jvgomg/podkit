@@ -103,8 +103,8 @@ interface DoctorOutput {
       summary: string;
       details?: Record<string, unknown>;
     }>;
-    /** Canonical rejection reason; only set when level === 'unsupported'. */
-    unsupportedReason?: string;
+    /** Structured rejection payload; only set when level === 'unsupported'. */
+    unsupported?: import('@podkit/core').ReadinessUnsupportedReason;
   };
   checks: DoctorCheckOutput[];
 }
@@ -643,9 +643,7 @@ export async function runDoctorDiagnostics(
           summary: s.summary,
           details: s.details,
         })),
-        ...(readinessResult.unsupportedReason
-          ? { unsupportedReason: readinessResult.unsupportedReason }
-          : {}),
+        ...(readinessResult.unsupported ? { unsupported: readinessResult.unsupported } : {}),
       }
     : undefined;
 
@@ -687,12 +685,20 @@ export async function runDoctorDiagnostics(
       out.print(`podkit doctor — checking iPod at ${devicePath}`);
       out.newline();
       out.error('Device is not supported by podkit.');
-      if (readinessResult.unsupportedReason) {
+      const unsupported = readinessResult.unsupported;
+      if (unsupported) {
         out.newline();
-        out.print(readinessResult.unsupportedReason);
+        out.print(unsupported.headline);
+        if (unsupported.details) {
+          for (const line of unsupported.details) {
+            out.print(`  ${line}`);
+          }
+        }
       }
       out.newline();
-      out.print('See: https://jvgomg.github.io/podkit/devices/supported-devices');
+      out.print(
+        `See: ${unsupported?.docsUrl ?? 'https://jvgomg.github.io/podkit/devices/supported-devices'}`
+      );
     });
     opened?.ipod?.close();
     out.setExitCode(1);

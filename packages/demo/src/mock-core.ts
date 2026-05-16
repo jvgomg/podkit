@@ -2415,6 +2415,16 @@ export function formatHfsplusOnLinuxRefusal(): string[] {
   return [];
 }
 
+export function makeHfsplusOnLinuxUnsupportedReason(_options: {
+  filesystem?: string;
+  path?: string;
+}): { kind: string; headline: string } {
+  return {
+    kind: 'filesystem-unsupported-on-linux',
+    headline: 'demo stub — HFS+-on-Linux refusal',
+  };
+}
+
 export const LINUX_FILESYSTEMS_DOCS_URL = 'https://docs.podkit.app/devices/linux-filesystems';
 
 export function identify(_input: any): any {

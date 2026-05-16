@@ -6,9 +6,59 @@ import { checkIpodStructure } from './stages/mount.js';
 import { checkSysInfo } from './stages/sysinfo.js';
 import { checkDatabase } from './stages/database.js';
 import { skipRemaining, determineLevel } from './determine-level.js';
-import type { ReadinessInput, ReadinessResult, ReadinessStageResult } from './types.js';
+import type {
+  ReadinessInput,
+  ReadinessResult,
+  ReadinessStageResult,
+  ReadinessUnsupportedReason,
+} from './types.js';
 import type { IpodModel } from '@podkit/devices-ipod';
-import { isFilesystemUnsupportedHere, formatHfsplusOnLinuxRefusal } from '../filesystem-policy.js';
+import {
+  isFilesystemUnsupportedHere,
+  makeHfsplusOnLinuxUnsupportedReason,
+} from '../filesystem-policy.js';
+
+/**
+ * Coerce a `ReadinessInput.unsupported` value into the typed payload.
+ *
+ * Accepts the structured object directly, or wraps a bare headline string
+ * with `kind: 'unsupported-device'` for legacy callers (the iPod /
+ * mass-storage classifiers thread strings today; once migrated this branch
+ * becomes dead code).
+ */
+function coerceUnsupportedReason(
+  input: ReadinessUnsupportedReason | string
+): ReadinessUnsupportedReason {
+  if (typeof input === 'string') {
+    return { kind: 'unsupported-device', headline: input };
+  }
+  return input;
+}
+
+/**
+ * Map an `IpodClassification` rejection into the typed `ReadinessUnsupportedReason`.
+ *
+ * The classifier already populated `notSupportedReason` with the canonical
+ * wording from `tables/unsupported.ts` (table or iOS-range fallback). We
+ * use the productId to decide between `'ios-device'` (PID lives in the iOS
+ * 0x1290–0x12af range catch) and `'unsupported-device'` (everything else
+ * — explicit Apple table entries like nano 7G, shuffle 3G/4G, Touch).
+ */
+function ipodClassificationToUnsupportedReason(
+  classification: IpodClassification<EnumeratedUsbDevice>
+): ReadinessUnsupportedReason {
+  const headline = classification.notSupportedReason ?? 'Device not supported by podkit.';
+  const productIdNum = parseInt(classification.device.productId.replace(/^0x/i, ''), 16);
+  // 0x1290–0x12af is the canonical iOS PID range fallback in
+  // `lookupIosRangeFallbackReason`. PIDs outside that range come from the
+  // explicit Apple unsupported-PID table (touch_*, nano 6/7, shuffle 3G/4G).
+  const isIosRange =
+    Number.isFinite(productIdNum) && productIdNum >= 0x1290 && productIdNum <= 0x12af;
+  return {
+    kind: isIosRange ? 'ios-device' : 'unsupported-device',
+    headline,
+  };
+}
 
 export { checkIpodStructure } from './stages/mount.js';
 export { checkSysInfo } from './stages/sysinfo.js';
@@ -19,6 +69,7 @@ export type {
   ReadinessLevel,
   ReadinessResult,
   ReadinessInput,
+  ReadinessUnsupportedReason,
   SysInfoCheckResult,
 } from './types.js';
 export { STAGE_DISPLAY_NAMES } from './types.js';
@@ -33,21 +84,22 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   // device as "recognised but not supported" (Apple unsupported-PID table,
   // iOS range fallback, non-Apple USB with no preset), don't run the rest
   // of the cascade — there's nothing for the stage probes to discover.
-  if (input.unsupportedReason) {
+  if (input.unsupported) {
+    const unsupported = coerceUnsupportedReason(input.unsupported);
     stages.push({
       stage: 'usb',
       status: 'fail',
       summary: 'Device not supported',
       details: {
         identifier: device.identifier,
-        unsupportedReason: input.unsupportedReason,
+        unsupported,
       },
     });
     skipRemaining(stages, 1);
     return {
       level: 'unsupported',
       stages,
-      unsupportedReason: input.unsupportedReason,
+      unsupported,
       ...(input.usbModel ? { usbModel: input.usbModel } : {}),
     };
   }
@@ -92,6 +144,10 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   // fixing any of them; refusing cleanly with a docs link is the policy.
   // See `filesystem-policy.ts` and TASK-317.12.
   if (isFilesystemUnsupportedHere(device.filesystem, input.platform)) {
+    const unsupported = makeHfsplusOnLinuxUnsupportedReason({
+      ...(device.filesystem ? { filesystem: device.filesystem } : {}),
+      ...(device.mountPoint ? { path: device.mountPoint } : {}),
+    });
     stages.push({
       stage: 'filesystem',
       status: 'fail',
@@ -99,7 +155,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
       details: {
         filesystem: device.filesystem,
         platform: input.platform ?? process.platform,
-        unsupported: true,
+        unsupported,
       },
     });
     // Deliberately do NOT push placeholder "Skipped — previous check failed"
@@ -108,7 +164,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
     return {
       level: 'unsupported',
       stages,
-      unsupportedReason: formatHfsplusOnLinuxRefusal().join('\n'),
+      unsupported,
       ...(input.usbModel ? { usbModel: input.usbModel } : {}),
     };
   }
@@ -298,10 +354,10 @@ export function createUsbOnlyReadinessResult(
   // Unsupported short-circuit: an Apple-vendor PID that lives in the
   // unsupported-PID table (or the iOS range fallback) is classified with
   // `supported: false` and a canonical `notSupportedReason`. Surface the
-  // new level + reason instead of pretending the device only needs a
-  // partition table.
+  // new level + structured reason instead of pretending the device only
+  // needs a partition table.
   if (classification.supported === false && classification.notSupportedReason) {
-    const reason = classification.notSupportedReason;
+    const unsupported = ipodClassificationToUnsupportedReason(classification);
     const stages: ReadinessStageResult[] = [
       {
         stage: 'usb',
@@ -311,7 +367,7 @@ export function createUsbOnlyReadinessResult(
           vendorId: device.vendorId,
           productId: device.productId,
           modelName: model?.displayName,
-          unsupportedReason: reason,
+          unsupported,
         },
       },
     ];
@@ -319,7 +375,7 @@ export function createUsbOnlyReadinessResult(
     return {
       level: 'unsupported',
       stages,
-      unsupportedReason: reason,
+      unsupported,
       ...(model ? { usbModel: model } : {}),
     };
   }

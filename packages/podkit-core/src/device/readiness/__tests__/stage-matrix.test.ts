@@ -195,17 +195,21 @@ describe('readiness pipeline — usb stage (ACs #1–#3)', () => {
     expect(usb?.details).not.toHaveProperty('usbModel');
   });
 
-  it('#2 usb fails (and downstream stages skip) when caller threads unsupportedReason', async () => {
+  it('#2 usb fails (and downstream stages skip) when caller threads unsupported', async () => {
     // The pipeline does not probe USB itself — discovery happens upstream.
     // The only failure path is the unsupported short-circuit (TASK-331).
-    const reason = 'iPod touch (5th generation) uses Apple’s proprietary sync protocol.';
+    const headline = 'iPod touch (5th generation) uses Apple’s proprietary sync protocol.';
     const result = await checkReadiness({
       device: makeDevice({ mountPoint: dir }),
-      unsupportedReason: reason,
+      unsupported: { kind: 'ios-device', headline },
     });
     const usb = result.stages.find((s) => s.stage === 'usb');
     expect(usb?.status).toBe('fail');
-    expect(usb?.details?.unsupportedReason).toBe(reason);
+    const stageUnsupported = usb?.details?.unsupported as
+      | { kind: string; headline: string }
+      | undefined;
+    expect(stageUnsupported?.headline).toBe(headline);
+    expect(stageUnsupported?.kind).toBe('ios-device');
     expect(result.level).toBe('unsupported');
   });
 
@@ -564,7 +568,10 @@ describe('readiness pipeline — downstream skip cascade (ACs #17–#19)', () =>
       build: () => ({
         input: {
           device: makeDevice(),
-          unsupportedReason: 'Sony Walkman is not yet supported by podkit.',
+          unsupported: {
+            kind: 'unsupported-preset' as const,
+            headline: 'Sony Walkman is not yet supported by podkit.',
+          },
         },
       }),
     },
@@ -772,7 +779,10 @@ describe('readiness pipeline — format parity (AC #21)', () => {
   it('parity: unsupported short-circuit (every downstream stage skipped)', async () => {
     const result = await checkReadiness({
       device: makeDevice({ mountPoint: dir }),
-      unsupportedReason: 'iPod touch (5th generation) uses proprietary sync.',
+      unsupported: {
+        kind: 'ios-device',
+        headline: 'iPod touch (5th generation) uses proprietary sync.',
+      },
     });
     assertParity(result);
   });

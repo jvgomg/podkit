@@ -35,7 +35,7 @@ import {
   formatIssueLines,
   formatReadinessLevel,
   formatReadinessSummaryLines,
-  formatUnsupportedReason,
+  formatUnsupportedReasonLines,
 } from './readiness-display.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -299,7 +299,9 @@ function pushReadinessBlock(
     lines.push(`  Ready — ${parts.join(', ')}`);
   } else if (readiness.level === 'unsupported') {
     lines.push(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
-    lines.push(`  ${formatUnsupportedReason(readiness.unsupportedReason)}`);
+    for (const line of formatUnsupportedReasonLines(readiness.unsupported)) {
+      lines.push(`  ${line}`);
+    }
   } else {
     lines.push(`  ${formatReadinessLevel(readiness.level, deviceName)}`);
   }

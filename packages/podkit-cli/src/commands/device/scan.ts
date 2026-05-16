@@ -8,8 +8,27 @@ import { runAction } from '../../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../../handler-deps.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import type { DeviceConfig } from '../../config/index.js';
-import type { ReadinessResult } from '@podkit/core';
+import type { ReadinessResult, ReadinessUnsupportedReason } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
+
+/**
+ * Wrap an iPod classifier's bare rejection string into the typed
+ * `ReadinessUnsupportedReason` payload. Picks `'ios-device'` when the PID
+ * lives in the iOS 0x1290–0x12af range catch and `'unsupported-device'`
+ * otherwise (explicit Apple table entries — touch_*, nano 6/7,
+ * shuffle 3G/4G).
+ */
+function makeIpodUnsupportedReason(
+  productId: string,
+  headline: string
+): ReadinessUnsupportedReason {
+  const pid = parseInt(productId.replace(/^0x/i, ''), 16);
+  const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
+  return {
+    kind: isIosRange ? 'ios-device' : 'unsupported-device',
+    headline,
+  };
+}
 import { stageMarker, formatReadinessLevel } from '../readiness-display.js';
 import {
   renderDeviceScan,
@@ -283,8 +302,18 @@ export async function runDeviceScan(
           // `level: 'unsupported'` for recognised-but-rejected iPods (touch,
           // iPhone, nano 6G/7G, …) rather than running the rest of the
           // pipeline against a device that will never mount in disk mode.
+          //
+          // Wrap the iPod classifier's bare reason string into the typed
+          // `ReadinessUnsupportedReason` payload — pick the kind based on
+          // whether the PID is in the iOS range fallback or the explicit
+          // unsupported-PID table.
           ...(matchedUsb && matchedUsb.supported === false && matchedUsb.notSupportedReason
-            ? { unsupportedReason: matchedUsb.notSupportedReason }
+            ? {
+                unsupported: makeIpodUnsupportedReason(
+                  matchedUsb.device.productId,
+                  matchedUsb.notSupportedReason
+                ),
+              }
             : {}),
         })
       );
@@ -457,7 +486,7 @@ export async function runDeviceScan(
           details: {
             vendorId: r.device.vendorId,
             productId: r.device.productId,
-            unsupportedReason: r.reason,
+            unsupported: { kind: 'unsupported-preset', headline: r.reason },
           },
         },
       ],

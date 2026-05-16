@@ -23,6 +23,7 @@ import {
   assessMassStorageDevice,
   isFilesystemUnsupportedHere,
   formatHfsplusOnLinuxRefusal,
+  makeHfsplusOnLinuxUnsupportedReason,
 } from '@podkit/core';
 import type { IpodIdentityAssessment } from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
@@ -465,6 +466,10 @@ export async function runDeviceAdd(
             filesystem: matching.filesystem,
             platform,
             path: explicitPath,
+            unsupported: makeHfsplusOnLinuxUnsupportedReason({
+              ...(matching.filesystem ? { filesystem: matching.filesystem } : {}),
+              path: explicitPath,
+            }),
           },
         });
       }
@@ -768,13 +773,18 @@ export async function runDeviceAdd(
   // Refuse HFS+ iPods on Linux up-front — before mount attempts, identity
   // assessment, or any state-mutating work. See TASK-317.12.
   if (isFilesystemUnsupportedHere(ipod.filesystem, platform)) {
+    const path = ipod.mountPoint ?? `/dev/${ipod.identifier}`;
     throw new CliError({
       message: formatHfsplusOnLinuxRefusal().join('\n'),
       code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
       details: {
         filesystem: ipod.filesystem,
         platform,
-        path: ipod.mountPoint ?? `/dev/${ipod.identifier}`,
+        path,
+        unsupported: makeHfsplusOnLinuxUnsupportedReason({
+          ...(ipod.filesystem ? { filesystem: ipod.filesystem } : {}),
+          path,
+        }),
       },
     });
   }
