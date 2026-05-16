@@ -723,3 +723,6 @@ export { SyncExecutor, createSyncExecutor } from './sync/engine/executor.js';
 
 // Stream utilities (for remote sources)
 export { streamToTempFile, cleanupTempFile } from './utils/stream.js';
+
+// Canonical docs site URL builder
+export { DOCS_BASE_URL, DOCS_URLS, docsUrl } from './docs-urls.js';

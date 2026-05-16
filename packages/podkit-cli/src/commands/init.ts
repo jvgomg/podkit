@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { DOCS_URLS } from '@podkit/core';
 import { DEFAULT_CONFIG_PATH, DEFAULT_CONFIG, CURRENT_CONFIG_VERSION } from '../config/index.js';
 import type { GlobalOptions } from '../config/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
@@ -33,7 +34,7 @@ export type InitOutput = InitSuccess | InitErrorOutput;
  * See docs/adr/ADR-008-multi-collection-device-config.md for details.
  */
 export const CONFIG_TEMPLATE = `# podkit configuration
-# Docs: https://jvgomg.github.io/podkit/user-guide/configuration
+# Docs: ${DOCS_URLS.userGuideConfiguration}
 
 version = ${CURRENT_CONFIG_VERSION}
 
@@ -48,14 +49,14 @@ version = ${CURRENT_CONFIG_VERSION}
 
 # All transfer modes optimize for device compatibility
 # but you have options around preserving file data
-# Docs: https://jvgomg.github.io/podkit/user-guide/configuration#transfer-mode
+# Docs: ${DOCS_URLS.userGuideConfiguration}#transfer-mode
 # transferMode = "fast"       # Skip extra data for fastest sync (default)
 # transferMode = "optimized"  # Strip data your device won't use, saving storage
 # transferMode = "portable"   # Preserve extra track data for extracting files later
 
 # Clean up featured artist entries in iPod artist list
 # Moves "Artist feat. X" credits from the artist field into the title.
-# Docs: https://jvgomg.github.io/podkit/reference/clean-artists
+# Docs: ${DOCS_URLS.cleanArtists}
 #
 # Simple — just enable it:
 # cleanArtists = true

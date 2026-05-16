@@ -70,7 +70,9 @@ export interface DeviceValidationResult {
 // Unsupported device detection
 // =============================================================================
 
-const DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices';
+import { DOCS_URLS } from '../docs-urls.js';
+
+const DOCS_URL = DOCS_URLS.supportedDevices;
 
 /**
  * Check if a generation is unsupported.

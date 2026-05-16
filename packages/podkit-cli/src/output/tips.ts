@@ -6,6 +6,8 @@
  * so callers only need to populate the fields relevant to their command.
  */
 
+import { DOCS_URLS } from '@podkit/core';
+
 export interface Tip {
   message: string;
   url?: string;
@@ -45,7 +47,7 @@ const NORMALIZATION_TIP: TipDefinition = {
       return {
         message:
           'Some tracks are missing audio normalization data. Add ReplayGain or Sound Check tags for consistent volume.',
-        url: 'https://jvgomg.github.io/podkit/user-guide/syncing/sound-check/',
+        url: `${DOCS_URLS.soundCheck}/`,
       };
     }
     return null;
@@ -57,7 +59,7 @@ const MACOS_MOUNTING_TIP: TipDefinition = {
     if (mountRequiresSudo) {
       return {
         message: 'Learn more about macOS mounting issues with iFlash devices.',
-        url: 'https://jvgomg.github.io/podkit/troubleshooting/macos-mounting/',
+        url: `${DOCS_URLS.macosMounting}/`,
       };
     }
     return null;

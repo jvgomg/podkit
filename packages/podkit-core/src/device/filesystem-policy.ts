@@ -16,12 +16,14 @@
  * Linux-only. See TASK-317.12 and `docs/devices/linux-filesystems.md`.
  */
 
+import { DOCS_URLS } from '../docs-urls.js';
+
 /**
  * Canonical docs URL for the Linux filesystem policy. Referenced by every
- * user-facing message that mentions the refusal. Keep in sync with the
- * filename of `docs/devices/linux-filesystems.md`.
+ * user-facing message that mentions the refusal. Re-exported from the
+ * central docs-urls registry for back-compat with prior call sites.
  */
-export const LINUX_FILESYSTEMS_DOCS_URL = 'https://docs.podkit.app/devices/linux-filesystems';
+export const LINUX_FILESYSTEMS_DOCS_URL = DOCS_URLS.linuxFilesystems;
 
 /**
  * Returns true when the given filesystem cannot be supported by podkit on

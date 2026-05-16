@@ -22,7 +22,7 @@ On Linux, running `podkit device add` against an HFS+ iPod produces a clear refu
 Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.
 
 To use this iPod with podkit on Linux, reformat it to FAT32. See:
-  https://docs.podkit.app/devices/linux-filesystems
+  https://jvgomg.github.io/podkit/devices/linux-filesystems
 
 (podkit fully supports HFS+ iPods on macOS — this is a Linux-only limitation.)
 ```

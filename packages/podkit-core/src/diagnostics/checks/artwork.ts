@@ -24,7 +24,9 @@ import type {
   RepairResult,
 } from '../types.js';
 
-const DOCS_URL = 'https://jvgomg.github.io/podkit/troubleshooting/artwork-repair';
+import { DOCS_URLS } from '../../docs-urls.js';
+
+const DOCS_URL = DOCS_URLS.artworkRepair;
 
 export const artworkRebuildCheck: DiagnosticCheck = {
   id: 'artwork-rebuild',

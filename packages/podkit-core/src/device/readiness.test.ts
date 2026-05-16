@@ -497,7 +497,9 @@ describe('checkReadiness', () => {
         'Cannot add iPod: this iPod is formatted as HFS+, which podkit does not support on Linux.'
       );
       expect(result.unsupported?.details?.join(' ')).toContain('reformat it to FAT32');
-      expect(result.unsupported?.docsUrl).toBe('https://docs.podkit.app/devices/linux-filesystems');
+      expect(result.unsupported?.docsUrl).toBe(
+        'https://jvgomg.github.io/podkit/devices/linux-filesystems'
+      );
       expect(result.unsupported?.filesystem).toBe('hfsplus');
       expect(result.unsupported?.path).toBe(tmpDir);
     });

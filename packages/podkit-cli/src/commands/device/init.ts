@@ -15,6 +15,7 @@ import {
 } from '../../device-resolver.js';
 import { OutputContext } from '../../output/index.js';
 import type { ReadinessLevel, ReadinessUnsupportedReason } from '@podkit/core';
+import { DOCS_URLS } from '@podkit/core';
 import { DeviceErrorCodes } from './error-codes.js';
 import { resolveDeviceArg, type DeviceOpDeps } from './shared.js';
 import type { DeviceInitOutput } from './output-types.js';
@@ -197,9 +198,7 @@ export async function runDeviceInit(
       case 'unsupported': {
         const headline =
           readinessUnsupported?.headline ?? 'This device is not on podkit’s supported-device list.';
-        const docsUrl =
-          readinessUnsupported?.docsUrl ??
-          'https://jvgomg.github.io/podkit/devices/supported-devices';
+        const docsUrl = readinessUnsupported?.docsUrl ?? DOCS_URLS.supportedDevices;
         throw new CliError({
           message: `Device is not supported by podkit. ${headline}`,
           code: DeviceErrorCodes.UNSUPPORTED_DEVICE,

@@ -75,7 +75,7 @@ describe('formatHfsplusOnLinuxRefusal', () => {
 
   it('points at the canonical docs URL', () => {
     const text = formatHfsplusOnLinuxRefusal().join('\n');
-    expect(text).toContain('https://docs.podkit.app/devices/linux-filesystems');
+    expect(text).toContain('https://jvgomg.github.io/podkit/devices/linux-filesystems');
   });
 
   it('does not leak the word "libgpod" — refusal is filesystem-level, not binding-level', () => {

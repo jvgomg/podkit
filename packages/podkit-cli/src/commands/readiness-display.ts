@@ -5,7 +5,7 @@
  * used by `device scan`, `device info`, and `doctor` commands.
  */
 
-import { STAGE_DISPLAY_NAMES } from '@podkit/core';
+import { STAGE_DISPLAY_NAMES, DOCS_URLS } from '@podkit/core';
 import type {
   ReadinessStageResult,
   ReadinessLevel,
@@ -48,8 +48,7 @@ export function formatReadinessLevel(level: ReadinessLevel, deviceName: string):
       // mounted. Point at the docs instead \u2014 the troubleshooting page
       // covers the external tools (iPod Reset Utility, parted/gparted,
       // mkfs.vfat, Rockbox utility) that actually do this work.
-      // TODO: replace with central DOCS_URLS const
-      return 'No mountable partition detected \u2014 see: https://docs.podkit.app/devices/troubleshooting';
+      return `No mountable partition detected \u2014 see: ${DOCS_URLS.troubleshooting}`;
     case 'hardware-error':
       return 'Hardware error \u2014 device may be disconnected or failing';
     case 'unsupported':
@@ -108,7 +107,7 @@ export interface ReadinessIssue {
 
 // ── Summary rendering ───────────────────────────────────────────────────────
 
-const SYSINFO_DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices';
+const SYSINFO_DOCS_URL = DOCS_URLS.supportedDevices;
 
 /**
  * Format compact one-line-per-stage readiness summary as a list of lines.

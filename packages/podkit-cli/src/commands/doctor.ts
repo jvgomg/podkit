@@ -61,6 +61,7 @@ import { createMusicAdapter } from '../utils/source-adapter.js';
 import { createShutdownController } from '../shutdown.js';
 import { openDevice, getDeviceTypeDisplayName } from './open-device.js';
 import type { ReadinessResult } from '@podkit/core';
+import { DOCS_URLS } from '@podkit/core';
 import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import {
   stageMarker,
@@ -696,9 +697,7 @@ export async function runDoctorDiagnostics(
         }
       }
       out.newline();
-      out.print(
-        `See: ${unsupported?.docsUrl ?? 'https://jvgomg.github.io/podkit/devices/supported-devices'}`
-      );
+      out.print(`See: ${unsupported?.docsUrl ?? DOCS_URLS.supportedDevices}`);
     });
     opened?.ipod?.close();
     out.setExitCode(1);

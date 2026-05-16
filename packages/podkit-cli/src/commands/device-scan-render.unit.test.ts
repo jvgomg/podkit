@@ -278,7 +278,7 @@ describe('renderDeviceScan', () => {
       });
       const output = renderDeviceScan(emptyInput({ usbOnlyIpods: [usbOnly] })).join('\n');
       expect(output).toContain(
-        'No mountable partition detected — see: https://docs.podkit.app/devices/troubleshooting'
+        'No mountable partition detected — see: https://jvgomg.github.io/podkit/devices/troubleshooting'
       );
       expect(output).not.toContain('Needs partitioning — see: podkit device init');
     });

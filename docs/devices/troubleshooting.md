@@ -23,7 +23,7 @@ If the device still doesn't appear, run `podkit device scan --report` and attach
 `podkit device scan` may report:
 
 ```
-No mountable partition detected — see: https://docs.podkit.app/devices/troubleshooting
+No mountable partition detected — see: https://jvgomg.github.io/podkit/devices/troubleshooting
 ```
 
 This means podkit recognised the device over USB (Apple vendor ID + iPod product ID), but no block-device partition was found. Possible causes:
