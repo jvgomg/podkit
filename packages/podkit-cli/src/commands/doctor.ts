@@ -869,21 +869,32 @@ export async function runDoctorDiagnostics(
 
         const details: string[] = [];
 
-        // Artwork corruption details
+        // Check-specific failure-explanation copy. Route by check id — the
+        // previous unconditional fall-through made every failing check show
+        // artwork wording (TASK-317.02 Bug 3).
         if (check.status === 'fail' && check.details) {
           const d = check.details as Record<string, unknown>;
-          if (d.totalEntries !== undefined) {
-            const total = (d.totalEntries as number).toLocaleString();
-            const corrupt = (d.corruptEntries as number).toLocaleString();
-            const healthyEntries = (d.healthyEntries as number).toLocaleString();
-            const pct = d.corruptPercent;
+          if (check.id === 'artwork-rebuild') {
+            if (d.totalEntries !== undefined) {
+              const total = (d.totalEntries as number).toLocaleString();
+              const corrupt = (d.corruptEntries as number).toLocaleString();
+              const healthyEntries = (d.healthyEntries as number).toLocaleString();
+              const pct = d.corruptPercent;
+              details.push(
+                `Corrupt: ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
+              );
+              details.push(`Healthy: ${healthyEntries} entries with valid offsets`);
+            }
+            details.push('The artwork database is out of sync with the thumbnail files.');
+            details.push('Affected tracks display wrong or missing artwork on the iPod.');
+          } else if (check.id === 'sysinfo-consistency') {
             details.push(
-              `Corrupt: ${corrupt} / ${total} entries (${pct}%) reference data beyond ithmb file bounds`
+              "The on-disk SysInfoExtended doesn't match the live device — likely a stale file copied from a different iPod."
             );
-            details.push(`Healthy: ${healthyEntries} entries with valid offsets`);
+            details.push(
+              'Run `podkit doctor --repair sysinfo-consistency` to refresh it from USB firmware.'
+            );
           }
-          details.push('The artwork database is out of sync with the thumbnail files.');
-          details.push('Affected tracks display wrong or missing artwork on the iPod.');
         }
 
         // Build fix command from actions
