@@ -37,7 +37,7 @@ import { printCapabilitySummary, confirmUnsupportedDeviceAdd } from './capabilit
 const SYSINFO_MISSING_PROMPT_LINES = [
   'SysInfo/SysInfoExtended is missing — required for syncing this iPod.',
   'podkit can read it from the device firmware over USB.',
-  'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices',
+  'Learn more: https://jvgomg.github.io/podkit/devices/supported-devices/',
 ] as const;
 
 /**

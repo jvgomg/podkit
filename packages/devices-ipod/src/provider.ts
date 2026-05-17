@@ -142,7 +142,7 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
         addArgs: [],
         notes: [
           identity.notSupportedReason,
-          'See: https://jvgomg.github.io/podkit/devices/supported-devices',
+          'See: https://jvgomg.github.io/podkit/devices/supported-devices/',
         ],
       };
     }

@@ -12,12 +12,17 @@ export const DOCS_BASE_URL = 'https://jvgomg.github.io/podkit';
 /**
  * Build a docs URL from a page slug (leading slash optional).
  *
+ * URLs always end with a trailing slash to match Starlight's default
+ * `trailingSlash: 'always'` serving behavior. Call sites should never
+ * append their own `/` to values from {@link DOCS_URLS}.
+ *
  * @example
  *   docsUrl('devices/linux-filesystems')
- *     // → 'https://jvgomg.github.io/podkit/devices/linux-filesystems'
+ *     // → 'https://jvgomg.github.io/podkit/devices/linux-filesystems/'
  */
 export function docsUrl(slug: string): string {
-  const normalized = slug.startsWith('/') ? slug : `/${slug}`;
+  const leading = slug.startsWith('/') ? slug : `/${slug}`;
+  const normalized = leading.endsWith('/') ? leading : `${leading}/`;
   return `${DOCS_BASE_URL}${normalized}`;
 }
 

@@ -25,7 +25,7 @@ import type { ReadinessUnsupportedReason, IpodGenerationId } from '@podkit/devic
  * embeds the URL on the payload so consumers can render it without
  * re-deriving it.
  */
-const SUPPORTED_DEVICES_DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices';
+const SUPPORTED_DEVICES_DOCS_URL = 'https://jvgomg.github.io/podkit/devices/supported-devices/';
 
 /**
  * Generation ids that are iOS-based sync targets (no disk mode). Used to pick

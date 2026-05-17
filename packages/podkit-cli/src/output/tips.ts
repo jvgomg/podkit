@@ -47,7 +47,7 @@ const NORMALIZATION_TIP: TipDefinition = {
       return {
         message:
           'Some tracks are missing audio normalization data. Add ReplayGain or Sound Check tags for consistent volume.',
-        url: `${DOCS_URLS.soundCheck}/`,
+        url: DOCS_URLS.soundCheck,
       };
     }
     return null;
@@ -59,7 +59,7 @@ const MACOS_MOUNTING_TIP: TipDefinition = {
     if (mountRequiresSudo) {
       return {
         message: 'Learn more about macOS mounting issues with iFlash devices.',
-        url: `${DOCS_URLS.macosMounting}/`,
+        url: DOCS_URLS.macosMounting,
       };
     }
     return null;

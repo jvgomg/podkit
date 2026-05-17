@@ -498,7 +498,7 @@ describe('checkReadiness', () => {
       );
       expect(result.unsupported?.details?.join(' ')).toContain('reformat it to FAT32');
       expect(result.unsupported?.docsUrl).toBe(
-        'https://jvgomg.github.io/podkit/devices/linux-filesystems'
+        'https://jvgomg.github.io/podkit/devices/linux-filesystems/'
       );
       expect(result.unsupported?.filesystem).toBe('hfsplus');
       expect(result.unsupported?.path).toBe(tmpDir);

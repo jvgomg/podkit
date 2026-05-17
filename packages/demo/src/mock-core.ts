@@ -2426,7 +2426,7 @@ export function makeHfsplusOnLinuxUnsupportedReason(_options: {
 }
 
 export const LINUX_FILESYSTEMS_DOCS_URL =
-  'https://jvgomg.github.io/podkit/devices/linux-filesystems';
+  'https://jvgomg.github.io/podkit/devices/linux-filesystems/';
 
 export function identify(_input: any): any {
   return undefined;
