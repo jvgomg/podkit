@@ -340,6 +340,93 @@ mise run tools:build   # Build gpod-tool (needed for iPod database tests)
 
 Without these steps, integration tests will fail at preload time with a clear "Missing required test dependency" message naming the missing tool. That's the preflight system doing its job — fix the environment, don't suppress the error.
 
+## Mocking: prefer DI over `mock.module()`
+
+### Why `mock.module()` is restricted
+
+Bun's `mock.module(specifier, factory)` mutates the **process-global** module
+registry. Once a test mocks `@podkit/ipod-firmware` (for example), every other
+test file loaded into the same `bun test` worker sees the mocked module —
+including tests that have nothing to do with the original suite. Calling
+`mock.restore()` in `afterEach` is easy to forget and easy to miss in code
+review.
+
+This isn't a theoretical concern: a `mock.module('@podkit/ipod-firmware', …)`
+in one of the readiness tests has been observed breaking unrelated readiness
+tests that load the real module. The symptom is order-dependent: tests pass in
+isolation, fail in the suite, and the failure points at code that hasn't been
+touched.
+
+**Rule:** new tests must not call `mock.module()`. Existing call sites are
+being migrated to dependency injection (see "Existing offenders" below).
+
+### The right pattern
+
+For runners that touch `@podkit/core`, the OS, or the device manager, accept a
+`XDeps` interface and let tests inject fakes at the function-call boundary.
+The CLI side of this is fully documented in §"The deps seam, in detail"
+above. For library code in `@podkit/core`, follow the same shape — the
+`sysinfo-modelnum-mismatch.ts` check is the cleanest reference: it accepts
+optional `SysInfoFsReader` and `SieReader` constructor parameters whose real
+implementations are imported by default and whose test stubs are passed in by
+the test file.
+
+For mocking individual function calls — *not* whole modules — `bun:test`'s
+`mock(impl)` is fine and lives only on the value you pass to the runner via
+its `Deps`. That keeps the mock scoped to the call rather than the module
+graph.
+
+### Existing offenders
+
+Tracked in TASK-343 item 3. Five files still call `mock.module()` and are
+being migrated:
+
+| File | What it mocks |
+|---|---|
+| `packages/devices-ipod/src/provider.test.ts` | `@podkit/ipod-firmware` |
+| `packages/podkit-core/src/diagnostics/checks/sysinfo-extended.test.ts` | `usb-path-resolution.js` + `@podkit/ipod-firmware` (5 calls) |
+| `packages/podkit-core/src/diagnostics/checks/sysinfo-consistency-repair.test.ts` | same two |
+| `packages/podkit-core/src/sync/video/handler-execute.test.ts` | `video/transcode.js`, `video/probe.js`, `executor-fs.js`, `ipod/video.js` |
+| `packages/podkit-core/src/adapters/directory.test.ts` | `glob`, `music-metadata` |
+
+When migrating one of these, follow the seam pattern: add an optional
+constructor or function parameter on the production code with a sensible
+default, then have the test pass a stub through that parameter rather than
+patching the module.
+
+## Assertion style
+
+There is no project-wide rule that "all tests use snapshots" or "all tests
+use field assertions" — the choice depends on what you're pinning:
+
+| What you're asserting | Use |
+|---|---|
+| Stable, multi-line user-facing text (CLI output, formatted error block) | `expect(text).toContain(...)` for fragments, full-string `toBe` for short fixed messages |
+| Structured JSON envelopes from the CLI | field-by-field `expect(json.code).toBe(...)`, `expect(json).toMatchObject(...)` — see `expectCliError` |
+| Typed discriminated unions (e.g. `ReadinessUnsupportedReason`) | direct field access: `expect(result.unsupported?.kind).toBe('ios-device')` |
+| Long generated artifacts where any change is interesting (M3U playlists, JSON reports) | a focused string assertion is still preferred over full-document snapshots — easier to diff in review |
+
+The codebase does **not** use `expect(...).toMatchSnapshot()` — searches show
+zero call sites. Don't introduce it without team agreement; the existing
+hand-rolled `toContain` / `toMatchObject` patterns make failures
+self-documenting in PR review.
+
+## Canonical fake builders
+
+Three sources of test data exist; pick one deliberately rather than
+hand-rolling inline fixtures:
+
+| Package | Use it for |
+|---|---|
+| `@podkit/device-testing` | Anything device-shaped: `personas` (typed `DevicePersona` fixtures with USB descriptors + SysInfo + lsblk JSON), `systemStates` (host-environment snapshots), `ReplaySubprocessRunner`. See [agents/device-testing.md](device-testing.md). |
+| `@podkit/gpod-testing` | Anything iPod-database-shaped: `withTestIpod()`, `createTestIpod()`, `addTracks()`. Tests that need a real iTunesDB on disk. |
+| `@podkit/test-fixtures` | Audio file generation: FLAC/MP3 files with controllable metadata and artwork for sync-pipeline tests. |
+
+For the in-process CLI helpers (`makeFakeIpodAdapter`,
+`makeFakeOpenDeviceResult`, `fakeManager`, `fakeCore`), see
+`packages/podkit-cli/src/test-utils/`. Do not add a second copy of these
+helpers inside an individual test file — extend the shared utility instead.
+
 ## Writing Tests with iPod Databases
 
 Use `@podkit/gpod-testing` to create test iPod environments:
