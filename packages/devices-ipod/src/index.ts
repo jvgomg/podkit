@@ -40,6 +40,7 @@ export {
   UNSUPPORTED_IPOD_PRODUCT_IDS,
   lookupUnsupportedReason,
   lookupIosRangeFallbackReason,
+  lookupUnsupportedReadinessReason,
 } from './tables/unsupported.js';
 
 // ── Lookups ───────────────────────────────────────────────────────────────────

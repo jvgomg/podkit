@@ -37,7 +37,7 @@ import type {
 } from '@podkit/device-types';
 import { inquireFirmware } from '@podkit/ipod-firmware';
 import { lookupByUsbId } from './lookups.js';
-import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from './tables/unsupported.js';
+import { lookupUnsupportedReadinessReason } from './tables/unsupported.js';
 
 /** Apple USB vendor ID (lower-case, no 0x prefix) */
 const APPLE_VENDOR_ID = '05ac';
@@ -98,15 +98,14 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
     // Unsupported short-circuit — return tagged identity WITHOUT calling
     // inquireFirmware. Saves the ~5s SCSI/USB timeout per device on
     // unsupported hardware (Touch/iPhone/iPad/nano 6G/7G/Shuffle 3G/4G).
-    const unsupportedReason =
-      lookupUnsupportedReason(fp.productId) ?? lookupIosRangeFallbackReason(fp.productId);
+    const unsupportedReason = lookupUnsupportedReadinessReason(fp.productId);
     if (unsupportedReason) {
       return {
         kind: 'ipod',
         firewireGuid: '',
         serialNumber: fp.serialNumber ?? '',
         familyId: null,
-        notSupportedReason: unsupportedReason,
+        unsupportedReason,
       };
     }
 
@@ -135,15 +134,13 @@ export const ipodProvider: DeviceProvider<IpodIdentity> = {
     // Unsupported iPod (Touch / nano 6 / shuffle 3G/4G / iOS device): surface
     // the reason as a note. No add-command to suggest — but the user benefits
     // from knowing the device was *recognised*, just not supported.
-    if (identity.notSupportedReason) {
+    if (identity.unsupportedReason) {
+      const { headline, docsUrl } = identity.unsupportedReason;
       return {
         providerId: 'ipod',
         kind: 'ipod',
         addArgs: [],
-        notes: [
-          identity.notSupportedReason,
-          'See: https://jvgomg.github.io/podkit/devices/supported-devices/',
-        ],
+        notes: docsUrl ? [headline, `See: ${docsUrl}`] : [headline],
       };
     }
 

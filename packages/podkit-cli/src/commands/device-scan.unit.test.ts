@@ -406,7 +406,10 @@ describe('runDeviceScan', () => {
         kind: 'ipod',
         device: { vendorId: '05ac', productId: '12aa' },
         supported: false,
-        notSupportedReason: 'iPod touch uses a proprietary sync protocol',
+        unsupportedReason: {
+          kind: 'ios-device',
+          headline: 'iPod touch uses a proprietary sync protocol',
+        },
       };
 
       const deps: DeviceScanDeps = {

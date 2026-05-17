@@ -248,8 +248,8 @@ function pushUsbOnlyIpodRow(
 
   if (!recognised.supported) {
     lines.push('  This device is not supported by podkit.');
-    if (recognised.notSupportedReason) {
-      lines.push(`  ${recognised.notSupportedReason}`);
+    if (recognised.unsupportedReason) {
+      lines.push(`  ${recognised.unsupportedReason.headline}`);
     }
   } else {
     const readiness = createUsbOnlyReadinessResult(recognised);

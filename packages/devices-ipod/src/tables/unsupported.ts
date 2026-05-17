@@ -1,3 +1,6 @@
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
+import { SUPPORTED_DEVICES_DOCS_URL } from '../build-unsupported-reason.js';
+
 /**
  * USB product IDs of iPod/iOS devices that podkit cannot sync, with the reason.
  *
@@ -154,4 +157,33 @@ export function lookupIosRangeFallbackReason(productId: string): string | null {
     return "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
   }
   return null;
+}
+
+/**
+ * Combined lookup that returns a fully-typed {@link ReadinessUnsupportedReason}
+ * for an unsupported USB product ID, or `null` if the device is supported.
+ *
+ * Picks the `kind` discriminator based on PID range:
+ * - PIDs in the iOS range (0x1290–0x12af) get `'ios-device'` — iPhone / iPad /
+ *   iPod touch / Apple Watch all use Apple's proprietary sync protocol.
+ * - Explicit Apple table entries outside that range (nano 6G/7G, shuffle 3G/4G)
+ *   get `'unsupported-device'` — podkit-specific limitations, not iOS.
+ *
+ * Used by `IpodClassification`, `IpodIdentity`, and the device-scan JSON
+ * envelope so every consumer sees the same canonical shape, replacing the
+ * legacy bare-string `notSupportedReason` field.
+ */
+export function lookupUnsupportedReadinessReason(
+  productId: string
+): ReadinessUnsupportedReason | null {
+  const headline = lookupUnsupportedReason(productId) ?? lookupIosRangeFallbackReason(productId);
+  if (!headline) return null;
+  const normalized = productId.toLowerCase().replace(/^0x/, '');
+  const pid = parseInt(normalized, 16);
+  const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
+  return {
+    kind: isIosRange ? 'ios-device' : 'unsupported-device',
+    headline,
+    docsUrl: SUPPORTED_DEVICES_DOCS_URL,
+  };
 }

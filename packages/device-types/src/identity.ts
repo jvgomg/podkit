@@ -8,6 +8,8 @@
  * @module
  */
 
+import type { ReadinessUnsupportedReason } from './unsupported-reason.js';
+
 // =============================================================================
 // USB fingerprint
 // =============================================================================
@@ -48,7 +50,7 @@ export type UsbFingerprint = {
  * number alone but firmware data was not (yet) read — typical for unsupported
  * devices where the inquiry is short-circuited, or for partial identifications.
  *
- * When `notSupportedReason` is set, the device was identified as an iPod but
+ * When `unsupportedReason` is set, the device was identified as an iPod but
  * is not supported by podkit (libgpod limitation, iTunes-only auth, etc.).
  * Other identity fields may be empty placeholders in that case.
  * Callers should surface the reason and stop the add flow.
@@ -60,9 +62,12 @@ export type IpodIdentity = {
   familyId: number | null;
   /**
    * If set, the device is a known iPod but cannot be synced by podkit.
-   * Callers should surface this reason to the user and abort the add flow.
+   * Carries the same {@link ReadinessUnsupportedReason} shape used by
+   * `IpodModel.unsupportedReason` and the readiness pipeline, so consumers
+   * can render `headline` / `details` / `docsUrl` directly without bridging
+   * a bare-string field.
    */
-  notSupportedReason?: string;
+  unsupportedReason?: ReadinessUnsupportedReason;
 };
 
 /**

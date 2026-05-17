@@ -799,21 +799,17 @@ export async function runDeviceAdd(
         (c): c is Extract<typeof c, { kind: 'ipod' }> => c.kind === 'ipod' && c.supported === false
       );
       if (unsupportedIpod) {
+        const pid = parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16);
+        const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
         iosUnsupportedDisplay =
-          unsupportedIpod.model?.displayName ??
-          (parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) >= 0x1290 &&
-          parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) <= 0x12af
-            ? 'iOS device'
-            : 'Unsupported iPod');
-        iosUnsupportedReason = {
-          kind:
-            parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) >= 0x1290 &&
-            parseInt(unsupportedIpod.device.productId.replace(/^0x/i, ''), 16) <= 0x12af
-              ? 'ios-device'
-              : 'unsupported-device',
-          headline:
-            unsupportedIpod.notSupportedReason ??
-            `${iosUnsupportedDisplay} is not supported by podkit.`,
+          unsupportedIpod.model?.displayName ?? (isIosRange ? 'iOS device' : 'Unsupported iPod');
+        // `classifyAsIpod` already attaches the canonical typed payload.
+        // Fall back to a synthesised reason only when the classifier somehow
+        // returned `supported: false` without one (defensive — currently
+        // unreachable on the iPod cascade path).
+        iosUnsupportedReason = unsupportedIpod.unsupportedReason ?? {
+          kind: isIosRange ? 'ios-device' : 'unsupported-device',
+          headline: `${iosUnsupportedDisplay} is not supported by podkit.`,
           docsUrl: DOCS_URLS.supportedDevices,
         };
       }
@@ -1013,7 +1009,7 @@ export async function runDeviceAdd(
   }
 
   // Known-unsupported generations (touch_*, nano_6/7, shuffle_3g/4g, iOS): warn-allow.
-  // The cascade-resolved model carries `notSupportedReason`; we surface the
+  // The cascade-resolved model carries `unsupportedReason`; we surface the
   // canonical message and prompt explicitly. On confirmation we mark the
   // persisted device with `unsupported: true` so `sync` + mutating
   // `doctor --repair` flows can still refuse.

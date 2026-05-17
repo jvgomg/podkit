@@ -202,7 +202,7 @@ describe('renderDeviceScan', () => {
 
     it('renders the unsupported USB-only iPod with its not-supported reason', () => {
       expect(output).toContain('This device is not supported by podkit.');
-      expect(output).toContain(usbOnlyUnsupported.notSupportedReason!);
+      expect(output).toContain(usbOnlyUnsupported.unsupportedReason!.headline);
     });
 
     it('renders the mass-storage DAP with preset id and disk identifier', () => {
@@ -265,16 +265,19 @@ describe('renderDeviceScan', () => {
 
     it('renders "iOS device" label for an iOS-range PID with no model (TASK-317.03 #4)', () => {
       // PID 0x12ad is in the iOS-range catch (0x1290–0x12af) but not in
-      // IPOD_USB_IDS — the classifier returns supported=false with a
-      // notSupportedReason but no model. The renderer should NOT collapse
+      // IPOD_USB_IDS — the classifier returns supported=false with an
+      // unsupportedReason but no model. The renderer should NOT collapse
       // that to "Unknown iPod" — it should derive a friendly "iOS device"
       // label from the PID range so the user sees what podkit recognised.
       const synthetic: IpodClassification<EnumeratedUsbDevice> = {
         kind: 'ipod',
         device: { vendorId: '05ac', productId: '12ad' },
         supported: false,
-        notSupportedReason:
-          "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol.",
+        unsupportedReason: {
+          kind: 'ios-device',
+          headline:
+            "iOS device (iPhone, iPad, or iPod touch) uses Apple's proprietary sync protocol.",
+        },
       };
       const lines = renderDeviceScan(emptyInput({ usbOnlyIpods: [synthetic] }));
       const output = stripAnsi(lines.join('\n'));

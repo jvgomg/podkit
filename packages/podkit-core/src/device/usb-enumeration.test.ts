@@ -39,7 +39,7 @@ describe('parseSystemProfilerUsbData', () => {
     });
   });
 
-  it('returns no iPod-domain fields (model/supported/notSupportedReason absent)', () => {
+  it('returns no iPod-domain fields (model/supported/unsupportedReason absent)', () => {
     const data = {
       SPUSBDataType: [
         {
@@ -64,7 +64,7 @@ describe('parseSystemProfilerUsbData', () => {
       // Pure enumeration shape — no iPod-domain leakage.
       expect(r).not.toHaveProperty('model');
       expect(r).not.toHaveProperty('supported');
-      expect(r).not.toHaveProperty('notSupportedReason');
+      expect(r).not.toHaveProperty('unsupportedReason');
       // Only USB-shape fields are present.
       const keys = Object.keys(r);
       for (const k of keys) {

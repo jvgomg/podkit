@@ -226,13 +226,17 @@ describe('ipodProvider', () => {
       expect(intent?.notes?.join('\n')).toContain('mount');
     });
 
-    it('surfaces notSupportedReason in notes for unsupported iPods', () => {
+    it('surfaces unsupportedReason in notes for unsupported iPods', () => {
       const identity = {
         kind: 'ipod' as const,
         firewireGuid: '',
         serialNumber: '',
         familyId: null,
-        notSupportedReason: 'iPod Touch is not supported by podkit (iTunes-only authentication).',
+        unsupportedReason: {
+          kind: 'ios-device' as const,
+          headline: 'iPod Touch is not supported by podkit (iTunes-only authentication).',
+          docsUrl: 'https://jvgomg.github.io/podkit/devices/supported-devices/',
+        },
       };
       const intent = ipodProvider.describeAddIntent!(identity, {});
 

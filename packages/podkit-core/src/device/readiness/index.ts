@@ -38,26 +38,20 @@ function coerceUnsupportedReason(
 /**
  * Map an `IpodClassification` rejection into the typed `ReadinessUnsupportedReason`.
  *
- * The classifier already populated `notSupportedReason` with the canonical
- * wording from `tables/unsupported.ts` (table or iOS-range fallback). We
- * use the productId to decide between `'ios-device'` (PID lives in the iOS
- * 0x1290–0x12af range catch) and `'unsupported-device'` (everything else
- * — explicit Apple table entries like nano 7G, shuffle 3G/4G, Touch).
+ * `classifyAsIpod` (in `@podkit/devices-ipod`) already attaches the canonical
+ * typed payload via `lookupUnsupportedReadinessReason`. This helper just
+ * narrows + provides a defensive fallback for the unreachable case where the
+ * classifier returned `supported: false` without one.
  */
 function ipodClassificationToUnsupportedReason(
   classification: IpodClassification<EnumeratedUsbDevice>
 ): ReadinessUnsupportedReason {
-  const headline = classification.notSupportedReason ?? 'Device not supported by podkit.';
-  const productIdNum = parseInt(classification.device.productId.replace(/^0x/i, ''), 16);
-  // 0x1290–0x12af is the canonical iOS PID range fallback in
-  // `lookupIosRangeFallbackReason`. PIDs outside that range come from the
-  // explicit Apple unsupported-PID table (touch_*, nano 6/7, shuffle 3G/4G).
-  const isIosRange =
-    Number.isFinite(productIdNum) && productIdNum >= 0x1290 && productIdNum <= 0x12af;
-  return {
-    kind: isIosRange ? 'ios-device' : 'unsupported-device',
-    headline,
-  };
+  return (
+    classification.unsupportedReason ?? {
+      kind: 'unsupported-device',
+      headline: 'Device not supported by podkit.',
+    }
+  );
 }
 
 export { checkIpodStructure } from './stages/mount.js';
@@ -353,10 +347,10 @@ export function createUsbOnlyReadinessResult(
 
   // Unsupported short-circuit: an Apple-vendor PID that lives in the
   // unsupported-PID table (or the iOS range fallback) is classified with
-  // `supported: false` and a canonical `notSupportedReason`. Surface the
-  // new level + structured reason instead of pretending the device only
+  // `supported: false` and a canonical `unsupportedReason` payload. Surface
+  // the new level + structured reason instead of pretending the device only
   // needs a partition table.
-  if (classification.supported === false && classification.notSupportedReason) {
+  if (classification.supported === false && classification.unsupportedReason) {
     const unsupported = ipodClassificationToUnsupportedReason(classification);
     const stages: ReadinessStageResult[] = [
       {

@@ -15,10 +15,11 @@
  * @module
  */
 
+import type { ReadinessUnsupportedReason } from '@podkit/device-types';
 import type { IpodModel } from './types.js';
 import { identify } from './identity.js';
 import { lookupByUsbId } from './lookups.js';
-import { lookupUnsupportedReason, lookupIosRangeFallbackReason } from './tables/unsupported.js';
+import { lookupUnsupportedReadinessReason } from './tables/unsupported.js';
 
 // ── Apple vendor matching ────────────────────────────────────────────────────
 
@@ -84,18 +85,20 @@ export interface ClassifiableUsbDevice {
  *
  * `supported` is `false` when the device is a known but unsyncable iPod-family
  * member (touch, iPhone, iPad, nano 6G/7G, shuffle 3G/4G, Apple Watch). The
- * `notSupportedReason` field carries a human-readable explanation in that case.
+ * `unsupportedReason` field carries the structured payload in that case so
+ * consumers can render it without re-deriving the `kind` discriminator or the
+ * docs URL.
  *
  * `model` is populated when the product ID is in `IPOD_USB_IDS`; for
  * unsupported iOS-range PIDs that are not in that table, `model` is absent
- * but `supported: false` and `notSupportedReason` are still set.
+ * but `supported: false` and `unsupportedReason` are still set.
  */
 export interface IpodClassification<TDevice extends ClassifiableUsbDevice = ClassifiableUsbDevice> {
   kind: 'ipod';
   device: TDevice;
   model?: IpodModel;
   supported: boolean;
-  notSupportedReason?: string;
+  unsupportedReason?: ReadinessUnsupportedReason;
 }
 
 // ── classifyAsIpod ───────────────────────────────────────────────────────────
@@ -127,8 +130,7 @@ export function classifyAsIpod<TDevice extends ClassifiableUsbDevice>(
   // These devices are reported as unsupported even when they are not in
   // `IPOD_USB_IDS`, so future iPhone/iPad PIDs fail closed with a useful
   // message rather than silently appearing as "Unknown iPod".
-  const unsupportedReason =
-    lookupUnsupportedReason(productId) ?? lookupIosRangeFallbackReason(productId);
+  const unsupportedReason = lookupUnsupportedReadinessReason(productId);
 
   // If the PID is in IPOD_USB_IDS, identify() returns a richer model with
   // generation/checksum metadata; if not, model is undefined.
@@ -144,6 +146,6 @@ export function classifyAsIpod<TDevice extends ClassifiableUsbDevice>(
     device,
     ...(model ? { model } : {}),
     supported: !unsupportedReason,
-    ...(unsupportedReason ? { notSupportedReason: unsupportedReason } : {}),
+    ...(unsupportedReason ? { unsupportedReason } : {}),
   };
 }

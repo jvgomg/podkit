@@ -9,7 +9,7 @@ describe('classifyAsIpod — known iPods', () => {
     expect(result).not.toBeNull();
     expect(result!.kind).toBe('ipod');
     expect(result!.supported).toBe(true);
-    expect(result!.notSupportedReason).toBeUndefined();
+    expect(result!.unsupportedReason?.headline).toBeUndefined();
     expect(result!.model?.displayName).toBe('iPod Classic 6th generation');
   });
 
@@ -81,35 +81,35 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     expect(result).not.toBeNull();
     expect(result!.kind).toBe('ipod');
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason).toContain('iTunes authentication');
+    expect(result!.unsupportedReason?.headline).toContain('iTunes authentication');
   });
 
   it('classifies iPod nano 6G as unsupported (0x05ac:0x120d)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '120d' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason).toContain('iTunesDB format');
+    expect(result!.unsupportedReason?.headline).toContain('iTunesDB format');
   });
 
   it('classifies iPod nano 7G as unsupported (0x05ac:0x1267)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '1267' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason).toContain('libgpod');
+    expect(result!.unsupportedReason?.headline).toContain('libgpod');
   });
 
   it('classifies iPod touch 5G as unsupported via known table (0x05ac:0x12aa)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '12aa' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason).toContain('proprietary sync protocol');
+    expect(result!.unsupportedReason?.headline).toContain('proprietary sync protocol');
   });
 
   it('classifies iPhone 5/5c/5s/6/SE/7/8/X/XR as unsupported (0x05ac:0x12a8)', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '12a8' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason).toContain('proprietary sync protocol');
+    expect(result!.unsupportedReason?.headline).toContain('proprietary sync protocol');
   });
 
   it('classifies an unknown PID in the iOS range as unsupported (0x05ac:0x12ad)', () => {
@@ -118,7 +118,7 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '12ad' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.notSupportedReason?.toLowerCase()).toContain('ios device');
+    expect(result!.unsupportedReason?.headline?.toLowerCase()).toContain('ios device');
   });
 });
 

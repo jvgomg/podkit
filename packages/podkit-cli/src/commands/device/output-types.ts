@@ -345,11 +345,16 @@ export interface DeviceScanSuccess {
     /** Best available model (deviceModel ?? usbModel) */
     model?: DeviceModelOutput;
     /**
-     * Reason the device is not supported by podkit. Populated when
+     * Structured reason the device is not supported by podkit. Populated when
      * `classifyAsIpod` recognised the device as a known-unsupported iPod
-     * family member (touch, iPhone, iPad, nano 6G/7G, shuffle 3G/4G).
+     * family member (touch, iPhone, iPad, nano 6G/7G, shuffle 3G/4G) or when
+     * the device is a vendor-recognised mass-storage DAP with no preset.
+     *
+     * Replaces the legacy bare-string `notSupportedReason` field; consumers
+     * read `unsupportedReason.headline` for the single-line message and
+     * `unsupportedReason.docsUrl` for the link.
      */
-    notSupportedReason?: string;
+    unsupportedReason?: ReadinessUnsupportedReason;
     readiness?: {
       level: string;
       stages: Array<{

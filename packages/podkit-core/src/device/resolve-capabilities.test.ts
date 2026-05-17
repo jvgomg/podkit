@@ -115,15 +115,18 @@ describe('resolveCapabilities — iPod identity', () => {
     expect(caps.supportedAudioCodecs).toContain('alac');
   });
 
-  it('resolves capabilities for unsupported devices (notSupportedReason on identity, not on caps)', () => {
+  it('resolves capabilities for unsupported devices (unsupportedReason on identity, not on caps)', () => {
     // familyId 18 → nano_7g, which is unsupported by libgpod but hardware-capable
     const identity = makeIpodIdentity({
       serialNumber: 'XXXXXXX',
       familyId: 18,
-      notSupportedReason: 'nano 7G not supported',
+      unsupportedReason: {
+        kind: 'unsupported-device',
+        headline: 'nano 7G not supported',
+      },
     });
     // resolveCapabilities still returns capabilities even for unsupported devices —
-    // capability resolution is about hardware class; the notSupportedReason lives on
+    // capability resolution is about hardware class; the unsupportedReason lives on
     // the identity and is surfaced by the CLI, not by capability resolution.
     const caps = resolveCapabilities(identity);
     // nano_7g hardware: ALAC-capable, video, artwork 240px

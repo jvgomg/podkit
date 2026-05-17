@@ -10,25 +10,6 @@ import { OutputContext, formatBytes, formatNumber, bold } from '../../output/ind
 import type { DeviceConfig } from '../../config/index.js';
 import type { ReadinessResult, ReadinessUnsupportedReason } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
-
-/**
- * Wrap an iPod classifier's bare rejection string into the typed
- * `ReadinessUnsupportedReason` payload. Picks `'ios-device'` when the PID
- * lives in the iOS 0x1290–0x12af range catch and `'unsupported-device'`
- * otherwise (explicit Apple table entries — touch_*, nano 6/7,
- * shuffle 3G/4G).
- */
-function makeIpodUnsupportedReason(
-  productId: string,
-  headline: string
-): ReadinessUnsupportedReason {
-  const pid = parseInt(productId.replace(/^0x/i, ''), 16);
-  const isIosRange = Number.isFinite(pid) && pid >= 0x1290 && pid <= 0x12af;
-  return {
-    kind: isIosRange ? 'ios-device' : 'unsupported-device',
-    headline,
-  };
-}
 import { stageMarker, formatReadinessLevel } from '../readiness-display.js';
 import {
   renderDeviceScan,
@@ -59,7 +40,11 @@ async function generateDiagnosticReport(
     mountPoint?: string;
   }>,
   readinessResults: ReadinessResult[],
-  usbOnlyIpods: Array<{ modelName?: string; supported?: boolean; notSupportedReason?: string }>,
+  usbOnlyIpods: Array<{
+    modelName?: string;
+    supported?: boolean;
+    unsupportedReason?: ReadinessUnsupportedReason;
+  }>,
   recognisedMassStorage: Array<{ presetId: string; diskIdentifier?: string }>,
   configuredDevices: Array<{ name: string; type: string; path?: string }>,
   config: { devices?: Record<string, DeviceConfig> },
@@ -159,8 +144,8 @@ async function generateDiagnosticReport(
     lines.push('---');
     const label = usbDevice.modelName ?? 'Unknown iPod';
     lines.push(`  iPod: ${label} (USB only)`);
-    if (!usbDevice.supported && usbDevice.notSupportedReason) {
-      lines.push(`  ${usbDevice.notSupportedReason}`);
+    if (!usbDevice.supported && usbDevice.unsupportedReason) {
+      lines.push(`  ${usbDevice.unsupportedReason.headline}`);
     }
     lines.push('');
   }
@@ -313,18 +298,10 @@ export async function runDeviceScan(
           // `level: 'unsupported'` for recognised-but-rejected iPods (touch,
           // iPhone, nano 6G/7G, …) rather than running the rest of the
           // pipeline against a device that will never mount in disk mode.
-          //
-          // Wrap the iPod classifier's bare reason string into the typed
-          // `ReadinessUnsupportedReason` payload — pick the kind based on
-          // whether the PID is in the iOS range fallback or the explicit
-          // unsupported-PID table.
-          ...(matchedUsb && matchedUsb.supported === false && matchedUsb.notSupportedReason
-            ? {
-                unsupported: makeIpodUnsupportedReason(
-                  matchedUsb.device.productId,
-                  matchedUsb.notSupportedReason
-                ),
-              }
+          // `classifyAsIpod` already produced the typed payload via
+          // `lookupUnsupportedReadinessReason`, so it threads through verbatim.
+          ...(matchedUsb && matchedUsb.supported === false && matchedUsb.unsupportedReason
+            ? { unsupported: matchedUsb.unsupportedReason }
             : {}),
         })
       );
@@ -454,7 +431,7 @@ export async function runDeviceScan(
         ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
       },
       ...(r.model ? { model: r.model } : {}),
-      ...(r.notSupportedReason ? { notSupportedReason: r.notSupportedReason } : {}),
+      ...(r.unsupportedReason ? { unsupportedReason: r.unsupportedReason } : {}),
       ...(usbReadiness
         ? {
             readiness: {
@@ -486,7 +463,7 @@ export async function runDeviceScan(
       productId: r.device.productId,
       ...(r.device.serialNumber ? { serialNumber: r.device.serialNumber } : {}),
     },
-    notSupportedReason: r.reason,
+    unsupportedReason: { kind: 'unsupported-preset', headline: r.reason },
     readiness: {
       level: 'unsupported',
       stages: [
@@ -526,7 +503,7 @@ export async function runDeviceScan(
       usbOnlyIpods.map((r) => ({
         modelName: r.model?.displayName,
         supported: r.supported,
-        notSupportedReason: r.notSupportedReason,
+        ...(r.unsupportedReason ? { unsupportedReason: r.unsupportedReason } : {}),
       })),
       massStorageList.map((r) => ({
         presetId: r.presetId,

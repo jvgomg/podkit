@@ -93,7 +93,7 @@ describe('classifyUsbDevices', () => {
     expect(unsupported).toBeDefined();
     if (unsupported && unsupported.kind === 'ipod') {
       expect(unsupported.device.productId).toBe('12aa');
-      expect(unsupported.notSupportedReason).toContain('proprietary sync protocol');
+      expect(unsupported.unsupportedReason?.headline).toContain('proprietary sync protocol');
     }
 
     // Echo Mini.
