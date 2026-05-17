@@ -1,8 +1,11 @@
 /**
  * Unit tests for ipodProvider
  *
- * `inquireFirmware` from `@podkit/ipod-firmware` is mocked at the module level
- * so no real hardware, native bindings, or FS access is needed.
+ * `inquireFirmware` from `@podkit/ipod-firmware` is injected via
+ * `createIpodProvider({ inquireFirmware })` so no real hardware, native
+ * bindings, or FS access is needed — and so the seam stays scoped to one
+ * provider instance instead of leaking through Bun's process-global module
+ * registry (see agents/testing.md §"Mocking: prefer DI over mock.module()").
  *
  * Test coverage:
  * - Non-Apple vendor ID → null
@@ -14,15 +17,16 @@
  * - Product ID normalisation (with/without 0x prefix)
  */
 
-import { describe, expect, it, mock, beforeAll } from 'bun:test';
+import { describe, expect, it, beforeAll } from 'bun:test';
 import type { ParsedFirmware } from '@podkit/device-types';
 import type { UsbFingerprint } from '@podkit/device-types';
+import { ipodProvider, createIpodProvider } from './provider.js';
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
 
-/** Canned ParsedFirmware returned by the mock when firmware is "available" */
+/** Canned ParsedFirmware returned by the stub when firmware is "available" */
 const MOCK_FIRMWARE: ParsedFirmware = {
   firewireGuid: '000A270024A23E9E',
   serialNumber: '7K74HBYZRP2',
@@ -45,17 +49,15 @@ const VALID_FP: UsbFingerprint = {
 };
 
 // ---------------------------------------------------------------------------
-// Module mock — must be declared before importing the module under test
+// Injected fake — each test constructs its own provider with the stub
+// firmware return value it cares about.
 // ---------------------------------------------------------------------------
 
 let firmwareMockReturnValue: ParsedFirmware | null = MOCK_FIRMWARE;
 
-mock.module('@podkit/ipod-firmware', () => ({
+const testProvider = createIpodProvider({
   inquireFirmware: async (_fp: UsbFingerprint) => firmwareMockReturnValue,
-}));
-
-// After mock.module, import the module under test
-const { ipodProvider } = await import('./provider.js');
+});
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -71,12 +73,12 @@ describe('ipodProvider', () => {
   describe('detect — vendor pre-filter', () => {
     it('returns null for a non-Apple vendor ID', async () => {
       const fp: UsbFingerprint = { vendorId: '071b', productId: '3203', bus: 1, devnum: 2 };
-      expect(await ipodProvider.detect(fp)).toBeNull();
+      expect(await testProvider.detect(fp)).toBeNull();
     });
 
     it('returns null for a non-Apple vendor ID with 0x prefix', async () => {
       const fp: UsbFingerprint = { vendorId: '0x071b', productId: '3203', bus: 1, devnum: 2 };
-      expect(await ipodProvider.detect(fp)).toBeNull();
+      expect(await testProvider.detect(fp)).toBeNull();
     });
 
     it('accepts Apple vendor ID without 0x prefix', async () => {
@@ -87,7 +89,7 @@ describe('ipodProvider', () => {
         bus: 3,
         devnum: 4,
       };
-      const result = await ipodProvider.detect(fp);
+      const result = await testProvider.detect(fp);
       // firmware mock returns MOCK_FIRMWARE → should produce a full identity
       expect(result).not.toBeNull();
     });
@@ -99,7 +101,7 @@ describe('ipodProvider', () => {
         bus: 3,
         devnum: 4,
       };
-      const result = await ipodProvider.detect(fp);
+      const result = await testProvider.detect(fp);
       expect(result).not.toBeNull();
     });
   });
@@ -107,22 +109,22 @@ describe('ipodProvider', () => {
   describe('detect — product ID pre-filter', () => {
     it('returns null for Apple vendor + unknown product ID', async () => {
       const fp: UsbFingerprint = { vendorId: '05ac', productId: '9999', bus: 1, devnum: 2 };
-      expect(await ipodProvider.detect(fp)).toBeNull();
+      expect(await testProvider.detect(fp)).toBeNull();
     });
 
     it('returns null for Apple vendor + unknown product ID with 0x prefix', async () => {
       const fp: UsbFingerprint = { vendorId: '05ac', productId: '0x9999', bus: 1, devnum: 2 };
-      expect(await ipodProvider.detect(fp)).toBeNull();
+      expect(await testProvider.detect(fp)).toBeNull();
     });
 
     it('accepts known product ID without 0x prefix', async () => {
       const fp: UsbFingerprint = { vendorId: '05ac', productId: '1260', bus: 3, devnum: 4 };
-      expect(await ipodProvider.detect(fp)).not.toBeNull();
+      expect(await testProvider.detect(fp)).not.toBeNull();
     });
 
     it('accepts known product ID with 0x prefix', async () => {
       const fp: UsbFingerprint = { vendorId: '05ac', productId: '0x1260', bus: 3, devnum: 4 };
-      expect(await ipodProvider.detect(fp)).not.toBeNull();
+      expect(await testProvider.detect(fp)).not.toBeNull();
     });
   });
 
@@ -130,7 +132,7 @@ describe('ipodProvider', () => {
     it('returns null when firmware inquiry returns null', async () => {
       firmwareMockReturnValue = null;
       try {
-        expect(await ipodProvider.detect(VALID_FP)).toBeNull();
+        expect(await testProvider.detect(VALID_FP)).toBeNull();
       } finally {
         firmwareMockReturnValue = MOCK_FIRMWARE;
       }
@@ -138,7 +140,7 @@ describe('ipodProvider', () => {
 
     it('returns full IpodIdentity when firmware inquiry succeeds', async () => {
       firmwareMockReturnValue = MOCK_FIRMWARE;
-      const result = await ipodProvider.detect(VALID_FP);
+      const result = await testProvider.detect(VALID_FP);
       expect(result).not.toBeNull();
       expect(result!.kind).toBe('ipod');
       expect(result!.firewireGuid).toBe('000A270024A23E9E');
@@ -152,7 +154,7 @@ describe('ipodProvider', () => {
         capabilities: { familyId: 90, audioCodecs: [] },
       };
       try {
-        const result = await ipodProvider.detect(VALID_FP);
+        const result = await testProvider.detect(VALID_FP);
         expect(result!.familyId).toBe(90);
       } finally {
         firmwareMockReturnValue = MOCK_FIRMWARE;
@@ -167,7 +169,7 @@ describe('ipodProvider', () => {
         // capabilities intentionally absent
       };
       try {
-        const result = await ipodProvider.detect(VALID_FP);
+        const result = await testProvider.detect(VALID_FP);
         expect(result!.familyId).toBeNull();
       } finally {
         firmwareMockReturnValue = MOCK_FIRMWARE;
@@ -193,7 +195,7 @@ describe('ipodProvider', () => {
     for (const [label, productId] of SAMPLE_IDS) {
       it(`returns identity for ${label}`, async () => {
         const fp: UsbFingerprint = { vendorId: '05ac', productId, bus: 1, devnum: 2 };
-        const result = await ipodProvider.detect(fp);
+        const result = await testProvider.detect(fp);
         expect(result).not.toBeNull();
         expect(result!.kind).toBe('ipod');
       });

@@ -86,7 +86,7 @@ export {
 
 // ── Provider ──────────────────────────────────────────────────────────────────
 
-export { ipodProvider } from './provider.js';
+export { ipodProvider, createIpodProvider, type IpodProviderDeps } from './provider.js';
 
 // ── libgpod-naming surface ────────────────────────────────────────────────────
 

@@ -10,14 +10,17 @@
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { mkdir, stat, rm } from './executor-fs.js';
+import { mkdir as realMkdir, stat as realStat, rm as realRm } from './executor-fs.js';
 
 import type { CollectionVideo } from '../../video/directory-adapter.js';
 import type { DeviceAdapter, DeviceTrack, DeviceTrackInput } from '../../device/adapter.js';
-import { isVideoMediaType, createVideoTrackInput } from '../../ipod/video.js';
+import {
+  isVideoMediaType as realIsVideoMediaType,
+  createVideoTrackInput as realCreateVideoTrackInput,
+} from '../../ipod/video.js';
 import { MediaType } from '../../ipod/constants.js';
-import { transcodeVideo } from '../../video/transcode.js';
-import { probeVideo } from '../../video/probe.js';
+import { transcodeVideo as realTranscodeVideo } from '../../video/transcode.js';
+import { probeVideo as realProbeVideo } from '../../video/probe.js';
 import { generateVideoMatchKey, type DeviceVideo, type VideoOperation } from './types.js';
 import { calculateVideoOperationSize, calculateVideoOperationTime } from './planner.js';
 import { getVideoOperationDisplayName } from './executor.js';
@@ -52,6 +55,34 @@ import { VideoTrackClassifier } from './classifier.js';
  * Delegates to existing video sync functions from video-types.ts,
  * video-planner.ts, and video-executor.ts.
  */
+/**
+ * Dependency-injection seam for {@link VideoHandler}. Tests pass stubbed
+ * `transcodeVideo`, `probeVideo`, and filesystem helpers so the handler can
+ * be exercised without a real FFmpeg or filesystem. See
+ * `agents/testing.md` §"Mocking: prefer DI over mock.module()".
+ *
+ * Defaults pull the real implementations from sibling modules.
+ */
+export interface VideoHandlerDeps {
+  transcodeVideo?: typeof realTranscodeVideo;
+  probeVideo?: typeof realProbeVideo;
+  stat?: typeof realStat;
+  mkdir?: typeof realMkdir;
+  rm?: typeof realRm;
+  createVideoTrackInput?: typeof realCreateVideoTrackInput;
+  isVideoMediaType?: typeof realIsVideoMediaType;
+}
+
+interface ResolvedVideoHandlerDeps {
+  transcodeVideo: typeof realTranscodeVideo;
+  probeVideo: typeof realProbeVideo;
+  stat: typeof realStat;
+  mkdir: typeof realMkdir;
+  rm: typeof realRm;
+  createVideoTrackInput: typeof realCreateVideoTrackInput;
+  isVideoMediaType: typeof realIsVideoMediaType;
+}
+
 export class VideoHandler implements ContentTypeHandler<
   CollectionVideo,
   DeviceVideo,
@@ -65,9 +96,21 @@ export class VideoHandler implements ContentTypeHandler<
   /** Classifier for passthrough vs transcode decisions */
   private readonly classifier: VideoTrackClassifier;
 
-  constructor(config?: VideoSyncConfig) {
+  /** Injected helpers — defaults to real implementations */
+  private readonly deps: ResolvedVideoHandlerDeps;
+
+  constructor(config?: VideoSyncConfig, deps: VideoHandlerDeps = {}) {
     this.config = resolveVideoConfig(config);
     this.classifier = new VideoTrackClassifier(this.config);
+    this.deps = {
+      transcodeVideo: deps.transcodeVideo ?? realTranscodeVideo,
+      probeVideo: deps.probeVideo ?? realProbeVideo,
+      stat: deps.stat ?? realStat,
+      mkdir: deps.mkdir ?? realMkdir,
+      rm: deps.rm ?? realRm,
+      createVideoTrackInput: deps.createVideoTrackInput ?? realCreateVideoTrackInput,
+      isVideoMediaType: deps.isVideoMediaType ?? realIsVideoMediaType,
+    };
   }
 
   // ---- Diffing ----
@@ -386,7 +429,7 @@ export class VideoHandler implements ContentTypeHandler<
     );
 
     if (hasTranscodes && !ctx.dryRun) {
-      await mkdir(transcodeDir, { recursive: true });
+      await this.deps.mkdir(transcodeDir, { recursive: true });
     }
 
     try {
@@ -398,7 +441,7 @@ export class VideoHandler implements ContentTypeHandler<
     } finally {
       if (hasTranscodes && !ctx.dryRun) {
         try {
-          await rm(transcodeDir, { recursive: true, force: true });
+          await this.deps.rm(transcodeDir, { recursive: true, force: true });
         } catch {
           // Ignore cleanup errors
         }
@@ -433,7 +476,7 @@ export class VideoHandler implements ContentTypeHandler<
     let transcodeComplete = false;
     let transcodeError: Error | undefined;
 
-    const transcodePromise = transcodeVideo(source.filePath, tempOutputPath, settings, {
+    const transcodePromise = this.deps.transcodeVideo(source.filePath, tempOutputPath, settings, {
       signal: ctx.signal,
       onProgress: (p: TranscodeProgress) => {
         progressQueue.push({
@@ -482,12 +525,12 @@ export class VideoHandler implements ContentTypeHandler<
     await transcodePromise;
 
     // Get transcoded file size and probe for metadata
-    const outputStats = await stat(tempOutputPath);
-    const analysis = await probeVideo(source.filePath);
-    const outputAnalysis = await probeVideo(tempOutputPath);
+    const outputStats = await this.deps.stat(tempOutputPath);
+    const analysis = await this.deps.probeVideo(source.filePath);
+    const outputAnalysis = await this.deps.probeVideo(tempOutputPath);
 
     // Create track input for iPod database
-    const trackInput = createVideoTrackInput(source, analysis, {
+    const trackInput = this.deps.createVideoTrackInput(source, analysis, {
       size: outputStats.size,
       bitrate: outputAnalysis.videoBitrate + outputAnalysis.audioBitrate,
     });
@@ -528,11 +571,11 @@ export class VideoHandler implements ContentTypeHandler<
     yield { operation: op, phase: 'starting' };
 
     // Get file stats and probe metadata
-    const fileStats = await stat(source.filePath);
-    const analysis = await probeVideo(source.filePath);
+    const fileStats = await this.deps.stat(source.filePath);
+    const analysis = await this.deps.probeVideo(source.filePath);
 
     // Create track input
-    const trackInput = createVideoTrackInput(source, analysis, {
+    const trackInput = this.deps.createVideoTrackInput(source, analysis, {
       size: fileStats.size,
     });
 
@@ -798,7 +841,7 @@ function deviceTrackToVideo(track: DeviceTrack): DeviceVideo {
 export function getVideoDeviceItems(device: DeviceAdapter): DeviceVideo[] {
   const tracks = device
     .getTracks()
-    .filter((track) => isVideoMediaType(track.mediaType))
+    .filter((track) => realIsVideoMediaType(track.mediaType))
     .filter((track) => !('managed' in track && !track.managed));
 
   return tracks.map((track) => deviceTrackToVideo(track));

@@ -65,7 +65,18 @@ function isKnownIpodProduct(fp: UsbFingerprint): boolean {
 }
 
 /**
- * iPod device provider.
+ * Dependency-injection seam for {@link ipodProvider}. Production uses the
+ * default-wired `ipodProvider` export below; tests pass a stub for
+ * `inquireFirmware` to {@link createIpodProvider} to keep the seam scoped to
+ * one provider instance instead of mutating the global module registry.
+ */
+export interface IpodProviderDeps {
+  inquireFirmware?: typeof inquireFirmware;
+}
+
+/**
+ * Factory for an iPod device provider. Returns a fresh provider object
+ * wired to the supplied (or default) `inquireFirmware` implementation.
  *
  * `detect` pre-filters by Apple VID and known iPod product IDs, then calls
  * `inquireFirmware` to obtain the firmware identity. If firmware inquiry
@@ -74,6 +85,55 @@ function isKnownIpodProduct(fp: UsbFingerprint): boolean {
  *
  * For the offline / table-only case, use `lookupByUsbId` or `identify`
  * from `@podkit/devices-ipod` directly.
+ */
+export function createIpodProvider(deps: IpodProviderDeps = {}): DeviceProvider<IpodIdentity> {
+  const inquire = deps.inquireFirmware ?? inquireFirmware;
+  return {
+    id: 'ipod',
+
+    async detect(fp: UsbFingerprint): Promise<IpodIdentity | null> {
+      // Pre-filter: must be an Apple device.
+      if (!isAppleVendor(fp)) return null;
+
+      // Unsupported short-circuit — return tagged identity WITHOUT calling
+      // inquireFirmware. Saves the ~5s SCSI/USB timeout per device on
+      // unsupported hardware (Touch/iPhone/iPad/nano 6G/7G/Shuffle 3G/4G).
+      const unsupportedReason = lookupUnsupportedReadinessReason(fp.productId);
+      if (unsupportedReason) {
+        return {
+          kind: 'ipod',
+          firewireGuid: '',
+          serialNumber: fp.serialNumber ?? '',
+          familyId: null,
+          unsupportedReason,
+        };
+      }
+
+      // Pre-filter: must be a product ID we recognise as an iPod.
+      if (!isKnownIpodProduct(fp)) return null;
+
+      // Live firmware inquiry — SCSI or USB, orchestrated by ipod-firmware.
+      const firmware = await inquire(fp);
+      if (!firmware) return null;
+
+      return {
+        kind: 'ipod',
+        firewireGuid: firmware.firewireGuid,
+        serialNumber: firmware.serialNumber,
+        // extractFromPlist populates familyId when FamilyID is present in the
+        // SysInfoExtended plist; null when the field is absent or the firmware
+        // path returned a partial result.
+        familyId: firmware.capabilities?.familyId ?? null,
+      };
+    },
+
+    describeAddIntent,
+  };
+}
+
+/**
+ * Default iPod device provider, wired to the real `inquireFirmware`
+ * implementation from `@podkit/ipod-firmware`.
  *
  * @example
  * ```typescript
@@ -88,72 +148,34 @@ function isKnownIpodProduct(fp: UsbFingerprint): boolean {
  * // identity → { kind: 'ipod', firewireGuid: '...', serialNumber: '...', familyId: 120 }
  * ```
  */
-export const ipodProvider: DeviceProvider<IpodIdentity> = {
-  id: 'ipod',
+export const ipodProvider: DeviceProvider<IpodIdentity> = createIpodProvider();
 
-  async detect(fp: UsbFingerprint): Promise<IpodIdentity | null> {
-    // Pre-filter: must be an Apple device.
-    if (!isAppleVendor(fp)) return null;
-
-    // Unsupported short-circuit — return tagged identity WITHOUT calling
-    // inquireFirmware. Saves the ~5s SCSI/USB timeout per device on
-    // unsupported hardware (Touch/iPhone/iPad/nano 6G/7G/Shuffle 3G/4G).
-    const unsupportedReason = lookupUnsupportedReadinessReason(fp.productId);
-    if (unsupportedReason) {
-      return {
-        kind: 'ipod',
-        firewireGuid: '',
-        serialNumber: fp.serialNumber ?? '',
-        familyId: null,
-        unsupportedReason,
-      };
-    }
-
-    // Pre-filter: must be a product ID we recognise as an iPod.
-    if (!isKnownIpodProduct(fp)) return null;
-
-    // Live firmware inquiry — SCSI or USB, orchestrated by ipod-firmware.
-    const firmware = await inquireFirmware(fp);
-    if (!firmware) return null;
-
-    return {
-      kind: 'ipod',
-      firewireGuid: firmware.firewireGuid,
-      serialNumber: firmware.serialNumber,
-      // extractFromPlist populates familyId when FamilyID is present in the
-      // SysInfoExtended plist; null when the field is absent or the firmware
-      // path returned a partial result.
-      familyId: firmware.capabilities?.familyId ?? null,
-    };
-  },
-
-  describeAddIntent(
-    identity: IpodIdentity,
-    _discovered: DiscoveredContext
-  ): DeviceAddIntent | null {
-    // Unsupported iPod (Touch / nano 6 / shuffle 3G/4G / iOS device): surface
-    // the reason as a note. No add-command to suggest — but the user benefits
-    // from knowing the device was *recognised*, just not supported.
-    if (identity.unsupportedReason) {
-      const { headline, docsUrl } = identity.unsupportedReason;
-      return {
-        providerId: 'ipod',
-        kind: 'ipod',
-        addArgs: [],
-        notes: docsUrl ? [headline, `See: ${docsUrl}`] : [headline],
-      };
-    }
-
-    // Supported iPod detected via USB only — no mounted disk found by the
-    // platform device manager. The user's add command was correct; they just
-    // need to mount the device first (or check the USB connection).
+function describeAddIntent(
+  identity: IpodIdentity,
+  _discovered: DiscoveredContext
+): DeviceAddIntent | null {
+  // Unsupported iPod (Touch / nano 6 / shuffle 3G/4G / iOS device): surface
+  // the reason as a note. No add-command to suggest — but the user benefits
+  // from knowing the device was *recognised*, just not supported.
+  if (identity.unsupportedReason) {
+    const { headline, docsUrl } = identity.unsupportedReason;
     return {
       providerId: 'ipod',
       kind: 'ipod',
       addArgs: [],
-      notes: [
-        '(iPod detected via USB but no mounted disk — try `podkit device mount` first, then re-run this command)',
-      ],
+      notes: docsUrl ? [headline, `See: ${docsUrl}`] : [headline],
     };
-  },
-};
+  }
+
+  // Supported iPod detected via USB only — no mounted disk found by the
+  // platform device manager. The user's add command was correct; they just
+  // need to mount the device first (or check the USB connection).
+  return {
+    providerId: 'ipod',
+    kind: 'ipod',
+    addArgs: [],
+    notes: [
+      '(iPod detected via USB but no mounted disk — try `podkit device mount` first, then re-run this command)',
+    ],
+  };
+}

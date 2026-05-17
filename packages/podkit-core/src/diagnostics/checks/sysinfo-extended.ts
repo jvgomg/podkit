@@ -23,6 +23,20 @@ import type {
 } from '../types.js';
 
 /**
+ * Dependency-injection seam for {@link runSysInfoExtendedRepair}. Tests pass
+ * stubbed USB resolution + ensure functions so the runner can execute against
+ * fixture data instead of touching real hardware or the filesystem.
+ *
+ * Defaults pull the real implementations from `@podkit/ipod-firmware` and
+ * `../../device/usb-path-resolution.js`.
+ */
+export interface SysInfoExtendedRepairDeps {
+  ensureSysInfoExtended?: typeof ensureSysInfoExtended;
+  resolveUsbDeviceFromPath?: typeof resolveUsbDeviceFromPath;
+  hasCompleteUsbFingerprint?: typeof hasCompleteUsbFingerprint;
+}
+
+/**
  * Shared SysInfoExtended-from-USB repair runner.
  *
  * Both `sysinfo-extended` (file genuinely missing) and `sysinfo-consistency`
@@ -31,20 +45,26 @@ import type {
  *
  * @param force when true, re-read from USB and overwrite an existing
  *   on-disk file. When false (default), short-circuit to the existing file.
+ * @param deps test seam — see {@link SysInfoExtendedRepairDeps}.
  */
 export async function runSysInfoExtendedRepair(
   ctx: RepairContext,
   options: RepairRunOptions | undefined,
-  force: boolean
+  force: boolean,
+  deps: SysInfoExtendedRepairDeps = {}
 ): Promise<RepairResult> {
+  const ensure = deps.ensureSysInfoExtended ?? ensureSysInfoExtended;
+  const resolveUsb = deps.resolveUsbDeviceFromPath ?? resolveUsbDeviceFromPath;
+  const hasComplete = deps.hasCompleteUsbFingerprint ?? hasCompleteUsbFingerprint;
+
   // Step 1: Resolve USB device from mount path
   options?.onProgress?.({
     phase: 'resolving',
     message: 'Resolving USB device from mount path',
   });
 
-  const usbDevice = await resolveUsbDeviceFromPath(ctx.mountPoint);
-  if (!hasCompleteUsbFingerprint(usbDevice)) {
+  const usbDevice = await resolveUsb(ctx.mountPoint);
+  if (!hasComplete(usbDevice)) {
     return {
       success: false,
       summary: 'Could not find USB device for this iPod',
@@ -73,7 +93,7 @@ export async function runSysInfoExtendedRepair(
     message: `Reading SysInfoExtended from USB bus ${usbDevice.bus} device ${usbDevice.devnum}`,
   });
 
-  const result = await ensureSysInfoExtended(
+  const result = await ensure(
     ctx.mountPoint,
     {
       vendorId: usbDevice.vendorId,

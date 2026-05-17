@@ -9,10 +9,12 @@
  *   - calls `ensureSysInfoExtended` to overwrite the on-disk file from
  *     fresh data read off the USB bus.
  *
- * We mock the two side-effecting imports (`usb-path-resolution.js` and
- * `@podkit/ipod-firmware`) at the module boundary so the test drives the
- * real `repair.run()` code path end-to-end without touching real USB or
- * the real filesystem.
+ * These tests exercise the underlying `runSysInfoExtendedRepair` runner
+ * directly with `force=true` (matching how `sysinfoConsistencyCheck.repair`
+ * wires it). USB resolution + `ensureSysInfoExtended` are injected via the
+ * `SysInfoExtendedRepairDeps` seam (agents/testing.md §"Mocking: prefer DI
+ * over mock.module()") so this file does not touch Bun's process-global
+ * module registry.
  *
  * AC mapping:
  *   - AC #14: non-dry-run calls `ensureSysInfoExtended` exactly once with
@@ -34,23 +36,15 @@ import type {
   DiagnosticContext,
   LiveDeviceIdentity,
 } from '../types.js';
-import type { SysinfFsReader } from './sysinfo-consistency.js';
+import { checkSysinfoConsistency, type SysinfFsReader } from './sysinfo-consistency.js';
+import { runSysInfoExtendedRepair, type SysInfoExtendedRepairDeps } from './sysinfo-extended.js';
+import type { UsbFingerprint } from '@podkit/device-types';
 
-// Pull the real implementations of pure helpers we need to preserve when
-// mocking the `@podkit/ipod-firmware` barrel below. `sysinfo-consistency.ts`
-// itself imports `parsePlist`, `extractFromPlist`, and
-// `normaliseFireWireGuid` from this package — those have no side effects
-// and must continue to resolve to real implementations.
-import * as ipodFirmwareReal from '@podkit/ipod-firmware';
+// ── Fixtures ────────────────────────────────────────────────────────────────
 
-// ── Mocks — declared BEFORE importing the module under test ──────────────────
-//
-// The repair lives in `sysinfo-extended.ts` and is re-exposed via
-// `sysinfoConsistencyCheck.repair`. It imports `resolveUsbDeviceFromPath` +
-// `hasCompleteUsbFingerprint` from `../../device/usb-path-resolution.js`
-// and `ensureSysInfoExtended` from `@podkit/ipod-firmware`.
+const MOUNT = '/Volumes/IPOD';
 
-const RESOLVED_USB = {
+const RESOLVED_USB: UsbFingerprint = {
   vendorId: '05ac',
   productId: '1209',
   serialNumber: '000A27001605D1A0',
@@ -58,35 +52,16 @@ const RESOLVED_USB = {
   devnum: 4,
 };
 
-let resolveUsbReturn: typeof RESOLVED_USB | null = RESOLVED_USB;
-const resolveUsbMock = mock(async (_path: string) => resolveUsbReturn);
-const hasCompleteFingerprintMock = mock((info: unknown): boolean => {
-  return info !== null && typeof info === 'object';
-});
-
-mock.module('../../device/usb-path-resolution.js', () => ({
-  resolveUsbDeviceFromPath: resolveUsbMock,
-  hasCompleteUsbFingerprint: hasCompleteFingerprintMock,
-}));
-
-// `ensureSysInfoExtended` is the side effect we want to observe. It returns
-// a shape with `present`, `identity`, `firewireGuid`, `serialNumber`,
-// `source`, and optionally `error`. Default to a success result so dry-run
-// branches that do call it are caught by axis assertions if mis-routed.
 const REAL_PERSONA_GUID = '000A27001605D1A0';
 const REAL_PERSONA_SERIAL = '9C642MEFV9M';
 const REAL_PERSONA_MODELNUM = 'A446';
 
-let ensureSysInfoReturn: {
-  present: boolean;
-  source: 'existing' | 'usb';
-  firewireGuid?: string;
-  serialNumber?: string;
-  identity: { modelNumStr?: string; serialNumber: string; familyId?: number };
-  error?: string;
-} = {
+type EnsureFn = NonNullable<SysInfoExtendedRepairDeps['ensureSysInfoExtended']>;
+type EnsureResult = Awaited<ReturnType<EnsureFn>>;
+
+const DEFAULT_ENSURE_RESULT: EnsureResult = {
   present: true,
-  source: 'usb',
+  source: 'usb-read',
   firewireGuid: REAL_PERSONA_GUID,
   serialNumber: REAL_PERSONA_SERIAL,
   identity: {
@@ -96,25 +71,39 @@ let ensureSysInfoReturn: {
   },
 };
 
-const ensureSysInfoMock = mock(async (_mountPath: string, _fp: object) => ensureSysInfoReturn);
+let resolveUsbReturn: UsbFingerprint | null = RESOLVED_USB;
+let ensureSysInfoReturn: EnsureResult = DEFAULT_ENSURE_RESULT;
 
-mock.module('@podkit/ipod-firmware', () => ({
-  // Forward every real export — parsePlist, extractFromPlist,
-  // normaliseFireWireGuid, etc. are pure helpers consumed elsewhere and
-  // must continue to resolve.
-  ...ipodFirmwareReal,
-  // Override the one side-effecting function we're observing.
-  ensureSysInfoExtended: ensureSysInfoMock,
-}));
+const resolveUsbMock = mock(async (_path: string) => resolveUsbReturn);
+const ensureSysInfoMock = mock(
+  async (mountPath: string, fp: UsbFingerprint, opts?: { force?: boolean; verbose?: number }) => {
+    void mountPath;
+    void fp;
+    void opts;
+    return ensureSysInfoReturn;
+  }
+);
+const hasCompleteFingerprintMock = mock(
+  (info: UsbFingerprint | null): info is UsbFingerprint => info !== null
+);
 
-// Import AFTER the mocks. Use dynamic import so the mock-installed module
-// references are already in place when the chunk loads.
-const { sysinfoConsistencyCheck, checkSysinfoConsistency } =
-  await import('./sysinfo-consistency.js');
+function repairDeps(): SysInfoExtendedRepairDeps {
+  return {
+    ensureSysInfoExtended: ensureSysInfoMock as unknown as EnsureFn,
+    resolveUsbDeviceFromPath: resolveUsbMock as never,
+    hasCompleteUsbFingerprint: hasCompleteFingerprintMock as never,
+  };
+}
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-const MOUNT = '/Volumes/IPOD';
+// Consistency-check repair wires the runner with force=true; replicate that
+// here so each test invokes the same code path the production `.repair.run`
+// would.
+function runConsistencyRepair(
+  ctx: RepairContext,
+  options?: Parameters<typeof runSysInfoExtendedRepair>[1]
+): Promise<RepairResult> {
+  return runSysInfoExtendedRepair(ctx, options, /* force */ true, repairDeps());
+}
 
 function makeRepairCtx(): RepairContext {
   return {
@@ -132,32 +121,19 @@ beforeEach(() => {
   resolveUsbMock.mockClear();
   ensureSysInfoMock.mockClear();
   hasCompleteFingerprintMock.mockClear();
-  // Reset module-level mutable fixtures to known-good defaults.
   resolveUsbReturn = RESOLVED_USB;
-  ensureSysInfoReturn = {
-    present: true,
-    source: 'usb',
-    firewireGuid: REAL_PERSONA_GUID,
-    serialNumber: REAL_PERSONA_SERIAL,
-    identity: {
-      modelNumStr: REAL_PERSONA_MODELNUM,
-      serialNumber: REAL_PERSONA_SERIAL,
-      familyId: 6,
-    },
-  };
+  ensureSysInfoReturn = DEFAULT_ENSURE_RESULT;
 });
 
 // ── AC #14: repair overwrites file; subsequent check passes ──────────────────
 
 describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
   it('calls ensureSysInfoExtended exactly once with the resolved USB fingerprint', async () => {
-    const ctx = makeRepairCtx();
-
-    const result: RepairResult = await sysinfoConsistencyCheck.repair!.run(ctx);
+    const result = await runConsistencyRepair(makeRepairCtx());
 
     expect(result.success).toBe(true);
     expect(ensureSysInfoMock.mock.calls.length).toBe(1);
-    const [calledMount, calledFp] = ensureSysInfoMock.mock.calls[0] as [
+    const [calledMount, calledFp] = ensureSysInfoMock.mock.calls[0] as unknown as [
       string,
       Record<string, unknown>,
     ];
@@ -170,7 +146,7 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
   });
 
   it('surfaces the resolved model in the repair summary', async () => {
-    const result = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx());
+    const result = await runConsistencyRepair(makeRepairCtx());
 
     expect(result.success).toBe(true);
     expect(result.summary).toContain('SysInfoExtended');
@@ -180,7 +156,7 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
     expect(result.summary).toContain('iPod');
     expect(result.details?.firewireGuid).toBe(REAL_PERSONA_GUID);
     expect(result.details?.serialNumber).toBe(REAL_PERSONA_SERIAL);
-    expect(result.details?.source).toBe('usb');
+    expect(result.details?.source).toBe('usb-read');
   });
 
   it('after a successful repair, re-running the check against the new on-disk XML returns pass', async () => {
@@ -189,7 +165,7 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
     // `checkSysinfoConsistency` via the injectable fsReader. This proves
     // the end-to-end "repair → check passes" contract that AC #14 calls
     // for, without touching the real filesystem.
-    const repairResult = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx());
+    const repairResult = await runConsistencyRepair(makeRepairCtx());
     expect(repairResult.success).toBe(true);
 
     // The freshly-written XML on disk would contain the same identity as
@@ -223,7 +199,7 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
 
   it('returns failure when USB resolution fails (no device found)', async () => {
     resolveUsbReturn = null;
-    const result = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx());
+    const result = await runConsistencyRepair(makeRepairCtx());
 
     expect(result.success).toBe(false);
     expect(result.summary).toContain('USB');
@@ -233,12 +209,12 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
   it('propagates ensureSysInfoExtended failure as a non-success result', async () => {
     ensureSysInfoReturn = {
       present: false,
-      source: 'usb',
+      source: 'usb-read',
       error: 'firmware inquiry refused on SCSI page',
       identity: { serialNumber: '' },
     };
 
-    const result = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx());
+    const result = await runConsistencyRepair(makeRepairCtx());
 
     expect(result.success).toBe(false);
     expect(result.summary).toContain('firmware inquiry refused');
@@ -249,9 +225,7 @@ describe('sysinfoConsistencyCheck.repair — overwrite path (AC #14)', () => {
 
 describe('sysinfoConsistencyCheck.repair — dry-run path (AC #15)', () => {
   it('returns a Dry-run summary with the resolved USB bus + devnum', async () => {
-    const result = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx(), {
-      dryRun: true,
-    });
+    const result = await runConsistencyRepair(makeRepairCtx(), { dryRun: true });
 
     expect(result.success).toBe(true);
     // The consistency repair runs with `force: true` so the dry-run summary
@@ -267,15 +241,13 @@ describe('sysinfoConsistencyCheck.repair — dry-run path (AC #15)', () => {
   });
 
   it('does NOT call ensureSysInfoExtended (no file write side-effect)', async () => {
-    await sysinfoConsistencyCheck.repair!.run(makeRepairCtx(), { dryRun: true });
+    await runConsistencyRepair(makeRepairCtx(), { dryRun: true });
     expect(ensureSysInfoMock.mock.calls.length).toBe(0);
   });
 
   it('still fails the dry-run when USB resolution fails (no false positive)', async () => {
     resolveUsbReturn = null;
-    const result = await sysinfoConsistencyCheck.repair!.run(makeRepairCtx(), {
-      dryRun: true,
-    });
+    const result = await runConsistencyRepair(makeRepairCtx(), { dryRun: true });
 
     expect(result.success).toBe(false);
     expect(result.summary).toContain('USB');
@@ -285,7 +257,7 @@ describe('sysinfoConsistencyCheck.repair — dry-run path (AC #15)', () => {
 
   it('invokes onProgress before the dry-run short-circuit', async () => {
     const phases: string[] = [];
-    await sysinfoConsistencyCheck.repair!.run(makeRepairCtx(), {
+    await runConsistencyRepair(makeRepairCtx(), {
       dryRun: true,
       onProgress: (p) => {
         if (typeof p.phase === 'string') phases.push(p.phase);

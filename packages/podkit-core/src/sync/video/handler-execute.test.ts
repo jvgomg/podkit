@@ -4,69 +4,15 @@
  * Verifies that VideoHandler.execute() yields OperationProgress events
  * with transcodeProgress data during video transcoding.
  *
- * Uses module mocks to avoid requiring real FFmpeg/iPod dependencies.
+ * Fakes for `transcodeVideo`, `probeVideo`, `executor-fs` (mkdir/stat/rm),
+ * and `createVideoTrackInput` / `isVideoMediaType` are injected via the
+ * `VideoHandlerDeps` constructor seam (agents/testing.md §"Mocking: prefer
+ * DI over mock.module()"). The handler can be exercised end-to-end without
+ * a real FFmpeg, real filesystem, or Bun's process-global module registry.
  */
 
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
-
-// =============================================================================
-// Mocks — must be set up before importing the module under test
-// =============================================================================
-
-const mockTranscodeVideo = mock(
-  (_input: string, _output: string, _settings: any, options?: any) => {
-    // Simulate progress callbacks
-    if (options?.onProgress) {
-      options.onProgress({ time: 5, duration: 10, percent: 50, speed: 2.0 });
-      options.onProgress({ time: 10, duration: 10, percent: 100, speed: 2.0 });
-    }
-    return Promise.resolve();
-  }
-);
-
-const mockProbeVideo = mock(() =>
-  Promise.resolve({
-    videoCodec: 'h264',
-    audioCodec: 'aac',
-    width: 320,
-    height: 240,
-    duration: 120,
-    videoBitrate: 500,
-    audioBitrate: 128,
-    container: 'mp4',
-  })
-);
-
-const mockStat = mock(() => Promise.resolve({ size: 50_000_000 }));
-const mockMkdir = mock(() => Promise.resolve());
-const mockRm = mock(() => Promise.resolve());
-
-mock.module('../../video/transcode.js', () => ({
-  transcodeVideo: mockTranscodeVideo,
-}));
-
-mock.module('../../video/probe.js', () => ({
-  probeVideo: mockProbeVideo,
-}));
-
-mock.module('./executor-fs.js', () => ({
-  stat: mockStat,
-  mkdir: mockMkdir,
-  rm: mockRm,
-}));
-
-mock.module('../../ipod/video.js', () => ({
-  createVideoTrackInput: () => ({
-    title: 'Test Video',
-    artist: 'Test Artist',
-    album: 'Test Album',
-    mediaType: 2,
-  }),
-  isVideoMediaType: (mt: number) => (mt & 0x0002) !== 0 || (mt & 0x0040) !== 0,
-}));
-
-// Import after mocks
-import { VideoHandler } from './handler.js';
+import { VideoHandler, type VideoHandlerDeps } from './handler.js';
 import type { VideoOperation } from './types.js';
 import type { OperationProgress, ExecutionContext } from '../engine/content-type.js';
 import type { CollectionVideo } from '../../video/directory-adapter.js';
@@ -161,14 +107,63 @@ async function collectProgress(
 // Tests
 // =============================================================================
 
+// Module-scoped fakes — recreated per test via beforeEach so call counts
+// don't bleed between cases.
+let mockTranscodeVideo: ReturnType<typeof mock>;
+let mockProbeVideo: ReturnType<typeof mock>;
+let mockStat: ReturnType<typeof mock>;
+let mockMkdir: ReturnType<typeof mock>;
+let mockRm: ReturnType<typeof mock>;
+
+function makeDeps(): VideoHandlerDeps {
+  mockTranscodeVideo = mock((_input: string, _output: string, _settings: any, options?: any) => {
+    // Simulate progress callbacks
+    if (options?.onProgress) {
+      options.onProgress({ time: 5, duration: 10, percent: 50, speed: 2.0 });
+      options.onProgress({ time: 10, duration: 10, percent: 100, speed: 2.0 });
+    }
+    return Promise.resolve();
+  });
+  mockProbeVideo = mock(() =>
+    Promise.resolve({
+      videoCodec: 'h264',
+      audioCodec: 'aac',
+      width: 320,
+      height: 240,
+      duration: 120,
+      videoBitrate: 500,
+      audioBitrate: 128,
+      container: 'mp4',
+    })
+  );
+  mockStat = mock(() => Promise.resolve({ size: 50_000_000 }));
+  mockMkdir = mock(() => Promise.resolve());
+  mockRm = mock(() => Promise.resolve());
+
+  return {
+    transcodeVideo: mockTranscodeVideo as never,
+    probeVideo: mockProbeVideo as never,
+    stat: mockStat as never,
+    mkdir: mockMkdir as never,
+    rm: mockRm as never,
+    createVideoTrackInput: () =>
+      ({
+        title: 'Test Video',
+        artist: 'Test Artist',
+        album: 'Test Album',
+        mediaType: 2,
+      }) as never,
+    isVideoMediaType: (mt: number) => (mt & 0x0002) !== 0 || (mt & 0x0040) !== 0,
+  };
+}
+
 describe('VideoHandler execution', () => {
   let handler: VideoHandler;
+  let deps: VideoHandlerDeps;
 
   beforeEach(() => {
-    handler = new VideoHandler();
-    mockTranscodeVideo.mockClear();
-    mockProbeVideo.mockClear();
-    mockStat.mockClear();
+    deps = makeDeps();
+    handler = new VideoHandler(undefined, deps);
   });
 
   describe('executeTranscode (video-transcode)', () => {
@@ -634,7 +629,7 @@ describe('VideoHandler execution', () => {
     it('writes sync tag to track comment when videoQuality is configured', async () => {
       const mockIpod = createMockIpod();
 
-      const qualityHandler = new VideoHandler({ videoQuality: 'medium' });
+      const qualityHandler = new VideoHandler({ videoQuality: 'medium' }, deps);
 
       const op: VideoOperation = {
         type: 'video-transcode',
@@ -674,7 +669,7 @@ describe('VideoHandler execution', () => {
     it('writes sync tag with different quality presets', async () => {
       const mockIpod = createMockIpod();
 
-      const qualityHandler = new VideoHandler({ videoQuality: 'high' });
+      const qualityHandler = new VideoHandler({ videoQuality: 'high' }, deps);
 
       const op: VideoOperation = {
         type: 'video-transcode',

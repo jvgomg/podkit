@@ -5,7 +5,7 @@
  * Supports FLAC, MP3, M4A, OGG, and OPUS formats.
  */
 
-import { glob } from 'glob';
+import { glob as realGlob } from 'glob';
 import * as mm from 'music-metadata';
 import { extname, basename, resolve } from 'node:path';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
@@ -13,6 +13,19 @@ import type { AudioFileType, TrackFilter } from '../types.js';
 import { extractNormalization } from '../metadata/normalization.js';
 import { selectBestPicture } from '../artwork/extractor.js';
 import { hashArtwork } from '../artwork/hash.js';
+
+/**
+ * Dependency-injection seam for {@link DirectoryAdapter}. Tests pass fakes
+ * for `glob` and `music-metadata`'s `parseFile` so the adapter can be
+ * exercised without a real filesystem or real audio files. See
+ * `agents/testing.md` §"Mocking: prefer DI over mock.module()".
+ *
+ * Defaults pull the real implementations from `glob` and `music-metadata`.
+ */
+export interface DirectoryAdapterDeps {
+  glob?: typeof realGlob;
+  parseFile?: typeof mm.parseFile;
+}
 
 /**
  * Warning emitted during directory scanning
@@ -129,13 +142,17 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
   private checkArtwork: boolean;
   private cache: CollectionTrack[] = [];
   private connected = false;
+  private globFn: typeof realGlob;
+  private parseAudioFile: typeof mm.parseFile;
 
-  constructor(config: DirectoryAdapterConfig) {
+  constructor(config: DirectoryAdapterConfig, deps: DirectoryAdapterDeps = {}) {
     this.rootPath = resolve(config.path);
     this.extensions = config.extensions ?? DEFAULT_EXTENSIONS;
     this.onProgress = config.onProgress;
     this.onWarning = config.onWarning;
     this.checkArtwork = config.checkArtwork ?? false;
+    this.globFn = deps.glob ?? realGlob;
+    this.parseAudioFile = deps.parseFile ?? mm.parseFile;
   }
 
   /**
@@ -167,7 +184,7 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
         : `**/*.{${this.extensions.join(',')}}`;
 
     // Find all audio files
-    const files = await glob(pattern, {
+    const files = await this.globFn(pattern, {
       cwd: this.rootPath,
       absolute: true,
       nodir: true,
@@ -224,7 +241,7 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
     // memory overhead is proportional to the number of files with artwork, not
     // the total artwork size — each IPicture object's .data field is freed once
     // we capture hasArtwork below.
-    const metadata = await mm.parseFile(filePath, {
+    const metadata = await this.parseAudioFile(filePath, {
       skipCovers: false,
     });
 
