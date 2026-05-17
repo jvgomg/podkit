@@ -663,8 +663,13 @@ export async function runDeviceAdd(
     if (options.artwork !== undefined) deviceConfig.artwork = options.artwork;
 
     // Single combined prompt: config persistence + (optional) firmware inquiry.
+    // Skip the SIE write entirely when persisting an unsupported device — the
+    // user has acknowledged the device won't sync; writing identity files to
+    // it is wasted effort and can fail against synthetic / non-writable paths.
     const offerFirmwareInquiry =
-      assessment.firmwareInquiry === 'missing' && options.firmwareInquiry !== false;
+      assessment.firmwareInquiry === 'missing' &&
+      options.firmwareInquiry !== false &&
+      !recordUnsupported;
 
     if (!autoConfirm && out.isText) {
       if (offerFirmwareInquiry) {
@@ -1121,8 +1126,14 @@ export async function runDeviceAdd(
   // complete USB fingerprint was resolved — see assessIpodIdentity for state.
   // `--no-firmware-inquiry` opts out of the write while keeping the cascade-derived
   // identity. `--yes` defaults to the slick path (writes when offered).
+  // Skip entirely when persisting an unsupported device — writing identity
+  // files to a device we've recorded as unsupported is wasted work and can
+  // fail against non-writable / synthetic paths.
   const offerFirmwareInquiry =
-    !!assessment && assessment.firmwareInquiry === 'missing' && options.firmwareInquiry !== false;
+    !!assessment &&
+    assessment.firmwareInquiry === 'missing' &&
+    options.firmwareInquiry !== false &&
+    !recordUnsupportedScan;
 
   if (!autoConfirm && out.isText) {
     if (offerFirmwareInquiry) {
