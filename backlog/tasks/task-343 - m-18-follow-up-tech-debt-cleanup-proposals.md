@@ -4,6 +4,7 @@ title: m-18 follow-up tech debt + cleanup proposals
 status: To Do
 assignee: []
 created_date: '2026-05-16 22:32'
+updated_date: '2026-05-17 10:09'
 labels:
   - tech-debt
   - follow-up
@@ -106,3 +107,9 @@ done
 - [ ] #2 Items 3, 6, 7 captured in agents/*.md guidance docs.
 - [ ] #3 Items 8, 9 either closed or filed as their own focused tasks if scope is non-trivial.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Item 8 (pre-existing lint warnings) closed in commit `c63ffe2` — 4 warnings cleared: 1 real fix in `mass-storage-tag-writer.ts` (`new Array(n)` → `Array.from({ length: n })`); 3 disable directives with explanatory comments for legitimate console.warn / console.log calls (ipod-adapter best-effort tag-write warnings, no-fs-at-load probe script). `bun run lint` now reports 0 warnings, 0 errors.
+<!-- SECTION:NOTES:END -->
