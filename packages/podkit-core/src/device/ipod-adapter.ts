@@ -229,6 +229,10 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
       this.pendingTagWrites.clear();
 
       if (dropped.length > 0) {
+        // Non-fatal warning surfaced to stderr — iTunesDB write already
+        // succeeded; tag write is best-effort. No logger plumbed into
+        // IpodAdapter today.
+        // eslint-disable-next-line no-console
         console.warn(
           `[podkit] iPod portable: ${dropped.length} track(s) had no file path at save time; tag write skipped: ${dropped.join(', ')}`
         );
@@ -256,6 +260,7 @@ export class IpodDeviceAdapter implements DeviceAdapter<IpodTrack> {
         // are best-effort. The iTunesDB write already succeeded so playback
         // is unaffected; only recovery (pulling files off the device) is
         // degraded for these tracks.
+        // eslint-disable-next-line no-console
         console.warn(
           `[podkit] iPod portable: failed to write file tags for ${failures.length} track(s): ${failures.join('; ')}`
         );

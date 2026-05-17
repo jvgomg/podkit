@@ -39,6 +39,8 @@ if (fs.promises) {
 
 const mod = await import('./index.ts');
 
+// Probe script: prints JSON to stdout for the parent test harness to parse.
+// eslint-disable-next-line no-console
 console.log(
   JSON.stringify({
     calls,

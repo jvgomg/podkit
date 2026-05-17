@@ -49,7 +49,7 @@ export async function runWithConcurrency<T>(
   tasks: Array<() => Promise<T>>,
   limit: number
 ): Promise<Array<PromiseSettledResult<T>>> {
-  const results: Array<PromiseSettledResult<T>> = new Array(tasks.length);
+  const results: Array<PromiseSettledResult<T>> = Array.from({ length: tasks.length });
   let next = 0;
 
   async function worker(): Promise<void> {
