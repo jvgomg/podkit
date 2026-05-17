@@ -23,7 +23,27 @@ import { registerRunner } from './runners/registry.js';
 
 // Personas
 export type { DevicePersona, DoctorOutput } from './personas/types.js';
-export { personas } from './personas/index.js';
+export {
+  personas,
+  ipodMini2gPink,
+  ipodNano3gBlack,
+  ipodNano4gBlack,
+  ipodNano2gGreen,
+  ipodNano7gBlue,
+  ipodNano7gSpaceGray,
+  ipodVideo5gIflash1tb,
+  ipodTouch5gUnsupported,
+  echoMini,
+  sonyNwzE384,
+  sonyNwA1000,
+  sonyNwA3000,
+  sonyNwA1200,
+  sonyNwHd5,
+  ipodShuffleNotSupported,
+  nonIpodUsbDisk,
+  malformedSysinfo,
+} from './personas/index.js';
+export { buildEnumeratedUsbDevice } from './personas/builders.js';
 
 // Persona sidecar (JSON serialisation consumed by the FunctionFS daemon)
 export type {

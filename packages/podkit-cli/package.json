@@ -41,6 +41,7 @@
     "usb": "^2.17.0"
   },
   "devDependencies": {
+    "@podkit/device-testing": "workspace:*",
     "@podkit/gpod-testing": "workspace:*",
     "@types/bun": "latest"
   }

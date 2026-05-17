@@ -17,6 +17,12 @@ import {
   type MassStorageClassification,
 } from '@podkit/devices-mass-storage';
 import type { EnumeratedUsbDevice, ReadinessResult, ReadinessStageResult } from '@podkit/core';
+import {
+  buildEnumeratedUsbDevice,
+  ipodVideo5gIflash1tb as personaIpodVideo5g,
+  ipodTouch5gUnsupported as personaIpodTouch5g,
+  echoMini as personaEchoMini,
+} from '@podkit/device-testing';
 import { renderDeviceScan, type DeviceScanInput } from './device-scan-render.js';
 
 // Strip ANSI escape sequences so substring assertions don't break depending on
@@ -163,20 +169,16 @@ describe('renderDeviceScan', () => {
       configuredName: 'terapod',
     };
 
-    const usbOnlySupported = classifyIpod({
-      vendorId: '05ac',
-      productId: '1209',
-      diskIdentifier: 'disk7',
-    });
-    const usbOnlyUnsupported = classifyIpod({
-      vendorId: '05ac',
-      productId: '12aa',
-    });
-    const echoMini = classifyMassStorage({
-      vendorId: '071b',
-      productId: '3203',
-      diskIdentifier: 'disk8',
-    });
+    // Persona-derived USB descriptors — keeps the test in lockstep with the
+    // canonical persona registry instead of hand-coding bare hex IDs that
+    // could drift if a persona is renamed or recaptured.
+    const usbOnlySupported = classifyIpod(
+      buildEnumeratedUsbDevice(personaIpodVideo5g, { diskIdentifier: 'disk7' })
+    );
+    const usbOnlyUnsupported = classifyIpod(buildEnumeratedUsbDevice(personaIpodTouch5g));
+    const echoMini = classifyMassStorage(
+      buildEnumeratedUsbDevice(personaEchoMini, { diskIdentifier: 'disk8' })
+    );
 
     const input: DeviceScanInput = emptyInput({
       ipods: [mountedIpod],
