@@ -1,10 +1,10 @@
 ---
 id: TASK-343
 title: m-18 follow-up tech debt + cleanup proposals
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-16 22:32'
-updated_date: '2026-05-17 10:09'
+updated_date: '2026-05-17 11:41'
 labels:
   - tech-debt
   - follow-up
@@ -103,9 +103,9 @@ done
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Items 1, 2, 4, 5 closed via small targeted PRs.
-- [ ] #2 Items 3, 6, 7 captured in agents/*.md guidance docs.
-- [ ] #3 Items 8, 9 either closed or filed as their own focused tasks if scope is non-trivial.
+- [x] #1 Items 1, 2, 4, 5 closed via small targeted PRs.
+- [x] #2 Items 3, 6, 7 captured in agents/*.md guidance docs.
+- [x] #3 Items 8, 9 either closed or filed as their own focused tasks if scope is non-trivial.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -113,3 +113,47 @@ done
 <!-- SECTION:NOTES:BEGIN -->
 Item 8 (pre-existing lint warnings) closed in commit `c63ffe2` — 4 warnings cleared: 1 real fix in `mass-storage-tag-writer.ts` (`new Array(n)` → `Array.from({ length: n })`); 3 disable directives with explanatory comments for legitimate console.warn / console.log calls (ipod-adapter best-effort tag-write warnings, no-fs-at-load probe script). `bun run lint` now reports 0 warnings, 0 errors.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Closed in session 2026-05-17
+
+Items 1, 3, 5, 8, 9 fully resolved. Items 2, 4, 6, 7 explicitly dropped or punted per maintainer decision.
+
+### Item 1 — bare `notSupportedReason` on three shapes (`14458fd`)
+
+Migrated `IpodIdentity` (`@podkit/device-types`), `IpodClassification` (`@podkit/devices-ipod`), and `DeviceScanDeviceEntry` (podkit-cli JSON envelope) from `notSupportedReason: string` to `unsupportedReason?: ReadinessUnsupportedReason`. Shared producer lives in `@podkit/devices-ipod` as `lookupUnsupportedReadinessReason(productId)`. The CLI's local `makeIpodUnsupportedReason` helper deletes. JSON envelope rename ships as a changeset minor bump (`device-scan-unsupported-reason.md`).
+
+### Item 2 — docs-live cherry-pick
+
+Skipped per maintainer instruction. The two docs pages added during TASK-317 still need a `docs-live` sync at some point, but that is no longer scoped here.
+
+### Item 3 — test style + mocking patterns (`4e4f55f`, `f15f361`, `98a9d02`)
+
+Three commits, three sub-deliverables:
+
+1. **agents/testing.md** got an explicit "Mocking: prefer DI over `mock.module()`" section that codifies the rule, names the five offenders, and pins the canonical reference pattern (`sysinfo-modelnum-mismatch.ts`). Sibling sections on assertion style and canonical fake builders too.
+2. **Five `mock.module()` callers migrated to dependency injection.** `provider.test.ts` (via `createIpodProvider` factory), `sysinfo-extended.test.ts` + `sysinfo-consistency-repair.test.ts` (via `SysInfoExtendedRepairDeps`), `handler-execute.test.ts` (via `VideoHandlerDeps` constructor parameter), and `directory.test.ts` (via `DirectoryAdapterDeps`). No production behavior changes; each dep defaults to the real import.
+3. **Stretch — canonical persona-fake builder.** Added `buildEnumeratedUsbDevice(persona)` to `@podkit/device-testing` and migrated `device-scan-render.unit.test.ts` to use it for three personas (`ipodVideo5gIflash1tb`, `ipodTouch5gUnsupported`, `echoMini`). The pattern is now in place; further migrations of `device-scan.unit.test.ts` etc. are deferred.
+
+### Item 4 — stale worktrees
+
+Left in place per maintainer instruction.
+
+### Item 5 — `DOCS_URLS` trailing slash (`49f21a1`)
+
+`docsUrl()` now appends `/` so every `DOCS_URLS` entry matches Starlight's `trailingSlash: 'always'` default. The few hardcoded URLs in `devices-ipod`, `device/add`'s fallback prompt, the demo mock-core, and the exit-code test fixture were brought into line. A new `docs-urls.test.ts` asserts every entry ends with `/` so future drift is caught by CI.
+
+### Items 6 & 7 — process docs
+
+Skipped per maintainer instruction. The advice still stands but isn't worth a doc commit on its own.
+
+### Item 8 — pre-existing lint warnings
+
+Closed pre-session in `c63ffe2`.
+
+### Item 9 — oversized CLI command files
+
+Filed as TASK-345 (`doctor.ts` 1646 LoC + `device/add.ts` 1241 LoC). Refactor is a separate piece of work; tracking lives there now.
+<!-- SECTION:FINAL_SUMMARY:END -->
