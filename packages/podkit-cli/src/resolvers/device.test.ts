@@ -249,11 +249,11 @@ function mockDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDevice
     identifier: 'disk2s2',
     volumeName: 'IPOD',
     volumeUuid: 'ABC-123',
-    size: 160_000_000_000,
+    storage: { sizeBytes: 160_000_000_000 },
     isMounted: true,
     mountPoint: '/Volumes/IPOD',
     ...overrides,
-  };
+  } as PlatformDeviceInfo;
 }
 
 describe('resolveDevicePath', () => {

@@ -37,15 +37,51 @@ export const sonyNwHd5: DevicePersona = {
   id: 'sony-nw-hd5',
   description:
     'Sony Walkman NW-HD5 (20GB HDD, NO NAME) — original Network Walkman, pre-NW-A rebrand. ATRAC HDD descriptor; OpenMG v1.1 + MACLIST DRM + JPG sidecar artwork.',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x054c,
     productId: 0x0233,
-    deviceSerial: '',
+    // No USB serial — `iSerialNumber = 0` (confirmed via `raw/ioreg.txt`).
+    // v2 schema migrates from the v1 `''` workaround to explicit `null` —
+    // NW-HD5 is the canonical example for the nullable-serial gap Gap 3
+    // in TASK-332.
+    deviceSerial: null,
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // From `raw/ioreg.txt`: bMaxPacketSize0=64, bcdDevice=256 (0x0100),
+    // bcdUSB=512 (0x0200), bNumConfigurations=1. UsbDeviceSignature tail
+    // `080650` confirms Mass Storage / SCSI / Bulk-Only Transport interface.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0100,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    // iManufacturer=1 → "Sony", iProduct=2 → "ATRAC HDD" (note: different
+    // product string vs the later NW-A "HDD WALKMAN" — distinct product
+    // line). No serial entry (iSerialNumber=0).
+    stringDescriptors: { 1: 'Sony', 2: 'ATRAC HDD' },
   },
 
   sysInfoExtendedXml: null,
@@ -57,15 +93,29 @@ export const sonyNwHd5: DevicePersona = {
   partitionLayout: {
     // MBR FAT32-LBA (type 0x0C). 512-byte sectors. Single partition at
     // sector 63 — ~32 KiB MBR padding. No on-disk firmware region.
-    partitions: [{ index: 1, type: 'FAT32', sizeMiB: 19074, mountpoint: '/Volumes/NO NAME' }],
+    luns: [
+      {
+        lun: 0,
+        partitions: [{ index: 1, type: 'FAT32', sizeMiB: 19074, mountpoint: '/Volumes/NO NAME' }],
+      },
+    ],
   },
 
   massStorageBackingFile: null,
 
   expectedCapabilities: null,
 
+  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
+  // payload from the mass-storage classifier's no-preset rejection path.
+  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
+  // to the canonical `'unsupported'` shape.
   expectedReadiness: {
-    level: 'unknown',
+    level: 'unsupported',
+    unsupported: {
+      kind: 'unsupported-preset',
+      headline:
+        'Sony NW-HD5 (Network Walkman, 2004–2005 pre-NW-A line) is not supported — OpenMG/ATRAC content requires SonicStage (Windows, discontinued). Additional MACLIST0 integrity records are not authorable from outside SonicStage. USB descriptor "ATRAC HDD" + PID 0x0233 distinguish from later NW-A "HDD WALKMAN" units.',
+    },
     stages: [
       {
         stage: 'usb',

@@ -156,7 +156,7 @@ describe('renderDeviceScan', () => {
         volumeName: 'TERAPOD',
         volumeUuid: 'AAAA-BBBB',
         identifier: 'disk5s2',
-        size: 80_000_000_000,
+        storage: { sizeBytes: 80_000_000_000 },
         isMounted: true,
         mountPoint: '/Volumes/TERAPOD',
       },

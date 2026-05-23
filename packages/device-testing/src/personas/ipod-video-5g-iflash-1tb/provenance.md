@@ -53,9 +53,51 @@ Deferred. Linux captures completed this session for four representative personas
 
 Provisional. Stubs from generation table + SIE highlights (video codecs H.264 Baseline L1.3, H.264LC L3.0, MPEG-4; artwork up to 200×200). The compute-expected pass (per TASK-321.02 ACs) re-derives these against the production resolvers.
 
+## Mass-storage backing file (Tier-3 synthesis)
+
+**Source:** synthesised inside `podkit-test-vm` at `prepare()` time — no
+host-side artefact, no committed binary, no git LFS.
+
+**Recipe:** `massStorageBackingFile.synthesis = { sizeMiB: 256, filesystem:
+'FAT32', label: 'IPOD_VIDEO' }` in `persona.ts`.
+
+**mkfs.vfat invocation (from `runners/lima-test-vm-backing-files.ts`):**
+
+```
+truncate -s 256M /var/device-testing/backing-files/ipod-video-5g-iflash-1tb.img
+mkfs.vfat --invariant -F 32 -n IPOD_VIDEO -I <path>
+```
+
+**Why FAT32:** podkit refuses HFS+ on Linux (TASK-317.12). FAT32 is the
+universal iPod filesystem and the only one Tier-3 supports. The 5G's
+historical default is FAT32/MBR for the storage partition; the iFlash
+modification preserves that layout.
+
+**Why 256 MiB:** small enough that synthesis is sub-second and re-running
+the suite is cheap; large enough to host an iTunesDB + a handful of tracks
+when future variants seed content. The real device is 1 TB — wildly
+irrelevant to the inquiry-methods code path the daemon exercises.
+
+**Why empty:** TASK-348 starter content policy — model a fresh iPod, not a
+populated one. Future personas may seed `iPod_Control/Music/` or an
+iTunesDB skeleton; out of scope here.
+
+**Determinism:** `mkfs.vfat --invariant` fixes the FAT volume ID, the OEM
+string, and any creation timestamps that would otherwise be random or
+time-based. Re-running the recipe produces byte-identical output across
+hosts, kernels, and tool versions (within the 4.x mkfs.vfat series). The
+runner sha256-probes the result before and after; a non-deterministic
+output would be caught.
+
+**Source of truth:** the recipe in `persona.ts`. Re-derive the image at
+any time with `bun run build:backing-file ipod-video-5g-iflash-1tb` (from
+`packages/device-testing/`).
+
 ## Cross-references
 
 - Inventory entry: `documents/test-devices.md` §"iPod 5th Generation Video (iFlash 1TB mod)"
 - ADR-017: `adr/adr-017-device-persona-fixtures.md`
 - Capture playbook: `documents/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
+- TASK-348 — mass-storage backing-file synthesis
+- TASK-317.12 — HFS+ refusal on Linux (why FAT32)

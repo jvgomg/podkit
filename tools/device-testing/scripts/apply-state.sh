@@ -36,16 +36,28 @@ set -eu
 HEALTHY_PACKAGES="ffmpeg libgpod4 libgpod-common libglib2.0-0"
 
 # Kernel modules required to be loaded in the `healthy` state. Mirrors the
-# /etc/modules-load.d/podkit-test-vm.conf list in test-vm.yaml.
-HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs"
+# /etc/modules-load.d/podkit-test-vm.conf list in test-vm.yaml. `sg` is the
+# SCSI generic driver — /dev/sg* nodes are required by the `inquiry-methods`
+# doctor check.
+HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg"
 
 # Marker udev rules file controlling /dev/sg* group access. Owned by this
 # script — distinct from libgpod's own udev rules so we can flip it on/off
 # without touching distro-shipped files.
+#
+# MODE=0664 (world-readable) is deliberately permissive: the test VM has a
+# single non-root user (`james`, uid 501) who is NOT a member of the `disk`
+# group, and group changes don't propagate to existing limactl ssh
+# sessions. Real-world podkit users install
+# `91-podkit-ipod.rules` (TAG+="uaccess"), which grants access via systemd-
+# logind ACLs — but limactl shell sessions arrive over ssh, not via a
+# console seat, so uaccess doesn't fire. World-readable on the test VM
+# avoids both rabbit holes; production posture is unaffected.
 SG_PERMS_RULE="/etc/udev/rules.d/40-podkit-sg-perms.rules"
 SG_PERMS_RULE_BODY='# Managed by tools/device-testing/scripts/apply-state.sh — DO NOT EDIT.
-# Grants group-readable access to /dev/sg* nodes for the Tier 3 test VM.
-KERNEL=="sg[0-9]*", MODE="0660", GROUP="disk"'
+# Grants world-readable access to /dev/sg* nodes for the Tier 3 test VM
+# (TASK-348). See SG_PERMS_RULE comment in apply-state.sh for why mode 0664.
+KERNEL=="sg[0-9]*", MODE="0664"'
 
 # Path glob for libgpod-shipped udev rules. libgpod-common (Debian 12.10)
 # installs rules under /lib/udev/rules.d/. The "missing" state moves them
@@ -207,6 +219,56 @@ apply_healthy() {
 
   # 5. sg-perms udev rule — installed.
   ensure_sg_perms_rule
+
+  # 6. podkit iPod udev rule (91-podkit-ipod.rules) — installed via
+  #    `podkit doctor --repair udev-rule`. The doctor `udev-rule` check
+  #    asserts this file's presence; without it, doctor exits 2 on a
+  #    "healthy" VM even with /dev/sg* available. Production-equivalent
+  #    repair, idempotent (doctor skips if the rule is already current).
+  ensure_podkit_udev_rule
+}
+
+ensure_podkit_udev_rule() {
+  if [ ! -x /usr/local/bin/podkit ]; then
+    log "WARN: /usr/local/bin/podkit missing — skipping podkit udev rule install (runner prepare() should land the binary)"
+    return 0
+  fi
+  if [ ! -f /etc/udev/rules.d/91-podkit-ipod.rules ]; then
+    if /usr/local/bin/podkit doctor --repair udev-rule >/dev/null 2>&1; then
+      log "installed podkit udev rule: /etc/udev/rules.d/91-podkit-ipod.rules"
+    else
+      log "WARN: podkit doctor --repair udev-rule failed (exit non-zero)"
+    fi
+  fi
+  # The podkit udev rule sets MODE="0660" GROUP="plugdev" on Apple-vendor
+  # /dev/sg* nodes. Our 40-podkit-sg-perms.rules with MODE=0664 runs
+  # FIRST (40 < 91), so the Apple-vendor branch wins and /dev/sg* ends
+  # up 0660 — unreadable to the test user (ssh sessions cannot add to
+  # plugdev mid-session, since group membership is fixed at login).
+  # Install a 99-prefix override that runs AFTER 91-podkit-ipod.rules
+  # and forces MODE=0664 on every sg[0-9]* node regardless of vendor.
+  # Test-VM-only; production posture is untouched.
+  ensure_test_vm_sg_override
+}
+
+# Override rule that wins against 91-podkit-ipod.rules's MODE=0660 for
+# Apple-vendor sg nodes. 99-prefix sorts last.
+TEST_VM_SG_OVERRIDE_RULE="/etc/udev/rules.d/99-podkit-test-vm-sg-override.rules"
+TEST_VM_SG_OVERRIDE_BODY='# Managed by tools/device-testing/scripts/apply-state.sh — DO NOT EDIT.
+# Overrides 91-podkit-ipod.rules MODE=0660 with MODE=0664 for /dev/sg*
+# on the test VM. Allows the ssh-attached test user (not on a console
+# seat, so uaccess does not fire) to read SCSI generic nodes during
+# Tier 3. TASK-348.
+KERNEL=="sg[0-9]*", MODE="0664"'
+
+ensure_test_vm_sg_override() {
+  if [ ! -f "$TEST_VM_SG_OVERRIDE_RULE" ] \
+     || ! diff -q <(printf '%s\n' "$TEST_VM_SG_OVERRIDE_BODY") "$TEST_VM_SG_OVERRIDE_RULE" >/dev/null 2>&1
+  then
+    printf '%s\n' "$TEST_VM_SG_OVERRIDE_BODY" > "$TEST_VM_SG_OVERRIDE_RULE"
+    log "installed test-VM sg override rule: $TEST_VM_SG_OVERRIDE_RULE"
+    trigger_udev_reload
+  fi
 }
 
 apply_no_ffmpeg() {

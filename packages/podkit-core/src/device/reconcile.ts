@@ -18,9 +18,9 @@
  * `reconcileIpodDiscovery` is the single decision point that folds the two
  * input streams into one. It is a pure function: no I/O, no platform
  * branches. All the platform-specific data already lives in the input shapes
- * — block-side `usbFingerprint` is populated by Linux's `findIpodDevices`,
- * USB-side `diskIdentifier` is populated by both macOS (system_profiler
- * `bsd_name`) and Linux (sysfs walk).
+ * — block-side `usb` (TASK-340; renamed from `usbFingerprint`) is populated
+ * by Linux's `findIpodDevices`, USB-side `diskIdentifier` is populated by
+ * both macOS (system_profiler `bsd_name`) and Linux (sysfs walk).
  *
  * Matching priority:
  *  1. **Serial number** — the most reliable correlator. iPods report a
@@ -77,7 +77,7 @@ function nonEmpty(s: string | undefined | null): s is string {
  *
  * Matching rules — applied in priority order:
  *  1. **Serial-number match** — when both
- *     `block.usbFingerprint?.serialNumber` and `usb.device.serialNumber` are
+ *     `block.usb?.serialNumber` and `usb.device.serialNumber` are
  *     non-empty and equal, fold into one record (`matchedBy: 'serial'`).
  *  2. **Disk-identifier match** — when `usb.device.diskIdentifier` matches
  *     the block device's `identifier` after stripping any trailing
@@ -134,7 +134,7 @@ function findMatchingUsb(
     }
   | undefined {
   // Priority 1: serial-number match.
-  const blockSerial = block.usbFingerprint?.serialNumber;
+  const blockSerial = block.usb?.serialNumber;
   if (nonEmpty(blockSerial)) {
     for (let i = 0; i < usbClassified.length; i++) {
       if (claimed.has(i)) continue;

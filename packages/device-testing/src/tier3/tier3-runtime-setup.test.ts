@@ -11,7 +11,7 @@
  * host because it doesn't touch a real VM (uses fake runtimes).
  *
  * The companion `personas-baseline.tier3.test.ts` contains the actual Tier-3
- * tests; those auto-skip when Lima isn't installed (AC #4).
+ * tests; those auto-skip when Lima isn't installed.
  *
  * Test grouping convention (standard for all Tier-3 tests):
  *   personas are grouped by `SystemState`, `applyState()` runs once per group
@@ -38,7 +38,7 @@ import type { TestRuntime } from '../runtime.js';
 import type { SystemState } from '../system-states/types.js';
 
 // ---------------------------------------------------------------------------
-// Starter persona resolution (AC #7)
+// Starter persona resolution
 // ---------------------------------------------------------------------------
 
 describe('STARTER_PERSONA_ID_LIST', () => {
@@ -83,11 +83,11 @@ describe('resolveStarterPersonas', () => {
 });
 
 // ---------------------------------------------------------------------------
-// State grouping (AC #8)
+// State grouping
 // ---------------------------------------------------------------------------
 
 describe('resolveSystemStateForPersona', () => {
-  it('returns `healthy` for the 3 starter personas (m-19 baseline)', () => {
+  it('returns `healthy` for the 3 starter personas', () => {
     for (const persona of resolveStarterPersonas()) {
       expect(resolveSystemStateForPersona(persona).id).toBe('healthy');
     }
@@ -99,30 +99,27 @@ describe('groupPersonasByState', () => {
     resetTier3PersonaSkipWarnings();
   });
 
-  it('groups the daemon-payload starter personas under the `healthy` state today', () => {
-    // `echo-mini` has neither `sysInfoExtendedXml` nor
-    // `massStorageBackingFile` until TASK-324 captures real data, so the
-    // grouper filters it. The other two starter personas survive.
+  it('groups all 3 starter personas under the `healthy` state', () => {
+    // Every starter persona has daemon payload, so the grouper retains all three.
     const groups = groupPersonasByState(resolveStarterPersonas(), () => {});
     expect(groups).toHaveLength(1);
     expect(groups[0]!.state.id).toBe('healthy');
     expect(groups[0]!.personas.map((p) => p.id)).toEqual([
       'ipod-video-5g-iflash-1tb',
       'ipod-nano-7g-space-gray',
+      'echo-mini',
     ]);
   });
 
-  it('drops `echo-mini` from the starter set today (TASK-324 canary)', () => {
-    // Canary: once TASK-324 captures echo-mini's mass-storage backing file,
-    // this assertion flips to expect inclusion. Treat the flip as the
-    // signal that the gate is back to being a tripwire-only filter.
+  it('does NOT drop `echo-mini` (echo-mini carries massStorageBackingFile)', () => {
+    // echo-mini was populated with an in-VM synthesis recipe. The daemon-
+    // payload filter remains in place as a tripwire for future bare personas;
+    // this assertion confirms the tripwire no longer trips on the starter set.
     const warnings: string[] = [];
     const groups = groupPersonasByState(resolveStarterPersonas(), (m) => warnings.push(m));
     const idsInGroups = groups.flatMap((g) => g.personas.map((p) => p.id));
-    expect(idsInGroups).not.toContain('echo-mini');
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain("'echo-mini'");
-    expect(warnings[0]).toContain('TASK-324');
+    expect(idsInGroups).toContain('echo-mini');
+    expect(warnings).toEqual([]);
   });
 
   it('preserves insertion order across personas within a group', () => {
@@ -131,6 +128,7 @@ describe('groupPersonasByState', () => {
     expect(group!.personas.map((p) => p.id)).toEqual([
       'ipod-video-5g-iflash-1tb',
       'ipod-nano-7g-space-gray',
+      'echo-mini',
     ]);
   });
 
@@ -151,7 +149,7 @@ describe('groupPersonasByState', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Daemon-payload filter (TASK-322.06.01)
+// Daemon-payload filter
 // ---------------------------------------------------------------------------
 
 describe('hasDaemonPayload', () => {
@@ -234,14 +232,14 @@ describe('groupPersonasByState daemon-payload filter', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('warning text names the persona id, the null fields, and references TASK-324', () => {
+  it('warning text names the persona id, the null fields, and the remediation hint', () => {
     const warnings: string[] = [];
     groupPersonasByState([makeFakePersona('drop-me')], (m) => warnings.push(m));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("'drop-me'");
     expect(warnings[0]).toContain('sysInfoExtendedXml=null');
     expect(warnings[0]).toContain('massStorageBackingFile=null');
-    expect(warnings[0]).toContain('TASK-324');
+    expect(warnings[0]).toMatch(/populate sysInfoExtendedXml or massStorageBackingFile/);
   });
 
   it('emits one warning per excluded persona on first invocation', () => {
@@ -295,7 +293,7 @@ describe('formatPersonaSkipWarning', () => {
     expect(msg).toContain("'zonked'");
     expect(msg).toContain('sysInfoExtendedXml=null');
     expect(msg).toContain('massStorageBackingFile=null');
-    expect(msg).toContain('TASK-324');
+    expect(msg).toMatch(/populate sysInfoExtendedXml or massStorageBackingFile/);
   });
 });
 
@@ -303,20 +301,43 @@ function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): De
   return {
     id,
     description: id,
-    schemaVersion: 1,
+    schemaVersion: 2,
     usbDescriptor: {
       vendorId: 0,
       productId: 0,
-      deviceSerial: '',
+      deviceSerial: null,
       deviceClass: 0,
       deviceSubclass: 0,
       deviceProtocol: 0,
+      bMaxPacketSize0: 64,
+      bcdUSB: 0x0200,
+      bcdDevice: 0x0001,
+      bNumConfigurations: 1,
+      configurations: [
+        {
+          bConfigurationValue: 1,
+          bNumInterfaces: 1,
+          bmAttributes: 0x80,
+          bMaxPower: 0xfa,
+          interfaces: [
+            {
+              bInterfaceNumber: 0,
+              bAlternateSetting: 0,
+              bInterfaceClass: 0x08,
+              bInterfaceSubClass: 0x06,
+              bInterfaceProtocol: 0x50,
+              endpoints: [],
+            },
+          ],
+        },
+      ],
+      stringDescriptors: {},
     },
     sysInfoExtendedXml: null,
     lsblkJson: null,
     systemProfilerJson: null,
     diskutilPlist: null,
-    partitionLayout: { partitions: [] },
+    partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
     massStorageBackingFile: null,
     expectedCapabilities: null,
     expectedReadiness: {
@@ -330,7 +351,7 @@ function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): De
 }
 
 // ---------------------------------------------------------------------------
-// Tier-3 availability detection (AC #4)
+// Tier-3 availability detection
 // ---------------------------------------------------------------------------
 
 function fakeRuntime(opts: {

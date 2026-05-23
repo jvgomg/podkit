@@ -36,11 +36,11 @@ import { SUPPORTED_DEVICES_DOCS_URL } from '../build-unsupported-reason.js';
 // ── Reason strings ────────────────────────────────────────────────────────────
 
 const SHUFFLE_REASON =
-  'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.';
+  'iPod shuffle 3rd/4th gen requires iTunes authentication, which podkit cannot perform.';
 
-const NANO_6G_REASON = 'iPod nano 6th gen uses an iTunesDB format incompatible with libgpod.';
+const NANO_6G_REASON = 'iPod nano 6th gen uses an iTunesDB format podkit cannot read or write.';
 
-const NANO_7G_REASON = "iPod nano 7th gen is not in libgpod's device table; podkit cannot sync it.";
+const NANO_7G_REASON = 'iPod nano 7th gen is not a podkit-supported device.';
 
 const itouch = (gen: string) =>
   `iPod touch (${gen}) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.`;

@@ -17,19 +17,19 @@
 #     they are the same shared libraries an end-user with libgpod-using
 #     applications would already have. ADR-016 §"Snapshot-based state
 #     layering" names `base-no-libgpod` as a snapshot, which implies libgpod
-#     IS in the base VM and is removed for that snapshot — TASK-322.02 lands
-#     the snapshot setter.
+#     IS in the base VM and is removed for that snapshot (see the snapshot setter
+#     in `lima-test-vm-state.ts`).
 #   - Kernel modules loaded at boot via /etc/modules-load.d/podkit-test-vm.conf:
-#     `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`
+#     `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, `sg`
+#     (`sg` provides /dev/sg* SCSI generic device nodes that podkit's
+#     `inquiry-methods` doctor check requires)
 #   - configfs auto-mounted at /sys/kernel/config (kernel default on Debian 12;
 #     an explicit /etc/fstab line is added as a belt-and-braces measure)
-#   - /usr/local/bin/podkit — empty placeholder; populated by TASK-322.03's
-#     binary transfer step (limactl copy from the host's turbo cache)
+#   - /usr/local/bin/podkit — empty placeholder; populated by the binary
+#     transfer step (limactl copy from the host's turbo cache)
 #   - /usr/local/bin/gpod-tool — populated by a placeholder provision step
-#     that expects a host-side binary at /tmp/gpod-tool. TASK-322.03 will
-#     refine the transfer contract once the host-side gpod-tool linux build
-#     pipeline lands. See README §"gpod-tool sourcing" for the current
-#     handoff contract.
+#     that expects a host-side binary at /tmp/gpod-tool. See README
+#     §"gpod-tool sourcing" for the current handoff contract.
 #
 # What this VM explicitly DOES NOT have:
 #   - NO Bun, NO Node, NO npm/npx
@@ -62,7 +62,7 @@
 # Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s
 # for `qemu` on aarch64 hosts, and the Tier-3 state-mutation path uses
 # `apply-state.sh` (sub-2-second per flip — see ADR-016 §"Test speed
-# strategy" / TASK-322.02.01) rather than `limactl snapshot`, which is
+# strategy") rather than `limactl snapshot`, which is
 # QEMU-only in Lima 2.x. Explicit pinning prevents implicit reliance on
 # the user's default driver.
 vmType: 'vz'
@@ -76,7 +76,7 @@ images:
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'
     arch: 'x86_64'
 
-# No host mount. The binary is delivered via `limactl copy` by TASK-322.03.
+# No host mount. The binary is delivered via `limactl copy`.
 # Lima's default $HOME mount would re-introduce dev-library shadowing risk
 # (the host's node_modules, libgpod-dev, Bun install, etc. would all become
 # visible). ADR-016 §"Builder/test VM split" forbids it.
@@ -102,6 +102,9 @@ provision:
       # libglib2.0-0          — runtime glib (depended on by libgpod4; explicit for clarity)
       # ca-certificates       — boot-time TLS for apt + limactl ssh
       # kmod                  — modprobe, lsmod, depmod (boot-time module loading)
+      # dosfstools            — mkfs.vfat for synthesising FAT32 backing images
+      #                         used by the Tier-3 mass-storage smoke test
+      #                         for the mass-storage smoke test. Runtime tool, not a -dev package.
       # NO build-essential, NO pkg-config, NO any -dev packages.
       apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -109,13 +112,17 @@ provision:
         libgpod-common \
         libglib2.0-0 \
         ca-certificates \
-        kmod
+        kmod \
+        dosfstools
 
       echo "=== Configuring kernel modules to load at boot ==="
       # USB gadget stack: dummy_hcd provides a virtual USB host controller in
       # the kernel; libcomposite + usb_f_mass_storage + usb_f_fs provide the
-      # gadget function modules that the FunctionFS daemon (TASK-322.05) uses
-      # to synthesize iPod-shaped USB devices.
+      # gadget function modules that the FunctionFS daemon uses to synthesize
+      # iPod-shaped USB devices.
+      # `sg` (SCSI generic) provides the /dev/sg* device nodes that podkit's
+      # `inquiry-methods` doctor check probes when scanning for iPods — without
+      # it the `healthy` SystemState fixture cannot be satisfied.
       install -d /etc/modules-load.d
       # Write via printf — heredocs inside an indented YAML `|` block scalar
       # would either need column-0 bodies (breaking yaml indent) or `<<-EOF`
@@ -128,13 +135,14 @@ provision:
         'libcomposite' \
         'usb_f_mass_storage' \
         'usb_f_fs' \
+        'sg' \
         > /etc/modules-load.d/podkit-test-vm.conf
 
       # Best-effort modprobe during provisioning so the modules are available
       # immediately without a reboot. The `|| echo` is what keeps `set -e` from
       # aborting the script if a module fails to load (e.g. an image variant
       # missing dummy_hcd); the boot-time loader catches the real run.
-      for mod in dummy_hcd libcomposite usb_f_mass_storage usb_f_fs; do
+      for mod in dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg; do
         modprobe "$mod" || echo "WARN: modprobe $mod failed during provisioning; will retry on boot via modules-load.d"
       done
 
@@ -153,7 +161,7 @@ provision:
       mountpoint -q /sys/kernel/config || mount -t configfs configfs /sys/kernel/config
 
       echo "=== Verifying /usr/local/bin is writable for binary transfer ==="
-      # TASK-322.03 will limactl-copy the compiled podkit binary here.
+      # The runner limactl-copies the compiled podkit binary here.
       install -d -m 0755 /usr/local/bin
       test -w /usr/local/bin
 
@@ -162,25 +170,20 @@ provision:
       #!/usr/bin/env bash
       set -eux
 
-      # gpod-tool sourcing (interim contract; refined by TASK-322.03)
+      # gpod-tool sourcing (interim contract)
       #
       # gpod-tool is built by tools/gpod-tool/Makefile and dynamically links
-      # libgpod-1.0 + glib-2.0. The host-side build artefact for Linux x64/arm64
-      # is not yet wired up — TASK-322.03 will produce it from @podkit/gpod-testing
-      # build outputs and ship it into the VM via limactl copy alongside the
-      # podkit binary.
-      #
-      # Interim handoff: developers wanting to populate gpod-tool today can
+      # libgpod-1.0 + glib-2.0. Developers wanting to populate gpod-tool can
       # `limactl copy <gpod-tool-linux> podkit-test-vm:/tmp/gpod-tool` after
       # boot, then `limactl shell podkit-test-vm -- sudo install -m 0755
       # /tmp/gpod-tool /usr/local/bin/gpod-tool`. The provisioning step below
-      # picks the file up automatically if it is staged BEFORE first boot
-      # (e.g. via a pre-boot `limactl copy` in TASK-322.03's transferBinary).
+      # picks the file up automatically if it is staged BEFORE first boot.
+      # The runner also transfers it via PODKIT_GPOD_TOOL_BINARY if set.
       if [ -f /tmp/gpod-tool ]; then
         install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
         echo "Installed gpod-tool from /tmp/gpod-tool"
       else
-        echo "NOTE: /tmp/gpod-tool not staged at boot — TASK-322.03 will copy it later."
+        echo "NOTE: /tmp/gpod-tool not staged at boot — use the runner transfer step."
       fi
 
   - mode: system

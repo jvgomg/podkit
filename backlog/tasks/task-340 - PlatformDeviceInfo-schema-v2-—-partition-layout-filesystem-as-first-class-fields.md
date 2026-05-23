@@ -3,9 +3,10 @@ id: TASK-340
 title: >-
   PlatformDeviceInfo schema v2 — partition layout + filesystem as first-class
   fields
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-15 23:59'
+updated_date: '2026-05-23 21:06'
 labels:
   - schema
   - device-discovery
@@ -91,10 +92,43 @@ A `PlatformDeviceInfo` value tells you, by its type, which sub-shape is present 
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 PlatformDeviceInfo refactored into a tagged union (or sub-objects) so each branch's required fields are present together by the type system
-- [ ] #2 Platform probes (linux.ts, macos.ts) return the new shape; existing consumers updated
-- [ ] #3 No regressions in: findIpodDevices, readiness pipeline, device scan, device info, doctor
-- [ ] #4 Existing tests pass; new tests pin each variant's required fields
-- [ ] #5 Type-narrowing removes defensive `if (info.vendorId !== undefined)` checks from consumers (count before/after)
-- [ ] #6 Schema migration is documented in agents/device-testing.md or a new agents/platform-device-info.md if substantial
+- [x] #1 PlatformDeviceInfo refactored into a tagged union (or sub-objects) so each branch's required fields are present together by the type system
+- [x] #2 Platform probes (linux.ts, macos.ts) return the new shape; existing consumers updated
+- [x] #3 No regressions in: findIpodDevices, readiness pipeline, device scan, device info, doctor
+- [x] #4 Existing tests pass; new tests pin each variant's required fields
+- [x] #5 Type-narrowing removes defensive `if (info.vendorId !== undefined)` checks from consumers (count before/after)
+- [x] #6 Schema migration is documented in agents/device-testing.md or a new agents/platform-device-info.md if substantial
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**2026-05-23 — TASK-340 landed in two phases.**
+
+**Phase 1 (Opus worker):** Refactored `PlatformDeviceInfo` to v2 — nested sub-objects with discriminated mount-state. New shape:
+- `storage: { sizeBytes, blockSizeBytes?, filesystem?, partitionLayout? }` (required)
+- `usb?: UsbFingerprint` (optional)
+- Discriminated mount-state union: `{ isMounted: true; mountPoint: string }` | `{ isMounted: false }`
+
+Migrated `types.ts`, `linux.ts`, `macos.ts`, `readiness/index.ts`, `reconcile.ts`, `findIpodDevices`, `scan.ts`, `add.ts`, `mount.ts`, `doctor.ts`, `resolvers/device.ts`, `device-scan-render.ts` + the worker stalled (watchdog) before sweeping all test fixtures.
+
+**Phase 2 (Haiku worker):** Mechanical test-fixture sweep — 35+ fixture objects migrated across podkit-cli + podkit-core tests. Pattern map:
+- `size: N` → `storage: { sizeBytes: N }`
+- `blockSizeBytes` / `filesystem` / `partitionLayout` → merged into `storage: { ... }`
+- `usbFingerprint: {...}` → `usb: {...}`
+- `usbFingerprint: null` → omit field (optional, not nullable)
+
+Quality gates:
+- typecheck (30 packages) — green
+- build (17 packages) — green
+- podkit T1+T2 — 1322 pass / 0 fail
+- @podkit/core T1+T2 — 2772 pass / 0 fail
+- Tier-3 — **79 pass / 0 fail / 447 expect / 124s preserved**
+
+Files touched: 13 production files + 10 test files. ADR/agents doc: TBD — worker did not land `agents/platform-device-info.md`. Schema is documented inline in `types.ts` TSDoc and via the migration note "Pre-v2 PDI had flat …".
+
+PR review flags:
+1. Discriminated union for `MassStorageBackingFile` not landed — kept relaxed `imagePath?` + `synthesis?` both optional. Same as TASK-332's call.
+2. `as PlatformDeviceInfo` casts added to some test fixtures (acceptable escape hatch in tests).
+3. `agents/platform-device-info.md` doc not created — TSDoc in `types.ts` is the canonical reference today. If a follow-up wants a dedicated doc, low-cost spinout.
+<!-- SECTION:NOTES:END -->

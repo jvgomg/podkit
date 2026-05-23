@@ -27,7 +27,7 @@ const unsupported = { kind: 'ios-device', headline: unsupportedHeadline } as con
 export const ipodTouch5gUnsupported: DevicePersona = {
   id: 'ipod-touch-5g-unsupported',
   description: 'iPod touch 5G — rejection case (iOS device, no disk mode, no SysInfoExtended).',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -37,6 +37,43 @@ export const ipodTouch5gUnsupported: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // iOS device — proprietary Apple iAP protocol over USB; no disk mode.
+    // The classifier rejects this device on USB PID alone before reading the
+    // descriptor tree, so the hierarchy below is a minimal stand-in. Real
+    // iOS USB descriptors expose Audio/HID/iAP composite interfaces (class
+    // 0x01 / 0x03 / 0xFF) — re-capture from `lsusb -v` on Linux if a future
+    // test asserts on interface details.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0xc0,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            // Vendor-specific (Apple Mobile Device Service / iAP).
+            bInterfaceClass: 0xff,
+            bInterfaceSubClass: 0xfe,
+            bInterfaceProtocol: 0x02,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: {
+      1: 'Apple Inc.',
+      2: 'iPod',
+      3: '637fea3cca37ff292e9cd4b26b1d411dfce06fd8',
+    },
   },
 
   sysInfoExtendedXml: null,
@@ -45,7 +82,10 @@ export const ipodTouch5gUnsupported: DevicePersona = {
   systemProfilerJson,
   diskutilPlist: null,
 
-  partitionLayout: { partitions: [] },
+  partitionLayout: {
+    // iOS device — no disk mode. Empty layout.
+    luns: [{ lun: 0, partitions: [] }],
+  },
 
   massStorageBackingFile: null,
 

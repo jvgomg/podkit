@@ -160,7 +160,7 @@ describe('identify', () => {
       expect(model).toBeDefined();
       expect(model!.generationId).toBe('nano_7g');
       expect(model!.unsupportedReason).toBeDefined();
-      expect(model!.unsupportedReason!.headline).toContain('libgpod');
+      expect(model!.unsupportedReason!.headline).toMatch(/nano 7th gen/i);
       // touch_* gets 'ios-device'; everything else gets 'unsupported-device'.
       expect(model!.unsupportedReason!.kind).toBe('unsupported-device');
       expect(model!.unsupportedReason!.docsUrl).toContain('supported-devices');

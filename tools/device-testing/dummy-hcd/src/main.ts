@@ -186,6 +186,7 @@ async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise
     gadgetPath = gadget.gadgetPath;
     ffsInstance = gadget.ffsInstance;
 
+    let keepAliveTimer: ReturnType<typeof setInterval> | null = null;
     if (bindFfs) {
       // `runFunctionFs` owns the descriptor handshake → UDC bind → BIND
       // event sequence. It calls our `attachUdc` callback at the correct
@@ -203,10 +204,23 @@ async function runWithGadget(opts: CliOptions, persona: SidecarPersona): Promise
       // UDC bind is sufficient.
       const udc = attachUdc(gadget.gadgetPath);
       console.log(`[ready] gadget ${persona.id} bound to UDC ${udc} (mass-storage only)`);
+      // Bun (unlike Node) does not consider `process.on('SIGTERM', …)` a
+      // pending handle that keeps the event loop alive. Without an open
+      // file descriptor (the FunctionFS ep0 in the bindFfs branch above),
+      // the loop drains and the runtime exits ~16ms after attachUdc,
+      // leaving the gadget bound but the daemon process gone — and
+      // systemctl reports the unit as `inactive` even though /dev/sg* +
+      // /dev/sd* are live. A 1-hour interval timer is the smallest fix
+      // that keeps the loop alive without polling; the signal handler
+      // clears it during teardown. 1h is arbitrary — short enough to
+      // be visibly distinct in a heap dump, long enough that it should
+      // never actually fire in practice.
+      keepAliveTimer = setInterval(() => {}, 60 * 60 * 1000);
     }
 
     // Wait until a signal arrives.
     const code = await donePromise;
+    if (keepAliveTimer !== null) clearInterval(keepAliveTimer);
     return code;
   } catch (err) {
     const message = describe(err);

@@ -9,31 +9,115 @@ import type { UsbFingerprint } from '@podkit/device-types';
 import type { DeviceAssessment } from './assessment.js';
 
 /**
- * Information about an attached disk device from the platform
+ * Information about an attached disk device from the platform.
  *
  * Represents physical disk/volume information from the operating system,
- * distinct from iPod-specific metadata.
+ * distinct from iPod-specific metadata. PDI is always a block-device record —
+ * USB-only entries (e.g. iPod 6G in restore mode, FunctionFS-synthesised
+ * Tier-3 personas with no backing image) flow through `IpodClassification`
+ * separately and never become PDI values.
+ *
+ * **Schema v2 (TASK-340).** PDI is a sub-object record with a discriminated
+ * mount state. Each cohesive group lives under its own sub-object so the
+ * type system enforces co-presence:
+ *
+ * - **Identity** (`identifier` / `volumeName` / `volumeUuid`) — always present.
+ * - **Mount** (`{ isMounted: true; mountPoint: string } | { isMounted: false }`) —
+ *   discriminated union. Consumers do `if (info.isMounted) { info.mountPoint }`
+ *   without a defensive `&& info.mountPoint` guard; the type narrowing
+ *   guarantees the path is present.
+ * - **Storage** (`storage.sizeBytes` / `storage.blockSizeBytes` / `storage.filesystem` /
+ *   `storage.partitionLayout`) — `storage` is always present; the inner fields
+ *   stay optional because not every probe surfaces them.
+ * - **USB** (`usb?: UsbFingerprint`) — present on Linux (sysfs walk attached
+ *   in `findIpodDevices`). Absent on macOS, which reconciles via
+ *   `diskIdentifier` against the USB-inquiry stream in
+ *   `reconcileIpodDiscovery`.
+ * - **Media type** (`mediaType?: string`) — top-level; populated by macOS only.
+ *
+ * **Migration note (v1 → v2, TASK-340).** Pre-v2 PDI had flat fields:
+ *   - `size: number` → `storage.sizeBytes: number`
+ *   - `blockSizeBytes?: number` → `storage.blockSizeBytes?: number`
+ *   - `filesystem?: string` → `storage.filesystem?: string`
+ *   - `partitionLayout?: PartitionLayout` → `storage.partitionLayout?: PartitionLayout`
+ *   - `usbFingerprint?: UsbFingerprint` → `usb?: UsbFingerprint`
+ *   - `mountPoint?: string` + `isMounted: boolean` → discriminated mount-state union
+ *     (`{ isMounted: true; mountPoint: string }` | `{ isMounted: false }`)
+ *
+ * Renamed in one commit because `@podkit/core` is an internal workspace
+ * package, not a published API.
  */
-export interface PlatformDeviceInfo {
-  /** Device identifier (e.g., "disk6s2" on macOS) */
+export type PlatformDeviceInfo = PlatformDeviceIdentity &
+  PlatformDeviceMountState & {
+    /** Media type if known (e.g., "iPod"). macOS-only; from `diskutil info`. */
+    mediaType?: string;
+    /** Storage characteristics (always present; inner fields stay optional). */
+    storage: PlatformDeviceStorage;
+    /**
+     * USB fingerprint for the underlying physical device, when the platform
+     * surfaces it cheaply during enumeration.
+     *
+     * Populated by the Linux device manager (read from sysfs alongside the
+     * partition info that produces this record). Absent on macOS, which
+     * relies on `diskIdentifier` matching against the USB enumeration
+     * stream for reconciliation. Used by `reconcileIpodDiscovery` to fold
+     * a single physical iPod's block-device + USB-inquiry records into one
+     * entry.
+     */
+    usb?: UsbFingerprint;
+  };
+
+/**
+ * Identity fields — always present on every block-device record.
+ *
+ * Three strings the OS hands us before we know anything about the device.
+ * `identifier` is the kernel name (`disk6s2` / `sda1`); `volumeName` is the
+ * user-visible label; `volumeUuid` is the cross-replug-stable identifier.
+ */
+export interface PlatformDeviceIdentity {
+  /** Device identifier (e.g., "disk6s2" on macOS, "sda1" on Linux). */
   identifier: string;
-  /** Volume name (e.g., "TERAPOD") */
+  /** Volume name (e.g., "TERAPOD"). Empty string when no label set. */
   volumeName: string;
-  /** Volume UUID for persistent identification */
+  /** Volume UUID for persistent identification across mounts/replugs. */
   volumeUuid: string;
-  /** Device size in bytes */
-  size: number;
+}
+
+/**
+ * Discriminated mount-state union.
+ *
+ * When `isMounted` is `true`, `mountPoint` is **always** a non-empty string.
+ * When `isMounted` is `false`, `mountPoint` is **always** absent. Type
+ * narrowing replaces the historical `if (info.isMounted && info.mountPoint)`
+ * pair-check that scattered across every consumer pre-v2.
+ *
+ * Producers (`linux.ts`, `macos.ts`) and synthesisers
+ * (`synthesizePathModeDeviceInfo`) must emit one of the two variants — the
+ * union refuses the mixed shape `{ isMounted: true, mountPoint: undefined }`
+ * that previously slipped through.
+ */
+export type PlatformDeviceMountState =
+  | { isMounted: true; mountPoint: string }
+  | { isMounted: false; mountPoint?: undefined };
+
+/**
+ * Storage characteristics for a partition's whole-disk context.
+ *
+ * `sizeBytes` is always populated (`0` when unknown). The remaining fields
+ * stay optional because the underlying probes don't always surface them —
+ * `partitionLayout` is captured during enumeration but synthesised callers
+ * (`synthesizePathModeDeviceInfo`) skip it; `filesystem` lower bound depends
+ * on the probe (Linux always carries `fstype`, macOS may report empty);
+ * `blockSizeBytes` is OS-reported and absent on synthesised records.
+ */
+export interface PlatformDeviceStorage {
+  /** Device size in bytes. `0` when unknown (synthesised records). */
+  sizeBytes: number;
   /**
    * Physical block size in bytes as reported by the OS.
    * Standard iPod hard drives report 512. iFlash adapters report 2048.
    */
   blockSizeBytes?: number;
-  /** Whether the device is currently mounted */
-  isMounted: boolean;
-  /** Current mount point if mounted (e.g., "/Volumes/TERAPOD") */
-  mountPoint?: string;
-  /** Media type if known (e.g., "iPod") */
-  mediaType?: string;
   /**
    * Filesystem type for this partition as reported by the platform probe.
    * Linux: `fstype` from `lsblk` (e.g. `"vfat"`, `"hfsplus"`). macOS:
@@ -49,25 +133,11 @@ export interface PlatformDeviceInfo {
    * details to make single- vs dual-partition iPod layouts observable
    * (TASK-338).
    *
-   * Cross-platform asymmetry: Linux populates `filesystem` from `fstype`
-   * (e.g. `"vfat"`, `"hfsplus"`); macOS populates it from diskutil's
-   * "File System Personality" / "Type (Bundle)" (e.g. `"MS-DOS FAT32"`,
-   * `"Apple_HFS"`). Consumers should treat the string as opaque and lower-case
-   * for comparison.
+   * Cross-platform asymmetry: Linux populates `filesystem` from `fstype`;
+   * macOS populates it from diskutil's "File System Personality". Consumers
+   * should treat the string as opaque and lower-case for comparison.
    */
   partitionLayout?: PartitionLayout;
-  /**
-   * USB fingerprint for the underlying physical device, when the platform
-   * surfaces it cheaply during enumeration.
-   *
-   * Populated by the Linux device manager (read from sysfs alongside the
-   * partition info that produces this record). Currently absent on macOS,
-   * which relies on `diskIdentifier` matching against the USB enumeration
-   * stream for reconciliation. Used by `reconcileIpodDiscovery` to fold a
-   * single physical iPod's block-device + USB-inquiry records into one
-   * entry.
-   */
-  usbFingerprint?: UsbFingerprint;
 }
 
 /**

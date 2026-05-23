@@ -79,14 +79,14 @@ function attachMacPartitionLayouts(devices: PlatformDeviceInfo[]): void {
     });
     const partitions: PartitionLayoutEntry[] = siblings.map((sib, i) => ({
       index: i + 1,
-      filesystem: sib.filesystem ?? null,
-      sizeBytes: sib.size,
+      filesystem: sib.storage.filesystem ?? null,
+      sizeBytes: sib.storage.sizeBytes,
       identifier: sib.identifier,
       ...(sib.volumeUuid ? { volumeUuid: sib.volumeUuid } : {}),
     }));
     const layout: PartitionLayout = { partitionCount: partitions.length, partitions };
     for (const sib of siblings) {
-      sib.partitionLayout = layout;
+      sib.storage.partitionLayout = layout;
     }
   }
 }
@@ -262,9 +262,9 @@ export class MacOSDeviceManager implements DeviceManager {
       };
     }
 
-    // Already mounted — return existing mount point
-    // If an explicit target was requested but the device is already mounted elsewhere, warn
-    if (device.isMounted && device.mountPoint) {
+    // Already mounted — return existing mount point.
+    // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+    if (device.isMounted) {
       if (options?.target && device.mountPoint !== options.target) {
         return {
           success: false,
@@ -420,8 +420,9 @@ export class MacOSDeviceManager implements DeviceManager {
         continue;
       }
 
-      // Check if it has iPod_Control directory (for mounted devices)
-      if (device.isMounted && device.mountPoint) {
+      // Check if it has iPod_Control directory (for mounted devices).
+      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+      if (device.isMounted) {
         const ipodControlPath = join(device.mountPoint, 'iPod_Control');
         if (existsSync(ipodControlPath)) {
           ipods.push(device);
@@ -513,8 +514,8 @@ Replace diskXsY with your actual device identifier`;
     }
 
     const volumeName = info['Volume Name'] || '';
-    const mountPoint = info['Mount Point'] || '';
-    const isMounted = mountPoint !== '' && mountPoint !== '(not mounted)';
+    const rawMountPoint = info['Mount Point'] || '';
+    const isMounted = rawMountPoint !== '' && rawMountPoint !== '(not mounted)';
 
     // Parse size
     const sizeStr = info['Disk Size'] || info['Total Size'] || '0';
@@ -540,12 +541,15 @@ Replace diskXsY with your actual device identifier`;
       identifier: diskId,
       volumeName,
       volumeUuid,
-      size,
-      blockSizeBytes,
-      isMounted,
-      mountPoint: isMounted ? mountPoint : undefined,
       mediaType,
-      ...(filesystem ? { filesystem } : {}),
+      storage: {
+        sizeBytes: size,
+        ...(blockSizeBytes !== undefined ? { blockSizeBytes } : {}),
+        ...(filesystem ? { filesystem } : {}),
+      },
+      ...(isMounted
+        ? { isMounted: true as const, mountPoint: rawMountPoint }
+        : { isMounted: false as const }),
     };
   }
 
@@ -554,7 +558,8 @@ Replace diskXsY with your actual device identifier`;
     const normalized = mountPoint.replace(/\/+$/, '');
 
     for (const device of devices) {
-      if (device.isMounted && device.mountPoint) {
+      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+      if (device.isMounted) {
         const deviceNormalized = device.mountPoint.replace(/\/+$/, '');
         if (deviceNormalized === normalized) {
           return device.volumeUuid || null;
@@ -591,7 +596,8 @@ Replace diskXsY with your actual device identifier`;
 
       for (const partId of allIds) {
         const info = await this.getPlatformDeviceInfo(partId);
-        if (info?.isMounted && info.mountPoint && info.mountPoint !== mountPoint) {
+        // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+        if (info?.isMounted && info.mountPoint !== mountPoint) {
           siblings.push(info.mountPoint);
         }
       }
@@ -713,14 +719,14 @@ Replace diskXsY with your actual device identifier`;
     const wholeDisk = diskId.replace(/s\d+$/, '');
     const usb = await this.queryUsbInfo(wholeDisk);
 
-    const iFlash = detectIFlash(device.size, device.blockSizeBytes ?? 512);
+    const iFlash = detectIFlash(device.storage.sizeBytes, device.storage.blockSizeBytes ?? 512);
 
     return {
       diskIdentifier: diskId,
       volumeName: device.volumeName,
       volumeUuid: device.volumeUuid || undefined,
-      sizeBytes: device.size,
-      blockSizeBytes: device.blockSizeBytes ?? 512,
+      sizeBytes: device.storage.sizeBytes,
+      blockSizeBytes: device.storage.blockSizeBytes ?? 512,
       isMounted: device.isMounted,
       mountPoint: device.mountPoint,
       usb,

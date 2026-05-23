@@ -37,15 +37,44 @@ export const sonyNwA1200: DevicePersona = {
   id: 'sony-nw-a1200',
   description:
     'Sony Walkman NW-A1200 (8GB HDD, NO NAME) — identical hardware to NW-A1000 except HDD capacity. This unit synced via Media Go on Windows, so carries DB v2.0 + MEDIAGO/ + Windows artefacts.',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x054c,
     productId: 0x026a, // shared with NW-A1000
-    deviceSerial: '',
+    // v2 schema: `iSerialNumber=0` migrates from v1's `''` to explicit `null`.
+    deviceSerial: null,
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // Identical hardware to NW-A1000 — shares the same USB descriptor
+    // hierarchy. Source: `raw/ioreg.txt`.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0100,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'Sony', 2: 'HDD WALKMAN' },
   },
 
   sysInfoExtendedXml: null,
@@ -57,15 +86,29 @@ export const sonyNwA1200: DevicePersona = {
   partitionLayout: {
     // MBR FAT32-LBA (type 0x0C). 512-byte sectors. Single partition at
     // sector 63 — ~32 KiB MBR padding before. Same shape as A1000 / A3000.
-    partitions: [{ index: 1, type: 'FAT32', sizeMiB: 7475, mountpoint: '/Volumes/NO NAME' }],
+    luns: [
+      {
+        lun: 0,
+        partitions: [{ index: 1, type: 'FAT32', sizeMiB: 7475, mountpoint: '/Volumes/NO NAME' }],
+      },
+    ],
   },
 
   massStorageBackingFile: null,
 
   expectedCapabilities: null,
 
+  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
+  // payload from the mass-storage classifier's no-preset rejection path.
+  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
+  // to the canonical `'unsupported'` shape.
   expectedReadiness: {
-    level: 'unknown',
+    level: 'unsupported',
+    unsupported: {
+      kind: 'unsupported-preset',
+      headline:
+        'Sony NW-A1200 (SonicStage/Media Go-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage or Media Go (Windows, discontinued). Same hardware as NW-A1000 (shared USB PID, differs only by HDD capacity); distinct platform from NW-A3000.',
+    },
     stages: [
       {
         stage: 'usb',

@@ -144,10 +144,10 @@ describe('device scan integration — discovery reconciliation', () => {
       identifier: 'sdc1',
       volumeName: 'IPOD',
       volumeUuid: '1234-5678',
-      size: 7_950_000_000,
+      storage: { sizeBytes: 7_950_000_000 },
       isMounted: true,
       mountPoint: '/media/james/IPOD',
-      usbFingerprint: {
+      usb: {
         vendorId: '05ac',
         productId: '1262',
         serialNumber: 'NANO3G-LINKA-SERIAL',
@@ -184,10 +184,10 @@ describe('device scan integration — discovery reconciliation', () => {
         identifier: 'sdc1',
         volumeName: 'IPOD',
         volumeUuid: '1234-5678',
-        size: 7_950_000_000,
+        storage: { sizeBytes: 7_950_000_000 },
         isMounted: true,
         mountPoint: '/media/james/IPOD',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'NANO3G',

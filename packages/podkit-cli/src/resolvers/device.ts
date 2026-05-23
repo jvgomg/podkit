@@ -270,8 +270,9 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
     if (deviceIdentity?.volumeUuid) {
       const device = await manager.findByVolumeUuid(deviceIdentity.volumeUuid);
       if (device) {
-        // UUID device found — check if it's at the expected path
-        if (device.mountPoint && normalizePath(device.mountPoint) !== normalizePath(cliPath)) {
+        // UUID device found — check if it's at the expected path.
+        // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+        if (device.isMounted && normalizePath(device.mountPoint) !== normalizePath(cliPath)) {
           return {
             source: 'cli',
             error:
@@ -325,7 +326,8 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
 
     if (device) {
       if (requireMounted) {
-        if (device.isMounted && device.mountPoint) {
+        // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+        if (device.isMounted) {
           return {
             path: device.mountPoint,
             source: 'uuid',
@@ -338,9 +340,10 @@ export async function resolveDevicePath(options: DevicePathOptions): Promise<Dev
           error: 'Device found but not mounted',
         };
       }
-      // For mount command - return device info even if not mounted
+      // For mount command - return device info even if not mounted.
+      // `mountPoint` may be absent when the device isn't mounted yet.
       return {
-        path: device.mountPoint,
+        path: device.isMounted ? device.mountPoint : undefined,
         source: 'uuid',
         deviceInfo: device,
       };
@@ -461,10 +464,12 @@ export async function autoDetectDevice(
     }
   }
 
-  // One match → auto-select
+  // One match → auto-select.
+  // Type narrowing on `isMounted` makes `mountPoint` non-nullable in the
+  // mounted branch.
   if (matches.length === 1) {
     const { deviceInfo, matchedDevice } = matches[0]!;
-    if (!deviceInfo.isMounted || !deviceInfo.mountPoint) {
+    if (!deviceInfo.isMounted) {
       return {
         source: 'auto-detected',
         deviceInfo,
@@ -492,7 +497,7 @@ export async function autoDetectDevice(
   // No config match — use the iPod with global settings if exactly one is connected
   if (ipods.length === 1) {
     const ipod = ipods[0]!;
-    if (!ipod.isMounted || !ipod.mountPoint) {
+    if (!ipod.isMounted) {
       return {
         source: 'none',
         deviceInfo: ipod,

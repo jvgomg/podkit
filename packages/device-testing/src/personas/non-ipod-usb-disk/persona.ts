@@ -42,7 +42,7 @@ export const nonIpodUsbDisk: DevicePersona = {
   id: 'non-ipod-usb-disk',
   description:
     'Generic non-Apple USB flash drive (SanDisk Cruzer Blade, 0x0781:0x5567) — synthesised rejection case for the no-preset vendor path.',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x0781, // SanDisk Corp.
@@ -54,6 +54,36 @@ export const nonIpodUsbDisk: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // Synthesised Cruzer Blade descriptor — single config, single
+    // Mass-Storage Bulk-Only interface. Representative of the typical
+    // USB-2.0 flash drive layout; re-capture from `lsusb -v` if a future
+    // test asserts on specific descriptor values.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0100,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'SanDisk', 2: 'Cruzer Blade', 3: '4C530001071224119242' },
   },
 
   sysInfoExtendedXml: null,
@@ -67,7 +97,12 @@ export const nonIpodUsbDisk: DevicePersona = {
     // 16 GB Cruzer Blade. Filesystem detail is irrelevant once the
     // classifier rejects the vendor, but recorded for symmetry with the
     // host probes.
-    partitions: [{ index: 1, type: 'FAT32', sizeMiB: 14732, mountpoint: '/Volumes/CRUZER' }],
+    luns: [
+      {
+        lun: 0,
+        partitions: [{ index: 1, type: 'FAT32', sizeMiB: 14732, mountpoint: '/Volumes/CRUZER' }],
+      },
+    ],
   },
 
   massStorageBackingFile: null,

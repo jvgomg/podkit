@@ -8,7 +8,7 @@ Step-by-step directive for an agent + human pair to capture `DevicePersona` fixt
 
 | File | Why |
 |------|-----|
-| `adr/adr-017-device-persona-fixtures.md` § "DevicePersona schema" + § "Capture methodology" | Authoritative schema + capture rationale |
+| `adr/adr-017-device-persona-fixtures.md` § "DevicePersona schema" + § "Schema v2 — May 2026" | Authoritative schema + capture rationale + v2 migration notes |
 | `packages/device-testing/src/personas/types.ts` | The canonical TypeScript type — every persona file must satisfy this |
 | `packages/device-testing/src/system-states/healthy.ts` | Example of a sibling fixture file's shape — match the comment/structure style |
 | `documents/test-devices.md` | Inventory of the user's hardware with model numbers, serial-suffix mappings, and notes per device |
@@ -16,6 +16,8 @@ Step-by-step directive for an agent + human pair to capture `DevicePersona` fixt
 | `documents/device-identification.md` | USB-inquiry vs SCSI-fallback boundary + transport semantics |
 
 Open the type file once. Refer to it whenever you write a persona — every field must be populated (`null` is valid for the documented optional fields).
+
+**Schema is at v2.** All personas must declare `schemaVersion: 2`. Specifically: `usbDescriptor` carries the full descriptor hierarchy (configurations/interfaces/endpoints + stringDescriptors), `partitionLayout` groups partitions under `luns[]`, and `deviceSerial: string | null` (use `null` when the device advertises `iSerialNumber = 0`, e.g. Sony NW-HD5 / NW-A1000 family).
 
 ## Hardware inventory + capture targets
 
@@ -120,33 +122,98 @@ system_profiler SPUSBDataType -json > /tmp/sp-full.json
 diskutil list -plist /dev/diskN > packages/device-testing/src/personas/<id>/raw/diskutil.plist
 ```
 
-**5. Compose `usbDescriptor` from the JSON:**
+**5. Compose `usbDescriptor` from the JSON (schema v2):**
 
 ```ts
 usbDescriptor: {
+  // Device descriptor
   vendorId: 0x05ac,           // from `vendor_id` (parse "0x05ac (Apple Inc.)")
   productId: 0x1209,          // from `product_id`
-  deviceSerial: '000A270014…', // from `serial_num`
-  deviceClass: 0,             // top-level USB class — usually 0 for composite devices
+  deviceSerial: '000A270014…', // from `serial_num`; `null` if iSerialNumber=0
+  deviceClass: 0,             // typically 0 on composite devices
   deviceSubclass: 0,
   deviceProtocol: 0,
+  bMaxPacketSize0: 64,        // from ioreg `bMaxPacketSize0` or sysfs
+  bcdUSB: 0x0200,             // from ioreg `bcdUSB` (=512 decimal)
+  bcdDevice: 0x0001,          // from ioreg `bcdDevice` or sysfs
+  bNumConfigurations: 1,      // from ioreg `bNumConfigurations` or sysfs
+  // Configuration / interface / endpoint hierarchy
+  configurations: [
+    {
+      bConfigurationValue: 1,
+      bNumInterfaces: 1,
+      bmAttributes: 0x80,     // bus-powered, no remote wakeup
+      bMaxPower: 0xfa,        // 500 mA
+      interfaces: [
+        {
+          bInterfaceNumber: 0,
+          bAlternateSetting: 0,
+          // Mass Storage class lives here, NOT on the device-level fields.
+          // From `udevadm info` (Linux) `ID_USB_INTERFACES=:080650:`, or
+          // ioreg `UsbDeviceSignature` tail (last 3 bytes).
+          bInterfaceClass: 0x08,        // Mass Storage
+          bInterfaceSubClass: 0x06,     // SCSI transparent
+          bInterfaceProtocol: 0x50,     // Bulk-Only Transport
+          endpoints: [
+            { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+          ],
+        },
+      ],
+    },
+  ],
+  // From ioreg `iManufacturer`, `iProduct`, `iSerialNumber` indices.
+  stringDescriptors: { 1: 'Apple Inc.', 2: 'iPod', 3: '000A270014…' },
 }
 ```
 
-For `deviceClass/Subclass/Protocol`: macOS `system_profiler` doesn't always surface these cleanly. If absent, set all three to `0` and note in `provenance.md` that the Linux capture (sysfs) will provide the authoritative values. The Linux session will reconcile.
+**Where each field comes from:**
 
-**6. Compose `partitionLayout` from the plist:**
+| Field | Mac (`ioreg`) | Linux (`/sys/bus/usb/devices/<n>/`) |
+|-------|---------------|-------------------------------------|
+| `vendorId` / `productId` | `idVendor` / `idProduct` (decimal — convert) | `cat idVendor idProduct` (hex) |
+| `deviceSerial` | `kUSBSerialNumberString` | `cat serial` (or `null` if `iSerialNumber=0`) |
+| `deviceClass`/Subclass/Protocol | `bDeviceClass`/SubClass/Protocol | `cat bDeviceClass bDeviceSubClass bDeviceProtocol` |
+| `bMaxPacketSize0` | `bMaxPacketSize0` | `cat bMaxPacketSize0` |
+| `bcdUSB` / `bcdDevice` | `bcdUSB` / `bcdDevice` (decimal) | `cat version bcdDevice` |
+| `bNumConfigurations` | `bNumConfigurations` (active config only) | `cat bNumConfigurations` (descriptor count — authoritative) |
+| Interface class/subclass/protocol | `UsbDeviceSignature` byte string, tail 3 bytes | `udevadm info -q all -n /dev/sdX \| grep ID_USB_INTERFACES` (format `:CCSSPP:`) |
+| Endpoint details | not surfaced cleanly | `lsusb -v -d <vid>:<pid>` |
+| `stringDescriptors` indices | `iManufacturer`, `iProduct`, `iSerialNumber` | `cat manufacturer product serial` |
+
+For `deviceClass/Subclass/Protocol`: macOS `system_profiler` doesn't always surface these cleanly. If absent, set all three to `0` (the composite-device convention) and note in `provenance.md` that the Linux capture (sysfs) will provide the authoritative values. The Linux session will reconcile. The interface-level class fields are the load-bearing ones for capability inference — `0x08/0x06/0x50` means Mass Storage / SCSI / Bulk-Only Transport (BBB) and applies to every iPod, Walkman, and DAP in the registry.
+
+**6. Compose `partitionLayout` from the plist (schema v2 — LUN-grouped):**
 
 The plist contains an `AllDisksAndPartitions` array with `Partitions[]` entries. Each partition has `Content` (type, e.g. `Apple_HFS`, `DOS_FAT_32`), `Size` (bytes), `MountPoint`. Map to:
 
 ```ts
 partitionLayout: {
-  partitions: [
-    { index: 1, type: 'firmware',     sizeMiB: 80,    /* no mountpoint */ },
-    { index: 2, type: 'HFS+',         sizeMiB: 952832, mountpoint: '/Volumes/iPod' },
+  luns: [
+    {
+      lun: 0,
+      partitions: [
+        { index: 1, type: 'firmware',     sizeMiB: 80,    /* no mountpoint */ },
+        { index: 2, type: 'HFS+',         sizeMiB: 952832, mountpoint: '/Volumes/iPod' },
+      ],
+    },
   ],
 }
 ```
+
+Single-LUN devices (every iPod, every Sony Walkman) use a single `luns[]` entry with `lun: 0`. Multi-LUN devices (Echo Mini: internal flash on LUN 0 + SD-card slot on LUN 1) emit one entry per LUN:
+
+```ts
+// echo-mini persona — dual-LUN
+partitionLayout: {
+  luns: [
+    { lun: 0, partitions: [{ index: 1, type: 'FAT32', sizeMiB: 7184, mountpoint: '/Volumes/ECHO MINI' }] },
+    { lun: 1, partitions: [{ index: 1, type: 'ExFAT', sizeMiB: 120564, mountpoint: '/Volumes/Echo SD' }] },
+  ],
+}
+```
+
+To detect multi-LUN devices: macOS surfaces each LUN as a distinct `/dev/diskN` under the same USB device entry (`system_profiler SPUSBDataType -json` shows them as sibling Media entries). Linux exposes them as distinct `/dev/sdX` block devices sharing the same USB device path (`udevadm info` shows them with sequential `ID_USB_INSTANCE=0:0` / `0:1` suffixes). Capture one `diskutil.plist` + `lsblk.json` per LUN if both have user-meaningful filesystems.
 
 Partition types: prefer human labels (`'firmware'`, `'HFS+'`, `'FAT32'`, `'empty'`) over the plist's raw `Apple_HFS` / `DOS_FAT_32` strings. Document the mapping in `provenance.md` if you do anything non-obvious.
 

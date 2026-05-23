@@ -95,7 +95,7 @@ describe('classifyAsIpod — unsupported iPod-family devices', () => {
     const result = classifyAsIpod({ vendorId: '05ac', productId: '1267' });
     expect(result).not.toBeNull();
     expect(result!.supported).toBe(false);
-    expect(result!.unsupportedReason?.headline).toContain('libgpod');
+    expect(result!.unsupportedReason?.headline).toMatch(/nano 7th gen/i);
   });
 
   it('classifies iPod touch 5G as unsupported via known table (0x05ac:0x12aa)', () => {

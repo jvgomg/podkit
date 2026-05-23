@@ -42,6 +42,9 @@ export {
   ipodShuffleNotSupported,
   nonIpodUsbDisk,
   malformedSysinfo,
+  ipodVideo5gCorruptDb,
+  corruptItunesDb,
+  echoMiniPopulated,
 } from './personas/index.js';
 export { buildEnumeratedUsbDevice } from './personas/builders.js';
 
@@ -141,6 +144,19 @@ export {
   BASE_HEALTHY_SNAPSHOT,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
 } from './runners/lima-test-vm.js';
+
+// Mass-storage backing-file synthesis (TASK-348)
+export type {
+  EnsureBackingFileOpts,
+  EnsureBackingFileResult,
+  EnsureBackingFilesForPersonasOpts,
+} from './runners/lima-test-vm-backing-files.js';
+export {
+  ensureBackingFile,
+  ensureBackingFilesForPersonas,
+  vmPathForPersona,
+  BACKING_FILES_VM_DIR,
+} from './runners/lima-test-vm-backing-files.js';
 
 // local-linux runner constants (TASK-322.04)
 export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';

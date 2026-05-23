@@ -93,11 +93,11 @@ function makeDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDevice
     identifier: 'disk6s2',
     volumeName: 'TERAPOD',
     volumeUuid: 'ABC-123-UUID',
-    size: 120 * 1024 * 1024 * 1024,
+    storage: { sizeBytes: 120 * 1024 * 1024 * 1024 },
     isMounted: true,
     mountPoint: '/tmp/will-be-overridden',
     ...overrides,
-  };
+  } as PlatformDeviceInfo;
 }
 
 /**
@@ -256,17 +256,20 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
       device: makeDevice({
         mountPoint: dir,
         identifier: 'sda1',
-        partitionLayout: {
-          partitionCount: 1,
-          partitions: [
-            {
-              index: 1,
-              filesystem: 'vfat',
-              sizeBytes: 32 * 1024 * 1024 * 1024,
-              identifier: 'sda1',
-              volumeUuid: 'ABCD-EF01',
-            },
-          ],
+        storage: {
+          sizeBytes: 120 * 1024 * 1024 * 1024,
+          partitionLayout: {
+            partitionCount: 1,
+            partitions: [
+              {
+                index: 1,
+                filesystem: 'vfat',
+                sizeBytes: 32 * 1024 * 1024 * 1024,
+                identifier: 'sda1',
+                volumeUuid: 'ABCD-EF01',
+              },
+            ],
+          },
         },
       }),
     });
@@ -293,18 +296,21 @@ describe('readiness pipeline — partition stage (ACs #4–#5)', () => {
       device: makeDevice({
         mountPoint: dir,
         identifier: 'disk6s2',
-        partitionLayout: {
-          partitionCount: 2,
-          partitions: [
-            { index: 1, filesystem: null, sizeBytes: 80 * 1024 * 1024, identifier: 'disk6s1' },
-            {
-              index: 2,
-              filesystem: 'MS-DOS FAT32',
-              sizeBytes: 30 * 1024 * 1024 * 1024,
-              identifier: 'disk6s2',
-              volumeUuid: 'ABC-123-UUID',
-            },
-          ],
+        storage: {
+          sizeBytes: 120 * 1024 * 1024 * 1024,
+          partitionLayout: {
+            partitionCount: 2,
+            partitions: [
+              { index: 1, filesystem: null, sizeBytes: 80 * 1024 * 1024, identifier: 'disk6s1' },
+              {
+                index: 2,
+                filesystem: 'MS-DOS FAT32',
+                sizeBytes: 30 * 1024 * 1024 * 1024,
+                identifier: 'disk6s2',
+                volumeUuid: 'ABC-123-UUID',
+              },
+            ],
+          },
         },
       }),
     });

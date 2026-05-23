@@ -23,11 +23,11 @@ function block(overrides: Partial<PlatformDeviceInfo>): PlatformDeviceInfo {
     identifier: 'sdc1',
     volumeName: 'IPOD',
     volumeUuid: '0000-0000',
-    size: 8_000_000_000,
+    storage: { sizeBytes: 8_000_000_000 },
     isMounted: true,
     mountPoint: '/media/ipod',
     ...overrides,
-  };
+  } as PlatformDeviceInfo;
 }
 
 function usb(
@@ -89,7 +89,7 @@ describe('reconcileIpodDiscovery', () => {
     it('folds same-iPod records from both pipelines into one entry', () => {
       const blockDevice = block({
         identifier: 'sdc1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: '000A1B2C3D4E5F60',
@@ -108,7 +108,7 @@ describe('reconcileIpodDiscovery', () => {
     it('treats empty serials as no-match (does not fold)', () => {
       const blockDevice = block({
         identifier: 'sdc1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: '',
@@ -201,7 +201,7 @@ describe('reconcileIpodDiscovery', () => {
     it('prefers serial match when both rules would produce different pairings', () => {
       const blockDevice = block({
         identifier: 'sdc1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'SERIAL-A',
@@ -255,7 +255,7 @@ describe('reconcileIpodDiscovery', () => {
       const blockA = block({
         identifier: 'sdc1',
         volumeName: 'IPOD-A',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'SERIAL-A',
@@ -264,7 +264,7 @@ describe('reconcileIpodDiscovery', () => {
       const blockB = block({
         identifier: 'sdd1',
         volumeName: 'IPOD-B',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1263',
           serialNumber: 'SERIAL-B',
@@ -289,7 +289,7 @@ describe('reconcileIpodDiscovery', () => {
       // to disk-identifier or block-only.
       const blockA = block({
         identifier: 'sdc1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'DUPLICATE',
@@ -297,7 +297,7 @@ describe('reconcileIpodDiscovery', () => {
       });
       const blockB = block({
         identifier: 'sdd1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'DUPLICATE',
@@ -319,7 +319,7 @@ describe('reconcileIpodDiscovery', () => {
     it('returns equal records when called twice with the same inputs', () => {
       const blockDevice = block({
         identifier: 'sdc1',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'SERIAL-A',
@@ -353,10 +353,10 @@ describe('reconcileIpodDiscovery', () => {
         identifier: 'sdc1',
         volumeName: 'IPOD',
         volumeUuid: '1234-5678',
-        size: 7_950_000_000,
+        storage: { sizeBytes: 7_950_000_000 },
         isMounted: true,
         mountPoint: '/media/james/IPOD',
-        usbFingerprint: {
+        usb: {
           vendorId: '05ac',
           productId: '1262',
           serialNumber: 'NANO3G-LINKA-SERIAL',

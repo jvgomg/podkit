@@ -161,6 +161,29 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
 
   const devices: PlatformDeviceInfo[] = [];
 
+  /**
+   * Build the discriminated mount-state union (TASK-340 schema v2). Returns
+   * either `{ isMounted: true, mountPoint }` or `{ isMounted: false }` so
+   * the caller cannot accidentally emit the mixed
+   * `{ isMounted: true, mountPoint: undefined }` shape the old schema
+   * allowed.
+   */
+  function mountState(part: LsblkDevice):
+    | {
+        isMounted: true;
+        mountPoint: string;
+      }
+    | { isMounted: false } {
+    const rawMount =
+      part.mountpoint ??
+      part.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
+      null;
+    if (rawMount !== null && rawMount !== '') {
+      return { isMounted: true, mountPoint: rawMount };
+    }
+    return { isMounted: false };
+  }
+
   // Walk disks so we can compute a per-disk partitionLayout payload once
   // and attach it to every emitted sibling partition. Loop-device children
   // are skipped here for the same reason `collectPartitions` skips them.
@@ -175,56 +198,46 @@ export function parseLsblkJson(jsonString: string): PlatformDeviceInfo[] {
           // see the full partition table.
           if (!part.uuid) continue;
 
-          // Handle both old "mountpoint" (string) and new "mountpoints" (array) formats.
-          const rawMount =
-            part.mountpoint ??
-            part.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
-            null;
-          const isMounted = rawMount !== null && rawMount !== '';
-
           devices.push({
             identifier: part.name,
             volumeName: part.label ?? '',
             volumeUuid: part.uuid,
-            size: part.size ?? 0,
-            blockSizeBytes: part['phy-sec'] ?? undefined,
-            isMounted,
-            mountPoint: isMounted ? (rawMount ?? undefined) : undefined,
             mediaType: '',
-            ...(part.fstype ? { filesystem: part.fstype } : {}),
-            partitionLayout: layout,
+            storage: {
+              sizeBytes: part.size ?? 0,
+              ...(part['phy-sec'] !== null ? { blockSizeBytes: part['phy-sec'] } : {}),
+              ...(part.fstype ? { filesystem: part.fstype } : {}),
+              partitionLayout: layout,
+            },
+            ...mountState(part),
           });
         }
       } else if (node.type === 'part' && node.uuid) {
         // Top-level "part" entries (rare — lsblk normally nests under a disk).
         // Synthesise a single-partition layout so callers always have one.
-        const rawMount =
-          node.mountpoint ??
-          node.mountpoints?.find((m) => m !== null && m !== undefined && m !== '') ??
-          null;
-        const isMounted = rawMount !== null && rawMount !== '';
         devices.push({
           identifier: node.name,
           volumeName: node.label ?? '',
           volumeUuid: node.uuid,
-          size: node.size ?? 0,
-          blockSizeBytes: node['phy-sec'] ?? undefined,
-          isMounted,
-          mountPoint: isMounted ? (rawMount ?? undefined) : undefined,
           mediaType: '',
-          ...(node.fstype ? { filesystem: node.fstype } : {}),
-          partitionLayout: {
-            partitionCount: 1,
-            partitions: [
-              {
-                index: 1,
-                filesystem: node.fstype ?? null,
-                sizeBytes: node.size ?? 0,
-                identifier: node.name,
-                ...(node.uuid ? { volumeUuid: node.uuid } : {}),
-              },
-            ],
+          storage: {
+            sizeBytes: node.size ?? 0,
+            ...(node['phy-sec'] !== null ? { blockSizeBytes: node['phy-sec'] } : {}),
+            ...(node.fstype ? { filesystem: node.fstype } : {}),
+            partitionLayout: {
+              partitionCount: 1,
+              partitions: [
+                {
+                  index: 1,
+                  filesystem: node.fstype ?? null,
+                  sizeBytes: node.size ?? 0,
+                  identifier: node.name,
+                  ...(node.uuid ? { volumeUuid: node.uuid } : {}),
+                },
+              ],
+            },
           },
+          ...mountState(node),
         });
       }
       if (node.children && node.type !== 'loop' && node.type !== 'disk') {
@@ -474,15 +487,17 @@ export class LinuxDeviceManager implements DeviceManager {
       // with the matching USB-inquiry record by serial number.
       const usb = findUsbIdentity(device.identifier);
       if (usb?.vendorId === '05ac') {
-        ipods.push({ ...device, usbFingerprint: usb });
+        ipods.push({ ...device, usb });
         continue;
       }
 
-      // Check for iPod_Control directory (mounted devices)
-      if (device.isMounted && device.mountPoint) {
+      // Check for iPod_Control directory (mounted devices). Type narrowing
+      // on `isMounted` guarantees `mountPoint` is present without a
+      // defensive `&& device.mountPoint` guard.
+      if (device.isMounted) {
         const ipodControlPath = join(device.mountPoint, 'iPod_Control');
         if (existsSync(ipodControlPath)) {
-          ipods.push(usb ? { ...device, usbFingerprint: usb } : device);
+          ipods.push(usb ? { ...device, usb } : device);
           continue;
         }
       }
@@ -490,7 +505,7 @@ export class LinuxDeviceManager implements DeviceManager {
       // Volume name heuristics (supplementary)
       const volumeName = device.volumeName.toUpperCase();
       if (volumeName.includes('IPOD') || volumeName.includes('POD') || volumeName === 'TERAPOD') {
-        ipods.push(usb ? { ...device, usbFingerprint: usb } : device);
+        ipods.push(usb ? { ...device, usb } : device);
       }
     }
 
@@ -511,9 +526,9 @@ export class LinuxDeviceManager implements DeviceManager {
     const devices = await this.listDevices();
     const device = devices.find((d) => d.identifier === baseName);
 
-    // Already mounted — return existing mount point
-    // If an explicit target was requested but the device is already mounted elsewhere, warn
-    if (device?.isMounted && device.mountPoint) {
+    // Already mounted — return existing mount point.
+    // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+    if (device?.isMounted) {
       if (options?.target && device.mountPoint !== options.target) {
         return {
           success: false,
@@ -733,7 +748,8 @@ export class LinuxDeviceManager implements DeviceManager {
     const normalized = mountPoint.replace(/\/+$/, '');
 
     for (const device of devices) {
-      if (device.isMounted && device.mountPoint) {
+      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+      if (device.isMounted) {
         const deviceNormalized = device.mountPoint.replace(/\/+$/, '');
         if (deviceNormalized === normalized) {
           return device.volumeUuid || null;
@@ -778,14 +794,14 @@ export class LinuxDeviceManager implements DeviceManager {
     // Get USB identity from /sys
     const usb = findUsbIdentity(baseName);
 
-    const iFlash = detectIFlash(device.size, device.blockSizeBytes ?? 512);
+    const iFlash = detectIFlash(device.storage.sizeBytes, device.storage.blockSizeBytes ?? 512);
 
     return {
       diskIdentifier: baseName,
       volumeName: device.volumeName,
       volumeUuid: device.volumeUuid || undefined,
-      sizeBytes: device.size,
-      blockSizeBytes: device.blockSizeBytes ?? 512,
+      sizeBytes: device.storage.sizeBytes,
+      blockSizeBytes: device.storage.blockSizeBytes ?? 512,
       isMounted: device.isMounted,
       mountPoint: device.mountPoint,
       usb,

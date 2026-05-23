@@ -26,7 +26,7 @@ describe('malformed-sysinfo persona (synthesised, TASK-324 Phase 5)', () => {
     // Same PID as `ipod-video-5g-iflash-1tb` — the classifier accepts it.
     expect(malformedSysinfo.usbDescriptor.vendorId).toBe(0x05ac);
     expect(malformedSysinfo.usbDescriptor.productId).toBe(0x1209);
-    expect(malformedSysinfo.usbDescriptor.deviceSerial.length).toBeGreaterThan(0);
+    expect(malformedSysinfo.usbDescriptor.deviceSerial?.length ?? 0).toBeGreaterThan(0);
   });
 
   it('ships a truncated SIE XML payload (exactly 500 bytes)', () => {

@@ -24,7 +24,7 @@
  *
  * Mass-storage backing files and the daemon's systemd lifecycle have separate
  * helpers (`stageBackingFile`, `resetBackingFile`, `startDaemonForPersona`,
- * `stopDaemon`) that the Tier-3 tests in TASK-322.06 will call between
+ * `stopDaemon`) that the Tier-3 tests call between
  * `prepare()` and `run()`. The runner does not auto-start the daemon — tests
  * choose when, because the daemon is per-persona.
  *
@@ -51,6 +51,7 @@ import { restoreSnapshot, snapshotExists } from './lima-test-vm-snapshots.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
+import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -653,11 +654,29 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
         subprocess,
       });
 
-      // 6. Emit the persona sidecar. Idempotent: byte-identical payload for
+      // 6. Synthesise mass-storage backing files for personas that declare a
+      //    `synthesis` recipe. The image is built inside the VM (no host
+      //    roundtrip) via `truncate` + `mkfs.vfat --invariant`, producing
+      //    byte-identical FAT32 every run. The returned map feeds step 7's
+      //    sidecar so the daemon sees `massStorageBackingFile.vmPath` pointing
+      //    at the just-synthesised image.
+      const personaSource = opts.personas ?? defaultPersonas.values();
+      // Materialise the iterable so we can re-use it for both backing-file
+      // synthesis AND sidecar emission (Iterables from the registry are
+      // single-use Map iterators).
+      const personaList = Array.from(personaSource);
+      const backingFilePaths = await ensureBackingFilesForPersonas({
+        vmName,
+        personas: personaList,
+        subprocess,
+      });
+
+      // 7. Emit the persona sidecar. Idempotent: byte-identical payload for
       //    a fixed registry, so re-running prepare() is a no-op for the daemon.
       await ensurePersonaSidecar({
         vmName,
-        personas: opts.personas,
+        personas: personaList,
+        backingFilePaths,
         subprocess,
       });
     },

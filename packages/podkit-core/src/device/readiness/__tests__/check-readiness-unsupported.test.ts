@@ -19,10 +19,10 @@ function makeDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDevice
     identifier: 'disk5s2',
     volumeName: 'TERAPOD',
     volumeUuid: 'ABC-123',
-    size: 0,
+    storage: { sizeBytes: 0 },
     isMounted: false,
     ...overrides,
-  };
+  } as PlatformDeviceInfo;
 }
 
 describe('checkReadiness() — unsupported short-circuit', () => {

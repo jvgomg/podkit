@@ -22,11 +22,11 @@ function createDevice(overrides: Partial<PlatformDeviceInfo> = {}): PlatformDevi
     identifier: 'disk5s2',
     volumeName: 'TERAPOD',
     volumeUuid: 'ABC-123',
-    size: 120 * 1024 * 1024 * 1024,
+    storage: { sizeBytes: 120 * 1024 * 1024 * 1024 },
     isMounted: true,
     mountPoint: '/tmp/fake-mount',
     ...overrides,
-  };
+  } as PlatformDeviceInfo;
 }
 
 function createIpodStructure(mountPoint: string): void {
@@ -486,7 +486,7 @@ describe('checkReadiness', () => {
     it('returns level "unsupported" for HFS+ on Linux with the structured payload', async () => {
       const device = createDevice({
         mountPoint: tmpDir,
-        filesystem: 'hfsplus',
+        storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
       const result = await checkReadiness({ device, platform: 'linux' });
       expect(result.level).toBe('unsupported');
@@ -507,7 +507,7 @@ describe('checkReadiness', () => {
     it('does NOT push placeholder "Skipped — previous check failed" rows', async () => {
       const device = createDevice({
         mountPoint: tmpDir,
-        filesystem: 'hfsplus',
+        storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
       const result = await checkReadiness({ device, platform: 'linux' });
       // Should have only usb + partition + filesystem (the latter as fail).
@@ -527,7 +527,7 @@ describe('checkReadiness', () => {
       createIpodStructure(tmpDir);
       const device = createDevice({
         mountPoint: tmpDir,
-        filesystem: 'hfsplus',
+        storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'hfsplus' },
       });
       const result = await checkReadiness({ device, platform: 'darwin' });
       // Pipeline runs to completion as if filesystem were absent — no
@@ -541,7 +541,7 @@ describe('checkReadiness', () => {
       createIpodStructure(tmpDir);
       const device = createDevice({
         mountPoint: tmpDir,
-        filesystem: 'vfat',
+        storage: { sizeBytes: 120 * 1024 * 1024 * 1024, filesystem: 'vfat' },
       });
       const result = await checkReadiness({ device, platform: 'linux' });
       expect(result.level).not.toBe('unsupported');

@@ -27,6 +27,8 @@ import { sonyNwHd5 } from './sony-nw-hd5/persona.js';
 import { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
 import { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 import { malformedSysinfo } from './malformed-sysinfo/persona.js';
+import { ipodVideo5gCorruptDb } from './ipod-video-5g-corrupt-db/persona.js';
+import { echoMiniPopulated } from './echo-mini-populated/persona.js';
 
 export type { DevicePersona } from './types.js';
 
@@ -47,6 +49,8 @@ export { sonyNwHd5 } from './sony-nw-hd5/persona.js';
 export { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
 export { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 export { malformedSysinfo } from './malformed-sysinfo/persona.js';
+export { ipodVideo5gCorruptDb, corruptItunesDb } from './ipod-video-5g-corrupt-db/persona.js';
+export { echoMiniPopulated } from './echo-mini-populated/persona.js';
 
 /** Registry of device personas, keyed by `DevicePersona.id`. */
 export const personas = new Map<string, DevicePersona>([
@@ -68,4 +72,7 @@ export const personas = new Map<string, DevicePersona>([
   [ipodShuffleNotSupported.id, ipodShuffleNotSupported],
   [nonIpodUsbDisk.id, nonIpodUsbDisk],
   [malformedSysinfo.id, malformedSysinfo],
+  // TASK-324 Phase 5 AC #1 — state-variant personas (synthesised).
+  [ipodVideo5gCorruptDb.id, ipodVideo5gCorruptDb],
+  [echoMiniPopulated.id, echoMiniPopulated],
 ]);

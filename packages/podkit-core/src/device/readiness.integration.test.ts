@@ -18,7 +18,7 @@ function deviceInfoFor(mountPoint: string): PlatformDeviceInfo {
     identifier: 'integration',
     volumeName: 'TEST',
     volumeUuid: 'integration-uuid',
-    size: 0,
+    storage: { sizeBytes: 0 },
     isMounted: true,
     mountPoint,
   };

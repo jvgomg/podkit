@@ -8,7 +8,7 @@ import { runAction } from '../../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../../handler-deps.js';
 import { OutputContext, formatBytes, formatNumber, bold } from '../../output/index.js';
 import type { DeviceConfig } from '../../config/index.js';
-import type { ReadinessResult, ReadinessUnsupportedReason } from '@podkit/core';
+import type { PlatformDeviceInfo, ReadinessResult, ReadinessUnsupportedReason } from '@podkit/core';
 import { STAGE_DISPLAY_NAMES } from '@podkit/core';
 import { stageMarker, formatReadinessLevel } from '../readiness-display.js';
 import {
@@ -35,7 +35,6 @@ async function generateDiagnosticReport(
     volumeName: string;
     volumeUuid: string;
     identifier: string;
-    size: number;
     isMounted: boolean;
     mountPoint?: string;
   }>,
@@ -335,11 +334,27 @@ export async function runDeviceScan(
         try {
           const result = await manager.mount(ipod.identifier);
           if (result.success && result.mountPoint) {
-            // Update the ipod entry with new mount info
-            ipod.isMounted = true;
-            (ipod as { mountPoint?: string }).mountPoint = result.mountPoint;
+            // Update the ipod entry with new mount info. The discriminated
+            // mount-state union forbids partial mutation — build a new
+            // record with `isMounted: true` + `mountPoint` and replace the
+            // slot.
+            // Spread of an unmounted `ipod` carries `isMounted: false` in
+            // its inferred type; rebuild from identity + storage + usb so
+            // the discriminated mount-state union narrows correctly.
+            const { identifier, volumeName, volumeUuid, storage, usb, mediaType } = ipod;
+            const mounted: PlatformDeviceInfo = {
+              identifier,
+              volumeName,
+              volumeUuid,
+              storage,
+              isMounted: true,
+              mountPoint: result.mountPoint,
+              ...(usb ? { usb } : {}),
+              ...(mediaType ? { mediaType } : {}),
+            };
+            ipods[i] = mounted;
             // Re-run readiness to get full picture
-            readinessResults[i] = await checkReadiness({ device: ipod });
+            readinessResults[i] = await checkReadiness({ device: mounted });
             out.verbose1(`Mounted ${label} at ${result.mountPoint}`);
           } else if (result.requiresSudo) {
             const assessment = result.assessment;
@@ -375,9 +390,9 @@ export async function runDeviceScan(
       volumeName: d.volumeName,
       volumeUuid: d.volumeUuid,
       identifier: d.identifier,
-      size: d.size,
+      size: d.storage.sizeBytes,
       isMounted: d.isMounted,
-      ...(d.mountPoint ? { mountPoint: d.mountPoint } : {}),
+      ...(d.isMounted ? { mountPoint: d.mountPoint } : {}),
       ...(configuredAs ? { configuredAs } : {}),
       ...(bestModel ? { model: bestModel } : {}),
       ...(matchedUsb
@@ -521,14 +536,16 @@ export async function runDeviceScan(
     const readiness = readinessResults[i];
     const matchedUsb = findMatchingUsbIpod(i);
     const configuredName = findConfiguredDeviceName(device, config.devices ?? {});
+    // Type narrowing on `isMounted` makes `mountPoint` non-nullable below
+    // — no need for `device.mountPoint ? {...} : {}` spread guards.
     return {
       device: {
         volumeName: device.volumeName,
         volumeUuid: device.volumeUuid,
         identifier: device.identifier,
-        size: device.size,
+        storage: { sizeBytes: device.storage.sizeBytes },
         isMounted: device.isMounted,
-        ...(device.mountPoint ? { mountPoint: device.mountPoint } : {}),
+        ...(device.isMounted ? { mountPoint: device.mountPoint } : {}),
       },
       ...(readiness ? { readiness } : {}),
       ...(configuredName ? { configuredName } : {}),

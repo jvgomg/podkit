@@ -13,23 +13,46 @@ import { buildSidecar, toSidecarPersona } from './sidecar-build.js';
 const baseUsb = {
   vendorId: 0x05ac,
   productId: 0x1209,
-  deviceSerial: '000A27001605D1A0',
+  deviceSerial: '000A27001605D1A0' as string | null,
   deviceClass: 0,
   deviceSubclass: 0,
   deviceProtocol: 0,
+  bMaxPacketSize0: 64,
+  bcdUSB: 0x0200,
+  bcdDevice: 0x0001,
+  bNumConfigurations: 1,
+  configurations: [
+    {
+      bConfigurationValue: 1,
+      bNumInterfaces: 1,
+      bmAttributes: 0x80,
+      bMaxPower: 0xfa,
+      interfaces: [
+        {
+          bInterfaceNumber: 0,
+          bAlternateSetting: 0,
+          bInterfaceClass: 0x08,
+          bInterfaceSubClass: 0x06,
+          bInterfaceProtocol: 0x50,
+          endpoints: [],
+        },
+      ],
+    },
+  ],
+  stringDescriptors: {},
 };
 
 function makeIpod(overrides: Partial<DevicePersona> = {}): DevicePersona {
   return {
     id: 'ipod-test',
     description: 'test persona',
-    schemaVersion: 1,
+    schemaVersion: 2,
     usbDescriptor: { ...baseUsb },
     sysInfoExtendedXml: '<plist><dict><key>foo</key><string>bar</string></dict></plist>',
     lsblkJson: null,
     systemProfilerJson: null,
     diskutilPlist: null,
-    partitionLayout: { partitions: [] },
+    partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
     massStorageBackingFile: null,
     expectedCapabilities: null,
     expectedReadiness: { level: 'ready', stages: [] },
@@ -86,6 +109,16 @@ describe('toSidecarPersona', () => {
     );
     expect(out!.usbDescriptor.vendorId).toBe('0x0001');
     expect(out!.usbDescriptor.productId).toBe('0x0010');
+  });
+
+  it('omits the sidecar serial field when persona.deviceSerial is null', () => {
+    // TASK-332 v2 schema: Sony NW-HD5-style devices set deviceSerial=null
+    // (iSerialNumber=0). The sidecar serialiser must omit the `serial`
+    // field rather than writing `null` so the daemon's optional-string
+    // default kicks in.
+    const out = toSidecarPersona(makeIpod({ usbDescriptor: { ...baseUsb, deviceSerial: null } }));
+    expect(out).not.toBeNull();
+    expect(out!.usbDescriptor.serial).toBeUndefined();
   });
 });
 

@@ -34,7 +34,7 @@ export const ipodShuffleNotSupported: DevicePersona = {
   id: 'ipod-shuffle-not-supported',
   description:
     'iPod shuffle 3G — synthesised rejection case (USB PID 0x1302, libgpod recognises it but iTunes auth is required).',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -48,6 +48,36 @@ export const ipodShuffleNotSupported: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // Synthesised — shuffle 3G/4G never gets past the USB-PID classifier
+    // rejection, so this hierarchy is a placeholder. Re-capture from
+    // `lsusb -v` on a real shuffle if a future test asserts on descriptor
+    // details.
+    bMaxPacketSize0: 8,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 64, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 64, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'Apple Inc.', 2: 'iPod', 3: 'SHUFFLE-SYNTHESISED-001' },
   },
 
   sysInfoExtendedXml: null,
@@ -57,7 +87,7 @@ export const ipodShuffleNotSupported: DevicePersona = {
   systemProfilerJson: null,
   diskutilPlist: null,
 
-  partitionLayout: { partitions: [] },
+  partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
 
   massStorageBackingFile: null,
 

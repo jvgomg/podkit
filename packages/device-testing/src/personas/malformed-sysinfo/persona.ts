@@ -40,7 +40,7 @@ export const malformedSysinfo: DevicePersona = {
   id: 'malformed-sysinfo',
   description:
     'Synthesised SIE-parser error-path fixture — real iPod 5G USB identity (0x05ac:0x1209) with deliberately-truncated SysInfoExtended XML.',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     // Real iPod 5G Video — same PID as `ipod-video-5g-iflash-1tb`. The
@@ -53,6 +53,52 @@ export const malformedSysinfo: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // Mirrors the iPod 5G hierarchy (shared PID 0x1209).
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 2,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+      {
+        bConfigurationValue: 2,
+        bNumInterfaces: 1,
+        bmAttributes: 0xc0,
+        bMaxPower: 0x32,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'Apple Inc.', 2: 'iPod', 3: 'MALFORMED-SYSINFO-FIXTURE-001' },
   },
 
   // The fault under test: 500-byte truncation. `parsePlist(xml)` throws on
@@ -68,7 +114,7 @@ export const malformedSysinfo: DevicePersona = {
   systemProfilerJson: null,
   diskutilPlist: null,
 
-  partitionLayout: { partitions: [] },
+  partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
 
   massStorageBackingFile: null,
 

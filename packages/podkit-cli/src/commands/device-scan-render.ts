@@ -53,7 +53,7 @@ export interface DeviceScanIpodRow {
     volumeName: string;
     volumeUuid: string;
     identifier: string;
-    size: number;
+    storage: { sizeBytes: number };
     isMounted: boolean;
     mountPoint?: string;
   };
@@ -220,7 +220,7 @@ function pushIpodRow(lines: string[], row: DeviceScanIpodRow): void {
     pushReadinessBlock(lines, readiness.stages, readiness, cmdId);
   } else {
     lines.push(`    Volume UUID:  ${device.volumeUuid || '(unknown)'}`);
-    lines.push(`    Size:         ${formatBytes(device.size)}`);
+    lines.push(`    Size:         ${formatBytes(device.storage.sizeBytes)}`);
     if (device.isMounted && device.mountPoint) {
       lines.push(`    Mounted:      ${device.mountPoint}`);
     } else {

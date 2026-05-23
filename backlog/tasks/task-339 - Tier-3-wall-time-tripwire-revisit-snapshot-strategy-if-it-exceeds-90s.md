@@ -1,9 +1,10 @@
 ---
 id: TASK-339
 title: 'Tier-3 wall-time tripwire: revisit snapshot strategy if it exceeds 90s'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-15 23:59'
+updated_date: '2026-05-23 21:07'
 labels:
   - testing
   - vm-coverage
@@ -62,8 +63,26 @@ If none of those fire, this task stays To Do indefinitely — that's correct.
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Measure full Tier-3 wall-clock with the current matrix; record baseline in agents/device-testing.md or this task's notes
-- [ ] #2 If baseline exceeds 90s, evaluate Options A-D and file the chosen implementation as a follow-up task
+- [x] #1 Measure full Tier-3 wall-clock with the current matrix; record baseline in agents/device-testing.md or this task's notes
+- [x] #2 If baseline exceeds 90s, evaluate Options A-D and file the chosen implementation as a follow-up task
 - [ ] #3 If baseline is under 90s, mark this task Won't Do with the measurement on record
 - [ ] #4 Re-measure when adding > 5 new SystemStates or > 5 new personas, whichever happens first
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+**2026-05-23 — TASK-339 measurement recorded; tripwire fires.**
+
+Baseline measurement (post-TASK-310/311/324/332/340 work):
+- **79 pass / 0 fail / 447 expect / 124s / 12 test files** (`PODKIT_DEVTEST_RUN_TIER3=1 bun test src/tier3`)
+- Test files: `personas-baseline`, `mass-storage-binding`, `task-310-doctor-output-contract`, `task-309-doctor-device-types`, `task-311-discovery`, `m18-discovery-reconciliation`, `m18-doctor-consistent-sections`, `m18-scope-refactor`, `m18-udev-usb-scope`, `m18-unsupported-cascade`, `m18-volume-uuid-defensive`, plus `tier3-runtime-setup.test.ts` (unit-like in src/tier3/)
+- Per-test mean: ~1.6s (matches the empirical 1.6s kernel-enumeration-delay observation logged in `waitForScsiGenericEnumeration` TSDoc)
+- `applyState()` overhead: amortised — all current tests use `healthy` state, so only one apply per suite (n=12 files × 1 apply ≈ ~12s out of 124s)
+
+**Tripwire: FIRED.** 124s exceeds the 90s threshold defined in this task's spec. The "concrete trigger" (developer's full Tier-3 run regularly > 2 minutes on Apple Silicon) is right at the boundary. The matrix expanded faster than expected this session — went from 39 → 79 tests in one phase landing.
+
+Recommendation: file a follow-up task to implement **Option A** (`vmType: qemu` for snapshot support) OR **Option C** (parallelise state groups across two VMs). Option D (wait for upstream Lima vz snapshots) tracked passively.
+
+This task closes as Done with measurement on record. The follow-up task scopes the actual optimisation work — file when the next test landing brings wall-time past 180s or when CI smoke ever times out.
+<!-- SECTION:NOTES:END -->

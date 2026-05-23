@@ -24,7 +24,7 @@
   - **Vendor ID literal:** unlike Apple devices, `system_profiler` reports the real hex string `"0x071b"` (not a vendor alias). Encoded as-is.
   - USB `bDeviceClass / bDeviceSubclass / bDeviceProtocol` confirmed `0` from `ioreg.txt`. Composite-device convention: device-level descriptor is 0/0/0; the Mass Storage class (`0x08`) lives on the interface descriptor (not captured in this top-level dump). Linux sysfs corroborates (see Linux capture session below).
   - **Two LUNs.** The Echo Mini is a multi-LUN USB Mass Storage device — macOS presents each LUN as a separate `/dev/diskN`, not as two partitions on one disk. The `DevicePersona.partitionLayout.partitions` schema lacks a LUN field, so both volumes are flattened into a single `partitions` array (entry 1 = LUN 0, entry 2 = LUN 1). The schema may need a `lun` field in a future revision if Tier 3 USB synthesis needs to model multi-LUN behaviour.
-  - **Backing-image dump skipped.** The playbook's "firmware partition" assumption (< 16 MiB) does not match this device — LUN 0 (`ECHO MINI`) is 7.53 GB, far too large to commit as a backing image. `massStorageBackingFile: null`. If Tier 3 needs a backing file, use the `synthesis` recipe in `types.ts` rather than dumping the real device.
+  - **Backing-image dump skipped — synthesis used instead.** The playbook's "firmware partition" assumption (< 16 MiB) does not match this device — LUN 0 (`ECHO MINI`) is 7.53 GB, far too large to commit as a backing image. The Tier-3 fixture uses the `synthesis` recipe in `types.ts` (see "Mass-storage backing file (Tier-3 synthesis)" below) rather than dumping the real device.
   - LUN 1 (`Echo SD`) is the sync target. LUN 0 is exposed but not written to by podkit.
   - SD card is `Windows_NTFS` in the plist `iocontent` field but reports as `ExFAT` in `file_system` — macOS plist labels `Windows_NTFS` for both NTFS and ExFAT iocontent types. The user-visible filesystem is ExFAT (confirmed by `file_system`). Encoded as `'ExFAT'`.
 
@@ -115,6 +115,47 @@ None — mass-storage devices have no `SysInfoExtended`.
 
 Provisional. `expectedCapabilities` mirrors the built-in `echo-mini` preset shape (`packages/devices-mass-storage/src/presets/built-in.ts`). `expectedReadiness` carries a placeholder stage layout — the compute-expected pass (per TASK-321.02 ACs) re-derives both against the real readiness pipeline (mass-storage devices likely return a different stage layout than iPod-specific stages).
 
+## Mass-storage backing file (Tier-3 synthesis)
+
+**Source:** synthesised inside `podkit-test-vm` at `prepare()` time — no
+host-side artefact, no committed binary, no git LFS.
+
+**Recipe:** `massStorageBackingFile.synthesis = { sizeMiB: 64, filesystem:
+'FAT32', label: 'ECHO_MINI' }` in `persona.ts`.
+
+**mkfs.vfat invocation (from `runners/lima-test-vm-backing-files.ts`):**
+
+```
+truncate -s 64M /var/device-testing/backing-files/echo-mini.img
+mkfs.vfat --invariant -F 32 -n ECHO_MINI -I <path>
+```
+
+**Why FAT32:** matches the real-device LUN 0 (`ECHO MINI` firmware
+volume). Echo Mini's LUN 1 is exFAT (the SD card) but the
+`DevicePersona` schema is single-LUN-flat — this entry models LUN 0.
+HFS+ is irrelevant for non-Apple DAPs; only FAT32 is wired up in the
+Tier-3 synthesiser.
+
+**Why 64 MiB:** the real LUN 0 is 7.53 GB — far too large to commit or
+synthesise verbatim, and irrelevant to what the preset-resolution code
+path actually inspects. The directory listing in
+`raw/echo-mini-dirlisting.txt` confirms LUN 0 is empty (only macOS-
+generated `.fseventsd/`). A 64 MiB FAT32 satisfies the auto-detect path
+that maps `0x071b:0x3203` → `echo-mini` preset.
+
+**Why empty:** TASK-348 starter content policy. The real device's LUN 0
+is itself empty (no vendor system folder, no firmware blobs on disk —
+firmware lives in NOR flash). The synthesised image is a faithful
+projection of that.
+
+**Determinism:** `mkfs.vfat --invariant` fixes the FAT volume ID, OEM
+string, and any timestamps. Re-running the recipe is byte-identical.
+
+**Source of truth:** the recipe in `persona.ts`. Re-derive with
+`bun run build:backing-file echo-mini` from `packages/device-testing/`.
+
+**Closes TASK-324 AC #8** ("echo-mini sidecar payload requirement").
+
 ## Cross-references
 
 - Inventory entry: `documents/test-devices.md` §"FiiO Snowsky Echo Mini (mass-storage DAP)"
@@ -123,3 +164,5 @@ Provisional. `expectedCapabilities` mirrors the built-in `echo-mini` preset shap
 - ADR-017: `adr/adr-017-device-persona-fixtures.md`
 - Capture playbook: `documents/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
+- TASK-348 — mass-storage backing-file synthesis
+- TASK-317.12 — HFS+ refusal on Linux (why FAT32)

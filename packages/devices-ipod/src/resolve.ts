@@ -56,10 +56,7 @@ function synthesizeFromGeneration(genId: IpodGenerationId): IpodModel {
   const gen = GENERATIONS[genId];
   const unsupportedReason = gen.supported
     ? undefined
-    : buildUnsupportedReason(
-        `${gen.displayName} is not supported by podkit (libgpod cannot sync this generation).`,
-        genId
-      );
+    : buildUnsupportedReason(`${gen.displayName} is not a podkit-supported generation.`, genId);
   return {
     displayName: gen.displayName,
     generationId: genId,

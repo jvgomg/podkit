@@ -84,6 +84,11 @@ export type DeviceTypeId = BuiltInDeviceTypeId | (string & {});
 // Types
 export type {
   PlatformDeviceInfo,
+  PlatformDeviceIdentity,
+  PlatformDeviceMountState,
+  PlatformDeviceStorage,
+  PartitionLayout,
+  PartitionLayoutEntry,
   DeviceManager,
   EjectResult,
   MountResult,

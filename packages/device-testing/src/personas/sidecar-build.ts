@@ -70,12 +70,20 @@ export function toSidecarPersona(
     usbDescriptor: {
       vendorId: toHex16(persona.usbDescriptor.vendorId),
       productId: toHex16(persona.usbDescriptor.productId),
-      serial: persona.usbDescriptor.deviceSerial,
       deviceClass: persona.usbDescriptor.deviceClass,
       deviceSubclass: persona.usbDescriptor.deviceSubclass,
       deviceProtocol: persona.usbDescriptor.deviceProtocol,
     },
   };
+  // `deviceSerial` is nullable (v2 schema). Four Sony personas (NW-HD5,
+  // NW-A1000, NW-A1200, NW-A3000) advertise `iSerialNumber = 0` and
+  // currently set this to `null`. The sidecar's `serial` field is
+  // optional — omit it entirely rather than serialising `null` so the
+  // daemon's optional-string semantics (apply a default of
+  // `'000000000001'`) take effect.
+  if (persona.usbDescriptor.deviceSerial !== null) {
+    out.usbDescriptor.serial = persona.usbDescriptor.deviceSerial;
+  }
   if (hasXml) {
     out.sysInfoExtendedXml = persona.sysInfoExtendedXml as string;
   }

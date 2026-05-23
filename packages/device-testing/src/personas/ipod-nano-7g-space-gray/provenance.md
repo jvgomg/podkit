@@ -47,9 +47,48 @@ Deferred. Linux captures completed this session for four representative personas
 
 Provisional. Stubs from generation table + SIE highlights. The compute-expected pass (per TASK-321.02 ACs) re-derives these against the production resolvers.
 
+## Mass-storage backing file (Tier-3 synthesis)
+
+**Source:** synthesised inside `podkit-test-vm` at `prepare()` time — no
+host-side artefact, no committed binary, no git LFS.
+
+**Recipe:** `massStorageBackingFile.synthesis = { sizeMiB: 128, filesystem:
+'FAT32', label: 'IPOD_NANO' }` in `persona.ts`.
+
+**mkfs.vfat invocation (from `runners/lima-test-vm-backing-files.ts`):**
+
+```
+truncate -s 128M /var/device-testing/backing-files/ipod-nano-7g-space-gray.img
+mkfs.vfat --invariant -F 32 -n IPOD_NANO -I <path>
+```
+
+**Why FAT32:** matches the captured real-device layout (`partitionLayout`
+above) and contrasts with sibling `ipod-nano-7g-blue` which is HFS+/APM.
+HFS+ synthesis is out of scope (TASK-317.12 — podkit refuses HFS+ on
+Linux at `device-add`).
+
+**Why 128 MiB:** smaller than the 5G's 256 MiB recipe because the 7G has
+no on-disk firmware partition (firmware is in NOR flash). The whole image
+is user-data space; 128 MiB is plenty for an iTunesDB + a handful of
+tracks once future variants seed content.
+
+**Why empty:** TASK-348 starter content policy — model a fresh iPod. The
+real device captured 6,103 tracks in `system_profiler` output, but that
+data is not relevant to the inquiry-methods code path the daemon
+exercises. Future variants may seed marker files.
+
+**Determinism:** `mkfs.vfat --invariant` fixes the FAT volume ID, OEM
+string, and any timestamps. Re-running the recipe is byte-identical.
+
+**Source of truth:** the recipe in `persona.ts`. Re-derive with
+`bun run build:backing-file ipod-nano-7g-space-gray` from
+`packages/device-testing/`.
+
 ## Cross-references
 
 - Inventory entry: `documents/test-devices.md` §"iPod nano 7th Generation (16GB)"
 - ADR-017: `adr/adr-017-device-persona-fixtures.md`
 - Capture playbook: `documents/persona-capture-playbook.md`
 - TASK-321.02 (persona capture starter set)
+- TASK-348 — mass-storage backing-file synthesis
+- TASK-317.12 — HFS+ refusal on Linux (why FAT32)

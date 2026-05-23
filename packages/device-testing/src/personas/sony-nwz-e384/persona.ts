@@ -28,7 +28,7 @@ export const sonyNwzE384: DevicePersona = {
   id: 'sony-nwz-e384',
   description:
     'Sony Walkman NWZ-E384 (8GB, WALKMAN) — mass-storage DAP, FAT32/MBR, currently unsupported (no podkit preset).',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x054c, // Sony Corporation
@@ -41,6 +41,38 @@ export const sonyNwzE384: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // From `raw/ioreg.txt`: bMaxPacketSize0=64, bcdDevice=1 (0x0001),
+    // bcdUSB=512 (0x0200), bNumConfigurations=1, iSerialNumber=5,
+    // iManufacturer=1, iProduct=2. UsbDeviceSignature tail `080650`
+    // confirms Mass Storage / SCSI / Bulk-Only Transport interface.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 1,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    // iManufacturer=1 → "Sony", iProduct=2 → "WALKMAN", iSerialNumber=5
+    // → the device serial string (from `kUSBSerialNumberString`).
+    stringDescriptors: { 1: 'Sony', 2: 'WALKMAN', 5: '10431991572055' },
   },
 
   sysInfoExtendedXml: null,
@@ -54,7 +86,12 @@ export const sonyNwzE384: DevicePersona = {
     // reserved before, just enough for MBR. Sony Walkman firmware lives on
     // a separate internal NAND area, not in a disk-visible firmware region.
     // No synthetic firmware entry needed.
-    partitions: [{ index: 1, type: 'FAT32', sizeMiB: 7357, mountpoint: '/Volumes/WALKMAN' }],
+    luns: [
+      {
+        lun: 0,
+        partitions: [{ index: 1, type: 'FAT32', sizeMiB: 7357, mountpoint: '/Volumes/WALKMAN' }],
+      },
+    ],
   },
 
   // Backing image dump not captured — 7.3 GB FAT32 far exceeds the playbook's

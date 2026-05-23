@@ -10,11 +10,11 @@
  *      that has no daemon payload (`sysInfoExtendedXml === null &&
  *      massStorageBackingFile === null`). Filtering at grouping time keeps
  *      `withPersona()` from being called for personas the daemon's sidecar
- *      builder also drops — see TASK-322.06.01 and the mirror logic in
+ *      builder also drops — see the mirror logic in
  *      `personas/sidecar-build.ts`. Tier-3 tests are organised so
  *      `applyState()` runs once per group, not once per test (the cornerstone
  *      of ADR-016 §"Test speed strategy").
- *   3. Resolve the starter persona list (TASK-321.02 captured personas).
+ *   3. Resolve the starter persona list.
  *
  * # Test grouping convention (standard for all Tier-3 test files)
  *
@@ -31,10 +31,8 @@
  * # Assertion families wired in `personas-baseline.tier3.test.ts`
  *
  *   - Device-scan finds the synthesised persona; lsusb cross-checks
- *     vendor/product (FunctionFS descriptor handshake landed in
- *     TASK-322.05.01).
- *   - Doctor `--scope system --json` agrees with the `SystemState` fixture
- *     (CLI surface landed in TASK-333).
+ *     vendor/product (FunctionFS descriptor handshake).
+ *   - Doctor `--scope system --json` agrees with the `SystemState` fixture.
  *
  * @module
  */
@@ -47,11 +45,11 @@ import type { TestRuntime } from '../runtime.js';
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 
 // ---------------------------------------------------------------------------
-// Starter persona list (TASK-322.06 AC #7)
+// Starter persona list
 // ---------------------------------------------------------------------------
 
 /**
- * The 3 starter personas Tier 3 covers in m-19.
+ * The 3 starter personas Tier 3 covers.
  *
  * Spec aliases ("ipod-video-5g-fresh", "ipod-nano-7g-populated",
  * "echo-mini-empty") map to captured persona ids in `personas/index.ts`. The
@@ -98,7 +96,7 @@ export function resolveStarterPersonas(
 }
 
 // ---------------------------------------------------------------------------
-// Persona-by-state grouping (TASK-322.06 AC #8)
+// Persona-by-state grouping
 // ---------------------------------------------------------------------------
 
 /**
@@ -113,11 +111,11 @@ export interface PersonaStateGroup {
 /**
  * Resolve the `SystemState` required by a persona's tests.
  *
- * Today every starter persona uses `healthy` — the m-19 baseline tests verify
- * the happy path. Later doctor-coverage tests (TASK-307–311) will introduce
- * personas that pair with `no-ffmpeg`, `no-libgpod`, etc. The function exists
- * as the extension point so a future persona with a different state slot
- * naturally lands in a new group without restructuring callers.
+ * Today every starter persona uses `healthy` — the baseline tests verify the
+ * happy path. Future doctor-coverage tests will introduce personas that pair
+ * with `no-ffmpeg`, `no-libgpod`, etc. The function exists as the extension
+ * point so a future persona with a different state slot naturally lands in a
+ * new group without restructuring callers.
  */
 export function resolveSystemStateForPersona(persona: DevicePersona): SystemState {
   // No persona currently overrides healthy; baseline tests are happy-path.
@@ -135,11 +133,9 @@ export function resolveSystemStateForPersona(persona: DevicePersona): SystemStat
  * every test in the persona's group.
  *
  * {@link groupPersonasByState} uses this gate to drop the persona at
- * grouping time instead of letting it reach `withPersona()`. This is the
- * interim safety belt described in TASK-322.06.01 — TASK-324 will capture
- * real backing-file payloads for the affected personas, at which point this
- * filter becomes a no-op for the starter set but remains as a tripwire for
- * future bare personas.
+ * grouping time instead of letting it reach `withPersona()`. Today no
+ * starter persona trips this filter; it stays as a tripwire for future
+ * bare personas added without a daemon payload.
  */
 export function hasDaemonPayload(persona: DevicePersona): boolean {
   return persona.sysInfoExtendedXml !== null || persona.massStorageBackingFile !== null;
@@ -164,8 +160,8 @@ export function resetTier3PersonaSkipWarnings(): void {
 
 /**
  * Build the "persona dropped" stderr line for a persona that fails
- * {@link hasDaemonPayload}. Exported so the unit tests can assert against
- * the exact text (AC #6 — TASK-324 must appear).
+ * {@link hasDaemonPayload}. Exported so unit tests can assert against the
+ * exact text.
  */
 export function formatPersonaSkipWarning(persona: DevicePersona): string {
   const nullFields: string[] = [];
@@ -174,7 +170,7 @@ export function formatPersonaSkipWarning(persona: DevicePersona): string {
   return (
     `[tier-3] persona '${persona.id}' has no daemon payload (` +
     nullFields.join(', ') +
-    `); skipping — see TASK-324 for the capture work`
+    `); skipping — populate sysInfoExtendedXml or massStorageBackingFile to enable`
   );
 }
 
@@ -184,9 +180,9 @@ export function formatPersonaSkipWarning(persona: DevicePersona): string {
  * persona was inserted.
  *
  * Personas where {@link hasDaemonPayload} is `false` are dropped before
- * grouping — see the module header and TASK-322.06.01. The first time a
- * given persona is dropped in this session, `warn` is called with a single
- * line naming the persona id, the null fields, and the TASK-324 reference.
+ * grouping — see the module header. The first time a given persona is dropped
+ * in this session, `warn` is called with a single line naming the persona id,
+ * the null fields, and the remediation hint.
  * Subsequent calls in the same session are silent for that persona.
  *
  * `warn` is a DI seam so tests can capture output; the default routes to
@@ -223,7 +219,7 @@ export function groupPersonasByState(
 }
 
 // ---------------------------------------------------------------------------
-// Tier-3 availability detection (TASK-322.06 AC #4)
+// Tier-3 availability detection
 // ---------------------------------------------------------------------------
 
 /**
@@ -243,7 +239,7 @@ export function resetTier3SkipWarning(): void {
  * MORE than just the VM existing: the podkit binary must be present at
  * `/usr/local/bin/podkit`, the dummy-hcd-daemon binary must be installed,
  * the systemd unit must be enabled, and the FunctionFS descriptor handshake
- * must work (TASK-322.05.01). Probing every prerequisite at suite top-level
+ * must work. Probing every prerequisite at suite top-level
  * is brittle, so we require an explicit opt-in instead.
  *
  * Developer flow:
@@ -267,7 +263,7 @@ export const TIER3_RUN_ENV_VAR = 'PODKIT_DEVTEST_RUN_TIER3';
  *
  * Why the env-var gate exists: a running VM is necessary but not sufficient
  * — the daemon's systemd unit must be installed, the FunctionFS descriptor
- * handshake must work (TASK-322.05.01), the podkit binary must be at the
+ * handshake must work, the podkit binary must be at the
  * expected path. Probing every prerequisite at suite load is brittle. An
  * explicit opt-in keeps the default test run clean.
  */
@@ -303,7 +299,7 @@ export async function resolveTier3Availability(
 }
 
 // ---------------------------------------------------------------------------
-// Test wall-time budgets (TASK-322.06 AC #5)
+// Test wall-time budgets
 // ---------------------------------------------------------------------------
 
 /**

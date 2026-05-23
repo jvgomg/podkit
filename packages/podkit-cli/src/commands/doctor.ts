@@ -401,9 +401,8 @@ export async function runDoctorAction(
 
     const isMassStorage =
       resolved.deviceConfig?.type !== undefined && resolved.deviceConfig.type !== 'ipod';
+    const applicableTypes = check.applicableTo ?? ['ipod'];
     if (isMassStorage) {
-      // Check if this repair check applies to mass-storage
-      const applicableTypes = check.applicableTo ?? ['ipod'];
       if (!applicableTypes.includes('mass-storage')) {
         throw new CliError({
           message: `Repair "${options.repair}" is not available for mass-storage devices.`,
@@ -420,6 +419,14 @@ export async function runDoctorAction(
         config
       );
       return;
+    }
+
+    if (!applicableTypes.includes('ipod')) {
+      throw new CliError({
+        message: `Repair "${options.repair}" is not available for iPod devices.`,
+        code: DoctorErrorCodes.INCOMPATIBLE_DEVICE_TYPE,
+        details: { checkId: options.repair, deviceType: resolved.deviceConfig?.type ?? 'ipod' },
+      });
     }
 
     await runRepair(resolved.path, check, options, out, config);
@@ -581,9 +588,9 @@ export async function runDoctorDiagnostics(
       identifier: 'unknown',
       volumeName: basename(devicePath),
       volumeUuid: '',
-      size: 0,
       isMounted: true,
       mountPoint: devicePath,
+      storage: { sizeBytes: 0 },
     };
   }
 

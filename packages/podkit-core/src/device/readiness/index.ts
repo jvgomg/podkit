@@ -137,17 +137,17 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   // point. Trying to "make it work" patches three friction points without
   // fixing any of them; refusing cleanly with a docs link is the policy.
   // See `filesystem-policy.ts` and TASK-317.12.
-  if (isFilesystemUnsupportedHere(device.filesystem, input.platform)) {
+  if (isFilesystemUnsupportedHere(device.storage.filesystem, input.platform)) {
     const unsupported = makeHfsplusOnLinuxUnsupportedReason({
-      ...(device.filesystem ? { filesystem: device.filesystem } : {}),
-      ...(device.mountPoint ? { path: device.mountPoint } : {}),
+      ...(device.storage.filesystem ? { filesystem: device.storage.filesystem } : {}),
+      ...(device.isMounted ? { path: device.mountPoint } : {}),
     });
     stages.push({
       stage: 'filesystem',
       status: 'fail',
-      summary: `${device.filesystem} is not supported on Linux`,
+      summary: `${device.storage.filesystem} is not supported on Linux`,
       details: {
-        filesystem: device.filesystem,
+        filesystem: device.storage.filesystem,
         platform: input.platform ?? process.platform,
         unsupported,
       },
@@ -181,8 +181,9 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
     return { level: determineLevel(stages), stages };
   }
 
-  // Stage 4: Mounted
-  if (!device.isMounted || !device.mountPoint) {
+  // Stage 4: Mounted. Type narrowing on `isMounted` makes the subsequent
+  // `device.mountPoint` reads non-nullable.
+  if (!device.isMounted) {
     stages.push({
       stage: 'mount',
       status: 'fail',
@@ -193,8 +194,9 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
     return { level: determineLevel(stages), stages };
   }
 
+  const mountPoint = device.mountPoint;
   try {
-    const mountResult = await checkIpodStructure(device.mountPoint);
+    const mountResult = await checkIpodStructure(mountPoint);
     stages.push(mountResult);
 
     if (mountResult.status === 'fail') {
@@ -222,7 +224,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   let deviceModel: IpodModel | undefined;
   try {
     const sysInfoResult = await checkSysInfo(
-      device.mountPoint,
+      mountPoint,
       input.usbConnection,
       input.usbModel?.displayName
     );
@@ -241,9 +243,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
   // Stage 6: Has Database
   let trackCount: number | undefined;
   try {
-    const dbResult = await checkDatabase(
-      input.ipod ? { ipod: input.ipod } : { mountPoint: device.mountPoint }
-    );
+    const dbResult = await checkDatabase(input.ipod ? { ipod: input.ipod } : { mountPoint });
     stages.push(dbResult);
     trackCount = dbResult.trackCount;
   } catch (error) {
@@ -270,7 +270,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
     let totalBytes: number | undefined;
 
     try {
-      const stats = fs.statfsSync(device.mountPoint!);
+      const stats = fs.statfsSync(mountPoint);
       totalBytes = stats.blocks * stats.bsize;
       freeBytes = stats.bfree * stats.bsize;
     } catch {
@@ -313,7 +313,7 @@ export async function checkReadiness(input: ReadinessInput): Promise<ReadinessRe
  * synthesise a `PlatformDeviceInfo` without going through `listDevices()`.
  */
 function buildPartitionStageDetails(device: ReadinessInput['device']): Record<string, unknown> {
-  const layout = device.partitionLayout;
+  const layout = device.storage.partitionLayout;
   if (!layout) {
     return { identifier: device.identifier };
   }

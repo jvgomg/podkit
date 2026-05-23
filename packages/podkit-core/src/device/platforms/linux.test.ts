@@ -53,23 +53,25 @@ describe('parseLsblkJson', () => {
       identifier: 'sda1',
       volumeName: 'TERAPOD',
       volumeUuid: '1234-5678',
-      size: 500106813440,
-      blockSizeBytes: 512,
       isMounted: true,
       mountPoint: '/media/user/TERAPOD',
       mediaType: '',
-      filesystem: 'vfat',
-      partitionLayout: {
-        partitionCount: 1,
-        partitions: [
-          {
-            index: 1,
-            filesystem: 'vfat',
-            sizeBytes: 500106813440,
-            identifier: 'sda1',
-            volumeUuid: '1234-5678',
-          },
-        ],
+      storage: {
+        sizeBytes: 500106813440,
+        blockSizeBytes: 512,
+        filesystem: 'vfat',
+        partitionLayout: {
+          partitionCount: 1,
+          partitions: [
+            {
+              index: 1,
+              filesystem: 'vfat',
+              sizeBytes: 500106813440,
+              identifier: 'sda1',
+              volumeUuid: '1234-5678',
+            },
+          ],
+        },
       },
     });
   });
@@ -107,7 +109,7 @@ describe('parseLsblkJson', () => {
     expect(devices).toHaveLength(1);
     expect(devices[0]!.isMounted).toBe(false);
     expect(devices[0]!.mountPoint).toBeUndefined();
-    expect(devices[0]!.blockSizeBytes).toBe(2048);
+    expect(devices[0]!.storage.blockSizeBytes).toBe(2048);
   });
 
   it('skips partitions without UUID', () => {
@@ -313,8 +315,8 @@ describe('parseLsblkJson', () => {
     const devices = parseLsblkJson(json);
 
     expect(devices).toHaveLength(1);
-    expect(devices[0]!.size).toBe(0);
-    expect(devices[0]!.blockSizeBytes).toBeUndefined();
+    expect(devices[0]!.storage.sizeBytes).toBe(0);
+    expect(devices[0]!.storage.blockSizeBytes).toBeUndefined();
   });
 
   it('handles mountpoints array format (Linux 5.14+ / util-linux 2.38+)', () => {

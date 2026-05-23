@@ -510,16 +510,16 @@ export async function runDeviceAdd(
       const matching = platformDevices.find(
         (d) => d.mountPoint && stripSlash(d.mountPoint) === wantPath
       );
-      if (matching && isFilesystemUnsupportedHere(matching.filesystem, platform)) {
+      if (matching && isFilesystemUnsupportedHere(matching.storage.filesystem, platform)) {
         throw new CliError({
           message: formatHfsplusOnLinuxRefusal().join('\n'),
           code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
           details: {
-            filesystem: matching.filesystem,
+            filesystem: matching.storage.filesystem,
             platform,
             path: explicitPath,
             unsupported: makeHfsplusOnLinuxUnsupportedReason({
-              ...(matching.filesystem ? { filesystem: matching.filesystem } : {}),
+              ...(matching.storage.filesystem ? { filesystem: matching.storage.filesystem } : {}),
               path: explicitPath,
             }),
           },
@@ -607,12 +607,12 @@ export async function runDeviceAdd(
 
     if (manager.isSupported) {
       const ipods = await manager.findIpodDevices();
-      const matchingDevice = ipods.find((d) => d.mountPoint === explicitPath);
+      const matchingDevice = ipods.find((d) => d.isMounted && d.mountPoint === explicitPath);
       if (matchingDevice) {
         volumeUuid = matchingDevice.volumeUuid;
         volumeName = matchingDevice.volumeName;
         matchingIdentifier = matchingDevice.identifier;
-        matchingFilesystem = matchingDevice.filesystem;
+        matchingFilesystem = matchingDevice.storage.filesystem;
       }
     }
 
@@ -887,9 +887,9 @@ export async function runDeviceAdd(
     if (out.isText) {
       out.newline();
       for (const ipod of ipods) {
-        const path = ipod.mountPoint ?? ipod.identifier;
+        const path = ipod.isMounted ? ipod.mountPoint : ipod.identifier;
         out.error(`  podkit device add -d ${name} --path ${path}`);
-        out.error(`    ${ipod.volumeName || '(unnamed)'} - ${formatBytes(ipod.size)}`);
+        out.error(`    ${ipod.volumeName || '(unnamed)'} - ${formatBytes(ipod.storage.sizeBytes)}`);
         out.newline();
       }
     }
@@ -899,9 +899,9 @@ export async function runDeviceAdd(
       details: {
         ipods: ipods.map((d) => ({
           identifier: d.identifier,
-          mountPoint: d.mountPoint,
+          mountPoint: d.isMounted ? d.mountPoint : undefined,
           volumeName: d.volumeName,
-          size: d.size,
+          size: d.storage.sizeBytes,
         })),
       },
     });
@@ -911,17 +911,17 @@ export async function runDeviceAdd(
 
   // Refuse HFS+ iPods on Linux up-front — before mount attempts, identity
   // assessment, or any state-mutating work. See TASK-317.12.
-  if (isFilesystemUnsupportedHere(ipod.filesystem, platform)) {
-    const path = ipod.mountPoint ?? `/dev/${ipod.identifier}`;
+  if (isFilesystemUnsupportedHere(ipod.storage.filesystem, platform)) {
+    const path = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
     throw new CliError({
       message: formatHfsplusOnLinuxRefusal().join('\n'),
       code: DeviceErrorCodes.UNSUPPORTED_FILESYSTEM_ON_LINUX,
       details: {
-        filesystem: ipod.filesystem,
+        filesystem: ipod.storage.filesystem,
         platform,
         path,
         unsupported: makeHfsplusOnLinuxUnsupportedReason({
-          ...(ipod.filesystem ? { filesystem: ipod.filesystem } : {}),
+          ...(ipod.storage.filesystem ? { filesystem: ipod.storage.filesystem } : {}),
           path,
         }),
       },
@@ -933,7 +933,7 @@ export async function runDeviceAdd(
   // catch-all for corrupt FAT32, unusual layouts, etc. Without a real
   // UUID we cannot identify the device across replug cycles.
   if (!ipod.volumeUuid || ipod.volumeUuid.startsWith('manual-')) {
-    const probePath = ipod.mountPoint ?? `/dev/${ipod.identifier}`;
+    const probePath = ipod.isMounted ? ipod.mountPoint : `/dev/${ipod.identifier}`;
     const syntheticUuid = synthesizeTestVolumeUuid(probePath);
     if (syntheticUuid) {
       ipod = { ...ipod, volumeUuid: syntheticUuid };
@@ -941,7 +941,7 @@ export async function runDeviceAdd(
       throwVolumeUuidRequired({
         path: probePath,
         identifier: ipod.identifier,
-        filesystem: ipod.filesystem,
+        filesystem: ipod.storage.filesystem,
       });
     }
   }
@@ -951,7 +951,9 @@ export async function runDeviceAdd(
     const assessment = await manager.assessDevice(ipod.identifier);
 
     out.newline();
-    out.print(`Found iPod: ${ipod.volumeName} (${formatBytes(ipod.size)}) — not mounted`);
+    out.print(
+      `Found iPod: ${ipod.volumeName} (${formatBytes(ipod.storage.sizeBytes)}) — not mounted`
+    );
     if (assessment?.usb?.productId) {
       const { identify } = await loadCore();
       const assessModel = identify({ from: 'usb', productId: assessment.usb.productId });
@@ -1004,7 +1006,7 @@ export async function runDeviceAdd(
   // This runs before database init so SysInfoExtended is available for the
   // hash58/72/AB checksum stack when we eventually write it.
   let assessment: IpodIdentityAssessment | null = null;
-  if (ipod.mountPoint) {
+  if (ipod.isMounted) {
     assessment = await assessIdentity(ipod.mountPoint);
   }
 
@@ -1030,8 +1032,8 @@ export async function runDeviceAdd(
     out.newline();
     out.print(`Found ${identityDisplayName}:`);
     out.print(`  Name:        ${ipod.volumeName || '(unnamed)'}`);
-    out.print(`  Mount:       ${ipod.mountPoint ?? '(not mounted)'}`);
-    out.print(`  Capacity:    ${formatBytes(ipod.size)}`);
+    out.print(`  Mount:       ${ipod.isMounted ? ipod.mountPoint : '(not mounted)'}`);
+    out.print(`  Capacity:    ${formatBytes(ipod.storage.sizeBytes)}`);
     out.print(`  Volume UUID: ${ipod.volumeUuid}`);
     out.print(`  Device:      /dev/${ipod.identifier}`);
   }
@@ -1040,8 +1042,9 @@ export async function runDeviceAdd(
   let trackCount = 0;
   let initialized = false;
 
-  if (ipod.mountPoint) {
-    const hasDb = await IpodDatabase.hasDatabase(ipod.mountPoint);
+  if (ipod.isMounted) {
+    const mountPoint = ipod.mountPoint;
+    const hasDb = await IpodDatabase.hasDatabase(mountPoint);
 
     if (!hasDb) {
       out.newline();
@@ -1057,7 +1060,7 @@ export async function runDeviceAdd(
 
       try {
         out.print('Initializing iPod database...');
-        const db = await IpodDatabase.initializeIpod(ipod.mountPoint);
+        const db = await IpodDatabase.initializeIpod(mountPoint);
         db.close();
         initialized = true;
         out.print(`Initialized as ${identityDisplayName}.`);
@@ -1070,7 +1073,7 @@ export async function runDeviceAdd(
       }
     } else {
       try {
-        const db = await IpodDatabase.open(ipod.mountPoint);
+        const db = await IpodDatabase.open(mountPoint);
         try {
           trackCount = db.trackCount;
         } finally {
@@ -1091,9 +1094,9 @@ export async function runDeviceAdd(
     identifier: ipod.identifier,
     volumeName: ipod.volumeName,
     volumeUuid: ipod.volumeUuid,
-    size: ipod.size,
+    size: ipod.storage.sizeBytes,
     isMounted: ipod.isMounted,
-    mountPoint: ipod.mountPoint,
+    mountPoint: ipod.isMounted ? ipod.mountPoint : undefined,
     trackCount,
     modelName: identityDisplayName,
   };
@@ -1167,7 +1170,7 @@ export async function runDeviceAdd(
   // core helper handles the write → re-assess lifecycle; we surface a
   // non-fatal warning on failure and continue.
   let firmwareWritten = false;
-  if (offerFirmwareInquiry && assessment && ipod.mountPoint) {
+  if (offerFirmwareInquiry && assessment && ipod.isMounted) {
     const r = await ensureSysInfoExtendedAndReassess(ipod.mountPoint, assessment, {
       assessIdentity: deps.assessIdentity,
       ensureSysInfoExtended: deps.ensureSysInfoExtended,

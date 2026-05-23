@@ -344,7 +344,7 @@ export function synthesizePathModeDeviceInfo(
     identifier: `path:${mountPoint}`,
     volumeName: mountPoint.split('/').pop() || mountPoint,
     volumeUuid: volumeUuid ?? '',
-    size: 0,
+    storage: { sizeBytes: 0 },
     isMounted: true,
     mountPoint,
   };

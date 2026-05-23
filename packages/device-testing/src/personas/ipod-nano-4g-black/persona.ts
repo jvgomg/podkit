@@ -27,7 +27,7 @@ export const ipodNano4gBlack: DevicePersona = {
   id: 'ipod-nano-4g-black',
   description:
     "iPod nano 4G 8GB Black (James' iPod) — HFS+ / Apple Partition Map, USB-inquiry works, per-read crypto blob in SIE.",
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -38,6 +38,53 @@ export const ipodNano4gBlack: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // From `raw/sysfs-usb.txt`: bMaxPacketSize0=64, bcdDevice=0001,
+    // bNumConfigurations=2 (same shape as nano 3G).
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 2,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+      {
+        bConfigurationValue: 2,
+        bNumInterfaces: 1,
+        bmAttributes: 0xc0,
+        bMaxPower: 0x32,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'Apple Inc.', 2: 'iPod', 3: '000A27001DCECFB5' },
   },
 
   sysInfoExtendedXml,
@@ -51,9 +98,14 @@ export const ipodNano4gBlack: DevicePersona = {
     // partitions: APM header + HFS+ data. There is no hidden `Apple_MDFW`
     // firmware partition on this unit — diskutil's view was complete.
     // Both partitions visible in `raw/lsblk.json` with `pttype: "mac"`.
-    partitions: [
-      { index: 1, type: 'apple_partition_map', sizeMiB: 1 },
-      { index: 2, type: 'HFS+', sizeMiB: 7601, mountpoint: "/Volumes/James' iPod" },
+    luns: [
+      {
+        lun: 0,
+        partitions: [
+          { index: 1, type: 'apple_partition_map', sizeMiB: 1 },
+          { index: 2, type: 'HFS+', sizeMiB: 7601, mountpoint: "/Volumes/James' iPod" },
+        ],
+      },
     ],
   },
 

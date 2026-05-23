@@ -119,7 +119,9 @@ packages/device-testing/
     └── apply-state-vm.sh           # in-VM script to mutate state
 ```
 
-### `DevicePersona` schema
+### `DevicePersona` schema (v2, current)
+
+Schema version 2 landed under TASK-332 (2026-05-23). See `packages/device-testing/src/personas/types.ts` for the canonical TypeScript definitions, including TSDoc on every field. The shape below is illustrative — the source file is authoritative.
 
 ```typescript
 interface DevicePersona {
@@ -127,80 +129,106 @@ interface DevicePersona {
   id: string;
   /** Human-readable label for error messages and logs */
   description: string;
-  /** Schema version; bump on any breaking field change */
+  /** Schema version; bump on any breaking field change. Current: 2. */
   schemaVersion: number;
 
-  // --- USB layer ---
+  // --- USB layer (v2 — full descriptor hierarchy) ---
   usbDescriptor: {
-    vendorId: number;         // e.g. 0x05ac (Apple)
-    productId: number;        // e.g. 0x1261 (iPod classic 7G)
-    deviceSerial: string;
-    deviceClass: number;
+    // Device descriptor (USB 2.0 §9.6.1)
+    vendorId: number;
+    productId: number;
+    /** `null` when iSerialNumber = 0 in the descriptor (e.g. Sony NW-HD5). */
+    deviceSerial: string | null;
+    deviceClass: number;        // typically 0 on composite devices
     deviceSubclass: number;
     deviceProtocol: number;
+    bMaxPacketSize0: number;
+    bcdUSB: number;
+    bcdDevice: number;
+    bNumConfigurations: number;
+    // Configuration / interface / endpoint hierarchy
+    configurations: Array<{
+      bConfigurationValue: number;
+      bNumInterfaces: number;
+      bmAttributes: number;
+      bMaxPower: number;
+      interfaces: Array<{
+        bInterfaceNumber: number;
+        bAlternateSetting: number;
+        bInterfaceClass: number;       // 0x08 = Mass Storage (lives here, not on device)
+        bInterfaceSubClass: number;    // 0x06 = SCSI transparent
+        bInterfaceProtocol: number;    // 0x50 = Bulk-Only Transport
+        endpoints: Array<{
+          bEndpointAddress: number;
+          bmAttributes: number;
+          wMaxPacketSize: number;
+          bInterval: number;
+        }>;
+      }>;
+    }>;
+    /** String descriptor table, keyed by descriptor index. */
+    stringDescriptors: Record<number, string>;
   };
 
   // --- SCSI / firmware layer ---
-  /** Raw XML payload returned by SCSI VPD page 0xC0 (SysInfoExtended) */
-  sysInfoExtendedXml: string | null;  // null for devices that don't answer VPD 0xC0
+  sysInfoExtendedXml: string | null;
 
   // --- Host OS probe layer ---
-  /** Canned output of `lsblk -J` for this device (Linux) */
   lsblkJson: object | null;
-  /** Canned output of `system_profiler SPUSBDataType -json` (macOS) */
   systemProfilerJson: object | null;
-  /** Canned output of `diskutil list -plist` (macOS) */
   diskutilPlist: string | null;
 
-  // --- Filesystem ---
-  /** MBR partition table describing the device layout */
+  // --- Filesystem (v2 — partition tables now grouped by LUN) ---
   partitionLayout: {
-    partitions: Array<{
-      index: number;
-      type: string;          // e.g. "FAT32", "HFS+", "empty"
-      sizeMiB: number;
-      mountpoint?: string;
+    luns: Array<{
+      lun: number;                // 0-based LUN index
+      partitions: Array<{
+        index: number;
+        type: string;             // e.g. "FAT32", "HFS+", "empty"
+        sizeMiB: number;
+        mountpoint?: string;
+      }>;
     }>;
   };
 
   // --- Mass storage backing file (optional; set for mass-storage personas) ---
-  /**
-   * Describes the FAT32 backing file for mass-storage personas.
-   * When set, the lima-test-vm runner stages this image as the usb_f_mass_storage backing file.
-   * Either points to a pre-built image committed in the persona directory, or provides a
-   * synthesis recipe (size, filesystem, initial content) that the runner materialises.
-   * null for iPod personas (which use FunctionFS vendor control transfers instead).
-   */
   massStorageBackingFile: {
-    /** Path to a pre-built FAT32 image file relative to this persona's directory */
     imagePath?: string;
-    /** Synthesis recipe (used when no pre-built image is committed) */
     synthesis?: {
       sizeMiB: number;
       filesystem: 'FAT32' | 'FAT16';
+      label: string;
       initialContent?: Array<{ path: string; sourceFixture: string }>;
     };
-    /** Reset strategy between tests: copy (re-copy from reference) or swap (atomic rename) */
     resetStrategy: 'copy' | 'swap';
   } | null;
 
   // --- Expected outcomes (for assertion) ---
-  /** What resolveCapabilities() must return for this persona */
-  expectedCapabilities: DeviceCapabilities | null;  // null for unsupported/rejected devices
-  /** What checkReadiness() must return */
-  expectedReadiness: DeviceReadiness;
-  /** Snapshot of doctor JSON output; used for golden-file assertions */
+  expectedCapabilities: DeviceCapabilities | null;
+  expectedReadiness: ReadinessResult;
   expectedDoctorOutput: object;
 
   // --- Provenance ---
   provenance: {
-    /** Path to provenance.md that links capture session and hardware serial */
     provenanceDoc: string;
-    /** Whether this persona was captured from physical hardware or synthesised */
     source: 'physical-capture' | 'synthesised';
   };
 }
 ```
+
+### Schema v2 — May 2026 (TASK-332)
+
+Three coordinated changes to the schema, surfaced during the TASK-321.02 persona-capture pass and landed under TASK-332 as a single registry-wide commit:
+
+1. **`usbDescriptor` hierarchy.** v1 only modelled device-level fields (vendor/product/serial + the top-level class/subclass/protocol triple). v2 adds the full USB descriptor tree: device descriptor + one or more configurations, each containing interfaces, each containing endpoints, plus a string-descriptor table. The flat-only schema could describe "a device exists" but could not drive a FunctionFS daemon to synthesise a believable gadget — Mass Storage class `0x08` lives on the **interface descriptor**, not the device descriptor, and every iPod and every Sony Walkman reports `deviceClass = 0` because they are composite devices.
+
+2. **`partitionLayout.luns[]`.** v1 flattened all partitions into a single `partitions[]` array. v2 reshapes to `{ luns: Array<{ lun, partitions[] }> }`. Echo Mini is the canonical multi-LUN device (internal FAT32 firmware on LUN 0 + SD-card ExFAT on LUN 1); v1 modelled both LUNs as a single flat partition array with an apologetic comment. Future multi-LUN devices hit the same issue without this reshape.
+
+3. **`deviceSerial: string | null`.** Sony NW-HD5 (and the older NW-A HDD Walkmans) advertise `iSerialNumber = 0` in the device descriptor — no serial-descriptor index assigned. v1 used `''` as a workaround; v2 makes it `null` so the absence is semantically explicit, eliminating the `if (persona.deviceSerial) {...}` empty-string-as-falsy footgun.
+
+**Daemon compatibility note.** The sidecar wire shape (`packages/device-testing/src/personas/sidecar.ts`) was deliberately **not** changed. The dummy-hcd daemon only needs vendor/product IDs, an optional serial string, and class/subclass/protocol fields to bind the configfs gadget — the richer hierarchy stays host-side. The sidecar builder (`sidecar-build.ts`) was updated to project `deviceSerial: null` to an omitted `serial` field (rather than serialising `null`), so the daemon's existing optional-string fallback (`'000000000001'`) continues to work.
+
+**Migration scope.** All 17 personas migrated mechanically: `schemaVersion: 1 → 2`, `partitions[...] → luns: [{ lun: 0, partitions: [...] }]`, `usbDescriptor` extended with synthesised hierarchy fields drawn from raw probe data (`raw/sysfs-usb.txt`, `raw/ioreg.txt`, `raw/udev.txt`) where available. Personas without raw probe data (mini 2G, nano 2G, video 5G, touch 5G, shuffle, malformed-sysinfo, synthetic state-variants) inherit hierarchy values from the matching family pattern and flag a follow-up Linux capture in `provenance.md`. Sony NW-A1000, NW-A1200, NW-A3000, NW-HD5 migrate `deviceSerial: ''` → `null` (all four advertise `iSerialNumber = 0`); other personas keep their non-empty serials.
 
 ### `SystemState` schema
 

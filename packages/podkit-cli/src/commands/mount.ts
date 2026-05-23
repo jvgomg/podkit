@@ -148,7 +148,8 @@ export async function runMount(
         });
       }
 
-      if (device.isMounted && device.mountPoint) {
+      // Type narrowing on `isMounted` makes `mountPoint` non-nullable.
+      if (device.isMounted) {
         out.result<MountOutput>(
           { success: true, device: device.identifier, mountPoint: device.mountPoint },
           () => out.print(`Device already mounted at: ${device.mountPoint}`)

@@ -1,8 +1,8 @@
 /**
  * Tier-1 smoke tests for the rejection-case personas.
  *
- * Pins the persona-fixture shape after TASK-331 added `'unsupported'` to
- * `ReadinessLevel`. Both rejection personas must:
+ * Pins the persona-fixture shape for the `'unsupported'` ReadinessLevel.
+ * Both rejection personas must:
  *   1. Declare `expectedReadiness.level === 'unsupported'`
  *   2. Surface the structured `unsupported` payload on the result
  *   3. Have a fail `usb` stage whose `details.unsupported` matches
@@ -18,12 +18,16 @@
 import { describe, it, expect } from 'bun:test';
 import { ipodTouch5gUnsupported } from './ipod-touch-5g-unsupported/persona.js';
 import { sonyNwzE384 } from './sony-nwz-e384/persona.js';
+import { sonyNwA1000 } from './sony-nw-a1000/persona.js';
+import { sonyNwA1200 } from './sony-nw-a1200/persona.js';
+import { sonyNwA3000 } from './sony-nw-a3000/persona.js';
+import { sonyNwHd5 } from './sony-nw-hd5/persona.js';
 import { ipodShuffleNotSupported } from './ipod-shuffle-not-supported/persona.js';
 import { nonIpodUsbDisk } from './non-ipod-usb-disk/persona.js';
 import { personas } from './index.js';
 import type { ReadinessUnsupportedReason } from '@podkit/core';
 
-describe('rejection personas: TASK-331 shape', () => {
+describe('rejection personas: unsupported readiness shape', () => {
   describe('ipod-touch-5g-unsupported', () => {
     it('declares expectedReadiness.level === unsupported', () => {
       expect(ipodTouch5gUnsupported.expectedReadiness.level).toBe('unsupported');
@@ -53,7 +57,7 @@ describe('rejection personas: TASK-331 shape', () => {
     });
   });
 
-  describe('ipod-shuffle-not-supported (synthesised, TASK-324 Phase 5)', () => {
+  describe('ipod-shuffle-not-supported', () => {
     it('is registered in the persona registry under its declared id', () => {
       expect(personas.get('ipod-shuffle-not-supported')).toBe(ipodShuffleNotSupported);
     });
@@ -88,7 +92,7 @@ describe('rejection personas: TASK-331 shape', () => {
     it('has a non-empty USB descriptor pinned to Apple vendor + shuffle 3G PID', () => {
       expect(ipodShuffleNotSupported.usbDescriptor.vendorId).toBe(0x05ac);
       expect(ipodShuffleNotSupported.usbDescriptor.productId).toBe(0x1302);
-      expect(ipodShuffleNotSupported.usbDescriptor.deviceSerial.length).toBeGreaterThan(0);
+      expect(ipodShuffleNotSupported.usbDescriptor.deviceSerial?.length ?? 0).toBeGreaterThan(0);
     });
 
     it('is marked synthesised in its provenance', () => {
@@ -96,7 +100,7 @@ describe('rejection personas: TASK-331 shape', () => {
     });
   });
 
-  describe('non-ipod-usb-disk (synthesised, TASK-324 Phase 5)', () => {
+  describe('non-ipod-usb-disk', () => {
     it('is registered in the persona registry under its declared id', () => {
       expect(personas.get('non-ipod-usb-disk')).toBe(nonIpodUsbDisk);
     });
@@ -129,7 +133,7 @@ describe('rejection personas: TASK-331 shape', () => {
     it('has a non-empty USB descriptor pinned to SanDisk Cruzer Blade', () => {
       expect(nonIpodUsbDisk.usbDescriptor.vendorId).toBe(0x0781);
       expect(nonIpodUsbDisk.usbDescriptor.productId).toBe(0x5567);
-      expect(nonIpodUsbDisk.usbDescriptor.deviceSerial.length).toBeGreaterThan(0);
+      expect(nonIpodUsbDisk.usbDescriptor.deviceSerial?.length ?? 0).toBeGreaterThan(0);
     });
 
     it('ships plausible host-probe data (rejection happens at the mass-storage classifier, after probes)', () => {
@@ -169,6 +173,39 @@ describe('rejection personas: TASK-331 shape', () => {
         | ReadinessUnsupportedReason
         | undefined;
       expect(stageUnsupported?.headline).toBe(sonyNwzE384.expectedReadiness.unsupported?.headline);
+    });
+  });
+
+  // Legacy `'unknown'` rejection personas now use the canonical `'unsupported'`
+  // ReadinessLevel shape introduced for this persona category.
+  describe.each([
+    { persona: sonyNwA1000, id: 'sony-nw-a1000' },
+    { persona: sonyNwA1200, id: 'sony-nw-a1200' },
+    { persona: sonyNwA3000, id: 'sony-nw-a3000' },
+    { persona: sonyNwHd5, id: 'sony-nw-hd5' },
+  ])('$id — unsupported-preset shape', ({ persona, id }) => {
+    it('declares expectedReadiness.level === unsupported', () => {
+      expect(persona.expectedReadiness.level).toBe('unsupported');
+    });
+
+    it('exposes a structured unsupported payload on the top-level result', () => {
+      expect(persona.expectedReadiness.unsupported).toBeDefined();
+      expect(persona.expectedReadiness.unsupported?.kind).toBe('unsupported-preset');
+      expect(typeof persona.expectedReadiness.unsupported?.headline).toBe('string');
+      expect(persona.expectedReadiness.unsupported!.headline.length).toBeGreaterThan(0);
+    });
+
+    it('keeps the usb-stage fail surface in sync with the top-level payload', () => {
+      const usbStage = persona.expectedReadiness.stages.find((s) => s.stage === 'usb');
+      expect(usbStage?.status).toBe('fail');
+      const stageUnsupported = usbStage?.details?.unsupported as
+        | ReadinessUnsupportedReason
+        | undefined;
+      expect(stageUnsupported?.headline).toBe(persona.expectedReadiness.unsupported?.headline);
+    });
+
+    it('is registered in the persona registry', () => {
+      expect(personas.get(id)).toBe(persona);
     });
   });
 });

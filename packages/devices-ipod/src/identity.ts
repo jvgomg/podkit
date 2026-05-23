@@ -62,9 +62,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       // Check unsupported PID table first, then fall back to generation flag.
       const headline =
         lookupUnsupportedReason(input.productId) ??
-        (!gen.supported
-          ? `${entry.displayName} is not supported by podkit (libgpod cannot sync this generation).`
-          : undefined);
+        (!gen.supported ? `${entry.displayName} is not a podkit-supported generation.` : undefined);
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
         : undefined;
@@ -85,7 +83,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       const upper = input.modelNumStr.toUpperCase();
       const stripped = /^[MPF]/.test(upper) ? upper.slice(1) : upper;
       const headline = !gen.supported
-        ? `${entry.displayName} is not supported by podkit (libgpod cannot sync this generation).`
+        ? `${entry.displayName} is not a podkit-supported generation.`
         : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, entry.generation)
@@ -110,7 +108,7 @@ export function identify(input: IpodModelInput): IpodModel | undefined {
       if (!variant) return undefined;
       const gen = GENERATIONS[variant.generation];
       const headline = !gen.supported
-        ? `${variant.displayName} is not supported by podkit (libgpod cannot sync this generation).`
+        ? `${variant.displayName} is not a podkit-supported generation.`
         : undefined;
       const unsupportedReason = headline
         ? buildUnsupportedReason(headline, variant.generation)

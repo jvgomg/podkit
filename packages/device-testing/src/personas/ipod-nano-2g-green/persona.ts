@@ -23,7 +23,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const ipodNano2gGreen: DevicePersona = {
   id: 'ipod-nano-2g-green',
   description: 'iPod nano 2G 4GB Green (PARTY IPOD) — SCSI-fallback path, no artwork, no video.',
-  schemaVersion: 1,
+  schemaVersion: 2,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -33,6 +33,54 @@ export const ipodNano2gGreen: DevicePersona = {
     deviceClass: 0,
     deviceSubclass: 0,
     deviceProtocol: 0,
+    // Synthesised from the iPod composite-mass-storage convention shared by
+    // every captured iPod sibling. Linux capture deferred — flagged for
+    // follow-up in `provenance.md`.
+    bMaxPacketSize0: 64,
+    bcdUSB: 0x0200,
+    bcdDevice: 0x0001,
+    bNumConfigurations: 2,
+    configurations: [
+      {
+        bConfigurationValue: 1,
+        bNumInterfaces: 1,
+        bmAttributes: 0x80,
+        bMaxPower: 0xfa,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+      {
+        bConfigurationValue: 2,
+        bNumInterfaces: 1,
+        bmAttributes: 0xc0,
+        bMaxPower: 0x32,
+        interfaces: [
+          {
+            bInterfaceNumber: 0,
+            bAlternateSetting: 0,
+            bInterfaceClass: 0x08,
+            bInterfaceSubClass: 0x06,
+            bInterfaceProtocol: 0x50,
+            endpoints: [
+              { bEndpointAddress: 0x81, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+              { bEndpointAddress: 0x02, bmAttributes: 0x02, wMaxPacketSize: 512, bInterval: 0 },
+            ],
+          },
+        ],
+      },
+    ],
+    stringDescriptors: { 1: 'Apple Inc.', 2: 'iPod', 3: '000A27001A0647CB' },
   },
 
   sysInfoExtendedXml,
@@ -45,9 +93,14 @@ export const ipodNano2gGreen: DevicePersona = {
     // MBR (2048-byte sectors). FAT32 starts at sector 48195. Sectors
     // 0..48194 (~94 MiB) are unallocated reserved space holding the iPod
     // firmware — same pattern as mini 2G and iPod 5G Video.
-    partitions: [
-      { index: 1, type: 'firmware', sizeMiB: 94 },
-      { index: 2, type: 'FAT32', sizeMiB: 3778, mountpoint: '/Volumes/PARTY IPOD' },
+    luns: [
+      {
+        lun: 0,
+        partitions: [
+          { index: 1, type: 'firmware', sizeMiB: 94 },
+          { index: 2, type: 'FAT32', sizeMiB: 3778, mountpoint: '/Volumes/PARTY IPOD' },
+        ],
+      },
     ],
   },
 
