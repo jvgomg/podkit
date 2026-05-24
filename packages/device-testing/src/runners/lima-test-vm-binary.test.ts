@@ -112,26 +112,26 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
     ]);
 
     const result = await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: runner,
     });
 
     expect(result.skipped).toBe(false);
     expect(result.hostSha256).toBe(hostSha);
-    expect(result.vmName).toBe('podkit-test-vm');
+    expect(result.vmName).toBe('podkit-device-harness');
     expect(result.vmPath).toBe(DEFAULT_PODKIT_VM_PATH);
 
     expect(calls).toHaveLength(4);
     expect(calls[0]!.command).toBe('limactl');
     expect(calls[0]!.args[0]).toBe('shell');
-    expect(calls[0]!.args).toContain('podkit-test-vm');
+    expect(calls[0]!.args).toContain('podkit-device-harness');
     expect(calls[0]!.args.join(' ')).toContain('sha256sum');
 
     // copy: <host> <vm>:<tmp>
     expect(calls[1]!.args[0]).toBe('copy');
     expect(calls[1]!.args[1]).toBe(hostBinary);
-    expect(calls[1]!.args[2]).toMatch(/^podkit-test-vm:\/tmp\/podkit-transfer-/);
+    expect(calls[1]!.args[2]).toMatch(/^podkit-device-harness:\/tmp\/podkit-transfer-/);
 
     // install: sudo install -m 0755 <tmp> <vmPath>
     // Assert tmp precedes vmPath so a swapped argument order (which would
@@ -154,7 +154,7 @@ describe('transferBinary (AC1: copy + install + cleanup atomically)', () => {
   it('respects a custom vmPath', async () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
     const result = await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       vmPath: '/opt/podkit/podkit',
       subprocess: runner,
@@ -173,7 +173,7 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha + '\n')]);
 
     const result = await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: runner,
     });
@@ -189,7 +189,7 @@ describe('transferBinary (AC2: idempotent on sha256 match)', () => {
     const { runner, calls } = makeScriptedRunner([ok(wrongSha + '\n'), ok(), ok(), ok()]);
 
     const result = await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: runner,
     });
@@ -209,12 +209,12 @@ describe('transferBinary (AC3: atomicity)', () => {
     const probe2 = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
 
     await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: probe1.runner,
     });
     await transferBinary({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: probe2.runner,
     });
@@ -222,7 +222,7 @@ describe('transferBinary (AC3: atomicity)', () => {
     const tmpA = probe1.calls[1]!.args[2];
     const tmpB = probe2.calls[1]!.args[2];
     expect(tmpA).not.toBe(tmpB);
-    expect(tmpA).toMatch(/^podkit-test-vm:\/tmp\/podkit-transfer-[0-9a-f-]+$/);
+    expect(tmpA).toMatch(/^podkit-device-harness:\/tmp\/podkit-transfer-[0-9a-f-]+$/);
   });
 
   it('cleans up the temp file when install fails (no dangling state)', async () => {
@@ -236,7 +236,7 @@ describe('transferBinary (AC3: atomicity)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: hostBinary,
         subprocess: runner,
       });
@@ -265,7 +265,7 @@ describe('transferBinary (AC3: atomicity)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: hostBinary,
         subprocess: runner,
       });
@@ -292,7 +292,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: ghost,
         subprocess: runner,
       });
@@ -313,7 +313,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: hostBinary,
         subprocess: runner,
       });
@@ -326,11 +326,11 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
   });
 
   it('throws when limactl shell returns non-zero for the probe', async () => {
-    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-test-vm" not found')]);
+    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device-harness" not found')]);
     let caught: Error | undefined;
     try {
       await transferBinary({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: hostBinary,
         subprocess: runner,
       });
@@ -339,7 +339,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toMatch(/failed to probe/);
-    expect(caught!.message).toContain('podkit-test-vm');
+    expect(caught!.message).toContain('podkit-device-harness');
     expect(caught!.message).toContain('not found');
   });
 
@@ -366,7 +366,7 @@ describe('transferGpodTool', () => {
   it('defaults to /usr/local/bin/gpod-tool', async () => {
     const { runner, calls } = makeScriptedRunner([ok(''), ok(), ok(), ok()]);
     const result = await transferGpodTool({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: runner,
     });
@@ -379,7 +379,7 @@ describe('transferGpodTool', () => {
     let caught: Error | undefined;
     try {
       await transferGpodTool({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         binaryPath: ghost,
       });
     } catch (err) {
@@ -394,7 +394,7 @@ describe('transferGpodTool', () => {
   it('is idempotent on sha256 match (skips copy + install)', async () => {
     const { runner, calls } = makeScriptedRunner([ok(hostSha)]);
     const result = await transferGpodTool({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       binaryPath: hostBinary,
       subprocess: runner,
     });

@@ -134,7 +134,7 @@ describe('ensureBackingFile', () => {
       ok(SHA + '\n'), // build script returns sha256
     ]);
     const result = await ensureBackingFile({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       persona: makePersona(),
       subprocess: runner,
     });
@@ -148,7 +148,7 @@ describe('ensureBackingFile', () => {
     // Probe call shape
     expect(calls[0]!.command).toBe('limactl');
     expect(calls[0]!.args[0]).toBe('shell');
-    expect(calls[0]!.args[1]).toBe('podkit-test-vm');
+    expect(calls[0]!.args[1]).toBe('podkit-device-harness');
 
     // Build call: the script should mention truncate, mkfs.vfat --invariant,
     // and the label.
@@ -165,7 +165,7 @@ describe('ensureBackingFile', () => {
       ok(SHA + '\n'), // build: same sha
     ]);
     const result = await ensureBackingFile({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       persona: makePersona(),
       subprocess: runner,
     });
@@ -177,7 +177,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({ massStorageBackingFile: null }),
         subprocess: runner,
       })
@@ -188,7 +188,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({
           massStorageBackingFile: { imagePath: './foo.img', resetStrategy: 'copy' },
         }),
@@ -201,7 +201,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({
           massStorageBackingFile: {
             synthesis: { sizeMiB: 4, filesystem: 'FAT16', label: 'X' },
@@ -217,7 +217,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({
           massStorageBackingFile: {
             synthesis: { sizeMiB: 0, filesystem: 'FAT32', label: 'X' },
@@ -233,7 +233,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({
           massStorageBackingFile: {
             synthesis: { sizeMiB: 1, filesystem: 'FAT32', label: 'TOO_LONG_LABEL' },
@@ -249,7 +249,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona({
           massStorageBackingFile: {
             synthesis: { sizeMiB: 1, filesystem: 'FAT32', label: 'Bad Label' },
@@ -268,7 +268,7 @@ describe('ensureBackingFile', () => {
     ]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona(),
         subprocess: runner,
       })
@@ -279,7 +279,7 @@ describe('ensureBackingFile', () => {
     const { runner } = makeScriptedRunner([ok('absent'), ok('not-a-sha\n')]);
     await expect(
       ensureBackingFile({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         persona: makePersona(),
         subprocess: runner,
       })
@@ -302,7 +302,7 @@ describe('ensureBackingFilesForPersonas', () => {
   it('returns an empty map for an empty persona list', async () => {
     const { runner, calls } = makeScriptedRunner([]);
     const result = await ensureBackingFilesForPersonas({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       personas: [],
       subprocess: runner,
     });
@@ -313,7 +313,7 @@ describe('ensureBackingFilesForPersonas', () => {
   it('skips personas without massStorageBackingFile', async () => {
     const { runner, calls } = makeScriptedRunner([]);
     const result = await ensureBackingFilesForPersonas({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       personas: [makePersona({ id: 'no-backing', massStorageBackingFile: null })],
       subprocess: runner,
     });
@@ -324,7 +324,7 @@ describe('ensureBackingFilesForPersonas', () => {
   it('skips personas with only imagePath (pre-built)', async () => {
     const { runner, calls } = makeScriptedRunner([]);
     const result = await ensureBackingFilesForPersonas({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       personas: [
         makePersona({
           id: 'prebuilt',
@@ -345,7 +345,7 @@ describe('ensureBackingFilesForPersonas', () => {
       ok('b'.repeat(64) + '\n'),
     ]);
     const result = await ensureBackingFilesForPersonas({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       personas: [
         makePersona({ id: 'one' }),
         makePersona({

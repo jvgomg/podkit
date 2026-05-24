@@ -2,7 +2,7 @@
  * Tier-3 coverage — doctor across device types and presets.
  *
  * Verifies that the production `podkit doctor` binary running inside
- * `podkit-test-vm` selects the correct check set for each device type and
+ * `podkit-device-harness` selects the correct check set for each device type and
  * surfaces unsupported-device readiness without running checks against an
  * unsupported device.
  *
@@ -300,7 +300,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           // 1. Start the daemon.
           const { startDaemonForPersona } = await import('../runners/lima-test-vm.js');
           await startDaemonForPersona({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
           });
 
@@ -308,7 +308,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           //    Re-use the helper that withPersona uses internally.
           const { waitForScsiGenericEnumeration } = await import('./persona-fixture.js');
           await waitForScsiGenericEnumeration({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
             timeoutMs: 5_000,
           });
@@ -387,7 +387,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
             .catch(() => {});
           const { stopDaemon } = await import('../runners/lima-test-vm.js');
           await stopDaemon({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -408,7 +408,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           .catch(() => {});
         const { stopDaemon } = await import('../runners/lima-test-vm.js');
         await stopDaemon({
-          vmName: 'podkit-test-vm',
+          vmName: 'podkit-device-harness',
           personaId: echoMini.id,
         }).catch(() => {});
       }, TIER3_COLD_TIMEOUT_MS);

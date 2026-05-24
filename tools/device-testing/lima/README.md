@@ -1,44 +1,44 @@
-# Builder & test VMs (Lima)
+# Builder & device-testing harness VMs (Lima)
 
 Lima VMs that produce and verify Linux glibc binaries from macOS. These are
 the **VMs introduced by [ADR-016](../../../adr/adr-016-linux-vm-test-harness.md)**
 and are separate from `tools/lima/` (the cross-platform test environment) and
-`tools/lima/virtual-ipod.yaml` (the demo VM, off-limits).
+`tools/lima/podkit-virtual-ipod.yaml` (the demo VM, off-limits).
 
-## Builder VM vs test VM
+## Builder VM vs device-testing harness
 
 ADR-016 mandates a physical split between the VM that compiles binaries and
 the VM(s) that exercise them:
 
 | VM | Yaml | Role | Contents |
 |----|------|------|----------|
-| **Builder** | `builder.yaml` | Compile `@podkit/libgpod-node` prebuilds + the podkit standalone binary | Bun, Node 22, build-essential, `libglib2.0-dev`, `libgdk-pixbuf-2.0-dev`, `libplist-dev`, cmake, meson, ninja, autoconf, libtool, intltool, perl XML::Parser |
-| **ABI verify** (spike-only) | `abi-verify.yaml` | Smoke-check that the binary loads on stock Debian with `ldd` showing only system libs | Stock Debian 12.10 + `ffmpeg` and `binutils`. **No `-dev` packages, no Bun, no Node, no source tree.** |
-| **Test VM** | `test-vm.yaml` | Run Tier 3 device-integration tests against the compiled binary | Stock Debian 12.10 + kernel modules (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`), `ffmpeg`, runtime libgpod4 (for `gpod-tool` helper only), FunctionFS daemon, `gpod-tool`. **No dev tools, no `-dev` packages, no Bun, no Node, no source tree.** |
+| **Builder** | `podkit-linux-builder.yaml` | Compile `@podkit/libgpod-node` prebuilds + the podkit standalone binary | Bun, Node 22, build-essential, `libglib2.0-dev`, `libgdk-pixbuf-2.0-dev`, `libplist-dev`, cmake, meson, ninja, autoconf, libtool, intltool, perl XML::Parser |
+| **ABI verify** (spike-only) | `podkit-abi-verify.yaml` | Smoke-check that the binary loads on stock Debian with `ldd` showing only system libs | Stock Debian 12.10 + `ffmpeg` and `binutils`. **No `-dev` packages, no Bun, no Node, no source tree.** |
+| **Device-testing harness** | `podkit-device-harness.yaml` | Run Tier 3 device-integration tests against the compiled binary | Stock Debian 12.10 + kernel modules (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`), `ffmpeg`, runtime libgpod4 (for `gpod-tool` helper only), FunctionFS daemon, `gpod-tool`. **No dev tools, no `-dev` packages, no Bun, no Node, no source tree.** |
 
 The dev-library separation prevents binaries with hidden dynamic linkage from
 passing tests on dev hosts that happen to have `libgpod.so` available — a bug
 class ADR-016 §"Builder/test VM split" was created to catch.
 
-## Test VM (`test-vm.yaml`)
+## Device-testing harness (`podkit-device-harness.yaml`)
 
 The test VM is the minimal Debian 12.10 environment that Tier 3 integration
 tests run against (TASK-322.01). It mimics a stock end-user runtime so binary
 linkage problems cannot be masked by dev libraries on PATH.
 
-**Lima instance name:** `podkit-test-vm`.
+**Lima instance name:** `podkit-device-harness`.
 
 ### Start it
 
 ```bash
-limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
+limactl start tools/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
 ```
 
 The yaml provisions in three system steps:
 
 1. `apt install` of `ffmpeg`, `libgpod4`, `libgpod-common`, `libglib2.0-0`,
    `ca-certificates`, `kmod`. Module-load config at
-   `/etc/modules-load.d/podkit-test-vm.conf` for the USB gadget stack
+   `/etc/modules-load.d/podkit-device-harness.conf` for the USB gadget stack
    (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`); explicit
    `configfs` fstab line as a safety net.
 2. `gpod-tool` install from `/tmp/gpod-tool` if staged (see "gpod-tool
@@ -51,8 +51,8 @@ The yaml provisions in three system steps:
 After boot, none of these should produce output:
 
 ```bash
-limactl shell podkit-test-vm -- which bun node npm        # all empty
-limactl shell podkit-test-vm -- dpkg -l | grep -E ' -dev ' # no -dev pkgs
+limactl shell podkit-device-harness -- which bun node npm        # all empty
+limactl shell podkit-device-harness -- dpkg -l | grep -E ' -dev ' # no -dev pkgs
 ```
 
 `/usr/local/bin` is writable but starts empty for `podkit` — TASK-322.03
@@ -90,7 +90,7 @@ Interim handoff contract:
 - Developers needing `gpod-tool` today can stage it before boot:
   ```bash
   cp /path/to/linux-built-gpod-tool /tmp/gpod-tool   # on the VM after boot
-  limactl shell podkit-test-vm -- sudo install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
+  limactl shell podkit-device-harness -- sudo install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
   ```
 - Or post-boot via `limactl copy`, then `install`.
 
@@ -110,7 +110,7 @@ exercises gpod-tool absence, not podkit's own linkage.
 ### Snapshot lifecycle and reprovisioning
 
 > **Apple Silicon note (TASK-322.02.01):** the test VM is pinned to
-> `vmType: vz` in `test-vm.yaml`. Lima 2.x's `vz` driver does not implement
+> `vmType: vz` in `podkit-device-harness.yaml`. Lima 2.x's `vz` driver does not implement
 > `limactl snapshot` — every call returns `unimplemented`. The orchestrator
 > in `lima-test-vm-snapshots.ts` detects this and silently degrades to
 > running `apply-state.sh` for every group restore. Measured cost on
@@ -153,30 +153,30 @@ Subsequent test runs hit the fast path — a single
 
 **When to reprovision.** Snapshots are tied to a specific VM disk image,
 which in turn is pinned to a specific Debian point release (currently
-12.10, set in `test-vm.yaml`). Snapshots become stale when:
+12.10, set in `podkit-device-harness.yaml`). Snapshots become stale when:
 
-- The Debian point release is bumped in `test-vm.yaml`.
+- The Debian point release is bumped in `podkit-device-harness.yaml`.
 - `apply-state.sh` semantics change (e.g. a new package added to the
   healthy state).
 - The `SystemState` registry adds, removes, or renames a state.
 - The kernel module list in
-  `/etc/modules-load.d/podkit-test-vm.conf` changes.
+  `/etc/modules-load.d/podkit-device-harness.conf` changes.
 
 In any of those cases, drop the existing snapshots and let the orchestrator
 recreate them on the next test run:
 
 ```bash
 # Inspect what's currently stored
-limactl snapshot list podkit-test-vm
+limactl snapshot list podkit-device-harness
 
 # Drop all base-* snapshots so apply-state.sh runs fresh next time
-for tag in $(limactl snapshot list podkit-test-vm --quiet | grep '^base-'); do
-  limactl snapshot delete podkit-test-vm --tag "$tag"
+for tag in $(limactl snapshot list podkit-device-harness --quiet | grep '^base-'); do
+  limactl snapshot delete podkit-device-harness --tag "$tag"
 done
 
 # Or nuke the VM entirely (slower; full re-provision on next boot)
-limactl delete podkit-test-vm --force
-limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
+limactl delete podkit-device-harness --force
+limactl start tools/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
 ```
 
 Snapshots are stored inside the Lima VM's disk image — there are no extra
@@ -195,7 +195,7 @@ mutation succeeded) can be recovered by simply running `applyState` again.
 brew install lima
 
 # 1) Boot the builder VM (first run ~5 min)
-limactl start tools/device-testing/lima/builder.yaml --name builder
+limactl start tools/device-testing/lima/podkit-linux-builder.yaml --name podkit-linux-builder
 
 # 2) Produce a Linux x64 binary via turbo (cached on the host)
 bunx turbo run @podkit/device-testing#build:linux-binary
@@ -205,15 +205,15 @@ bunx turbo run @podkit/device-testing#build:linux-binary
 mise run device-testing:build-linux
 
 # 3) (Optional) Verify ABI on a stock Debian VM
-limactl start tools/device-testing/lima/abi-verify.yaml --name abi-verify
-limactl copy packages/podkit-cli/bin/podkit-linux-x64 abi-verify:/tmp/podkit
-limactl shell abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
-limactl shell abi-verify -- ldd /usr/local/bin/podkit
-limactl shell abi-verify -- /usr/local/bin/podkit --version
+limactl start tools/device-testing/lima/podkit-abi-verify.yaml --name podkit-abi-verify
+limactl copy packages/podkit-cli/bin/podkit-linux-x64  podkit-abi-verify:/tmp/podkit
+limactl shell podkit-abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+limactl shell podkit-abi-verify -- ldd /usr/local/bin/podkit
+limactl shell podkit-abi-verify -- /usr/local/bin/podkit --version
 
-# 4) Start the Tier 3 test VM (lives separately from the builder)
-limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
-limactl shell podkit-test-vm -- which bun node npm   # must return empty
+# 4) Start the device-testing harness VM (lives separately from the builder)
+limactl start tools/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
+limactl shell podkit-device-harness -- which bun node npm   # must return empty
 ```
 
 ## Build pipeline (single source of truth)
@@ -224,7 +224,7 @@ turbo task
 @podkit/device-testing#build:linux-prebuild
     ↓ (host)
 packages/device-testing/scripts/build-linux-prebuild.sh
-    ↓ (limactl shell builder)
+    ↓ (limactl shell podkit-linux-builder)
 tools/prebuild/build-linux-glibc.sh    ←──── SHARED with .github/workflows/prebuild.yml
     ↓
 tools/prebuild/build-static-deps.sh    ←──── SHARED with prebuild.yml + build-platform.yml
@@ -234,7 +234,7 @@ npx prebuildify --napi --strip
 packages/libgpod-node/prebuilds/linux-${arch}/*.node
     ↓
 @podkit/device-testing#build:linux-binary
-    ↓ (limactl shell builder)
+    ↓ (limactl shell podkit-linux-builder)
 bun build --compile (via packages/podkit-cli/scripts/compile.sh)
     ↓
 packages/podkit-cli/bin/podkit-linux-${arch}
@@ -256,7 +256,7 @@ builder VM to glibc.
 
 - `@podkit/device-testing#build:linux-prebuild` — hashes
   `packages/libgpod-node/native/**`, `binding.gyp`, `tools/prebuild/**`, and
-  `tools/device-testing/lima/builder.yaml`. Cache hit = no VM invocation.
+  `tools/device-testing/lima/podkit-linux-builder.yaml`. Cache hit = no VM invocation.
 - `@podkit/device-testing#build:linux-binary` — depends on the prebuild task
   plus the TypeScript source set.
 
@@ -318,15 +318,15 @@ mise run device-testing:build-linux  # recreates on first run
 ```
 
 ### Version mismatch (different Debian point release)
-Both `builder.yaml` and `abi-verify.yaml` pin Debian 12.10 via explicit
+Both `podkit-linux-builder.yaml` and `podkit-abi-verify.yaml` pin Debian 12.10 via explicit
 cloud-image URLs. If you bump one, bump both, and run the ABI spike again to
 confirm the build artefacts still load.
 
 ### Native binding fails to load inside the binary
 Re-run with verification skipped, then inspect the .node file:
 ```bash
-SKIP_VERIFY=1 limactl shell builder -- bash tools/prebuild/build-linux-glibc.sh
-limactl shell builder -- ldd packages/libgpod-node/prebuilds/linux-*/*.node
+SKIP_VERIFY=1 limactl shell podkit-linux-builder -- bash tools/prebuild/build-linux-glibc.sh
+limactl shell podkit-linux-builder -- ldd packages/libgpod-node/prebuilds/linux-*/*.node
 ```
 Any `libgpod`, `libgdk_pixbuf`, `libglib`, or `libplist` line indicates a
 build regression in `build-static-deps.sh`.
@@ -338,6 +338,6 @@ build regression in `build-static-deps.sh`.
 - [ADR-016](../../../adr/adr-016-linux-vm-test-harness.md) §"Build tooling:
   one implementation, two callers" — the single-source-of-truth invariant.
 - `tools/lima/README.md` — the cross-platform test VMs (different concern).
-- `tools/lima/virtual-ipod.yaml` — the demo VM (off-limits per ADR-016).
+- `tools/lima/podkit-virtual-ipod.yaml` — the demo VM (off-limits per ADR-016).
 - `.github/workflows/prebuild.yml` — the CI workflow that shares
   `build-linux-glibc.sh` with this VM.

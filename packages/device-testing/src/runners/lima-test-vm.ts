@@ -11,13 +11,13 @@
  * Lifecycle (per ADR-016 §"Tier 3"):
  *
  *   isAvailable() — returns true iff `limactl` is in PATH AND the
- *                   `podkit-test-vm` instance exists. Never throws.
+ *                   `podkit-device-harness` instance exists. Never throws.
  *   prepare()     — boots the VM if stopped, transfers the podkit binary,
  *                   transfers gpod-tool + the dummy-hcd-daemon (best-effort),
  *                   emits the persona sidecar at /var/device-testing/personas.json.
  *   applyState()  — delegates to applyState({ vmName, stateId }) from
  *                   lima-test-vm-state.ts. Fast path: <1s snapshot restore.
- *   run()         — `limactl shell podkit-test-vm -- <command>`, honouring
+ *   run()         — `limactl shell podkit-device-harness -- <command>`, honouring
  *                   cwd/env/timeout opts.
  *   teardown()    — restores the `base-healthy` snapshot. Does NOT shut down
  *                   the VM (per-test shutdown is too slow).
@@ -58,7 +58,7 @@ import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 // ---------------------------------------------------------------------------
 
 /** Lima instance name the runner manages. */
-export const LIMA_TEST_VM_NAME = 'podkit-test-vm';
+export const LIMA_DEVICE_HARNESS_VM_NAME = 'podkit-device-harness';
 /** Sidecar destination inside the VM. */
 export const SIDECAR_VM_PATH = '/var/device-testing/personas.json';
 /** Snapshot the runner restores on teardown. */
@@ -147,7 +147,7 @@ interface LimactlListEntry {
  * "unavailable" conclusion either way.
  */
 export async function instanceStatus(
-  vmName: string = LIMA_TEST_VM_NAME,
+  vmName: string = LIMA_DEVICE_HARNESS_VM_NAME,
   subprocess: SubprocessRunner = defaultSubprocessRunner
 ): Promise<InstanceStatus> {
   let result: LimactlResult;
@@ -515,7 +515,7 @@ export async function stopDaemon(opts: StopDaemonOpts): Promise<void> {
 
 /** Options for {@link createLimaTestVmRuntime}. */
 export interface CreateLimaTestVmRuntimeOpts {
-  /** Lima instance name. Defaults to {@link LIMA_TEST_VM_NAME}. */
+  /** Lima instance name. Defaults to {@link LIMA_DEVICE_HARNESS_VM_NAME}. */
   vmName?: string;
   /** DI seam for limactl; production callers leave unset. */
   subprocess?: SubprocessRunner;
@@ -552,7 +552,7 @@ export interface CreateLimaTestVmRuntimeOpts {
  * subprocess runner.
  */
 export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}): TestRuntime {
-  const vmName = opts.vmName ?? LIMA_TEST_VM_NAME;
+  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
   const resolvePodkitBinary = opts.resolvePodkitBinary ?? (() => resolveDefaultPodkitBinary());
   const resolveDummyHcdDaemonBinary =
@@ -573,7 +573,7 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       if (status === 'missing') {
         throw new Error(
           `[lima-test-vm] instance '${vmName}' is not registered with Lima. ` +
-            `Create it with: limactl start tools/device-testing/lima/test-vm.yaml --name ${vmName}`
+            `Create it with: limactl start tools/device-testing/lima/podkit-device-harness.yaml --name ${vmName}`
         );
       }
       if (status === 'stopped') {

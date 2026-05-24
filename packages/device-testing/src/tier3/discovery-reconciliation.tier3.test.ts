@@ -71,7 +71,11 @@ import {
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { ipodNano3gBlack } from '../personas/ipod-nano-3g-black/persona.js';
-import { startDaemonForPersona, stopDaemon, LIMA_TEST_VM_NAME } from '../runners/lima-test-vm.js';
+import {
+  startDaemonForPersona,
+  stopDaemon,
+  LIMA_DEVICE_HARNESS_VM_NAME,
+} from '../runners/lima-test-vm.js';
 
 const tier3Available = await resolveTier3Availability();
 
@@ -154,7 +158,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
         // enumerations somewhere unexpected (e.g. /sys hot-cache).
         for (let cycle = 0; cycle < 3; cycle++) {
           await startDaemonForPersona({
-            vmName: LIMA_TEST_VM_NAME,
+            vmName: LIMA_DEVICE_HARNESS_VM_NAME,
             personaId: ipodNano3gBlack.id,
           });
           try {
@@ -175,7 +179,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
             );
           } finally {
             await stopDaemon({
-              vmName: LIMA_TEST_VM_NAME,
+              vmName: LIMA_DEVICE_HARNESS_VM_NAME,
               personaId: ipodNano3gBlack.id,
             }).catch(() => undefined);
           }

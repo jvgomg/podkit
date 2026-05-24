@@ -49,7 +49,7 @@ Provisional. Stubs from generation table + SIE highlights. The compute-expected 
 
 ## Mass-storage backing file (Tier-3 synthesis)
 
-**Source:** synthesised inside `podkit-test-vm` at `prepare()` time — no
+**Source:** synthesised inside `podkit-device-harness` at `prepare()` time — no
 host-side artefact, no committed binary, no git LFS.
 
 **Recipe:** `massStorageBackingFile.synthesis = { sizeMiB: 128, filesystem:

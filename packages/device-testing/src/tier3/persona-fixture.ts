@@ -27,7 +27,11 @@
 
 import type { DevicePersona } from '../personas/types.js';
 import type { TestRuntime } from '../runtime.js';
-import { LIMA_TEST_VM_NAME, startDaemonForPersona, stopDaemon } from '../runners/lima-test-vm.js';
+import {
+  LIMA_DEVICE_HARNESS_VM_NAME,
+  startDaemonForPersona,
+  stopDaemon,
+} from '../runners/lima-test-vm.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { runLimactl } from '../runners/lima-limactl.js';
 
@@ -63,7 +67,7 @@ export interface WithPersonaOpts {
  * and skip the poll.
  */
 export async function withPersona<T>(opts: WithPersonaOpts, body: () => Promise<T>): Promise<T> {
-  const vmName = opts.vmName ?? LIMA_TEST_VM_NAME;
+  const vmName = opts.vmName ?? LIMA_DEVICE_HARNESS_VM_NAME;
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
 
   await startDaemonForPersona({

@@ -13,12 +13,12 @@
 #    (`ldd /usr/local/bin/podkit` shows only stable system libs)."
 #
 # Usage:
-#   limactl start tools/device-testing/lima/abi-verify.yaml --name abi-verify
-#   limactl copy packages/podkit-cli/bin/podkit abi-verify:/tmp/podkit
-#   limactl shell abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
-#   limactl shell abi-verify -- ldd /usr/local/bin/podkit
-#   limactl shell abi-verify -- /usr/local/bin/podkit --version
-#   limactl stop abi-verify; limactl delete abi-verify  # optional teardown
+#   limactl start tools/device-testing/lima/podkit-abi-verify.yaml --name podkit-abi-verify
+#   limactl copy packages/podkit-cli/bin/podkit podkit-abi-verify:/tmp/podkit
+#   limactl shell podkit-abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+#   limactl shell podkit-abi-verify -- ldd /usr/local/bin/podkit
+#   limactl shell podkit-abi-verify -- /usr/local/bin/podkit --version
+#   limactl stop podkit-abi-verify; limactl delete podkit-abi-verify  # optional teardown
 #
 # Allowed runtime libs (anything else is a static-linking regression):
 #   linux-vdso.so.1, libc.so.6, libpthread.so.0, libdl.so.2, libm.so.6,

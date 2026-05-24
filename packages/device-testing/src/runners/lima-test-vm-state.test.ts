@@ -82,7 +82,7 @@ describe('applyState (fast path: snapshot exists)', () => {
     ]);
 
     const result = await applyState({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       stateId: 'no-ffmpeg',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -93,11 +93,11 @@ describe('applyState (fast path: snapshot exists)', () => {
       created: false,
     });
     expect(calls).toHaveLength(2);
-    expect(calls[0]!.args).toEqual(['snapshot', 'list', 'podkit-test-vm', '--quiet']);
+    expect(calls[0]!.args).toEqual(['snapshot', 'list', 'podkit-device-harness', '--quiet']);
     expect(calls[1]!.args).toEqual([
       'snapshot',
       'apply',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-no-ffmpeg',
     ]);
@@ -129,7 +129,7 @@ describe('applyState (slow path: snapshot missing, healthy exists)', () => {
     ]);
 
     const result = await applyState({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       stateId: 'no-ffmpeg',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -146,16 +146,16 @@ describe('applyState (slow path: snapshot missing, healthy exists)', () => {
     expect(calls[2]!.args).toEqual([
       'snapshot',
       'apply',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-healthy',
     ]);
     expect(calls[3]!.args[0]).toBe('copy');
     expect(calls[3]!.args[1]).toBe(SCRIPT_PATH);
-    expect(calls[3]!.args[2]).toBe('podkit-test-vm:/tmp/apply-state.sh');
+    expect(calls[3]!.args[2]).toBe('podkit-device-harness:/tmp/apply-state.sh');
     expect(calls[4]!.args).toEqual([
       'shell',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--',
       'sudo',
       'chmod',
@@ -164,7 +164,7 @@ describe('applyState (slow path: snapshot missing, healthy exists)', () => {
     ]);
     expect(calls[5]!.args).toEqual([
       'shell',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--',
       'sudo',
       '/tmp/apply-state.sh',
@@ -173,7 +173,7 @@ describe('applyState (slow path: snapshot missing, healthy exists)', () => {
     expect(calls[6]!.args).toEqual([
       'snapshot',
       'create',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-no-ffmpeg',
     ]);
@@ -203,7 +203,7 @@ describe('applyState (first run: no snapshots at all)', () => {
     ]);
 
     const result = await applyState({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       stateId: 'no-ffmpeg',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -237,7 +237,7 @@ describe('applyState (first run: no snapshots at all)', () => {
     ]);
 
     const result = await applyState({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       stateId: 'healthy',
       subprocess: runner,
       applyStateScript: SCRIPT_PATH,
@@ -283,7 +283,7 @@ describe('applyState (AC5: every SystemState id is supported)', () => {
       ]);
 
       const result = await applyState({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         stateId,
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -322,7 +322,7 @@ describe('applyState (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -346,7 +346,7 @@ describe('applyState (error propagation)', () => {
     let caught: Error | undefined;
     try {
       await applyState({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,
@@ -370,7 +370,7 @@ describe('applyState (error propagation)', () => {
     ]);
     await expect(
       applyState({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         stateId: 'no-ffmpeg',
         subprocess: runner,
         applyStateScript: SCRIPT_PATH,

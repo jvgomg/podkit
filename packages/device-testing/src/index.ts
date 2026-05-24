@@ -139,7 +139,7 @@ export {
   resolveDefaultPodkitBinary,
   resolveDefaultDummyHcdDaemonBinary,
   resolveDefaultGpodToolBinary,
-  LIMA_TEST_VM_NAME,
+  LIMA_DEVICE_HARNESS_VM_NAME,
   SIDECAR_VM_PATH,
   BASE_HEALTHY_SNAPSHOT,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,

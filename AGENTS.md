@@ -199,7 +199,7 @@ The virtual iPod system creates a synthetic iPod for demonstrating podkit. It co
 - `@podkit/virtual-ipod-server` — Runs inside a Lima VM. Manages USB gadget via configfs + dummy_hcd (Apple vendor/product IDs). Serves iPod filesystem over REST + WebSocket. podkit sees the virtual device as a real iPod with zero code changes.
 - `@podkit/virtual-ipod-app` — Tauri v2 macOS app. Frameless transparent window shaped like an iPod. Manages Lima VM lifecycle.
 
-**Lima VM (`tools/lima/virtual-ipod.yaml`):**
+**Lima VM (`tools/lima/podkit-virtual-ipod.yaml`):**
 - Debian 12 with dummy_hcd + configfs USB gadget support
 - `mise run vipod:install` rsyncs source to `/opt/podkit/` (VM-local, won't touch macOS node_modules), builds, and installs podkit binary to `/usr/local/bin`
 - `mise run vipod:shell` drops into an isolated `james@lima-virtual-ipod:~$` with podkit in PATH and tab completion
@@ -261,7 +261,7 @@ Key files to understand:
 | Virtual iPod server | `packages/virtual-ipod-server/src/main.ts` |
 | Virtual iPod USB gadget | `packages/virtual-ipod-server/src/gadget.ts` |
 | Virtual iPod Tauri app | `packages/virtual-ipod-app/src/App.tsx` |
-| Virtual iPod Lima config | `tools/lima/virtual-ipod.yaml` |
+| Virtual iPod Lima config | `tools/lima/podkit-virtual-ipod.yaml` |
 | Live demo guide | `tools/demo/README.md` |
 | Device-types entry | `packages/device-types/src/index.ts` |
 | iPod identity | `packages/devices-ipod/src/identity.ts` |

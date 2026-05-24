@@ -80,7 +80,7 @@ describe('createSnapshot', () => {
   it('invokes `limactl snapshot create <vm> --tag <name>`', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
     await createSnapshot({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });
@@ -89,7 +89,7 @@ describe('createSnapshot', () => {
     expect(calls[0]!.args).toEqual([
       'snapshot',
       'create',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-healthy',
     ]);
@@ -100,7 +100,7 @@ describe('createSnapshot', () => {
     let caught: Error | undefined;
     try {
       await createSnapshot({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         snapshotName: 'base-healthy',
         subprocess: runner,
       });
@@ -110,7 +110,7 @@ describe('createSnapshot', () => {
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('failed to create snapshot');
     expect(caught!.message).toContain('base-healthy');
-    expect(caught!.message).toContain('podkit-test-vm');
+    expect(caught!.message).toContain('podkit-device-harness');
     expect(caught!.message).toContain('already exists');
   });
 
@@ -128,7 +128,7 @@ describe('createSnapshot', () => {
     // Must not throw — applyState() relies on this so it can call
     // createSnapshot unconditionally on the slow path.
     await createSnapshot({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });
@@ -143,14 +143,14 @@ describe('restoreSnapshot', () => {
   it('invokes `limactl snapshot apply <vm> --tag <name>`', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
     await restoreSnapshot({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-no-ffmpeg',
       subprocess: runner,
     });
     expect(calls[0]!.args).toEqual([
       'snapshot',
       'apply',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-no-ffmpeg',
     ]);
@@ -161,7 +161,7 @@ describe('restoreSnapshot', () => {
     let caught: Error | undefined;
     try {
       await restoreSnapshot({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         snapshotName: 'base-no-ffmpeg',
         subprocess: runner,
       });
@@ -183,14 +183,14 @@ describe('deleteSnapshot', () => {
   it('invokes `limactl snapshot delete <vm> --tag <name>`', async () => {
     const { runner, calls } = makeScriptedRunner([ok()]);
     await deleteSnapshot({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });
     expect(calls[0]!.args).toEqual([
       'snapshot',
       'delete',
-      'podkit-test-vm',
+      'podkit-device-harness',
       '--tag',
       'base-healthy',
     ]);
@@ -218,17 +218,17 @@ describe('listSnapshots', () => {
       ok('base-healthy\nbase-no-ffmpeg\nbase-no-libgpod\n'),
     ]);
     const result = await listSnapshots({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       subprocess: runner,
     });
     expect(result).toEqual(['base-healthy', 'base-no-ffmpeg', 'base-no-libgpod']);
-    expect(calls[0]!.args).toEqual(['snapshot', 'list', 'podkit-test-vm', '--quiet']);
+    expect(calls[0]!.args).toEqual(['snapshot', 'list', 'podkit-device-harness', '--quiet']);
   });
 
   it('returns an empty array when no snapshots exist (limactl prints nothing)', async () => {
     const { runner } = makeScriptedRunner([ok('')]);
     const result = await listSnapshots({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       subprocess: runner,
     });
     expect(result).toEqual([]);
@@ -237,7 +237,7 @@ describe('listSnapshots', () => {
   it('trims whitespace and filters blank lines defensively', async () => {
     const { runner } = makeScriptedRunner([ok('  base-healthy  \n\n base-no-ffmpeg \n')]);
     const result = await listSnapshots({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       subprocess: runner,
     });
     expect(result).toEqual(['base-healthy', 'base-no-ffmpeg']);
@@ -263,7 +263,7 @@ describe('snapshotExists', () => {
   it('returns true when the named tag is in the list', async () => {
     const { runner } = makeScriptedRunner([ok('base-healthy\nbase-no-ffmpeg\n')]);
     const exists = await snapshotExists({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-no-ffmpeg',
       subprocess: runner,
     });
@@ -273,7 +273,7 @@ describe('snapshotExists', () => {
   it('returns false when the named tag is absent', async () => {
     const { runner } = makeScriptedRunner([ok('base-healthy\n')]);
     const exists = await snapshotExists({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-no-ffmpeg',
       subprocess: runner,
     });
@@ -283,7 +283,7 @@ describe('snapshotExists', () => {
   it('returns false when the VM has no snapshots at all', async () => {
     const { runner } = makeScriptedRunner([ok('')]);
     const exists = await snapshotExists({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });
@@ -291,9 +291,9 @@ describe('snapshotExists', () => {
   });
 
   it('returns false when the instance itself is missing (does not throw)', async () => {
-    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-test-vm" not found')]);
+    const { runner } = makeScriptedRunner([fail(1, 'instance "podkit-device-harness" not found')]);
     const exists = await snapshotExists({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });
@@ -304,7 +304,7 @@ describe('snapshotExists', () => {
     const { runner } = makeScriptedRunner([fail(1, 'qemu-img: I/O error reading snapshot table')]);
     await expect(
       snapshotExists({
-        vmName: 'podkit-test-vm',
+        vmName: 'podkit-device-harness',
         snapshotName: 'base-healthy',
         subprocess: runner,
       })
@@ -324,7 +324,7 @@ describe('snapshotExists', () => {
       ),
     ]);
     const exists = await snapshotExists({
-      vmName: 'podkit-test-vm',
+      vmName: 'podkit-device-harness',
       snapshotName: 'base-healthy',
       subprocess: runner,
     });

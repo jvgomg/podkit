@@ -6,7 +6,7 @@
  * running the rest of the test pipeline.
  *
  * Resolution rules:
- *   - VM defaults to `podkit-test-vm` (override via PODKIT_TEST_VM_NAME).
+ *   - VM defaults to `podkit-device-harness` (override via PODKIT_DEVICE_HARNESS_VM_NAME).
  *   - Podkit binary resolved from `packages/podkit-cli/bin/podkit-linux-${arch}`
  *     where `${arch}` is `process.arch` mapped to `x64`/`arm64`. Override
  *     via PODKIT_LINUX_BINARY.
@@ -55,7 +55,7 @@ function resolveGpodToolBinary(): string {
 }
 
 async function main(): Promise<void> {
-  const vmName = process.env['PODKIT_TEST_VM_NAME'] ?? 'podkit-test-vm';
+  const vmName = process.env['PODKIT_DEVICE_HARNESS_VM_NAME'] ?? 'podkit-device-harness';
   const podkitPath = resolvePodkitBinary();
 
   if (!fs.existsSync(podkitPath)) {

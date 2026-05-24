@@ -1,16 +1,16 @@
-# Lima VM: Test VM (Debian 12.10 — minimal, binary-only)
+# Lima VM: Device-testing harness (Debian 12.10 — minimal, binary-only)
 #
 # Role: run Tier 3 integration tests from ADR-016 against the statically-linked
-# podkit linux-x64 binary produced by the builder VM (tools/device-testing/lima/
-# builder.yaml). This VM is deliberately stripped of all development tooling
-# so that dev libraries on PATH cannot mask binary linkage problems — the
-# cornerstone of ADR-016's builder/test-VM split.
+# podkit linux-x64 binary produced by the builder VM
+# (tools/device-testing/lima/podkit-linux-builder.yaml). This VM is deliberately
+# stripped of all development tooling so that dev libraries on PATH cannot mask
+# binary linkage problems — the cornerstone of ADR-016's builder/harness split.
 #
-# Boots as Lima instance name: `podkit-test-vm`.
+# Boots as Lima instance name: `podkit-device-harness`.
 #
 # What this VM HAS:
 #   - Debian 12.10 (pinned via explicit cloud-image URL — same point release
-#     as builder.yaml and abi-verify.yaml; bump deliberately and in sync)
+#     as podkit-linux-builder.yaml and podkit-abi-verify.yaml; bump deliberately and in sync)
 #   - `ffmpeg` (apt) — the only system runtime dep podkit users install
 #   - `libgpod4` + `libgpod-common` + `libglib2.0-0` (apt, runtime-only) —
 #     required by the `gpod-tool` test helper. These are NOT -dev packages;
@@ -19,7 +19,7 @@
 #     layering" names `base-no-libgpod` as a snapshot, which implies libgpod
 #     IS in the base VM and is removed for that snapshot (see the snapshot setter
 #     in `lima-test-vm-state.ts`).
-#   - Kernel modules loaded at boot via /etc/modules-load.d/podkit-test-vm.conf:
+#   - Kernel modules loaded at boot via /etc/modules-load.d/podkit-device-harness.conf:
 #     `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, `sg`
 #     (`sg` provides /dev/sg* SCSI generic device nodes that podkit's
 #     `inquiry-methods` doctor check requires)
@@ -47,17 +47,17 @@
 # the runtime libgpod ABI in this VM is Debian 12.10's, not the static build's.
 #
 # Usage (manual):
-#   limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
+#   limactl start tools/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
 #   # The runner's transferBinary helper handles this in CI; manually for now:
-#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-test-vm:/tmp/podkit
-#   limactl shell podkit-test-vm -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
-#   limactl shell podkit-test-vm -- /usr/local/bin/podkit --version
-#   limactl stop podkit-test-vm
+#   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-device-harness:/tmp/podkit
+#   limactl shell podkit-device-harness -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
+#   limactl shell podkit-device-harness -- /usr/local/bin/podkit --version
+#   limactl stop podkit-device-harness
 #
 # Verifying the binary-only invariant:
-#   limactl shell podkit-test-vm -- which bun node npm   # must return empty
-#   limactl shell podkit-test-vm -- ls /workspaces /Users 2>/dev/null   # must be empty
-#   limactl shell podkit-test-vm -- dpkg -l | grep -E '\-dev '         # must be empty
+#   limactl shell podkit-device-harness -- which bun node npm   # must return empty
+#   limactl shell podkit-device-harness -- ls /workspaces /Users 2>/dev/null   # must be empty
+#   limactl shell podkit-device-harness -- dpkg -l | grep -E '\-dev '         # must be empty
 
 # Pin the Apple Virtualization framework backend. `vz` boots ~5s vs ~30s
 # for `qemu` on aarch64 hosts, and the Tier-3 state-mutation path uses
@@ -68,8 +68,8 @@
 vmType: 'vz'
 
 images:
-  # Debian 12.10 point release. Pinned in sync with builder.yaml and
-  # abi-verify.yaml — bumping requires updating all three files plus a
+  # Debian 12.10 point release. Pinned in sync with podkit-linux-builder.yaml and
+  # podkit-abi-verify.yaml — bumping requires updating all three files plus a
   # re-run of the ABI spike to confirm the static binary still loads.
   - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
     arch: 'aarch64'
@@ -140,7 +140,7 @@ provision:
         'usb_f_mass_storage' \
         'usb_f_fs' \
         'sg' \
-        > /etc/modules-load.d/podkit-test-vm.conf
+        > /etc/modules-load.d/podkit-device-harness.conf
 
       # dummy_hcd ships with `num=1` by default — only one virtual UDC, which
       # means only one gadget can be bound at a time. The Tier-3 harness needs
@@ -154,7 +154,7 @@ provision:
       printf '%s\n' \
         '# Tier-3 harness needs multiple emulated UDCs for concurrent gadgets.' \
         'options dummy_hcd num=4' \
-        > /etc/modprobe.d/podkit-test-vm-dummy-hcd.conf
+        > /etc/modprobe.d/podkit-device-harness-dummy-hcd.conf
 
       # Best-effort modprobe during provisioning so the modules are available
       # immediately without a reboot. The `|| echo` is what keeps `set -e` from
@@ -198,8 +198,8 @@ provision:
       #
       # gpod-tool is built by tools/gpod-tool/Makefile and dynamically links
       # libgpod-1.0 + glib-2.0. Developers wanting to populate gpod-tool can
-      # `limactl copy <gpod-tool-linux> podkit-test-vm:/tmp/gpod-tool` after
-      # boot, then `limactl shell podkit-test-vm -- sudo install -m 0755
+      # `limactl copy <gpod-tool-linux> podkit-device-harness:/tmp/gpod-tool` after
+      # boot, then `limactl shell podkit-device-harness -- sudo install -m 0755
       # /tmp/gpod-tool /usr/local/bin/gpod-tool`. The provisioning step below
       # picks the file up automatically if it is staged BEFORE first boot.
       # The runner also transfers it via PODKIT_GPOD_TOOL_BINARY if set.

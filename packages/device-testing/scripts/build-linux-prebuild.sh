@@ -9,7 +9,7 @@
 #   packages/libgpod-node/prebuilds/linux-x64/...node
 #
 # Turbo hashes the inputs declared in turbo.json (libgpod-node native +
-# binding.gyp + tools/prebuild/** + builder.yaml) and skips this entire
+# binding.gyp + tools/prebuild/** + podkit-linux-builder.yaml) and skips this entire
 # step on a cache hit.
 #
 # The builder VM is created on first use and left running between
@@ -18,10 +18,10 @@
 
 set -euo pipefail
 
-VM_NAME="${BUILDER_VM_NAME:-builder}"
+VM_NAME="${BUILDER_VM_NAME:-podkit-linux-builder}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-BUILDER_YAML="$REPO_ROOT/tools/device-testing/lima/builder.yaml"
+BUILDER_YAML="$REPO_ROOT/tools/device-testing/lima/podkit-linux-builder.yaml"
 
 log() { echo "==> [build:linux-prebuild] $1"; }
 

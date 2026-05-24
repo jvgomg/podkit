@@ -1,5 +1,5 @@
 /**
- * Backing-file synthesis for mass-storage personas inside `podkit-test-vm`.
+ * Backing-file synthesis for mass-storage personas inside `podkit-device-harness`.
  *
  * Three starter personas (`ipod-video-5g-iflash-1tb`, `ipod-nano-7g-space-gray`,
  * `echo-mini`) declare a `massStorageBackingFile.synthesis` recipe. The runner
@@ -11,7 +11,7 @@
  * Why in-VM (vs host then `limactl copy`):
  *
  *   - `mkfs.vfat` exists on the test VM already (provisioned by
- *     `tools/device-testing/lima/test-vm.yaml`'s `dosfstools` package) and
+ *     `tools/device-testing/lima/podkit-device-harness.yaml`'s `dosfstools` package) and
  *     is not always available on macOS hosts.
  *   - Skipping the copy eliminates a 256 MiB+ host→VM transfer per session
  *     for the biggest persona.

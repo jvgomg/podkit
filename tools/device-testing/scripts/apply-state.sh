@@ -32,11 +32,11 @@ set -eu
 # ---------------------------------------------------------------------------
 
 # Packages required to be present in the `healthy` state. Mirrors the apt
-# install list in tools/device-testing/lima/test-vm.yaml.
+# install list in tools/device-testing/lima/podkit-device-harness.yaml.
 HEALTHY_PACKAGES="ffmpeg libgpod4 libgpod-common libglib2.0-0"
 
 # Kernel modules required to be loaded in the `healthy` state. Mirrors the
-# /etc/modules-load.d/podkit-test-vm.conf list in test-vm.yaml. `sg` is the
+# /etc/modules-load.d/podkit-device-harness.conf list in podkit-device-harness.yaml. `sg` is the
 # SCSI generic driver — /dev/sg* nodes are required by the `inquiry-methods`
 # doctor check.
 HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg"
@@ -63,7 +63,7 @@ KERNEL=="sg[0-9]*", MODE="0664"'
 # installs rules under /lib/udev/rules.d/. The "missing" state moves them
 # aside; healthy state moves them back.
 LIBGPOD_UDEV_GLOB="/lib/udev/rules.d/*libgpod*"
-LIBGPOD_UDEV_STASH_DIR="/var/lib/podkit-test-vm/stashed-udev"
+LIBGPOD_UDEV_STASH_DIR="/var/lib/podkit-device-harness/stashed-udev"
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,7 +253,7 @@ ensure_podkit_udev_rule() {
 
 # Override rule that wins against 91-podkit-ipod.rules's MODE=0660 for
 # Apple-vendor sg nodes. 99-prefix sorts last.
-TEST_VM_SG_OVERRIDE_RULE="/etc/udev/rules.d/99-podkit-test-vm-sg-override.rules"
+TEST_VM_SG_OVERRIDE_RULE="/etc/udev/rules.d/99-podkit-device-harness-sg-override.rules"
 TEST_VM_SG_OVERRIDE_BODY='# Managed by tools/device-testing/scripts/apply-state.sh — DO NOT EDIT.
 # Overrides 91-podkit-ipod.rules MODE=0660 with MODE=0664 for /dev/sg*
 # on the test VM. Allows the ssh-attached test user (not on a console

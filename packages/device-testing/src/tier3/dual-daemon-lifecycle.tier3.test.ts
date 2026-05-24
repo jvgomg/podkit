@@ -46,7 +46,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import {
-  LIMA_TEST_VM_NAME,
+  LIMA_DEVICE_HARNESS_VM_NAME,
   limaTestVmRunner,
   startDaemonForPersona,
   stopDaemon,
@@ -169,11 +169,11 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
     await limaTestVmRunner.prepare();
     await limaTestVmRunner.applyState(healthy);
     // Defensive: scrub any stale dummy-hcd unit from a prior crashed run.
-    await stopDaemon({ vmName: LIMA_TEST_VM_NAME });
+    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
   }, TIER3_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
-    await stopDaemon({ vmName: LIMA_TEST_VM_NAME });
+    await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
     await limaTestVmRunner.teardown();
   }, TIER3_COLD_TIMEOUT_MS);
 
@@ -186,8 +186,14 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
         // 1. Start both units. startDaemonForPersona issues `systemctl start`;
         //    Type=simple means the call returns once the daemon is forked, not
         //    once it's done binding — `waitForBothUnitsActive` covers the gap.
-        await startDaemonForPersona({ vmName: LIMA_TEST_VM_NAME, personaId: PERSONA_A.id });
-        await startDaemonForPersona({ vmName: LIMA_TEST_VM_NAME, personaId: PERSONA_B.id });
+        await startDaemonForPersona({
+          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+          personaId: PERSONA_A.id,
+        });
+        await startDaemonForPersona({
+          vmName: LIMA_DEVICE_HARNESS_VM_NAME,
+          personaId: PERSONA_B.id,
+        });
 
         // 2. Both units report active. Sets the precondition for the gadget
         //    + /dev/sg* assertions below; without this we'd race the daemon's
@@ -222,8 +228,12 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
       } finally {
         // Stop both regardless of outcome so a body-level failure doesn't
         // leave the VM with bound gadgets for the next test session.
-        await stopDaemon({ vmName: LIMA_TEST_VM_NAME, personaId: PERSONA_A.id }).catch(() => {});
-        await stopDaemon({ vmName: LIMA_TEST_VM_NAME, personaId: PERSONA_B.id }).catch(() => {});
+        await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, personaId: PERSONA_A.id }).catch(
+          () => {}
+        );
+        await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, personaId: PERSONA_B.id }).catch(
+          () => {}
+        );
       }
 
       // 5. Cleanup: no orphan configfs directories survive shutdown.

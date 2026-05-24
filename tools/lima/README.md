@@ -4,8 +4,8 @@ Lima VMs for running the podkit test suite against Linux from macOS.
 
 | VM | Distro | Libc | Purpose |
 |----|--------|------|---------|
-| `linux-tests-debian` | Debian 12 | glibc | General Linux test environment (matches Homebrew Linux users) |
-| `linux-tests-alpine` | Alpine 3.23 | musl  | Docker image parity (published image is Alpine-based) |
+| `podkit-tests-debian-glibc` | Debian 12 | glibc | General Linux test environment (matches Homebrew Linux users) |
+| `podkit-tests-alpine-musl` | Alpine 3.23 | musl  | Docker image parity (published image is Alpine-based) |
 | `virtual-ipod`       | Debian 12 | glibc | USB gadget host for the virtual iPod demo (not used for tests) |
 
 ## Prerequisites
@@ -39,8 +39,8 @@ Under the hood, `tools/lima/run-tests.sh`:
 For ad-hoc work inside a VM:
 
 ```bash
-limactl shell linux-tests-debian
-limactl shell linux-tests-alpine
+limactl shell podkit-tests-debian-glibc
+limactl shell podkit-tests-alpine-musl
 ```
 
 The macOS filesystem is mounted under your home directory inside the VM, so you can `cd` into the repo. **Do not** run `bun install` against the mounted source — it recompiles the `libgpod-node` native binding for Linux and overwrites your macOS binary. Rebuild on macOS afterward:
@@ -62,7 +62,7 @@ mise run vipod:start
 mise run vipod:shell
 ```
 
-See `tools/lima/virtual-ipod.yaml` and `tools/demo/README.md` for details.
+See `tools/lima/podkit-virtual-ipod.yaml` and `tools/demo/README.md` for details.
 
 ## VM specs
 

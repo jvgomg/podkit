@@ -256,7 +256,7 @@ export const TIER3_RUN_ENV_VAR = 'PODKIT_DEVTEST_RUN_TIER3';
  *
  *   - `PODKIT_DEVTEST_RUN_TIER3=1` is set in the environment
  *   - The `lima-test-vm` runner's `isAvailable()` returns `true` (limactl
- *     installed + the `podkit-test-vm` Lima instance exists)
+ *     installed + the `podkit-device-harness` Lima instance exists)
  *
  * Emits a single stderr warning line the first time the gate evaluates to
  * `false`. Subsequent skips are silent.

@@ -4,8 +4,8 @@ FunctionFS userspace daemon that synthesises iPod-shaped USB devices on
 Linux `dummy_hcd` for Tier 3 tests. See [ADR-016](../../../adr/adr-016-linux-vm-test-harness.md)
 for the full architecture.
 
-The daemon runs inside the `podkit-test-vm` Lima VM
-(`tools/device-testing/lima/test-vm.yaml`). It is delivered as a single
+The daemon runs inside the `podkit-device-harness` Lima VM
+(`tools/device-testing/lima/podkit-device-harness.yaml`). It is delivered as a single
 self-contained binary produced by `bun build --compile`; the test VM has
 no Bun, no Node, no source tree.
 
@@ -126,7 +126,7 @@ machinery in `@podkit/device-testing`:
 ```ts
 import { transferBinary } from '@podkit/device-testing';
 await transferBinary({
-  vmName: 'podkit-test-vm',
+  vmName: 'podkit-device-harness',
   binaryPath: 'tools/device-testing/dummy-hcd/dist/dummy-hcd-daemon-linux-arm64',
   vmPath: '/usr/local/bin/dummy-hcd-daemon',
 });

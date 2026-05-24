@@ -1,6 +1,6 @@
 use crate::vm;
 
-const VM_NAME: &str = "virtual-ipod";
+const VM_NAME: &str = "podkit-virtual-ipod";
 const SERVER_URL: &str = "http://localhost:3456";
 
 #[tauri::command]
@@ -18,7 +18,7 @@ pub fn vm_status() -> Result<String, String> {
 #[tauri::command]
 pub fn vm_start() -> Result<(), String> {
     if !vm::vm_exists(VM_NAME) {
-        return Err("VM not created. Run: limactl create --name virtual-ipod tools/lima/virtual-ipod.yaml".to_string());
+        return Err("VM not created. Run: limactl create --name podkit-virtual-ipod tools/lima/podkit-virtual-ipod.yaml".to_string());
     }
     if !vm::vm_running(VM_NAME) {
         vm::start_vm(VM_NAME)?;

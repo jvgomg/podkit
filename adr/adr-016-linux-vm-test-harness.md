@@ -100,7 +100,7 @@ The full inquiry pipeline — USB enumeration, SCSI VPD, `lsblk`, capability res
 | VM | Yaml | Role | Contents |
 |----|------|------|----------|
 | **Builder VM** | `tools/device-testing/lima/builder.yaml` | Compiles native prebuilds + standalone binary; runs only when source changes (turbo-cached) | Debian 12.10 + Bun, Node, build-essential, libgpod-dev, libglib2.0-dev, etc. |
-| **Test VM** | `tools/device-testing/lima/test-vm.yaml` | Runs the test suite against the compiled binary | Debian 12.10 + ffmpeg, `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, FunctionFS daemon binary, gpod-tool binary, and `/usr/local/bin/podkit` (compiled statically-linked binary). **NO Bun, NO Node, NO node_modules, NO source tree, NO libgpod-dev or other -dev packages.** |
+| **Test VM** | `tools/device-testing/lima/podkit-device-harness.yaml` | Runs the test suite against the compiled binary | Debian 12.10 + ffmpeg, `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, FunctionFS daemon binary, gpod-tool binary, and `/usr/local/bin/podkit` (compiled statically-linked binary). **NO Bun, NO Node, NO node_modules, NO source tree, NO libgpod-dev or other -dev packages.** |
 
 Both Lima yamls pin Debian to the exact point release (`debian-12.10` or the current stable 12.x point release at time of setup) to ensure reproducible kernel version and module availability. The disk field is set to the smallest viable size (5–8 GB) for each VM.
 
@@ -126,7 +126,7 @@ This is **Option III** of the state-management options considered: more flexible
 |-----------|----------|---------|
 | FunctionFS daemon | `tools/device-testing/dummy-hcd/` | Userspace daemon; synthesises USB gadget responses (vendor control transfers, mass-storage backing file) from a `DevicePersona` JSON payload |
 | Builder Lima yaml | `tools/device-testing/lima/builder.yaml` | Debian 12.10 VM with dev toolchain; produces linux-x64 prebuilds + standalone binary |
-| Test Lima yaml | `tools/device-testing/lima/test-vm.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
+| Test Lima yaml | `tools/device-testing/lima/podkit-device-harness.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
 | `packages/device-testing/` | New package | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, subprocess snapshot framework |
 
 **Tier 3 backends:**
@@ -134,7 +134,7 @@ This is **Option III** of the state-management options considered: more flexible
 The `TestRuntime` interface abstracts how a test connects to the Linux environment. Two implementations ship:
 
 - `local-linux` — runs the FunctionFS daemon as a subprocess on the current host. Used on Linux dev hosts directly.
-- `lima-test-vm` — wraps `local-linux` execution inside a Lima test VM using `tools/device-testing/lima/test-vm.yaml`. Used on macOS dev hosts.
+- `lima-test-vm` — wraps `local-linux` execution inside a Lima test VM using `tools/device-testing/lima/podkit-device-harness.yaml`. Used on macOS dev hosts.
 
 One test file, swappable backend. Tests do not need to know which backend is active.
 
@@ -174,7 +174,7 @@ Tier 3 tests can be slow if every test restores a VM snapshot independently. To 
 The original plan called for `limactl snapshot apply` for ~1s-per-group restores. Surveying the deployed harness:
 
 - Lima 2.1.1's default driver on Apple Silicon is `vz` (Apple Virtualization framework). `limactl snapshot {create,apply,delete}` exits with `level=fatal msg=unimplemented` on `vz` — snapshots are QEMU-only in Lima 2.x.
-- Measured `apply-state.sh` cost on `podkit-test-vm` (aarch64, podkit-builder cache warm): single-package reinstall is **~740ms**; package-pair purge+install is **~860ms**. Even the worst state flip (libgpod purge + udev rule rewrite + modprobe) is sub-2-second.
+- Measured `apply-state.sh` cost on `podkit-device-harness` (aarch64, podkit-builder cache warm): single-package reinstall is **~740ms**; package-pair purge+install is **~860ms**. Even the worst state flip (libgpod purge + udev rule rewrite + modprobe) is sub-2-second.
 - The doctor matrix currently has 6 states. Sequential per-group `applyState` at ~1s/state is ~6s of state-change overhead per full pass — negligible against the cold-start budget.
 
 **Decision:** stay with `apply-state.sh`-every-time on Apple Silicon `vz`. The existing `isSnapshotUnsupported()` fallback in `packages/device-testing/src/runners/lima-test-vm-snapshots.ts` is the right shape — it lets the code path stay snapshot-aware so future Lima releases (or a `vmType: qemu` opt-in) automatically pick it up. Rejected alternatives:

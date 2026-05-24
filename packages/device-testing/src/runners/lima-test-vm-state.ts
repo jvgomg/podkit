@@ -1,6 +1,6 @@
 /**
  * lima-test-vm-state — boot-once / apply-once / snapshot orchestration for
- * the Tier 3 `podkit-test-vm`.
+ * the Tier 3 `podkit-device-harness`.
  *
  * Glue layer between three pieces of the snapshot-based state-layering
  * system (ADR-016 §"Snapshot-based state layering"):
@@ -43,7 +43,7 @@ import { createSnapshot, restoreSnapshot, snapshotExists } from './lima-test-vm-
 
 /** Options for {@link applyState}. */
 export interface ApplyStateOpts {
-  /** Lima instance name (e.g. `podkit-test-vm`). */
+  /** Lima instance name (e.g. `podkit-device-harness`). */
   vmName: string;
   /** SystemState id to apply (one of the 6 registered states). */
   stateId: SystemStateId;

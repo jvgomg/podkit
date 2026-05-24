@@ -1,6 +1,6 @@
 /**
  * lima-test-vm-snapshots — wrappers around `limactl snapshot {create,apply,
- * delete,list}` for the Tier 3 `podkit-test-vm`.
+ * delete,list}` for the Tier 3 `podkit-device-harness`.
  *
  * Snapshots are the primary state-layering mechanism for Tier 3 tests
  * (see ADR-016 §"Snapshot-based state layering"). Each `SystemState` in
@@ -23,7 +23,7 @@
  * without touching a real VM.
  *
  * @see adr/adr-016-linux-vm-test-harness.md §"Snapshot-based state layering"
- * @see tools/device-testing/lima/test-vm.yaml
+ * @see tools/device-testing/lima/podkit-device-harness.yaml
  * @module
  */
 
@@ -48,7 +48,7 @@ export function resetSnapshotUnsupportedWarning(): void {
 
 /** Options shared by all snapshot operations. */
 export interface SnapshotOpts {
-  /** Lima instance name (e.g. `podkit-test-vm`). */
+  /** Lima instance name (e.g. `podkit-device-harness`). */
   vmName: string;
   /** Snapshot tag (e.g. `base-healthy`). */
   snapshotName: string;

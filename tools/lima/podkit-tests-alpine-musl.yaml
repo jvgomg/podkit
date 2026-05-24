@@ -6,8 +6,8 @@
 # version difference is acceptable for device manager and test suite validation.
 #
 # Usage:
-#   limactl start tools/lima/alpine.yaml --name=linux-tests-alpine
-#   limactl shell linux-tests-alpine
+#   limactl start tools/lima/podkit-tests-alpine-musl.yaml --name=podkit-tests-alpine-musl
+#   limactl shell podkit-tests-alpine-musl
 #   # Or use the wrapper: mise run test:linux:alpine
 #
 # Note: Bun has experimental musl/Alpine support. If Bun fails to install,

@@ -35,7 +35,7 @@ import * as path from 'node:path';
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import { LIMA_TEST_VM_NAME, limaTestVmRunner } from '../runners/lima-test-vm.js';
+import { LIMA_DEVICE_HARNESS_VM_NAME, limaTestVmRunner } from '../runners/lima-test-vm.js';
 import { ensureBackingFile, personasRoot } from '../runners/lima-test-vm-backing-files.js';
 import { echoMiniPopulated, ipodVideo5gCorruptDb } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
@@ -55,7 +55,7 @@ const tier3Available = await resolveTier3Availability();
 // Helpers
 // ---------------------------------------------------------------------------
 
-const VM_NAME = LIMA_TEST_VM_NAME;
+const VM_NAME = LIMA_DEVICE_HARNESS_VM_NAME;
 
 interface VmResult {
   stdout: string;

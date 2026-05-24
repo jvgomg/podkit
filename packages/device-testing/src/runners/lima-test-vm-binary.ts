@@ -1,7 +1,7 @@
 /**
  * lima-test-vm-binary — host→Lima-VM binary transfer for the Tier 3 test VM.
  *
- * The Tier 3 `podkit-test-vm` (see `tools/device-testing/lima/test-vm.yaml`)
+ * The Tier 3 `podkit-device-harness` (see `tools/device-testing/lima/podkit-device-harness.yaml`)
  * deliberately has no source tree, no Bun, no Node, and no `mounts:` entry.
  * The compiled linux-x64/arm64 podkit binary produced by the builder VM is
  * the only podkit artefact that ever runs inside it. This module owns the
@@ -22,7 +22,7 @@
  *   callers should leave the default in place.
  *
  * @see adr/adr-016-linux-vm-test-harness.md "Builder VM / test VM split"
- * @see tools/device-testing/lima/test-vm.yaml
+ * @see tools/device-testing/lima/podkit-device-harness.yaml
  * @module
  */
 
@@ -38,7 +38,7 @@ export const DEFAULT_GPOD_TOOL_VM_PATH = '/usr/local/bin/gpod-tool';
 
 /** Options for {@link transferBinary} and {@link transferGpodTool}. */
 export interface TransferBinaryOpts {
-  /** Lima instance name (e.g. `podkit-test-vm`). */
+  /** Lima instance name (e.g. `podkit-device-harness`). */
   vmName: string;
   /** Absolute path to the host-side binary to transfer. */
   binaryPath: string;

@@ -48,7 +48,7 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 # Builder VM (Lima — Linux glibc cross-compile from macOS)
 # Produces @podkit/libgpod-node prebuilds + the podkit standalone binary
 # via the same shared script the GHA workflows use.
-# See: tools/device-testing/lima/builder.yaml and tools/device-testing/lima/README.md
+# See: tools/device-testing/lima/podkit-linux-builder.yaml and tools/device-testing/lima/README.md
 # ---------------------------------------------------------------------------
 
 [tasks."device-testing:build-linux"]
@@ -75,11 +75,11 @@ run = "bun run --cwd packages/device-testing transfer-binary"
 
 [tasks."device-testing:builder:stop"]
 description = "Stop the builder VM (preserves state + caches)"
-run = "limactl stop builder 2>/dev/null; echo Done."
+run = "limactl stop podkit-linux-builder 2>/dev/null; echo Done."
 
 [tasks."device-testing:builder:destroy"]
 description = "Delete the builder VM entirely"
-run = "limactl delete builder --force 2>/dev/null; echo Done."
+run = "limactl delete podkit-linux-builder --force 2>/dev/null; echo Done."
 
 # ---------------------------------------------------------------------------
 # Linux test VMs (Lima — cross-platform testing on Debian + Alpine)
@@ -99,17 +99,17 @@ run = "tools/lima/run-tests.sh alpine"
 
 [tasks."test:linux:stop"]
 description = "Stop Linux test VMs (preserves state and turbo cache)"
-run = "limactl stop linux-tests-debian 2>/dev/null; limactl stop linux-tests-alpine 2>/dev/null; echo Done."
+run = "limactl stop podkit-tests-debian-glibc 2>/dev/null; limactl stop podkit-tests-alpine-musl 2>/dev/null; echo Done."
 
 [tasks."test:linux:destroy"]
 description = "Delete Linux test VMs entirely (wipes turbo cache too)"
-run = "limactl delete linux-tests-debian --force 2>/dev/null; limactl delete linux-tests-alpine --force 2>/dev/null; echo Done."
+run = "limactl delete podkit-tests-debian-glibc --force 2>/dev/null; limactl delete podkit-tests-alpine-musl --force 2>/dev/null; echo Done."
 
 [tasks."test:linux:cache:clear"]
 description = "Clear turbo cache inside Linux test VMs without deleting them"
 run = """
-limactl shell linux-tests-debian -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
-limactl shell linux-tests-alpine -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+limactl shell podkit-tests-debian-glibc -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
+limactl shell podkit-tests-alpine-musl -- rm -rf ~/.cache/podkit-turbo 2>/dev/null || true
 echo Done.
 """
 
@@ -119,19 +119,19 @@ echo Done.
 
 [tasks."vipod:create"]
 description = "Create the virtual iPod Lima VM"
-run = "limactl create --name virtual-ipod tools/lima/virtual-ipod.yaml"
+run = "limactl create --name podkit-virtual-ipod tools/lima/podkit-virtual-ipod.yaml"
 
 [tasks."vipod:start"]
 description = "Start the virtual iPod VM"
-run = "limactl start virtual-ipod"
+run = "limactl start podkit-virtual-ipod"
 
 [tasks."vipod:stop"]
 description = "Stop the virtual iPod VM"
-run = "limactl stop virtual-ipod"
+run = "limactl stop podkit-virtual-ipod"
 
 [tasks."vipod:shell"]
 description = "Open an isolated shell in the VM (simulates SSH with podkit installed)"
-run = "limactl shell virtual-ipod -- sudo -iu james"
+run = "limactl shell podkit-virtual-ipod -- sudo -iu james"
 
 [tasks."vipod:install"]
 description = "Build podkit for Linux and install to /usr/local/bin inside the VM"
@@ -143,7 +143,7 @@ HOST_SRC="/Users/james/Development/projects/podkit"
 VM_DIR="/opt/podkit"
 
 echo "=== Syncing source to VM-local directory ==="
-limactl shell virtual-ipod -- sudo bash -c "
+limactl shell podkit-virtual-ipod -- sudo bash -c "
   mkdir -p $VM_DIR
   rsync -a --delete \
     --exclude node_modules \
@@ -162,13 +162,13 @@ limactl shell virtual-ipod -- sudo bash -c "
 "
 
 echo "=== Installing dependencies ==="
-limactl shell virtual-ipod -- sudo bash -c "cd $VM_DIR && bun install"
+limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR && bun install"
 
 echo "=== Building native libgpod binding for Linux ==="
-limactl shell virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/libgpod-node && npx node-gyp rebuild"
+limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/libgpod-node && npx node-gyp rebuild"
 
 echo "=== Building packages ==="
-limactl shell virtual-ipod -- sudo bash -c "
+limactl shell podkit-virtual-ipod -- sudo bash -c "
   cd $VM_DIR && bun turbo build \
     --filter=@podkit/core \
     --filter=podkit \
@@ -180,18 +180,18 @@ limactl shell virtual-ipod -- sudo bash -c "
 "
 
 echo "=== Compiling podkit binary ==="
-limactl shell virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/podkit-cli && bash scripts/compile.sh"
+limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/podkit-cli && bash scripts/compile.sh"
 
 echo "=== Installing to /usr/local/bin ==="
-limactl shell virtual-ipod -- sudo bash -c "
+limactl shell podkit-virtual-ipod -- sudo bash -c "
   cp $VM_DIR/packages/podkit-cli/bin/podkit /usr/local/bin/podkit
   chmod +x /usr/local/bin/podkit
   chown -R james:james /home/james
 "
 
 echo "=== Installing shell completions ==="
-limactl shell virtual-ipod -- sudo -u james bash -c 'mkdir -p ~/.bashrc.d && podkit completions bash > ~/.bashrc.d/podkit'
-limactl shell virtual-ipod -- sudo -u james bash << 'BASHRC'
+limactl shell podkit-virtual-ipod -- sudo -u james bash -c 'mkdir -p ~/.bashrc.d && podkit completions bash > ~/.bashrc.d/podkit'
+limactl shell podkit-virtual-ipod -- sudo -u james bash << 'BASHRC'
 grep -q bashrc.d ~/.bashrc 2>/dev/null || cat >> ~/.bashrc << 'EOF'
 for f in ~/.bashrc.d/*; do source "$f"; done
 EOF
@@ -199,13 +199,13 @@ BASHRC
 
 echo ""
 echo "=== Done ==="
-limactl shell virtual-ipod -- sudo -iu james podkit --version
+limactl shell podkit-virtual-ipod -- sudo -iu james podkit --version
 echo "podkit installed. Run: mise run vipod:shell"
 """
 
 [tasks."vipod:server"]
 description = "Start the virtual iPod server inside the VM"
-run = "limactl shell virtual-ipod -- sudo bash -c 'cd /opt/podkit/packages/virtual-ipod-server && bun run src/main.ts'"
+run = "limactl shell podkit-virtual-ipod -- sudo bash -c 'cd /opt/podkit/packages/virtual-ipod-server && bun run src/main.ts'"
 
 [tasks."vipod:plug"]
 description = "Plug the virtual iPod into USB"
@@ -239,7 +239,7 @@ curl -s -X POST -H 'Content-Type: application/json' \
 
 [tasks."vipod:destroy"]
 description = "Delete the virtual iPod VM entirely"
-run = "limactl delete virtual-ipod --force 2>/dev/null; echo Done."
+run = "limactl delete podkit-virtual-ipod --force 2>/dev/null; echo Done."
 
 [tasks."tools:check"]
 description = "Build and test all native tools"

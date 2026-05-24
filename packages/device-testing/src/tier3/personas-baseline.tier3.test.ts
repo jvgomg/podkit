@@ -6,7 +6,7 @@
  *   - Tier 1 — pure-TS unit tests with injectable transports.
  *   - Tier 2 — native subprocess tests (`*.darwin.test.ts` / `*.linux.test.ts`).
  *   - Tier 3 — full inquiry stack against a synthetic USB device served by a
- *     FunctionFS daemon inside the `podkit-test-vm` Lima VM (this file).
+ *     FunctionFS daemon inside the `podkit-device-harness` Lima VM (this file).
  *
  * # Test grouping convention (standard for Tier 3)
  *
@@ -28,7 +28,7 @@
  *
  * Tests skip with a single stderr warning (`[tier-3] Linux VM not available …`)
  * when `limaTestVmRunner.isAvailable()` returns false — i.e. limactl absent
- * or the `podkit-test-vm` instance does not exist. The skip is at-runtime
+ * or the `podkit-device-harness` instance does not exist. The skip is at-runtime
  * via `describe.skipIf`, so this file is safe to load on any host.
  *
  * # Assertion families

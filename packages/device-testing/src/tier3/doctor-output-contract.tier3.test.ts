@@ -21,7 +21,7 @@
  *   - `ipodNano7gSpaceGray` — the iPod path. USB-inquiry surface; reaches the
  *     iPod doctor renderer via `--scope system` (we do not drive the full iPod
  *     `doctor -d <path>` text flow because gpod-tool is not installed in
- *     `podkit-test-vm` — see "Scope limitations" below).
+ *     `podkit-device-harness` — see "Scope limitations" below).
  *   - `echoMini` — the mass-storage path. Mounted FAT32 backing exercises the
  *     device-bound mass-storage doctor renderer end-to-end (including the
  *     `podkit doctor — Echo Mini at <path>` header, the `Issues:` block for
@@ -533,14 +533,14 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // 1. Start the daemon (long-lived for the test group).
           const { startDaemonForPersona } = await import('../runners/lima-test-vm.js');
           await startDaemonForPersona({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
           });
 
           // 2. Wait for /dev/sg* enumeration.
           const { waitForScsiGenericEnumeration } = await import('./persona-fixture.js');
           await waitForScsiGenericEnumeration({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
             timeoutMs: 5_000,
           });
@@ -613,7 +613,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             .catch(() => {});
           const { stopDaemon } = await import('../runners/lima-test-vm.js');
           await stopDaemon({
-            vmName: 'podkit-test-vm',
+            vmName: 'podkit-device-harness',
             personaId: echoMini.id,
           }).catch(() => {});
           throw err;
@@ -633,7 +633,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           .catch(() => {});
         const { stopDaemon } = await import('../runners/lima-test-vm.js');
         await stopDaemon({
-          vmName: 'podkit-test-vm',
+          vmName: 'podkit-device-harness',
           personaId: echoMini.id,
         }).catch(() => {});
       }, TIER3_COLD_TIMEOUT_MS);

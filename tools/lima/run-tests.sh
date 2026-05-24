@@ -10,8 +10,8 @@
 # `mise run test:linux:cache:clear`) wipes it.
 #
 # VM names:
-#   linux-tests-debian — glibc, general Linux env
-#   linux-tests-alpine — musl, Docker image parity check
+#   podkit-tests-debian-glibc — glibc, general Linux env
+#   podkit-tests-alpine-musl — musl, Docker image parity check
 #
 # Usage:
 #   ./tools/lima/run-tests.sh              # Both VMs
@@ -134,18 +134,18 @@ target="${1:-all}"
 
 case "$target" in
   debian)
-    ensure_vm "linux-tests-debian" "$LIMA_DIR/debian.yaml"
-    run_tests "linux-tests-debian"
+    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/debian.yaml"
+    run_tests "podkit-tests-debian-glibc"
     ;;
   alpine)
-    ensure_vm "linux-tests-alpine" "$LIMA_DIR/alpine.yaml"
-    run_tests "linux-tests-alpine"
+    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/alpine.yaml"
+    run_tests "podkit-tests-alpine-musl"
     ;;
   all)
-    ensure_vm "linux-tests-debian" "$LIMA_DIR/debian.yaml"
-    ensure_vm "linux-tests-alpine" "$LIMA_DIR/alpine.yaml"
-    run_tests "linux-tests-debian"
-    run_tests "linux-tests-alpine"
+    ensure_vm "podkit-tests-debian-glibc" "$LIMA_DIR/debian.yaml"
+    ensure_vm "podkit-tests-alpine-musl" "$LIMA_DIR/alpine.yaml"
+    run_tests "podkit-tests-debian-glibc"
+    run_tests "podkit-tests-alpine-musl"
     echo ""
     echo "All Linux tests passed."
     ;;

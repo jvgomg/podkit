@@ -156,7 +156,7 @@ Determinism contract: two runs of the same persona must produce a byte-identical
 
 **Runner implementation:** `packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
 
-**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `tools/device-testing/lima/test-vm.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
+**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `tools/device-testing/lima/podkit-device-harness.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
 
 ## `SystemState` registry
 
@@ -189,7 +189,7 @@ For Tier 3: once TASK-322 lands, also run the matching VM-mutation script and sn
 `TestRuntime` abstracts where a Tier 3 test executes. Two implementations:
 
 - **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Auto-registered when `@podkit/device-testing` is imported on Linux. Use on Linux dev hosts directly.
-- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `tools/device-testing/lima/test-vm.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
+- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `tools/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
 
 Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available. If neither is available, Tier 3 tests skip with a single-line warning.
 
@@ -241,9 +241,9 @@ Single source of truth: `tools/prebuild/build-linux-glibc.sh`.
 
 | Path | Purpose |
 |------|---------|
-| `tools/device-testing/lima/builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
-| `tools/device-testing/lima/abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
-| `tools/device-testing/lima/test-vm.yaml` | Test VM (`podkit-test-vm`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
+| `tools/device-testing/lima/podkit-linux-builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
+| `tools/device-testing/lima/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
+| `tools/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
 
 For the full operator manual, see [`tools/device-testing/lima/README.md`](../tools/device-testing/lima/README.md).
 
@@ -265,7 +265,7 @@ Tier-3 infrastructure landed in TASK-322. Reference implementation:
 
 **Imports:**
 - `limaTestVmRunner` from `../runners/lima-test-vm.js` — the `TestRuntime`
-  implementation that executes commands inside `podkit-test-vm`.
+  implementation that executes commands inside `podkit-device-harness`.
 - `resolveTier3Availability`, `groupPersonasByState`, `TIER3_WARM_TIMEOUT_MS`,
   `TIER3_COLD_TIMEOUT_MS` from `./tier3-runtime-setup.js`.
 - `withPersona`, `runJsonCommand` from `./persona-fixture.js`.
@@ -300,7 +300,7 @@ describe.skipIf(!tier3Available)('my Tier-3 suite', () => {
 
 ```bash
 mise run device-testing:build-linux        # builds podkit + dummy-hcd-daemon
-mise run device-testing:transfer-binary    # copies both into podkit-test-vm
+mise run device-testing:transfer-binary    # copies both into podkit-device-harness
 PODKIT_DEVTEST_RUN_TIER3=1 bun run test --filter @podkit/device-testing
 ```
 
@@ -322,7 +322,7 @@ configfs gadget directory (`podkit-<persona>`) and FunctionFS mountpoint
 side-by-side without colliding on either kernel resource. Two
 infrastructure pieces back this:
 
-- `dummy_hcd num=4` (via `/etc/modprobe.d/podkit-test-vm-dummy-hcd.conf`)
+- `dummy_hcd num=4` (via `/etc/modprobe.d/podkit-device-harness-dummy-hcd.conf`)
   exposes four virtual UDCs at `/sys/class/udc/dummy_udc.{0..3}`.
 - `attachUdc` in `tools/device-testing/dummy-hcd/src/gadget.ts` walks
   `/sys/kernel/config/usb_gadget/*/UDC` and picks the first UDC not
