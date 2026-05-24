@@ -115,6 +115,20 @@ export async function runFunctionFs(opts: FunctionFsOpts): Promise<FunctionFsHan
   const bindTimeoutMs = opts.bindTimeoutMs ?? 10_000;
   await fsp.mkdir(opts.ffsMount, { recursive: true });
 
+  // Drain any leftover FunctionFS mount at this mountpoint before mounting
+  // fresh. A prior daemon shutdown calls `umount -l` (lazy), which detaches
+  // the mount but defers cleanup until the last fd closes — if the bun
+  // runtime is SIGKILLed before that happens, the mount survives. Re-running
+  // `mount` on top of it stacks instead of replacing, leading to a kernel
+  // mount-stack of identical entries (visible in `mount | grep ffs-podkit`).
+  // Looping the umount drains the stack idempotently; the loop bails when
+  // umount fails (mountpoint no longer mounted), so a clean mountpoint costs
+  // exactly one cheap umount call.
+  while (true) {
+    const drain = spawnSync('umount', ['-l', opts.ffsMount]);
+    if (drain.status !== 0) break;
+  }
+
   // Mount FunctionFS. The instance name (ffsInstance) is supplied as the
   // *source* — it must match the configfs `ffs.<name>` directory.
   log(`mounting functionfs (instance=${opts.ffsInstance}) at ${opts.ffsMount}`);

@@ -139,11 +139,10 @@ export const ipodVideo5gCorruptDb: DevicePersona = {
 
   // Tier-3: 256 MiB FAT32 backing image SEEDED with the truncated iTunesDB
   // at the canonical iPod database path. `initialContent` is the seed
-  // recipe — copying the fixture into the FAT32 after `mkfs.vfat` is
-  // **deferred to TASK-352** (mtools wiring in `lima-test-vm-backing-files.ts`).
-  // Until then, Tier-3 will see an empty FAT32. Tier-1 smoke test (`corrupt-db.test.ts`)
-  // calls `parseDatabase(corruptItunesDb)` directly via the exported Uint8Array
-  // and is unaffected by the wiring gap.
+  // recipe; the runner (`lima-test-vm-backing-files.ts`) copies the fixture
+  // into the FAT32 via mtools after `mkfs.vfat`. Tier-1 smoke test
+  // (`corrupt-db.test.ts`) bypasses the image entirely by calling
+  // `parseDatabase(corruptItunesDb)` directly on the exported Uint8Array.
   massStorageBackingFile: {
     synthesis: {
       sizeMiB: 256,

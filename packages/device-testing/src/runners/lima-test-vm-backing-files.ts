@@ -34,12 +34,29 @@
  * @module
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import type { DevicePersona } from '../personas/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
 
 /** In-VM directory where the runner stages synthesised backing files. */
 export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
+
+/**
+ * Fixed epoch used as `SOURCE_DATE_EPOCH` for mtools invocations.
+ *
+ * mtools (`mmd`, `mcopy`) writes a current-time directory entry timestamp by
+ * default. mtools honours `SOURCE_DATE_EPOCH` (the reproducible-builds.org
+ * standard) and burns that timestamp into every directory entry instead, which
+ * gives byte-identical FAT32 output across runs regardless of host clock or
+ * source-file mtime. The value itself is arbitrary; `1700000000` is "early
+ * 2023-11-14" — comfortably in the FAT-supported range (1980-01-01 to
+ * 2107-12-31) and not coincident with any meaningful real timestamp.
+ */
+const SEED_FIXED_EPOCH = '1700000000';
 
 /** Result of {@link ensureBackingFile} for a single persona. */
 export interface EnsureBackingFileResult {
@@ -113,6 +130,23 @@ export async function ensureBackingFile(
 
   const vmPath = vmPathForPersona(opts.persona.id);
 
+  // Resolve + validate `initialContent` host paths up front so a bad fixture
+  // surfaces before we touch the VM. Returns empty when no seeding is needed.
+  const seedEntries = resolveSeedEntries(opts.persona);
+
+  // Stage host fixtures into the VM under a per-persona scratch dir before
+  // `mkfs.vfat` so the seeding step can `mcopy` from local VM paths (no
+  // host roundtrip per file inside the build script). The build script's
+  // trailing `rm -rf` cleans up on success; the `finally` below covers
+  // the failure path (the script's `set -e` aborts before the rm).
+  const stageDir = `/tmp/initial-content/${opts.persona.id}`;
+  await stageSeedFixtures({
+    vmName: opts.vmName,
+    stageDir,
+    entries: seedEntries,
+    subprocess,
+  });
+
   // Build the synthesis command. `truncate` makes a sparse file at the
   // exact size; `mkfs.vfat --invariant` writes a deterministic header. The
   // `-I` flag suppresses the "you are formatting a whole block device"
@@ -122,14 +156,24 @@ export async function ensureBackingFile(
   // Stages, all under one `sh -c` so a partial failure cleans up:
   //   1. mkdir -p <dir>
   //   2. write to <vmPath>.tmp
-  //   3. atomic rename to <vmPath>
-  //   4. emit sha256 on stdout
+  //   3. seed initialContent into <vmPath>.tmp via mtools (mmd + mcopy)
+  //      while the file is still the .tmp — so post-mv the image is byte-
+  //      complete before any consumer can observe it.
+  //   4. atomic rename to <vmPath>
+  //   5. emit sha256 on stdout
   //
   // `set -e` is portable (dash + bash). We deliberately avoid `-o pipefail`
   // because Debian's `/bin/sh` is dash, which does not support it. The
   // pipeline (`sha256sum | awk`) is the only place a silent partial-failure
   // could matter, and a missing file there fails the build via -e on the
   // preceding `sudo mv` (the file is the same one we just wrote).
+  //
+  // Seeding determinism: mtools writes a current-time timestamp into every
+  // directory entry by default. Exporting `SOURCE_DATE_EPOCH` (the
+  // reproducible-builds.org standard) makes mtools burn a fixed timestamp
+  // instead, which is what gives the post-seed image a byte-stable sha256
+  // across runs. `MTOOLS_SKIP_CHECK=1` lets mtools operate on the partition-
+  // less FAT32 file directly (it otherwise expects a partition table).
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
@@ -140,7 +184,9 @@ export async function ensureBackingFile(
     // clusters for 32 bit FAT is less then suggested minimum") that we do
     // NOT want surfacing as test noise — drop stderr.
     `sudo mkfs.vfat --invariant -F 32 -n ${shellQuote(label)} -I "$TMP" >/dev/null 2>&1`,
+    ...buildSeedCommands({ stageDir, tmpVar: '"$TMP"', entries: seedEntries }),
     `sudo mv "$TMP" ${shellQuote(vmPath)}`,
+    `sudo rm -rf ${shellQuote(stageDir)}`,
     `sha256sum ${shellQuote(vmPath)} | awk '{print $1}'`,
   ].join('; ');
 
@@ -169,7 +215,24 @@ export async function ensureBackingFile(
 
   // Build (or rebuild) the image. The script writes a deterministic image,
   // so post-build sha256 is stable across runs of the same recipe.
-  const build = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', buildScript]);
+  let build;
+  try {
+    build = await runLimactl(subprocess, ['shell', opts.vmName, '--', 'sh', '-c', buildScript]);
+  } finally {
+    // Build-script `rm -rf` only runs on the success path (set -e aborts
+    // earlier on failure). Always sweep the stage dir on the way out so a
+    // partial-build failure does not leave fixtures behind for later runs.
+    if (seedEntries.length > 0) {
+      await runLimactl(subprocess, [
+        'shell',
+        opts.vmName,
+        '--',
+        'sh',
+        '-c',
+        `rm -rf ${shellQuote(stageDir)}`,
+      ]).catch(() => undefined);
+    }
+  }
   if (build.exitCode !== 0) {
     throw limactlError(
       `failed to synthesise backing file for persona '${opts.persona.id}' in ${opts.vmName}`,
@@ -236,6 +299,238 @@ export function vmPathForPersona(personaId: string): string {
     );
   }
   return `${BACKING_FILES_VM_DIR}/${personaId}.img`;
+}
+
+/** A validated, host-resolved seed entry ready to be staged into the VM. */
+interface ResolvedSeedEntry {
+  /** Persona-declared image-relative target path (already validated). */
+  imagePath: string;
+  /** Absolute host path to the source fixture (already validated + stat'd). */
+  hostPath: string;
+  /** Basename used when staging in the VM (so collisions across paths fail loudly). */
+  stagedBasename: string;
+}
+
+/**
+ * Resolve every `initialContent` entry on `persona` to an absolute host path,
+ * validating each one against the constraints below. Returns `[]` when the
+ * persona declares no seeding.
+ *
+ * Validation (defence-in-depth — these strings are piped into a shell):
+ *   - `sourceFixture` must not contain `..` segments and must be a regular file.
+ *   - `path` (in-image) must not start with `/`, must not contain `..`, and
+ *     must match `/^[A-Za-z0-9_./-]+$/` (no shell metacharacters, no spaces).
+ *   - Basenames of `sourceFixture` are required to be unique across entries —
+ *     they collide in the per-persona stage dir otherwise, and a silent
+ *     overwrite would corrupt one of the seeded files.
+ *
+ * Throws with the persona id in the message on any violation.
+ */
+function resolveSeedEntries(persona: DevicePersona): ResolvedSeedEntry[] {
+  const recipe = persona.massStorageBackingFile?.synthesis;
+  const entries = recipe?.initialContent;
+  if (!entries || entries.length === 0) return [];
+
+  const personaDir = path.resolve(personasRoot(), persona.id);
+  const seen = new Set<string>();
+  const out: ResolvedSeedEntry[] = [];
+
+  for (const entry of entries) {
+    if (typeof entry.path !== 'string' || entry.path.length === 0) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent entry has empty 'path'.`
+      );
+    }
+    if (entry.path.startsWith('/')) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent path '${entry.path}' ` +
+          `must be image-relative (no leading '/').`
+      );
+    }
+    if (entry.path.split('/').some((seg) => seg === '..' || seg === '.')) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent path '${entry.path}' ` +
+          `must not contain '..' or '.' segments.`
+      );
+    }
+    if (!/^[A-Za-z0-9_./-]+$/.test(entry.path)) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent path '${entry.path}' ` +
+          `must match /^[A-Za-z0-9_./-]+$/ (ASCII letters, digits, '/', '-', '_', '.').`
+      );
+    }
+
+    if (typeof entry.sourceFixture !== 'string' || entry.sourceFixture.length === 0) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent entry has empty 'sourceFixture'.`
+      );
+    }
+    if (entry.sourceFixture.split('/').includes('..')) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent sourceFixture ` +
+          `'${entry.sourceFixture}' must not contain '..' segments.`
+      );
+    }
+
+    const hostPath = path.resolve(personaDir, entry.sourceFixture);
+    // Resolved path must remain inside the persona dir even after normalising
+    // any leading `./` segments — a defence-in-depth check on top of the
+    // explicit `..` rejection above.
+    if (!hostPath.startsWith(personaDir + path.sep) && hostPath !== personaDir) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent sourceFixture ` +
+          `'${entry.sourceFixture}' resolves outside the persona directory.`
+      );
+    }
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(hostPath);
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent sourceFixture ` +
+          `'${entry.sourceFixture}' not readable at ${hostPath} (${cause}).`
+      );
+    }
+    if (!stat.isFile()) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent sourceFixture ` +
+          `'${entry.sourceFixture}' is not a regular file at ${hostPath}.`
+      );
+    }
+
+    const stagedBasename = path.basename(hostPath);
+    if (seen.has(stagedBasename)) {
+      throw new Error(
+        `ensureBackingFile: persona '${persona.id}' initialContent sourceFixture ` +
+          `basename '${stagedBasename}' is used by multiple entries; basenames must be unique.`
+      );
+    }
+    seen.add(stagedBasename);
+
+    out.push({ imagePath: entry.path, hostPath, stagedBasename });
+  }
+
+  return out;
+}
+
+/** Options for {@link stageSeedFixtures}. */
+interface StageSeedFixturesOpts {
+  vmName: string;
+  /** Per-persona scratch directory inside the VM (e.g. `/tmp/initial-content/<id>`). */
+  stageDir: string;
+  /** Already-resolved + validated seed entries. Empty array short-circuits. */
+  entries: ResolvedSeedEntry[];
+  subprocess: SubprocessRunner;
+}
+
+/**
+ * `limactl copy` each resolved seed fixture into the VM scratch dir. No-op
+ * when `entries` is empty.
+ */
+async function stageSeedFixtures(opts: StageSeedFixturesOpts): Promise<void> {
+  if (opts.entries.length === 0) return;
+
+  // Create the per-persona scratch dir (idempotent). /tmp is tmpfs, no sudo
+  // needed; the trailing `rm -rf` in the build script cleans it up.
+  const mkdir = await runLimactl(opts.subprocess, [
+    'shell',
+    opts.vmName,
+    '--',
+    'sh',
+    '-c',
+    `rm -rf ${shellQuote(opts.stageDir)} && mkdir -p ${shellQuote(opts.stageDir)}`,
+  ]);
+  if (mkdir.exitCode !== 0) {
+    throw limactlError(`failed to prepare seed stage dir ${opts.vmName}:${opts.stageDir}`, mkdir);
+  }
+
+  for (const entry of opts.entries) {
+    const dest = `${opts.vmName}:${opts.stageDir}/${entry.stagedBasename}`;
+    const copy = await runLimactl(opts.subprocess, ['copy', entry.hostPath, dest]);
+    if (copy.exitCode !== 0) {
+      throw limactlError(`failed to copy seed fixture ${entry.hostPath} → ${dest}`, copy);
+    }
+  }
+}
+
+/** Options for {@link buildSeedCommands}. */
+interface BuildSeedCommandsOpts {
+  stageDir: string;
+  /**
+   * Shell expression that expands to the in-VM path of the FAT32 image. The
+   * caller uses `"$TMP"` (double-quoted) so the var-expansion happens at
+   * script-eval time rather than at JS time.
+   */
+  tmpVar: string;
+  entries: ResolvedSeedEntry[];
+}
+
+/**
+ * Emit the shell fragments that seed `entries` into the image at `tmpVar` via
+ * mtools. Returns `[]` when no seeding is needed.
+ *
+ * Directory pre-creation: every unique ancestor of every `imagePath` is
+ * `mmd`'d in shortest-first order so deeper paths see their parent created
+ * first. `mkfs.vfat` immediately precedes this block, so every dir is brand
+ * new — `mmd` should never fail and we let `set -e` propagate any error.
+ *
+ * mcopy preserves bytes verbatim by default — CRLF translation is `-t`
+ * (opt-in), and `-b` is *batch streaming* (not binary) and triggers
+ * "Streamcache allocation problem" on multi-MiB FAT32 images. No flag
+ * needed for binary fidelity.
+ */
+function buildSeedCommands(opts: BuildSeedCommandsOpts): string[] {
+  if (opts.entries.length === 0) return [];
+
+  // SOURCE_DATE_EPOCH gives mtools a deterministic timestamp; MTOOLS_SKIP_CHECK
+  // lets it operate on the partition-less FAT32 file. Export them at the top
+  // of the seeding block so every mtools call sees the same env.
+  const cmds: string[] = [
+    `export MTOOLS_SKIP_CHECK=1`,
+    `export SOURCE_DATE_EPOCH=${SEED_FIXED_EPOCH}`,
+  ];
+
+  // Collect every ancestor dir of every image path, in shortest-first order
+  // so `mmd Music` is created before `mmd Music/Artist`. Using `Set` for
+  // dedupe keeps a single mmd per unique path.
+  const dirs = new Set<string>();
+  for (const entry of opts.entries) {
+    const segments = entry.imagePath.split('/').slice(0, -1);
+    for (let i = 1; i <= segments.length; i++) {
+      dirs.add(segments.slice(0, i).join('/'));
+    }
+  }
+  for (const dir of Array.from(dirs).sort((a, b) => a.split('/').length - b.split('/').length)) {
+    cmds.push(`sudo -E mmd -i ${opts.tmpVar} ${shellQuote(`::${dir}`)}`);
+  }
+
+  for (const entry of opts.entries) {
+    const src = `${opts.stageDir}/${entry.stagedBasename}`;
+    cmds.push(
+      `sudo -E mcopy -i ${opts.tmpVar} ${shellQuote(src)} ${shellQuote(`::${entry.imagePath}`)}`
+    );
+  }
+
+  return cmds;
+}
+
+/**
+ * Filesystem root of the persona source directories at
+ * `packages/device-testing/src/personas/`. Used by `resolveSeedEntries` to
+ * resolve `sourceFixture` paths declared on a persona.
+ *
+ * The compiled module lives at `dist/runners/lima-test-vm-backing-files.js`,
+ * but persona raw fixture files (the `raw/` sibling dirs) ship only under
+ * `src/personas/` — they are not copied into `dist/`. We therefore resolve
+ * to the source tree explicitly: four `..` segments reach the repo root,
+ * then re-enter `packages/device-testing/src/personas`.
+ */
+export function personasRoot(): string {
+  const thisFile = fileURLToPath(import.meta.url);
+  const moduleDir = path.dirname(thisFile);
+  const repoRoot = path.resolve(moduleDir, '..', '..', '..', '..');
+  return path.resolve(repoRoot, 'packages', 'device-testing', 'src', 'personas');
 }
 
 /**

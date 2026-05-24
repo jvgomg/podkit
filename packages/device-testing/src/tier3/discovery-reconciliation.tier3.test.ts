@@ -133,19 +133,16 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
       TIER3_WARM_TIMEOUT_MS
     );
 
-    // NB — "two iPods plugged in simultaneously" is NOT verifiable in the
-    // current Tier-3 harness: the FunctionFS mount point used by the
-    // dummy-hcd daemon (`/dev/ffs-podkit`, instance name `podkit-test`)
-    // is single-instance, and a second `systemctl start
-    // dummy-hcd-daemon@<id>.service` exits 4 with `mount: /dev/ffs-podkit:
-    // podkit-test already mounted`. The systemd template auto-restarts
-    // the second daemon forever; the kernel never enumerates both. This
-    // is an infrastructure constraint of the daemon's current design,
-    // not a podkit-core regression. The reconcile primitive's dual-iPod
-    // path is exhaustively covered unit-side by
-    // `packages/podkit-core/src/device/reconcile.test.ts` (387 lines of
-    // golden-fixture coverage). A follow-up can lift this by dropping the
-    // singleton FFS instance name in the daemon.
+    // NB — "two iPods plugged in simultaneously" is covered by the dual-
+    // daemon lifecycle smoke (`dual-daemon-lifecycle.tier3.test.ts`), which
+    // boots two `dummy-hcd-daemon@<id>.service` units against the now
+    // per-persona configfs / FunctionFS naming and asserts both kernel
+    // gadgets land cleanly. The reconcile primitive's dual-iPod ordering is
+    // covered exhaustively unit-side by
+    // `packages/podkit-core/src/device/reconcile.test.ts`. Wiring a
+    // dual-persona scan-envelope assertion on top of that infrastructure is
+    // left as a follow-up so this suite stays focused on single-device
+    // reconciliation.
 
     it(
       'replug cycle (start/stop ×3) — scan shows exactly one entry each cycle',

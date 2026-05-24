@@ -48,7 +48,7 @@
 #
 # Usage (manual):
 #   limactl start tools/device-testing/lima/test-vm.yaml --name podkit-test-vm
-#   # TASK-322.03 will provide a transferBinary helper; manually for now:
+#   # The runner's transferBinary helper handles this in CI; manually for now:
 #   limactl copy packages/podkit-cli/bin/podkit-linux-* podkit-test-vm:/tmp/podkit
 #   limactl shell podkit-test-vm -- sudo install -m 0755 /tmp/podkit /usr/local/bin/podkit
 #   limactl shell podkit-test-vm -- /usr/local/bin/podkit --version
@@ -105,6 +105,9 @@ provision:
       # dosfstools            — mkfs.vfat for synthesising FAT32 backing images
       #                         used by the Tier-3 mass-storage smoke test
       #                         for the mass-storage smoke test. Runtime tool, not a -dev package.
+      # mtools                — mcopy/mmd for seeding files into FAT32 images without
+      #                         loop-mounting (no root, no kernel mount; deterministic
+      #                         output via SOURCE_DATE_EPOCH).
       # NO build-essential, NO pkg-config, NO any -dev packages.
       apt-get install -y --no-install-recommends \
         ffmpeg \
@@ -113,7 +116,8 @@ provision:
         libglib2.0-0 \
         ca-certificates \
         kmod \
-        dosfstools
+        dosfstools \
+        mtools
 
       echo "=== Configuring kernel modules to load at boot ==="
       # USB gadget stack: dummy_hcd provides a virtual USB host controller in
@@ -138,11 +142,31 @@ provision:
         'sg' \
         > /etc/modules-load.d/podkit-test-vm.conf
 
+      # dummy_hcd ships with `num=1` by default — only one virtual UDC, which
+      # means only one gadget can be bound at a time. The Tier-3 harness needs
+      # at least two so two `dummy-hcd-daemon@<persona>.service` units can run
+      # side-by-side for multi-iPod scenarios. `options dummy_hcd num=4`
+      # makes the boot-time `systemd-modules-load` step bring up four UDCs
+      # (`dummy_udc.0` … `dummy_udc.3`). The exact count is arbitrary — four
+      # is well below the kernel's MAX_UDC_HOSTS (16) and gives headroom
+      # without a measurable boot-time cost.
+      install -d /etc/modprobe.d
+      printf '%s\n' \
+        '# Tier-3 harness needs multiple emulated UDCs for concurrent gadgets.' \
+        'options dummy_hcd num=4' \
+        > /etc/modprobe.d/podkit-test-vm-dummy-hcd.conf
+
       # Best-effort modprobe during provisioning so the modules are available
       # immediately without a reboot. The `|| echo` is what keeps `set -e` from
       # aborting the script if a module fails to load (e.g. an image variant
       # missing dummy_hcd); the boot-time loader catches the real run.
-      for mod in dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg; do
+      # Dummy_hcd gets an explicit `num=4` here because a stale instance
+      # already loaded with `num=1` would survive otherwise — `modprobe` is
+      # a no-op on an already-loaded module. We `rmmod` first (best-effort)
+      # so the options take effect on first boot too.
+      rmmod dummy_hcd 2>/dev/null || true
+      modprobe dummy_hcd num=4 || echo "WARN: modprobe dummy_hcd num=4 failed during provisioning"
+      for mod in libcomposite usb_f_mass_storage usb_f_fs sg; do
         modprobe "$mod" || echo "WARN: modprobe $mod failed during provisioning; will retry on boot via modules-load.d"
       done
 

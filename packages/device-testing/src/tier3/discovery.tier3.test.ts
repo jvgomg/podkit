@@ -29,14 +29,15 @@
  *
  * # Scope limitations (deferred)
  *
- *   - **Multiple iPods simultaneously**: DEFERRED. The dummy-hcd daemon uses a
- *     single hardcoded FunctionFS mount point (`/dev/ffs-podkit`); a second
- *     `systemctl start dummy-hcd-daemon@<id>.service` exits 4 with
- *     `mount: /dev/ffs-podkit: podkit-test already mounted`. The systemd
- *     template auto-restarts the second daemon forever, and the kernel never
- *     enumerates both. See `discovery-reconciliation.tier3.test.ts` for the
- *     long-form rationale, and `discovery-permutations.test.ts` for the
- *     unit-side coverage of the multi-iPod ordering path.
+ *   - **Multiple iPods simultaneously via this suite**: deferred here for
+ *     scope, not for infrastructure: the dummy-hcd daemon now derives both
+ *     the configfs gadget name and the FunctionFS mountpoint from the
+ *     persona id (`podkit-<id>` + `/dev/ffs-podkit-<id>`), so two
+ *     `dummy-hcd-daemon@<id>.service` units co-exist cleanly. The dual-daemon
+ *     lifecycle is covered standalone by `dual-daemon-lifecycle.tier3.test.ts`;
+ *     unit-side reconcile ordering is covered by `discovery-permutations.test.ts`.
+ *     Layering an end-to-end multi-iPod scan envelope assertion on top of
+ *     that infrastructure is a follow-up.
  *
  *   - **`podkit device info` matches identify()**: DEFERRED. Info requires a
  *     configured `-d <name>` device, which requires a successful `device add`

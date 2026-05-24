@@ -18,6 +18,11 @@
 
 /** Default location of the persona registry sidecar inside the test VM. */
 export const DEFAULT_SIDECAR_PATH = '/var/device-testing/personas.json';
+// The defaults below are convenient single-daemon values for ad-hoc CLI use.
+// The production systemd template `dummy-hcd-daemon@.service` always passes
+// `--gadget-name podkit-<persona>` and `--ffs-mount /dev/ffs-podkit-<persona>`
+// so two units can run in parallel without colliding on either kernel
+// resource — see `tools/device-testing/dummy-hcd/dummy-hcd-daemon@.service`.
 /** Default name of the configfs gadget directory. */
 export const DEFAULT_GADGET_NAME = 'podkit-test';
 /** Default FunctionFS mountpoint. */

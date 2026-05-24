@@ -142,13 +142,72 @@ export function createGadget(opts: GadgetBindOpts): { gadgetPath: string; ffsIns
  * device to the kernel's USB stack. Must be called AFTER the FunctionFS
  * descriptor handshake completes on ep0; binding before the descriptors are
  * written causes the kernel to STALL on enumeration.
+ *
+ * "Available" means: not currently claimed by another configfs gadget. The
+ * authoritative signal is whichever gadget under `/sys/kernel/config/
+ * usb_gadget/<g>/UDC` names it — an empty UDC file means the gadget is not
+ * bound. We deliberately do NOT read `/sys/class/udc/<n>/state`: on
+ * dummy_hcd that field latches at `configured` once any gadget has bound
+ * the UDC and never goes back to `not attached`, even after an unbind. The
+ * UDC file in configfs IS reset to empty on unbind, so it is the only
+ * reliable source.
+ *
+ * The walk lets `dummy-hcd-daemon@<persona>.service` units start
+ * sequentially under a `dummy_hcd num=N` (N > 1) kernel module: each
+ * daemon picks the lowest-numbered free UDC without colliding on
+ * `dummy_udc.0`. The read-then-write is NOT atomic — two daemons racing
+ * the window could both pick the same UDC. Callers must serialise their
+ * `systemctl start` invocations (the runner awaits each one in turn) to
+ * stay safe.
  */
 export function attachUdc(gadgetPath: string): string {
-  const udcList = readdirSync('/sys/class/udc');
-  const udc = udcList[0];
-  if (!udc) throw new Error('attachUdc: no UDC available — is dummy_hcd loaded?');
-  writeFileSync(`${gadgetPath}/UDC`, udc);
-  return udc;
+  const udcList = readdirSync('/sys/class/udc').sort();
+  if (udcList.length === 0) {
+    throw new Error('attachUdc: no UDC available — is dummy_hcd loaded?');
+  }
+  const claimed = collectClaimedUdcs(gadgetPath);
+  for (const candidate of udcList) {
+    if (claimed.has(candidate)) continue;
+    writeFileSync(`${gadgetPath}/UDC`, candidate);
+    return candidate;
+  }
+  throw new Error(
+    `attachUdc: every UDC is already bound (${udcList.join(', ')}; claimed: ${Array.from(
+      claimed
+    ).join(', ')}). Increase dummy_hcd num= or stop the conflicting gadget.`
+  );
+}
+
+/**
+ * Walk `/sys/kernel/config/usb_gadget/*\/UDC` and collect the set of UDC
+ * names already claimed by some other configfs gadget. Our own gadget at
+ * `selfGadgetPath` is excluded — its UDC file should always be empty
+ * before we bind, but skipping it makes the function safe to call from
+ * scenarios where it isn't (e.g. a re-bind after a partial teardown).
+ *
+ * Returns an empty set on any read error: the caller's "no free UDC"
+ * error then surfaces with the directory listing, which is more
+ * actionable than a sysfs-walk traceback.
+ */
+function collectClaimedUdcs(selfGadgetPath: string): Set<string> {
+  const claimed = new Set<string>();
+  let gadgets: string[];
+  try {
+    gadgets = readdirSync(CONFIGFS_ROOT);
+  } catch {
+    return claimed;
+  }
+  for (const g of gadgets) {
+    const fullPath = `${CONFIGFS_ROOT}/${g}`;
+    if (fullPath === selfGadgetPath) continue;
+    try {
+      const udc = readFileSync(`${fullPath}/UDC`, 'utf-8').trim();
+      if (udc.length > 0) claimed.add(udc);
+    } catch {
+      // Missing UDC file → not a gadget we own; skip.
+    }
+  }
+  return claimed;
 }
 
 /**
@@ -176,6 +235,15 @@ export function unbindGadget(
  * Callers should `unbindGadget()` first — rmdir on `functions/ffs.<name>`
  * fails with EBUSY while FunctionFS is still mounted, so the teardown
  * sequence is: unbind UDC → close + umount FunctionFS → destroy tree.
+ *
+ * `mass_storage.0/lun.0` is intentionally NOT rmdir'd directly: the
+ * `usb_f_mass_storage` driver pins the implicit lun.0 to its parent
+ * function and rejects the rmdir with EPERM. The parent `mass_storage.0`
+ * rmdir removes lun.0 as part of its own teardown — leaving lun.0 in
+ * the explicit removal list would log a spurious warning every shutdown
+ * and (historically) leak the tree when callers misread the EPERM as
+ * a hard failure. We do clear `lun.0/file` first to release the
+ * backing-file open count cleanly.
  */
 export function destroyGadget(
   gadgetPath: string,
@@ -186,11 +254,14 @@ export function destroyGadget(
   tryWrite(`${gadgetPath}/UDC`, '', onWarn);
   tryUnlink(`${gadgetPath}/configs/c.1/ffs.${ffsInstance}`, onWarn);
   tryUnlink(`${gadgetPath}/configs/c.1/mass_storage.0`, onWarn);
+  // Only present on mass-storage-bearing gadgets. Skip cleanly otherwise so
+  // FFS-only personas don't log a spurious "no such file" warning.
+  const lunFile = `${gadgetPath}/functions/mass_storage.0/lun.0/file`;
+  if (existsSync(lunFile)) tryWrite(lunFile, '', onWarn);
 
   const removeDirs = [
     `${gadgetPath}/configs/c.1/strings/0x409`,
     `${gadgetPath}/configs/c.1`,
-    `${gadgetPath}/functions/mass_storage.0/lun.0`,
     `${gadgetPath}/functions/mass_storage.0`,
     `${gadgetPath}/functions/ffs.${ffsInstance}`,
     `${gadgetPath}/strings/0x409`,

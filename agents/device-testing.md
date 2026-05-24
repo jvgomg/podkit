@@ -56,15 +56,17 @@ The mapping lives in `packages/device-testing/src/tier3/tier3-runtime-setup.ts` 
 
 ### Synthesised personas (no hardware)
 
-Three personas exist that have no physical-hardware capture — they exercise rejection / error paths that cannot be driven from real devices alone:
+Five personas have no physical-hardware capture — they exercise rejection / error paths and content-state variants that cannot be driven from real devices alone:
 
 | Persona ID | Purpose |
 |------------|---------|
 | `ipod-shuffle-not-supported` | Apple unsupported-PID rejection (shuffle 3G `0x05ac:0x1302`). |
 | `non-ipod-usb-disk` | Non-Apple vendor-no-preset rejection (SanDisk Cruzer Blade `0x0781:0x5567`). |
 | `malformed-sysinfo` | SIE-parser error path. Real iPod 5G USB identity + deliberately-truncated SIE XML. |
+| `echo-mini-populated` | State variant of `echo-mini` with five 64-byte sentinel `.mp3` files seeded into `Music/`. Exercises the "populated mass-storage device" sync-target path. |
+| `ipod-video-5g-corrupt-db` | State variant of `ipod-video-5g-iflash-1tb` with a 512-byte truncated iTunesDB (`mhbd` magic + zeros) seeded at `iPod_Control/iTunes/iTunesDB`. Exercises the database-parse failure surface (parser throws "mhbd header too small"). |
 
-Each has a `provenance.md` documenting its synthesis recipe (no `raw/` capture session). Smoke tests in `src/personas/rejection-personas.test.ts` and `src/personas/malformed-sysinfo.test.ts` pin the fixture shapes.
+Each has a `provenance.md` documenting its synthesis recipe (no `raw/` capture session). Smoke tests in `src/personas/rejection-personas.test.ts` and `src/personas/malformed-sysinfo.test.ts` pin the fixture shapes; the two state-variant personas seed their FAT32 backing images via `synthesis.initialContent` (see "Mass-storage backing files" below).
 
 ### Raw-fixture imports (do not `readFileSync` at module-eval)
 
@@ -140,6 +142,21 @@ See [`documents/persona-capture-playbook.md`](../documents/persona-capture-playb
 4. Commit the captured payloads alongside a hand-written `provenance.md` per the playbook template (hardware serial, capture date, operator).
 
 **When to capture a new persona:** when adding support for a new device family, when changing the `DevicePersona` schema (re-capture to populate new fields), or when touching device-identification logic and you want a new fixture to pin regression coverage.
+
+### Mass-storage backing files (FAT32 synthesis)
+
+Personas that drive `usb_f_mass_storage` (Echo Mini today; future Sony Walkman variants) declare a `massStorageBackingFile.synthesis` recipe instead of committing a multi-MiB binary fixture. The lima-test-vm runner synthesises the image inside the VM via `truncate` + `mkfs.vfat --invariant` — byte-deterministic and cheap (~100 ms per persona, dominated by limactl round-trip).
+
+Two seeding paths:
+
+- **Empty backing image** — set `synthesis: { sizeMiB, filesystem: 'FAT32', label }` only. The image is formatted and left empty. Used by `echo-mini` (sync-target detection on an empty device).
+- **Seeded backing image** — add `synthesis.initialContent: Array<{path, sourceFixture}>`. `path` is the in-image absolute path (no leading `/`, ASCII-safe charset only). `sourceFixture` is the persona-relative host path (e.g. `./raw/iTunesDB`). The runner `limactl copy`s each fixture into a per-persona scratch dir, then `mcopy`s into the post-`mkfs.vfat` image with `SOURCE_DATE_EPOCH` fixed so the seeded bytes don't perturb determinism. Used by `echo-mini-populated` and `ipod-video-5g-corrupt-db`.
+
+Determinism contract: two runs of the same persona must produce a byte-identical sha256. The runner's `EnsureBackingFileResult.sha256` is the tripwire — assert it in your test if you depend on byte-stability. See `src/tier3/backing-file-content.tier3.test.ts` for the canonical determinism check (one `it` runs `ensureBackingFile` twice and compares).
+
+**Runner implementation:** `packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
+
+**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `tools/device-testing/lima/test-vm.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
 
 ## `SystemState` registry
 
@@ -296,6 +313,25 @@ must be installed, the FunctionFS descriptor handshake must work
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog
 task. The reference test file documents this convention in its header.
+
+### Multi-daemon Tier-3 tests
+
+The `dummy-hcd-daemon@<persona>.service` systemd template derives its
+configfs gadget directory (`podkit-<persona>`) and FunctionFS mountpoint
+(`/dev/ffs-podkit-<persona>`) from the persona id, so two units start
+side-by-side without colliding on either kernel resource. Two
+infrastructure pieces back this:
+
+- `dummy_hcd num=4` (via `/etc/modprobe.d/podkit-test-vm-dummy-hcd.conf`)
+  exposes four virtual UDCs at `/sys/class/udc/dummy_udc.{0..3}`.
+- `attachUdc` in `tools/device-testing/dummy-hcd/src/gadget.ts` walks
+  `/sys/kernel/config/usb_gadget/*/UDC` and picks the first UDC not
+  already claimed. Caller (Tier-3 test / runner) must serialise
+  `systemctl start` invocations — the read-then-write is not atomic.
+
+Reference test: `src/tier3/dual-daemon-lifecycle.tier3.test.ts`. Boots
+two personas concurrently, asserts both configfs trees + extra `/dev/sg*`
+nodes, verifies clean teardown.
 
 ## Cross-references
 
