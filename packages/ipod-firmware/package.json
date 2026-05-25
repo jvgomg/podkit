@@ -33,7 +33,8 @@
     "usb": "^2.17.0"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bun-types": "latest"
   },
   "trustedDependencies": [
     "koffi",

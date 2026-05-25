@@ -35,6 +35,7 @@
   "devDependencies": {
     "@podkit/ipod-db": "workspace:*",
     "@podkit/ipod-firmware": "workspace:*",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bun-types": "latest"
   }
 }

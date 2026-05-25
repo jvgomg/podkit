@@ -27,6 +27,7 @@
   "devDependencies": {
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/libgpod-node": "workspace:*",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bun-types": "latest"
   }
 }

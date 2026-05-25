@@ -37,6 +37,7 @@
   "devDependencies": {
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/test-fixtures": "workspace:*",
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "bun-types": "latest"
   }
 }
