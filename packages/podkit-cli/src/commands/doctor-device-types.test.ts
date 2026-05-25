@@ -34,7 +34,7 @@
  * full persona module — the persona registry is the source of truth for what
  * each ID represents, and the doctor command operates on `deviceConfig.type`
  * rather than persona schema, so a string is sufficient at the unit tier.
- * VM coverage in `packages/device-testing/src/vm/doctor-device-types.e2e.test.ts`
+ * VM coverage in `test-packages/e2e-vm-tests/src/doctor-device-types.e2e.test.ts`
  * drives the actual personas end-to-end.
  */
 

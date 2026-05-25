@@ -62,7 +62,7 @@ Originally proposed as two separate packages: one for fixture data, one for the 
 
 **Cons:** The runners and fixtures are tightly coupled (the `lima-test-vm` runner serialises the persona registry to a JSON sidecar consumed by the FunctionFS daemon; the `lima-test-vm` runner needs the `SystemState` registry to drive `applyState`). Splitting them adds workspace boilerplate without preventing coupling.
 
-### Option D: Single `packages/device-testing/` package (Chosen)
+### Option D: Single `test-packages/device-testing/` package (Chosen)
 
 One package consolidates all test-harness foundations: `DevicePersona` registry, `SystemState` registry, `TestRuntime` interface + runners, `SubprocessRunner` re-exports. Unit tests import TypeScript objects; the VM-test daemon and lima runners read JSON sidecars derived from the same TypeScript registry.
 
@@ -72,12 +72,12 @@ One package consolidates all test-harness foundations: `DevicePersona` registry,
 
 ## Decision
 
-**Option D: a single `packages/device-testing/` package** holding `DevicePersona` and `SystemState` registries plus the `TestRuntime` harness.
+**Option D: a single `test-packages/device-testing/` package** holding `DevicePersona` and `SystemState` registries plus the `TestRuntime` harness.
 
 ### Package layout
 
 ```
-packages/device-testing/
+test-packages/device-testing/
 ├── package.json
 ├── tsconfig.json
 ├── README.md                       # Cross-references agents/device-testing.md
@@ -118,7 +118,7 @@ packages/device-testing/
 
 ### `DevicePersona` schema (v2, current)
 
-Schema version 2 landed under TASK-332 (2026-05-23). See `packages/device-testing/src/personas/types.ts` for the canonical TypeScript definitions, including TSDoc on every field. The shape below is illustrative — the source file is authoritative.
+Schema version 2 landed under TASK-332 (2026-05-23). See `test-packages/device-testing/src/personas/types.ts` for the canonical TypeScript definitions, including TSDoc on every field. The shape below is illustrative — the source file is authoritative.
 
 ```typescript
 interface DevicePersona {
@@ -223,7 +223,7 @@ Three coordinated changes to the schema, surfaced during the TASK-321.02 persona
 
 3. **`deviceSerial: string | null`.** Sony NW-HD5 (and the older NW-A HDD Walkmans) advertise `iSerialNumber = 0` in the device descriptor — no serial-descriptor index assigned. v1 used `''` as a workaround; v2 makes it `null` so the absence is semantically explicit, eliminating the `if (persona.deviceSerial) {...}` empty-string-as-falsy footgun.
 
-**Daemon compatibility note.** The sidecar wire shape (`packages/device-testing/src/personas/sidecar.ts`) was deliberately **not** changed. The dummy-hcd daemon only needs vendor/product IDs, an optional serial string, and class/subclass/protocol fields to bind the configfs gadget — the richer hierarchy stays host-side. The sidecar builder (`sidecar-build.ts`) was updated to project `deviceSerial: null` to an omitted `serial` field (rather than serialising `null`), so the daemon's existing optional-string fallback (`'000000000001'`) continues to work.
+**Daemon compatibility note.** The sidecar wire shape (`test-packages/device-testing/src/personas/sidecar.ts`) was deliberately **not** changed. The dummy-hcd daemon only needs vendor/product IDs, an optional serial string, and class/subclass/protocol fields to bind the configfs gadget — the richer hierarchy stays host-side. The sidecar builder (`sidecar-build.ts`) was updated to project `deviceSerial: null` to an omitted `serial` field (rather than serialising `null`), so the daemon's existing optional-string fallback (`'000000000001'`) continues to work.
 
 **Migration scope.** All 17 personas migrated mechanically: `schemaVersion: 1 → 2`, `partitions[...] → luns: [{ lun: 0, partitions: [...] }]`, `usbDescriptor` extended with synthesised hierarchy fields drawn from raw probe data (`raw/sysfs-usb.txt`, `raw/ioreg.txt`, `raw/udev.txt`) where available. Personas without raw probe data (mini 2G, nano 2G, video 5G, touch 5G, shuffle, malformed-sysinfo, synthetic state-variants) inherit hierarchy values from the matching family pattern and flag a follow-up Linux capture in `provenance.md`. Sony NW-A1000, NW-A1200, NW-A3000, NW-HD5 migrate `deviceSerial: ''` → `null` (all four advertise `iSerialNumber = 0`); other personas keep their non-empty serials.
 
@@ -316,12 +316,12 @@ Additional mass-storage personas (Rockbox-enabled device, FiiO DAP) are in scope
 
 ### Capture methodology
 
-Real SCSI VPD payloads, `lsblk` output, `system_profiler` JSON, and `diskutil` plists are captured from physical hardware using the existing `documents/sysinfo-captures/` workflow for VPD, plus new capture scripts at `packages/device-testing/scripts/capture-persona.ts` for the host-OS probe layers.
+Real SCSI VPD payloads, `lsblk` output, `system_profiler` JSON, and `diskutil` plists are captured from physical hardware using the existing `documents/sysinfo-captures/` workflow for VPD, plus new capture scripts at `test-packages/device-testing/scripts/capture-persona.ts` for the host-OS probe layers.
 
 **Human-in-the-loop capture flow:**
 
 1. User plugs the physical device into their Mac.
-2. Agent runs `bun run device-testing:capture --persona <id>` on the mac host (or invokes `packages/device-testing/scripts/capture-persona.ts` directly). The script prompts for the device path, then captures `system_profiler SPUSBDataType -json`, `diskutil list -plist <disk>`, and USB descriptor fields automatically.
+2. Agent runs `bun run device-testing:capture --persona <id>` on the mac host (or invokes `test-packages/device-testing/scripts/capture-persona.ts` directly). The script prompts for the device path, then captures `system_profiler SPUSBDataType -json`, `diskutil list -plist <disk>`, and USB descriptor fields automatically.
 3. For Linux-side captures (`lsblk -J`): user connects the device to a Linux machine OR passes the device through Lima USB passthrough to a VM. Agent runs the lsblk capture step inside the VM.
 4. Agent commits captured data + auto-generated `provenance.md` (capture date, hardware serial, host OS, operator).
 
@@ -353,7 +353,7 @@ No serialisation round-trip. Type errors surface at compile time if a test refer
 
 ### Consumption by VM tests
 
-The FunctionFS daemon (`tools/device-testing/dummy-hcd/`) accepts a `--persona <id>` flag at startup. The `lima-test-vm` runner serialises the registry to a JSON sidecar and passes it to the daemon, which loads the named persona and serves its USB descriptors, VPD responses, and partition layout. The daemon does not import TypeScript; it reads the JSON sidecar produced by the runner.
+The FunctionFS daemon (`test-packages/device-testing-daemon/`) accepts a `--persona <id>` flag at startup. The `lima-test-vm` runner serialises the registry to a JSON sidecar and passes it to the daemon, which loads the named persona and serves its USB descriptors, VPD responses, and partition layout. The daemon does not import TypeScript; it reads the JSON sidecar produced by the runner.
 
 For mass-storage personas, the runner also stages the `massStorageBackingFile` image at the known backing-file path in the test VM during `prepare()`. The runner resets the backing file between tests in the same SystemState group using the persona's configured `resetStrategy`.
 
@@ -383,7 +383,7 @@ Personas and system states are read-only across all tests. A test that needs a m
 
 ### Negative
 
-- **One large package.** `packages/device-testing/` ships fixtures + runners + framework. Mitigated by clear subpath structure (`src/personas/`, `src/system-states/`, `src/runners/`).
+- **One large package.** `test-packages/device-testing/` ships fixtures + runners + framework. Mitigated by clear subpath structure (`src/personas/`, `src/system-states/`, `src/runners/`).
 - **Physical-capture dependency for new personas.** Some personas require physical hardware access to capture VPD payloads and `lsblk` output. Synthesised personas are a fallback but may not match real device behaviour exactly. The human-in-the-loop capture flow makes physical capture tractable without fully automating it.
 - **Snapshot management overhead for new system states.** Each new `SystemState` requires the test VM to be prepared, mutated, and snapshotted once. Mitigated by `apply-state.sh` automation.
 - **Schema migrations are synchronised commits.** A breaking schema change requires updating every entry in one commit; there is no incremental migration path.
@@ -408,7 +408,7 @@ Personas and system states are read-only across all tests. A test that needs a m
 - [doc-032](../backlog/docs/doc-032%20-%20Spec-Phase-1-—-ipod-firmware-SCSI-delivery.md) — Spec: P1 ipod-firmware SCSI delivery (VPD payload format)
 - [doc-033](../backlog/docs/doc-033%20-%20Spec-Phase-2-—-USB-inquiry-consolidation.md) — Spec: P2 USB inquiry consolidation (USB descriptor format)
 - `packages/ipod-firmware/` — injectable transport interfaces that consume persona data in T1
-- `tools/device-testing/dummy-hcd/` — FunctionFS daemon that consumes persona data in T3
+- `test-packages/device-testing-daemon/` — FunctionFS daemon that consumes persona data in T3
 - `documents/test-devices.md` — canonical hardware inventory; each persona cross-references the matching entry
 - `documents/sysinfo-captures/` — existing SysInfoExtended XML captures reused as fixture source
 - `agents/device-testing.md` — agent guide for the device test stack, persona capture, and runner ops (created by TASK-321.08)

@@ -33,19 +33,6 @@
         "@types/bun": "latest",
       },
     },
-    "packages/device-testing": {
-      "name": "@podkit/device-testing",
-      "version": "0.0.1",
-      "dependencies": {
-        "@podkit/core": "workspace:*",
-        "@podkit/device-types": "workspace:*",
-      },
-      "devDependencies": {
-        "@podkit/ipod-db": "workspace:*",
-        "@podkit/ipod-firmware": "workspace:*",
-        "@types/bun": "latest",
-      },
-    },
     "packages/device-types": {
       "name": "@podkit/device-types",
       "version": "0.0.1",
@@ -89,28 +76,6 @@
       },
       "devDependencies": {
         "starlight-links-validator": "^0.19.2",
-      },
-    },
-    "packages/e2e-tests": {
-      "name": "@podkit/e2e-tests",
-      "version": "0.0.0",
-      "dependencies": {
-        "@podkit/compatibility": "workspace:*",
-        "@podkit/gpod-testing": "workspace:*",
-        "podkit": "workspace:*",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-      },
-    },
-    "packages/gpod-testing": {
-      "name": "@podkit/gpod-testing",
-      "version": "0.0.0",
-      "bin": {
-        "gpod-tests-parallel": "./scripts/run-tests-parallel.ts",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
       },
     },
     "packages/ipod-db": {
@@ -236,14 +201,6 @@
         "podkit": "workspace:*",
       },
     },
-    "packages/test-fixtures": {
-      "name": "@podkit/test-fixtures",
-      "version": "0.0.0",
-      "devDependencies": {
-        "@types/bun": "latest",
-        "typescript": "^5.9.0",
-      },
-    },
     "packages/virtual-ipod-app": {
       "name": "@podkit/virtual-ipod-app",
       "version": "0.0.1",
@@ -269,6 +226,70 @@
       },
       "devDependencies": {
         "@types/bun": "latest",
+      },
+    },
+    "test-packages/device-testing": {
+      "name": "@podkit/device-testing",
+      "version": "0.0.1",
+      "dependencies": {
+        "@podkit/core": "workspace:*",
+        "@podkit/device-types": "workspace:*",
+      },
+      "devDependencies": {
+        "@podkit/ipod-db": "workspace:*",
+        "@podkit/ipod-firmware": "workspace:*",
+        "@types/bun": "latest",
+      },
+    },
+    "test-packages/device-testing-daemon": {
+      "name": "@podkit/device-testing-daemon",
+      "version": "0.0.1",
+      "dependencies": {
+        "@podkit/device-testing": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
+      },
+    },
+    "test-packages/e2e-host-tests": {
+      "name": "@podkit/e2e-host-tests",
+      "version": "0.0.0",
+      "dependencies": {
+        "@podkit/compatibility": "workspace:*",
+        "@podkit/gpod-testing": "workspace:*",
+        "podkit": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
+    "test-packages/e2e-vm-tests": {
+      "name": "@podkit/e2e-vm-tests",
+      "version": "0.0.0",
+      "dependencies": {
+        "@podkit/device-testing": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
+    "test-packages/gpod-testing": {
+      "name": "@podkit/gpod-testing",
+      "version": "0.0.0",
+      "bin": {
+        "gpod-tests-parallel": "./scripts/run-tests-parallel.ts",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
+    "test-packages/test-fixtures": {
+      "name": "@podkit/test-fixtures",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@types/bun": "latest",
+        "typescript": "^5.9.0",
       },
     },
   },
@@ -621,7 +642,9 @@
 
     "@podkit/demo": ["@podkit/demo@workspace:packages/demo"],
 
-    "@podkit/device-testing": ["@podkit/device-testing@workspace:packages/device-testing"],
+    "@podkit/device-testing": ["@podkit/device-testing@workspace:test-packages/device-testing"],
+
+    "@podkit/device-testing-daemon": ["@podkit/device-testing-daemon@workspace:test-packages/device-testing-daemon"],
 
     "@podkit/device-types": ["@podkit/device-types@workspace:packages/device-types"],
 
@@ -633,9 +656,11 @@
 
     "@podkit/docs-site": ["@podkit/docs-site@workspace:packages/docs-site"],
 
-    "@podkit/e2e-tests": ["@podkit/e2e-tests@workspace:packages/e2e-tests"],
+    "@podkit/e2e-host-tests": ["@podkit/e2e-host-tests@workspace:test-packages/e2e-host-tests"],
 
-    "@podkit/gpod-testing": ["@podkit/gpod-testing@workspace:packages/gpod-testing"],
+    "@podkit/e2e-vm-tests": ["@podkit/e2e-vm-tests@workspace:test-packages/e2e-vm-tests"],
+
+    "@podkit/gpod-testing": ["@podkit/gpod-testing@workspace:test-packages/gpod-testing"],
 
     "@podkit/ipod-db": ["@podkit/ipod-db@workspace:packages/ipod-db"],
 
@@ -645,7 +670,7 @@
 
     "@podkit/libgpod-node": ["@podkit/libgpod-node@workspace:packages/libgpod-node"],
 
-    "@podkit/test-fixtures": ["@podkit/test-fixtures@workspace:packages/test-fixtures"],
+    "@podkit/test-fixtures": ["@podkit/test-fixtures@workspace:test-packages/test-fixtures"],
 
     "@podkit/virtual-ipod-app": ["@podkit/virtual-ipod-app@workspace:packages/virtual-ipod-app"],
 

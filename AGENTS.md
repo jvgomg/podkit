@@ -10,13 +10,14 @@ Instructions for AI agents (Claude Code, Cursor, etc.) working in this repositor
 
 **Monorepo structure:**
 ```
-packages/
+packages/            # Published / published-adjacent packages
+├── compatibility/   # Cross-version compatibility helpers
 ├── demo/            # Animated GIF demo (VHS + mocked CLI build)
 ├── device-types/    # Shared TypeScript types for device capabilities, identity, firmware
 ├── devices-ipod/    # Pure TypeScript iPod generation tables + capability synthesis (no libgpod)
 ├── devices-mass-storage/ # User-extensible mass-storage preset framework (Echo Mini, Rockbox, generic)
-├── e2e-tests/       # End-to-end CLI tests (dummy + real iPod)
-├── gpod-testing/    # Test utilities for iPod environments (no hardware needed)
+├── docs-site/       # Documentation site (Starlight/Astro)
+├── ipod-avatar/     # iPod avatar image assets
 ├── ipod-db/         # Pure TypeScript iTunesDB/ArtworkDB parser (browser-compatible)
 ├── ipod-firmware/   # iPod firmware inquiry — SCSI via koffi (SG_IO/IOKit), USB via the `usb` npm package
 ├── ipod-web/        # Virtual iPod UI — React + Jotai web component
@@ -24,9 +25,17 @@ packages/
 ├── podkit-core/     # Core sync logic, adapters, transcoding
 ├── podkit-cli/      # Command-line interface
 ├── podkit-docker/   # Docker image (Dockerfile, entrypoint, compose files)
-├── test-fixtures/   # Test fixture generator (FLAC files with controllable metadata/artwork)
+├── podkit-daemon/   # Background sync daemon
 ├── virtual-ipod-app/    # Tauri macOS app — frameless iPod-shaped window
 └── virtual-ipod-server/ # Lima VM backend — USB gadget + REST/WebSocket API
+
+test-packages/             # Testing infrastructure (private, not published)
+├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, Lima yamls, apply-state.sh
+├── device-testing-daemon/ # FunctionFS userspace daemon — synthesises iPod USB gadget on dummy_hcd
+├── e2e-host-tests/        # End-to-end CLI tests on the host (dummy + real iPod)
+├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
+├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
+└── test-fixtures/         # Test fixture generator (FLAC files with controllable metadata/artwork)
 
 tools/
 ├── demo/            # Live demo documentation for the virtual iPod system
@@ -241,12 +250,17 @@ Key files to understand:
 | CLI entry | `packages/podkit-cli/src/main.ts` |
 | Core library | `packages/podkit-core/src/index.ts` |
 | libgpod bindings | `packages/libgpod-node/src/index.ts` |
-| Test utilities | `packages/gpod-testing/src/index.ts` |
-| E2E test helpers | `packages/e2e-tests/src/helpers/index.ts` |
+| Test utilities | `test-packages/gpod-testing/src/index.ts` |
+| E2E test helpers | `test-packages/e2e-host-tests/src/helpers/index.ts` |
+| VM test harness | `test-packages/device-testing/src/index.ts` |
+| VM test entry | `test-packages/e2e-vm-tests/src/` |
+| FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
+| VM test Lima configs | `test-packages/device-testing/lima/` |
+| apply-state.sh | `test-packages/device-testing/scripts/apply-state.sh` |
 | gpod-tool CLI | `tools/gpod-tool/gpod-tool.c` |
 | Demo build | `packages/demo/build.ts` |
 | Demo tape | `packages/demo/demo.tape` |
-| Test fixture generator | `packages/test-fixtures/src/index.ts` |
+| Test fixture generator | `test-packages/test-fixtures/src/index.ts` |
 | Docker entrypoint | `packages/podkit-docker/entrypoint.sh` |
 | Dockerfile | `packages/podkit-docker/Dockerfile` |
 | Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |

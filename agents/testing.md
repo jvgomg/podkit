@@ -8,7 +8,7 @@ Also see [docs/developers/testing.md](../docs/developers/testing.md) for full te
 
 - **Unit tests** (`*.test.ts`): Fast, no external dependencies
 - **Integration tests** (`*.integration.test.ts`): Require gpod-tool, FFmpeg, etc.
-- **E2E tests** (`packages/e2e-tests/`): Full CLI workflow tests
+- **E2E tests** (`test-packages/e2e-host-tests/`): Full CLI workflow tests
 
 ## Per-OS Test Tagging
 
@@ -76,7 +76,7 @@ Tests that invoke real subprocesses against canned fixtures on the host. Always 
 The full inquiry stack (`libusb`, `SG_IO`, `lsblk`, capability resolution) runs against a synthetic USB device inside a Lima test VM. The FunctionFS daemon loads a `DevicePersona` and presents real USB descriptors to the kernel.
 
 - **Auto-detected:** if the `lima-test-vm` runner is available (macOS host with Lima installed, or a Linux host), VM tests run. If unavailable, tests are skipped with a warning (`[vm] Linux VM not available — skipping device integration tests`) rather than failed.
-- Test files live under `packages/device-testing/src/vm/` and are tagged `*.e2e.test.ts`.
+- Harness self-tests live under `test-packages/device-testing/src/vm/`; podkit feature tests live under `test-packages/e2e-vm-tests/src/`. Both are tagged `*.e2e.test.ts`.
 - `SystemState` is applied via `apply-state.sh` before each test group; the runner handles this transparently.
 
 ### Quick-reference commands (today)
@@ -84,10 +84,10 @@ The full inquiry stack (`libusb`, `SG_IO`, `lsblk`, capability resolution) runs 
 ```bash
 bun run test:unit --filter <pkg>    # Unit + host tests (OS-tagged files self-skip)
 bun run test --filter <pkg>         # All tests for one package (unit + host + integration)
-bun test packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
+bun test test-packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
 ```
 
-For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd packages/device-testing test:vm`).
+For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd test-packages/device-testing test:vm`).
 
 ### Quick-reference: doctor invocations for state assertions
 
@@ -164,7 +164,7 @@ deferred to the next VM-test sweep and noted in the task's AC list.
 - [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — architecture decision and tier definitions
 - [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
 - [agents/device-testing.md](device-testing.md) — canonical reference for writing device tests
-- [packages/device-testing/README.md](../packages/device-testing/README.md) — package-level API reference
+- [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) — package-level API reference
 
 ## Test Task Composition
 
@@ -177,7 +177,7 @@ bun run test                         # Runs both — reuses cached sub-tasks
 bun run test --filter podkit-core    # Same composition, scoped to one package
 ```
 
-E2E tests are separate — `bun run test:e2e` runs the `test` script in `@podkit/e2e-tests` directly (not composed).
+E2E tests are separate — `bun run test:e2e` runs the `test` script in `@podkit/e2e-host-tests` directly (not composed).
 
 **Important:** Package `test` scripts are no-ops (`true`) because turbo handles the composition. Don't `cd` into a package and run `bun run test` directly — use turbo from the repo root. To run a single test file directly:
 
@@ -203,7 +203,7 @@ bun test -t "fails when no device"   # Match test name substring
 
 ## Interpreting Test Output
 
-Test output is prefixed with the package name (e.g., `@podkit/e2e-tests:test:`) because turborepo runs packages in parallel. Failures from different packages can be interleaved.
+Test output is prefixed with the package name (e.g., `@podkit/e2e-host-tests:test:`) because turborepo runs packages in parallel. Failures from different packages can be interleaved.
 
 **Finding failures quickly:**
 
@@ -233,7 +233,7 @@ If any tests failed, Bun also prints a count like `X pass, Y fail` — scan for 
 Turbo caches test results based on file inputs. Be aware of these pitfalls:
 
 - **Stale cache can mask failures.** If tests pass but you suspect they shouldn't (e.g., after changing behavior in an upstream package), clear the cache: `npx turbo run test --force`
-- **E2E tests depend on the built CLI.** The `@podkit/e2e-tests#test` task uses `^build` (upstream builds) in its cache key. If you change podkit-cli or podkit-core source, the e2e cache invalidates automatically. But if you only change test files, `bun run build` may not re-run — rebuild explicitly if needed.
+- **E2E tests depend on the built CLI.** The `@podkit/e2e-host-tests#test` task uses `^build` (upstream builds) in its cache key. If you change podkit-cli or podkit-core source, the e2e cache invalidates automatically. But if you only change test files, `bun run build` may not re-run — rebuild explicitly if needed.
 - **The `Cached: N cached` line in turbo output tells you what was reused.** If you expect a task to re-run but it shows as cached, the inputs may not cover what changed.
 
 ## Debugging E2E Failures
@@ -285,8 +285,8 @@ mise run test:linux:destroy      # Delete VMs entirely
 mise run test:linux:cache:clear  # Clear turbo cache without deleting VMs
 mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
-# Container cleanup (in packages/e2e-tests/)
-cd packages/e2e-tests && bun run cleanup:docker
+# Container cleanup (in test-packages/e2e-host-tests/)
+cd test-packages/e2e-host-tests && bun run cleanup:docker
 ```
 
 ## Prerequisites for Integration Tests
@@ -442,7 +442,7 @@ it('works with iPod database', async () => {
 });
 ```
 
-See [packages/gpod-testing/README.md](../packages/gpod-testing/README.md) for full API documentation.
+See [test-packages/gpod-testing/README.md](../test-packages/gpod-testing/README.md) for full API documentation.
 
 ### Why gpod-testing for setup, not the production code
 
@@ -519,12 +519,12 @@ bun turbo run generate-templates --filter=@podkit/gpod-testing  # cached
 bun turbo run generate-templates --filter=@podkit/gpod-testing --force  # force rebuild
 ```
 
-Templates live in `packages/gpod-testing/templates/` (gitignored, ~290KB total). The turbo task invalidates on changes to the generation script, `src/templates.ts`, `src/test-ipod.ts`, `src/gpod-tool.ts`, or the `bin/gpod-tool` binary itself. Consuming integration test tasks (`@podkit/gpod-testing#test:integration`, the global `test:integration`, `@podkit/ipod-db#test:integration`, `@podkit/e2e-tests#test`, `@podkit/ipod-db#generate-fixtures`) declare it as a dependency, so templates rebuild automatically when needed.
+Templates live in `test-packages/gpod-testing/templates/` (gitignored, ~290KB total). The turbo task invalidates on changes to the generation script, `src/templates.ts`, `src/test-ipod.ts`, `src/gpod-tool.ts`, or the `bin/gpod-tool` binary itself. Consuming integration test tasks (`@podkit/gpod-testing#test:integration`, the global `test:integration`, `@podkit/ipod-db#test:integration`, `@podkit/e2e-host-tests#test`, `@podkit/ipod-db#generate-fixtures`) declare it as a dependency, so templates rebuild automatically when needed.
 
 **Adding a new model:**
-1. Add the model number to `TEMPLATE_MODELS` in `packages/gpod-testing/src/templates.ts`.
-2. Add it to the `IpodModelNumber` literal union in `packages/gpod-testing/src/types.ts`.
-3. (Optional) Add a friendly alias to `TestModels` in `packages/gpod-testing/src/test-ipod.ts`.
+1. Add the model number to `TEMPLATE_MODELS` in `test-packages/gpod-testing/src/templates.ts`.
+2. Add it to the `IpodModelNumber` literal union in `test-packages/gpod-testing/src/types.ts`.
+3. (Optional) Add a friendly alias to `TestModels` in `test-packages/gpod-testing/src/test-ipod.ts`.
 4. Run `bun turbo run generate-templates --filter=@podkit/gpod-testing --force` to regenerate.
 
 **Disabling the fast path** (for benchmarking or debugging suspected template-induced bugs):
@@ -556,7 +556,7 @@ Output goes to `test/manual-collection/` (gitignored). Without flags, output is 
 
 ## Writing CLI Unit and Integration Tests
 
-**Hard rule: never spawn the podkit CLI as a subprocess from a unit or integration test.** Subprocess invocation lives only in `packages/e2e-tests/`. The rule is enforced by an oxlint check (`no-restricted-imports` for `node:child_process` in `packages/podkit-cli/src/**/*.test.ts`) — see `oxlint.json`.
+**Hard rule: never spawn the podkit CLI as a subprocess from a unit or integration test.** Subprocess invocation lives only in `test-packages/e2e-host-tests/`. The rule is enforced by an oxlint check (`no-restricted-imports` for `node:child_process` in `packages/podkit-cli/src/**/*.test.ts`) — see `oxlint.json`.
 
 For tests that need to drive a CLI command, call its **runner function** in-process. Each runner is an exported `async function runX(options, out, deps?)` extracted from the Commander action callback. Examples:
 
@@ -770,7 +770,7 @@ For asserting on this shape in tests, use `expectCliError` from `../test-utils/c
 
 ### Test helper: `expectCliError`
 
-Both the in-process (`packages/podkit-cli/src/test-utils/cli-error.ts`) and subprocess (`packages/e2e-tests/src/helpers/cli-error.ts`) helpers collapse the standard "parse JSON, narrow, check fields" flow into one call:
+Both the in-process (`packages/podkit-cli/src/test-utils/cli-error.ts`) and subprocess (`test-packages/e2e-host-tests/src/helpers/cli-error.ts`) helpers collapse the standard "parse JSON, narrow, check fields" flow into one call:
 
 ```ts
 // in-process
@@ -802,7 +802,7 @@ The helper asserts `success === false`, matches `code` exactly, optionally subst
 
 ## Writing E2E Tests
 
-Use `@podkit/e2e-tests` helpers for CLI testing:
+Use `@podkit/e2e-host-tests` helpers for CLI testing:
 
 ```typescript
 import { withTarget } from '../targets';
@@ -821,7 +821,7 @@ it('syncs tracks to iPod', async () => {
 });
 ```
 
-See [packages/e2e-tests/README.md](../packages/e2e-tests/README.md) for full documentation.
+See [test-packages/e2e-host-tests/README.md](../test-packages/e2e-host-tests/README.md) for full documentation.
 
 **Config files must include `version = 1`.** Every test config — whether created via `createTempConfig()` or inline — must start with `version = 1`. Configs without a version field are treated as version 0 and cause a hard error requiring migration. Use the helpers when possible:
 
@@ -849,7 +849,7 @@ Some E2E tests use Docker to run external services (Navidrome for Subsonic). The
 
 **Running Docker tests:**
 ```bash
-cd packages/e2e-tests
+cd test-packages/e2e-host-tests
 bun run test:subsonic  # Runs Subsonic E2E tests with Docker
 ```
 
@@ -857,14 +857,14 @@ bun run test:subsonic  # Runs Subsonic E2E tests with Docker
 Docker containers are automatically cleaned up on test completion, Ctrl+C, and crashes. If orphaned containers remain:
 
 ```bash
-cd packages/e2e-tests
+cd test-packages/e2e-host-tests
 bun run cleanup:docker:list   # List orphaned containers
 bun run cleanup:docker        # Remove stopped containers
 bun run cleanup:docker --force  # Force remove all
 ```
 
 **Adding new Docker sources:**
-When implementing new Docker-based test sources, use the container manager at `packages/e2e-tests/src/docker/`:
+When implementing new Docker-based test sources, use the container manager at `test-packages/e2e-host-tests/src/docker/`:
 
 ```typescript
 import { startContainer, stopContainer } from '../docker/index.js';
@@ -878,4 +878,4 @@ const result = await startContainer({
 });
 ```
 
-See [packages/e2e-tests/README.md](../packages/e2e-tests/README.md) for the full Docker infrastructure documentation.
+See [test-packages/e2e-host-tests/README.md](../test-packages/e2e-host-tests/README.md) for the full Docker infrastructure documentation.

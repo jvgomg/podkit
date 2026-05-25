@@ -83,7 +83,7 @@ describe('iPod Video 60GB (MA147)', () => {
 });
 ```
 
-> **Note:** iPod Classic 6th gen+ models (MB565, MC297) require a FirewireID that libgpod does not auto-generate, so they cannot be used with `createTestIpod()`. Use iPod Video models (MA147, MA002) for test environments instead. See `packages/gpod-testing/README.md` for supported models.
+> **Note:** iPod Classic 6th gen+ models (MB565, MC297) require a FirewireID that libgpod does not auto-generate, so they cannot be used with `createTestIpod()`. Use iPod Video models (MA147, MA002) for test environments instead. See `test-packages/gpod-testing/README.md` for supported models.
 
 ### Update Supported Devices
 
@@ -113,7 +113,7 @@ bun run test:e2e:real
 Or from the e2e-tests package directly:
 
 ```bash
-cd packages/e2e-tests
+cd test-packages/e2e-host-tests
 IPOD_TARGET=real IPOD_MOUNT=/Volumes/IPOD bun test
 ```
 
@@ -171,5 +171,5 @@ If you have an iPod and want to help verify support:
 
 - [Supported Devices](/devices/supported-devices) - Complete compatibility list
 - [Testing](/developers/testing) - General testing strategy
-- `packages/gpod-testing/README.md` - Test utility documentation
-- `packages/e2e-tests/README.md` - E2E test documentation
+- `test-packages/gpod-testing/README.md` - Test utility documentation
+- `test-packages/e2e-host-tests/README.md` - E2E test documentation

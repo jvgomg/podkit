@@ -1,0 +1,17 @@
+{
+  "name": "@podkit/e2e-vm-tests",
+  "version": "0.0.0",
+  "description": "End-to-end VM tests for podkit features running against the @podkit/device-testing harness",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test:vm": "bun test src/ --pass-with-no-tests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@podkit/device-testing": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

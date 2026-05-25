@@ -62,7 +62,7 @@ const SYSINFO_MISSING_PROMPT_LINES = [
  * in which case the caller throws `VOLUME_UUID_REQUIRED`.
  *
  * Production safety: real users never set this variable. Documented in
- * `packages/e2e-tests/README.md`.
+ * `test-packages/e2e-host-tests/README.md`.
  */
 function synthesizeTestVolumeUuid(path: string): string | undefined {
   if (process.env.PODKIT_TEST_SYNTHETIC_VOLUME_UUID !== '1') return undefined;

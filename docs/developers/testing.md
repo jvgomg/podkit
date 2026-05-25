@@ -46,7 +46,7 @@ Tests that verify components work together with real external dependencies.
 - Testing FFmpeg transcoding with real audio files
 - Testing full sync workflows
 
-### End-to-End Tests (`packages/e2e-tests/`)
+### End-to-End Tests (`test-packages/e2e-host-tests/`)
 
 Tests that invoke the built CLI as a real user would. Run against dummy iPods (CI-safe) or real iPods (manual validation).
 
@@ -201,7 +201,7 @@ it('adds a track to iPod', async () => {
 });
 ```
 
-See `packages/gpod-testing/README.md` for full API documentation.
+See `test-packages/gpod-testing/README.md` for full API documentation.
 
 ## Test Audio Fixtures
 
@@ -291,7 +291,7 @@ Some E2E tests require Docker for external services (Navidrome for Subsonic):
 bun run test:e2e:docker
 
 # Container cleanup
-cd packages/e2e-tests
+cd test-packages/e2e-host-tests
 bun run cleanup:docker:list   # List orphaned containers
 bun run cleanup:docker        # Remove stopped containers
 bun run cleanup:docker --force  # Force remove all
@@ -337,5 +337,5 @@ See [Quality Preset Device Testing](/developers/quality-preset-testing) for the 
 - [Device Testing](/developers/device-testing) - Testing device compatibility
 - [Device Hardware Testing](/developers/device-hardware-testing) - Manual test procedure for real iPod hardware
 - [Development Setup](/developers/development) - Setting up dev environment
-- `packages/gpod-testing/README.md` - Test utility documentation
-- `packages/e2e-tests/README.md` - E2E test documentation
+- `test-packages/gpod-testing/README.md` - Test utility documentation
+- `test-packages/e2e-host-tests/README.md` - E2E test documentation

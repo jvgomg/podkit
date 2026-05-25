@@ -3,7 +3,7 @@
  *
  * Exercises the discovery + classification pipeline against synthetic USB
  * descriptors with no real USB hardware. Pairs the unit-side coverage with
- * the VM coverage in `packages/device-testing/src/vm/discovery.e2e.test.ts`.
+ * the VM coverage in `test-packages/e2e-vm-tests/src/discovery.e2e.test.ts`.
  *
  * Tests cover the discovery surface (`parseSystemProfilerUsbData`,
  * `parseSysfsUsbDevices`, `classifyUsbDevices`) — the same modules

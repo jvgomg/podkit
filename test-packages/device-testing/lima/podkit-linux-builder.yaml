@@ -1,0 +1,125 @@
+# Lima VM: Builder (Debian 12 Bookworm — glibc)
+#
+# Role: compile native prebuilds (@podkit/libgpod-node) and the standalone
+# podkit binary for Linux glibc. Invoked from macOS via the turbo tasks
+# `build:linux-prebuild` and `build:linux-binary` (see turbo.json) or the
+# mise wrapper `mise run device-testing:build-linux`.
+#
+# Cornerstone of ADR-016 (Linux VM Test Harness):
+#   - This is the BUILDER VM. It contains the dev toolchain (Bun, Node,
+#     build-essential, libglib2.0-dev, libgdk-pixbuf-2.0-dev, libplist-dev,
+#     cmake, meson, ninja, etc.).
+#   - The TEST VM (test-packages/device-testing/lima/podkit-device-harness.yaml, lands in
+#     TASK-322.01) is deliberately separate and contains NO dev tools so
+#     that dev libraries on PATH cannot mask binary linkage problems.
+#   - DO NOT add test execution to this yaml. Add it to the test VM yaml.
+#
+# Native-build implementation:
+#   This VM and .github/workflows/prebuild.yml invoke the SAME script:
+#   tools/prebuild/build-linux-glibc.sh — which in turn calls the shared
+#   tools/prebuild/build-static-deps.sh. There is no duplicate build logic
+#   between local and CI paths.
+#
+# Debian 12.10 is pinned via the explicit cloud image URLs below; bumping
+# the point release is an intentional act (update both URLs + the test VM
+# yaml + the CI base image if changed).
+#
+# Usage (manual):
+#   limactl start test-packages/device-testing/lima/podkit-linux-builder.yaml --name podkit-linux-builder
+#   # Lima transparently mounts $HOME, so the repo is visible inside the VM
+#   # at its macOS path. Invoke the build script from the repo:
+#   limactl shell podkit-linux-builder --workdir "$(pwd)" -- bash tools/prebuild/build-linux-glibc.sh
+#   limactl stop podkit-linux-builder
+#
+# Usage (via turbo on macOS):
+#   bunx turbo run build:linux-prebuild   # → libgpod-node .node addon
+#   bunx turbo run build:linux-binary     # → dist/podkit-linux-x64
+#
+# Usage (via mise on macOS):
+#   mise run device-testing:build-linux
+
+images:
+  # Debian 12.10 point release. ADR-016 requires pinning to the exact point
+  # release to ensure reproducible kernel + glibc version. Bump deliberately.
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-arm64-20250316-2053.qcow2'
+    arch: 'aarch64'
+  - location: 'https://cloud.debian.org/images/cloud/bookworm/20250316-2053/debian-12-generic-amd64-20250316-2053.qcow2'
+    arch: 'x86_64'
+
+# Mount the host home (writable) — Lima exposes $HOME inside the VM at the
+# same path. The repo is therefore reachable inside the VM at its macOS path
+# (e.g. ~/Development/projects/podkit). Prebuilds are written into the host
+# source tree at packages/libgpod-node/prebuilds/linux-${arch}/ so turbo can
+# hash them as task outputs.
+mounts:
+  - location: '~'
+    writable: true
+
+# Builds are CPU-bound (gcc, meson, ninja); give the VM what it needs.
+cpus: 4
+memory: '4GiB'
+disk: '12GiB'
+
+provision:
+  - mode: system
+    script: |
+      #!/usr/bin/env bash
+      set -eux
+
+      echo "=== Installing build toolchain ==="
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        build-essential \
+        pkg-config \
+        python3 \
+        python3-pip \
+        python3-venv \
+        cmake \
+        ninja-build \
+        intltool \
+        autoconf \
+        automake \
+        libtool \
+        gtk-doc-tools \
+        libglib2.0-dev \
+        libgdk-pixbuf-2.0-dev \
+        libplist-dev \
+        libffi-dev \
+        libsqlite3-dev \
+        libpng-dev \
+        libjpeg-dev \
+        libtiff-dev \
+        libxml2-dev \
+        zlib1g-dev \
+        libpcre2-dev \
+        libxml-parser-perl \
+        ca-certificates \
+        ffmpeg \
+        git \
+        curl \
+        unzip \
+        rsync
+
+      # Debian 12 ships meson 1.0.1; glib 2.82.4 requires meson >= 1.2.0.
+      # Install a newer meson via pip into /usr/local so it shadows apt's.
+      echo "=== Installing meson (newer than apt's 1.0.1) ==="
+      if ! command -v meson &>/dev/null || ! meson --version | awk -F. '{ exit !($1 > 1 || ($1 == 1 && $2 >= 2)) }'; then
+        pip3 install --break-system-packages --upgrade "meson>=1.4.0"
+      fi
+
+      echo "=== Installing Node.js 22 LTS ==="
+      curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+      apt-get install -y nodejs
+
+      echo "=== Installing Bun (system-wide so root + lima user share it) ==="
+      if ! command -v bun &> /dev/null; then
+        curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash
+      fi
+
+      echo "=== Verifying versions ==="
+      node --version
+      bun --version
+      gcc --version | head -1
+      cmake --version | head -1
+      meson --version
+      ninja --version

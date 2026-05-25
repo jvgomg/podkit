@@ -58,7 +58,7 @@ Add a third tier that runs the full inquiry stack against a synthetic USB device
 
 **Pros:** Closes all three gaps. The VM tier is opt-in and Turbo-cached, so the cost on cache hit is zero. Catches the dev-library-shadowing bug class.
 
-**Cons:** New infrastructure. Requires a FunctionFS daemon, two new Lima VM configurations (builder + test), a `packages/device-testing/` package, and a state-layering mechanism via `apply-state.sh`. `dummy_hcd` is unavailable in Docker Desktop's LinuxKit kernel and in GH Actions `ubuntu-latest`'s Azure-flavor kernel, so VM tests run on developer mac hosts only (see "CI: build-only" section below).
+**Cons:** New infrastructure. Requires a FunctionFS daemon, two new Lima VM configurations (builder + test), a `test-packages/device-testing/` package, and a state-layering mechanism via `apply-state.sh`. `dummy_hcd` is unavailable in Docker Desktop's LinuxKit kernel and in GH Actions `ubuntu-latest`'s Azure-flavor kernel, so VM tests run on developer mac hosts only (see "CI: build-only" section below).
 
 ## Decision
 
@@ -99,8 +99,8 @@ The full inquiry pipeline — USB enumeration, SCSI VPD, `lsblk`, capability res
 
 | VM | Yaml | Role | Contents |
 |----|------|------|----------|
-| **Builder VM** | `tools/device-testing/lima/builder.yaml` | Compiles native prebuilds + standalone binary; runs only when source changes (turbo-cached) | Debian 12.10 + Bun, Node, build-essential, libgpod-dev, libglib2.0-dev, etc. |
-| **Test VM** | `tools/device-testing/lima/podkit-device-harness.yaml` | Runs the test suite against the compiled binary | Debian 12.10 + ffmpeg, `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, FunctionFS daemon binary, gpod-tool binary, and `/usr/local/bin/podkit` (compiled statically-linked binary). **NO Bun, NO Node, NO node_modules, NO source tree, NO libgpod-dev or other -dev packages.** |
+| **Builder VM** | `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Compiles native prebuilds + standalone binary; runs only when source changes (turbo-cached) | Debian 12.10 + Bun, Node, build-essential, libgpod-dev, libglib2.0-dev, etc. |
+| **Test VM** | `test-packages/device-testing/lima/podkit-device-harness.yaml` | Runs the test suite against the compiled binary | Debian 12.10 + ffmpeg, `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`, FunctionFS daemon binary, gpod-tool binary, and `/usr/local/bin/podkit` (compiled statically-linked binary). **NO Bun, NO Node, NO node_modules, NO source tree, NO libgpod-dev or other -dev packages.** |
 
 Both Lima yamls pin Debian to the exact point release (`debian-12.10` or the current stable 12.x point release at time of setup) to ensure reproducible kernel version and module availability. The disk field is set to the smallest viable size (5–8 GB) for each VM.
 
@@ -112,9 +112,9 @@ The binary moves from builder VM to test VM via `limactl copy` (or equivalent at
 
 Doctor system-scope checks (FFmpeg, libgpod, libusb, SCSI transport, udev rule, sg permissions) need to be tested against **manipulated system state**, not just mocked. We do this in the test VM by staging and running an in-VM `apply-state.sh` script for each `SystemState` group:
 
-- Before each test group, `applyState(stateId)` copies `tools/device-testing/scripts/apply-state.sh` into the VM, makes it executable, and runs `sudo apply-state.sh <stateId>`.
+- Before each test group, `applyState(stateId)` copies `test-packages/device-testing/scripts/apply-state.sh` into the VM, makes it executable, and runs `sudo apply-state.sh <stateId>`.
 - The script performs the required mutations (e.g. `apt remove ffmpeg`, permission changes, modprobe manipulation) to bring the VM to the named state.
-- State definitions live in `packages/device-testing/src/system-states/`.
+- State definitions live in `test-packages/device-testing/src/system-states/`.
 
 Each `applyState` call takes ~800ms. The current 6-state matrix adds ~5s of state-change overhead per full pass — negligible.
 
@@ -122,17 +122,18 @@ Each `applyState` call takes ~800ms. The current 6-state matrix adds ~5s of stat
 
 | Component | Location | Purpose |
 |-----------|----------|---------|
-| FunctionFS daemon | `tools/device-testing/dummy-hcd/` | Userspace daemon; synthesises USB gadget responses (vendor control transfers, mass-storage backing file) from a `DevicePersona` JSON payload |
-| Builder Lima yaml | `tools/device-testing/lima/builder.yaml` | Debian 12.10 VM with dev toolchain; produces linux-x64 prebuilds + standalone binary |
-| Test Lima yaml | `tools/device-testing/lima/podkit-device-harness.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
-| `packages/device-testing/` | New package | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, `SubprocessRunner` re-exports |
+| FunctionFS daemon | `test-packages/device-testing-daemon/` | Userspace daemon; synthesises USB gadget responses (vendor control transfers, mass-storage backing file) from a `DevicePersona` JSON payload |
+| Builder Lima yaml | `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Debian 12.10 VM with dev toolchain; produces linux-x64 prebuilds + standalone binary |
+| Test Lima yaml | `test-packages/device-testing/lima/podkit-device-harness.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
+| `test-packages/device-testing/` | Harness library + self-tests | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, `SubprocessRunner` re-exports, plus the harness's own e2e self-tests (`personas-baseline`, `backing-file-content`) |
+| `test-packages/e2e-vm-tests/` | podkit feature VM tests | Pure consumer of `@podkit/device-testing`; exercises `podkit device scan`, `doctor`, discovery reconciliation, dual-daemon lifecycle, mass-storage binding, etc. against synthesised personas. Mirrors how `@podkit/e2e-host-tests` is a test app that imports podkit. |
 
 **VM test backends:**
 
 The `TestRuntime` interface abstracts how a test connects to the Linux environment. Two implementations ship:
 
 - `local-linux` — runs the FunctionFS daemon as a subprocess on the current host. Used on Linux dev hosts directly.
-- `lima-test-vm` — wraps `local-linux` execution inside a Lima test VM using `tools/device-testing/lima/podkit-device-harness.yaml`. Used on macOS dev hosts.
+- `lima-test-vm` — wraps `local-linux` execution inside a Lima test VM using `test-packages/device-testing/lima/podkit-device-harness.yaml`. Used on macOS dev hosts.
 
 One test file, swappable backend. Tests do not need to know which backend is active.
 
@@ -141,7 +142,7 @@ One test file, swappable backend. Tests do not need to know which backend is act
 2. If running on macOS and Lima is installed with the test VM instance reachable: `lima-test-vm` is available; VM tests run.
 3. Otherwise: VM tests are skipped with a single-line warning (`[vm] Linux VM not available — skipping device integration tests`).
 
-Turbo caches VM test results against the `tools/device-testing/dummy-hcd/` and `packages/device-testing/` input sets, so the cost on cache hit is zero regardless of platform.
+Turbo caches VM test results against the `test-packages/device-testing-daemon/`, `test-packages/device-testing/`, and `test-packages/e2e-vm-tests/` input sets, so the cost on cache hit is zero regardless of platform.
 
 ### Binary quality parity
 
@@ -226,7 +227,7 @@ Docker containers share the host kernel (or Docker Desktop's LinuxKit kernel on 
 
 ### Lima `virtual-ipod.yaml` is off-limits
 
-`tools/lima/virtual-ipod.yaml` is the user-facing demo VM (see doc-028). The test harness gets its own yamls under `tools/device-testing/lima/` to avoid any risk of the demo environment being disturbed by test workloads. The naming convention is deliberate: anything under `tools/device-testing/` is test infrastructure.
+`tools/lima/virtual-ipod.yaml` is the user-facing demo VM (see doc-028). The test harness gets its own yamls under `test-packages/device-testing/lima/` to avoid any risk of the demo environment being disturbed by test workloads. The naming convention is deliberate: anything under `test-packages/device-testing/` is test infrastructure.
 
 ### CI: build-only
 
@@ -236,8 +237,8 @@ A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for
 
 ### Reuse of existing infrastructure
 
-- `packages/gpod-testing/` — test iPod templates used by VM tests to populate the gadget filesystem
-- `packages/e2e-tests/` — existing target abstraction reused for CLI-level VM assertions
+- `test-packages/gpod-testing/` — test iPod templates used by VM tests to populate the gadget filesystem
+- `test-packages/e2e-host-tests/` — existing target abstraction reused for CLI-level VM assertions
 - Injectable transports in `packages/ipod-firmware/` — reused unchanged by unit tests
 
 ## Consequences
@@ -274,7 +275,7 @@ A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for
 - [doc-032](../backlog/docs/doc-032%20-%20Spec-Phase-1-—-ipod-firmware-SCSI-delivery.md) — Spec: P1 ipod-firmware SCSI delivery (injectable transport interfaces)
 - [doc-033](../backlog/docs/doc-033%20-%20Spec-Phase-2-—-USB-inquiry-consolidation.md) — Spec: P2 USB inquiry consolidation
 - `packages/ipod-firmware/` — injectable transport interfaces (`UsbBinding`, `ScsiSyscall`, `ProbeFs`)
-- `packages/gpod-testing/` — test iPod template utilities
+- `test-packages/gpod-testing/` — test iPod template utilities
 - `.github/workflows/prebuild.yml` — existing native-build CI workflow; builder VM shares its implementation
 - `tools/prebuild/build-static-deps.sh` — shared static-deps build script
 - TASK-320 — GH Actions `dummy_hcd` spike (FAIL recorded; CI test execution is out of scope)

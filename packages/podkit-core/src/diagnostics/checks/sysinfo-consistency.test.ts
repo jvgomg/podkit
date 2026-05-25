@@ -672,11 +672,11 @@ describe('checkSysinfoConsistency — fold rule (all skip ⇒ skip)', () => {
 
 const PERSONA_NANO_7G_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../device-testing/src/personas/ipod-nano-7g-space-gray'
+  '../../../../../test-packages/device-testing/src/personas/ipod-nano-7g-space-gray'
 );
 const PERSONA_VIDEO_5G_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
-  '../../../../device-testing/src/personas/ipod-video-5g-iflash-1tb'
+  '../../../../../test-packages/device-testing/src/personas/ipod-video-5g-iflash-1tb'
 );
 
 describe('checkSysinfoConsistency — real persona fixtures', () => {

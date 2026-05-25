@@ -1,0 +1,40 @@
+{
+  "name": "@podkit/device-testing",
+  "version": "0.0.1",
+  "description": "Device persona + system-state fixtures and test runtime harness for podkit's VM integration tests",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types && bun run build:types",
+    "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "test": "bun test",
+    "test:unit": "bun test --pass-with-no-tests",
+    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
+    "test:vm": "bun test src/vm --pass-with-no-tests",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist",
+    "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",
+    "build:linux-binary": "bash scripts/build-linux-binary.sh",
+    "build:backing-file": "bun run scripts/build-backing-file.ts",
+    "transfer-binary": "bun run scripts/transfer-binary.ts"
+  },
+  "dependencies": {
+    "@podkit/core": "workspace:*",
+    "@podkit/device-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@podkit/ipod-db": "workspace:*",
+    "@podkit/ipod-firmware": "workspace:*",
+    "@types/bun": "latest"
+  }
+}

@@ -48,7 +48,7 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 # Builder VM (Lima — Linux glibc cross-compile from macOS)
 # Produces @podkit/libgpod-node prebuilds + the podkit standalone binary
 # via the same shared script the GHA workflows use.
-# See: tools/device-testing/lima/podkit-linux-builder.yaml and tools/device-testing/lima/README.md
+# See: test-packages/device-testing/lima/podkit-linux-builder.yaml and test-packages/device-testing/lima/README.md
 # ---------------------------------------------------------------------------
 
 [tasks."device-testing:build-linux"]
@@ -71,7 +71,7 @@ run = "bunx turbo run @podkit/device-testing#build:dummy-hcd-daemon"
 
 [tasks."device-testing:transfer-binary"]
 description = "Transfer the linux-x64/arm64 podkit binary into the Tier 3 test VM (also gpod-tool when host artefact exists)"
-run = "bun run --cwd packages/device-testing transfer-binary"
+run = "bun run --cwd test-packages/device-testing transfer-binary"
 
 [tasks."device-testing:builder:stop"]
 description = "Stop the builder VM (preserves state + caches)"

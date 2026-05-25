@@ -79,13 +79,13 @@
       "inputs": ["src/**", "test/**", "bunfig.toml", "package.json"],
       "outputs": []
     },
-    "@podkit/e2e-tests#test": {
+    "@podkit/e2e-host-tests#test": {
       "dependsOn": ["^build", "@podkit/gpod-testing#generate-templates"],
       "inputs": ["src/**"],
       "outputs": []
     },
-    "@podkit/e2e-tests#test:unit": { "dependsOn": [] },
-    "@podkit/e2e-tests#test:integration": { "dependsOn": [] },
+    "@podkit/e2e-host-tests#test:unit": { "dependsOn": [] },
+    "@podkit/e2e-host-tests#test:integration": { "dependsOn": [] },
     "typecheck": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "tsconfig.json"],
@@ -161,7 +161,21 @@
         "src/runners/**",
         "src/runtime.ts",
         "src/subprocess.ts",
-        "$TURBO_ROOT$/tools/device-testing/**",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
+        "package.json",
+        "bunfig.toml"
+      ],
+      "outputs": []
+    },
+    "@podkit/e2e-vm-tests#test:vm": {
+      "dependsOn": ["@podkit/device-testing-daemon#build", "^build"],
+      "cache": true,
+      "inputs": [
+        "src/**",
+        "$TURBO_ROOT$/test-packages/device-testing/src/**",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/**",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/apply-state.sh",
         "package.json",
         "bunfig.toml"
       ],
@@ -178,7 +192,7 @@
         "$TURBO_ROOT$/tools/prebuild/build-linux-glibc.sh",
         "$TURBO_ROOT$/tools/prebuild/get-cflags.sh",
         "$TURBO_ROOT$/tools/prebuild/get-ldflags.sh",
-        "$TURBO_ROOT$/tools/device-testing/lima/builder.yaml",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
         "scripts/build-linux-prebuild.sh"
       ],
       "outputs": [
@@ -186,17 +200,16 @@
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**"
       ]
     },
-    "@podkit/device-testing#build:dummy-hcd-daemon": {
+    "@podkit/device-testing-daemon#build": {
       "dependsOn": [],
       "inputs": [
-        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/src/**",
-        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/scripts/build.sh",
-        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/package.json",
-        "$TURBO_ROOT$/tools/device-testing/dummy-hcd/tsconfig.json",
-        "$TURBO_ROOT$/packages/device-testing/src/personas/sidecar.ts",
-        "scripts/build-dummy-hcd-daemon.sh"
+        "src/**",
+        "scripts/build.sh",
+        "package.json",
+        "tsconfig.json",
+        "$TURBO_ROOT$/test-packages/device-testing/src/personas/sidecar.ts"
       ],
-      "outputs": ["$TURBO_ROOT$/tools/device-testing/dummy-hcd/dist/dummy-hcd-daemon-linux-*"]
+      "outputs": ["dist/dummy-hcd-daemon-linux-*"]
     },
     "@podkit/device-testing#build:linux-binary": {
       "dependsOn": ["@podkit/device-testing#build:linux-prebuild", "^build"],
@@ -211,7 +224,7 @@
         "$TURBO_ROOT$/packages/podkit-cli/scripts/compile.sh",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-x64/**",
         "$TURBO_ROOT$/packages/libgpod-node/prebuilds/linux-arm64/**",
-        "$TURBO_ROOT$/tools/device-testing/lima/builder.yaml",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/bun.lock",

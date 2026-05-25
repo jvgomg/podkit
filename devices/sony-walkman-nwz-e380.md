@@ -204,7 +204,7 @@ Indexing trigger: the device rescans the FAT32 partition and rebuilds the Conten
 
 ## Research Notes
 
-- **Content Database reverse-engineering.** The STDB* binary format would let podkit incrementally update the DB rather than relying on the device's full rescan. Initial bytes captured in `packages/device-testing/src/personas/sony-nwz-e384/raw/stdbdata-magic.txt` — first 16 bytes of STDBDATA.DAT look like a header with size/count fields (4-byte LE). STDBSTR.DAT bytes after the initial header are high-entropy — needs investigation whether strings are obfuscated, compressed, or whether the entropy is purely from the offset/hash structure.
+- **Content Database reverse-engineering.** The STDB* binary format would let podkit incrementally update the DB rather than relying on the device's full rescan. Initial bytes captured in `test-packages/device-testing/src/personas/sony-nwz-e384/raw/stdbdata-magic.txt` — first 16 bytes of STDBDATA.DAT look like a header with size/count fields (4-byte LE). STDBSTR.DAT bytes after the initial header are high-entropy — needs investigation whether strings are obfuscated, compressed, or whether the entropy is purely from the offset/hash structure.
 - **Per-SKU PID confirmation.** E383 / E385 are believed to share PID `0x0882` with E384 based on community sources, but only E384 is firsthand-verified. Plug in E383 / E385 hardware to confirm.
 - **DSEE Engine** (Sony's high-frequency upsampling DSP). Available on this series per Sony marketing. Capability XMLs don't mention it (it's a playback-time DSP setting, not a content capability).
 - **Bluetooth.** NWZ-E380 series has no Bluetooth (added in the W-series and later).
@@ -229,7 +229,7 @@ Not yet implemented in podkit (2026-05-13). When implementing:
    ```
 3. **Capability XML parser.** Future-proof by reading `/capability_00.xml` at sync time and reconciling with the preset — if a unit reports different formats than the preset, the XML wins. Generalizes to other Walkman series (NW-A / ZX) which use the same XML schema.
 4. **Marker-file preservation.** When writing files, never delete `.E380`. Add to a global "protected paths" list.
-5. **Persona fixture.** `packages/device-testing/src/personas/sony-nwz-e384/` carries the captured probes, capability XMLs, ContentDB magic bytes, and a directory listing — see `packages/device-testing/src/personas/sony-nwz-e384/provenance.md` for the full session record.
+5. **Persona fixture.** `test-packages/device-testing/src/personas/sony-nwz-e384/` carries the captured probes, capability XMLs, ContentDB magic bytes, and a directory listing — see `test-packages/device-testing/src/personas/sony-nwz-e384/provenance.md` for the full session record.
 
 ## Inventory
 

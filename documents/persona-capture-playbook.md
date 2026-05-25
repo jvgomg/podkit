@@ -9,8 +9,8 @@ Step-by-step directive for an agent + human pair to capture `DevicePersona` fixt
 | File | Why |
 |------|-----|
 | `adr/adr-017-device-persona-fixtures.md` § "DevicePersona schema" + § "Schema v2 — May 2026" | Authoritative schema + capture rationale + v2 migration notes |
-| `packages/device-testing/src/personas/types.ts` | The canonical TypeScript type — every persona file must satisfy this |
-| `packages/device-testing/src/system-states/healthy.ts` | Example of a sibling fixture file's shape — match the comment/structure style |
+| `test-packages/device-testing/src/personas/types.ts` | The canonical TypeScript type — every persona file must satisfy this |
+| `test-packages/device-testing/src/system-states/healthy.ts` | Example of a sibling fixture file's shape — match the comment/structure style |
 | `documents/test-devices.md` | Inventory of the user's hardware with model numbers, serial-suffix mappings, and notes per device |
 | `documents/sysinfo-captures/` | Pre-existing SysInfoExtended XML payloads for 7 of the 9 iPods — reuse these; do NOT re-capture |
 | `documents/device-identification.md` | USB-inquiry vs SCSI-fallback boundary + transport semantics |
@@ -44,7 +44,7 @@ User has 9 physical devices and we want **2 additional synthesised personas** (r
 For **each** persona, produce this directory:
 
 ```
-packages/device-testing/src/personas/<persona-id>/
+test-packages/device-testing/src/personas/<persona-id>/
 ├── persona.ts                    # exports the typed DevicePersona value
 ├── provenance.md                 # capture-session metadata (template below)
 ├── raw/
@@ -62,7 +62,7 @@ Commit raw probe files alongside the persona — they are the evidence trail for
 
 After writing `<persona-id>/persona.ts`, add an import + map entry to:
 
-`packages/device-testing/src/personas/index.ts`
+`test-packages/device-testing/src/personas/index.ts`
 
 ```ts
 import { ipodVideo5gIflash1tb } from './ipod-video-5g-iflash-1tb/persona.js';
@@ -111,7 +111,7 @@ User reads off the device's `/dev/diskN` path. Agent records it.
 ```bash
 system_profiler SPUSBDataType -json > /tmp/sp-full.json
 # Agent then walks the JSON to find the specific device's subtree and writes
-# packages/device-testing/src/personas/<id>/raw/system-profiler.json with just that subtree.
+# test-packages/device-testing/src/personas/<id>/raw/system-profiler.json with just that subtree.
 ```
 
 > Save only the device's own subtree (the object containing `_name`, `vendor_id`, `product_id`, `serial_num`, etc.), not the whole `SPUSBDataType` array. This keeps fixtures small + diffable.
@@ -119,7 +119,7 @@ system_profiler SPUSBDataType -json > /tmp/sp-full.json
 **4. Capture `diskutil list -plist` for this device only:**
 
 ```bash
-diskutil list -plist /dev/diskN > packages/device-testing/src/personas/<id>/raw/diskutil.plist
+diskutil list -plist /dev/diskN > test-packages/device-testing/src/personas/<id>/raw/diskutil.plist
 ```
 
 **5. Compose `usbDescriptor` from the JSON (schema v2):**
@@ -223,7 +223,7 @@ For iPods 1–7 in the inventory, do **not** re-capture — the XML already exis
 
 ```bash
 cp documents/sysinfo-captures/<existing-file>.xml \
-   packages/device-testing/src/personas/<id>/raw/sysinfo-extended.xml
+   test-packages/device-testing/src/personas/<id>/raw/sysinfo-extended.xml
 ```
 
 Then in `persona.ts`, load it via `readFileSync` at module load:
@@ -245,7 +245,7 @@ The Echo Mini exposes two volumes: `ECHO MINI` (firmware, small) + `Echo SD` (FA
 
 ```bash
 # User identifies the firmware partition disk (the small one).
-sudo dd if=/dev/diskNs1 of=packages/device-testing/src/personas/echo-mini/raw/mass-storage-backing.img bs=4M status=progress
+sudo dd if=/dev/diskNs1 of=test-packages/device-testing/src/personas/echo-mini/raw/mass-storage-backing.img bs=4M status=progress
 ```
 
 > Confirm the partition is < 16 MiB before dumping. If it's the SD-card partition (126 GB), STOP — that's the wrong partition. Document the firmware partition's size in `provenance.md`.
@@ -290,7 +290,7 @@ User confirms which `/dev/sdX` matches.
 **2. Capture `lsblk -J` for this device with full output columns:**
 
 ```bash
-sudo lsblk -J -O /dev/sdX > packages/device-testing/src/personas/<id>/raw/lsblk.json
+sudo lsblk -J -O /dev/sdX > test-packages/device-testing/src/personas/<id>/raw/lsblk.json
 ```
 
 The `-O` flag emits every available column (PTUUID, PARTUUID, MODEL, SERIAL, FSTYPE, etc.). Massive but structured. Tier 1 tests only consume specific fields — keeping the full dump means future tests don't need re-capture.
@@ -332,7 +332,7 @@ import { readFileSync } from 'node:fs';
 import { resolveCapabilities } from '@podkit/core';
 import { checkReadiness } from '@podkit/core';
 
-const sie = readFileSync(`packages/device-testing/src/personas/${id}/raw/sysinfo-extended.xml`, 'utf8');
+const sie = readFileSync(`test-packages/device-testing/src/personas/${id}/raw/sysinfo-extended.xml`, 'utf8');
 const usb = { vendorId: 0x05ac, productId: 0x1209, /* … */ };
 const caps = resolveCapabilities({ identity: /* derived from usb+sie */ });
 console.log(JSON.stringify(caps, null, 2));
@@ -429,7 +429,7 @@ The user **does** own a touch 5G. Decide together: capture real (treat as a 10th
 
 ## Validation pass
 
-After every persona is registered in `packages/device-testing/src/personas/index.ts`:
+After every persona is registered in `test-packages/device-testing/src/personas/index.ts`:
 
 1. `bun run build --filter @podkit/device-testing` — every persona must compile under the `DevicePersona` type. TypeScript errors here are the most common capture-mistake signal.
 2. `bun run test:unit --filter @podkit/device-testing` — the existing scaffold smoke test (`runtime.test.ts`) asserts the personas Map has the expected size. Update that test to expect 11 entries instead of 0.
@@ -451,7 +451,7 @@ After every persona is registered in `packages/device-testing/src/personas/index
 
 ## Done criteria
 
-- 11 persona directories under `packages/device-testing/src/personas/`
+- 11 persona directories under `test-packages/device-testing/src/personas/`
 - Registry index populated; package builds + tests pass
 - `documents/test-devices.md` updated with capture timestamps
 - Each persona has a `provenance.md` filled out

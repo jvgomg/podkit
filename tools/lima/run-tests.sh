@@ -89,7 +89,7 @@ run_tests() {
       --exclude 'packages/*/bin/' \
       --exclude 'packages/*/.turbo/' \
       --exclude 'packages/libgpod-node/prebuilds/' \
-      --exclude 'packages/gpod-testing/templates/' \
+      --exclude 'test-packages/gpod-testing/templates/' \
       --exclude 'packages/ipod-db/fixtures/databases/' \
       --exclude 'packages/demo/demo.gif' \
       --exclude 'packages/docs-site/' \

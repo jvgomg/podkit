@@ -7,7 +7,7 @@ Last updated: 2026-05-23 (TASK-324 Phase 5 AC #1, #5, #6 — two state-variant p
 ## Synthesised personas (no hardware)
 
 In addition to the hardware-captured personas documented below, five
-synthesised personas live in `packages/device-testing/src/personas/` and
+synthesised personas live in `test-packages/device-testing/src/personas/` and
 exercise paths that cannot be tested from physical inventory alone:
 
 | Persona ID | Created | Purpose |
@@ -435,7 +435,7 @@ No FLAC / ALAC / Vorbis / Opus support — predates Sony's lossless adoption on 
 
 `PICTURES/` (plural) also exists with a `.E380` marker but is not declared in `<FileSystem>` — likely a Sony PC-app convention; use `PICTURE/`.
 
-**Persona capture:** `packages/device-testing/src/personas/sony-nwz-e384/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
+**Persona capture:** `test-packages/device-testing/src/personas/sony-nwz-e384/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
 
 **Implementation notes (for future Sony preset work):** see `devices/sony-walkman-nwz-e380.md` § "Implementation Notes" — proposed `sony-walkman-e380` preset, marker-file preservation, capability-XML reconciliation.
 
@@ -492,7 +492,7 @@ Heritage SonicStage-era HDD Walkman (2005). Added 2026-05-13 to catalog the Open
 
 **Critical limitation:** Stock firmware accepts content only via SonicStage (Windows, discontinued 2008). Files dropped into `OMGAUDIO/` without matching database entries are invisible to the device's library. Firmware v2.0+ adds a "USB Mass Storage Mode" toggle for folder-only MP3 browsing — **the unit captured here is v1.00 (no MSM mode)**.
 
-**Persona capture:** `packages/device-testing/src/personas/sony-nw-a1000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy note in provenance** — the captured database-file hexdumps include user music metadata in cleartext UTF-16LE; review before committing to a public branch.
+**Persona capture:** `test-packages/device-testing/src/personas/sony-nw-a1000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy note in provenance** — the captured database-file hexdumps include user music metadata in cleartext UTF-16LE; review before committing to a public branch.
 
 **Implementation notes (three viable paths):** detect-and-reject with friendly SonicStage warning / MSM-mode preset (requires firmware v2.0+) / full OpenMG writer (out of scope). See `devices/sony-walkman-nw-a-series.md` § "Implementation Notes".
 
@@ -531,7 +531,7 @@ Sibling of NW-A1000 in the SonicStage-era HDD Walkman line. Added 2026-05-13. Sa
 | `MCKF` / `MCKB` chunks | `A_WM/ARDETECT.DAT`, `A_WM/C2DETECT.DAT` | DRM-handshake challenge records |
 | (header `00 01 00 80 …`) | `SRCIDLST.DAT` + `.BAK` | Source ID List (content origin tracking) |
 
-**Persona capture:** `packages/device-testing/src/personas/sony-nw-a3000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). Privacy notice on captured database hexdumps inherits from `sony-nw-a1000`.
+**Persona capture:** `test-packages/device-testing/src/personas/sony-nw-a3000/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). Privacy notice on captured database hexdumps inherits from `sony-nw-a1000`.
 
 ---
 
@@ -567,7 +567,7 @@ Third NW-A HDD unit. Added 2026-05-13. **Same hardware as NW-A1000 — only the 
 
 **New magic bytes / artefacts** (per `raw/` captures): `MediaGo.xml` (XML, schema v1, Media Go classification), `IndexerVolumeGuid` (Windows binary GUID, 76 bytes), `WPSettings.dat` (Windows Properties, 12 bytes).
 
-**Persona capture:** `packages/device-testing/src/personas/sony-nw-a1200/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy notices in provenance** — captured `MediaGo.xml` contains a per-unit device UUID; review before public commit.
+**Persona capture:** `test-packages/device-testing/src/personas/sony-nw-a1200/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session). **Privacy notices in provenance** — captured `MediaGo.xml` contains a per-unit device UUID; review before public commit.
 
 ---
 
@@ -603,7 +603,7 @@ Sony's original "Network Walkman" line — predates the NW-A rebrand (2004–200
 
 **Additional DRM gate vs NW-A:** `MACLIST0.DAT` + `.BAK` carry per-track Message Authentication Codes — encrypted records (no plaintext magic) that DRM checks at playback. Modifying `.OMA` without updating the MAC will likely cause playback to fail. Not present on NW-A.
 
-**Persona capture:** `packages/device-testing/src/personas/sony-nw-hd5/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
+**Persona capture:** `test-packages/device-testing/src/personas/sony-nw-hd5/` (Mac session complete; Linux capture deferred — pattern confirmed by sibling personas this session).
 
 **Implementation note:** same `detect-and-reject` recommendation as NW-A. USB hints entry would be `0x054c:0x0233 → 'sony-nw-hd-network-walkman'`. If support is ever attempted, NW-HD needs both the separate-JPG artwork emission and MACLIST0 generation on top of NW-A's OpenMG writer requirements — substantially harder than NW-A.
 

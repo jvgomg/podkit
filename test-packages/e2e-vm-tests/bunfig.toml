@@ -1,0 +1,6 @@
+[test]
+# Exclude .e2e.test.ts from the default `bun test` run; the `test:vm` script
+# passes `src/` explicitly to opt them back in. Mirrors the gate in
+# @podkit/device-testing's bunfig.toml so a stray `bun test` from anywhere in
+# the repo doesn't try to spin up VM personas.
+pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts"]

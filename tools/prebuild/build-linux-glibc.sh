@@ -3,7 +3,7 @@
 # Shared Linux glibc native-build entry point.
 #
 # Single source of truth invoked by:
-#   - tools/device-testing/lima/podkit-linux-builder.yaml (local builds on macOS via Lima)
+#   - test-packages/device-testing/lima/podkit-linux-builder.yaml (local builds on macOS via Lima)
 #   - .github/workflows/prebuild.yml         (CI prebuilds for linux-x64/arm64 glibc)
 # (build-platform.yml only handles musl/Alpine + darwin and does not call this script.)
 #
@@ -118,7 +118,7 @@ else
   ldd "$PREBUILD" || true
   # Forbidden runtime deps: libgpod plus the full glib/gdk-pixbuf/plist transitive
   # closure that must be statically linked into the addon. Keep this aligned with
-  # the broader check in packages/device-testing/scripts/build-linux-binary.sh.
+  # the broader check in test-packages/device-testing/scripts/build-linux-binary.sh.
   if ldd "$PREBUILD" 2>/dev/null | grep -E 'libgpod|libgdk_pixbuf|libglib|libgobject|libgio|libgmodule|libplist|libffi|libxml2|libsqlite|libpcre2|libpng|libjpeg|libtiff'; then
     echo "ERROR: $PREBUILD has runtime dependencies on libraries that must be" >&2
     echo "       statically linked. Check tools/prebuild/build-static-deps.sh" >&2

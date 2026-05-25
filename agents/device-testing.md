@@ -2,7 +2,7 @@
 
 Canonical reference for agents writing tests for device identification, doctor checks, and readiness pipelines. Read this before touching `@podkit/device-testing`, any file named `*.e2e.test.ts`, or tasks in milestone m-19.
 
-Also see [packages/device-testing/README.md](../packages/device-testing/README.md) for package-level API details, [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full architecture decision, and [ADR-017](../adr/adr-017-device-persona-fixtures.md) for the fixture registry design.
+Also see [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) for package-level API details, [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full architecture decision, and [ADR-017](../adr/adr-017-device-persona-fixtures.md) for the fixture registry design.
 
 ## Purpose
 
@@ -27,7 +27,7 @@ See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the architecture deci
 
 ## `DevicePersona` schema
 
-The full TypeScript interface lives in [`packages/device-testing/src/personas/types.ts`](../packages/device-testing/src/personas/types.ts). Nine top-level fields:
+The full TypeScript interface lives in [`test-packages/device-testing/src/personas/types.ts`](../test-packages/device-testing/src/personas/types.ts). Nine top-level fields:
 
 | Field | Type | Purpose |
 |-------|------|---------|
@@ -52,7 +52,7 @@ TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starter
 | `ipod-nano-7g-populated` | `ipod-nano-7g-space-gray` | USB inquiry |
 | `echo-mini-empty` | `echo-mini` | Mass-storage preset |
 
-The mapping lives in `packages/device-testing/src/vm/vm-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
+The mapping lives in `test-packages/device-testing/src/vm/vm-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
 
 ### Synthesised personas (no hardware)
 
@@ -98,7 +98,7 @@ This matters because importing `personas` from outside `@podkit/device-testing`
 used to crash with `ENOENT`: the bundler doesn't copy `raw/` directories
 into `dist/`, and even before bundling the persona registry coupled its
 load order to filesystem state. The smoke test
-[`src/personas/no-fs-at-load.test.ts`](../packages/device-testing/src/personas/no-fs-at-load.test.ts)
+[`src/personas/no-fs-at-load.test.ts`](../test-packages/device-testing/src/personas/no-fs-at-load.test.ts)
 pins the contract by spawning a subprocess that patches `fs.readFileSync`
 before importing the registry and asserts the call count stays at zero.
 
@@ -115,7 +115,7 @@ before importing the registry and asserts the call count stays at zero.
 **TypeScript declarations.** TypeScript doesn't ship built-in
 declarations for `*.xml` / `*.plist` / `*.txt` imports. Ambient
 declarations live in
-[`packages/device-testing/src/personas/text-imports.d.ts`](../packages/device-testing/src/personas/text-imports.d.ts)
+[`test-packages/device-testing/src/personas/text-imports.d.ts`](../test-packages/device-testing/src/personas/text-imports.d.ts)
 and apply to every persona in the registry. JSON imports are handled by
 `resolveJsonModule: true` in the workspace `tsconfig.json`.
 
@@ -154,13 +154,13 @@ Two seeding paths:
 
 Determinism contract: two runs of the same persona must produce a byte-identical sha256. The runner's `EnsureBackingFileResult.sha256` is the tripwire — assert it in your test if you depend on byte-stability. See `src/vm/backing-file-content.e2e.test.ts` for the canonical determinism check (one `it` runs `ensureBackingFile` twice and compares).
 
-**Runner implementation:** `packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
+**Runner implementation:** `test-packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
 
-**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `tools/device-testing/lima/podkit-device-harness.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
+**VM provisioning prerequisites** for seeding: `mtools` package (provides `mcopy` + `mmd`), provisioned by `test-packages/device-testing/lima/podkit-device-harness.yaml`. Operates on partition-less FAT32 images via `MTOOLS_SKIP_CHECK=1`.
 
 ## `SystemState` registry
 
-The full TypeScript interface is in [`packages/device-testing/src/system-states/types.ts`](../packages/device-testing/src/system-states/types.ts). Detailed guidance is in [`packages/device-testing/src/system-states/README.md`](../packages/device-testing/src/system-states/README.md).
+The full TypeScript interface is in [`test-packages/device-testing/src/system-states/types.ts`](../test-packages/device-testing/src/system-states/types.ts). Detailed guidance is in [`test-packages/device-testing/src/system-states/README.md`](../test-packages/device-testing/src/system-states/README.md).
 
 ### Starter state set (v1)
 
@@ -189,7 +189,7 @@ For VM tests: once TASK-322 lands, also run the matching VM-mutation script and 
 `TestRuntime` abstracts where a VM test executes. Two implementations:
 
 - **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Auto-registered when `@podkit/device-testing` is imported on Linux. Use on Linux dev hosts directly.
-- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `tools/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
+- **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
 
 Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available. If neither is available, VM tests skip with a single-line warning.
 
@@ -233,11 +233,11 @@ Single source of truth: `tools/prebuild/build-linux-glibc.sh`.
 
 | Path | Purpose |
 |------|---------|
-| `tools/device-testing/lima/podkit-linux-builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
-| `tools/device-testing/lima/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
-| `tools/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
+| `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
+| `test-packages/device-testing/lima/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
+| `test-packages/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
 
-For the full operator manual, see [`tools/device-testing/lima/README.md`](../tools/device-testing/lima/README.md).
+For the full operator manual, see [`test-packages/device-testing/lima/README.md`](../test-packages/device-testing/lima/README.md).
 
 **Local build:**
 
@@ -249,19 +249,20 @@ mise run device-testing:build-linux   # turbo-cached; invokes builder VM
 
 ## Where to write a VM test
 
-VM test infrastructure landed in TASK-322. Reference implementation:
-`packages/device-testing/src/vm/personas-baseline.e2e.test.ts`.
+VM tests live in two packages:
 
-**Filename:** `*.e2e.test.ts` under `src/vm/`. The `bunfig.toml`
-`pathIgnorePatterns` excludes `*.e2e.test.ts` from the default `bun test`
-run; `bun run test:vm` (which passes `src/vm` explicitly) opts them back in.
+- **`test-packages/device-testing/src/vm/`** — harness self-tests (e.g. `personas-baseline.e2e.test.ts`, `backing-file-content.e2e.test.ts`). Anything that pins the harness's own correctness (persona grouping, backing-file byte-determinism, daemon lifecycle smoke). These tests use relative imports into the harness because they ARE the harness's tests.
+- **`test-packages/e2e-vm-tests/src/`** — podkit feature tests (e.g. `discovery.e2e.test.ts`, `doctor-output-contract.e2e.test.ts`, `mass-storage-binding.e2e.test.ts`). Anything that exercises the podkit binary against a synthesised persona. These tests import everything from `@podkit/device-testing` — never reach into the harness's relative file layout.
 
-**Imports:**
-- `limaTestVmRunner` from `../runners/lima-test-vm.js` — the `TestRuntime`
-  implementation that executes commands inside `podkit-device-harness`.
-- `resolveVmAvailability`, `groupPersonasByState`, `VM_WARM_TIMEOUT_MS`,
-  `VM_COLD_TIMEOUT_MS` from `./vm-runtime-setup.js`.
-- `withPersona`, `runJsonCommand` from `./persona-fixture.js`.
+Reference implementation for harness self-tests: `test-packages/device-testing/src/vm/personas-baseline.e2e.test.ts`. Reference for podkit feature tests: `test-packages/e2e-vm-tests/src/discovery.e2e.test.ts`.
+
+**Filename:** `*.e2e.test.ts` under the appropriate package's `src/` (harness self-tests stay under `src/vm/`; feature tests live at `src/` root of `@podkit/e2e-vm-tests`). The `bunfig.toml` `pathIgnorePatterns` in both packages excludes `*.e2e.test.ts` from the default `bun test` run; `bun run test:vm` opts them back in by passing the test directory explicitly.
+
+**Imports (podkit feature tests in `@podkit/e2e-vm-tests`):** Everything comes from `@podkit/device-testing`:
+- `limaTestVmRunner` — the `TestRuntime` implementation that executes commands inside `podkit-device-harness`.
+- `resolveVmAvailability`, `groupPersonasByState`, `resolveStarterPersonas`, `VM_WARM_TIMEOUT_MS`, `VM_COLD_TIMEOUT_MS`.
+- `withPersona`, `runJsonCommand`.
+- Persona + `SystemState` named exports (`ipodVideo5gIflash1tb`, `echoMini`, `healthy`, etc.).
 
 **Suite shape** — gate, prepare/teardown, then one `describe` per state group:
 
@@ -294,7 +295,7 @@ describe.skipIf(!vmAvailable)('my VM suite', () => {
 ```bash
 mise run device-testing:build-linux        # builds podkit + dummy-hcd-daemon
 mise run device-testing:transfer-binary    # copies both into podkit-device-harness
-bun run test:vm                            # from repo root (or: bun run --cwd packages/device-testing test:vm)
+bun run test:vm                            # from repo root (or: bun run --cwd test-packages/device-testing test:vm)
 ```
 
 VM tests are excluded from the default `bun test` run via `bunfig.toml`
@@ -317,12 +318,12 @@ infrastructure pieces back this:
 
 - `dummy_hcd num=4` (via `/etc/modprobe.d/podkit-device-harness-dummy-hcd.conf`)
   exposes four virtual UDCs at `/sys/class/udc/dummy_udc.{0..3}`.
-- `attachUdc` in `tools/device-testing/dummy-hcd/src/gadget.ts` walks
+- `attachUdc` in `test-packages/device-testing-daemon/src/gadget.ts` walks
   `/sys/kernel/config/usb_gadget/*/UDC` and picks the first UDC not
   already claimed. Caller (VM test / runner) must serialise
   `systemctl start` invocations — the read-then-write is not atomic.
 
-Reference test: `src/vm/dual-daemon-lifecycle.e2e.test.ts`. Boots
+Reference test: `test-packages/e2e-vm-tests/src/dual-daemon-lifecycle.e2e.test.ts`. Boots
 two personas concurrently, asserts both configfs trees + extra `/dev/sg*`
 nodes, verifies clean teardown.
 
@@ -330,6 +331,6 @@ nodes, verifies clean teardown.
 
 - [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — device test stack architecture decision
 - [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
-- [packages/device-testing/README.md](../packages/device-testing/README.md) — package-level API and public exports
+- [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) — package-level API and public exports
 - [agents/testing.md](testing.md) — test stack overview, tagging convention, quick-reference commands
-- [tools/device-testing/lima/README.md](../tools/device-testing/lima/README.md) — builder and ABI-verify VM operator manual
+- [test-packages/device-testing/lima/README.md](../test-packages/device-testing/lima/README.md) — builder and ABI-verify VM operator manual

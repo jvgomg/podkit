@@ -6,7 +6,7 @@ Single source of truth for iPod model compatibility data.
 
 This private package contains the iPod model matrix, generation summaries, and real device test records. It's consumed by:
 
-- **`@podkit/e2e-tests`** — generates data-driven test suites from the model matrix
+- **`@podkit/e2e-host-tests`** — generates data-driven test suites from the model matrix
 - **`@podkit/docs-site`** — renders compatibility tables via Astro components
 
 ## Data
