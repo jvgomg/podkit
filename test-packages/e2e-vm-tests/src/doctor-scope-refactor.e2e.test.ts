@@ -39,14 +39,11 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   withPersona,
   runJsonCommand,
   healthy,
   ipodNano7gBlue,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Type guards — narrow the parsed JSON to the shapes asserted below.
@@ -78,7 +75,7 @@ interface DeviceScanJson {
   devices: DeviceScanEntry[];
 }
 
-describe.skipIf(!vmAvailable)('VM: doctor scope refactor + JSON shape', () => {
+describe('VM: doctor scope refactor + JSON shape', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

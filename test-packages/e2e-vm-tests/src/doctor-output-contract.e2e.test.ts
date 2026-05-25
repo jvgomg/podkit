@@ -65,7 +65,6 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   withPersona,
   runJsonCommand,
   healthy,
@@ -73,8 +72,6 @@ import {
   ipodNano7gBlue,
   ipodNano7gSpaceGray,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Type interfaces (mirror the production-side DoctorOutput / RepairOutput)
@@ -158,7 +155,7 @@ const ALLOWED_CHECK_SCOPES = new Set(['system', 'device-readiness', 'database-he
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!vmAvailable)('VM: doctor output contract', () => {
+describe('VM: doctor output contract', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

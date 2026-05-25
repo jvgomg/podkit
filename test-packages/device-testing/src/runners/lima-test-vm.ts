@@ -37,7 +37,6 @@ import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import type { DevicePersona } from '../personas/types.js';
 import { personas as defaultPersonas } from '../personas/index.js';
@@ -51,6 +50,7 @@ import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
 import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
+import { repoRoot } from './paths.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -103,17 +103,6 @@ export function resolveDefaultGpodToolBinary(
 ): string | undefined {
   const override = env['PODKIT_GPOD_TOOL_BINARY'];
   return override && override.length > 0 ? override : undefined;
-}
-
-/**
- * Repo root, relative to this module file. The module lives in
- * `test-packages/device-testing/{src,dist}/runners/lima-test-vm.ts` so the repo
- * root is four `..` segments up.
- */
-function repoRoot(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const moduleDir = path.dirname(thisFile);
-  return path.resolve(moduleDir, '..', '..', '..', '..');
 }
 
 /**

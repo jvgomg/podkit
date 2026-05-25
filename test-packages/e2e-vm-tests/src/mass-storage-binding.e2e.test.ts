@@ -58,18 +58,7 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
-import {
-  limaTestVmRunner,
-  VM_COLD_TIMEOUT_MS,
-  VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
-} from '@podkit/device-testing';
-
-// ---------------------------------------------------------------------------
-// Top-level availability gate (mirrors `personas-baseline.e2e.test.ts`)
-// ---------------------------------------------------------------------------
-
-const vmAvailable = await resolveVmAvailability();
+import { limaTestVmRunner, VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from '@podkit/device-testing';
 
 // ---------------------------------------------------------------------------
 // Smoke-test constants (deterministic so cleanup is targetable)
@@ -254,7 +243,7 @@ function sleep(ms: number): Promise<void> {
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!vmAvailable)('VM: dummy-hcd mass-storage smoke', () => {
+describe('VM: dummy-hcd mass-storage smoke', () => {
   beforeAll(async () => {
     // Boot the VM, transfer the daemon binary, etc. The runner's prepare()
     // is idempotent.

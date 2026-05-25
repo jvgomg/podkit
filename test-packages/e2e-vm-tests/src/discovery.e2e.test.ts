@@ -59,15 +59,12 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   withPersona,
   runJsonCommand,
   healthy,
   ipodVideo5gIflash1tb,
   echoMini,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Scan envelope helpers (subset of the device-scan JSON shape we assert on)
@@ -98,7 +95,7 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!vmAvailable)('VM: discovery + identification', () => {
+describe('VM: discovery + identification', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

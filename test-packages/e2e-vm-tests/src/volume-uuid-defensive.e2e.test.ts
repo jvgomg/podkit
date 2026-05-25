@@ -55,11 +55,8 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   healthy,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 // Each test gets its own scratch dir so retries / re-runs are clean. The
 // tmpfs path is the trigger for the VOLUME_UUID_REQUIRED refusal — tmpfs
@@ -67,7 +64,7 @@ const vmAvailable = await resolveVmAvailability();
 // one and the defensive check fires.
 const SCRATCH_BASE = '/tmp/podkit-volumeuuid-test';
 
-describe.skipIf(!vmAvailable)('VM: volumeUuid defensive refusal', () => {
+describe('VM: volumeUuid defensive refusal', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

@@ -48,14 +48,11 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   runJsonCommand,
   healthy,
 } from '@podkit/device-testing';
 
-const vmAvailable = await resolveVmAvailability();
-
-describe.skipIf(!vmAvailable)('VM: doctor consistent sections', () => {
+describe('VM: doctor consistent sections', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

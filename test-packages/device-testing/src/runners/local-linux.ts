@@ -15,9 +15,9 @@
 
 import { spawn } from 'node:child_process';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
 import type { SystemState } from '../system-states/types.js';
+import { devTestingPackageRoot } from './paths.js';
 
 const ID: RunnerId = 'local-linux';
 
@@ -29,11 +29,7 @@ export const LOCAL_MUTATE_ENV = 'PODKIT_DEVTEST_LOCAL_MUTATE';
  * `lima-test-vm-state.ts` so both runners stay in sync if the script moves.
  */
 function defaultApplyStateScriptPath(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const moduleDir = path.dirname(thisFile);
-  // moduleDir is .../test-packages/device-testing/{src,dist}/runners/
-  // scripts/apply-state.sh lives in the same package — two `..` segments up.
-  return path.resolve(moduleDir, '..', '..', 'scripts', 'apply-state.sh');
+  return path.resolve(devTestingPackageRoot(), 'scripts', 'apply-state.sh');
 }
 
 /**

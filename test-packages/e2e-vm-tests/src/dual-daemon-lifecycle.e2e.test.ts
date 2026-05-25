@@ -55,10 +55,7 @@ import {
   ipodVideo5gIflash1tb,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Persona pair — see module header for the rationale.
@@ -160,7 +157,7 @@ function sleep(ms: number): Promise<void> {
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!vmAvailable)('VM: dual-daemon lifecycle', () => {
+describe('VM: dual-daemon lifecycle', () => {
   beforeAll(async () => {
     // prepare() reinstalls the systemd template on any change (sha256-keyed),
     // so a fresh checkout with the per-persona ExecStart picks up automatically.

@@ -66,7 +66,6 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   withPersona,
   runJsonCommand,
   healthy,
@@ -75,8 +74,6 @@ import {
   stopDaemon,
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 interface ScanDevice {
   usbOnly?: boolean;
@@ -95,7 +92,7 @@ interface ScanJson {
 // returns them as bare lower-case hex.
 const hex = (n: number) => n.toString(16).padStart(4, '0');
 
-describe.skipIf(!vmAvailable)('VM: discovery reconciliation', () => {
+describe('VM: discovery reconciliation', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

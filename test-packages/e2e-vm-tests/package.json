@@ -5,7 +5,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test:vm": "bun test src/ --pass-with-no-tests",
+    "test:vm": "podkit-vm-preflight && bun test src/ --path-ignore-patterns= --pass-with-no-tests",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -29,10 +29,10 @@
 import { createHash, randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
+import { repoRoot } from './paths.js';
 
 /** Default destination inside the VM for the systemd unit template. */
 export const DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH =
@@ -90,11 +90,8 @@ export interface TransferSystemdUnitResult {
  * the repo root is four `..` segments up.
  */
 export function resolveDefaultDummyHcdDaemonUnit(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const moduleDir = path.dirname(thisFile);
-  const repoRoot = path.resolve(moduleDir, '..', '..', '..', '..');
   return path.resolve(
-    repoRoot,
+    repoRoot(),
     'test-packages',
     'device-testing-daemon',
     'dummy-hcd-daemon@.service'

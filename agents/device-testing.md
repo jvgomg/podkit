@@ -192,7 +192,7 @@ For VM tests: once TASK-322 lands, also run the matching VM-mutation script and 
 - **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Auto-registered when `@podkit/device-testing` is imported on Linux. Use on Linux dev hosts directly.
 - **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `test-packages/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
 
-Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available. If neither is available, VM tests skip with a single-line warning.
+Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available.
 
 ## Test-file tagging convention
 
@@ -261,17 +261,16 @@ Reference implementation for harness self-tests: `test-packages/device-testing/s
 
 **Imports (podkit feature tests in `@podkit/e2e-vm-tests`):** Everything comes from `@podkit/device-testing`:
 - `limaTestVmRunner` — the `TestRuntime` implementation that executes commands inside `podkit-device-harness`.
-- `resolveVmAvailability`, `groupPersonasByState`, `resolveStarterPersonas`, `VM_WARM_TIMEOUT_MS`, `VM_COLD_TIMEOUT_MS`.
+- `groupPersonasByState`, `resolveStarterPersonas`, `VM_WARM_TIMEOUT_MS`, `VM_COLD_TIMEOUT_MS`.
 - `withPersona`, `runJsonCommand`.
 - Persona + `SystemState` named exports (`ipodVideo5gIflash1tb`, `echoMini`, `healthy`, etc.).
 
-**Suite shape** — gate, prepare/teardown, then one `describe` per state group:
+**Suite shape** — prepare/teardown, then one `describe` per state group (no availability gate in the file — the preflight handles that):
 
 ```ts
-const vmAvailable = await resolveVmAvailability();
 const groups = groupPersonasByState(resolveStarterPersonas());
 
-describe.skipIf(!vmAvailable)('my VM suite', () => {
+describe('my VM suite', () => {
   beforeAll(() => limaTestVmRunner.prepare(),  VM_COLD_TIMEOUT_MS);
   afterAll(()  => limaTestVmRunner.teardown(), VM_COLD_TIMEOUT_MS);
 
@@ -301,9 +300,9 @@ bun run test:vm                            # from repo root (or: bun run --cwd t
 
 VM tests are excluded from the default `bun test` run via `bunfig.toml`
 `pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,
-which overrides the ignore pattern. When Lima is not installed or the VM
-instance is absent, `resolveVmAvailability` returns `false` and every
-suite skips with a single stderr warning.
+which overrides the ignore pattern.
+
+**Preflight contract:** `bun run test:vm` runs `podkit-vm-preflight` before the test suite. If the Lima VM is not reachable, the preflight exits 1 with a remediation message listing the exact commands to bring it up. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
 
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog

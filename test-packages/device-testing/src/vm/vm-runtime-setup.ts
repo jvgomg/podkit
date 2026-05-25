@@ -1,12 +1,9 @@
 /**
  * VM runtime setup helpers.
  *
- * Shared scaffolding for the `*.e2e.test.ts` files. Three jobs:
+ * Shared scaffolding for the `*.e2e.test.ts` files. Two jobs:
  *
- *   1. Detect VM availability via the `lima-test-vm` runner's
- *      `isAvailable()`. The test files use the cached boolean to
- *      `describe.skipIf` themselves on hosts without Lima.
- *   2. Group personas by required `SystemState`, filtering out any persona
+ *   1. Group personas by required `SystemState`, filtering out any persona
  *      that has no daemon payload (`sysInfoExtendedXml === null &&
  *      massStorageBackingFile === null`). Filtering at grouping time keeps
  *      `withPersona()` from being called for personas the daemon's sidecar
@@ -14,19 +11,20 @@
  *      `personas/sidecar-build.ts`. VM tests are organised so
  *      `applyState()` runs once per group, not once per test (the cornerstone
  *      of ADR-016 §"Test speed strategy").
- *   3. Resolve the starter persona list.
+ *   2. Resolve the starter persona list.
  *
  * # Test grouping convention (standard for all VM test files)
  *
  * Every VM test file must:
  *
- *   - Call {@link resolveVmAvailability} at module top level and stash the
- *     boolean in a const (e.g. `const vmAvailable = await …`).
- *   - Apply `describe.skipIf(!vmAvailable)` to every VM `describe`.
  *   - Group `it()` blocks under a parent `describe` per `SystemState`. The
  *     setup file's `beforeAll` for the group calls `runtime.applyState(state)`
  *     once; per-test cost should be sub-second.
  *   - Use the {@link STARTER_PERSONA_IDS} constant — never inline raw persona ids.
+ *
+ * VM tests are gated by the `podkit-vm-preflight` script (run before `bun test`
+ * in the `test:vm` package script). If the VM is not reachable, the preflight
+ * exits 1 with a remediation message and no tests run. There is no silent skip.
  *
  * # Assertion families wired in `personas-baseline.e2e.test.ts`
  *
@@ -41,8 +39,6 @@ import type { DevicePersona } from '../personas/types.js';
 import { personas as defaultRegistry } from '../personas/index.js';
 import type { SystemState, SystemStateId } from '../system-states/types.js';
 import { healthy } from '../system-states/healthy.js';
-import type { TestRuntime } from '../runtime.js';
-import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 
 // ---------------------------------------------------------------------------
 // Starter persona list
@@ -195,59 +191,6 @@ export function groupPersonasByState(
     state,
     personas: ps,
   }));
-}
-
-// ---------------------------------------------------------------------------
-// VM availability detection
-// ---------------------------------------------------------------------------
-
-/**
- * Emit a single warning line to stderr the first time VM tests are skipped in a
- * test session. The flag is module-scoped so re-imports across files share
- * the same once-only semantics.
- */
-let skipWarningEmitted = false;
-
-/** Reset the once-only skip-warning state. Tests only — never call from production. */
-export function resetVmSkipWarning(): void {
-  skipWarningEmitted = false;
-}
-
-/**
- * Probe VM availability.
- *
- * VM tests are gated behind a separate `test:vm` script (not the default
- * `bun test`), so the available-but-not-ready case here only needs to handle
- * "Lima not installed or VM instance missing". The `lima-test-vm` runner's
- * `isAvailable()` captures both: it returns `false` when `limactl` is absent
- * or the `podkit-device-harness` instance has never been created.
- *
- * Emits a single stderr warning line the first time the gate evaluates to
- * `false`. Subsequent skips are silent.
- *
- * Developer flow:
- *   1. Set up the test VM end-to-end (see test-packages/device-testing/lima/README.md).
- *   2. `bun run test:vm` (from the repo root or from `test-packages/device-testing/`).
- */
-export async function resolveVmAvailability(
-  runtime: TestRuntime = limaTestVmRunner,
-  // DI seam for the warning emitter (tests assert the captured output).
-  warn: (msg: string) => void = (msg) => {
-    // eslint-disable-next-line no-console
-    console.warn(msg);
-  }
-): Promise<boolean> {
-  let available: boolean;
-  try {
-    available = await runtime.isAvailable();
-  } catch {
-    available = false;
-  }
-  if (!available && !skipWarningEmitted) {
-    skipWarningEmitted = true;
-    warn('[vm] Linux VM not available — skipping device integration tests');
-  }
-  return available;
 }
 
 // ---------------------------------------------------------------------------

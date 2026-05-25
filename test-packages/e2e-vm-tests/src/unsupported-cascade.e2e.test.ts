@@ -67,15 +67,12 @@ import {
   limaTestVmRunner,
   VM_COLD_TIMEOUT_MS,
   VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
   withPersona,
   runJsonCommand,
   healthy,
   ipodNano7gBlue,
   ipodNano4gBlack,
 } from '@podkit/device-testing';
-
-const vmAvailable = await resolveVmAvailability();
 
 interface ScanEntry {
   usbOnly?: boolean;
@@ -91,7 +88,7 @@ interface ScanJson {
 
 const hex = (n: number) => n.toString(16).padStart(4, '0');
 
-describe.skipIf(!vmAvailable)('VM: unsupported-device cascade', () => {
+describe('VM: unsupported-device cascade', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
   }, VM_COLD_TIMEOUT_MS);

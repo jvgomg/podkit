@@ -16,11 +16,11 @@
  * @module
  */
 
-import { fileURLToPath } from 'node:url';
 import * as path from 'node:path';
 import type { SystemStateId } from '../system-states/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { limactlError, runLimactl } from './lima-limactl.js';
+import { devTestingPackageRoot } from './paths.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,9 +131,5 @@ export async function applyState(opts: ApplyStateOpts): Promise<void> {
  * resolution works for both source and built layouts.
  */
 function defaultApplyStateScriptPath(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const moduleDir = path.dirname(thisFile);
-  // moduleDir is .../test-packages/device-testing/{src,dist}/runners/
-  // scripts dir is two levels up then into scripts/.
-  return path.resolve(moduleDir, '..', '..', 'scripts', 'apply-state.sh');
+  return path.resolve(devTestingPackageRoot(), 'scripts', 'apply-state.sh');
 }

@@ -25,8 +25,6 @@
  * tripwire for mtools (`mkfs.vfat --invariant` alone is not enough; mtools
  * would otherwise embed a current-time directory timestamp).
  *
- * Auto-skip mirrors the other VM files: top-level `resolveVmAvailability`
- * + `describe.skipIf`.
  */
 
 import { createHash } from 'node:crypto';
@@ -39,17 +37,7 @@ import { LIMA_DEVICE_HARNESS_VM_NAME, limaTestVmRunner } from '../runners/lima-t
 import { ensureBackingFile, personasRoot } from '../runners/lima-test-vm-backing-files.js';
 import { echoMiniPopulated, ipodVideo5gCorruptDb } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
-import {
-  VM_COLD_TIMEOUT_MS,
-  VM_WARM_TIMEOUT_MS,
-  resolveVmAvailability,
-} from './vm-runtime-setup.js';
-
-// ---------------------------------------------------------------------------
-// Top-level availability gate
-// ---------------------------------------------------------------------------
-
-const vmAvailable = await resolveVmAvailability();
+import { VM_COLD_TIMEOUT_MS, VM_WARM_TIMEOUT_MS } from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -145,7 +133,7 @@ const EXPECTATIONS: SeedExpectation[] = [
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!vmAvailable)('VM: initialContent seeding for FAT32 backing files', () => {
+describe('VM: initialContent seeding for FAT32 backing files', () => {
   beforeAll(async () => {
     // Boot the VM + transfer binaries. Idempotent.
     await limaTestVmRunner.prepare();

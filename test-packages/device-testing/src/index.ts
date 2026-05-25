@@ -174,8 +174,6 @@ export {
   groupPersonasByState,
   resetVmPersonaSkipWarnings,
   formatPersonaSkipWarning,
-  resolveVmAvailability,
-  resetVmSkipWarning,
   VM_WARM_TIMEOUT_MS,
   VM_COLD_TIMEOUT_MS,
 } from './vm/vm-runtime-setup.js';

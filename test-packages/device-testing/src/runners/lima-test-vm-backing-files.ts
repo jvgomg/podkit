@@ -36,11 +36,11 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import type { DevicePersona } from '../personas/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { limactlError, runLimactl, shellQuote } from './lima-limactl.js';
+import { devTestingPackageRoot } from './paths.js';
 
 /** In-VM directory where the runner stages synthesised backing files. */
 export const BACKING_FILES_VM_DIR = '/var/device-testing/backing-files';
@@ -527,10 +527,7 @@ function buildSeedCommands(opts: BuildSeedCommandsOpts): string[] {
  * then re-enter `test-packages/device-testing/src/personas`.
  */
 export function personasRoot(): string {
-  const thisFile = fileURLToPath(import.meta.url);
-  const moduleDir = path.dirname(thisFile);
-  const repoRoot = path.resolve(moduleDir, '..', '..', '..', '..');
-  return path.resolve(repoRoot, 'test-packages', 'device-testing', 'src', 'personas');
+  return path.resolve(devTestingPackageRoot(), 'src', 'personas');
 }
 
 /**

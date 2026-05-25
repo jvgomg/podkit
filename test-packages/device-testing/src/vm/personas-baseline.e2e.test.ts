@@ -24,13 +24,6 @@
  * group. When `no-ffmpeg` etc. personas land, they form additional groups
  * with no per-test changes here.
  *
- * # Auto-skip
- *
- * Tests skip with a single stderr warning (`[vm] Linux VM not available …`)
- * when `limaTestVmRunner.isAvailable()` returns false — i.e. limactl absent
- * or the `podkit-device-harness` instance does not exist. The skip is at-runtime
- * via `describe.skipIf`, so this file is safe to load on any host.
- *
  * # Assertion families
  *
  *   - **device-scan-finds-persona** — `podkit device scan --json` must list the
@@ -55,29 +48,19 @@ import {
   VM_WARM_TIMEOUT_MS,
   groupPersonasByState,
   resolveStarterPersonas,
-  resolveVmAvailability,
 } from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
-
-// ---------------------------------------------------------------------------
-// Top-level availability gate
-// ---------------------------------------------------------------------------
-
-// `await` at module top level inside a test module is supported by Bun's
-// test runner (which loads with ESM). Probing once here, before any
-// describe() is evaluated, keeps the gate cheap.
-const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
 // Personas + groups are computed eagerly so the registry's missing-id
-// assertion fires at module load even when VM is skipped on this host.
+// assertion fires at module load.
 const starterPersonas = resolveStarterPersonas();
 const groups = groupPersonasByState(starterPersonas);
 
-describe.skipIf(!vmAvailable)('VM: starter personas', () => {
+describe('VM: starter personas', () => {
   beforeAll(async () => {
     // One-time setup: boot the VM, transfer binaries, emit sidecar. The
     // runner's prepare() is idempotent; running it from inside the test

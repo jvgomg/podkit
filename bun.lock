@@ -243,6 +243,9 @@
     "test-packages/device-testing": {
       "name": "@podkit/device-testing",
       "version": "0.0.1",
+      "bin": {
+        "podkit-vm-preflight": "./scripts/preflight-vm.ts",
+      },
       "dependencies": {
         "@podkit/core": "workspace:*",
         "@podkit/device-types": "workspace:*",
