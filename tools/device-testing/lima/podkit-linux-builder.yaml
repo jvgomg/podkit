@@ -58,7 +58,7 @@ mounts:
 # Builds are CPU-bound (gcc, meson, ninja); give the VM what it needs.
 cpus: 4
 memory: '4GiB'
-disk: '20GiB'
+disk: '12GiB'
 
 provision:
   - mode: system

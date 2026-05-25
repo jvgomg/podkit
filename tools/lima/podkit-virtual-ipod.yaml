@@ -30,7 +30,7 @@ mounts:
 
 cpus: 2
 memory: '2GiB'
-disk: '20GiB'
+disk: '10GiB'
 
 portForwards:
   - guestPort: 3456
