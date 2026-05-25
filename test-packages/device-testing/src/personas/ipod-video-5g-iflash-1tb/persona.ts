@@ -8,8 +8,8 @@
  * SCSI-fallback inquiry path. Original HDD replaced by iFlash 1 TB flash
  * adapter; firmware identity (via SCSI) unaffected by the storage mod.
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-video-5g-iflash-1tb.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod 5th Generation Video (iFlash 1TB mod)"
  * @see documents/sysinfo-captures/ipod-5g-video-iflash-1tb.xml
@@ -25,7 +25,7 @@ export const ipodVideo5gIflash1tb: DevicePersona = {
   id: 'ipod-video-5g-iflash-1tb',
   description:
     'iPod 5G Video iFlash 1TB mod (TERAPOD) — SCSI-fallback path, FAT32/MBR, firmware in 94 MiB MBR gap, requires manual mount.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -124,24 +124,6 @@ export const ipodVideo5gIflash1tb: DevicePersona = {
     },
     resetStrategy: 'copy',
   },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 200,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: true,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

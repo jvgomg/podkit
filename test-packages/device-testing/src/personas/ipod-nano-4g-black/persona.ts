@@ -9,8 +9,8 @@
  * conclusively resolved the Mac-session "hidden Apple_MDFW" hypothesis:
  * no such partition exists.
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-4g-black.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod nano 4th Generation (8GB Black)"
  * @see documents/sysinfo-captures/nano-4g-8gb-black.xml
@@ -27,7 +27,7 @@ export const ipodNano4gBlack: DevicePersona = {
   id: 'ipod-nano-4g-black',
   description:
     "iPod nano 4G 8GB Black (James' iPod) — HFS+ / Apple Partition Map, USB-inquiry works, per-read crypto blob in SIE.",
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -110,24 +110,6 @@ export const ipodNano4gBlack: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 320,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: true,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

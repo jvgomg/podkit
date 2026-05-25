@@ -54,7 +54,7 @@ describe('@podkit/device-testing scaffold', () => {
     const sample: DevicePersona = {
       id: 'fixture-test-only',
       description: 'fixture for type-check smoke test',
-      schemaVersion: 2,
+      schemaVersion: 3,
       usbDescriptor: {
         vendorId: 0x05ac,
         productId: 0x1261,
@@ -92,9 +92,6 @@ describe('@podkit/device-testing scaffold', () => {
       diskutilPlist: null,
       partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
       massStorageBackingFile: null,
-      expectedCapabilities: null,
-      expectedReadiness: { level: 'unknown', stages: [] },
-      expectedDoctorOutput: {},
       provenance: {
         provenanceDoc: 'docs/personas/fixture-test-only.md',
         source: 'synthesised',

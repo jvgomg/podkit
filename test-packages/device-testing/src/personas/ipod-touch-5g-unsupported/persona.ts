@@ -9,8 +9,8 @@
  * `lsblkJson` permanently `null`. Mac ioreg is the authoritative USB
  * descriptor source. See `provenance.md` § "Linux capture session".
  *
- * `expectedReadiness` is provisional — see `provenance.md` § "Expected-*
- * fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-touch-5g-unsupported.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod touch 5th Generation (iOS)"
  * @see packages/devices-ipod/src/tables/unsupported.ts (productId `12aa`)
@@ -20,14 +20,10 @@
 import type { DevicePersona } from '../types.js';
 import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 
-const unsupportedHeadline =
-  "iPod touch (5th generation) uses Apple's proprietary sync protocol; podkit only supports iPod disk mode.";
-const unsupported = { kind: 'ios-device', headline: unsupportedHeadline } as const;
-
 export const ipodTouch5gUnsupported: DevicePersona = {
   id: 'ipod-touch-5g-unsupported',
   description: 'iPod touch 5G — rejection case (iOS device, no disk mode, no SysInfoExtended).',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -88,28 +84,6 @@ export const ipodTouch5gUnsupported: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + exposed the structured
-  // payload as a top-level `unsupported` field on the result. The fail `usb`
-  // stage mirrors what `checkReadiness({ unsupported })` emits for an
-  // unsupported-PID device, so this fixture is the byte-for-byte expected
-  // result the determineLevel cascade produces today.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported,
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: { unsupported },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

@@ -27,20 +27,21 @@ See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the architecture deci
 
 ## `DevicePersona` schema
 
-The full TypeScript interface lives in [`test-packages/device-testing/src/personas/types.ts`](../test-packages/device-testing/src/personas/types.ts). Nine top-level fields:
+The full TypeScript interface lives in [`test-packages/device-testing/src/personas/types.ts`](../test-packages/device-testing/src/personas/types.ts). Top-level fields (schema v3):
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | `string` | Stable registry key; used as the FunctionFS daemon's `--persona` flag |
 | `description` | `string` | Human-readable label for logs and error messages |
-| `schemaVersion` | `number` | Bump on any breaking field change; migrate all entries in the same commit |
-| `usbDescriptor` | object | USB vendor/product IDs, serial, class/subclass/protocol |
+| `schemaVersion` | `3` | Bump on any breaking field change; migrate all entries in the same commit |
+| `usbDescriptor` | object | USB vendor/product IDs, serial, class/subclass/protocol + configuration/interface/endpoint hierarchy |
 | `sysInfoExtendedXml` | `string \| null` | SCSI VPD page 0xC0 payload; `null` for devices that don't answer |
 | `lsblkJson` / `systemProfilerJson` / `diskutilPlist` | objects | Canned host-OS probe output (Linux, macOS, macOS) |
-| `partitionLayout` | object | MBR partition table; used by readiness stage and T3 gadget setup |
+| `partitionLayout` | object | Per-LUN partition tables; used by readiness stage and T3 gadget setup |
 | `massStorageBackingFile` | object \| null | FAT32 backing image info for mass-storage personas (Echo Mini, etc.) |
-| `expectedCapabilities` / `expectedReadiness` / `expectedDoctorOutput` | typed | Golden-file assertions built into the fixture |
 | `provenance` | object | Links to `provenance.md`; records hardware serial, capture date, operator |
+
+**Schema v3 (2026-05-25):** the expectation fields `expectedCapabilities`, `expectedReadiness`, and `expectedDoctorOutput` were lifted out of `DevicePersona` and now live in `@podkit/e2e-vm-tests/src/expectations/<persona-id>.ts` (with an aggregated `expectations` map in `index.ts`). The persona fixture carries only inputs; tests own their assertion shape. See [ADR-017 §"Schema v3"](../adr/adr-017-device-persona-fixtures.md).
 
 ### Starter persona set
 

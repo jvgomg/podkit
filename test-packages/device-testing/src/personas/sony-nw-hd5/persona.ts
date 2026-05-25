@@ -37,7 +37,7 @@ export const sonyNwHd5: DevicePersona = {
   id: 'sony-nw-hd5',
   description:
     'Sony Walkman NW-HD5 (20GB HDD, NO NAME) — original Network Walkman, pre-NW-A rebrand. ATRAC HDD descriptor; OpenMG v1.1 + MACLIST DRM + JPG sidecar artwork.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x054c,
@@ -102,37 +102,6 @@ export const sonyNwHd5: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
-  // payload from the mass-storage classifier's no-preset rejection path.
-  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
-  // to the canonical `'unsupported'` shape.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported: {
-      kind: 'unsupported-preset',
-      headline:
-        'Sony NW-HD5 (Network Walkman, 2004–2005 pre-NW-A line) is not supported — OpenMG/ATRAC content requires SonicStage (Windows, discontinued). Additional MACLIST0 integrity records are not authorable from outside SonicStage. USB descriptor "ATRAC HDD" + PID 0x0233 distinguish from later NW-A "HDD WALKMAN" units.',
-    },
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: {
-          unsupported: {
-            kind: 'unsupported-preset',
-            headline:
-              'Sony NW-HD5 (Network Walkman, 2004–2005 pre-NW-A line) is not supported — OpenMG/ATRAC content requires SonicStage (Windows, discontinued). Additional MACLIST0 integrity records are not authorable from outside SonicStage. USB descriptor "ATRAC HDD" + PID 0x0233 distinguish from later NW-A "HDD WALKMAN" units.',
-          },
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

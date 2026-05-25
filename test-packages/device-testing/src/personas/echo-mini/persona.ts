@@ -18,8 +18,8 @@
  * Only LUN 1 is the sync target. LUN 0 (firmware/internal) is exposed but
  * not used by podkit.
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/echo-mini.ts` (schema v3).
  *
  * @see documents/test-devices.md §"FiiO Snowsky Echo Mini (mass-storage DAP)"
  * @module
@@ -34,7 +34,7 @@ export const echoMini: DevicePersona = {
   id: 'echo-mini',
   description:
     'FiiO Snowsky Echo Mini — mass-storage DAP, two LUNs (ECHO MINI firmware FAT32 + Echo SD card ExFAT).',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x071b,
@@ -154,26 +154,6 @@ export const echoMini: DevicePersona = {
     },
     resetStrategy: 'copy',
   },
-
-  // Provisional — mirrors the built-in `echo-mini` preset capability shape.
-  // Validate against production resolver / preset lookup in the compute-
-  // expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded'],
-    artworkMaxResolution: 127,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'wav'],
-    supportsVideo: false,
-    audioNormalization: 'none',
-    supportsAlbumArtistBrowsing: true,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

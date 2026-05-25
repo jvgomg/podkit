@@ -9,6 +9,20 @@
  *   the lima-test-vm runner; the FunctionFS daemon then replays the USB
  *   descriptors, VPD payload, and partition layout.
  *
+ * # Schema version 3 (2026-05-25)
+ *
+ * Removed three expectation fields — `expectedCapabilities`,
+ * `expectedReadiness`, `expectedDoctorOutput` — from the persona schema.
+ * Expectations now live in
+ * `@podkit/e2e-vm-tests/src/expectations/<persona-id>.ts`, keyed by persona
+ * id. A persona is now purely "the inputs the harness presents to podkit";
+ * what podkit should produce in response is a test-side concern.
+ *
+ * Migration: every persona dropped the three fields. Tests previously
+ * asserting against `persona.expected*` now import the expectation map.
+ *
+ * See `adr/adr-017-device-persona-fixtures.md` §"Schema v3 — May 2026".
+ *
  * # Schema version 2 (2026-05-23)
  *
  * Three coordinated changes versus v1. See
@@ -40,19 +54,6 @@
  * @see adr/adr-017-device-persona-fixtures.md
  * @module
  */
-
-import type { DeviceCapabilities } from '@podkit/device-types';
-import type { ReadinessResult } from '@podkit/core';
-
-/**
- * Placeholder for the `podkit doctor` JSON shape.
- *
- * TODO: tighten once `DoctorOutput` is exported. Currently defined as the
- * private interface `DoctorOutput` in `packages/podkit-cli/src/commands/doctor.ts:85`
- * and not part of any public surface. Tightening this requires either
- * promoting the type to `@podkit/core` or exporting it from the CLI.
- */
-export type DoctorOutput = object;
 
 /**
  * USB endpoint descriptor — `struct usb_endpoint_descriptor` (USB 2.0 §9.6.6).
@@ -292,11 +293,12 @@ export interface DevicePersona {
   /** Human-readable label for error messages and logs. */
   description: string;
   /**
-   * Schema version. Current: `2` (see module-level TSDoc for the v1 → v2
-   * migration notes). Bump on any breaking field change and update every
-   * persona in the same commit per ADR-017 §"Schema versioning".
+   * Schema version. Current: `3` (see module-level TSDoc for the v2 → v3
+   * migration notes — expectations lifted to `@podkit/e2e-vm-tests`). Bump
+   * on any breaking field change and update every persona in the same
+   * commit per ADR-017 §"Schema versioning".
    */
-  schemaVersion: number;
+  schemaVersion: 3;
 
   // --- USB layer -------------------------------------------------------------
 
@@ -344,15 +346,6 @@ export interface DevicePersona {
    * recipe) — see {@link MassStorageBackingFile} for the discriminated union.
    */
   massStorageBackingFile: MassStorageBackingFile | null;
-
-  // --- Expected outcomes (for assertion) -------------------------------------
-
-  /** What `resolveCapabilities()` must return for this persona. `null` for unsupported/rejected devices. */
-  expectedCapabilities: DeviceCapabilities | null;
-  /** What `checkReadiness()` must return. */
-  expectedReadiness: ReadinessResult;
-  /** Snapshot of doctor JSON output; used for golden-file assertions. */
-  expectedDoctorOutput: DoctorOutput;
 
   // --- Provenance ------------------------------------------------------------
 

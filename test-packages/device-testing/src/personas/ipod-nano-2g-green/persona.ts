@@ -7,8 +7,8 @@
  *
  * SCSI-fallback inquiry path (USB inquiry fails on nano 2G).
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-2g-green.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod nano 2nd Generation (4GB Green)"
  * @see documents/sysinfo-captures/nano-2g-4gb-green.xml
@@ -23,7 +23,7 @@ import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' 
 export const ipodNano2gGreen: DevicePersona = {
   id: 'ipod-nano-2g-green',
   description: 'iPod nano 2G 4GB Green (PARTY IPOD) — SCSI-fallback path, no artwork, no video.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -105,24 +105,6 @@ export const ipodNano2gGreen: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 176,
-    supportedAudioCodecs: ['aac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: false,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

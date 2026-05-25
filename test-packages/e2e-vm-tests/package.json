@@ -9,9 +9,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@podkit/device-testing": "workspace:*"
+    "@podkit/core": "workspace:*",
+    "@podkit/device-testing": "workspace:*",
+    "@podkit/device-types": "workspace:*"
   },
   "devDependencies": {
+    "@podkit/ipod-db": "workspace:*",
+    "@podkit/ipod-firmware": "workspace:*",
     "@types/bun": "latest"
   }
 }

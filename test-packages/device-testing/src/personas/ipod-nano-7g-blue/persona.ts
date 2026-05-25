@@ -7,8 +7,8 @@
  * USB-inquiry path. hashAB checksum generation — `device add` currently
  * refuses unsupported generations (warn-but-allow change is backlog).
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-7g-blue.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod nano 7th Generation #2 (16GB Blue)"
  * @see documents/sysinfo-captures/nano-7g-16gb-blue-usb.xml
@@ -25,7 +25,7 @@ export const ipodNano7gBlue: DevicePersona = {
   id: 'ipod-nano-7g-blue',
   description:
     'iPod nano 7G #2 16GB Blue (iPod) — HFS+/APM, USB-inquiry works, per-read crypto blob in SIE, hashAB checksum.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -107,24 +107,6 @@ export const ipodNano7gBlue: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 240,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: false,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

@@ -11,9 +11,8 @@
  * (eventual) Sony preset implementation; see `devices/sony-walkman-nwz-e380.md`
  * for the full device profile.
  *
- * `expectedCapabilities: null` reflects today's behaviour (no preset match).
- * When a Sony preset lands, update this persona and the related provenance
- * fields.
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/sony-nwz-e384.ts` (schema v3).
  *
  * @see devices/sony-walkman-nwz-e380.md
  * @see documents/test-devices.md §"Sony Walkman NWZ-E384 (8GB)"
@@ -28,7 +27,7 @@ export const sonyNwzE384: DevicePersona = {
   id: 'sony-nwz-e384',
   description:
     'Sony Walkman NWZ-E384 (8GB, WALKMAN) — mass-storage DAP, FAT32/MBR, currently unsupported (no podkit preset).',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x054c, // Sony Corporation
@@ -99,42 +98,6 @@ export const sonyNwzE384: DevicePersona = {
   // the marker files documented in `provenance.md` (the `.E380` files +
   // capability XMLs + DeviceInfo.txt + empty STDB* placeholders).
   massStorageBackingFile: null,
-
-  // Currently unsupported — no Sony preset in built-in presets. When a
-  // preset lands, populate this with the real capabilities (audio: mp3, aac,
-  // wav; video: false unless WMV transcoding is added; artwork: 160x128 max,
-  // embedded only).
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded a structured
-  // payload from the mass-storage classifier's vendor-recognised-but-no-preset
-  // table (`packages/devices-mass-storage/src/unsupported.ts`). The headline
-  // comes from the Sony entry's `reason(vendorId, productId)` template — keep
-  // it in sync with that table.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported: {
-      kind: 'unsupported-preset',
-      headline:
-        'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
-    },
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: {
-          unsupported: {
-            kind: 'unsupported-preset',
-            headline:
-              'Sony Walkman is not yet supported by podkit — no preset registered for USB 0x054c:0x0882.',
-          },
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

@@ -116,9 +116,9 @@ test-packages/device-testing/
     └── apply-state-vm.sh           # in-VM script to mutate state
 ```
 
-### `DevicePersona` schema (v2, current)
+### `DevicePersona` schema (v3, current)
 
-Schema version 2 landed under TASK-332 (2026-05-23). See `test-packages/device-testing/src/personas/types.ts` for the canonical TypeScript definitions, including TSDoc on every field. The shape below is illustrative — the source file is authoritative.
+Schema version 3 lifted the expectation fields out of `DevicePersona` (2026-05-25); schema v2 was the prior baseline (2026-05-23). See `test-packages/device-testing/src/personas/types.ts` for the canonical TypeScript definitions, including TSDoc on every field. The shape below is illustrative — the source file is authoritative.
 
 ```typescript
 interface DevicePersona {
@@ -126,8 +126,8 @@ interface DevicePersona {
   id: string;
   /** Human-readable label for error messages and logs */
   description: string;
-  /** Schema version; bump on any breaking field change. Current: 2. */
-  schemaVersion: number;
+  /** Schema version; bump on any breaking field change. Current: 3. */
+  schemaVersion: 3;
 
   // --- USB layer (v2 — full descriptor hierarchy) ---
   usbDescriptor: {
@@ -200,11 +200,6 @@ interface DevicePersona {
     resetStrategy: 'copy' | 'swap';
   } | null;
 
-  // --- Expected outcomes (for assertion) ---
-  expectedCapabilities: DeviceCapabilities | null;
-  expectedReadiness: ReadinessResult;
-  expectedDoctorOutput: object;
-
   // --- Provenance ---
   provenance: {
     provenanceDoc: string;
@@ -212,6 +207,45 @@ interface DevicePersona {
   };
 }
 ```
+
+Expectation data (what podkit should produce in response to a persona) lives in `@podkit/e2e-vm-tests/src/expectations/<persona-id>.ts`, keyed by persona id — see §"Schema v3" below.
+
+### Schema v3 — May 2026
+
+The expectation fields `expectedCapabilities`, `expectedReadiness`, and `expectedDoctorOutput` were lifted out of `DevicePersona` and moved to per-persona modules under `test-packages/e2e-vm-tests/src/expectations/<persona-id>.ts`.
+
+**Reasoning.** A persona today carries two distinct kinds of data:
+
+1. Inputs the harness presents to the system under test: USB descriptors, SysInfoExtended XML, `lsblk`/`system_profiler`/`diskutil` payloads, partition layout, mass-storage backing-file recipes. The dummy-hcd daemon needs the USB + backing-file subset; unit-test fakes need everything.
+2. Expectations against which a test asserts: capability set podkit should derive, readiness result the cascade should produce, doctor JSON snapshot.
+
+Mixing these in one record couples the persona fixture (an input description) to assertion shape (a test concern). Schema v3 separates them. The `@podkit/device-testing` harness ships lean persona data; the `@podkit/e2e-vm-tests` package owns the expected outputs and imports them per-persona when asserting.
+
+**New location.** Each persona has a matching module:
+
+```
+test-packages/e2e-vm-tests/src/expectations/
+├── echo-mini.ts
+├── echo-mini-populated.ts
+├── ipod-nano-3g-black.ts
+├── ipod-nano-7g-blue.ts
+├── ...
+└── index.ts          # registry keyed by persona id
+```
+
+The aggregated `expectations` registry mirrors the `personas` registry in `@podkit/device-testing` — same keys, different (lifted) value shape:
+
+```typescript
+interface PersonaExpectations {
+  expectedCapabilities: DeviceCapabilities | null;
+  expectedReadiness: ReadinessResult;
+  expectedDoctorOutput: unknown;
+}
+
+const expectations: ReadonlyMap<string, PersonaExpectations>;
+```
+
+**Migration scope.** All 19 personas migrated in the same commit per ADR-017 §"Schema versioning": `schemaVersion: 2 → 3`, expected* fields removed verbatim and copied into the new expectation module. Tests previously asserting against `persona.expected*` were relocated from `test-packages/device-testing/src/personas/*.test.ts` to `test-packages/e2e-vm-tests/src/expectations/*.test.ts` (preserved as `git mv` renames).
 
 ### Schema v2 — May 2026 (TASK-332)
 
@@ -377,7 +411,7 @@ Personas and system states are read-only across all tests. A test that needs a m
 - **Two fixture types in one place.** `DevicePersona` and `SystemState` co-locate in the same package, so adding a doctor test that asserts behaviour against a (device, state) pair is one import.
 - **Named stable handles.** Tests refer to personas and states by ID, not by inline fake data.
 - **Provenance.** Every persona links to a capture session or synthesis rationale; firmware payloads are not magic strings.
-- **Type-enforced expectations.** `expectedCapabilities`, `expectedDoctorOutput`, and `expectedDoctorSystemOutput` are typed alongside the protocol data; a schema change causes a compile error in the fixtures package, not a silent test failure.
+- **Type-enforced expectations.** `expectedCapabilities`, `expectedReadiness`, and `expectedDoctorOutput` are typed in the e2e-vm-tests expectation files (re-using the same `@podkit/device-types` + `@podkit/core` types); `expectedDoctorSystemOutput` remains typed on `SystemState`. A schema change in any of these types causes a compile error at the assertion site, not a silent test failure.
 - **Zero-code fixture addition.** Adding a persona or state to the registry automatically makes it available to every test that iterates over the registry.
 - **Mass-storage extensibility.** Echo Mini ships as a starter; Rockbox, FiiO, and others follow the same pattern with a `massStorageBackingFile` entry.
 

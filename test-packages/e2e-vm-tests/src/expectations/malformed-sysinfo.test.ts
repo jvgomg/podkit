@@ -1,5 +1,5 @@
 /**
- * unit smoke tests for the `malformed-sysinfo` persona.
+ * unit smoke tests for the `malformed-sysinfo` persona + expectations.
  *
  * Separate from `rejection-personas.test.ts` because this is not strictly
  * a rejection persona — the USB classifier accepts the device as a
@@ -14,10 +14,10 @@
 
 import { describe, it, expect } from 'bun:test';
 import { parsePlist } from '@podkit/ipod-firmware';
-import { malformedSysinfo } from './malformed-sysinfo/persona.js';
-import { personas } from './index.js';
+import { malformedSysinfo, personas } from '@podkit/device-testing';
+import * as expectations from './malformed-sysinfo.js';
 
-describe('malformed-sysinfo persona (synthesised, TASK-324 Phase 5)', () => {
+describe('malformed-sysinfo persona (synthesised)', () => {
   it('is registered in the persona registry under its declared id', () => {
     expect(personas.get('malformed-sysinfo')).toBe(malformedSysinfo);
   });
@@ -61,11 +61,11 @@ describe('malformed-sysinfo persona (synthesised, TASK-324 Phase 5)', () => {
     // `determineLevel`'s "SysInfo check failed" rule
     // (`packages/podkit-core/src/device/readiness/determine-level.ts:88`)
     // resolves a fail `sysinfo` stage to `needs-repair`.
-    expect(malformedSysinfo.expectedReadiness.level).toBe('needs-repair');
+    expect(expectations.expectedReadiness.level).toBe('needs-repair');
   });
 
   it('expectedReadiness has a single failed sysinfo stage', () => {
-    const stages = malformedSysinfo.expectedReadiness.stages;
+    const stages = expectations.expectedReadiness.stages;
     expect(stages).toHaveLength(1);
     expect(stages[0]?.stage).toBe('sysinfo');
     expect(stages[0]?.status).toBe('fail');
@@ -81,9 +81,9 @@ describe('malformed-sysinfo persona (synthesised, TASK-324 Phase 5)', () => {
     // The test contract: when SIE parsing fails, the persona's expected
     // capabilities are still the device the USB PID identifies. A future
     // failure that misclassifies the device would fail this assertion.
-    expect(malformedSysinfo.expectedCapabilities).not.toBeNull();
-    expect(malformedSysinfo.expectedCapabilities?.supportsVideo).toBe(true);
-    expect(malformedSysinfo.expectedCapabilities?.artworkMaxResolution).toBe(200);
+    expect(expectations.expectedCapabilities).not.toBeNull();
+    expect(expectations.expectedCapabilities?.supportsVideo).toBe(true);
+    expect(expectations.expectedCapabilities?.artworkMaxResolution).toBe(200);
   });
 
   it('is marked synthesised in its provenance', () => {

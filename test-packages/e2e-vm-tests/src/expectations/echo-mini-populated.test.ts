@@ -1,5 +1,5 @@
 /**
- * unit smoke tests for the `echo-mini-populated` persona.
+ * unit smoke tests for the `echo-mini-populated` persona + expectations.
  *
  * Pins the synthesis recipe (same Echo Mini USB identity as the empty sibling,
  * FAT32 backing with 5 synthetic track files) so future schema changes can't
@@ -9,11 +9,11 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { echoMiniPopulated } from './echo-mini-populated/persona.js';
-import { echoMini } from './echo-mini/persona.js';
-import { personas } from './index.js';
+import { echoMiniPopulated, echoMini, personas } from '@podkit/device-testing';
+import * as populatedExpectations from './echo-mini-populated.js';
+import * as emptyExpectations from './echo-mini.js';
 
-describe('echo-mini-populated persona (synthesised, TASK-324 Phase 5)', () => {
+describe('echo-mini-populated persona (synthesised)', () => {
   it('is registered in the persona registry under its declared id', () => {
     expect(personas.get('echo-mini-populated')).toBe(echoMiniPopulated);
   });
@@ -34,12 +34,14 @@ describe('echo-mini-populated persona (synthesised, TASK-324 Phase 5)', () => {
   it('has expectedReadiness.level === ready', () => {
     // Content presence doesn't affect the readiness level — the device is
     // still ready regardless of whether tracks are present.
-    expect(echoMiniPopulated.expectedReadiness.level).toBe('ready');
+    expect(populatedExpectations.expectedReadiness.level).toBe('ready');
   });
 
   it('shares the same capabilities as the empty echo-mini sibling', () => {
     // Capabilities come from the preset, not from filesystem content.
-    expect(echoMiniPopulated.expectedCapabilities).toEqual(echoMini.expectedCapabilities);
+    expect(populatedExpectations.expectedCapabilities).toEqual(
+      emptyExpectations.expectedCapabilities
+    );
   });
 
   it('has a FAT32 backing file synthesis recipe', () => {

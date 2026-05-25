@@ -46,7 +46,7 @@ function makeIpod(overrides: Partial<DevicePersona> = {}): DevicePersona {
   return {
     id: 'ipod-test',
     description: 'test persona',
-    schemaVersion: 2,
+    schemaVersion: 3,
     usbDescriptor: { ...baseUsb },
     sysInfoExtendedXml: '<plist><dict><key>foo</key><string>bar</string></dict></plist>',
     lsblkJson: null,
@@ -54,9 +54,6 @@ function makeIpod(overrides: Partial<DevicePersona> = {}): DevicePersona {
     diskutilPlist: null,
     partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
     massStorageBackingFile: null,
-    expectedCapabilities: null,
-    expectedReadiness: { level: 'ready', stages: [] },
-    expectedDoctorOutput: {},
     provenance: { provenanceDoc: './provenance.md', source: 'physical-capture' },
     ...overrides,
   };

@@ -7,10 +7,8 @@
  * USB-inquiry boundary device — nano 3G is the earliest iPod that answers
  * vendor control transfers (refines prior "iPod 5G+" research).
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — derived
- * from generation-table defaults. Validate against the production resolvers
- * (`resolveCapabilities`, `checkReadiness`) during the compute-expected
- * pass per TASK-321.02 acceptance criteria.
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-nano-3g-black.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod nano 3rd Generation (8GB Black)"
  * @see documents/sysinfo-captures/nano-3g-8gb-black.xml
@@ -27,7 +25,7 @@ export const ipodNano3gBlack: DevicePersona = {
   id: 'ipod-nano-3g-black',
   description:
     'iPod nano 3G 8GB Black (IPOD) — USB-inquiry boundary device, no per-read crypto blob.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -118,24 +116,6 @@ export const ipodNano3gBlack: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 320,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: true,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

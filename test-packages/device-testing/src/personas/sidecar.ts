@@ -16,10 +16,12 @@
  *      transfer (`bmRequestType=0xC0`, `bRequest=0x40`, `wValue=0x02`).
  *   3. The mass-storage backing-file path the runner has already staged.
  *
- * The fixture-only fields (`expectedCapabilities`, `expectedDoctorOutput`,
- * `provenance`, raw lsblk/system-profiler dumps, etc.) are deliberately
- * excluded — they belong to the host-side TypeScript layer and have no place
- * in the daemon binary.
+ * The fixture-only fields (`provenance`, raw lsblk/system-profiler dumps,
+ * etc.) are deliberately excluded — they belong to the host-side TypeScript
+ * layer and have no place in the daemon binary. As of schema v3, expectation
+ * data (capabilities, readiness, doctor output) lives in
+ * `@podkit/e2e-vm-tests/src/expectations/<persona-id>.ts` and never reaches
+ * the sidecar either.
  *
  * # Why this file has no `DevicePersona` import
  *

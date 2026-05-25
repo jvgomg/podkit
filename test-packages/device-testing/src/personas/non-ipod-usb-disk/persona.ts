@@ -28,21 +28,11 @@ import diskutilPlist from './raw/diskutil.plist' with { type: 'text' };
 import systemProfilerJson from './raw/system-profiler.json' with { type: 'json' };
 import lsblkJson from './raw/lsblk.json' with { type: 'json' };
 
-// Canonical reason string — must match the SanDisk entry in
-// `packages/devices-mass-storage/src/unsupported.ts`'s `UNSUPPORTED_VENDORS`
-// table applied to vendor `0781`, product `5567`.
-const unsupportedHeadline =
-  'Non-Apple USB storage device (SanDisk); podkit has no preset for this vendor (USB 0x0781:0x5567).';
-const unsupported = {
-  kind: 'unsupported-preset',
-  headline: unsupportedHeadline,
-} as const;
-
 export const nonIpodUsbDisk: DevicePersona = {
   id: 'non-ipod-usb-disk',
   description:
     'Generic non-Apple USB flash drive (SanDisk Cruzer Blade, 0x0781:0x5567) — synthesised rejection case for the no-preset vendor path.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x0781, // SanDisk Corp.
@@ -106,23 +96,6 @@ export const nonIpodUsbDisk: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  expectedCapabilities: null,
-
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported,
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: { unsupported },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

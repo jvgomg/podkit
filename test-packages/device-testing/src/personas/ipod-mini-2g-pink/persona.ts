@@ -5,8 +5,8 @@
  * Linux capture deferred (pattern confirmed by sibling personas — see
  * `provenance.md` § "Linux capture session").
  *
- * `expectedCapabilities` + `expectedReadiness` are provisional — see
- * `provenance.md` § "Expected-* fields status".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/ipod-mini-2g-pink.ts` (schema v3).
  *
  * @see documents/test-devices.md §"iPod mini 2nd Generation (4GB Pink)"
  * @see documents/sysinfo-captures/mini-2g.xml
@@ -22,7 +22,7 @@ export const ipodMini2gPink: DevicePersona = {
   id: 'ipod-mini-2g-pink',
   description:
     'iPod mini 2G 4GB Pink (SALLYS IPOD) — pre-2006 SysInfo, SCSI-fallback inquiry, no artwork/video.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -106,24 +106,6 @@ export const ipodMini2gPink: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedCapabilities: {
-    artworkSources: [],
-    artworkMaxResolution: null,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: false,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // Provisional — validate against production resolver in the compute-expected pass.
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

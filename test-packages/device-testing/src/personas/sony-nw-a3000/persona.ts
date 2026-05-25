@@ -35,7 +35,7 @@ export const sonyNwA3000: DevicePersona = {
   id: 'sony-nw-a3000',
   description:
     'Sony Walkman NW-A3000 (20GB HDD, NO NAME) — SonicStage-era OpenMG v2.0 database. Sibling of NW-A1000 with newer DB format + DRM artefacts.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x054c, // Sony Corporation
@@ -100,40 +100,6 @@ export const sonyNwA3000: DevicePersona = {
   // content. VM synthesis should use the OpenMG marker scaffold listed
   // in `devices/sony-walkman-nw-a-series.md`.
   massStorageBackingFile: null,
-
-  // Currently unsupported — same rationale as sony-nw-a1000. When/if a
-  // detect-and-reject path lands, this becomes a second rejection fixture
-  // (distinct PID, same family).
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
-  // payload from the mass-storage classifier's no-preset rejection path.
-  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
-  // to the canonical `'unsupported'` shape.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported: {
-      kind: 'unsupported-preset',
-      headline:
-        'Sony NW-A3000 (SonicStage-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage (Windows, discontinued 2008). Distinct PID from NW-A1000 (0x0269 vs 0x026a) — per-model support needed.',
-    },
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: {
-          unsupported: {
-            kind: 'unsupported-preset',
-            headline:
-              'Sony NW-A3000 (SonicStage-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage (Windows, discontinued 2008). Distinct PID from NW-A1000 (0x0269 vs 0x026a) — per-model support needed.',
-          },
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

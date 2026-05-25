@@ -33,7 +33,7 @@ export const echoMiniPopulated: DevicePersona = {
   id: 'echo-mini-populated',
   description:
     'FiiO Snowsky Echo Mini (populated) — synthesised state-variant with 5 synthetic track files in Music/. Sibling of echo-mini (empty state).',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     // Same vendor/product + full descriptor hierarchy as `echo-mini` — the
@@ -116,24 +116,6 @@ export const echoMiniPopulated: DevicePersona = {
     },
     resetStrategy: 'copy',
   },
-
-  // Same capabilities as the empty `echo-mini` persona — content state does
-  // not affect device capabilities (preset resolution is identity-based).
-  expectedCapabilities: {
-    artworkSources: ['embedded'],
-    artworkMaxResolution: 127,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'wav'],
-    supportsVideo: false,
-    audioNormalization: 'none',
-    supportsAlbumArtistBrowsing: true,
-  },
-
-  expectedReadiness: {
-    level: 'ready',
-    stages: [],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

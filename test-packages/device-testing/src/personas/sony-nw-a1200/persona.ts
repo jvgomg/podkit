@@ -37,7 +37,7 @@ export const sonyNwA1200: DevicePersona = {
   id: 'sony-nw-a1200',
   description:
     'Sony Walkman NW-A1200 (8GB HDD, NO NAME) — identical hardware to NW-A1000 except HDD capacity. This unit synced via Media Go on Windows, so carries DB v2.0 + MEDIAGO/ + Windows artefacts.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x054c,
@@ -95,37 +95,6 @@ export const sonyNwA1200: DevicePersona = {
   },
 
   massStorageBackingFile: null,
-
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
-  // payload from the mass-storage classifier's no-preset rejection path.
-  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
-  // to the canonical `'unsupported'` shape.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported: {
-      kind: 'unsupported-preset',
-      headline:
-        'Sony NW-A1200 (SonicStage/Media Go-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage or Media Go (Windows, discontinued). Same hardware as NW-A1000 (shared USB PID, differs only by HDD capacity); distinct platform from NW-A3000.',
-    },
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: {
-          unsupported: {
-            kind: 'unsupported-preset',
-            headline:
-              'Sony NW-A1200 (SonicStage/Media Go-era HDD Walkman) is not supported — OpenMG/ATRAC content layer requires SonicStage or Media Go (Windows, discontinued). Same hardware as NW-A1000 (shared USB PID, differs only by HDD capacity); distinct platform from NW-A3000.',
-          },
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

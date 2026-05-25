@@ -22,7 +22,7 @@ import { limaTestVmRunner } from './runners/lima-test-vm.js';
 import { registerRunner } from './runners/registry.js';
 
 // Personas
-export type { DevicePersona, DoctorOutput } from './personas/types.js';
+export type { DevicePersona } from './personas/types.js';
 export {
   personas,
   ipodMini2gPink,

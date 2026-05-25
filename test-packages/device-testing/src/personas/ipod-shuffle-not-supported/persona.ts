@@ -23,18 +23,11 @@
 
 import type { DevicePersona } from '../types.js';
 
-const unsupportedHeadline =
-  'iPod shuffle 3rd/4th gen requires iTunes authentication; not supported by libgpod.';
-const unsupported = {
-  kind: 'unsupported-device',
-  headline: unsupportedHeadline,
-} as const;
-
 export const ipodShuffleNotSupported: DevicePersona = {
   id: 'ipod-shuffle-not-supported',
   description:
     'iPod shuffle 3G — synthesised rejection case (USB PID 0x1302, libgpod recognises it but iTunes auth is required).',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x05ac,
@@ -90,27 +83,6 @@ export const ipodShuffleNotSupported: DevicePersona = {
   partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
 
   massStorageBackingFile: null,
-
-  expectedCapabilities: null,
-
-  // TASK-331: `level: 'unsupported'` carries the structured rejection payload on
-  // both the top-level `unsupported` field and the `usb` stage's
-  // `details.unsupported`. Keep the headline identical to
-  // `SHUFFLE_REASON` in `tables/unsupported.ts`.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported,
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: { unsupported },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

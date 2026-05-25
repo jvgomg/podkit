@@ -59,7 +59,7 @@ function makePersona(overrides: Partial<DevicePersona> = {}): DevicePersona {
   return {
     id: 'echo-mini',
     description: 'test',
-    schemaVersion: 2,
+    schemaVersion: 3,
     usbDescriptor: {
       vendorId: 0x071b,
       productId: 0x3203,
@@ -100,9 +100,6 @@ function makePersona(overrides: Partial<DevicePersona> = {}): DevicePersona {
       synthesis: { sizeMiB: 64, filesystem: 'FAT32', label: 'ECHO_MINI' },
       resetStrategy: 'copy',
     },
-    expectedCapabilities: null,
-    expectedReadiness: { level: 'ready', stages: [] },
-    expectedDoctorOutput: {},
     provenance: { provenanceDoc: '', source: 'physical-capture' },
     ...overrides,
   };

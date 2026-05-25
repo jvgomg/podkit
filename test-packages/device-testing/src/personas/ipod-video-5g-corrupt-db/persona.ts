@@ -54,7 +54,7 @@ export const ipodVideo5gCorruptDb: DevicePersona = {
   id: 'ipod-video-5g-corrupt-db',
   description:
     'iPod 5G Video (corrupt-db) — synthesised state-variant: same USB identity as TERAPOD, iTunesDB truncated to 512 bytes (mhbd magic + zeros). Parser throws "mhbd header too small".',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     // Same vendor/product as `ipod-video-5g-iflash-1tb` — classifier accepts
@@ -157,39 +157,6 @@ export const ipodVideo5gCorruptDb: DevicePersona = {
     },
     resetStrategy: 'copy',
   },
-
-  // Nominal iPod 5G Video capabilities — USB PID unambiguously identifies the
-  // generation regardless of DB state, so capabilities remain determinable.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 200,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: true,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // The corrupt-db failure surfaces at the `database` readiness stage.
-  // `determineLevel` maps a failed `database` stage to `needs-repair` —
-  // same as malformed-sysinfo's `needs-repair` from a failed `sysinfo`
-  // stage. The repair path is `podkit device repair itunes-db`.
-  expectedReadiness: {
-    level: 'needs-repair',
-    stages: [
-      {
-        stage: 'database',
-        status: 'fail',
-        summary: 'iTunesDB is corrupt or unreadable (parser error)',
-        details: {
-          error: 'parseMhbd: mhbd header too small',
-          dbBytes: 512,
-          truncated: true,
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

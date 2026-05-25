@@ -268,9 +268,13 @@
       "name": "@podkit/e2e-vm-tests",
       "version": "0.0.0",
       "dependencies": {
+        "@podkit/core": "workspace:*",
         "@podkit/device-testing": "workspace:*",
+        "@podkit/device-types": "workspace:*",
       },
       "devDependencies": {
+        "@podkit/ipod-db": "workspace:*",
+        "@podkit/ipod-firmware": "workspace:*",
         "@types/bun": "latest",
       },
     },

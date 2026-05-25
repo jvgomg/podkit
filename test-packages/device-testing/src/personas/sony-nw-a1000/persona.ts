@@ -27,7 +27,7 @@ export const sonyNwA1000: DevicePersona = {
   id: 'sony-nw-a1000',
   description:
     'Sony Walkman NW-A1000 (6GB HDD, NO NAME) — SonicStage-era OpenMG/ATRAC device. Enumerates as FAT32 mass storage but content layer is proprietary.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     vendorId: 0x054c, // Sony Corporation
@@ -102,42 +102,6 @@ export const sonyNwA1000: DevicePersona = {
   // synthesis, use the `synthesis` recipe with the OpenMG marker files
   // listed in `devices/sony-walkman-nw-a-series.md` § "Detection".
   massStorageBackingFile: null,
-
-  // Currently unsupported — no preset, no implementation. When/if a
-  // detect-and-reject path lands (option 1 in the device profile), this
-  // becomes the canonical rejection fixture. When/if a MSM-mode preset is
-  // added (option 2), `expectedCapabilities` shifts to the MP3/folder-only
-  // shape.
-  expectedCapabilities: null,
-
-  // TASK-331 added `'unsupported'` to ReadinessLevel + threaded the structured
-  // payload from the mass-storage classifier's no-preset rejection path.
-  // TASK-324 Phase 5 AC #5 sweeps this from the legacy `'unknown'` workaround
-  // to the canonical `'unsupported'` shape.
-  expectedReadiness: {
-    level: 'unsupported',
-    unsupported: {
-      kind: 'unsupported-preset',
-      headline:
-        'Sony NW-A1000 (SonicStage-era HDD Walkman) is not supported — content layer requires OpenMG/ATRAC encoding authored by SonicStage. Switch device to USB Mass Storage Mode (firmware v2.0+) for folder-browser sync.',
-    },
-    stages: [
-      {
-        stage: 'usb',
-        status: 'fail',
-        summary: 'Device not supported',
-        details: {
-          unsupported: {
-            kind: 'unsupported-preset',
-            headline:
-              'Sony NW-A1000 (SonicStage-era HDD Walkman) is not supported — content layer requires OpenMG/ATRAC encoding authored by SonicStage. Switch device to USB Mass Storage Mode (firmware v2.0+) for folder-browser sync.',
-          },
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',

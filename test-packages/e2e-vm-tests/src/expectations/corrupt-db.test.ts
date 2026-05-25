@@ -1,5 +1,5 @@
 /**
- * unit smoke tests for the `ipod-video-5g-corrupt-db` persona.
+ * unit smoke tests for the `ipod-video-5g-corrupt-db` persona + expectations.
  *
  * Separate from `rejection-personas.test.ts` because this is not a rejection
  * persona — the USB classifier accepts the device as a supported iPod 5G
@@ -14,10 +14,10 @@
 
 import { describe, it, expect } from 'bun:test';
 import { parseDatabase } from '@podkit/ipod-db';
-import { ipodVideo5gCorruptDb, corruptItunesDb } from './ipod-video-5g-corrupt-db/persona.js';
-import { personas } from './index.js';
+import { ipodVideo5gCorruptDb, corruptItunesDb, personas } from '@podkit/device-testing';
+import * as expectations from './ipod-video-5g-corrupt-db.js';
 
-describe('ipod-video-5g-corrupt-db persona (synthesised, TASK-324 Phase 5)', () => {
+describe('ipod-video-5g-corrupt-db persona (synthesised)', () => {
   it('is registered in the persona registry under its declared id', () => {
     expect(personas.get('ipod-video-5g-corrupt-db')).toBe(ipodVideo5gCorruptDb);
   });
@@ -86,11 +86,11 @@ describe('ipod-video-5g-corrupt-db persona (synthesised, TASK-324 Phase 5)', () 
   });
 
   it('expectedReadiness.level === needs-repair (database stage, not SIE stage)', () => {
-    expect(ipodVideo5gCorruptDb.expectedReadiness.level).toBe('needs-repair');
+    expect(expectations.expectedReadiness.level).toBe('needs-repair');
   });
 
   it('expectedReadiness has a single failed database stage', () => {
-    const stages = ipodVideo5gCorruptDb.expectedReadiness.stages;
+    const stages = expectations.expectedReadiness.stages;
     expect(stages).toHaveLength(1);
     expect(stages[0]?.stage).toBe('database');
     expect(stages[0]?.status).toBe('fail');
@@ -100,9 +100,9 @@ describe('ipod-video-5g-corrupt-db persona (synthesised, TASK-324 Phase 5)', () 
 
   it('exposes the iPod 5G Video nominal capability set (identity recoverable from USB PID)', () => {
     // Capabilities are derivable from USB PID even without a working DB.
-    expect(ipodVideo5gCorruptDb.expectedCapabilities).not.toBeNull();
-    expect(ipodVideo5gCorruptDb.expectedCapabilities?.supportsVideo).toBe(true);
-    expect(ipodVideo5gCorruptDb.expectedCapabilities?.artworkMaxResolution).toBe(200);
+    expect(expectations.expectedCapabilities).not.toBeNull();
+    expect(expectations.expectedCapabilities?.supportsVideo).toBe(true);
+    expect(expectations.expectedCapabilities?.artworkMaxResolution).toBe(200);
   });
 
   it('has a FAT32 backing file synthesis recipe with initialContent', () => {

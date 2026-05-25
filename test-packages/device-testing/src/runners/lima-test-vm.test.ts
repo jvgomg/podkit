@@ -563,7 +563,7 @@ describe('ensurePersonaSidecar', () => {
   const fakePersona: DevicePersona = {
     id: 'fake-persona',
     description: 'fake',
-    schemaVersion: 2,
+    schemaVersion: 3,
     usbDescriptor: {
       vendorId: 0x05ac,
       productId: 0x1209,
@@ -601,9 +601,6 @@ describe('ensurePersonaSidecar', () => {
     diskutilPlist: null,
     partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
     massStorageBackingFile: null,
-    expectedCapabilities: null,
-    expectedReadiness: { status: 'unknown', checks: [] } as never,
-    expectedDoctorOutput: {},
     provenance: { provenanceDoc: '', source: 'synthesised' },
   };
 

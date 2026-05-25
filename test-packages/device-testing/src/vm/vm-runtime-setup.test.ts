@@ -300,7 +300,7 @@ function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): De
   return {
     id,
     description: id,
-    schemaVersion: 2,
+    schemaVersion: 3,
     usbDescriptor: {
       vendorId: 0,
       productId: 0,
@@ -338,12 +338,6 @@ function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): De
     diskutilPlist: null,
     partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
     massStorageBackingFile: null,
-    expectedCapabilities: null,
-    expectedReadiness: {
-      level: 'ready',
-      stages: [],
-    } as unknown as DevicePersona['expectedReadiness'],
-    expectedDoctorOutput: {},
     provenance: { provenanceDoc: '', source: 'synthesised' },
     ...overrides,
   };

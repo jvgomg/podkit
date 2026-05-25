@@ -12,16 +12,15 @@
  *   - Real iPod identity (PID 0x1209, supported) so the upstream
  *     classifier accepts the device and routes to the SIE parser.
  *   - Truncated XML so `parsePlist` is the function that throws.
- *   - `expectedReadiness.level: 'needs-repair'` per
+ *   - The expected readiness level is `'needs-repair'` per
  *     `packages/podkit-core/src/device/readiness/determine-level.ts`:
  *     "SysInfo check failed" rule resolves to `needs-repair`.
  *
- * The `expectedCapabilities` snapshot is the iPod 5G's nominal capability
- * set — the test asserts that when the SIE parser fails, the persona's
- * expected snapshot still describes the device the USB descriptor
- * identifies, so a test using this persona can distinguish "parser failed
- * but device identity still recovered" from "parser failed and identity
- * lost".
+ * Expected outputs (capabilities, readiness, doctor JSON) live in
+ * `@podkit/e2e-vm-tests/src/expectations/malformed-sysinfo.ts` (schema v3) —
+ * including the iPod 5G's nominal capability set so a test using this
+ * persona can distinguish "parser failed but device identity still
+ * recovered" from "parser failed and identity lost".
  *
  * @see packages/ipod-firmware/src/plist/parser.ts (`parsePlist` — entry point under test)
  * @see documents/persona-capture-playbook.md §"Synthesised personas (no hardware)"
@@ -40,7 +39,7 @@ export const malformedSysinfo: DevicePersona = {
   id: 'malformed-sysinfo',
   description:
     'Synthesised SIE-parser error-path fixture — real iPod 5G USB identity (0x05ac:0x1209) with deliberately-truncated SysInfoExtended XML.',
-  schemaVersion: 2,
+  schemaVersion: 3,
 
   usbDescriptor: {
     // Real iPod 5G Video — same PID as `ipod-video-5g-iflash-1tb`. The
@@ -117,43 +116,6 @@ export const malformedSysinfo: DevicePersona = {
   partitionLayout: { luns: [{ lun: 0, partitions: [] }] },
 
   massStorageBackingFile: null,
-
-  // Nominal iPod 5G Video capability set — copied from
-  // `ipod-video-5g-iflash-1tb/persona.ts`. The test can use this to assert
-  // "if the parser had succeeded, this is what the capabilities would have
-  // been" — distinct from a misclassification scenario.
-  expectedCapabilities: {
-    artworkSources: ['embedded', 'database'],
-    artworkMaxResolution: 200,
-    supportedAudioCodecs: ['aac', 'alac', 'mp3', 'aiff', 'wav'],
-    supportsVideo: true,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
-  },
-
-  // `determineLevel`'s "SysInfo check failed" rule resolves a fail `sysinfo`
-  // stage to `needs-repair` — the same level a non-malformed-but-absent
-  // SIE produces, which is the right behaviour: the repair path
-  // (`podkit device repair sysinfo-extended`) is the user-facing escape
-  // hatch for both cases. See
-  // `packages/podkit-core/src/device/readiness/determine-level.ts:88`.
-  expectedReadiness: {
-    level: 'needs-repair',
-    stages: [
-      {
-        stage: 'sysinfo',
-        status: 'fail',
-        summary: 'SysInfoExtended XML is malformed (parser error)',
-        details: {
-          error: 'parsePlist: unexpected end of input',
-          xmlBytes: 500,
-          truncated: true,
-        },
-      },
-    ],
-  },
-
-  expectedDoctorOutput: {},
 
   provenance: {
     provenanceDoc: './provenance.md',
