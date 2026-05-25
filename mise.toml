@@ -45,42 +45,16 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 """
 
 # ---------------------------------------------------------------------------
-# Builder VM (Lima — Linux glibc cross-compile from macOS)
-# Produces @podkit/libgpod-node prebuilds + the podkit standalone binary
-# via the same shared script the GHA workflows use.
-# See: test-packages/device-testing/lima/podkit-linux-builder.yaml and test-packages/device-testing/lima/README.md
-#
-# Device-harness test VM lifecycle (create/start/stop/install/...) lives in
-# the @podkit/device-testing package as `bun run harness:*` scripts. See
-# root package.json for the friendly aliases, or test-packages/device-testing/
-# scripts/harness.ts for the implementation.
+# Device-harness + builder VM lifecycle lives in @podkit/device-testing as
+# `bun run harness:*` package scripts (mirrored at the repo root). The
+# Linux-build turbo tasks (`@podkit/device-testing#build:linux-binary` etc.)
+# auto-create + auto-start the builder VM on demand, so a developer rarely
+# touches it directly. See:
+#   - test-packages/device-testing/scripts/harness.ts (dispatcher)
+#   - root package.json scripts (`harness:setup`, `harness:install`,
+#     `harness:builder:stop`, `harness:builder:destroy`, ...)
+#   - agents/device-testing.md (developer quick start)
 # ---------------------------------------------------------------------------
-
-[tasks."device-testing:build-linux"]
-description = "Build linux podkit binary + dummy-hcd-daemon for host arch via the Lima builder VM (turbo-cached)"
-# PODKIT_HOST_ARCH is hashed into the turbo cache key (see turbo.json `env`)
-# so a remote/shared cache from a different-arch host does not produce wrong-
-# arch binaries on this host. If invoking `bunx turbo` directly without mise,
-# export PODKIT_HOST_ARCH=$(uname -m) first.
-# Builds both the podkit binary (host-arch only) AND the dummy-hcd-daemon
-# (cross-compiled to both arches). Tier-3 needs both.
-run = "PODKIT_HOST_ARCH=$(uname -m) bunx turbo run @podkit/device-testing#build:linux-binary @podkit/device-testing#build:dummy-hcd-daemon"
-
-[tasks."device-testing:build-linux:prebuild"]
-description = "Build only the libgpod-node linux prebuild for host arch (turbo-cached)"
-run = "PODKIT_HOST_ARCH=$(uname -m) bunx turbo run @podkit/device-testing#build:linux-prebuild"
-
-[tasks."device-testing:build-daemon"]
-description = "Build only the dummy-hcd-daemon (Tier 3 FunctionFS daemon) standalone Linux binary"
-run = "bunx turbo run @podkit/device-testing#build:dummy-hcd-daemon"
-
-[tasks."device-testing:builder:stop"]
-description = "Stop the builder VM (preserves state + caches)"
-run = "limactl stop podkit-linux-builder 2>/dev/null; echo Done."
-
-[tasks."device-testing:builder:destroy"]
-description = "Delete the builder VM entirely"
-run = "limactl delete podkit-linux-builder --force 2>/dev/null; echo Done."
 
 # ---------------------------------------------------------------------------
 # Linux test VMs (Lima — cross-platform testing on Debian + Alpine)

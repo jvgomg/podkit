@@ -302,7 +302,7 @@ describe('transferBinary (AC4/AC5: error paths)', () => {
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('cannot read podkit binary');
     expect(caught!.message).toContain(ghost);
-    expect(caught!.message).toContain('mise run device-testing:build-linux');
+    expect(caught!.message).toContain('bun run harness:install');
     expect(calls).toHaveLength(0); // never reached limactl
   });
 

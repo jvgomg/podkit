@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 /**
- * Standalone driver for `transferBinary` + `transferGpodTool`. Invoked by
- * the mise task `device-testing:transfer-binary` so developers can push the
+ * Standalone driver for `transferBinary` + `transferGpodTool`. Pushes the
  * latest linux-x64/arm64 podkit binary into the Lima test VM without
- * running the rest of the test pipeline.
+ * running the rest of the install pipeline. Useful when iterating only on
+ * the podkit binary or gpod-tool; for the full install flow (binaries +
+ * daemon + systemd unit) use `bun run harness:install` instead.
  *
  * Resolution rules:
  *   - VM defaults to `podkit-device-harness` (override via PODKIT_DEVICE_HARNESS_VM_NAME).
@@ -61,8 +62,8 @@ async function main(): Promise<void> {
   if (!fs.existsSync(podkitPath)) {
     console.error(
       `ERROR: podkit linux binary not found at ${podkitPath}.\n` +
-        `       Run: bunx turbo run @podkit/device-testing#build:linux-binary\n` +
-        `       Or:  mise run device-testing:build-linux\n` +
+        `       Run: bun run harness:install   (builds + transfers in one go)\n` +
+        `       Or:  bunx turbo run @podkit/device-testing#build:linux-binary\n` +
         `       Override path: PODKIT_LINUX_BINARY=<path>`
     );
     process.exit(1);
@@ -124,7 +125,7 @@ async function main(): Promise<void> {
   } else {
     console.log(
       `==> skipping dummy-hcd-daemon transfer: ${daemonPath} does not exist.\n` +
-        `    Build it: mise run device-testing:build-daemon\n` +
+        `    Build it: bunx turbo run @podkit/device-testing-daemon#build\n` +
         `    Override the path via PODKIT_DUMMY_HCD_DAEMON_BINARY=<path>.`
     );
   }

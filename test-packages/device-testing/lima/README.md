@@ -197,15 +197,15 @@ mutation succeeded) can be recovered by simply running `applyState` again.
 ```bash
 brew install lima
 
-# 1) Boot the builder VM (first run ~5 min)
-limactl start test-packages/device-testing/lima/podkit-linux-builder.yaml --name podkit-linux-builder
-
-# 2) Produce a Linux x64 binary via turbo (cached on the host)
+# 1) Produce a Linux binary via turbo (cached on the host).
+# The builder VM is auto-created + auto-started on first invocation;
+# the build-linux-*.sh scripts handle the lifecycle.
 bunx turbo run @podkit/device-testing#build:linux-binary
-# Output: packages/podkit-cli/bin/podkit-linux-x64
+# Output: packages/podkit-cli/bin/podkit-linux-<arch>
 
-# Or via the mise wrapper:
-mise run device-testing:build-linux
+# Or, to build everything (binary + daemon + libgpod-node prebuild) + transfer
+# it into the device-harness VM in one go:
+bun run harness:install
 
 # 3) (Optional) Verify ABI on a stock Debian VM
 limactl start test-packages/device-testing/lima/podkit-abi-verify.yaml --name podkit-abi-verify
@@ -265,9 +265,8 @@ builder VM to glibc.
 
 Both tasks hash the `PODKIT_HOST_ARCH` env var into the cache key so a remote
 cache shared across arm64 and x86_64 hosts does not surface a wrong-arch
-binary on cache hit. The mise wrappers (`mise run device-testing:build-linux`,
-`mise run device-testing:build-linux:prebuild`) set this automatically from
-`uname -m`. If invoking `bunx turbo` directly, export it first:
+binary on cache hit. `bun run harness:install` sets this automatically from
+`process.arch`. If invoking `bunx turbo` directly, export it first:
 
 ```bash
 export PODKIT_HOST_ARCH=$(uname -m)
@@ -316,8 +315,8 @@ the `STATIC_DEPS_DIR/lib/*.a` checks that the script's verify phase performs.
 
 ### Builder VM is degraded / won't start
 ```bash
-mise run device-testing:builder:destroy
-mise run device-testing:build-linux  # recreates on first run
+bun run harness:builder:destroy
+bun run harness:install               # recreates on first run
 ```
 
 ### Version mismatch (different Debian point release)

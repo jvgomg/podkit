@@ -88,8 +88,8 @@ export async function transferBinary(opts: TransferBinaryOpts): Promise<Transfer
     vmPath: opts.vmPath ?? DEFAULT_PODKIT_VM_PATH,
     label: 'podkit binary',
     missingHint:
-      'Run `bunx turbo run @podkit/device-testing#build:linux-binary` ' +
-      '(or `mise run device-testing:build-linux`) to produce one.',
+      'Run `bun run harness:install` to build + transfer one ' +
+      '(or `bunx turbo run @podkit/device-testing#build:linux-binary` for the build alone).',
   });
 }
 

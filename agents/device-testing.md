@@ -263,8 +263,12 @@ For the full operator manual, see [`test-packages/device-testing/lima/README.md`
 **Local build:**
 
 ```bash
-mise run device-testing:build-linux   # turbo-cached; invokes builder VM
+bun run harness:install                # builds + transfers everything (turbo-cached)
+# or, build only (no transfer):
+bunx turbo run @podkit/device-testing#build:linux-binary @podkit/device-testing-daemon#build
 ```
+
+The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-linux-builder`) on demand, so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run harness:builder:stop` / `harness:builder:destroy`.
 
 **CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic.
 
@@ -317,7 +321,7 @@ bun run harness:install                    # builds podkit + dummy-hcd-daemon, t
 bun run test:vm                            # from repo root (or: bun run --cwd test-packages/device-testing test:vm)
 ```
 
-`bun run harness:setup` is the first-time superset (creates the VM, starts it, then runs `harness:install`). See §"Quick start" above. `mise run device-testing:build-linux` still works for build-only invocations (the harness install script uses the same turbo task internally).
+`bun run harness:setup` is the first-time superset (creates the VM, starts it, then runs `harness:install`). See §"Quick start" above. For build-only invocations (no transfer), use `bunx turbo run @podkit/device-testing#build:linux-binary @podkit/device-testing-daemon#build` — `harness:install` invokes the same turbo task internally.
 
 VM tests are excluded from the default `bun test` run via `bunfig.toml`
 `pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,

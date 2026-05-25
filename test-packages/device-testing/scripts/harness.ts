@@ -56,17 +56,27 @@ const VM = LIMA_DEVICE_HARNESS_VM_NAME;
 const VM_YAML = path.join(PACKAGE_ROOT, 'lima', 'podkit-device-harness.yaml');
 const VM_YAML_REL = path.relative(REPO_ROOT, VM_YAML);
 
+// The builder VM is a separate Lima instance that cross-compiles Linux
+// binaries on macOS hosts (libgpod-node prebuilds + podkit standalone +
+// dummy-hcd-daemon). The build-linux-*.sh scripts auto-create + auto-start
+// it on demand, so a developer rarely needs to touch it directly. The
+// `builder:stop` / `builder:destroy` subcommands exist as escape hatches
+// (free RAM, force a clean rebuild).
+const BUILDER_VM = 'podkit-linux-builder';
+
 const USAGE = `Usage: bun run scripts/harness.ts <subcommand>
 
 Subcommands:
-  create   Create the Lima VM (idempotent)
-  start    Start (or resume) the VM
-  stop     Stop the VM (preserves state)
-  destroy  Delete the VM (--yes to skip the confirm prompt)
-  shell    Interactive shell inside the VM
-  status   Health check: VM + binaries + systemd unit + kernel modules
-  install  Build + transfer podkit, daemon, gpod-tool, systemd unit
-  setup    create + start + install + status (first-time onboarding)
+  create            Create the Lima VM (idempotent)
+  start             Start (or resume) the VM
+  stop              Stop the VM (preserves state)
+  destroy           Delete the VM (--yes to skip the confirm prompt)
+  shell             Interactive shell inside the VM
+  status            Health check: VM + binaries + systemd unit + kernel modules
+  install           Build + transfer podkit, daemon, gpod-tool, systemd unit
+  setup             create + start + install + status (first-time onboarding)
+  builder:stop      Stop the Linux-builder VM (rarely needed — auto-managed by build scripts)
+  builder:destroy   Delete the Linux-builder VM (--yes to skip the confirm prompt)
 
 These are intended to be invoked via package.json scripts, not directly.
 `;
@@ -369,7 +379,7 @@ async function cmdInstall(): Promise<number> {
   // 1. Turbo build. PODKIT_HOST_ARCH is hashed into the turbo cache key so a
   //    shared cache from a different-arch host cannot deliver wrong-arch
   //    binaries. Set it from process.arch (`arm64` → `arm64`, anything else
-  //    → `x86_64` — matches the `mise device-testing:build-linux` convention).
+  //    → `x86_64` — `uname -m` convention).
   process.env['PODKIT_HOST_ARCH'] = process.arch === 'arm64' ? 'arm64' : 'x86_64';
   console.log('[harness:install] building linux binaries via turbo...');
   const turboResult = spawnSync(
@@ -500,6 +510,63 @@ async function cmdSetup(): Promise<number> {
 }
 
 // ---------------------------------------------------------------------------
+// Subcommand: builder:stop
+// ---------------------------------------------------------------------------
+
+async function cmdBuilderStop(): Promise<number> {
+  const status = await instanceStatus(BUILDER_VM).catch(() => 'missing' as const);
+  if (status === 'missing') {
+    console.log(`[harness:builder:stop] no \`${BUILDER_VM}\` instance — nothing to do.`);
+    return 0;
+  }
+  if (status === 'stopped') {
+    console.log(`[harness:builder:stop] \`${BUILDER_VM}\` is already stopped.`);
+    return 0;
+  }
+  const result = spawnSync('limactl', ['stop', BUILDER_VM], { stdio: 'inherit' });
+  if (result.error) {
+    console.error(`[harness:builder:stop] failed to invoke limactl: ${result.error.message}`);
+    return 1;
+  }
+  return result.status ?? 1;
+}
+
+// ---------------------------------------------------------------------------
+// Subcommand: builder:destroy
+// ---------------------------------------------------------------------------
+
+async function cmdBuilderDestroy(args: string[]): Promise<number> {
+  const status = await instanceStatus(BUILDER_VM).catch(() => 'missing' as const);
+  if (status === 'missing') {
+    console.log(`[harness:builder:destroy] no \`${BUILDER_VM}\` instance — nothing to do.`);
+    return 0;
+  }
+  const yes = args.includes('--yes');
+  if (!yes) {
+    if (!process.stdin.isTTY) {
+      console.error(
+        `[harness:builder:destroy] refusing to delete \`${BUILDER_VM}\` non-interactively. ` +
+          'Pass --yes to confirm.'
+      );
+      return 1;
+    }
+    const confirmed = await confirmPrompt(
+      `About to delete Lima instance \`${BUILDER_VM}\` (current status: ${status}). The next build will re-create it (5–10 min first run). Continue? [y/N] `
+    );
+    if (!confirmed) {
+      console.log('[harness:builder:destroy] aborted.');
+      return 0;
+    }
+  }
+  const result = spawnSync('limactl', ['delete', '--force', BUILDER_VM], { stdio: 'inherit' });
+  if (result.error) {
+    console.error(`[harness:builder:destroy] failed to invoke limactl: ${result.error.message}`);
+    return 1;
+  }
+  return result.status ?? 1;
+}
+
+// ---------------------------------------------------------------------------
 // Dispatcher
 // ---------------------------------------------------------------------------
 
@@ -527,6 +594,10 @@ async function main(): Promise<number> {
       return cmdInstall();
     case 'setup':
       return cmdSetup();
+    case 'builder:stop':
+      return cmdBuilderStop();
+    case 'builder:destroy':
+      return cmdBuilderDestroy(args);
     default:
       process.stderr.write(`Unknown subcommand: ${subcommand}\n\n${USAGE}`);
       return 1;

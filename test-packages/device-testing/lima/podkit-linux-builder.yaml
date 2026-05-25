@@ -2,8 +2,8 @@
 #
 # Role: compile native prebuilds (@podkit/libgpod-node) and the standalone
 # podkit binary for Linux glibc. Invoked from macOS via the turbo tasks
-# `build:linux-prebuild` and `build:linux-binary` (see turbo.json) or the
-# mise wrapper `mise run device-testing:build-linux`.
+# `build:linux-prebuild` and `build:linux-binary` (see turbo.json) — usually
+# transitively through `bun run harness:install`.
 #
 # Cornerstone of ADR-016 (Linux VM Test Harness):
 #   - This is the BUILDER VM. It contains the dev toolchain (Bun, Node,
@@ -35,8 +35,8 @@
 #   bunx turbo run build:linux-prebuild   # → libgpod-node .node addon
 #   bunx turbo run build:linux-binary     # → dist/podkit-linux-x64
 #
-# Usage (via mise on macOS):
-#   mise run device-testing:build-linux
+# Usage (one command, builds + transfers to harness VM):
+#   bun run harness:install
 
 images:
   # Debian 12.10 point release. ADR-016 requires pinning to the exact point

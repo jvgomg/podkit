@@ -37,7 +37,9 @@
     "harness:shell": "bun run scripts/harness.ts shell",
     "harness:status": "bun run scripts/harness.ts status",
     "harness:install": "bun run scripts/harness.ts install",
-    "harness:setup": "bun run scripts/harness.ts setup"
+    "harness:setup": "bun run scripts/harness.ts setup",
+    "harness:builder:stop": "bun run scripts/harness.ts builder:stop",
+    "harness:builder:destroy": "bun run scripts/harness.ts builder:destroy"
   },
   "dependencies": {
     "@podkit/core": "workspace:*",

@@ -27,6 +27,8 @@
     "harness:status": "bun run --cwd test-packages/device-testing harness:status",
     "harness:install": "bun run --cwd test-packages/device-testing harness:install",
     "harness:setup": "bun run --cwd test-packages/device-testing harness:setup",
+    "harness:builder:stop": "bun run --cwd test-packages/device-testing harness:builder:stop",
+    "harness:builder:destroy": "bun run --cwd test-packages/device-testing harness:builder:destroy",
     "test:e2e:real": "IPOD_TARGET=real turbo run test --filter=@podkit/e2e-host-tests",
     "test:e2e:docker": "SUBSONIC_E2E=1 bun run --cwd test-packages/e2e-host-tests src/scripts/run-parallel.ts src/workflows/subsonic-sync.e2e.test.ts src/features/artwork-change.e2e.test.ts src/features/compilation-subsonic.e2e.test.ts",
     "lint": "oxlint --config oxlint.json .",
