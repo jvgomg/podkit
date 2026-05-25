@@ -1,14 +1,14 @@
 /**
- * Tier-3 baseline integration tests against the 3 starter personas.
+ * VM baseline integration tests against the 3 starter personas.
  *
- * # Tier 3 vs Tier 1/2
+ * # VM vs unit/2
  *
- *   - Tier 1 — pure-TS unit tests with injectable transports.
- *   - Tier 2 — native subprocess tests (`*.darwin.test.ts` / `*.linux.test.ts`).
- *   - Tier 3 — full inquiry stack against a synthetic USB device served by a
+ *   - unit — pure-TS unit tests with injectable transports.
+ *   - native — native subprocess tests (`*.darwin.test.ts` / `*.linux.test.ts`).
+ *   - VM — full inquiry stack against a synthetic USB device served by a
  *     FunctionFS daemon inside the `podkit-device-harness` Lima VM (this file).
  *
- * # Test grouping convention (standard for Tier 3)
+ * # Test grouping convention (standard for VM)
  *
  * Personas are grouped by their required `SystemState`. The runner restores
  * one snapshot per group, then runs every persona's tests inside that group.
@@ -26,7 +26,7 @@
  *
  * # Auto-skip
  *
- * Tests skip with a single stderr warning (`[tier-3] Linux VM not available …`)
+ * Tests skip with a single stderr warning (`[vm] Linux VM not available …`)
  * when `limaTestVmRunner.isAvailable()` returns false — i.e. limactl absent
  * or the `podkit-device-harness` instance does not exist. The skip is at-runtime
  * via `describe.skipIf`, so this file is safe to load on any host.
@@ -51,12 +51,12 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
   groupPersonasByState,
   resolveStarterPersonas,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 
 // ---------------------------------------------------------------------------
@@ -66,31 +66,31 @@ import { withPersona, runJsonCommand } from './persona-fixture.js';
 // `await` at module top level inside a test module is supported by Bun's
 // test runner (which loads with ESM). Probing once here, before any
 // describe() is evaluated, keeps the gate cheap.
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Suite
 // ---------------------------------------------------------------------------
 
 // Personas + groups are computed eagerly so the registry's missing-id
-// assertion fires at module load even when Tier 3 is skipped on this host.
+// assertion fires at module load even when VM is skipped on this host.
 const starterPersonas = resolveStarterPersonas();
 const groups = groupPersonasByState(starterPersonas);
 
-describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
+describe.skipIf(!vmAvailable)('VM: starter personas', () => {
   beforeAll(async () => {
     // One-time setup: boot the VM, transfer binaries, emit sidecar. The
     // runner's prepare() is idempotent; running it from inside the test
     // suite means a fresh checkout's first invocation works without manual
     // setup. Cold-start budget: 60s.
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     // Restore base-healthy on the way out; do not shut down the VM (boot
     // dominates per-test cost).
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   // ── One describe per group → one applyState() per group ────────────────────
   for (const group of groups) {
@@ -99,7 +99,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
         // Snapshot restore — fast path is <1s; cold path (first build of
         // this state) hits the 60s budget once and amortises forever.
         await limaTestVmRunner.applyState(group.state);
-      }, TIER3_COLD_TIMEOUT_MS);
+      }, VM_COLD_TIMEOUT_MS);
 
       for (const persona of group.personas) {
         describe(`persona: ${persona.id}`, () => {
@@ -117,7 +117,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
                 runJsonCommand(
                   limaTestVmRunner,
                   '/usr/local/bin/podkit device scan --json',
-                  TIER3_WARM_TIMEOUT_MS
+                  VM_WARM_TIMEOUT_MS
                 )
               );
 
@@ -170,7 +170,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
                 expect(matchingDevice).toBeUndefined();
               }
             },
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
 
           it(
@@ -184,7 +184,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
                 runJsonCommand(
                   limaTestVmRunner,
                   '/usr/local/bin/podkit doctor --scope system --json',
-                  TIER3_WARM_TIMEOUT_MS
+                  VM_WARM_TIMEOUT_MS
                 )
               );
 
@@ -206,7 +206,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
               expect(parsed.healthy).toBe(expectedHealthy);
               expect(Array.isArray(parsed.checks)).toBe(true);
             },
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
 
           it(
@@ -220,7 +220,7 @@ describe.skipIf(!tier3Available)('Tier 3: starter personas', () => {
               });
               expect(ran).toBe(true);
             },
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
         });
       }

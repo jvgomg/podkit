@@ -6,8 +6,8 @@
  *   `corrupt-configfs`
  *
  * Each state describes a host-environment configuration that affects
- * `podkit doctor --scope system` output. Tier 1 tests mock subprocess
- * responses to match a state; Tier 3 tests restore a matching VM snapshot.
+ * `podkit doctor --scope system` output. Unit tests mock subprocess
+ * responses to match a state; VM tests apply the state via `apply-state.sh`.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @module
@@ -34,7 +34,7 @@ import { corruptConfigfs } from './corrupt-configfs.js';
 /**
  * Registry of host-environment states, keyed by `SystemState.id`.
  *
- * Used by Tier 1 injectable mocks and Tier 3 VM snapshot management.
+ * Used by unit injectable mocks and VM state orchestration.
  * Do not mutate at runtime — all states are read-only fixtures.
  */
 export const systemStates: Map<SystemStateId, SystemState> = new Map<SystemStateId, SystemState>([

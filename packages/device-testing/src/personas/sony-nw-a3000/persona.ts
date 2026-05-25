@@ -97,7 +97,7 @@ export const sonyNwA3000: DevicePersona = {
   },
 
   // Backing image dump not captured — 18.6 GiB FAT32 with DRM-bound user
-  // content. Tier 3 synthesis should use the OpenMG marker scaffold listed
+  // content. VM synthesis should use the OpenMG marker scaffold listed
   // in `devices/sony-walkman-nw-a-series.md`.
   massStorageBackingFile: null,
 

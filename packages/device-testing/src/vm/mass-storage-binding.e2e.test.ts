@@ -1,8 +1,8 @@
 /**
- * Tier-3 smoke test: dummy-hcd daemon mass-storage gadget binding.
+ * VM smoke test: dummy-hcd daemon mass-storage gadget binding.
  *
  * Verifies the end-to-end path that's distinct from the FunctionFS-based
- * USB-inquiry path the baseline `personas-baseline.tier3.test.ts` exercises:
+ * USB-inquiry path the baseline `personas-baseline.e2e.test.ts` exercises:
  *
  *   - Daemon starts with a `massStorageBackingFile` and no `sysInfoExtendedXml`
  *     (the mass-storage-only branch of `runWithGadget` in
@@ -15,7 +15,7 @@
  *   - On daemon stop, both kernel nodes go away and the configfs gadget tree
  *     is removed (no orphans under `/sys/kernel/config/usb_gadget/`).
  *
- * # Why this isn't part of `personas-baseline.tier3.test.ts`
+ * # Why this isn't part of `personas-baseline.e2e.test.ts`
  *
  * The baseline test iterates the starter personas with `withPersona()`, which
  * goes through the production systemd template + the runner-emitted shared
@@ -60,16 +60,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
-// Top-level availability gate (mirrors `personas-baseline.tier3.test.ts`)
+// Top-level availability gate (mirrors `personas-baseline.e2e.test.ts`)
 // ---------------------------------------------------------------------------
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Smoke-test constants (deterministic so cleanup is targetable)
@@ -126,7 +126,7 @@ interface VmResult {
   exitCode: number;
 }
 
-async function vm(cmd: string, timeoutMs: number = TIER3_WARM_TIMEOUT_MS): Promise<VmResult> {
+async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
   return limaTestVmRunner.run(cmd, { timeoutMs });
 }
 
@@ -254,21 +254,21 @@ function sleep(ms: number): Promise<void> {
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: dummy-hcd mass-storage smoke', () => {
+describe.skipIf(!vmAvailable)('VM: dummy-hcd mass-storage smoke', () => {
   beforeAll(async () => {
     // Boot the VM, transfer the daemon binary, etc. The runner's prepare()
     // is idempotent.
     await limaTestVmRunner.prepare();
     // Defensive: scrub any leftover state from a prior failed run.
     await purgeLingeringState();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     // Final scrub on the way out so we don't leave the VM in a half-bound
     // state for the next test session.
     await purgeLingeringState();
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   it(
     'binds a synthetic FAT32 mass-storage gadget, mounts r/w, then tears down cleanly',
@@ -352,6 +352,6 @@ describe.skipIf(!tier3Available)('Tier 3: dummy-hcd mass-storage smoke', () => {
     // The test does its own polling, but give it a generous outer budget so
     // a slow VM doesn't surface as a Bun-level timeout (which would mask the
     // real failure).
-    TIER3_WARM_TIMEOUT_MS * 3
+    VM_WARM_TIMEOUT_MS * 3
   );
 });

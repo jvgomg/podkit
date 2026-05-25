@@ -19,7 +19,7 @@
  *   implementation; callsites should rely on that merge unless they
  *   explicitly want to wipe the environment.
  *
- * @see adr/adr-016-linux-vm-test-harness.md "Tier 1 layer"
+ * @see adr/adr-016-linux-vm-test-harness.md "Unit tests with injectable transports"
  * @see adr/adr-017-device-persona-fixtures.md
  * @module
  */
@@ -47,9 +47,8 @@ export interface SubprocessRunResult {
  * Pluggable subprocess execution surface.
  *
  * Production code accepts a `SubprocessRunner` parameter (default: real
- * `execFile`-backed runner) so that Tier 1 unit tests can swap in a replay
- * implementation from `@podkit/device-testing` without altering call
- * semantics.
+ * `execFile`-backed runner) so that unit tests can swap in a hand-rolled stub
+ * without altering call semantics.
  */
 export interface SubprocessRunner {
   run(command: string, args: string[], opts?: SubprocessRunOpts): Promise<SubprocessRunResult>;

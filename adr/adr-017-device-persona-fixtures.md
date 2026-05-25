@@ -1,6 +1,6 @@
 ---
 title: "ADR-017: Device & System Fixture Registry"
-description: A single shared package (`@podkit/device-testing`) exporting `DevicePersona` and `SystemState` fixture registries, consumed by Tier 1 injectable mocks and the Tier 3 FunctionFS USB gadget daemon. Single source of truth prevents mock/integration drift.
+description: A single shared package (`@podkit/device-testing`) exporting `DevicePersona` and `SystemState` fixture registries, consumed by unit-test injectable mocks and the VM-test FunctionFS USB gadget daemon. Single source of truth prevents mock/integration drift.
 sidebar:
   order: 18
 ---
@@ -13,15 +13,15 @@ sidebar:
 
 ## Context
 
-The three-tier test harness (ADR-016) exercises the inquiry pipeline at two distinct levels:
+The device test stack (ADR-016) exercises the inquiry pipeline at two distinct levels:
 
-- **Tier 1** unit tests inject fake data directly into the TypeScript transport layer (`UsbBinding`, `ScsiSyscall`, `ProbeFs`, `SubprocessRunner`).
-- **Tier 3** integration tests run the full stack against a FunctionFS userspace daemon that synthesises a real USB gadget on `dummy_hcd` inside the test VM.
+- **Unit tests** inject fake data directly into the TypeScript transport layer (`UsbBinding`, `ScsiSyscall`, `ProbeFs`, `SubprocessRunner`).
+- **VM tests** run the full stack against a FunctionFS userspace daemon that synthesises a real USB gadget on `dummy_hcd` inside the test VM.
 
 Two kinds of fixture data are needed:
 
 - **Device fixtures** (`DevicePersona`) — USB descriptors, SCSI VPD payloads, partition layouts, mass-storage backing file info, expected capabilities for each iPod model and rejection case.
-- **System fixtures** (`SystemState`) — host-environment states the doctor command must handle (FFmpeg missing, libgpod missing, udev rule missing, `/dev/sg*` permissions denied, etc.). Tier 1 mocks these at the subprocess boundary; Tier 3 manipulates the real test VM state via VM snapshots.
+- **System fixtures** (`SystemState`) — host-environment states the doctor command must handle (FFmpeg missing, libgpod missing, udev rule missing, `/dev/sg*` permissions denied, etc.). Unit tests mock these at the subprocess boundary; VM tests manipulate the real test VM state via `apply-state.sh`.
 
 Without a shared registry, the fake data used in T1 mocks and the data served by the T3 daemon would diverge independently. A T1 test could pass while a T3 test using nominally the same device or system state fails because the two representations were authored separately and fell out of sync. This is the classic mock-drift problem applied to hardware and host-environment simulation.
 
@@ -60,11 +60,11 @@ Originally proposed as two separate packages: one for fixture data, one for the 
 
 **Pros:** Separation of concerns.
 
-**Cons:** The runners and fixtures are tightly coupled (the `lima-test-vm` runner serialises the persona registry to a JSON sidecar consumed by the FunctionFS daemon; the snapshot framework needs the `SystemState` registry to know what snapshots to manage). Splitting them adds workspace boilerplate without preventing coupling.
+**Cons:** The runners and fixtures are tightly coupled (the `lima-test-vm` runner serialises the persona registry to a JSON sidecar consumed by the FunctionFS daemon; the `lima-test-vm` runner needs the `SystemState` registry to drive `applyState`). Splitting them adds workspace boilerplate without preventing coupling.
 
 ### Option D: Single `packages/device-testing/` package (Chosen)
 
-One package consolidates all test-harness foundations: `DevicePersona` registry, `SystemState` registry, `TestRuntime` interface + runners, subprocess snapshot framework. Tier 1 tests import TypeScript objects; the T3 daemon and lima runners read JSON sidecars derived from the same TypeScript registry.
+One package consolidates all test-harness foundations: `DevicePersona` registry, `SystemState` registry, `TestRuntime` interface + runners, `SubprocessRunner` re-exports. Unit tests import TypeScript objects; the VM-test daemon and lima runners read JSON sidecars derived from the same TypeScript registry.
 
 **Pros:** Single source of truth across both fixture types and the harness that consumes them. No cross-package import friction. Schema is enforced by TypeScript. Named handles give tests a stable reference regardless of internal layout changes.
 
@@ -109,11 +109,8 @@ packages/device-testing/
 │   ├── runners/
 │   │   ├── local-linux.ts
 │   │   └── lima-test-vm.ts
-│   ├── subprocess/
-│   │   ├── runner.ts               # SubprocessRunner abstraction
-│   │   ├── capture.ts              # PODKIT_SNAPSHOT_CAPTURE=1
-│   │   └── replay.ts
-│   └── tier3/                      # Tier 3 integration tests
+│   ├── subprocess.ts               # SubprocessRunner re-exports (interface + default runner)
+│   └── vm/                         # VM integration tests
 └── scripts/
     ├── capture-persona.ts          # capture a persona from a connected device
     └── apply-state-vm.sh           # in-VM script to mutate state
@@ -263,7 +260,7 @@ interface SystemState {
 }
 ```
 
-The Tier 1 mock layer uses `SystemState` by injecting matching subprocess responses (e.g., `ffmpeg: 'no-aac-encoder'` → the `SubprocessRunner` returns a canned `ffmpeg -encoders` output that omits AAC). The Tier 3 layer applies the state via a QEMU snapshot (`base-no-ffmpeg`) before running the test, then reverts to `base-healthy` after. Snapshot names map 1-to-1 to `SystemState.id`.
+The unit-test mock layer uses `SystemState` by injecting matching subprocess responses (e.g., `ffmpeg: 'no-aac-encoder'` → the `SubprocessRunner` returns a canned `ffmpeg -encoders` output that omits AAC). The VM-test layer applies the state via `apply-state.sh` before running the test group and restores to `healthy` after. State IDs map 1-to-1 to `SystemState.id`.
 
 ### Starter persona set (v1)
 
@@ -281,7 +278,7 @@ The `echo-mini-empty` persona uses a mass-storage backing file (FAT32 image) for
 
 **Note on gpod-tool:** `gpod-tool` (produced by `@podkit/gpod-testing`) is installed in the test VM as a test-time dependency for populating iPod databases in test setup. It is not required to build podkit and is not bundled into the podkit binary.
 
-**Binary quality note:** All Tier 1 and Tier 3 tests exercise the same statically-linked podkit binary that ships via homebrew and Docker. There is no test-specific build flavor. libgpod is statically linked at build time.
+**Binary quality note:** All unit and VM tests exercise the same statically-linked podkit binary that ships via homebrew and Docker. There is no test-specific build flavor. libgpod is statically linked at build time.
 
 ### Starter system-state set (v1)
 
@@ -337,9 +334,9 @@ Each persona's `provenance.provenanceDoc` links to a `provenance.md` file in the
 
 Synthesised personas (used where hardware is unavailable, e.g. `echo-mini-empty` if no physical device is handy) document the synthesis method and rationale instead. Physical capture is preferred when the hardware is available.
 
-### Consumption by Tier 1
+### Consumption by unit tests
 
-Tier 1 tests import TypeScript objects directly:
+Unit tests import TypeScript objects directly:
 
 ```typescript
 import { personas, systemStates } from '@podkit/device-testing';
@@ -348,18 +345,19 @@ const persona = personas['ipod-video-5g-fresh'];
 const state = systemStates['no-ffmpeg'];
 
 const usbTransport = new FakeUsbBinding(persona.usbDescriptor, persona.sysInfoExtendedXml);
-const subprocessRunner = new ReplaySubprocessRunner(state); // returns ffmpeg-missing fixture
+// Inject a hand-rolled stub that returns canned subprocess output for the state under test:
+const subprocessRunner: SubprocessRunner = { async run() { return { stdout: '', stderr: '', exitCode: 1 }; } };
 ```
 
 No serialisation round-trip. Type errors surface at compile time if a test references a field that doesn't exist.
 
-### Consumption by Tier 3
+### Consumption by VM tests
 
 The FunctionFS daemon (`tools/device-testing/dummy-hcd/`) accepts a `--persona <id>` flag at startup. The `lima-test-vm` runner serialises the registry to a JSON sidecar and passes it to the daemon, which loads the named persona and serves its USB descriptors, VPD responses, and partition layout. The daemon does not import TypeScript; it reads the JSON sidecar produced by the runner.
 
 For mass-storage personas, the runner also stages the `massStorageBackingFile` image at the known backing-file path in the test VM during `prepare()`. The runner resets the backing file between tests in the same SystemState group using the persona's configured `resetStrategy`.
 
-For `SystemState`, the `lima-test-vm` runner restores the matching QEMU snapshot (`base-${state.id}`) before invoking the test. The runner never imports the registry at runtime in the VM — the snapshot is the materialised state.
+For `SystemState`, the `lima-test-vm` runner runs `apply-state.sh <state.id>` before invoking the test group. The runner never imports the registry at runtime in the VM — `apply-state.sh` is the materialised state.
 
 This ensures the daemon, snapshots, and T1 mocks always consume the same data: JSON or VM state produced from the same TypeScript objects.
 
@@ -401,7 +399,7 @@ Personas and system states are read-only across all tests. A test that needs a m
 
 - [ADR-005](/developers/adr/adr-005-test-ipod-environment) — iPod test environment; `gpod-testing` templates remain separate for database-layer tests; this package covers the USB/SCSI/probe/system-environment layers
 - [ADR-014](/developers/adr/adr-014-device-capability-architecture) — Device capability architecture; `expectedCapabilities` in each persona is a `DeviceCapabilities` record produced by `resolveCapabilities`
-- [ADR-016](/developers/adr/adr-016-linux-vm-test-harness) — Linux VM test harness; this ADR provides the fixture and harness package that ADR-016's three tiers consume
+- [ADR-016](/developers/adr/adr-016-linux-vm-test-harness) — Linux VM test harness; this ADR provides the fixture and harness package that ADR-016's device test stack consumes
 
 ## References
 
@@ -413,5 +411,5 @@ Personas and system states are read-only across all tests. A test that needs a m
 - `tools/device-testing/dummy-hcd/` — FunctionFS daemon that consumes persona data in T3
 - `documents/test-devices.md` — canonical hardware inventory; each persona cross-references the matching entry
 - `documents/sysinfo-captures/` — existing SysInfoExtended XML captures reused as fixture source
-- `agents/device-testing.md` — agent guide for the three-tier test stack, persona capture, and runner ops (created by TASK-321.08)
+- `agents/device-testing.md` — agent guide for the device test stack, persona capture, and runner ops (created by TASK-321.08)
 - Milestone m-19: VM testing

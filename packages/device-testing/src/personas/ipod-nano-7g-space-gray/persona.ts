@@ -103,12 +103,12 @@ export const ipodNano7gSpaceGray: DevicePersona = {
     ],
   },
 
-  // Tier-3 only: 128 MiB FAT32 backing file synthesised inside the test VM
+  // VM only: 128 MiB FAT32 backing file synthesised inside the test VM
   // by `runners/lima-test-vm-backing-files.ts`. The image is empty (no
   // iTunesDB, no media files). The recipe
   // is the source of truth; re-running mkfs.vfat --invariant against the
   // same (sizeMiB, label) pair is byte-identical. Real device is 16 GB;
-  // 128 MiB is a Tier-3-only stand-in that the inquiry path doesn't care
+  // 128 MiB is a VM-only stand-in that the inquiry path doesn't care
   // about.
   massStorageBackingFile: {
     synthesis: {

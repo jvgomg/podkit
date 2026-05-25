@@ -3,9 +3,9 @@
  *
  * Schema mirrors ADR-017 §"DevicePersona schema". Consumed in two places:
  *
- * - **Tier 1 unit tests** import the TypeScript object directly and feed
- *   its fields into injectable fakes (`FakeUsbBinding`, `ReplaySubprocessRunner`).
- * - **Tier 3 VM tests** receive a JSON serialisation of the same object via
+ * - **Unit tests** import the TypeScript object directly and feed
+ *   its fields into injectable fakes (`FakeUsbBinding`, hand-rolled `SubprocessRunner` stubs).
+ * - **VM tests** receive a JSON serialisation of the same object via
  *   the lima-test-vm runner; the FunctionFS daemon then replays the USB
  *   descriptors, VPD payload, and partition layout.
  *
@@ -223,7 +223,7 @@ export interface PartitionEntry {
  *
  * **LUN numbering:** matches what the device advertises (typically 0-based
  * sequential). The runner uses this index to address the right
- * `usb_f_mass_storage` LUN when staging backing files in Tier 3.
+ * `usb_f_mass_storage` LUN when staging backing files in VM tests.
  */
 export interface LunPartitionLayout {
   /** 0-based LUN index. Single-LUN devices use `0`. */
@@ -325,7 +325,7 @@ export interface DevicePersona {
    * Single-LUN devices (every iPod, every Sony Walkman) ship one entry with
    * `lun: 0`. Multi-LUN devices (Echo Mini: internal FAT32 + SD-card ExFAT)
    * ship one entry per LUN. The runner uses LUN indices to address the
-   * matching `usb_f_mass_storage` LUN in Tier 3.
+   * matching `usb_f_mass_storage` LUN in VM tests.
    */
   partitionLayout: {
     luns: LunPartitionLayout[];

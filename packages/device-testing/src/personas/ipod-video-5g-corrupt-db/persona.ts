@@ -18,7 +18,7 @@
  *   - Tests the truncated-read failure surface: the first thing `parseMhbd`
  *     validates after the 4-byte magic is `headerLen`.
  *
- * `corruptItunesDb` is exported alongside the persona for Tier-1 tests that
+ * `corruptItunesDb` is exported alongside the persona for unit tests that
  * feed the bytes directly to `parseDatabase` and assert it throws.
  *
  * @see packages/ipod-db/src/itunesdb/parser.ts (`parseDatabase`)
@@ -137,10 +137,10 @@ export const ipodVideo5gCorruptDb: DevicePersona = {
     ],
   },
 
-  // Tier-3: 256 MiB FAT32 backing image SEEDED with the truncated iTunesDB
+  // VM: 256 MiB FAT32 backing image SEEDED with the truncated iTunesDB
   // at the canonical iPod database path. `initialContent` is the seed
   // recipe; the runner (`lima-test-vm-backing-files.ts`) copies the fixture
-  // into the FAT32 via mtools after `mkfs.vfat`. Tier-1 smoke test
+  // into the FAT32 via mtools after `mkfs.vfat`. unit smoke test
   // (`corrupt-db.test.ts`) bypasses the image entirely by calling
   // `parseDatabase(corruptItunesDb)` directly on the exported Uint8Array.
   massStorageBackingFile: {

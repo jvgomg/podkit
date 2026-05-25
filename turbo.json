@@ -152,15 +152,10 @@
       "cache": true
     },
     "@podkit/device-testing#test:vm": {
-      "dependsOn": [],
-      "cache": false,
-      "outputs": []
-    },
-    "@podkit/device-testing#test:tier3": {
       "dependsOn": ["build", "^build"],
       "cache": true,
       "inputs": [
-        "src/tier3/**",
+        "src/vm/**",
         "src/personas/**",
         "src/system-states/**",
         "src/runners/**",

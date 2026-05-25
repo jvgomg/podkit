@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — udev rule USB scope (commit `cdebfb3`).
+ * VM coverage — udev rule USB scope (commit `cdebfb3`).
  *
  * Pins the installed udev-rule contract end-to-end inside the test VM:
  *
@@ -54,34 +54,34 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
-describe.skipIf(!tier3Available)('Tier 3: udev rule USB scope', () => {
+describe.skipIf(!vmAvailable)('VM: udev rule USB scope', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       'installed udev rule covers both scsi_generic AND usb subsystems for Apple vendor 05ac',
       async () => {
         const result = await limaTestVmRunner.run('cat /etc/udev/rules.d/91-podkit-ipod.rules', {
-          timeoutMs: TIER3_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(result.exitCode).toBe(0);
 
@@ -111,7 +111,7 @@ describe.skipIf(!tier3Available)('Tier 3: udev rule USB scope', () => {
         const uaccessBodyMatches = result.stdout.match(/, TAG\+="uaccess"/g) ?? [];
         expect(uaccessBodyMatches.length).toBe(2);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -124,11 +124,11 @@ describe.skipIf(!tier3Available)('Tier 3: udev rule USB scope', () => {
         // duplicate rule processing).
         const result = await limaTestVmRunner.run(
           'ls /etc/udev/rules.d/91-podkit-ipod-scsi.rules 2>/dev/null || echo "absent"',
-          { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
         expect(result.stdout.trim()).toBe('absent');
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -150,7 +150,7 @@ describe.skipIf(!tier3Available)('Tier 3: udev rule USB scope', () => {
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope system --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         expect([0, 2]).toContain(invocation.exitCode);
         expect(invocation.parseError).toBeUndefined();
@@ -166,7 +166,7 @@ describe.skipIf(!tier3Available)('Tier 3: udev rule USB scope', () => {
         expect(udev?.status).toBe('pass');
         expect(udev?.details?.path).toBe('/etc/udev/rules.d/91-podkit-ipod.rules');
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });

@@ -11,7 +11,7 @@
  *
  * `findIpodDevices()` returns only iPods that lsblk sees as mounted block
  * devices. The complementary USB-walk path that surfaces vendor-only Apple
- * devices (iPod 6G in restore mode, FunctionFS-synthesised Tier-3 personas
+ * devices (iPod 6G in restore mode, FunctionFS-synthesised VM-test personas
  * with `massStorageBackingFile: null`) lives in
  * `../usb-enumeration.ts` (`enumerateUsb`, which reads
  * `/sys/bus/usb/devices/` directly) and is composed with `findIpodDevices()`
@@ -384,8 +384,8 @@ export class LinuxDeviceManager implements DeviceManager {
   /**
    * Injected `SubprocessRunner` used by every `lsblk` / `mount` / `umount` /
    * `udisksctl` / `which` invocation in this class. Defaults to the real
-   * `execFile`-backed runner; Tier 1 tests construct the manager with a
-   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   * `execFile`-backed runner; tests construct the manager with a fake
+   * `SubprocessRunner` (e.g. a hand-rolled stub returning canned stdout).
    */
   private readonly subprocess: SubprocessRunner;
 
@@ -852,8 +852,8 @@ Replace sdX1 with your actual device identifier.`;
  * Create a Linux device manager instance
  *
  * @param opts.subprocess - Injectable subprocess runner. Defaults to the
- *   real `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
- *   from `@podkit/device-testing`.
+ *   real `execFile`-backed runner; tests inject a fake `SubprocessRunner`
+ *   (e.g. a hand-rolled stub returning canned stdout).
  */
 export function createLinuxManager(opts: { subprocess?: SubprocessRunner } = {}): DeviceManager {
   return new LinuxDeviceManager(opts);

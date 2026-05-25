@@ -12,7 +12,7 @@
  *   - video-encoder  (H.264 encoder coverage)
  *   - udev-rule      (Linux udev rule presence — repair-only)
  *
- * Tier-1 path: every test drives the exported pure check function with
+ * Unit-test path: every test drives the exported pure check function with
  * injected fakes (ProbeFn, SubprocessRunner, TranscoderCapabilities). No real
  * subprocess, filesystem, or native binding is touched.
  *

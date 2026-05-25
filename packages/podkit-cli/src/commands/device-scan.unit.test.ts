@@ -217,7 +217,7 @@ describe('runDeviceScan', () => {
   it('emits USB-only iPods into the JSON devices array (TASK-334)', async () => {
     // Regression for TASK-334: a USB-walk-only Apple device (no lsblk entry)
     // must surface in `--format json` output as a USB-only iPod entry so
-    // downstream consumers (Tier-3 tests, automation) can assert on its
+    // downstream consumers (VM tests, automation) can assert on its
     // vendor/product descriptor without falling back to `lsusb` cross-checks.
     //
     // The fake `enumerateUsb` returns an Apple iPod video 5G descriptor with
@@ -240,7 +240,7 @@ describe('runDeviceScan', () => {
     const fakeDevice: EnumeratedUsbDevice = {
       vendorId: '05ac',
       productId: '1209',
-      // No bus/devnum/serial — typical of the Tier-3 FunctionFS persona
+      // No bus/devnum/serial — typical of the VM-test FunctionFS persona
       // before the descriptor handshake completes.
     };
 

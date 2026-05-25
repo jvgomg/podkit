@@ -142,8 +142,8 @@ export class MacOSDeviceManager implements DeviceManager {
   /**
    * Injected `SubprocessRunner` used by every `diskutil` / `system_profiler` /
    * `mount` invocation in this class. Defaults to the real `execFile`-backed
-   * runner; Tier 1 tests construct the manager with a
-   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   * runner; tests construct the manager with a fake `SubprocessRunner`
+   * (e.g. a hand-rolled stub returning canned stdout).
    */
   private readonly subprocess: SubprocessRunner;
 
@@ -859,8 +859,8 @@ Replace diskXsY with your actual device identifier`;
  * Create a macOS device manager instance
  *
  * @param opts.subprocess - Injectable subprocess runner. Defaults to the
- *   real `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
- *   from `@podkit/device-testing`.
+ *   real `execFile`-backed runner; tests inject a fake `SubprocessRunner`
+ *   (e.g. a hand-rolled stub returning canned stdout).
  */
 export function createMacOSManager(opts: { subprocess?: SubprocessRunner } = {}): DeviceManager {
   return new MacOSDeviceManager(opts);

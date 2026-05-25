@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# apply-state.sh — mutate the Tier 3 test VM to match a named SystemState.
+# apply-state.sh — mutate the Lima test VM to match a named SystemState.
 #
 # Called by the @podkit/device-testing snapshot orchestrator (see
 # packages/device-testing/src/runners/lima-test-vm-state.ts) when a base
@@ -55,7 +55,7 @@ HEALTHY_MODULES="dummy_hcd libcomposite usb_f_mass_storage usb_f_fs sg"
 # avoids both rabbit holes; production posture is unaffected.
 SG_PERMS_RULE="/etc/udev/rules.d/40-podkit-sg-perms.rules"
 SG_PERMS_RULE_BODY='# Managed by tools/device-testing/scripts/apply-state.sh — DO NOT EDIT.
-# Grants world-readable access to /dev/sg* nodes for the Tier 3 test VM
+# Grants world-readable access to /dev/sg* nodes for the Lima test VM
 # (TASK-348). See SG_PERMS_RULE comment in apply-state.sh for why mode 0664.
 KERNEL=="sg[0-9]*", MODE="0664"'
 
@@ -258,7 +258,7 @@ TEST_VM_SG_OVERRIDE_BODY='# Managed by tools/device-testing/scripts/apply-state.
 # Overrides 91-podkit-ipod.rules MODE=0660 with MODE=0664 for /dev/sg*
 # on the test VM. Allows the ssh-attached test user (not on a console
 # seat, so uaccess does not fire) to read SCSI generic nodes during
-# Tier 3. TASK-348.
+# VM tests. TASK-348.
 KERNEL=="sg[0-9]*", MODE="0664"'
 
 ensure_test_vm_sg_override() {

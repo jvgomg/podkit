@@ -199,7 +199,7 @@ export interface UdevRuleCheckOptions {
 }
 
 /**
- * Pure detection — accepts an injected reader so Tier-1 tests don't touch
+ * Pure detection — accepts an injected reader so unit tests don't touch
  * the host filesystem. Mirrors `checkInquiryMethods(probe, platform)` in
  * `inquiry-methods.ts`.
  *

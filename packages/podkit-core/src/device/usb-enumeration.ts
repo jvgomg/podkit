@@ -358,8 +358,8 @@ export async function enumerateUsb(options?: {
   platform?: string;
   /**
    * Injectable subprocess runner used by the macOS path (`system_profiler`).
-   * Defaults to the real `execFile`-backed runner; Tier 1 tests pass a
-   * `ReplaySubprocessRunner` from `@podkit/device-testing`.
+   * Defaults to the real `execFile`-backed runner; tests inject a fake
+   * `SubprocessRunner` (e.g. a hand-rolled stub returning canned stdout).
    */
   subprocess?: SubprocessRunner;
 }): Promise<EnumeratedUsbDevice[]> {

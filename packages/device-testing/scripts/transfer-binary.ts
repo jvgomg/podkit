@@ -2,7 +2,7 @@
 /**
  * Standalone driver for `transferBinary` + `transferGpodTool`. Invoked by
  * the mise task `device-testing:transfer-binary` so developers can push the
- * latest linux-x64/arm64 podkit binary into the Tier 3 test VM without
+ * latest linux-x64/arm64 podkit binary into the Lima test VM without
  * running the rest of the test pipeline.
  *
  * Resolution rules:

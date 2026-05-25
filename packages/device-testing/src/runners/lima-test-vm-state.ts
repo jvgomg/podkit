@@ -1,31 +1,17 @@
 /**
- * lima-test-vm-state — boot-once / apply-once / snapshot orchestration for
- * the Tier 3 `podkit-device-harness`.
+ * lima-test-vm-state — stage and run apply-state.sh in the VM.
  *
- * Glue layer between three pieces of the snapshot-based state-layering
- * system (ADR-016 §"Snapshot-based state layering"):
+ * Single-path implementation: copy `apply-state.sh` into the VM, make it
+ * executable, and run it with `sudo`. There is no snapshot fast-path — the
+ * `vz` driver used by Lima 2.x on Apple Silicon never implemented snapshots,
+ * and the apply-state.sh-every-time path is ~800ms per state, which is
+ * negligible across the current 6-state matrix.
  *
- *   1. The named QEMU snapshots managed by `lima-test-vm-snapshots.ts`.
- *   2. The in-VM `tools/device-testing/scripts/apply-state.sh` mutator.
- *   3. The `SystemStateId` registry in `system-states/`.
+ * Historical note: this module previously contained a snapshot-based
+ * fast/slow path (QEMU-only; deleted May 2026). See ADR-016
+ * §"Snapshot-based state layering (historical)" for the full rationale.
  *
- * Algorithm (`applyState(opts)`):
- *
- *   1. If a snapshot tagged `base-<stateId>` already exists → restore it
- *      and return (the fast path, expected to be <1s).
- *   2. Otherwise: bring the VM to a known starting point. If a snapshot
- *      tagged `base-healthy` exists, restore it; if not, this must be the
- *      very first run on a freshly provisioned VM and we apply directly to
- *      the live state.
- *   3. Copy `apply-state.sh` into the VM under `/tmp/`.
- *   4. Run `sudo /tmp/apply-state.sh <stateId>` via `limactl shell`.
- *   5. Capture a fresh snapshot as `base-<stateId>` so the next run hits
- *      the fast path.
- *
- * The `lima-test-vm` runner (TASK-322.04) calls this once per
- * `SystemState` test group.
- *
- * @see adr/adr-016-linux-vm-test-harness.md §"Snapshot-based state layering"
+ * @see adr/adr-016-linux-vm-test-harness.md
  * @see tools/device-testing/scripts/apply-state.sh
  * @module
  */
@@ -35,7 +21,6 @@ import * as path from 'node:path';
 import type { SystemStateId } from '../system-states/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import { limactlError, runLimactl } from './lima-limactl.js';
-import { createSnapshot, restoreSnapshot, snapshotExists } from './lima-test-vm-snapshots.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -61,36 +46,23 @@ export interface ApplyStateOpts {
   applyStateScript?: string;
 }
 
-/** Outcome of an {@link applyState} call. */
-export interface ApplyStateResult {
-  /** Final snapshot name in the VM (always `base-<stateId>`). */
-  snapshotName: string;
-  /**
-   * `true` when a new snapshot was created during this call (slow path);
-   * `false` when the snapshot already existed and was simply restored
-   * (fast path).
-   */
-  created: boolean;
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Bring `vmName` to the system state identified by `stateId`, using a
- * snapshot when possible and applying mutations when not.
+ * Bring `vmName` to the system state identified by `stateId` by staging and
+ * running `apply-state.sh` inside the VM.
  *
- * On the fast path (snapshot already exists), this is a single
- * `limactl snapshot apply` call.
- *
- * On the slow path (first run for this state), this copies + executes
- * `apply-state.sh` and captures a new snapshot for future runs.
+ * Steps:
+ *   1. `limactl copy <hostPath> <vmName>:/tmp/apply-state.sh`
+ *   2. `limactl shell <vmName> -- sudo chmod 0755 /tmp/apply-state.sh`
+ *   3. `limactl shell <vmName> -- sudo /tmp/apply-state.sh <stateId>`
  *
  * Errors from any sub-step propagate with descriptive messages that include
  * the underlying `limactl` stderr.
  */
-export async function applyState(opts: ApplyStateOpts): Promise<ApplyStateResult> {
+export async function applyState(opts: ApplyStateOpts): Promise<void> {
   const { vmName, stateId } = opts;
   const subprocess = opts.subprocess ?? defaultSubprocessRunner;
 
@@ -101,37 +73,10 @@ export async function applyState(opts: ApplyStateOpts): Promise<ApplyStateResult
     throw new Error('applyState: stateId is required.');
   }
 
-  const snapshotName = `base-${stateId}`;
-
-  // ── Fast path: snapshot already exists, restore and exit ───────────────────
-  if (await snapshotExists({ vmName, snapshotName, subprocess })) {
-    await restoreSnapshot({ vmName, snapshotName, subprocess });
-    return { snapshotName, created: false };
-  }
-
-  // ── Slow path: bring VM to a known starting point ──────────────────────────
-  // If `base-healthy` exists, restoring it is a much cheaper starting point
-  // than "wherever the VM happens to be right now". Skip when the target IS
-  // `base-healthy` — that would loop on first creation.
-  if (stateId !== 'healthy') {
-    const healthyExists = await snapshotExists({
-      vmName,
-      snapshotName: 'base-healthy',
-      subprocess,
-    });
-    if (healthyExists) {
-      await restoreSnapshot({
-        vmName,
-        snapshotName: 'base-healthy',
-        subprocess,
-      });
-    }
-  }
-
-  // ── Stage apply-state.sh inside the VM ─────────────────────────────────────
   const scriptHostPath = opts.applyStateScript ?? defaultApplyStateScriptPath();
   const scriptVmPath = '/tmp/apply-state.sh';
 
+  // ── Stage apply-state.sh inside the VM ─────────────────────────────────────
   const copyResult = await runLimactl(subprocess, [
     'copy',
     scriptHostPath,
@@ -166,11 +111,6 @@ export async function applyState(opts: ApplyStateOpts): Promise<ApplyStateResult
   if (applyResult.exitCode !== 0) {
     throw limactlError(`apply-state.sh ${stateId} failed in ${vmName}`, applyResult);
   }
-
-  // ── Capture the resulting state as a snapshot ──────────────────────────────
-  await createSnapshot({ vmName, snapshotName, subprocess });
-
-  return { snapshotName, created: true };
 }
 
 // ---------------------------------------------------------------------------

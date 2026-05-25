@@ -1,5 +1,5 @@
 /**
- * Tier-3 verification: `synthesis.initialContent` seeding into FAT32 backing
+ * VM verification: `synthesis.initialContent` seeding into FAT32 backing
  * images.
  *
  * Two personas declare `initialContent` and depend on the runner copying their
@@ -25,7 +25,7 @@
  * tripwire for mtools (`mkfs.vfat --invariant` alone is not enough; mtools
  * would otherwise embed a current-time directory timestamp).
  *
- * Auto-skip mirrors the other Tier-3 files: top-level `resolveTier3Availability`
+ * Auto-skip mirrors the other VM files: top-level `resolveVmAvailability`
  * + `describe.skipIf`.
  */
 
@@ -40,16 +40,16 @@ import { ensureBackingFile, personasRoot } from '../runners/lima-test-vm-backing
 import { echoMiniPopulated, ipodVideo5gCorruptDb } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 
 // ---------------------------------------------------------------------------
 // Top-level availability gate
 // ---------------------------------------------------------------------------
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,7 +63,7 @@ interface VmResult {
   exitCode: number;
 }
 
-async function vm(cmd: string, timeoutMs: number = TIER3_WARM_TIMEOUT_MS): Promise<VmResult> {
+async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
   return limaTestVmRunner.run(cmd, { timeoutMs });
 }
 
@@ -145,15 +145,15 @@ const EXPECTATIONS: SeedExpectation[] = [
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: initialContent seeding for FAT32 backing files', () => {
+describe.skipIf(!vmAvailable)('VM: initialContent seeding for FAT32 backing files', () => {
   beforeAll(async () => {
     // Boot the VM + transfer binaries. Idempotent.
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   for (const expectation of EXPECTATIONS) {
     const { persona, files } = expectation;
@@ -182,7 +182,7 @@ describe.skipIf(!tier3Available)('Tier 3: initialContent seeding for FAT32 backi
           }
         });
       },
-      TIER3_WARM_TIMEOUT_MS * 3
+      VM_WARM_TIMEOUT_MS * 3
     );
   }
 
@@ -203,6 +203,6 @@ describe.skipIf(!tier3Available)('Tier 3: initialContent seeding for FAT32 backi
       });
       expect(second.sha256).toBe(first.sha256);
     },
-    TIER3_WARM_TIMEOUT_MS * 3
+    VM_WARM_TIMEOUT_MS * 3
   );
 });

@@ -109,7 +109,7 @@ export const ipodVideo5gIflash1tb: DevicePersona = {
     ],
   },
 
-  // Tier-3 only: 256 MiB FAT32 backing file synthesised inside the test VM
+  // VM only: 256 MiB FAT32 backing file synthesised inside the test VM
   // by `runners/lima-test-vm-backing-files.ts`. The image is empty (no
   // iTunesDB, no media files). The recipe
   // is the source of truth; re-running mkfs.vfat --invariant against the

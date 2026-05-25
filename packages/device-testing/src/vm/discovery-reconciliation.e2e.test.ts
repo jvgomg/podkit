@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — discovery reconciliation (commit `f5d0082`).
+ * VM coverage — discovery reconciliation (commit `f5d0082`).
  *
  * Pins the reconciliation primitive in `@podkit/core/device/reconcile.ts`
  * end-to-end via `podkit device scan --json`:
@@ -12,7 +12,7 @@
  *     same usbDescriptor; no phantom entries from a stale enumeration.
  *
  * The "two distinct Apple-vendor personas bound concurrently" scenario is
- * NOT verifiable in the current Tier-3 harness — see the inline NB on the
+ * NOT verifiable in the current VM harness — see the inline NB on the
  * suite for the FunctionFS-single-instance constraint and the
  * unit-side coverage pointer.
  *
@@ -22,7 +22,7 @@
  * The dummy-hcd-daemon lifecycle (`systemctl stop`/`start`) is the closest
  * VM-replayable analogue to a physical USB unplug/replug. Each cycle takes
  * ~1.5–2s (start + kernel enumeration + scan + stop). Ten cycles per test
- * pushes a single it() body to ~25s, eating the TIER3_WARM_TIMEOUT_MS
+ * pushes a single it() body to ~25s, eating the VM_WARM_TIMEOUT_MS
  * budget and adding very little signal — the failure mode "duplicate
  * entries accumulate across cycles" surfaces in the first or second cycle
  * if it exists at all. We do 3 cycles, which is enough to catch the
@@ -64,10 +64,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { ipodNano3gBlack } from '../personas/ipod-nano-3g-black/persona.js';
@@ -77,7 +77,7 @@ import {
   LIMA_DEVICE_HARNESS_VM_NAME,
 } from '../runners/lima-test-vm.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 interface ScanDevice {
   usbOnly?: boolean;
@@ -96,19 +96,19 @@ interface ScanJson {
 // returns them as bare lower-case hex.
 const hex = (n: number) => n.toString(16).padStart(4, '0');
 
-describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
+describe.skipIf(!vmAvailable)('VM: discovery reconciliation', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       'single Apple-vendor USB persona → exactly one devices[] entry',
@@ -117,7 +117,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -134,11 +134,11 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
           hex(ipodNano3gBlack.usbDescriptor.productId)
         );
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     // NB — "two iPods plugged in simultaneously" is covered by the dual-
-    // daemon lifecycle smoke (`dual-daemon-lifecycle.tier3.test.ts`), which
+    // daemon lifecycle smoke (`dual-daemon-lifecycle.e2e.test.ts`), which
     // boots two `dummy-hcd-daemon@<id>.service` units against the now
     // per-persona configfs / FunctionFS naming and asserts both kernel
     // gadgets land cleanly. The reconcile primitive's dual-iPod ordering is
@@ -165,7 +165,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
             const invocation = await runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit device scan --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             );
             expect(invocation.exitCode).toBe(0);
             const parsed = invocation.parsed as ScanJson;
@@ -186,7 +186,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery reconciliation', () => {
         }
       },
       // 3 cycles × (start + scan + stop) ≈ 6-8s; pad generously.
-      TIER3_WARM_TIMEOUT_MS * 3
+      VM_WARM_TIMEOUT_MS * 3
     );
   });
 });

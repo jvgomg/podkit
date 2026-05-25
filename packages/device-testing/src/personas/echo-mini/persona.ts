@@ -127,9 +127,9 @@ export const echoMini: DevicePersona = {
     ],
   },
 
-  // Tier-3 only: 64 MiB FAT32 backing file synthesised inside the test VM
+  // VM only: 64 MiB FAT32 backing file synthesised inside the test VM
   // by `runners/lima-test-vm-backing-files.ts`. The real LUN 0 is 7.53 GB —
-  // far too large to dump as a fixture — but the Tier-3 inquiry path only
+  // far too large to dump as a fixture — but the VM inquiry path only
   // needs a kernel-visible mass-storage LUN with a mountable FAT32. An
   // empty 64 MiB image satisfies that without representing the real device
   // verbatim. The starter content policy is empty filesystems; future
@@ -142,7 +142,7 @@ export const echoMini: DevicePersona = {
   // `stringDescriptors[1,2]` and `partitionLayout.luns[0].partitions[1].mountpoint`).
   // The deviation is intentional: keeps the synthesis recipe shell-quoting
   // simple and avoids assertion churn in `lima-test-vm-backing-files.test.ts`.
-  // Tier-3 tests don't currently assert on the FAT volume label of the
+  // VM tests don't currently assert on the FAT volume label of the
   // synthesised gadget, so the divergence is invisible to consumers. If a
   // future test reads `lsblk -o LABEL` and pins the value, flip to `'ECHO MINI'`
   // and update the affected assertions.

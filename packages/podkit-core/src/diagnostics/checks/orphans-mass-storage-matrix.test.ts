@@ -11,7 +11,7 @@
  * the precedence at the resolution layer that produces the value the check
  * actually consumes.
  *
- * Tier-3 (Lima VM, FunctionFS gadget) is deferred behind TASK-322.05.01.
+ * VM-test (Lima VM, FunctionFS gadget) is deferred behind TASK-322.05.01.
  *
  * @see backlog/tasks/task-306
  * @see adr/adr-016-test-harness-foundations.md

@@ -1,19 +1,19 @@
 /**
- * Unit tests for the Tier-3 runtime setup helpers.
+ * Unit tests for the VM runtime setup helpers.
  *
- * Tier 3 vs Tier 1/2 distinction:
- *   - Tier 1: injectable transports (pure TS, runs everywhere).
- *   - Tier 2: native subprocesses against canned fixtures (per-host suffix).
- *   - Tier 3: Linux VM + dummy_hcd + FunctionFS daemon (macOS dev hosts via Lima).
+ * VM vs unit/native distinction:
+ *   - Unit tests: injectable transports (pure TS, runs everywhere).
+ *   - Native tests: native subprocesses against canned fixtures (per-host suffix).
+ *   - VM tests: Linux VM + dummy_hcd + FunctionFS daemon (macOS dev hosts via Lima).
  *
  * **This file** tests the *setup helpers themselves* — persona resolution,
  * state grouping, availability detection. It runs unconditionally on every
  * host because it doesn't touch a real VM (uses fake runtimes).
  *
- * The companion `personas-baseline.tier3.test.ts` contains the actual Tier-3
+ * The companion `personas-baseline.e2e.test.ts` contains the actual VM
  * tests; those auto-skip when Lima isn't installed.
  *
- * Test grouping convention (standard for all Tier-3 tests):
+ * Test grouping convention (standard for all VM tests):
  *   personas are grouped by `SystemState`, `applyState()` runs once per group
  *   (not once per test) — see ADR-016 §"Test speed strategy".
  */
@@ -22,16 +22,15 @@ import { describe, it, expect, beforeEach } from 'bun:test';
 
 import {
   STARTER_PERSONA_IDS,
-  STARTER_PERSONA_ID_LIST,
   resolveStarterPersonas,
   resolveSystemStateForPersona,
   groupPersonasByState,
   hasDaemonPayload,
-  resolveTier3Availability,
-  resetTier3SkipWarning,
-  resetTier3PersonaSkipWarnings,
+  resolveVmAvailability,
+  resetVmSkipWarning,
+  resetVmPersonaSkipWarnings,
   formatPersonaSkipWarning,
-} from './tier3-runtime-setup.js';
+} from './vm-runtime-setup.js';
 import { personas as defaultRegistry } from '../personas/index.js';
 import type { DevicePersona } from '../personas/types.js';
 import type { TestRuntime } from '../runtime.js';
@@ -41,20 +40,20 @@ import type { SystemState } from '../system-states/types.js';
 // Starter persona resolution
 // ---------------------------------------------------------------------------
 
-describe('STARTER_PERSONA_ID_LIST', () => {
+describe('STARTER_PERSONA_IDS', () => {
   it('contains the 3 starter ids in stable order', () => {
-    expect(STARTER_PERSONA_ID_LIST).toEqual([
-      STARTER_PERSONA_IDS.ipodVideo5g,
-      STARTER_PERSONA_IDS.ipodNano7g,
-      STARTER_PERSONA_IDS.echoMini,
+    expect(STARTER_PERSONA_IDS).toEqual([
+      'ipod-video-5g-iflash-1tb',
+      'ipod-nano-7g-space-gray',
+      'echo-mini',
     ]);
-    expect(STARTER_PERSONA_ID_LIST).toHaveLength(3);
+    expect(STARTER_PERSONA_IDS).toHaveLength(3);
   });
 
   it('covers SCSI-fallback, USB-inquiry, and mass-storage paths', () => {
-    expect(STARTER_PERSONA_IDS.ipodVideo5g).toBe('ipod-video-5g-iflash-1tb');
-    expect(STARTER_PERSONA_IDS.ipodNano7g).toBe('ipod-nano-7g-space-gray');
-    expect(STARTER_PERSONA_IDS.echoMini).toBe('echo-mini');
+    expect(STARTER_PERSONA_IDS[0]).toBe('ipod-video-5g-iflash-1tb');
+    expect(STARTER_PERSONA_IDS[1]).toBe('ipod-nano-7g-space-gray');
+    expect(STARTER_PERSONA_IDS[2]).toBe('echo-mini');
   });
 });
 
@@ -70,7 +69,7 @@ describe('resolveStarterPersonas', () => {
   });
 
   it('every starter id exists in the default registry', () => {
-    for (const id of STARTER_PERSONA_ID_LIST) {
+    for (const id of STARTER_PERSONA_IDS) {
       expect(defaultRegistry.has(id)).toBe(true);
     }
   });
@@ -96,7 +95,7 @@ describe('resolveSystemStateForPersona', () => {
 
 describe('groupPersonasByState', () => {
   beforeEach(() => {
-    resetTier3PersonaSkipWarnings();
+    resetVmPersonaSkipWarnings();
   });
 
   it('groups all 3 starter personas under the `healthy` state', () => {
@@ -193,7 +192,7 @@ describe('hasDaemonPayload', () => {
 
 describe('groupPersonasByState daemon-payload filter', () => {
   beforeEach(() => {
-    resetTier3PersonaSkipWarnings();
+    resetVmPersonaSkipWarnings();
   });
 
   it('excludes a synthetic persona with both fields null', () => {
@@ -274,13 +273,13 @@ describe('groupPersonasByState daemon-payload filter', () => {
     expect(warnings[1]).toContain("'beta'");
   });
 
-  it('resetTier3PersonaSkipWarnings restores fresh emission state', () => {
+  it('resetVmPersonaSkipWarnings restores fresh emission state', () => {
     const warnings: string[] = [];
     const bare = makeFakePersona('cycle-me');
     groupPersonasByState([bare], (m) => warnings.push(m));
     expect(warnings).toHaveLength(1);
 
-    resetTier3PersonaSkipWarnings();
+    resetVmPersonaSkipWarnings();
 
     groupPersonasByState([bare], (m) => warnings.push(m));
     expect(warnings).toHaveLength(2);
@@ -351,7 +350,7 @@ function makeFakePersona(id: string, overrides: Partial<DevicePersona> = {}): De
 }
 
 // ---------------------------------------------------------------------------
-// Tier-3 availability detection
+// VM availability detection
 // ---------------------------------------------------------------------------
 
 function fakeRuntime(opts: {
@@ -376,65 +375,43 @@ function fakeRuntime(opts: {
   };
 }
 
-describe('resolveTier3Availability', () => {
-  const optedIn = { PODKIT_DEVTEST_RUN_TIER3: '1' } as const;
-  const optedOut = {} as const;
-
+describe('resolveVmAvailability', () => {
   beforeEach(() => {
-    resetTier3SkipWarning();
+    resetVmSkipWarning();
   });
 
-  it('returns true when opted in and the runner is available', async () => {
+  it('returns true when the runner is available', async () => {
     const warnings: string[] = [];
-    const result = await resolveTier3Availability(
-      fakeRuntime({ available: true }),
-      (m) => warnings.push(m),
-      optedIn
+    const result = await resolveVmAvailability(fakeRuntime({ available: true }), (m) =>
+      warnings.push(m)
     );
     expect(result).toBe(true);
     expect(warnings).toEqual([]);
   });
 
-  it('returns false and emits a warning when the env var is unset (default)', async () => {
+  it('returns false and emits a warning when the runner is unavailable', async () => {
     const warnings: string[] = [];
-    const result = await resolveTier3Availability(
-      fakeRuntime({ available: true }), // runner IS available; gate is the env var
-      (m) => warnings.push(m),
-      optedOut
+    const result = await resolveVmAvailability(fakeRuntime({ available: false }), (m) =>
+      warnings.push(m)
     );
     expect(result).toBe(false);
-    expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toContain('PODKIT_DEVTEST_RUN_TIER3=1');
-  });
-
-  it('returns false when opted in but the runner is unavailable', async () => {
-    const warnings: string[] = [];
-    const result = await resolveTier3Availability(
-      fakeRuntime({ available: false }),
-      (m) => warnings.push(m),
-      optedIn
-    );
-    expect(result).toBe(false);
-    expect(warnings).toEqual([
-      '[tier-3] Linux VM not available — skipping device integration tests',
-    ]);
+    expect(warnings).toEqual(['[vm] Linux VM not available — skipping device integration tests']);
   });
 
   it('only emits the warning once per test session (idempotent)', async () => {
     const warnings: string[] = [];
     const rt = fakeRuntime({ available: false });
-    await resolveTier3Availability(rt, (m) => warnings.push(m), optedIn);
-    await resolveTier3Availability(rt, (m) => warnings.push(m), optedIn);
-    await resolveTier3Availability(rt, (m) => warnings.push(m), optedIn);
+    await resolveVmAvailability(rt, (m) => warnings.push(m));
+    await resolveVmAvailability(rt, (m) => warnings.push(m));
+    await resolveVmAvailability(rt, (m) => warnings.push(m));
     expect(warnings).toHaveLength(1);
   });
 
   it('returns false (and does not throw) when isAvailable() throws', async () => {
     const warnings: string[] = [];
-    const result = await resolveTier3Availability(
+    const result = await resolveVmAvailability(
       fakeRuntime({ available: false, throwOnAvailability: true }),
-      (m) => warnings.push(m),
-      optedIn
+      (m) => warnings.push(m)
     );
     expect(result).toBe(false);
     expect(warnings).toHaveLength(1);

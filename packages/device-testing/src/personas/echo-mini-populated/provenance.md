@@ -32,7 +32,7 @@ the synthesis recipe below.
 | `initialContent` | absent (empty FAT32) | 5 × 64-byte `.mp3` blobs in `Music/` |
 
 The label differs so that the two images are distinguishable in the VM's
-`/var/device-testing/backing-files/` directory. Same size so the Tier-3
+`/var/device-testing/backing-files/` directory. Same size so the VM
 runner's synthesis step is equally fast for both.
 
 ## Synthesis recipe
@@ -83,13 +83,13 @@ for i in range(1, 6):
 ## Mass-storage backing file implementation note
 
 The `initialContent` field in `DevicePersona.massStorageBackingFile.synthesis`
-is declared on this persona but **not yet wired** in the Tier-3 backing-file
+is declared on this persona but **not yet wired** in the VM backing-file
 synthesiser (`packages/device-testing/src/runners/lima-test-vm-backing-files.ts`).
 TASK-324 lands the persona; **TASK-352** lands the runner-side wiring (after
 `mkfs.vfat --invariant`, use `mtools` (`mmd` + `mcopy`) to copy each
 `sourceFixture` file into the FAT32 image at its declared `path` — no loop-mount
-or root privileges needed). Until TASK-352 lands, Tier-3 runs against this
-persona will produce an **empty** FAT32. Tier-1 smoke tests are unaffected
+or root privileges needed). Until TASK-352 lands, VM runs against this
+persona will produce an **empty** FAT32. unit smoke tests are unaffected
 (they exercise the parser directly via the exported byte arrays).
 
 ## Cross-references

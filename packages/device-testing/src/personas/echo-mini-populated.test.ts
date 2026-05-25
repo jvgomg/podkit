@@ -1,5 +1,5 @@
 /**
- * Tier-1 smoke tests for the `echo-mini-populated` persona.
+ * unit smoke tests for the `echo-mini-populated` persona.
  *
  * Pins the synthesis recipe (same Echo Mini USB identity as the empty sibling,
  * FAT32 backing with 5 synthetic track files) so future schema changes can't
@@ -62,7 +62,7 @@ describe('echo-mini-populated persona (synthesised, TASK-324 Phase 5)', () => {
   });
 
   it('synthesis label differs from the empty echo-mini sibling (images are distinguishable)', () => {
-    // Different labels prevent Tier-3 from confusing the two images.
+    // Different labels prevent VM from confusing the two images.
     expect(echoMiniPopulated.massStorageBackingFile?.synthesis?.label).not.toBe(
       echoMini.massStorageBackingFile?.synthesis?.label
     );

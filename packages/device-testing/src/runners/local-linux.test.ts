@@ -2,7 +2,7 @@
  * Unit tests for the local-linux runner.
  *
  * Most of `local-linux` is a thin wrapper around `child_process.spawn` and is
- * already exercised by the higher-level Tier-2 tests. The targeted coverage
+ * already exercised by the higher-level native tests. The targeted coverage
  * here is the new `applyState()` safety guard: the runner must NOT shell out
  * to `apply-state.sh` unless `PODKIT_DEVTEST_LOCAL_MUTATE=1` is set. Mutating
  * a developer's host by accident would silently break their environment.

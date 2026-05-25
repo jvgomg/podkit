@@ -1,14 +1,13 @@
 /**
- * lima-test-vm runner — Tier 3 `TestRuntime` backend for macOS dev hosts.
+ * lima-test-vm runner — VM `TestRuntime` backend for macOS dev hosts.
  *
- * Stitches together the four primitives landed in Phase 3a/3b/3c:
+ * Stitches together the primitives landed in Phase 3a/3b/3c:
  *
  *   - `lima-test-vm-binary.ts` — host→VM binary transfer (idempotent, atomic)
- *   - `lima-test-vm-snapshots.ts` — `limactl snapshot {create,apply,delete,list}`
- *   - `lima-test-vm-state.ts` — `applyState(stateId)` snapshot orchestrator
+ *   - `lima-test-vm-state.ts` — `applyState(stateId)`: stage + run apply-state.sh
  *   - the FunctionFS daemon at `tools/device-testing/dummy-hcd/`
  *
- * Lifecycle (per ADR-016 §"Tier 3"):
+ * Lifecycle (per ADR-016 §"VM"):
  *
  *   isAvailable() — returns true iff `limactl` is in PATH AND the
  *                   `podkit-device-harness` instance exists. Never throws.
@@ -16,15 +15,16 @@
  *                   transfers gpod-tool + the dummy-hcd-daemon (best-effort),
  *                   emits the persona sidecar at /var/device-testing/personas.json.
  *   applyState()  — delegates to applyState({ vmName, stateId }) from
- *                   lima-test-vm-state.ts. Fast path: <1s snapshot restore.
+ *                   lima-test-vm-state.ts. Stages and runs apply-state.sh every
+ *                   time (~800ms). No snapshot fast-path (see ADR-016).
  *   run()         — `limactl shell podkit-device-harness -- <command>`, honouring
  *                   cwd/env/timeout opts.
- *   teardown()    — restores the `base-healthy` snapshot. Does NOT shut down
- *                   the VM (per-test shutdown is too slow).
+ *   teardown()    — no-op between groups; the next applyState() call restores
+ *                   the VM to the required state. Does NOT shut down the VM.
  *
  * Mass-storage backing files and the daemon's systemd lifecycle have separate
  * helpers (`stageBackingFile`, `resetBackingFile`, `startDaemonForPersona`,
- * `stopDaemon`) that the Tier-3 tests call between
+ * `stopDaemon`) that the VM tests call between
  * `prepare()` and `run()`. The runner does not auto-start the daemon — tests
  * choose when, because the daemon is per-persona.
  *
@@ -47,7 +47,6 @@ import type { SystemState } from '../system-states/types.js';
 import { defaultSubprocessRunner, type SubprocessRunner } from '../subprocess.js';
 import type { RunOpts, RunResult, RunnerId, TestRuntime } from '../runtime.js';
 import { transferBinary, transferGpodTool } from './lima-test-vm-binary.js';
-import { restoreSnapshot, snapshotExists } from './lima-test-vm-snapshots.js';
 import { applyState as applyStateRaw } from './lima-test-vm-state.js';
 import { limactlError, runLimactl, shellQuote, type LimactlResult } from './lima-limactl.js';
 import { transferSystemdUnit } from './lima-test-vm-systemd.js';
@@ -61,8 +60,6 @@ import { ensureBackingFilesForPersonas } from './lima-test-vm-backing-files.js';
 export const LIMA_DEVICE_HARNESS_VM_NAME = 'podkit-device-harness';
 /** Sidecar destination inside the VM. */
 export const SIDECAR_VM_PATH = '/var/device-testing/personas.json';
-/** Snapshot the runner restores on teardown. */
-export const BASE_HEALTHY_SNAPSHOT = 'base-healthy';
 /** Default destination inside the VM for the dummy-hcd-daemon binary. */
 export const DEFAULT_DUMMY_HCD_DAEMON_VM_PATH = '/usr/local/bin/dummy-hcd-daemon';
 
@@ -502,7 +499,7 @@ export async function stopDaemon(opts: StopDaemonOpts): Promise<void> {
     unit,
   ]);
   // systemd exit 5 = "no such unit / not loaded / not running" — treat as
-  // success so callers (notably Tier-3 teardown) can `stopDaemon` blindly
+  // success so callers (notably VM teardown) can `stopDaemon` blindly
   // without first checking whether anything is running.
   if (result.exitCode !== 0 && result.exitCode !== 5) {
     throw limactlError(`failed to stop ${unit} in ${opts.vmName}`, result);
@@ -691,28 +688,9 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
       return runViaLimactl(subprocess, vmName, command, runOpts);
     },
     async teardown() {
-      // Restore base-healthy when it exists; on first-ever run it does not,
-      // and that's fine — there is no clean state to roll back to yet.
-      const exists = await snapshotExists({
-        vmName,
-        snapshotName: BASE_HEALTHY_SNAPSHOT,
-        subprocess,
-      });
-      if (!exists) {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[lima-test-vm] teardown: snapshot '${BASE_HEALTHY_SNAPSHOT}' missing on ${vmName} ` +
-            `— skipping restore (first run?).`
-        );
-        return;
-      }
-      await restoreSnapshot({
-        vmName,
-        snapshotName: BASE_HEALTHY_SNAPSHOT,
-        subprocess,
-      });
-      // Deliberately do NOT shut down the VM: per-test shutdown is too slow
-      // (multi-second boot dominates a sub-second snapshot restore).
+      // No-op: the next applyState() call stages and runs apply-state.sh to
+      // bring the VM to the required state. There is no snapshot to restore.
+      // The VM is deliberately NOT shut down — per-group shutdown is too slow.
     },
   };
 }

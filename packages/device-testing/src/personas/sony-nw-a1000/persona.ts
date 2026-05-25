@@ -98,7 +98,7 @@ export const sonyNwA1000: DevicePersona = {
 
   // Backing image dump not captured — 5.7 GB FAT32 far exceeds the 16 MiB
   // threshold and contains user music (DRM-bound OMA files plus an OpenMG
-  // database with embedded ID3v2 metadata in cleartext). For Tier 3 USB
+  // database with embedded ID3v2 metadata in cleartext). For VM USB
   // synthesis, use the `synthesis` recipe with the OpenMG marker files
   // listed in `devices/sony-walkman-nw-a-series.md` § "Detection".
   massStorageBackingFile: null,

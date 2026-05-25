@@ -46,24 +46,24 @@ Key points:
 
 ### Rationale
 
-Tier 2 native integration tests (TASK-321 / ADR-016) call OS-specific subprocesses. On a Linux CI runner, spawning `system_profiler SPUSBDataType` will simply fail — there is nothing useful to assert. Tagging files by OS makes the skip intentional and visible rather than silent. The filename convention also makes it trivial to grep for all darwin-specific tests across the monorepo (`git grep -l '\.darwin\.test\.ts'`).
+Host-tagged native integration tests (TASK-321 / ADR-016) call OS-specific subprocesses. On a Linux CI runner, spawning `system_profiler SPUSBDataType` will simply fail — there is nothing useful to assert. Tagging files by OS makes the skip intentional and visible rather than silent. The filename convention also makes it trivial to grep for all darwin-specific tests across the monorepo (`git grep -l '\.darwin\.test\.ts'`).
 
-## Three-Tier Test Stack
+## Device Test Stack
 
-The device-identification, doctor, and readiness pipelines are covered by three distinct test tiers. See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full design rationale and [agents/device-testing.md](device-testing.md) for the harness reference.
+The device-identification, doctor, and readiness pipelines are covered by three qualitatively different test levels. See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full design rationale and [agents/device-testing.md](device-testing.md) for the harness reference.
 
-### Tier 1 — unit tests with injectable fakes
+### Unit tests with injectable fakes
 
 Pure TypeScript tests. Always run on every host. No subprocesses, no VMs, no special permissions.
 
 - Import `personas` and `systemStates` from `@podkit/device-testing` to get typed fixture objects.
-- Inject fakes through the `SubprocessRunner` seam (interface in `@podkit/device-types`; default implementation in `@podkit/core`; `ReplaySubprocessRunner` from `@podkit/device-testing`).
+- Inject fakes through the `SubprocessRunner` seam (interface in `@podkit/device-types`; default implementation in `@podkit/core`; hand-rolled stubs returning canned stdout for unit tests).
 - Use `DevicePersona` fields (`usbDescriptor`, `sysInfoExtendedXml`, `lsblkJson`, `systemProfilerJson`, etc.) to feed injectable transports (`UsbBinding`, `ScsiSyscall`, `ProbeFs`).
-- Use `SystemState` fields to configure subprocess replay, so the same fixture drives both the "FFmpeg missing" unit test and the Tier 3 snapshot.
+- Use `SystemState` fields to configure subprocess responses, so the same fixture drives both the "FFmpeg missing" unit test and the VM snapshot.
 
 **When to capture a new `DevicePersona`:** when touching device-identification logic (`identify()`, capability resolution, `resolveCapabilities()`), when adding a new supported device family, or when the `DevicePersona` schema gains a required field. See [agents/device-testing.md](device-testing.md) §"DevicePersona".
 
-### Tier 2 — native subprocess tests (host-tagged)
+### Host tests — native subprocess tests (host-tagged)
 
 Tests that invoke real subprocesses against canned fixtures on the host. Always run; skipped on the wrong OS via `describe.skipIf`.
 
@@ -71,24 +71,23 @@ Tests that invoke real subprocesses against canned fixtures on the host. Always 
 - Subprocess outputs (e.g., `lsblk -J`, `system_profiler SPUSBDataType -json`, `ffmpeg -encoders`) are exercised against their real parsers; no mock.
 - See §"Per-OS Test Tagging" for the full filename and `describe.skipIf` pattern.
 
-### Tier 3 — Linux VM with `dummy_hcd` + FunctionFS
+### VM tests — Linux VM with `dummy_hcd` + FunctionFS
 
 The full inquiry stack (`libusb`, `SG_IO`, `lsblk`, capability resolution) runs against a synthetic USB device inside a Lima test VM. The FunctionFS daemon loads a `DevicePersona` and presents real USB descriptors to the kernel.
 
-- **Auto-detected:** if the `lima-test-vm` runner is available (macOS host with Lima installed, or a Linux host), Tier 3 runs. If unavailable, tests are skipped with a warning (`[tier-3] Linux VM not available — skipping device integration tests`) rather than failed.
-- Test files are tagged `*.linux.tier3.test.ts` (forthcoming, lands in TASK-322).
-- `SystemState` snapshots (e.g. `base-no-ffmpeg`) are restored by the runner before each test group; the runner handles snapshot management transparently.
-- **Lands in TASK-322.x** — for now this is a forward reference. No Tier 3 test files exist yet.
+- **Auto-detected:** if the `lima-test-vm` runner is available (macOS host with Lima installed, or a Linux host), VM tests run. If unavailable, tests are skipped with a warning (`[vm] Linux VM not available — skipping device integration tests`) rather than failed.
+- Test files live under `packages/device-testing/src/vm/` and are tagged `*.e2e.test.ts`.
+- `SystemState` is applied via `apply-state.sh` before each test group; the runner handles this transparently.
 
 ### Quick-reference commands (today)
 
 ```bash
-bun run test:unit --filter <pkg>    # Tier 1 + Tier 2 (OS-tagged files self-skip)
-bun run test --filter <pkg>         # All tests for one package (T1 + T2 + integration)
+bun run test:unit --filter <pkg>    # Unit + host tests (OS-tagged files self-skip)
+bun run test --filter <pkg>         # All tests for one package (unit + host + integration)
 bun test packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
 ```
 
-For Tier 3: **lands in TASK-322**. Future commands will include `mise run device-testing:test-vm` and related tasks.
+For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd packages/device-testing test:vm`).
 
 ### Quick-reference: doctor invocations for state assertions
 
@@ -103,7 +102,7 @@ podkit doctor                          # Default: --scope all (legacy behaviour)
 
 `--scope system` skips device resolution entirely — it works on a
 freshly-booted machine with no configured device and exits 0 when all
-host-environment checks pass. Tier-3 baseline tests use it to compare a
+host-environment checks pass. VM-test baseline tests use it to compare a
 SystemState snapshot's `expectedDoctorSystemOutput` against the live VM.
 `--no-system` continues to work but applies only when `--scope` is `all`.
 
@@ -156,9 +155,9 @@ The matrix is pinned in
 Each numbered AC in TASK-308 has a matching `describe` block. The
 canonical numeric exit-code constants live in
 [`packages/podkit-cli/src/commands/error-codes.ts`](../packages/podkit-cli/src/commands/error-codes.ts)
-and the per-command code unions next to them. Tier-3 invocations of
+and the per-command code unions next to them. VM-test invocations of
 `--scope system` (which assert the same rule against a live VM) are
-deferred to the next Tier-3 sweep and noted in the task's AC list.
+deferred to the next VM-test sweep and noted in the task's AC list.
 
 ### Cross-references
 
@@ -418,7 +417,7 @@ hand-rolling inline fixtures:
 
 | Package | Use it for |
 |---|---|
-| `@podkit/device-testing` | Anything device-shaped: `personas` (typed `DevicePersona` fixtures with USB descriptors + SysInfo + lsblk JSON), `systemStates` (host-environment snapshots), `ReplaySubprocessRunner`. See [agents/device-testing.md](device-testing.md). |
+| `@podkit/device-testing` | Anything device-shaped: `personas` (typed `DevicePersona` fixtures with USB descriptors + SysInfo + lsblk JSON), `systemStates` (host-environment snapshots), `SubprocessRunner` + `defaultSubprocessRunner` re-exports. See [agents/device-testing.md](device-testing.md). |
 | `@podkit/gpod-testing` | Anything iPod-database-shaped: `withTestIpod()`, `createTestIpod()`, `addTracks()`. Tests that need a real iTunesDB on disk. |
 | `@podkit/test-fixtures` | Audio file generation: FLAC/MP3 files with controllable metadata and artwork for sync-pipeline tests. |
 

@@ -3,12 +3,11 @@
  *
  * FFmpeg, libgpod, udev rule, and sg permissions are all healthy. The
  * configfs mount is absent (unmounted), which blocks USB gadget setup for
- * the virtual iPod server and Tier 3 test VM. Doctor exits with code 1.
+ * the virtual iPod server and VM test VM. Doctor exits with code 1.
  *
  * Note: the state is named `corrupt-configfs` per the ADR-017 starter set,
  * but the concrete condition used here is `unmounted` (the most common
- * failure mode). A `corrupt` mount is also covered by this state ID for
- * Tier 3 snapshot purposes.
+ * failure mode). A `corrupt` mount is also covered by this state ID.
  *
  * @see adr/adr-017-device-persona-fixtures.md §"SystemState schema"
  * @module
@@ -19,7 +18,7 @@ import type { SystemState } from './types.js';
 export const corruptConfigfs: SystemState = {
   id: 'corrupt-configfs',
   description:
-    'configfs filesystem is not mounted; USB gadget setup is blocked for virtual iPod and Tier 3 tests.',
+    'configfs filesystem is not mounted; USB gadget setup is blocked for virtual iPod and VM tests.',
   schemaVersion: 1,
 
   ffmpeg: 'present',

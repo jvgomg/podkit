@@ -87,8 +87,8 @@ export interface FFmpegTranscoderConfig {
   /**
    * Injectable subprocess runner used for short-lived calls
    * (`ffmpeg -version`, `ffmpeg -encoders`, `ffprobe`). Defaults to the real
-   * `execFile`-backed runner; Tier 1 tests pass a `ReplaySubprocessRunner`
-   * from `@podkit/device-testing`.
+   * `execFile`-backed runner; tests inject a fake `SubprocessRunner`
+   * (e.g. a hand-rolled stub returning canned stdout).
    *
    * The streaming `transcode()` invocation continues to use a direct
    * `spawn` because it consumes progress from stdout in real time, which is

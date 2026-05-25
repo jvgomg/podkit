@@ -450,7 +450,7 @@ export async function runDoctorAction(
 /**
  * Run iPod / mass-storage diagnostics for a resolved device path.
  *
- * Exported for Tier-1 unit tests (TASK-308) — production callers go through
+ * Exported for unit tests (TASK-308) — production callers go through
  * the Commander action above. Tests pass `deps.loadCore` to inject a fake
  * `@podkit/core` module and `deps.getDeviceManager` for the readiness path.
  * For iPod tests that need to drive past `core.IpodDatabase.open`, supply a
@@ -994,7 +994,7 @@ export async function runDoctorDiagnostics(
 /**
  * Run only system-scope checks. Skips device resolution, readiness, and
  * database health — callable on a machine with no iPod plugged in, which
- * is the entry point for Tier-3 baseline assertions (see TASK-322.06).
+ * is the entry point for VM-test baseline assertions (see TASK-322.06).
  *
  * Exported for unit-test injection: tests pass a `loadCore` stub to assert
  * which scopes are forwarded to `runDiagnostics`.

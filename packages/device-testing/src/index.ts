@@ -103,18 +103,8 @@ export {
   DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH,
 } from './runners/lima-test-vm-systemd.js';
 
-// Lima test-VM snapshot helpers (TASK-322.02)
-export type { SnapshotOpts, ListSnapshotsOpts } from './runners/lima-test-vm-snapshots.js';
-export {
-  createSnapshot,
-  restoreSnapshot,
-  deleteSnapshot,
-  snapshotExists,
-  listSnapshots,
-} from './runners/lima-test-vm-snapshots.js';
-
-// Lima test-VM state orchestration (TASK-322.02)
-export type { ApplyStateOpts, ApplyStateResult } from './runners/lima-test-vm-state.js';
+// Lima test-VM state orchestration
+export type { ApplyStateOpts } from './runners/lima-test-vm-state.js';
 export { applyState } from './runners/lima-test-vm-state.js';
 
 // Lima test-VM TestRuntime (TASK-322.04)
@@ -141,7 +131,6 @@ export {
   resolveDefaultGpodToolBinary,
   LIMA_DEVICE_HARNESS_VM_NAME,
   SIDECAR_VM_PATH,
-  BASE_HEALTHY_SNAPSHOT,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
 } from './runners/lima-test-vm.js';
 
@@ -161,20 +150,9 @@ export {
 // local-linux runner constants (TASK-322.04)
 export { LOCAL_MUTATE_ENV } from './runners/local-linux.js';
 
-// Subprocess (capture + replay framework)
-export type {
-  SubprocessRunner,
-  SubprocessRunOpts,
-  SubprocessRunResult,
-  SubprocessFixture,
-} from './subprocess.js';
-export {
-  defaultSubprocessRunner,
-  CapturingSubprocessRunner,
-  ReplaySubprocessRunner,
-  createSubprocessRunner,
-  hashSubprocessCall,
-} from './subprocess.js';
+// Subprocess runner (re-exports for tests)
+export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';
+export { defaultSubprocessRunner } from './subprocess.js';
 
 // Auto-register built-in runners on first import.
 registerRunner(localLinuxRunner);

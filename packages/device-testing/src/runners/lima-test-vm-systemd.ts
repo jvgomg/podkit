@@ -1,8 +1,8 @@
 /**
- * lima-test-vm-systemd — host→Lima-VM systemd unit installer for the Tier 3
+ * lima-test-vm-systemd — host→Lima-VM systemd unit installer for the VM
  * test VM.
  *
- * The Tier 3 runner (`lima-test-vm.ts`) starts and stops
+ * The VM runner (`lima-test-vm.ts`) starts and stops
  * `dummy-hcd-daemon@<persona>.service` between tests. systemd will refuse to
  * start that template unless the unit file is registered on disk at
  * `/etc/systemd/system/dummy-hcd-daemon@.service` and `systemctl daemon-reload`

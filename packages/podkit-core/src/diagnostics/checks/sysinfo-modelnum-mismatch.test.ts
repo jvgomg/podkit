@@ -27,7 +27,7 @@
  *   - Repair short-circuits when on-disk value already matches firmware.
  *
  * Hardware verification (per the task ACs #6 and #7) is deferred to
- * TASK-319 — this Tier-1 coverage is sufficient for the check + repair
+ * TASK-319 — this unit coverage is sufficient for the check + repair
  * glue.
  */
 

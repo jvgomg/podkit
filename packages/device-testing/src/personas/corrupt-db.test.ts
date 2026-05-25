@@ -1,5 +1,5 @@
 /**
- * Tier-1 smoke tests for the `ipod-video-5g-corrupt-db` persona.
+ * unit smoke tests for the `ipod-video-5g-corrupt-db` persona.
  *
  * Separate from `rejection-personas.test.ts` because this is not a rejection
  * persona — the USB classifier accepts the device as a supported iPod 5G

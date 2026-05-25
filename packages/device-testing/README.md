@@ -1,8 +1,8 @@
 # @podkit/device-testing
 
-Shared fixture registries and the `TestRuntime` harness consumed by every Tier 1 unit test and Tier 3 VM test in podkit's three-tier device test stack (see [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) and [ADR-017](../../adr/adr-017-device-persona-fixtures.md)).
+Shared fixture registries and the `TestRuntime` harness consumed by every unit test and VM test in podkit's device test stack (see [ADR-016](../../adr/adr-016-linux-vm-test-harness.md) and [ADR-017](../../adr/adr-017-device-persona-fixtures.md)).
 
-A single package consolidates fixtures + runners so Tier 1 mocks and Tier 3 VM/USB-gadget responses can never drift — they derive from the same TypeScript object.
+A single package consolidates fixtures + runners so unit-test mocks and VM/USB-gadget responses can never drift — they derive from the same TypeScript object.
 
 ## Package structure
 
@@ -28,9 +28,9 @@ packages/device-testing/
 | `TestRuntime`, `RunnerId`, `RunOpts`, `RunResult` | Runtime abstraction |
 | `localLinuxRunner` | Linux-only runner instance |
 | `registerRunner`, `getRunner`, `listRunners` | Runner registry helpers |
-| `SubprocessRunner`, `defaultSubprocessRunner`, `CapturingSubprocessRunner`, `ReplaySubprocessRunner`, `createSubprocessRunner`, `hashSubprocessCall` | Subprocess execution surface + capture/replay framework — see [`src/subprocess.md`](./src/subprocess.md) |
+| `SubprocessRunner`, `SubprocessRunOpts`, `SubprocessRunResult`, `defaultSubprocessRunner` | Subprocess runner interface + default real-execFile implementation (re-exported from `@podkit/device-types` and `@podkit/core` for a single import path) |
 
-Importing the package auto-registers `local-linux`. Tier 3 runners (`lima-test-vm`) register themselves when their respective modules load.
+Importing the package auto-registers `local-linux`. VM runners (`lima-test-vm`) register themselves when their respective modules load.
 
 ## Adding a persona
 
@@ -49,7 +49,7 @@ States land in TASK-321.06 (initial set: `healthy`, `no-ffmpeg`, `no-libgpod`, `
 2. Register it by adding `systemStates.set(state.id, state)` in `src/system-states/index.ts`.
 3. Run the matching VM-mutation script and snapshot the VM as `base-${id}` (TASK-321.06 wires this up).
 
-## Tier 3 turbo task
+## VM test turbo task
 
 A no-op `@podkit/device-testing#test:vm` task is registered in the repo-root `turbo.json` so the dependency graph is in place. The body lands in TASK-321.07 (Linux native build pipeline) and TASK-321.03 (`lima-test-vm` runner).
 

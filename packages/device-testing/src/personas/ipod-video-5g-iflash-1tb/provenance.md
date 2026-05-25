@@ -53,7 +53,7 @@ Deferred. Linux captures completed this session for four representative personas
 
 Provisional. Stubs from generation table + SIE highlights (video codecs H.264 Baseline L1.3, H.264LC L3.0, MPEG-4; artwork up to 200×200). The compute-expected pass (per TASK-321.02 ACs) re-derives these against the production resolvers.
 
-## Mass-storage backing file (Tier-3 synthesis)
+## Mass-storage backing file (VM synthesis)
 
 **Source:** synthesised inside `podkit-device-harness` at `prepare()` time — no
 host-side artefact, no committed binary, no git LFS.
@@ -69,7 +69,7 @@ mkfs.vfat --invariant -F 32 -n IPOD_VIDEO -I <path>
 ```
 
 **Why FAT32:** podkit refuses HFS+ on Linux (TASK-317.12). FAT32 is the
-universal iPod filesystem and the only one Tier-3 supports. The 5G's
+universal iPod filesystem and the only one VM supports. The 5G's
 historical default is FAT32/MBR for the storage partition; the iFlash
 modification preserves that layout.
 

@@ -25,7 +25,7 @@ async function ffmpegEncoders(subprocess: SubprocessRunner): Promise<string> {
 
 /**
  * Pure check logic — accepts an injected subprocess runner and platform string
- * for unit testing. Exported so Tier-1 tests can drive the matrix without
+ * for unit testing. Exported so unit tests can drive the matrix without
  * spawning real ffmpeg.
  */
 export async function checkVideoEncoderForRunner(

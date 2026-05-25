@@ -55,17 +55,17 @@ corruptItunesDb[3] = 0x64; // 'd'
 // Bytes 4-511: 0x00 → headerLen = 0 → "mhbd header too small"
 ```
 
-The `raw/iTunesDB` binary is also committed for Tier-3 synthesis (the
+The `raw/iTunesDB` binary is also committed for VM synthesis (the
 `massStorageBackingFile.synthesis.initialContent` recipe references it via
 `sourceFixture`).
 
 ### iTunesDB binary committed to raw/
 
 `raw/iTunesDB` is the same 512-byte sequence committed as a binary fixture
-for Tier-3's `initialContent` mechanism. It is byte-identical to the
+for VM's `initialContent` mechanism. It is byte-identical to the
 `corruptItunesDb` Uint8Array constructed in `persona.ts`. The `raw/` file is
-the source-of-truth for Tier-3 (where the runner reads it and copies it into
-the FAT32 image); the inline `Uint8Array` is the source-of-truth for Tier-1
+the source-of-truth for VM (where the runner reads it and copies it into
+the FAT32 image); the inline `Uint8Array` is the source-of-truth for unit
 (where no filesystem access occurs).
 
 Recreation command:

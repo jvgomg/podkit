@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — `podkit doctor` consistent sections.
+ * VM coverage — `podkit doctor` consistent sections.
  *
  * Pins the post-`78b0c71` (+ `667d66b` cleanup) renderer contract:
  *
@@ -8,7 +8,7 @@
  *     checks (notably `inquiry-methods`, filtered via `applicableTo:
  *     ['ipod']`) still apply because the system scope is host-environment.
  *   - `--scope device` without `-d` exits non-zero with DEVICE_REQUIRED
- *     (the JSON envelope side lives in `doctor-scope-refactor.tier3.test.ts`).
+ *     (the JSON envelope side lives in `doctor-scope-refactor.e2e.test.ts`).
  *   - `--no-system` without `-d` exits non-zero with DEVICE_NOT_RESOLVED
  *     (the renderer never reaches "render device sections only" without a
  *     resolved device).
@@ -34,7 +34,7 @@
  * unit-side by `packages/podkit-cli/src/commands/doctor-grouped-render.
  * test.ts`, which drives `printGroupedChecks` with synthetic
  * `DiagnosticCheck[]` arrays — that test is the authoritative cover for
- * the renderer matrix. Tier-3's value-add is the surface-level
+ * the renderer matrix. VM's value-add is the surface-level
  * `--scope system` / `--scope device` / `--no-system` flag-routing
  * verified end-to-end against the real CLI binary in a real Linux
  * environment.
@@ -46,37 +46,37 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
-describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
+describe.skipIf(!vmAvailable)('VM: doctor consistent sections', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       '--scope system renders ONLY the System section (text mode)',
       async () => {
         // Text-mode invocation — the text renderer is what the AC's
         // section-ordering contract speaks about. JSON envelope is asserted
-        // in `doctor-scope-refactor.tier3.test.ts`.
+        // in `doctor-scope-refactor.e2e.test.ts`.
         const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
-          timeoutMs: TIER3_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WARM_TIMEOUT_MS,
         });
 
         // Exit code reflects system health (0 = healthy, 2 = issues-found);
@@ -93,7 +93,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         expect(result.stdout).not.toMatch(/^Device Readiness$/m);
         expect(result.stdout).not.toMatch(/^Database Health$/m);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -107,7 +107,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope system --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         expect(invocation.parseError).toBeUndefined();
         const parsed = invocation.parsed as {
@@ -126,7 +126,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         expect(parsed.deviceType).toBeUndefined();
         expect(parsed.readiness).toBeUndefined();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -135,7 +135,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope device --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         // Must fail — never silently downgrade to a partial run.
         expect(invocation.exitCode).not.toBe(0);
@@ -150,7 +150,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         // The error message must name the flag so the user can diagnose.
         expect(failure.error).toMatch(/--scope device/);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -164,7 +164,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --no-system --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         expect(invocation.exitCode).not.toBe(0);
         expect(invocation.parseError).toBeUndefined();
@@ -178,7 +178,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         expect(failure.code).toBeDefined();
         expect(['DEVICE_NOT_RESOLVED', 'DEVICE_REQUIRED']).toContain(failure.code!);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -191,11 +191,11 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         // evaluated (host environment, not device-bound), so we assert it
         // appears here. The negative-side coverage (Echo Mini doctor omitting
         // it) is in the unit suite `doctor-grouped-render.test.ts` because
-        // Tier-3 can't drive a mounted mass-storage `doctor -d` flow today.
+        // VM can't drive a mounted mass-storage `doctor -d` flow today.
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope system --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         const parsed = invocation.parsed as {
           checks: Array<{ id: string; scope: string }>;
@@ -204,7 +204,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor consistent sections', () => {
         expect(inquiry).toBeDefined();
         expect(inquiry?.scope).toBe('system');
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });

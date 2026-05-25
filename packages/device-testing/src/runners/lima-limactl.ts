@@ -1,6 +1,6 @@
 /**
  * Shared `limactl` invocation helpers used by the lima-test-vm runner and
- * its support modules (binary transfer, snapshots, state orchestrator).
+ * its support modules (binary transfer, state orchestrator).
  *
  * Extracted to one place so a Lima-version-specific change (argument order,
  * error-message wording, missing-instance heuristics) only needs to be made

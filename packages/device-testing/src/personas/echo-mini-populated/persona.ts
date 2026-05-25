@@ -96,11 +96,11 @@ export const echoMiniPopulated: DevicePersona = {
     ],
   },
 
-  // Tier-3: 64 MiB FAT32 backing image, same size as the empty `echo-mini`
+  // VM: 64 MiB FAT32 backing image, same size as the empty `echo-mini`
   // persona, but seeded with 5 synthetic track files via `initialContent`.
   // Each `track-0N.mp3` is a 64-byte sentinel blob — not real audio, but
   // sufficient to exercise the sync-target detection and file-count paths.
-  // Label differs from `ECHO_MINI` to make images distinguishable in VM.
+  // Label differs from `ECHO_MINI` to make images distinguishable in VM tests.
   massStorageBackingFile: {
     synthesis: {
       sizeMiB: 64,

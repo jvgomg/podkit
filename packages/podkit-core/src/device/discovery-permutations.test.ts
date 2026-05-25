@@ -3,7 +3,7 @@
  *
  * Exercises the discovery + classification pipeline against synthetic USB
  * descriptors with no real USB hardware. Pairs the unit-side coverage with
- * the Tier-3 coverage in `packages/device-testing/src/tier3/discovery.tier3.test.ts`.
+ * the VM coverage in `packages/device-testing/src/vm/discovery.e2e.test.ts`.
  *
  * Tests cover the discovery surface (`parseSystemProfilerUsbData`,
  * `parseSysfsUsbDevices`, `classifyUsbDevices`) — the same modules
@@ -33,9 +33,9 @@
  *     vendor-recognised path (Sony) lands in the unsupported-device classifier;
  *     the unrecognised path (random VID) is dropped entirely.
  *   - Multi-iPod ordering: covered partially here via injected fake enumerate
- *     output (two distinct Apple PIDs). The corresponding Tier-3 coverage is
+ *     output (two distinct Apple PIDs). The corresponding VM coverage is
  *     DEFERRED because the dummy-hcd daemon's FunctionFS mountpoint is single-
- *     instance — see `discovery-reconciliation.tier3.test.ts` for the
+ *     instance — see `discovery-reconciliation.e2e.test.ts` for the
  *     documented infrastructure constraint.
  *   - Missing serialNumber: every parser must omit the field rather than emit
  *     `serialNumber: ""` or `null`; downstream FireWireGUID checks can then
@@ -266,13 +266,13 @@ describe('multiple iPod descriptors classified in stable order', () => {
     expect(classified[3]!.kind === 'ipod' && classified[3]!.supported).toBe(false);
   });
 
-  // NB — the Tier-3 counterpart (two physical synthetic USB devices bound
+  // NB — the VM-test counterpart (two physical synthetic USB devices bound
   // concurrently) is DEFERRED: the dummy-hcd daemon uses a single hardcoded
   // FunctionFS mount point (`/dev/ffs-podkit`), and a second `systemctl start
   // dummy-hcd-daemon@<id>.service` exits 4 with `mount: /dev/ffs-podkit:
   // podkit-test already mounted`. The reconcile-primitive's dual-iPod ordering
   // path is exhaustively covered unit-side in `reconcile.test.ts`. See
-  // `discovery-reconciliation.tier3.test.ts` for the long-form rationale.
+  // `discovery-reconciliation.e2e.test.ts` for the long-form rationale.
 });
 
 // ---------------------------------------------------------------------------

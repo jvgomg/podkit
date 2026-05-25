@@ -424,7 +424,7 @@ export async function runDeviceScan(
   });
 
   // USB-only iPods: Apple-vendor USB descriptors with no joinable lsblk entry.
-  // These appear for personas synthesised inside the Tier-3 VM that have no
+  // These appear for personas synthesised inside the test VM that have no
   // block device (massStorageBackingFile: null) and for iPods in restore mode
   // (6G in particular). They share the same JSON shape as block-device-bound
   // entries, but with `usbOnly: true`, no `mountPoint`, and empty string

@@ -5,7 +5,7 @@
  *
  * - `local-linux` — spawns commands directly on a Linux host (or CI runner).
  * - `lima-test-vm` — proxies commands into a Lima VM with `dummy_hcd` + a
- *   FunctionFS daemon (ADR-016 Tier 3 on macOS dev hosts).
+ *   FunctionFS daemon (ADR-016 VM on macOS dev hosts).
  *
  * New runners register themselves via `registerRunner()` (see `runners/registry.ts`)
  * without modifying this file.
@@ -52,13 +52,14 @@ export interface TestRuntime {
   /** Idempotent setup; called before the first `run`. */
   prepare(): Promise<void>;
   /**
-   * Bring the runtime to a known `SystemState` — restores the matching VM
-   * snapshot for `lima-test-vm`, shells out to `apply-state.sh` for
-   * `local-linux` (gated behind `PODKIT_DEVTEST_LOCAL_MUTATE=1` so a dev host
-   * is never mutated by accident).
+   * Bring the runtime to a known `SystemState` — stages and runs
+   * `apply-state.sh` inside the VM for `lima-test-vm`, shells out to
+   * `apply-state.sh` for `local-linux` (gated behind
+   * `PODKIT_DEVTEST_LOCAL_MUTATE=1` so a dev host is never mutated by
+   * accident).
    *
-   * Tier-3 tests grouped by `SystemState` should call this once per group
-   * rather than once per test (see ADR-016 §"Snapshot-based state layering").
+   * VM tests grouped by `SystemState` should call this once per group
+   * rather than once per test (see ADR-016 §"State layering via apply-state.sh").
    */
   applyState(state: SystemState): Promise<void>;
   /** Execute a single command. */

@@ -1,7 +1,7 @@
 /**
  * Orphan-files (iPod) matrix coverage — TASK-305, m-19 Phase 5d.
  *
- * Tier-1 unit tests pinning the 14 ACs in `task-305` against the iPod-flavour
+ * Unit tests pinning the 14 ACs in `task-305` against the iPod-flavour
  * `orphan-files` check. Every test drives the exported `orphanFilesCheck.check`
  * (and `.repair.run`) against a synthetic on-disk × library-references state.
  *

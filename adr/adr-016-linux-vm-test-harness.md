@@ -1,6 +1,6 @@
 ---
 title: "ADR-016: Linux VM Test Harness"
-description: Three-tier test architecture for device-discovery code using injectable transports, native subprocess tests, and a Linux test VM with dummy_hcd for real kernel-level USB gadget simulation. Builder VM and test VM are physically separated to prevent dev libraries from masking binary linkage issues.
+description: Device test stack for device-discovery code using injectable transports, native subprocess tests, and a Linux test VM with dummy_hcd for real kernel-level USB gadget simulation. Builder VM and test VM are physically separated to prevent dev libraries from masking binary linkage issues.
 sidebar:
   order: 17
 ---
@@ -21,7 +21,7 @@ Testing this pipeline adequately requires exercising three qualitatively differe
 2. **Host subprocess integration** — does the code correctly invoke `ffmpeg`, `gpod-tool`, `lsblk`, `system_profiler`, `diskutil`, and handle their real output on each host OS?
 3. **Kernel-level USB/SCSI integration** — does the full stack (libusb, `SG_IO`, `lsblk`, kernel udev) behave correctly against a real virtual device seen through the actual OS device model?
 
-No single test environment satisfies all three requirements. Mocks cannot substitute for real subprocess invocations; real subprocess invocations on a dev host cannot manufacture a USB device node that libusb, `SG_IO`, and `lsblk` all see. A dedicated kernel-level environment is needed for Tier 3.
+No single test environment satisfies all three requirements. Mocks cannot substitute for real subprocess invocations; real subprocess invocations on a dev host cannot manufacture a USB device node that libusb, `SG_IO`, and `lsblk` all see. A dedicated kernel-level environment is needed for VM tests.
 
 A second concern motivates this ADR: **dev libraries on the host PATH have historically masked binary linkage problems**. The compiled `podkit` binary statically links libgpod (matching the homebrew and Docker distributions), but a developer's host typically has `libgpod-dev`, koffi development copies, etc. installed, which can shadow the bundled artefacts and let a broken binary pass its tests. The test environment must contain **only what a real user has** — no dev tooling, no source tree.
 
@@ -58,26 +58,26 @@ Add a third tier that runs the full inquiry stack against a synthetic USB device
 
 **Pros:** Closes all three gaps. The VM tier is opt-in and Turbo-cached, so the cost on cache hit is zero. Catches the dev-library-shadowing bug class.
 
-**Cons:** New infrastructure. Requires a FunctionFS daemon, two new Lima VM configurations (builder + test), a `packages/device-testing/` package, and a snapshot-based state-layering mechanism. `dummy_hcd` is unavailable in Docker Desktop's LinuxKit kernel and in GH Actions `ubuntu-latest`'s Azure-flavor kernel, so Tier 3 runs on developer mac hosts only (see "CI: build-only" section below).
+**Cons:** New infrastructure. Requires a FunctionFS daemon, two new Lima VM configurations (builder + test), a `packages/device-testing/` package, and a state-layering mechanism via `apply-state.sh`. `dummy_hcd` is unavailable in Docker Desktop's LinuxKit kernel and in GH Actions `ubuntu-latest`'s Azure-flavor kernel, so VM tests run on developer mac hosts only (see "CI: build-only" section below).
 
 ## Decision
 
 **Option C: three-tier test architecture, with strict builder/test VM separation for Tier 3.**
 
-### Tier 1: Unit tests with injectable transports
+### Unit tests: injectable transports
 
 Pure TypeScript tests that inject fake transports into existing injectable interfaces:
 
 - `UsbBinding` — USB control transfer responses
 - `ScsiSyscall` — raw SCSI command responses
 - `ProbeFsPlatform` / `ProbeFs` / `UsbLoader` — filesystem probe and USB enumeration results
-- `SubprocessRunner` — `ffmpeg`, `lsblk`, `system_profiler`, `diskutil` outputs (see ADR-017's snapshot framework)
+- `SubprocessRunner` — `ffmpeg`, `lsblk`, `system_profiler`, `diskutil` outputs (hand-rolled stubs returning canned stdout)
 
-These interfaces already exist in `packages/ipod-firmware/` and `packages/podkit-core/`. Tier 1 tests import TypeScript objects directly from `@podkit/device-testing` (see ADR-017) and inject them as the transport layer.
+These interfaces already exist in `packages/ipod-firmware/` and `packages/podkit-core/`. Unit tests import TypeScript objects directly from `@podkit/device-testing` (see ADR-017) and inject them as the transport layer.
 
 **Runs on:** every host (mac, linux, windows). Always on.
 
-### Tier 2: Native integration tests
+### Host tests: native integration tests
 
 Tests that invoke real subprocesses against real fixtures on disk:
 
@@ -91,7 +91,7 @@ Test files are tagged by OS suffix: `*.darwin.test.ts` runs only on macOS; `*.li
 
 **Runs on:** mac and linux hosts natively. Windows via WSL2 (future). Always on.
 
-### Tier 3: Linux test VM integration tests
+### VM tests: Linux test VM integration tests
 
 The full inquiry pipeline — USB enumeration, SCSI VPD, `lsblk`, capability resolution — is exercised against synthetic USB devices created by a FunctionFS userspace daemon. The daemon loads a `DevicePersona` (see ADR-017) at startup and serves the USB descriptors, SCSI VPD responses, and filesystem structure that the persona defines. The host Linux kernel sees a real device node via `dummy_hcd`.
 
@@ -108,17 +108,15 @@ The binary moves from builder VM to test VM via `limactl copy` (or equivalent at
 
 **What gpod-tool is and is not:** `gpod-tool` is a test-time dependency only. It is produced by `@podkit/gpod-testing` and installed into the test VM so test scripts can populate iPod databases in the synthetic persona. It is **not** bundled into the podkit binary and is **not** required to build podkit.
 
-**Snapshot-based state layering**:
+**State layering via `apply-state.sh`**:
 
-Doctor system-scope checks (FFmpeg, libgpod, libusb, SCSI transport, udev rule, sg permissions) need to be tested against **manipulated system state**, not just mocked. We do this in the test VM by:
+Doctor system-scope checks (FFmpeg, libgpod, libusb, SCSI transport, udev rule, sg permissions) need to be tested against **manipulated system state**, not just mocked. We do this in the test VM by staging and running an in-VM `apply-state.sh` script for each `SystemState` group:
 
-1. Bringing the test VM up with everything installed → `qemu-img snapshot -c base-healthy`
-2. Applying each `SystemState` variant once (e.g. `apt remove ffmpeg`) → `qemu-img snapshot -c base-no-ffmpeg`
-3. Repeat for `base-no-libgpod`, `base-no-udev`, `base-no-sg-perms`, `base-corrupt-configfs`, etc.
+- Before each test group, `applyState(stateId)` copies `tools/device-testing/scripts/apply-state.sh` into the VM, makes it executable, and runs `sudo apply-state.sh <stateId>`.
+- The script performs the required mutations (e.g. `apt remove ffmpeg`, permission changes, modprobe manipulation) to bring the VM to the named state.
+- State definitions live in `packages/device-testing/src/system-states/`.
 
-Tests restore the named snapshot via `qemu-img snapshot -a <name>` (typically <1s) before running. Snapshot definitions live in `packages/device-testing/src/system-states/` and are produced by an in-VM `apply-state.sh` script.
-
-This is **Option III** of the state-management options considered: more flexible than fixed VM images, much faster than `apt remove` per test.
+Each `applyState` call takes ~800ms. The current 6-state matrix adds ~5s of state-change overhead per full pass — negligible.
 
 **Infrastructure components:**
 
@@ -127,9 +125,9 @@ This is **Option III** of the state-management options considered: more flexible
 | FunctionFS daemon | `tools/device-testing/dummy-hcd/` | Userspace daemon; synthesises USB gadget responses (vendor control transfers, mass-storage backing file) from a `DevicePersona` JSON payload |
 | Builder Lima yaml | `tools/device-testing/lima/builder.yaml` | Debian 12.10 VM with dev toolchain; produces linux-x64 prebuilds + standalone binary |
 | Test Lima yaml | `tools/device-testing/lima/podkit-device-harness.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
-| `packages/device-testing/` | New package | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, subprocess snapshot framework |
+| `packages/device-testing/` | New package | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, `SubprocessRunner` re-exports |
 
-**Tier 3 backends:**
+**VM test backends:**
 
 The `TestRuntime` interface abstracts how a test connects to the Linux environment. Two implementations ship:
 
@@ -138,18 +136,18 @@ The `TestRuntime` interface abstracts how a test connects to the Linux environme
 
 One test file, swappable backend. Tests do not need to know which backend is active.
 
-**Opt-in detection:** `bun run test` detects Tier 3 availability at runtime:
-1. If running on Linux: `local-linux` is available; Tier 3 runs.
-2. If running on macOS and Lima is installed with the test VM instance reachable: `lima-test-vm` is available; Tier 3 runs.
-3. Otherwise: Tier 3 is skipped with a single-line warning (`[tier-3] Linux VM not available — skipping device integration tests`).
+**Opt-in detection:** `bun run test:vm` detects VM availability at runtime:
+1. If running on Linux: `local-linux` is available; VM tests run.
+2. If running on macOS and Lima is installed with the test VM instance reachable: `lima-test-vm` is available; VM tests run.
+3. Otherwise: VM tests are skipped with a single-line warning (`[vm] Linux VM not available — skipping device integration tests`).
 
-Turbo caches Tier 3 results against the `tools/device-testing/dummy-hcd/` and `packages/device-testing/` input sets, so the cost on cache hit is zero regardless of platform.
+Turbo caches VM test results against the `tools/device-testing/dummy-hcd/` and `packages/device-testing/` input sets, so the cost on cache hit is zero regardless of platform.
 
 ### Binary quality parity
 
 The test harness exercises the **same statically-linked binary** that ships via homebrew and Docker. There is no test-only build flavor and no test-specific linker flags. libgpod is statically linked at build time into both `@podkit/libgpod-node` (the N-API native addon) and the standalone podkit binary. This ensures:
 
-- A binary linkage bug that would manifest for homebrew users is caught by Tier 3 tests before it ships.
+- A binary linkage bug that would manifest for homebrew users is caught by VM tests before it ships.
 - The test VM's deliberate absence of `-dev` packages means a dynamic-link regression (missing `.so` at runtime) surfaces as a test failure rather than passing silently because the dev machine happened to have `libgpod.so` on PATH.
 - `ldd /usr/local/bin/podkit` in the test VM must show only stable system libraries (glibc, libpthread, etc.); any unresolved libgpod symbol indicates a build regression.
 
@@ -165,26 +163,21 @@ The musl variant (Alpine, used by `podkit-docker`) continues to build via the ex
 
 ### Test speed strategy
 
-Tier 3 tests can be slow if every test restores a VM snapshot independently. To keep the suite tractable:
+VM tests can be slow if every test re-applies state independently. To keep the suite tractable:
 
-**Group tests by required `SystemState`:** the test orchestrator collects all tests that require the same `SystemState`, restores the snapshot once for that group, then runs all tests in the group sequentially against that single restored state. Snapshot restore happens once per group, not once per test.
+**Group tests by required `SystemState`:** the test orchestrator collects all tests that require the same `SystemState`, runs `applyState` once for that group, then runs all tests in the group sequentially against that single applied state. State application happens once per group, not once per test.
 
-**Snapshot mechanism on Apple Silicon (revised 2026-05-14, TASK-322.02.01):**
+**Snapshot-based state layering (historical):**
 
-The original plan called for `limactl snapshot apply` for ~1s-per-group restores. Surveying the deployed harness:
+The original design called for `limactl snapshot apply` (~1s per restore) to layer system states on top of a `base-healthy` snapshot, with names like `base-no-ffmpeg`, `base-no-libgpod`, etc. `applyState` would check whether `base-<stateId>` existed (fast path: restore), or fall back to running `apply-state.sh` and capturing a new snapshot (slow path).
 
-- Lima 2.1.1's default driver on Apple Silicon is `vz` (Apple Virtualization framework). `limactl snapshot {create,apply,delete}` exits with `level=fatal msg=unimplemented` on `vz` — snapshots are QEMU-only in Lima 2.x.
-- Measured `apply-state.sh` cost on `podkit-device-harness` (aarch64, podkit-builder cache warm): single-package reinstall is **~740ms**; package-pair purge+install is **~860ms**. Even the worst state flip (libgpod purge + udev rule rewrite + modprobe) is sub-2-second.
-- The doctor matrix currently has 6 states. Sequential per-group `applyState` at ~1s/state is ~6s of state-change overhead per full pass — negligible against the cold-start budget.
+This design was never reachable on the deployed hardware. Lima 2.x's default driver on Apple Silicon is `vz` (Apple Virtualization framework); `limactl snapshot {create,apply,delete}` exits with `level=fatal msg=unimplemented` on `vz` — snapshots are QEMU-only in Lima 2.x. Every snapshot call silently no-oped, and `apply-state.sh`-every-time was the actual behaviour in all real test runs.
 
-**Decision:** stay with `apply-state.sh`-every-time on Apple Silicon `vz`. The existing `isSnapshotUnsupported()` fallback in `packages/device-testing/src/runners/lima-test-vm-snapshots.ts` is the right shape — it lets the code path stay snapshot-aware so future Lima releases (or a `vmType: qemu` opt-in) automatically pick it up. Rejected alternatives:
+Measured `apply-state.sh` cost on `podkit-device-harness` (aarch64): ~800ms per state. The 6-state matrix adds ~5s per full pass — negligible.
 
-- **Switch test VM to `vmType: qemu`** — adds ~25s to cold-start boot, and `qemu-img snapshot apply` on the same VM measured at ~800ms for our disk size — no net win at current matrix size.
-- **Out-of-band `qemu-img snapshot`** — requires VM pause/resume coordination and risks file-locking conflicts with Lima's lifecycle.
-- **APFS snapshots of the VZ disk image** — leaks macOS-specific tools (`tmutil` / `apfsctl`) through the Lima abstraction.
-- **Wait for upstream VZ snapshot support** — not on Lima's near-term roadmap and not a blocker now.
+**As of May 2026**, the snapshot codepath was deleted entirely. `applyState` is now a single path: stage `apply-state.sh` → chmod → exec. No fast/slow paths, no `base-<state-id>` snapshot tags, no snapshot creation or restore.
 
-Revisit when the doctor matrix grows past ~20 states or the state flips touch packages large enough that the apt-replay cost exceeds ~5s.
+If Lima `vz` ever gains snapshot support, the optimisation can be reintroduced. Until then, YAGNI.
 
 **Future optimisations (documented, not implemented now):**
 
@@ -217,17 +210,17 @@ Critical constraint: the builder VM **must share its native-build implementation
 
 The musl variant (Alpine, used by `podkit-docker`) continues to build via the existing GHA Alpine container path — out of scope for this ADR, no regression intended.
 
-### Why not macOS VMs for Tier 3
+### Why not macOS VMs for VM tests
 
 macOS has no userspace equivalent to `dummy_hcd`. Apple's USB stack requires signed, notarised DriverKit extensions to create virtual host controllers; there is no configfs, no FunctionFS, and no way for an unsigned userspace process to synthesise a USB device that the OS driver stack sees as real. macOS coverage is therefore:
 
-- **Tier 1**: injectable mocks for all transport layers
-- **Tier 2**: native subprocess tests against canned fixtures on the mac host
+- **Unit tests**: injectable mocks for all transport layers
+- **Host tests**: native subprocess tests against canned fixtures on the mac host
 - **Opt-in**: real iPod (developer hardware only)
 
 No macOS VM is created or maintained.
 
-### Why not Docker for Tier 3
+### Why not Docker for VM tests
 
 Docker containers share the host kernel (or Docker Desktop's LinuxKit kernel on mac/windows). `dummy_hcd` requires the module to be present in the running kernel; Docker Desktop's bundled LinuxKit kernel does not ship `dummy_hcd`. The cross-platform promise of Docker collapses precisely when kernel modules are needed. Lima provides an actual Linux kernel with module access.
 
@@ -237,25 +230,25 @@ Docker containers share the host kernel (or Docker Desktop's LinuxKit kernel on 
 
 ### CI: build-only
 
-CI (GH Actions `prebuild.yml`, `build-platform.yml`) builds artefacts but does **not** execute the test suite. Tier 1 and Tier 2 tests run locally on developer machines; Tier 3 runs on mac dev hosts with Lima.
+CI (GH Actions `prebuild.yml`, `build-platform.yml`) builds artefacts but does **not** execute the test suite. Unit and host tests run locally on developer machines; VM tests run on mac dev hosts with Lima.
 
 A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for Tier 3: the runner uses the `linux-azure` cloud kernel flavor (e.g. `6.17.0-1010-azure`), which is built without `CONFIG_USB_DUMMY_HCD`. The `linux-modules-extra-*-azure` package installs successfully but does not ship `dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, or `usb_f_fs`. All four `modprobe` calls fail with `FATAL: Module not found`. This is recorded here as historical context; CI test execution is out of scope for m-19.
 
 ### Reuse of existing infrastructure
 
-- `packages/gpod-testing/` — test iPod templates used by Tier 3 to populate the gadget filesystem
-- `packages/e2e-tests/` — existing target abstraction reused for CLI-level Tier 3 assertions
-- Injectable transports in `packages/ipod-firmware/` — reused unchanged by Tier 1
+- `packages/gpod-testing/` — test iPod templates used by VM tests to populate the gadget filesystem
+- `packages/e2e-tests/` — existing target abstraction reused for CLI-level VM assertions
+- Injectable transports in `packages/ipod-firmware/` — reused unchanged by unit tests
 
 ## Consequences
 
 ### Positive
 
-- **Full stack coverage.** Logic bugs (T1), subprocess-parsing bugs (T2), and kernel-level USB/SCSI bugs (T3) each have a dedicated test tier.
-- **Always-fast default.** `bun run test` is fast: T1+T2 always run; T3 is either cached or skipped.
+- **Full stack coverage.** Logic bugs (unit), subprocess-parsing bugs (host), and kernel-level USB/SCSI bugs (VM) each have a dedicated test level.
+- **Always-fast default.** `bun run test` is fast: unit + host tests always run; VM tests are either cached or skipped.
 - **Builder/test VM separation catches a real bug class.** Dev libraries on the host PATH cannot mask binary linkage problems because the test VM contains no dev libraries.
 - **Binary quality parity.** The binary under test is the same statically-linked binary that ships to homebrew and Docker users — no test-only build flavor.
-- **State-mutation testing is cheap.** Snapshot restore is ~1s; combinatorial doctor-system-state matrix is tractable. Test grouping by SystemState reduces snapshot restores from N-per-test to N-per-group.
+- **State-mutation testing is cheap.** `apply-state.sh` runs in ~800ms per state; the 6-state matrix adds ~5s overhead per full pass. Test grouping by SystemState reduces apply-state runs from N-per-test to N-per-group.
 - **One test interface, two backends.** `local-linux` and `lima-test-vm` share the `TestRuntime` contract; test files don't fork on platform.
 - **Demo VM is untouched.** The test harness lives under a different directory tree from `virtual-ipod.yaml`.
 - **Mass-storage extensibility.** Echo Mini ships as a starter persona; Rockbox, FiiO, and others can follow the same pattern.
@@ -263,16 +256,16 @@ A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for
 ### Negative
 
 - **New infrastructure to maintain.** The FunctionFS daemon, two Lima yamls, and `device-testing` package are new build artefacts.
-- **Tier 3 requires Linux kernel access.** Cannot run inside Docker Desktop on mac/windows; cannot run on GH Actions `ubuntu-latest`.
-- **Tier 3 runs on developer mac hosts only.** CI does not execute the test suite; test coverage gates on developers running Tier 3 locally.
+- **VM tests require Linux kernel access.** Cannot run inside Docker Desktop on mac/windows; cannot run on GH Actions `ubuntu-latest`.
+- **VM tests run on developer mac hosts only.** CI does not execute the test suite; test coverage gates on developers running VM tests locally.
 - **Builder VM is a separate VM to boot.** First-time onboarding cost is one extra Lima instance.
-- **Windows not yet covered at T3.** WSL2 can load `dummy_hcd`; a `wsl2-linux` `TestRuntime` backend is a future addition.
+- **Windows not yet covered by VM tests.** WSL2 can load `dummy_hcd`; a `wsl2-linux` `TestRuntime` backend is a future addition.
 
 ## Related Decisions
 
-- [ADR-005](/developers/adr/adr-005-test-ipod-environment) — iPod test environment (gpod-tool + temp directories); T3 reuses `gpod-testing` templates
-- [ADR-014](/developers/adr/adr-014-device-capability-architecture) — Device capability architecture; the code under test in T2 and T3
-- [ADR-017](/developers/adr/adr-017-device-persona-fixtures) — Device persona + system state fixtures; the shared fixture registry consumed by T1 mocks and the T3 FunctionFS daemon
+- [ADR-005](/developers/adr/adr-005-test-ipod-environment) — iPod test environment (gpod-tool + temp directories); VM tests reuse `gpod-testing` templates
+- [ADR-014](/developers/adr/adr-014-device-capability-architecture) — Device capability architecture; the code under test in host and VM tests
+- [ADR-017](/developers/adr/adr-017-device-persona-fixtures) — Device persona + system state fixtures; the shared fixture registry consumed by unit-test mocks and the VM-test FunctionFS daemon
 
 ## References
 
@@ -285,5 +278,5 @@ A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for
 - `.github/workflows/prebuild.yml` — existing native-build CI workflow; builder VM shares its implementation
 - `tools/prebuild/build-static-deps.sh` — shared static-deps build script
 - TASK-320 — GH Actions `dummy_hcd` spike (FAIL recorded; CI test execution is out of scope)
-- TASK-323 — CI Tier 3 matrix (archived)
+- TASK-323 — CI VM test matrix (archived)
 - Milestone m-19: VM testing

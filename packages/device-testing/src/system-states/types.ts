@@ -2,9 +2,9 @@
  * SystemState — a typed fixture describing a host-environment configuration
  * that affects `podkit doctor` system-scope checks.
  *
- * Schema mirrors ADR-017 §"SystemState schema". Tier 1 mocks materialise a
- * state by injecting matching subprocess responses; Tier 3 applies it via a
- * VM snapshot named `base-${id}`.
+ * Schema mirrors ADR-017 §"SystemState schema". Unit mocks materialise a
+ * state by injecting matching subprocess responses; VM tests apply it by
+ * staging and running `apply-state.sh <id>` in the test VM.
  *
  * @see adr/adr-017-device-persona-fixtures.md
  * @module
@@ -14,7 +14,7 @@
  * Stable union of all registered `SystemState` ids.
  *
  * Kept in sync with `packages/device-testing/src/system-states/index.ts`. Used
- * by the snapshot orchestrator (`lima-test-vm-state.ts`) and the in-VM
+ * by the state orchestrator (`lima-test-vm-state.ts`) and the in-VM
  * `apply-state.sh` script — both consume this exact set.
  */
 export type SystemStateId =
@@ -29,7 +29,7 @@ export type SystemStateId =
  * Stable, registry-keyed fixture describing one host-environment state.
  */
 export interface SystemState {
-  /** Stable identifier (used as the QEMU snapshot name `base-${id}`). */
+  /** Stable identifier (passed verbatim to `apply-state.sh` as `<stateId>`). */
   id: SystemStateId;
   description: string;
   /** Schema version; bump on any breaking field change. */

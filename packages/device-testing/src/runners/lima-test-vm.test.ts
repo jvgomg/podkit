@@ -6,7 +6,7 @@
  * sequence + shape of calls and the helper's return values + thrown errors.
  *
  * Covers ACs from TASK-322.04 — see the spec for the full list. AC #8 (live
- * VM smoke test) is exercised by the Tier-3 integration tests in
+ * VM smoke test) is exercised by the VM integration tests in
  * TASK-322.06, not here.
  */
 
@@ -423,32 +423,26 @@ describe('runtime.prepare', () => {
 // ---------------------------------------------------------------------------
 
 describe('runtime.applyState', () => {
-  it('delegates to applyState() and uses the fast path when snapshot exists', async () => {
+  it('delegates to applyState() via copy → chmod → exec sequence', async () => {
     const { runner, calls } = makeScriptedRunner([
-      // applyState: snapshot list probe
-      ok('base-no-ffmpeg\n'),
-      // applyState: snapshot apply
-      ok(),
+      ok(), // limactl copy apply-state.sh
+      ok(), // chmod
+      ok('[apply-state] applied: no-ffmpeg\n'), // exec
     ]);
 
     const runtime = createLimaTestVmRuntime({ subprocess: runner });
     await runtime.applyState(noFfmpeg);
 
-    expect(calls).toHaveLength(2);
-    expect(calls[0]!.args).toEqual(['snapshot', 'list', LIMA_DEVICE_HARNESS_VM_NAME, '--quiet']);
-    expect(calls[1]!.args).toEqual([
-      'snapshot',
-      'apply',
-      LIMA_DEVICE_HARNESS_VM_NAME,
-      '--tag',
-      'base-no-ffmpeg',
-    ]);
+    expect(calls).toHaveLength(3);
+    expect(calls[0]!.args[0]).toBe('copy');
+    expect(calls[0]!.args[2]).toBe(`${LIMA_DEVICE_HARNESS_VM_NAME}:/tmp/apply-state.sh`);
+    expect(calls[1]!.args).toContain('chmod');
+    expect(calls[2]!.args).toContain('no-ffmpeg');
   });
 
   it('propagates errors from the underlying applyState', async () => {
     const { runner } = makeScriptedRunner([
-      ok('base-no-ffmpeg\n'),
-      fail(1, 'snapshot apply failed: image locked'),
+      fail(1, 'permission denied'), // copy fails
     ]);
     const runtime = createLimaTestVmRuntime({ subprocess: runner });
 
@@ -459,8 +453,8 @@ describe('runtime.applyState', () => {
       caught = err as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/failed to restore snapshot/);
-    expect(caught!.message).toContain('image locked');
+    expect(caught!.message).toContain('failed to copy apply-state.sh');
+    expect(caught!.message).toContain('permission denied');
   });
 });
 
@@ -545,35 +539,15 @@ describe('runtime.run', () => {
 // ---------------------------------------------------------------------------
 
 describe('runtime.teardown', () => {
-  it('restores the base-healthy snapshot when it exists', async () => {
-    const { runner, calls } = makeScriptedRunner([
-      // snapshotExists → list
-      ok('base-healthy\n'),
-      // restoreSnapshot
-      ok(),
-    ]);
+  it('is a no-op (issues no limactl calls)', async () => {
+    const { runner, calls } = makeScriptedRunner([]);
     const runtime = createLimaTestVmRuntime({ subprocess: runner });
     await runtime.teardown();
-    expect(calls[1]!.args).toEqual([
-      'snapshot',
-      'apply',
-      LIMA_DEVICE_HARNESS_VM_NAME,
-      '--tag',
-      'base-healthy',
-    ]);
-  });
-
-  it('skips the restore (no error) when base-healthy is missing', async () => {
-    const { runner, calls } = makeScriptedRunner([ok('')]);
-    const runtime = createLimaTestVmRuntime({ subprocess: runner });
-    await runtime.teardown();
-    expect(calls).toHaveLength(1);
-    // Only the snapshotExists list call ran — no `apply`.
-    expect(calls[0]!.args).toContain('list');
+    expect(calls).toHaveLength(0);
   });
 
   it('does not shut down the VM', async () => {
-    const { runner, calls } = makeScriptedRunner([ok('base-healthy\n'), ok()]);
+    const { runner, calls } = makeScriptedRunner([]);
     const runtime = createLimaTestVmRuntime({ subprocess: runner });
     await runtime.teardown();
     const hasStop = calls.some((c) => c.args[0] === 'stop' || c.args.includes('shutdown'));
@@ -912,7 +886,7 @@ describe('stopDaemon', () => {
   });
 
   it('treats systemd exit 5 (no-such-unit) as success — idempotent stop', async () => {
-    // systemctl exits 5 when the unit isn't loaded / not running. Tier-3
+    // systemctl exits 5 when the unit isn't loaded / not running. VM
     // teardown calls `stopDaemon` unconditionally; this case must not throw.
     const { runner } = makeScriptedRunner([fail(5, 'Unit dummy-hcd-daemon@*.service not loaded.')]);
     await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME, subprocess: runner });

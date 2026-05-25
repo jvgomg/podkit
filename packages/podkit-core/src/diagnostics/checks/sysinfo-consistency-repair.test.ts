@@ -24,8 +24,8 @@
  *     `ensureSysInfoExtended`, and does NOT modify the simulated on-disk
  *     store.
  *
- * Tier-3 deferral: a real-USB end-to-end repair → re-check loop is
- * deferred to TASK-322.05.01's FunctionFS daemon. Tier-1 coverage here
+ * VM-test deferral: a real-USB end-to-end repair → re-check loop is
+ * deferred to TASK-322.05.01's FunctionFS daemon. Unit coverage here
  * is sufficient to lock the repair-glue contract.
  */
 

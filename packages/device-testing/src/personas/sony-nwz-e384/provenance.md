@@ -104,8 +104,8 @@ Captured while the device was still attached — cheap to take now, painful to r
 What was **not** captured and why:
 
 - Full `STDBDATA.DAT` / `STDBSTR.DAT` (4 MiB each). Mostly pre-allocated empty space — the 4 KiB hexdumps give a future RE pass the structural signal it needs without bloating the repo.
-- Sample music / video content from `MUSIC/Playlists/` — irrelevant to device support; what Tier 3 synthesis actually needs is the synthesised marker-file scaffold listed in `devices/sony-walkman-nwz-e380.md` § "Detection".
-- A backing-image dump of the FAT32 partition (7.3 GB). Far past the playbook's 16 MiB threshold; Tier 3 should use the `synthesis` recipe in `types.ts`.
+- Sample music / video content from `MUSIC/Playlists/` — irrelevant to device support; what VM synthesis actually needs is the synthesised marker-file scaffold listed in `devices/sony-walkman-nwz-e380.md` § "Detection".
+- A backing-image dump of the FAT32 partition (7.3 GB). Far past the playbook's 16 MiB threshold; VM should use the `synthesis` recipe in `types.ts`.
 
 ## Linux capture session
 
@@ -115,7 +115,7 @@ Deferred. The four Linux captures completed this session — including the relat
 - `bNumConfigurations` reading 1 on Linux (non-Apple devices are typically single-config — confirmed on Echo Mini; Apple iPods are the exception that advertise 2).
 - `lsblk -J -O /dev/sdX` confirming the Mac-captured MBR/FAT32 layout.
 
-`lsblkJson` stays `null` until a per-device need arises (e.g. a Tier 3 USB-replay test, or implementation work on a Sony Walkman preset that needs the exact payload).
+`lsblkJson` stays `null` until a per-device need arises (e.g. a VM USB-replay test, or implementation work on a Sony Walkman preset that needs the exact payload).
 
 ## SysInfoExtended source
 

@@ -6,7 +6,7 @@ The `podkit completions` command generates shell completion scripts (zsh, bash) 
 
 ## How It Works
 
-The completion system supports three tiers:
+The completion system supports three levels:
 1. **Subcommands and flags** — auto-generated from the Commander.js tree
 2. **Static argument values** — options using `.choices()` or `.addOption(new Option(...).choices([...]))` auto-complete their values (e.g. `--quality` → `max`, `high`, `medium`, `low`)
 3. **Dynamic argument values** — `--device` and `--collection` complete with names from the user's config via a hidden `__complete` command

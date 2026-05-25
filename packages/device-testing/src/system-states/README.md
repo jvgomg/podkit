@@ -16,8 +16,9 @@ installed, SCSI permissions correct, configfs mounted). A `SystemState` captures
   *should* emit for that environment (`expectedDoctorSystemOutput`).
 - **Expected exit code** — what exit code doctor should return (`expectedExitCode`).
 
-Tier 1 unit tests inject matching subprocess responses to simulate a state.
-Tier 3 integration tests restore a VM snapshot named `base-${id}` before running.
+Unit tests inject matching subprocess responses to simulate a state.
+VM tests stage the state inside the test VM via `apply-state.sh ${id}` (the
+runner copies + invokes the script through `applyState`).
 
 See [ADR-017](../../../../adr/adr-017-device-persona-fixtures.md) §"SystemState schema"
 for the full design rationale.
@@ -52,7 +53,7 @@ not match a real VM run exactly. The golden file
 `__fixtures__/healthy-doctor-output.golden.json` pins the `healthy` state; update it
 intentionally when the schema changes.
 
-**Once Tier 3 lands (TASK-322):**
+**Once VM lands (TASK-322):**
 
 1. Apply the matching VM snapshot: `mise run vm:snapshot:restore base-<id>`
 2. Run doctor inside the VM:

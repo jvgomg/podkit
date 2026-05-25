@@ -47,7 +47,7 @@ Deferred. Linux captures completed this session for four representative personas
 
 Provisional. Stubs from generation table + SIE highlights. The compute-expected pass (per TASK-321.02 ACs) re-derives these against the production resolvers.
 
-## Mass-storage backing file (Tier-3 synthesis)
+## Mass-storage backing file (VM synthesis)
 
 **Source:** synthesised inside `podkit-device-harness` at `prepare()` time — no
 host-side artefact, no committed binary, no git LFS.

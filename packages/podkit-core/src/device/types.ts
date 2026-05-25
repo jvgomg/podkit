@@ -14,7 +14,7 @@ import type { DeviceAssessment } from './assessment.js';
  * Represents physical disk/volume information from the operating system,
  * distinct from iPod-specific metadata. PDI is always a block-device record —
  * USB-only entries (e.g. iPod 6G in restore mode, FunctionFS-synthesised
- * Tier-3 personas with no backing image) flow through `IpodClassification`
+ * VM-test personas with no backing image) flow through `IpodClassification`
  * separately and never become PDI values.
  *
  * **Schema v2 (TASK-340).** PDI is a sub-object record with a discriminated

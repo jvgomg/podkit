@@ -19,7 +19,7 @@
  *
  *   - Positive correlation (a real iPod under `/Volumes/<NAME>` → its
  *     fingerprint) requires physical hardware and is exercised by manual
- *     smoke tests / Tier-3 on Linux via dummy_hcd. Not in scope for T2.
+ *     smoke tests / VM tests on Linux via dummy_hcd. Not in scope for host tests.
  */
 
 import { describe, expect, it } from 'bun:test';

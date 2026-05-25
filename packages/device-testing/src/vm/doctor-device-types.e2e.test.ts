@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — doctor across device types and presets.
+ * VM coverage — doctor across device types and presets.
  *
  * Verifies that the production `podkit doctor` binary running inside
  * `podkit-device-harness` selects the correct check set for each device type and
@@ -34,7 +34,7 @@
  * # Scope limitations
  *
  *   - Text-mode section headers — covered by the doctor renderer unit tests;
- *     Tier-3 is fully redundant for these.
+ *     VM is fully redundant for these.
  *   - Generic + rockbox preset content paths — no generic-preset or rockbox-
  *     preset persona exists in the registry (deferred). Unit coverage is
  *     authoritative.
@@ -50,17 +50,17 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { echoMini } from '../personas/echo-mini/persona.js';
 import { ipodNano7gBlue } from '../personas/ipod-nano-7g-blue/persona.js';
 import { ipodNano7gSpaceGray } from '../personas/ipod-nano-7g-space-gray/persona.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Shape interfaces
@@ -111,24 +111,24 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
+describe.skipIf(!vmAvailable)('VM: doctor device-types', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
     // iPod system-scope check set — iPod-applicable checks present.
     // The full registry filter for iPod-only DB checks is verified by the
-    // unit test; Tier-3 confirms the surface end-to-end with an iPod persona.
+    // unit test; VM confirms the surface end-to-end with an iPod persona.
     // ─────────────────────────────────────────────────────────────────────
 
     it(
@@ -138,7 +138,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit doctor --scope system --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.parseError).toBeUndefined();
@@ -159,7 +159,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
         // not appear regardless of which device is attached.
         expect(ids.has('orphan-files-mass-storage')).toBe(false);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     // ─────────────────────────────────────────────────────────────────────
@@ -177,7 +177,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit doctor --scope system --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.parseError).toBeUndefined();
@@ -194,7 +194,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
         expect(ids.has('orphan-files')).toBe(false);
         expect(ids.has('artwork-rebuild')).toBe(false);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     // ─────────────────────────────────────────────────────────────────────
@@ -212,7 +212,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -232,7 +232,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
         expect(typeof entry!.unsupportedReason!.headline).toBe('string');
         expect(entry!.unsupportedReason!.headline!.length).toBeGreaterThan(10);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -246,7 +246,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device add -d hashab-nano --yes --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).not.toBe(0);
@@ -261,7 +261,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
         expect(failure.details?.unsupported?.kind).toBeDefined();
         expect(failure.details?.unsupported?.headline).toBeDefined();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     // ─────────────────────────────────────────────────────────────────────
@@ -330,7 +330,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
             'exit 1',
           ].join(' ');
           const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           if (find.exitCode !== 0 || !find.stdout.trim()) {
             throw new Error(
@@ -344,17 +344,17 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           //    /dev/sd<x>1; the synthesised backing has no MBR partition
           //    table, just a raw FAT filesystem).
           await limaTestVmRunner.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           const mount = await limaTestVmRunner.run(
             `sudo mount -t vfat /dev/${scsiSd} ${VM_MOUNT_POINT}`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           if (mount.exitCode !== 0) {
             // Try with partition suffix (in case the backing is partitioned).
             const mountP1 = await limaTestVmRunner.run(
               `sudo mount -t vfat /dev/${scsiSd}1 ${VM_MOUNT_POINT}`,
-              { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+              { timeoutMs: VM_WARM_TIMEOUT_MS }
             );
             if (mountP1.exitCode !== 0) {
               throw new Error(
@@ -376,13 +376,13 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           ].join('\n');
           await limaTestVmRunner.run(
             `cat > ${VM_CONFIG_PATH} << '__CONFIG_EOF__'\n${configBody}\n__CONFIG_EOF__`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
         } catch (err) {
           // On setup failure, attempt cleanup so the next test isn't poisoned.
           await limaTestVmRunner
             .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
-              timeoutMs: TIER3_WARM_TIMEOUT_MS,
+              timeoutMs: VM_WARM_TIMEOUT_MS,
             })
             .catch(() => {});
           const { stopDaemon } = await import('../runners/lima-test-vm.js');
@@ -392,18 +392,18 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           }).catch(() => {});
           throw err;
         }
-      }, TIER3_COLD_TIMEOUT_MS);
+      }, VM_COLD_TIMEOUT_MS);
 
       afterAll(async () => {
         // Unmount + stop daemon. Both are best-effort.
         await limaTestVmRunner
           .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         await limaTestVmRunner
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         const { stopDaemon } = await import('../runners/lima-test-vm.js');
@@ -411,7 +411,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           vmName: 'podkit-device-harness',
           personaId: echoMini.id,
         }).catch(() => {});
-      }, TIER3_COLD_TIMEOUT_MS);
+      }, VM_COLD_TIMEOUT_MS);
 
       it(
         'doctor -d echo (name) and doctor -d <path> produce equivalent envelopes; deviceModel = "Echo Mini"',
@@ -424,14 +424,14 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
             `mount | grep -E '${VM_MOUNT_POINT}' || echo NOT_MOUNTED; ` +
               `ls -la ${VM_CONFIG_PATH} 2>&1 || echo NO_CONFIG; ` +
               `cat ${VM_CONFIG_PATH} 2>&1 || echo NO_CONFIG_CAT`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
 
           // Invocation 1: by name (resolves via the config).
           const byName = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
 
           // Invocation 2: by path (no config needed — but pass it anyway
@@ -441,7 +441,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           const byPath = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d ${VM_MOUNT_POINT} doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
 
           // Surface invocation details on assertion failure to make
@@ -502,7 +502,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           expect(byNameIds.has('artwork-rebuild')).toBe(false);
           expect(byNameIds.has('sysinfo-extended')).toBe(false);
         },
-        TIER3_WARM_TIMEOUT_MS * 2
+        VM_WARM_TIMEOUT_MS * 2
       );
 
       it(
@@ -514,7 +514,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           const invocation = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --scope device --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           expect(invocation.parseError).toBeUndefined();
           const parsed = invocation.parsed as DeviceDoctorJson;
@@ -524,7 +524,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor device-types', () => {
           expect(ids.has('codec-encoders')).toBe(false);
           expect(ids.has('udev-rule')).toBe(false);
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
     });
   });

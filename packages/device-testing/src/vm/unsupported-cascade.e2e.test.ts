@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — unsupported-device cascade (commit `ec8dc85`).
+ * VM coverage — unsupported-device cascade (commit `ec8dc85`).
  *
  * Pins the "unified unsupported UX" contract end-to-end via
  * `podkit device scan` and `podkit device add`. The scenarios verified
@@ -30,7 +30,7 @@
  * # Scope limitations (substantial)
  *
  * The full AC enumerates 8 sub-scenarios, several of which require state
- * the Tier-3 harness cannot produce today:
+ * the VM harness cannot produce today:
  *
  *   - **`device add` interactive prompt (decline/accept/--yes)**: requires
  *     stdin injection into the VM-side CLI, which `limactl shell` does not
@@ -65,16 +65,16 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { ipodNano7gBlue } from '../personas/ipod-nano-7g-blue/persona.js';
 import { ipodNano4gBlack } from '../personas/ipod-nano-4g-black/persona.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 interface ScanEntry {
   usbOnly?: boolean;
@@ -90,19 +90,19 @@ interface ScanJson {
 
 const hex = (n: number) => n.toString(16).padStart(4, '0');
 
-describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
+describe.skipIf(!vmAvailable)('VM: unsupported-device cascade', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       'device scan flags hashAB nano 7G as unsupported with discriminated reason + resolved model name',
@@ -111,7 +111,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -150,7 +150,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
         expect(headline.length).toBeGreaterThan(10);
         expect(headline).toMatch(/nano/i);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -163,7 +163,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -179,7 +179,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
         expect(entry!.readiness?.level).not.toBe('unsupported');
         expect(entry!.unsupportedReason).toBeUndefined();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -194,7 +194,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device add -d hashab-nano --yes --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         // Add must fail.
@@ -222,7 +222,7 @@ describe.skipIf(!tier3Available)('Tier 3: unsupported-device cascade', () => {
         // "Could not identify iPod model" error string from libgpod.
         expect(failure.error ?? '').not.toMatch(/Could not identify iPod model/i);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });

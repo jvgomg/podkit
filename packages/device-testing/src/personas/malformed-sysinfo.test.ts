@@ -1,5 +1,5 @@
 /**
- * Tier-1 smoke tests for the `malformed-sysinfo` persona.
+ * unit smoke tests for the `malformed-sysinfo` persona.
  *
  * Separate from `rejection-personas.test.ts` because this is not strictly
  * a rejection persona — the USB classifier accepts the device as a

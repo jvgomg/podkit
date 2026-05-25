@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — defensive volumeUuid refusal (commit `6db8fb0`).
+ * VM coverage — defensive volumeUuid refusal (commit `6db8fb0`).
  *
  * Pins the post-`6db8fb0` `device add` refusal contract: when the resolved
  * device has no readable filesystem UUID (corrupt FAT32 table, tmpfs path,
@@ -53,13 +53,13 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { healthy } from '../system-states/healthy.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // Each test gets its own scratch dir so retries / re-runs are clean. The
 // tmpfs path is the trigger for the VOLUME_UUID_REQUIRED refusal — tmpfs
@@ -67,23 +67,23 @@ const tier3Available = await resolveTier3Availability();
 // one and the defensive check fires.
 const SCRATCH_BASE = '/tmp/podkit-volumeuuid-test';
 
-describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
+describe.skipIf(!vmAvailable)('VM: volumeUuid defensive refusal', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     // Clean up scratch dirs on the way out so a re-run starts fresh.
     await limaTestVmRunner
-      .run(`rm -rf ${SCRATCH_BASE}*`, { timeoutMs: TIER3_WARM_TIMEOUT_MS })
+      .run(`rm -rf ${SCRATCH_BASE}*`, { timeoutMs: VM_WARM_TIMEOUT_MS })
       .catch(() => undefined);
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       'refuses device add with VOLUME_UUID_REQUIRED when the target path has no filesystem UUID',
@@ -91,7 +91,7 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
         const scratch = `${SCRATCH_BASE}-missing`;
         // Fresh dir on tmpfs — no filesystem UUID resolvable via lsblk.
         const setup = await limaTestVmRunner.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
-          timeoutMs: TIER3_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(setup.exitCode).toBe(0);
 
@@ -101,7 +101,7 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
         const result = await limaTestVmRunner.run(
           `/usr/local/bin/podkit device add -d testdev --path ${scratch} ` +
             `--no-firmware-inquiry --yes --json`,
-          { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
         expect(result.exitCode).not.toBe(0);
         const failure = JSON.parse(result.stdout) as {
@@ -119,7 +119,7 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
         // tmpfs has no detectable filesystem from lsblk's POV → null.
         expect(failure.details?.filesystem).toBeNull();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -132,7 +132,7 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
         // start failing — surfacing the deletion.
         const scratch = `${SCRATCH_BASE}-synthetic`;
         const setup = await limaTestVmRunner.run(`rm -rf ${scratch} && mkdir -p ${scratch}`, {
-          timeoutMs: TIER3_WARM_TIMEOUT_MS,
+          timeoutMs: VM_WARM_TIMEOUT_MS,
         });
         expect(setup.exitCode).toBe(0);
 
@@ -142,7 +142,7 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
           `/usr/local/bin/podkit device add -d testdev-synth --path ${scratch} ` +
             `--no-firmware-inquiry --yes --json`,
           {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
             env: { PODKIT_TEST_SYNTHETIC_VOLUME_UUID: '1' },
           }
         );
@@ -163,10 +163,10 @@ describe.skipIf(!tier3Available)('Tier 3: volumeUuid defensive refusal', () => {
         // polluted by stale state. `device remove` is idempotent.
         await limaTestVmRunner.run(
           `/usr/local/bin/podkit device remove -d testdev-synth --json 2>/dev/null || true`,
-          { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+          { timeoutMs: VM_WARM_TIMEOUT_MS }
         );
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });

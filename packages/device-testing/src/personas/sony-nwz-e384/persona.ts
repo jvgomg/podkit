@@ -95,7 +95,7 @@ export const sonyNwzE384: DevicePersona = {
   },
 
   // Backing image dump not captured — 7.3 GB FAT32 far exceeds the playbook's
-  // 16 MiB threshold. For Tier 3 USB synthesis, use a synthesised FAT32 with
+  // 16 MiB threshold. For VM USB synthesis, use a synthesised FAT32 with
   // the marker files documented in `provenance.md` (the `.E380` files +
   // capability XMLs + DeviceInfo.txt + empty STDB* placeholders).
   massStorageBackingFile: null,

@@ -23,8 +23,8 @@
 - Notes:
   - **Vendor ID literal:** unlike Apple devices, `system_profiler` reports the real hex string `"0x071b"` (not a vendor alias). Encoded as-is.
   - USB `bDeviceClass / bDeviceSubclass / bDeviceProtocol` confirmed `0` from `ioreg.txt`. Composite-device convention: device-level descriptor is 0/0/0; the Mass Storage class (`0x08`) lives on the interface descriptor (not captured in this top-level dump). Linux sysfs corroborates (see Linux capture session below).
-  - **Two LUNs.** The Echo Mini is a multi-LUN USB Mass Storage device — macOS presents each LUN as a separate `/dev/diskN`, not as two partitions on one disk. The `DevicePersona.partitionLayout.partitions` schema lacks a LUN field, so both volumes are flattened into a single `partitions` array (entry 1 = LUN 0, entry 2 = LUN 1). The schema may need a `lun` field in a future revision if Tier 3 USB synthesis needs to model multi-LUN behaviour.
-  - **Backing-image dump skipped — synthesis used instead.** The playbook's "firmware partition" assumption (< 16 MiB) does not match this device — LUN 0 (`ECHO MINI`) is 7.53 GB, far too large to commit as a backing image. The Tier-3 fixture uses the `synthesis` recipe in `types.ts` (see "Mass-storage backing file (Tier-3 synthesis)" below) rather than dumping the real device.
+  - **Two LUNs.** The Echo Mini is a multi-LUN USB Mass Storage device — macOS presents each LUN as a separate `/dev/diskN`, not as two partitions on one disk. The `DevicePersona.partitionLayout.partitions` schema lacks a LUN field, so both volumes are flattened into a single `partitions` array (entry 1 = LUN 0, entry 2 = LUN 1). The schema may need a `lun` field in a future revision if VM USB synthesis needs to model multi-LUN behaviour.
+  - **Backing-image dump skipped — synthesis used instead.** The playbook's "firmware partition" assumption (< 16 MiB) does not match this device — LUN 0 (`ECHO MINI`) is 7.53 GB, far too large to commit as a backing image. The VM fixture uses the `synthesis` recipe in `types.ts` (see "Mass-storage backing file (VM synthesis)" below) rather than dumping the real device.
   - LUN 1 (`Echo SD`) is the sync target. LUN 0 is exposed but not written to by podkit.
   - SD card is `Windows_NTFS` in the plist `iocontent` field but reports as `ExFAT` in `file_system` — macOS plist labels `Windows_NTFS` for both NTFS and ExFAT iocontent types. The user-visible filesystem is ExFAT (confirmed by `file_system`). Encoded as `'ExFAT'`.
 
@@ -57,7 +57,7 @@ From `raw/echo-mini-dirlisting.txt`:
 
 - `/Volumes/ECHO MINI/` is **empty** from the user's perspective — only macOS-generated `.fseventsd/` (a single `fseventsd-uuid` file, 36 bytes) and `.Spotlight-V100/` (Operation not permitted — Spotlight metadata blocked by macOS for this volume).
 - **No vendor system folder** (no `SYSTEM/`, `FIRMWARE/`, `.snowsky/`, configuration files, or firmware blobs). The device firmware lives in onboard NOR flash, not on the LUN 0 FAT32 partition. LUN 0 is exposed empty — appears to be a scratch / firmware-update staging volume.
-- Implication for Tier 3 synthesis: a synthesised LUN 0 backing image needs no marker files. An empty FAT32 of any size (a few MiB suffices) should pass the preset auto-detect test. The `synthesis` recipe in `types.ts` is sufficient — no real-device dump is required.
+- Implication for VM synthesis: a synthesised LUN 0 backing image needs no marker files. An empty FAT32 of any size (a few MiB suffices) should pass the preset auto-detect test. The `synthesis` recipe in `types.ts` is sufficient — no real-device dump is required.
 
 ## Linux capture session
 
@@ -74,7 +74,7 @@ From `raw/echo-mini-dirlisting.txt`:
 
 ### Multi-LUN architecture confirmed
 
-Linux exposes the Echo Mini as **two distinct `/dev/sdX` block devices** (sdc + sdd) under a **single USB device** (`1-2` on bus 1). Same model macOS uses (`/dev/disk4` + `/dev/disk5`). The schema gap (`DevicePersona.partitionLayout.partitions` lacks a LUN field) remains relevant — Tier 3 USB synthesis will need to model both LUNs explicitly. This persona keeps the flattened layout but captures **two separate lsblk JSONs** in `raw/` so the multi-LUN structure is preserved on disk.
+Linux exposes the Echo Mini as **two distinct `/dev/sdX` block devices** (sdc + sdd) under a **single USB device** (`1-2` on bus 1). Same model macOS uses (`/dev/disk4` + `/dev/disk5`). The schema gap (`DevicePersona.partitionLayout.partitions` lacks a LUN field) remains relevant — VM USB synthesis will need to model both LUNs explicitly. This persona keeps the flattened layout but captures **two separate lsblk JSONs** in `raw/` so the multi-LUN structure is preserved on disk.
 
 ### USB descriptor sysfs reconciliation (vs Mac ioreg)
 
@@ -115,7 +115,7 @@ None — mass-storage devices have no `SysInfoExtended`.
 
 Provisional. `expectedCapabilities` mirrors the built-in `echo-mini` preset shape (`packages/devices-mass-storage/src/presets/built-in.ts`). `expectedReadiness` carries a placeholder stage layout — the compute-expected pass (per TASK-321.02 ACs) re-derives both against the real readiness pipeline (mass-storage devices likely return a different stage layout than iPod-specific stages).
 
-## Mass-storage backing file (Tier-3 synthesis)
+## Mass-storage backing file (VM synthesis)
 
 **Source:** synthesised inside `podkit-device-harness` at `prepare()` time — no
 host-side artefact, no committed binary, no git LFS.
@@ -134,7 +134,7 @@ mkfs.vfat --invariant -F 32 -n ECHO_MINI -I <path>
 volume). Echo Mini's LUN 1 is exFAT (the SD card) but the
 `DevicePersona` schema is single-LUN-flat — this entry models LUN 0.
 HFS+ is irrelevant for non-Apple DAPs; only FAT32 is wired up in the
-Tier-3 synthesiser.
+VM synthesiser.
 
 **Why 64 MiB:** the real LUN 0 is 7.53 GB — far too large to commit or
 synthesise verbatim, and irrelevant to what the preset-resolution code

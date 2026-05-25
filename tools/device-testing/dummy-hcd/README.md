@@ -1,7 +1,7 @@
 # dummy-hcd-daemon
 
 FunctionFS userspace daemon that synthesises iPod-shaped USB devices on
-Linux `dummy_hcd` for Tier 3 tests. See [ADR-016](../../../adr/adr-016-linux-vm-test-harness.md)
+Linux `dummy_hcd` for VM tests. See [ADR-016](../../../adr/adr-016-linux-vm-test-harness.md)
 for the full architecture.
 
 The daemon runs inside the `podkit-device-harness` Lima VM
@@ -207,7 +207,7 @@ The tests run on macOS without kernel modules:
 | `cli.test.ts` | argv parsing, default values, error paths |
 | `main.test.ts` | daemon smoke tests: missing persona, missing sidecar, malformed schema, `--dry-run` happy path |
 
-Tier 3 integration tests (configfs/FunctionFS against `dummy_hcd`) run
+VM integration tests (configfs/FunctionFS against `dummy_hcd`) run
 inside the test VM and live in `@podkit/device-testing`.
 
 ## Implementation status

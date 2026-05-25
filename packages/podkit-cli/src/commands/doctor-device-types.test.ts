@@ -1,5 +1,5 @@
 /**
- * Doctor device-type + preset coverage (Tier-1).
+ * Doctor device-type + preset coverage (unit tests).
  *
  * Exercises the doctor flag-parsing and check-selection logic against a stubbed
  * `@podkit/core` — no live CLI subprocess, no libgpod, no FFmpeg. Uses the
@@ -34,8 +34,8 @@
  * full persona module — the persona registry is the source of truth for what
  * each ID represents, and the doctor command operates on `deviceConfig.type`
  * rather than persona schema, so a string is sufficient at the unit tier.
- * Tier-3 coverage in `packages/device-testing/src/tier3/doctor-device-types.
- * tier3.test.ts` drives the actual personas end-to-end.
+ * VM coverage in `packages/device-testing/src/vm/doctor-device-types.e2e.test.ts`
+ * drives the actual personas end-to-end.
  */
 
 import { describe, it, expect } from 'bun:test';
@@ -562,7 +562,7 @@ describe('generic mass-storage preset forwards default contentPaths', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 // Rockbox preset contentPaths.
 //
-// Tier-3 cannot drive a rockbox device today — no rockbox persona is captured
+// VM tests cannot drive a rockbox device today — no rockbox persona is captured
 // in the registry. Unit coverage is the authoritative cover for this path.
 // ═════════════════════════════════════════════════════════════════════════════
 

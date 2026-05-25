@@ -1,6 +1,6 @@
-# device-testing: Three-Tier Device Test Harness
+# device-testing: Device Test Harness
 
-Canonical reference for agents writing tests for device identification, doctor checks, and readiness pipelines. Read this before touching `@podkit/device-testing`, any file named `*.linux.tier3.test.ts`, or tasks in milestone m-19.
+Canonical reference for agents writing tests for device identification, doctor checks, and readiness pipelines. Read this before touching `@podkit/device-testing`, any file named `*.e2e.test.ts`, or tasks in milestone m-19.
 
 Also see [packages/device-testing/README.md](../packages/device-testing/README.md) for package-level API details, [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full architecture decision, and [ADR-017](../adr/adr-017-device-persona-fixtures.md) for the fixture registry design.
 
@@ -11,19 +11,19 @@ Also see [packages/device-testing/README.md](../packages/device-testing/README.m
 - **`DevicePersona` registry** — typed fixtures describing real or synthetic devices (USB descriptors, SCSI VPD payloads, host-OS probe outputs, expected capabilities).
 - **`SystemState` registry** — typed fixtures describing host-environment configurations (FFmpeg present/missing, udev rule installed/absent, SCSI permissions, etc.).
 - **`TestRuntime` interface + runners** — abstraction over "where does the test execute?" (`local-linux` for Linux hosts; `lima-test-vm` for macOS dev hosts, landed in TASK-322).
-- **Subprocess snapshot framework** — `CapturingSubprocessRunner` and `ReplaySubprocessRunner` for deterministic subprocess testing.
+- **`SubprocessRunner` re-exports** — the interface and default runner, re-exported for tests that need a single import path.
 
 The package ships no production code. It is a `devDependency` of packages that write device tests, never a runtime dependency.
 
-## Three-tier architecture summary
+## Device test stack summary
 
-| Tier | What runs | When it runs | Test filename pattern |
-|------|-----------|-------------|----------------------|
-| **T1** unit | Injectable TypeScript fakes | Always, every host | `*.test.ts` (no special tag) |
-| **T2** native subprocess | Real subprocesses on the host | Always; skipped on wrong OS | `*.darwin.test.ts` / `*.linux.test.ts` |
-| **T3** Linux VM | Full stack against `dummy_hcd` USB gadget | macOS + Lima with `PODKIT_DEVTEST_RUN_TIER3=1` | `*.tier3.test.ts` |
+| Level | What runs | When it runs | Test filename pattern |
+|-------|-----------|-------------|----------------------|
+| **Unit** | Injectable TypeScript fakes | Always, every host | `*.test.ts` (no special tag) |
+| **Host** native subprocess | Real subprocesses on the host | Always; skipped on wrong OS | `*.darwin.test.ts` / `*.linux.test.ts` |
+| **VM** Linux test VM | Full stack against `dummy_hcd` USB gadget | macOS + Lima via `bun run test:vm` | `*.e2e.test.ts` |
 
-See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for why three tiers are needed and why Docker is not suitable for Tier 3.
+See [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the architecture decision and why Docker is not suitable for VM tests.
 
 ## `DevicePersona` schema
 
@@ -44,15 +44,15 @@ The full TypeScript interface lives in [`packages/device-testing/src/personas/ty
 
 ### Starter persona set
 
-TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starters. The 3 starter aliases (used by the Tier-3 baseline tests) map to:
+TASK-321.02 captured 14 personas — far beyond the originally-planned 3 starters. The 3 starter aliases (used by the VM-test baseline tests) map to:
 
-| Starter alias (Tier-3 spec) | Captured persona ID | Inquiry path |
+| Starter alias | Captured persona ID | Inquiry path |
 |-----------------------------|---------------------|-------------|
 | `ipod-video-5g-fresh` | `ipod-video-5g-iflash-1tb` | SCSI fallback |
 | `ipod-nano-7g-populated` | `ipod-nano-7g-space-gray` | USB inquiry |
 | `echo-mini-empty` | `echo-mini` | Mass-storage preset |
 
-The mapping lives in `packages/device-testing/src/tier3/tier3-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
+The mapping lives in `packages/device-testing/src/vm/vm-runtime-setup.ts` (`STARTER_PERSONA_IDS`). The registry lives in `src/personas/` (one subdirectory per persona) and is enumerated by `src/personas/index.ts`. Additional captures + remaining synthesised personas are tracked in TASK-324 (Phase 5).
 
 ### Synthesised personas (no hardware)
 
@@ -152,7 +152,7 @@ Two seeding paths:
 - **Empty backing image** — set `synthesis: { sizeMiB, filesystem: 'FAT32', label }` only. The image is formatted and left empty. Used by `echo-mini` (sync-target detection on an empty device).
 - **Seeded backing image** — add `synthesis.initialContent: Array<{path, sourceFixture}>`. `path` is the in-image absolute path (no leading `/`, ASCII-safe charset only). `sourceFixture` is the persona-relative host path (e.g. `./raw/iTunesDB`). The runner `limactl copy`s each fixture into a per-persona scratch dir, then `mcopy`s into the post-`mkfs.vfat` image with `SOURCE_DATE_EPOCH` fixed so the seeded bytes don't perturb determinism. Used by `echo-mini-populated` and `ipod-video-5g-corrupt-db`.
 
-Determinism contract: two runs of the same persona must produce a byte-identical sha256. The runner's `EnsureBackingFileResult.sha256` is the tripwire — assert it in your test if you depend on byte-stability. See `src/tier3/backing-file-content.tier3.test.ts` for the canonical determinism check (one `it` runs `ensureBackingFile` twice and compares).
+Determinism contract: two runs of the same persona must produce a byte-identical sha256. The runner's `EnsureBackingFileResult.sha256` is the tripwire — assert it in your test if you depend on byte-stability. See `src/vm/backing-file-content.e2e.test.ts` for the canonical determinism check (one `it` runs `ensureBackingFile` twice and compares).
 
 **Runner implementation:** `packages/device-testing/src/runners/lima-test-vm-backing-files.ts` (`ensureBackingFile`, `resolveSeedEntries`, `buildSeedCommands`). Persona-side validation runs up front on the host so a bad `initialContent` entry surfaces before the VM is touched.
 
@@ -182,16 +182,16 @@ Each state carries `expectedDoctorSystemOutput` (the full `checks[]` array and `
 3. Add a named re-export to `src/index.ts`.
 4. Run `bun run test --filter @podkit/device-testing` to confirm the golden file passes.
 
-For Tier 3: once TASK-322 lands, also run the matching VM-mutation script and snapshot the VM as `base-<id>`.
+For VM tests: once TASK-322 lands, also run the matching VM-mutation script and snapshot the VM as `base-<id>`.
 
 ## `TestRuntime` + runner selection
 
-`TestRuntime` abstracts where a Tier 3 test executes. Two implementations:
+`TestRuntime` abstracts where a VM test executes. Two implementations:
 
 - **`local-linux`** — runs the FunctionFS daemon as a subprocess on the current Linux host. Auto-registered when `@podkit/device-testing` is imported on Linux. Use on Linux dev hosts directly.
 - **`lima-test-vm`** — wraps `local-linux` execution inside the Lima test VM at `tools/device-testing/lima/podkit-device-harness.yaml`. Use on macOS dev hosts. Forthcoming in TASK-322.04.
 
-Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available. If neither is available, Tier 3 tests skip with a single-line warning.
+Auto-register pattern: importing `@podkit/device-testing` registers `local-linux` via `src/index.ts`. The `lima-test-vm` runner registers itself when its module loads. Tests call `getRunner(id)` and receive whichever backend is available. If neither is available, VM tests skip with a single-line warning.
 
 ## Test-file tagging convention
 
@@ -200,40 +200,32 @@ Auto-register pattern: importing `@podkit/device-testing` registers `local-linux
 | `*.test.ts` | Any OS | None (default) |
 | `*.darwin.test.ts` | macOS only | `describe.skipIf(process.platform !== 'darwin')` |
 | `*.linux.test.ts` | Linux only | `describe.skipIf(process.platform !== 'linux')` |
-| `*.tier3.test.ts` | Linux or macOS + Lima | Skip unless `PODKIT_DEVTEST_RUN_TIER3=1` AND `lima-test-vm` runner is available |
+| `*.e2e.test.ts` | Linux or macOS + Lima | Excluded from default `bun test`; run via `bun run test:vm` |
 
 See [agents/testing.md](testing.md) §"Per-OS Test Tagging" for the exact `describe.skipIf` pattern and the `console.log` placement that makes skips visible in CI output.
 
-## Subprocess snapshot framework
+## SubprocessRunner DI seam
 
-`SubprocessRunner` is the DI seam every module uses instead of calling `execFile` or `spawn` directly. The interface lives in `@podkit/device-types`; the default (live) implementation is `defaultSubprocessRunner` from `@podkit/core`; capture and replay implementations live in `@podkit/device-testing`.
+`SubprocessRunner` is the DI seam every module uses instead of calling `execFile` or `spawn` directly. The interface lives in `@podkit/device-types`; the default (live) implementation is `defaultSubprocessRunner` from `@podkit/core`. Both are re-exported from `@podkit/device-testing` for tests that need a single import path.
 
-See [`packages/device-testing/src/subprocess.md`](../packages/device-testing/src/subprocess.md) for full docs. Quick reference:
+Tests inject a fake `SubprocessRunner` — typically a hand-rolled stub that returns canned stdout for each command the module under test invokes:
 
-**Capture fresh fixtures:**
+```ts
+import type { SubprocessRunner, SubprocessRunResult } from '@podkit/device-testing';
 
-```bash
-PODKIT_SNAPSHOT_CAPTURE=1 \
-PODKIT_SNAPSHOT_DIR=packages/device-testing/src/personas/ipod-video-5g-fresh/subprocess-fixtures \
-bun run test:unit --filter @podkit/core -- device/platforms
+function makeStubRunner(responses: Record<string, SubprocessRunResult>): SubprocessRunner {
+  return {
+    async run(command, args) {
+      const key = [command, ...args].join(' ');
+      const result = responses[key];
+      if (!result) throw new Error(`No stub for: ${key}`);
+      return result;
+    },
+  };
+}
 ```
 
-**Replay in tests:**
-
-```bash
-PODKIT_SNAPSHOT_REPLAY=1 \
-PODKIT_SNAPSHOT_DIR=packages/device-testing/src/personas/ipod-video-5g-fresh/subprocess-fixtures \
-bun run test:unit --filter @podkit/core
-```
-
-**Factory** (`createSubprocessRunner(env)`): picks `CapturingSubprocessRunner`, `ReplaySubprocessRunner`, or `defaultSubprocessRunner` based on env vars. Throws if both capture and replay are set simultaneously.
-
-**Where to put fixtures:**
-
-| Path | When to use |
-|------|-------------|
-| `src/personas/<persona-id>/subprocess-fixtures/*.json` | Output depends on which device is plugged in (`lsblk`, `system_profiler`) |
-| `fixtures/shared/*.json` | Environment-independent output (`ffmpeg -encoders`, `ffmpeg -version`) |
+Pass the stub as the `subprocess` option to the module under test — the same DI seam production uses for the real `execFile`-backed runner.
 
 ## Build pipeline
 
@@ -255,66 +247,67 @@ mise run device-testing:build-linux   # turbo-cached; invokes builder VM
 
 **CI:** `.github/workflows/prebuild.yml` invokes the same `build-linux-glibc.sh` script. No duplicated logic.
 
-## Where to write a Tier 3 test
+## Where to write a VM test
 
-Tier-3 infrastructure landed in TASK-322. Reference implementation:
-`packages/device-testing/src/tier3/personas-baseline.tier3.test.ts`.
+VM test infrastructure landed in TASK-322. Reference implementation:
+`packages/device-testing/src/vm/personas-baseline.e2e.test.ts`.
 
-**Filename:** `*.tier3.test.ts` (consumed by the `test:tier3` turbo task in
-`@podkit/device-testing#test:tier3`).
+**Filename:** `*.e2e.test.ts` under `src/vm/`. The `bunfig.toml`
+`pathIgnorePatterns` excludes `*.e2e.test.ts` from the default `bun test`
+run; `bun run test:vm` (which passes `src/vm` explicitly) opts them back in.
 
 **Imports:**
 - `limaTestVmRunner` from `../runners/lima-test-vm.js` — the `TestRuntime`
   implementation that executes commands inside `podkit-device-harness`.
-- `resolveTier3Availability`, `groupPersonasByState`, `TIER3_WARM_TIMEOUT_MS`,
-  `TIER3_COLD_TIMEOUT_MS` from `./tier3-runtime-setup.js`.
+- `resolveVmAvailability`, `groupPersonasByState`, `VM_WARM_TIMEOUT_MS`,
+  `VM_COLD_TIMEOUT_MS` from `./vm-runtime-setup.js`.
 - `withPersona`, `runJsonCommand` from `./persona-fixture.js`.
 
 **Suite shape** — gate, prepare/teardown, then one `describe` per state group:
 
 ```ts
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 const groups = groupPersonasByState(resolveStarterPersonas());
 
-describe.skipIf(!tier3Available)('my Tier-3 suite', () => {
-  beforeAll(() => limaTestVmRunner.prepare(),  TIER3_COLD_TIMEOUT_MS);
-  afterAll(()  => limaTestVmRunner.teardown(), TIER3_COLD_TIMEOUT_MS);
+describe.skipIf(!vmAvailable)('my VM suite', () => {
+  beforeAll(() => limaTestVmRunner.prepare(),  VM_COLD_TIMEOUT_MS);
+  afterAll(()  => limaTestVmRunner.teardown(), VM_COLD_TIMEOUT_MS);
 
   for (const group of groups) {
     describe(`SystemState: ${group.state.id}`, () => {
-      beforeAll(() => limaTestVmRunner.applyState(group.state), TIER3_COLD_TIMEOUT_MS);
+      beforeAll(() => limaTestVmRunner.applyState(group.state), VM_COLD_TIMEOUT_MS);
       for (const persona of group.personas) {
         it('exercises X', async () => {
           const result = await withPersona({ persona }, () =>
-            runJsonCommand(limaTestVmRunner, '/usr/local/bin/podkit …', TIER3_WARM_TIMEOUT_MS)
+            runJsonCommand(limaTestVmRunner, '/usr/local/bin/podkit …', VM_WARM_TIMEOUT_MS)
           );
           // assertions on result.parsed / result.exitCode
-        }, TIER3_WARM_TIMEOUT_MS);
+        }, VM_WARM_TIMEOUT_MS);
       }
     });
   }
 });
 ```
 
-**Running Tier-3 locally:**
+**Running VM tests locally:**
 
 ```bash
 mise run device-testing:build-linux        # builds podkit + dummy-hcd-daemon
 mise run device-testing:transfer-binary    # copies both into podkit-device-harness
-PODKIT_DEVTEST_RUN_TIER3=1 bun run test --filter @podkit/device-testing
+bun run test:vm                            # from repo root (or: bun run --cwd packages/device-testing test:vm)
 ```
 
-Without `PODKIT_DEVTEST_RUN_TIER3=1`, Tier-3 suites skip with a single
-stderr warning explaining the gate. The env-var gate exists because VM
-availability is necessary but not sufficient — the daemon's systemd unit
-must be installed, the FunctionFS descriptor handshake must work
-(TASK-322.05.01), the binary must be at the expected path.
+VM tests are excluded from the default `bun test` run via `bunfig.toml`
+`pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,
+which overrides the ignore pattern. When Lima is not installed or the VM
+instance is absent, `resolveVmAvailability` returns `false` and every
+suite skips with a single stderr warning.
 
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog
 task. The reference test file documents this convention in its header.
 
-### Multi-daemon Tier-3 tests
+### Multi-daemon VM tests
 
 The `dummy-hcd-daemon@<persona>.service` systemd template derives its
 configfs gadget directory (`podkit-<persona>`) and FunctionFS mountpoint
@@ -326,16 +319,16 @@ infrastructure pieces back this:
   exposes four virtual UDCs at `/sys/class/udc/dummy_udc.{0..3}`.
 - `attachUdc` in `tools/device-testing/dummy-hcd/src/gadget.ts` walks
   `/sys/kernel/config/usb_gadget/*/UDC` and picks the first UDC not
-  already claimed. Caller (Tier-3 test / runner) must serialise
+  already claimed. Caller (VM test / runner) must serialise
   `systemctl start` invocations — the read-then-write is not atomic.
 
-Reference test: `src/tier3/dual-daemon-lifecycle.tier3.test.ts`. Boots
+Reference test: `src/vm/dual-daemon-lifecycle.e2e.test.ts`. Boots
 two personas concurrently, asserts both configfs trees + extra `/dev/sg*`
 nodes, verifies clean teardown.
 
 ## Cross-references
 
-- [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — three-tier architecture decision
+- [ADR-016](../adr/adr-016-linux-vm-test-harness.md) — device test stack architecture decision
 - [ADR-017](../adr/adr-017-device-persona-fixtures.md) — `DevicePersona` + `SystemState` fixture registry design
 - [packages/device-testing/README.md](../packages/device-testing/README.md) — package-level API and public exports
 - [agents/testing.md](testing.md) — test stack overview, tagging convention, quick-reference commands

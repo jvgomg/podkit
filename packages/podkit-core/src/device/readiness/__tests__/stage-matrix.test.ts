@@ -15,7 +15,7 @@
  * `@podkit/core`, so importing personas here would introduce a cycle. The
  * matrix synthesises persona-shaped inputs inline instead — every relevant
  * stage input is a thin object/file already produced by the persona builders.
- * Persona-driven equivalents land at Tier-3 once TASK-322.05.01 closes the
+ * Persona-driven equivalents land in VM tests once TASK-322.05.01 closes the
  * USB synthesis loop (per the task's own deps).
  *
  * **Findings (resolved by TASK-338, 2026-05-16):**
@@ -516,9 +516,9 @@ describe('readiness pipeline — database stage (ACs #14–#16)', () => {
     // packages/podkit-core/src/device/readiness.integration.test.ts —
     // `checkDatabase` and `checkReadiness with pre-opened ipod` both
     // assert trackCount + modelName on a freshly-created database.
-    // Asserting it here would re-cover the same surface in Tier-1, and
+    // Asserting it here would re-cover the same surface in unit tests, and
     // libgpod isn't available without the native build. Tracked in the
-    // task notes as cross-suite coverage rather than a Tier-1 duplicate.
+    // task notes as cross-suite coverage rather than a unit-test duplicate.
     expect(true).toBe(true);
   });
 

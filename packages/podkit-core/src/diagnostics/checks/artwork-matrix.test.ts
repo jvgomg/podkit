@@ -1,5 +1,5 @@
 /**
- * Artwork-rebuild and artwork-reset diagnostic checks: Tier-1 detection +
+ * Artwork-rebuild and artwork-reset diagnostic checks: unit-test detection +
  * repair matrix (TASK-304, m-19 Phase 5d).
  *
  * Drives `artworkRebuildCheck.check()` against synthetic ArtworkDB + ithmb
@@ -9,7 +9,7 @@
  * `sysinfo-consistency.test.ts` and the system-scope matrix from
  * `system-scope-matrix.test.ts`.
  *
- * Tier-3 (real-hardware / lima-test-vm) coverage is deferred to
+ * VM-test (Lima VM) coverage is deferred to
  * TASK-322.05.01 per the parent task's dependency note.
  *
  * AC mapping (15 ACs, full coverage):

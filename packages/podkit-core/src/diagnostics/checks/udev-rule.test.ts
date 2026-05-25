@@ -228,7 +228,7 @@ describe('udevRuleCheck.check() production binding', () => {
     // check() must return skip even though it uses the real fs reader —
     // skip path runs before any fs access.
     if (process.platform === 'linux') {
-      // Skip on Linux to avoid touching the host filesystem from a Tier-1 test.
+      // Skip on Linux to avoid touching the host filesystem from a unit test.
       return;
     }
     const result = await udevRuleCheck.check(stubCtx);

@@ -1,7 +1,7 @@
 /**
- * lima-test-vm-binary — host→Lima-VM binary transfer for the Tier 3 test VM.
+ * lima-test-vm-binary — host→Lima-VM binary transfer for the VM test VM.
  *
- * The Tier 3 `podkit-device-harness` (see `tools/device-testing/lima/podkit-device-harness.yaml`)
+ * The VM `podkit-device-harness` (see `tools/device-testing/lima/podkit-device-harness.yaml`)
  * deliberately has no source tree, no Bun, no Node, and no `mounts:` entry.
  * The compiled linux-x64/arm64 podkit binary produced by the builder VM is
  * the only podkit artefact that ever runs inside it. This module owns the

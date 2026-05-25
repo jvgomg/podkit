@@ -1,5 +1,5 @@
 /**
- * Per-persona Tier-3 fixture helpers.
+ * Per-persona VM fixture helpers.
  *
  * One concern: starting/stopping the dummy-hcd-daemon for a single persona.
  * Tests own persona lifecycle; the setup module owns group lifecycle.
@@ -11,14 +11,14 @@
  * Personas without a daemon payload (`sysInfoExtendedXml === null &&
  * massStorageBackingFile === null`) never reach this fixture: they are
  * filtered at grouping time inside `groupPersonasByState()`. See
- * `tier3-runtime-setup.ts#hasDaemonPayload`.
+ * `vm-runtime-setup.ts#hasDaemonPayload`.
  *
  * # Known scaffold gap (descriptor handshake)
  *
  * The FunctionFS daemon's descriptor handshake is deferred (the production
  * systemd unit and binary serve VPD page 0xC0 over the gadget's control
  * endpoint, but the *USB host enumeration path* requires descriptors to be
- * published). The Tier-3 tests use this fixture to wrap each `it()` body in
+ * published). The VM tests use this fixture to wrap each `it()` body in
  * a daemon lifecycle and assert what works today (well-formed JSON shape,
  * daemon start/stop).
  *
@@ -97,7 +97,7 @@ export async function withPersona<T>(opts: WithPersonaOpts, body: () => Promise<
       // Stop failure is non-fatal; surface to stderr but do not throw.
       // eslint-disable-next-line no-console
       console.warn(
-        `[tier-3] best-effort stopDaemon(${opts.persona.id}) failed: ` +
+        `[vm] best-effort stopDaemon(${opts.persona.id}) failed: ` +
           (err instanceof Error ? err.message : String(err))
       );
     }

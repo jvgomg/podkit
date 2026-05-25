@@ -2,7 +2,7 @@
   "name": "@podkit/dummy-hcd",
   "version": "0.0.0",
   "private": true,
-  "description": "FunctionFS userspace daemon: synthesises iPod-shaped USB devices on Linux dummy_hcd for Tier 3 tests (ADR-016). Not a publishable npm package; lives outside packages/* so it never becomes a workspace member.",
+  "description": "FunctionFS userspace daemon: synthesises iPod-shaped USB devices on Linux dummy_hcd for VM tests (ADR-016). Not a publishable npm package; lives outside packages/* so it never becomes a workspace member.",
   "type": "module",
   "main": "./src/main.ts",
   "scripts": {

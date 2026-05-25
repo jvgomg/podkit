@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — doctor scope refactor + JSON envelope shape.
+ * VM coverage — doctor scope refactor + JSON envelope shape.
  *
  * Pins the post-`667d66b` / `679bec8` / `7d7a429` doctor envelope contract:
  *
@@ -28,7 +28,7 @@
  *     the config loader / writer (`packages/podkit-cli/src/config/`), covered
  *     by the unit-test suite at `packages/podkit-cli/src/config/*.unit.test.ts`.
  *     There is no `podkit config` CLI surface that surfaces the round-tripped
- *     shape over JSON, so a Tier-3 cross-check is not meaningful.
+ *     shape over JSON, so a VM cross-check is not meaningful.
  *
  * @see commits 667d66b, 679bec8, 7d7a429
  */
@@ -37,15 +37,15 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { ipodNano7gBlue } from '../personas/ipod-nano-7g-blue/persona.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Type guards — narrow the parsed JSON to the shapes asserted below.
@@ -77,19 +77,19 @@ interface DeviceScanJson {
   devices: DeviceScanEntry[];
 }
 
-describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', () => {
+describe.skipIf(!vmAvailable)('VM: doctor scope refactor + JSON shape', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     it(
       'exits DEVICE_REQUIRED when --scope device is requested with no -d',
@@ -97,7 +97,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope device --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         // The expansion `device → device-readiness + database-health` requires
         // a resolved device. Without -d, the CLI fails the request with
@@ -116,7 +116,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
         // diagnose without re-reading the flag matrix docs.
         expect(failure.error).toMatch(/--scope device/);
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -130,7 +130,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
         const invocation = await runJsonCommand(
           limaTestVmRunner,
           '/usr/local/bin/podkit doctor --scope system --json',
-          TIER3_WARM_TIMEOUT_MS
+          VM_WARM_TIMEOUT_MS
         );
         // doctor's exit code reflects overall health; we don't care here — we
         // care that the JSON envelope is well-formed even when checks warn.
@@ -157,7 +157,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
           expect(check.scope).toBe('system');
         }
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -172,7 +172,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -197,7 +197,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor scope refactor + JSON shape', (
         const stageUnsupported = usbStage!.details!.unsupported as { kind?: string };
         expect(typeof stageUnsupported.kind).toBe('string');
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });

@@ -57,7 +57,7 @@
 - **Config 1** — USB Mass Storage (disk mode; what podkit uses)
 - **Config 2** — iAP / iPod sync protocol (used by iTunes / iOS hosts)
 
-Same pattern will surface on every other iPod in the inventory. No persona schema change here — the current `DevicePersona.usbDescriptor` is single-config-flat (one set of class/subclass/protocol). A full configurations[] / interfaces[] / endpoints[] hierarchy is already flagged as a known schema gap by the ADR-017 reviewer for Tier 3 FunctionFS synthesis, and will land as one coordinated extension when Tier 3 needs it — not piecemeal.
+Same pattern will surface on every other iPod in the inventory. No persona schema change here — the current `DevicePersona.usbDescriptor` is single-config-flat (one set of class/subclass/protocol). A full configurations[] / interfaces[] / endpoints[] hierarchy is already flagged as a known schema gap by the ADR-017 reviewer for VM FunctionFS synthesis, and will land as one coordinated extension when VM needs it — not piecemeal.
 
 ### Linux-side new observations
 

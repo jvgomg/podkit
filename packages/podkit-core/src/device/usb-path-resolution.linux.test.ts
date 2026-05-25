@@ -22,8 +22,8 @@
  * # Scope
  *
  *   - Positive correlation ("given a real iPod at /mnt/ipod, returns the
- *     right bus/devnum/serial") is exercised end-to-end by the Tier-3
- *     `personas-baseline.tier3.test.ts` against the dummy-hcd persona.
+ *     right bus/devnum/serial") is exercised end-to-end by the VM-test
+ *     `personas-baseline.e2e.test.ts` against the dummy-hcd persona.
  *     That's the right place: T2 cannot synthesise a USB device, and the
  *     macOS-equivalent assertion would need physical hardware.
  */

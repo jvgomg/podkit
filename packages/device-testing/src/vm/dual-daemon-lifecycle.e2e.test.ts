@@ -1,5 +1,5 @@
 /**
- * Tier-3 smoke test: two `dummy-hcd-daemon@<persona>.service` units running
+ * VM smoke test: two `dummy-hcd-daemon@<persona>.service` units running
  * side-by-side.
  *
  * # Why this exists
@@ -35,7 +35,7 @@
  *
  * # Setup approach
  *
- * Uses the production systemd template (unlike `mass-storage-binding.tier3.
+ * Uses the production systemd template (unlike `mass-storage-binding.e2e.
  * test.ts` which writes a synthetic sidecar): we want the wiring tested as
  * the runner actually drives it, including the per-persona flags now
  * baked into `ExecStart`.
@@ -55,12 +55,12 @@ import { healthy } from '../system-states/healthy.js';
 import { echoMini } from '../personas/echo-mini/persona.js';
 import { ipodVideo5gIflash1tb } from '../personas/ipod-video-5g-iflash-1tb/persona.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Persona pair — see module header for the rationale.
@@ -80,7 +80,7 @@ interface VmResult {
   exitCode: number;
 }
 
-async function vm(cmd: string, timeoutMs: number = TIER3_WARM_TIMEOUT_MS): Promise<VmResult> {
+async function vm(cmd: string, timeoutMs: number = VM_WARM_TIMEOUT_MS): Promise<VmResult> {
   return limaTestVmRunner.run(cmd, { timeoutMs });
 }
 
@@ -162,7 +162,7 @@ function sleep(ms: number): Promise<void> {
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
+describe.skipIf(!vmAvailable)('VM: dual-daemon lifecycle', () => {
   beforeAll(async () => {
     // prepare() reinstalls the systemd template on any change (sha256-keyed),
     // so a fresh checkout with the per-persona ExecStart picks up automatically.
@@ -170,12 +170,12 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
     await limaTestVmRunner.applyState(healthy);
     // Defensive: scrub any stale dummy-hcd unit from a prior crashed run.
     await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await stopDaemon({ vmName: LIMA_DEVICE_HARNESS_VM_NAME });
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   it(
     'runs two personas concurrently with distinct configfs gadgets and tears down cleanly',
@@ -198,7 +198,7 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
         // 2. Both units report active. Sets the precondition for the gadget
         //    + /dev/sg* assertions below; without this we'd race the daemon's
         //    UDC bind on the first probe.
-        await waitForBothUnitsActive(PERSONA_A.id, PERSONA_B.id, TIER3_WARM_TIMEOUT_MS);
+        await waitForBothUnitsActive(PERSONA_A.id, PERSONA_B.id, VM_WARM_TIMEOUT_MS);
 
         // 3. Distinct configfs gadgets exist. The test of the per-persona
         //    naming change: a regression to a hardcoded directory name would
@@ -217,7 +217,7 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
         //    pre-start baseline — the boot disk already contributes sg
         //    nodes and the absolute count varies across VM images.
         //    Poll because dummy_hcd enumeration is asynchronous after UDC bind.
-        const deadline = Date.now() + TIER3_WARM_TIMEOUT_MS;
+        const deadline = Date.now() + VM_WARM_TIMEOUT_MS;
         let current = baselineSgCount;
         while (Date.now() < deadline) {
           current = await countScsiGenericNodes();
@@ -237,8 +237,8 @@ describe.skipIf(!tier3Available)('Tier 3: dual-daemon lifecycle', () => {
       }
 
       // 5. Cleanup: no orphan configfs directories survive shutdown.
-      await waitForGadgetsGone([PERSONA_A.id, PERSONA_B.id], TIER3_WARM_TIMEOUT_MS);
+      await waitForGadgetsGone([PERSONA_A.id, PERSONA_B.id], VM_WARM_TIMEOUT_MS);
     },
-    TIER3_COLD_TIMEOUT_MS
+    VM_COLD_TIMEOUT_MS
   );
 });

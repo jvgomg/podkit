@@ -1,5 +1,5 @@
 /**
- * Tier-3 coverage — doctor JSON output schema + human-text rendering.
+ * VM coverage — doctor JSON output schema + human-text rendering.
  *
  * Locks the public output contract of `podkit doctor`:
  *
@@ -63,17 +63,17 @@ import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { echoMini } from '../personas/echo-mini/persona.js';
 import { ipodNano7gBlue } from '../personas/ipod-nano-7g-blue/persona.js';
 import { ipodNano7gSpaceGray } from '../personas/ipod-nano-7g-space-gray/persona.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Type interfaces (mirror the production-side DoctorOutput / RepairOutput)
@@ -157,19 +157,19 @@ const ALLOWED_CHECK_SCOPES = new Set(['system', 'device-readiness', 'database-he
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
+describe.skipIf(!vmAvailable)('VM: doctor output contract', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     // ─────────────────────────────────────────────────────────────────────
     // JSON SCHEMA (system scope — drives ACs #1, #2, #3, #14, #15)
@@ -188,7 +188,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit doctor --scope system --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             )
           );
           expect(invocation.parseError).toBeUndefined();
@@ -235,7 +235,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             }
           }
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -249,7 +249,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit doctor --scope system --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             )
           );
           expect(invocation.parseError).toBeUndefined();
@@ -267,7 +267,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           expect(invocation.stdout).not.toMatch(/^Device Readiness$/m);
           expect(invocation.stdout).not.toMatch(/^Database Health$/m);
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -281,14 +281,14 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit doctor --scope system --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             )
           );
           const run2 = await withPersona({ persona: ipodNano7gSpaceGray }, () =>
             runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit doctor --scope system --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             )
           );
           expect(run1.parseError).toBeUndefined();
@@ -299,7 +299,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // value AND the serialisation (key order, whitespace, etc.).
           expect(run1.stdout).toBe(run2.stdout);
         },
-        TIER3_WARM_TIMEOUT_MS * 2
+        VM_WARM_TIMEOUT_MS * 2
       );
     });
 
@@ -315,7 +315,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const invocation = await runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit doctor --scope device --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           expect(invocation.exitCode).not.toBe(0);
           expect(invocation.parseError).toBeUndefined();
@@ -331,7 +331,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // The envelope is well-formed even on non-zero exit — the contract
           // that `runJsonCommand` relies on.
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
     });
 
@@ -353,7 +353,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             runJsonCommand(
               limaTestVmRunner,
               '/usr/local/bin/podkit device scan --json',
-              TIER3_WARM_TIMEOUT_MS
+              VM_WARM_TIMEOUT_MS
             )
           );
           expect(invocation.parseError).toBeUndefined();
@@ -378,7 +378,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             expect(DOCUMENTED_READINESS_STAGES.has(stage.stage)).toBe(true);
           }
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
     });
 
@@ -397,7 +397,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const invocation = await runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit doctor --repair udev-rule --dry-run --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           expect(invocation.parseError).toBeUndefined();
           const parsed = invocation.parsed as RepairOutput;
@@ -415,7 +415,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             expect(allowed.has(key)).toBe(true);
           }
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
     });
 
@@ -424,7 +424,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
     // gpod-tool). Drives the closing-line + section-heading + Issues block.
     //
     // The full iPod / mass-storage section-set assertions live in
-    // `doctor-consistent-sections.tier3.test.ts` and the grouped-render unit
+    // `doctor-consistent-sections.e2e.test.ts` and the grouped-render unit
     // tests; we focus here on the *renderer contract* not the per-device
     // section presence (covered unit-side authoritatively).
     // ─────────────────────────────────────────────────────────────────────
@@ -438,7 +438,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // probe, etc. We assert that *exactly one* of the two branches
           // appears and that pluralisation matches the count.
           const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           // Doctor exits 0 (healthy) or 2 (issues-found); never an error.
           expect([0, 2]).toContain(result.exitCode);
@@ -465,7 +465,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             expect(failureMatch![0]).toBe(`${count} ${word} found.`);
           }
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -478,7 +478,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // when the block is present — i.e. we don't require failures,
           // we require the *format* if/when they happen.
           const result = await limaTestVmRunner.run('/usr/local/bin/podkit doctor --scope system', {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           expect([0, 2]).toContain(result.exitCode);
 
@@ -497,7 +497,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             expect(firstLine).toMatch(/^ {2}[✓✗!\-?] .+ — .+/);
           }
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
     });
 
@@ -520,7 +520,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
     //   - JSON envelope: { healthy, mountPoint, deviceModel, deviceType,
     //     checks }; deviceType = 'mass-storage'
     //
-    // Same mount + config registration pattern as doctor-device-types.tier3.
+    // Same mount + config registration pattern as doctor-device-types.e2e.
     // ─────────────────────────────────────────────────────────────────────
 
     describe('Mass-storage device-bound doctor (echo-mini)', () => {
@@ -562,7 +562,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
             'exit 1',
           ].join(' ');
           const find = await limaTestVmRunner.run(`sh -c '${findScript.replace(/'/g, `'\\''`)}'`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           if (find.exitCode !== 0 || !find.stdout.trim()) {
             throw new Error(
@@ -573,16 +573,16 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
 
           // 4. Mount the FAT32 partition (raw FAT, no partition table).
           await limaTestVmRunner.run(`sudo mkdir -p ${VM_MOUNT_POINT}`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           });
           const mount = await limaTestVmRunner.run(
             `sudo mount -t vfat /dev/${scsiSd} ${VM_MOUNT_POINT}`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           if (mount.exitCode !== 0) {
             const mountP1 = await limaTestVmRunner.run(
               `sudo mount -t vfat /dev/${scsiSd}1 ${VM_MOUNT_POINT}`,
-              { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+              { timeoutMs: VM_WARM_TIMEOUT_MS }
             );
             if (mountP1.exitCode !== 0) {
               throw new Error(
@@ -603,12 +603,12 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           ].join('\n');
           await limaTestVmRunner.run(
             `cat > ${VM_CONFIG_PATH} << '__CONFIG_EOF__'\n${configBody}\n__CONFIG_EOF__`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
         } catch (err) {
           await limaTestVmRunner
             .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
-              timeoutMs: TIER3_WARM_TIMEOUT_MS,
+              timeoutMs: VM_WARM_TIMEOUT_MS,
             })
             .catch(() => {});
           const { stopDaemon } = await import('../runners/lima-test-vm.js');
@@ -618,17 +618,17 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           }).catch(() => {});
           throw err;
         }
-      }, TIER3_COLD_TIMEOUT_MS);
+      }, VM_COLD_TIMEOUT_MS);
 
       afterAll(async () => {
         await limaTestVmRunner
           .run(`sudo umount ${VM_MOUNT_POINT} 2>/dev/null || true`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         await limaTestVmRunner
           .run(`rm -f ${VM_CONFIG_PATH} 2>/dev/null || true`, {
-            timeoutMs: TIER3_WARM_TIMEOUT_MS,
+            timeoutMs: VM_WARM_TIMEOUT_MS,
           })
           .catch(() => {});
         const { stopDaemon } = await import('../runners/lima-test-vm.js');
@@ -636,7 +636,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           vmName: 'podkit-device-harness',
           personaId: echoMini.id,
         }).catch(() => {});
-      }, TIER3_COLD_TIMEOUT_MS);
+      }, VM_COLD_TIMEOUT_MS);
 
       // ── JSON envelope ──────────────────────────────────────────────────
 
@@ -649,7 +649,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const invocation = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           if (invocation.parsed === undefined) {
             throw new Error(
@@ -693,7 +693,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           expect(parsed.deviceType).toBe('mass-storage');
           expect(Array.isArray(parsed.checks)).toBe(true);
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       // ── Text mode ──────────────────────────────────────────────────────
@@ -703,7 +703,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
         async () => {
           const result = await limaTestVmRunner.run(
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           // Doctor may exit 0 or 2 — both are valid for the renderer
           // contract (we care about the header, not the outcome).
@@ -714,7 +714,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const firstLine = result.stdout.split('\n')[0]!;
           expect(firstLine).toBe(`podkit doctor — Echo Mini at ${VM_MOUNT_POINT}`);
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -726,7 +726,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // assert the Fix line names the typed argument verbatim.
           const result = await limaTestVmRunner.run(
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system`,
-            { timeoutMs: TIER3_WARM_TIMEOUT_MS }
+            { timeoutMs: VM_WARM_TIMEOUT_MS }
           );
           expect([0, 2]).toContain(result.exitCode);
 
@@ -750,7 +750,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // This is acceptable; the assertion exists to catch regressions
           // when the renderer DOES emit Fix lines.
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -762,7 +762,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const invocation = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           expect(invocation.parseError).toBeUndefined();
           expect(invocation.stdout).not.toMatch(/^podkit doctor/m);
@@ -770,7 +770,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           expect(invocation.stdout).not.toMatch(/^\d+ issues? found\.$/m);
           expect(invocation.stdout).not.toMatch(/^Issues:$/m);
         },
-        TIER3_WARM_TIMEOUT_MS
+        VM_WARM_TIMEOUT_MS
       );
 
       it(
@@ -779,12 +779,12 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           const r1 = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           const r2 = await runJsonCommand(
             limaTestVmRunner,
             `/usr/local/bin/podkit --config ${VM_CONFIG_PATH} -d echo doctor --no-system --json`,
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           );
           expect(r1.parseError).toBeUndefined();
           expect(r2.parseError).toBeUndefined();
@@ -792,7 +792,7 @@ describe.skipIf(!tier3Available)('Tier 3: doctor output contract', () => {
           // and the FAT32 backing file is unchanged between runs.
           expect(r1.stdout).toBe(r2.stdout);
         },
-        TIER3_WARM_TIMEOUT_MS * 2
+        VM_WARM_TIMEOUT_MS * 2
       );
     });
   });

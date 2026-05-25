@@ -33,7 +33,7 @@ Deferred. Linux captures completed this session for four representative personas
 - `bNumConfigurations` reading 2 on Linux vs 1 on Mac (Apple two-config descriptor: MSC + iAP). Documented under `ipod-nano-3g-black/provenance.md` § "USB descriptor sysfs reconciliation".
 - `lsblk -J -O /dev/sdX` confirming the Mac-captured MBR/FAT32 partition layout (`pttype: "dos"`, parttype byte `0xb` or `0xc`).
 
-`lsblkJson` stays `null` until a per-device need arises (e.g. a Tier 3 USB-replay test needs the exact payload, or this device shows partition geometry diverging from the four reconciled patterns). Re-plug and re-run the same capture commands used for the completed personas to populate.
+`lsblkJson` stays `null` until a per-device need arises (e.g. a VM USB-replay test needs the exact payload, or this device shows partition geometry diverging from the four reconciled patterns). Re-plug and re-run the same capture commands used for the completed personas to populate.
 
 ## SysInfoExtended source
 

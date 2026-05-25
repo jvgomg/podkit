@@ -1,5 +1,5 @@
 /**
- * Tier-1 smoke tests for the rejection-case personas.
+ * unit smoke tests for the rejection-case personas.
  *
  * Pins the persona-fixture shape for the `'unsupported'` ReadinessLevel.
  * Both rejection personas must:
@@ -7,7 +7,7 @@
  *   2. Surface the structured `unsupported` payload on the result
  *   3. Have a fail `usb` stage whose `details.unsupported` matches
  *
- * These assertions are intentionally lightweight — Tier 3 still owns
+ * These assertions are intentionally lightweight — VM still owns
  * end-to-end coverage of the inquiry pipeline. This file's job is to fail
  * loudly when a future schema change accidentally drops the rejection
  * fixture back to `'unknown'`.

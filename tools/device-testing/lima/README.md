@@ -14,7 +14,7 @@ the VM(s) that exercise them:
 |----|------|------|----------|
 | **Builder** | `podkit-linux-builder.yaml` | Compile `@podkit/libgpod-node` prebuilds + the podkit standalone binary | Bun, Node 22, build-essential, `libglib2.0-dev`, `libgdk-pixbuf-2.0-dev`, `libplist-dev`, cmake, meson, ninja, autoconf, libtool, intltool, perl XML::Parser |
 | **ABI verify** (spike-only) | `podkit-abi-verify.yaml` | Smoke-check that the binary loads on stock Debian with `ldd` showing only system libs | Stock Debian 12.10 + `ffmpeg` and `binutils`. **No `-dev` packages, no Bun, no Node, no source tree.** |
-| **Device-testing harness** | `podkit-device-harness.yaml` | Run Tier 3 device-integration tests against the compiled binary | Stock Debian 12.10 + kernel modules (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`), `ffmpeg`, runtime libgpod4 (for `gpod-tool` helper only), FunctionFS daemon, `gpod-tool`. **No dev tools, no `-dev` packages, no Bun, no Node, no source tree.** |
+| **Device-testing harness** | `podkit-device-harness.yaml` | Run VM device-integration tests against the compiled binary | Stock Debian 12.10 + kernel modules (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`), `ffmpeg`, runtime libgpod4 (for `gpod-tool` helper only), FunctionFS daemon, `gpod-tool`. **No dev tools, no `-dev` packages, no Bun, no Node, no source tree.** |
 
 The dev-library separation prevents binaries with hidden dynamic linkage from
 passing tests on dev hosts that happen to have `libgpod.so` available — a bug
@@ -22,7 +22,7 @@ class ADR-016 §"Builder/test VM split" was created to catch.
 
 ## Device-testing harness (`podkit-device-harness.yaml`)
 
-The test VM is the minimal Debian 12.10 environment that Tier 3 integration
+The test VM is the minimal Debian 12.10 environment that VM integration
 tests run against (TASK-322.01). It mimics a stock end-user runtime so binary
 linkage problems cannot be masked by dev libraries on PATH.
 
@@ -99,11 +99,11 @@ This contract will be replaced by TASK-322.03's `transferBinary` helper.
 ### SystemState fixtures and the `no-libgpod` case
 
 The `no-libgpod` `SystemState` fixture (`packages/device-testing/src/system-
-states/`) is intentionally **Tier 1 only** — not a Tier 3 snapshot. Because
+states/`) is intentionally **unit-test only** — not a VM snapshot. Because
 the podkit binary statically links libgpod, removing the runtime `libgpod4`
 package from the test VM does not change what `podkit doctor` reports for
 the binary itself. The fixture exists to exercise the doctor parsing /
-classification code (Tier 1 mocks), not to simulate a runtime where podkit
+classification code (unit-test mocks), not to simulate a runtime where podkit
 would actually fail. The `base-no-libgpod` snapshot named in ADR-016 only
 exercises gpod-tool absence, not podkit's own linkage.
 

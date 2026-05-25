@@ -1,8 +1,8 @@
 /**
- * Tier-3 coverage — USB-descriptor discovery + identification end-to-end.
+ * VM coverage — USB-descriptor discovery + identification end-to-end.
  *
- * Supplements the existing baseline tests (`personas-baseline.tier3.test.ts`,
- * `discovery-reconciliation.tier3.test.ts`, `unsupported-cascade.tier3.test.ts`)
+ * Supplements the existing baseline tests (`personas-baseline.e2e.test.ts`,
+ * `discovery-reconciliation.e2e.test.ts`, `unsupported-cascade.e2e.test.ts`)
  * with explicit assertions on the scan envelope shape.
  *
  * # Scenarios
@@ -34,7 +34,7 @@
  *     the configfs gadget name and the FunctionFS mountpoint from the
  *     persona id (`podkit-<id>` + `/dev/ffs-podkit-<id>`), so two
  *     `dummy-hcd-daemon@<id>.service` units co-exist cleanly. The dual-daemon
- *     lifecycle is covered standalone by `dual-daemon-lifecycle.tier3.test.ts`;
+ *     lifecycle is covered standalone by `dual-daemon-lifecycle.e2e.test.ts`;
  *     unit-side reconcile ordering is covered by `discovery-permutations.test.ts`.
  *     Layering an end-to-end multi-iPod scan envelope assertion on top of
  *     that infrastructure is a follow-up.
@@ -50,23 +50,23 @@
  *   - **`device add` against the iPod 5G persona**: DEFERRED for the same
  *     reason — no libgpod-node in the test VM, no iPod_Control tree on the
  *     backing image. The failure paths (UNSUPPORTED_DEVICE for hashAB nano,
- *     NO_IPOD for empty bus) ARE covered by `unsupported-cascade.tier3.test.ts`.
+ *     NO_IPOD for empty bus) ARE covered by `unsupported-cascade.e2e.test.ts`.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 
 import { limaTestVmRunner } from '../runners/lima-test-vm.js';
 import {
-  TIER3_COLD_TIMEOUT_MS,
-  TIER3_WARM_TIMEOUT_MS,
-  resolveTier3Availability,
-} from './tier3-runtime-setup.js';
+  VM_COLD_TIMEOUT_MS,
+  VM_WARM_TIMEOUT_MS,
+  resolveVmAvailability,
+} from './vm-runtime-setup.js';
 import { withPersona, runJsonCommand } from './persona-fixture.js';
 import { healthy } from '../system-states/healthy.js';
 import { ipodVideo5gIflash1tb } from '../personas/ipod-video-5g-iflash-1tb/persona.js';
 import { echoMini } from '../personas/echo-mini/persona.js';
 
-const tier3Available = await resolveTier3Availability();
+const vmAvailable = await resolveVmAvailability();
 
 // ---------------------------------------------------------------------------
 // Scan envelope helpers (subset of the device-scan JSON shape we assert on)
@@ -97,19 +97,19 @@ const hex = (n: number) => n.toString(16).padStart(4, '0');
 // Suite
 // ---------------------------------------------------------------------------
 
-describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
+describe.skipIf(!vmAvailable)('VM: discovery + identification', () => {
   beforeAll(async () => {
     await limaTestVmRunner.prepare();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   afterAll(async () => {
     await limaTestVmRunner.teardown();
-  }, TIER3_COLD_TIMEOUT_MS);
+  }, VM_COLD_TIMEOUT_MS);
 
   describe(`SystemState: ${healthy.id}`, () => {
     beforeAll(async () => {
       await limaTestVmRunner.applyState(healthy);
-    }, TIER3_COLD_TIMEOUT_MS);
+    }, VM_COLD_TIMEOUT_MS);
 
     // ────────────────────────────────────────────────────────────────────────
     // iPod 5G discovery + scan envelope shape
@@ -122,7 +122,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -149,7 +149,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
         expect(entry!.unsupportedReason).toBeUndefined();
         expect(entry!.readiness?.level).not.toBe('unsupported');
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     it(
@@ -159,7 +159,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         expect(invocation.exitCode).toBe(0);
@@ -187,7 +187,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
         // Model — at minimum the displayName, set from the cascade.
         expect(entry!.model?.displayName).toBeDefined();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
 
     // ────────────────────────────────────────────────────────────────────────
@@ -202,7 +202,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
           runJsonCommand(
             limaTestVmRunner,
             '/usr/local/bin/podkit device scan --json',
-            TIER3_WARM_TIMEOUT_MS
+            VM_WARM_TIMEOUT_MS
           )
         );
         // Scan is informational and never errors on "device unrecognised".
@@ -232,7 +232,7 @@ describe.skipIf(!tier3Available)('Tier 3: discovery + identification', () => {
         );
         expect(applePhantom).toBeUndefined();
       },
-      TIER3_WARM_TIMEOUT_MS
+      VM_WARM_TIMEOUT_MS
     );
   });
 });
