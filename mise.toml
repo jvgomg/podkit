@@ -1,5 +1,6 @@
 [tools]
 bun = "1.3.13"
+lima = "2.1.1"
 rust = "latest"
 
 [env]

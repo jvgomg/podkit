@@ -101,7 +101,9 @@ export STATIC_DEPS_DIR
 # ---------------------------------------------------------------------------
 log "running prebuildify (linux-${NODE_ARCH})..."
 cd "$REPO_ROOT/packages/libgpod-node"
-npx prebuildify --napi --strip
+# Silence npm's "new major version available" nag — irrelevant to CI/builder
+# environments where the npm version is fixed by the host image.
+NPM_CONFIG_UPDATE_NOTIFIER=false npx prebuildify --napi --strip
 
 # ---------------------------------------------------------------------------
 # Phase 3: verify the prebuild is genuinely statically linked

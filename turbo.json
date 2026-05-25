@@ -201,14 +201,8 @@
       ]
     },
     "@podkit/device-testing-daemon#build": {
-      "dependsOn": [],
-      "inputs": [
-        "src/**",
-        "scripts/build.sh",
-        "package.json",
-        "tsconfig.json",
-        "$TURBO_ROOT$/test-packages/device-testing/src/personas/sidecar.ts"
-      ],
+      "dependsOn": ["^build"],
+      "inputs": ["src/**", "scripts/build.sh", "package.json", "tsconfig.json"],
       "outputs": ["dist/dummy-hcd-daemon-linux-*"]
     },
     "@podkit/device-testing#build:linux-binary": {
