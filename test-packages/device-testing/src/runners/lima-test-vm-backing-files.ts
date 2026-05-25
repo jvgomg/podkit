@@ -174,19 +174,24 @@ export async function ensureBackingFile(
   // instead, which is what gives the post-seed image a byte-stable sha256
   // across runs. `MTOOLS_SKIP_CHECK=1` lets mtools operate on the partition-
   // less FAT32 file directly (it otherwise expects a partition table).
-  // `mktemp` is used (rather than a fixed `${vmPath}.tmp`) because two
+  // The scratch path embeds the in-VM shell PID (`$$`) because two
   // concurrent `bun run test:vm` invocations (turbo runs the device-testing
   // and e2e-vm-tests packages in parallel) both call `prepare()` and race on
-  // the per-persona scratch path. A fixed `.tmp` name made the first
-  // process's `rm -f` silently delete the second process's in-flight file,
-  // and the second process's `mv` then failed with "cannot stat <TMP>". A
-  // unique suffix per invocation eliminates the collision; the final `mv`
-  // to the canonical `<vmPath>` is atomic within the filesystem and
-  // last-writer-wins, which is safe because synthesis is deterministic.
+  // the per-persona path. A fixed `.tmp` name made the first process's
+  // `rm -f` silently delete the second process's in-flight file, and the
+  // second process's `mv` then failed with "cannot stat <TMP>". PID-suffixing
+  // guarantees a unique scratch per invocation; the final `mv` to the
+  // canonical `<vmPath>` is atomic within the filesystem and last-writer-
+  // wins, which is safe because synthesis is deterministic.
+  //
+  // (mktemp would be cleaner but its template rules require the X-run to be
+  // the trailing characters — `${vmPath}.XXXXXX.tmp` is invalid, and
+  // suffix-flag variants differ between BSD and GNU mktemp.)
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
-    `TMP=$(sudo mktemp ${shellQuote(`${vmPath}.XXXXXX.tmp`)})`,
+    `TMP=${shellQuote(`${vmPath}.tmp.`)}$$`,
+    'sudo rm -f "$TMP"',
     `sudo truncate -s ${sizeMiB}M "$TMP"`,
     // mkfs.vfat emits informational warnings on stderr (e.g. "Number of
     // clusters for 32 bit FAT is less then suggested minimum") that we do
