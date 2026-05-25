@@ -141,7 +141,7 @@ echo "=== Installing dependencies ==="
 limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR && bun install"
 
 echo "=== Building native libgpod binding for Linux ==="
-limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/libgpod-node && npx node-gyp rebuild"
+limactl shell podkit-virtual-ipod -- sudo bash -c "cd $VM_DIR/packages/libgpod-node && bunx node-gyp rebuild"
 
 echo "=== Building packages ==="
 limactl shell podkit-virtual-ipod -- sudo bash -c "

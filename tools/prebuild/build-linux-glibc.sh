@@ -11,7 +11,7 @@
 #   1. Build all static C dependencies (libgpod, gdk-pixbuf, glib, libplist, ...)
 #      via tools/prebuild/build-static-deps.sh — unless STATIC_DEPS_DIR is
 #      already populated (cache hit).
-#   2. Run `npx prebuildify --napi --strip` inside packages/libgpod-node/ to
+#   2. Run `bunx prebuildify --napi --strip` inside packages/libgpod-node/ to
 #      produce a self-contained linux-${arch} prebuild with libgpod statically
 #      linked into the .node addon.
 #   3. Verify via `ldd` that the resulting prebuild has no runtime libgpod /
@@ -33,7 +33,7 @@
 #                    inappropriate. CI defaults to running it.
 #
 # Exits non-zero on:
-#   - missing prerequisites (bun, npx, build-static-deps.sh)
+#   - missing prerequisites (bun, build-static-deps.sh)
 #   - any static-deps build failure
 #   - prebuildify failure
 #   - dynamic dependency on a library that should have been statically linked
@@ -101,9 +101,11 @@ export STATIC_DEPS_DIR
 # ---------------------------------------------------------------------------
 log "running prebuildify (linux-${NODE_ARCH})..."
 cd "$REPO_ROOT/packages/libgpod-node"
-# Silence npm's "new major version available" nag — irrelevant to CI/builder
-# environments where the npm version is fixed by the host image.
-NPM_CONFIG_UPDATE_NOTIFIER=false npx prebuildify --napi --strip
+# bunx instead of npx so the build path stays Bun-first; npm only enters
+# transitively when prebuildify shells out to node-gyp (unavoidable — node-gyp
+# is the canonical N-API build driver). Also avoids npm's "new major version
+# available" nag in the log.
+bunx prebuildify --napi --strip
 
 # ---------------------------------------------------------------------------
 # Phase 3: verify the prebuild is genuinely statically linked

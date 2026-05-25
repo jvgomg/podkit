@@ -157,7 +157,7 @@ The test harness exercises the **same statically-linked binary** that ships via 
 The builder VM and the existing GHA workflows share native-build code. There is one source of truth:
 
 - **`tools/prebuild/build-static-deps.sh`** — builds all static C dependencies (libgpod, gdk-pixbuf, glib, libplist, etc.). Already used by `.github/workflows/prebuild.yml` and `.github/workflows/build-platform.yml`.
-- The builder VM's provisioning invokes this same script (or a thin glibc-specific wrapper that calls it) before running `npx prebuildify --napi --strip` and `bun build --compile`.
+- The builder VM's provisioning invokes this same script (or a thin glibc-specific wrapper that calls it) before running `bunx prebuildify --napi --strip` and `bun build --compile`.
 - The GHA workflows are refactored (as part of TASK-321.07) so they invoke the shared script via a turbo task or a new thin wrapper — no shell commands duplicated between the Lima yaml and the GHA workflow.
 
 The musl variant (Alpine, used by `podkit-docker`) continues to build via the existing GHA Alpine container path — out of scope for the builder VM, no regression intended.

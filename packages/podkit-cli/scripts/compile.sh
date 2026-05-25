@@ -45,7 +45,7 @@ else
   echo "  Searched: $PREBUILD_DIR/*.node"
   echo "       and: $LOCAL_BUILD"
   echo "  Run 'bun run build:native' in packages/libgpod-node to build from source,"
-  echo "  or run 'npx prebuildify --napi --strip' to create a prebuild."
+  echo "  or run 'bunx prebuildify --napi --strip' to create a prebuild."
   exit 1
 fi
 

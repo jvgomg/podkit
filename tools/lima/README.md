@@ -83,7 +83,7 @@ Inside the VM:
 
 ```bash
 cd /tmp/podkit-test/packages/libgpod-node
-npx node-gyp rebuild
+bunx node-gyp rebuild
 ```
 
 ### Bun not available on Alpine
