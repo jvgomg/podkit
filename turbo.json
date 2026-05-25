@@ -169,7 +169,11 @@
       "outputs": []
     },
     "@podkit/e2e-vm-tests#test:vm": {
-      "dependsOn": ["@podkit/device-testing-daemon#build", "^build"],
+      "dependsOn": [
+        "@podkit/device-testing-daemon#build",
+        "^build",
+        "@podkit/device-testing#test:vm"
+      ],
       "cache": true,
       "inputs": [
         "src/**",
