@@ -174,11 +174,19 @@ export async function ensureBackingFile(
   // instead, which is what gives the post-seed image a byte-stable sha256
   // across runs. `MTOOLS_SKIP_CHECK=1` lets mtools operate on the partition-
   // less FAT32 file directly (it otherwise expects a partition table).
+  // `mktemp` is used (rather than a fixed `${vmPath}.tmp`) because two
+  // concurrent `bun run test:vm` invocations (turbo runs the device-testing
+  // and e2e-vm-tests packages in parallel) both call `prepare()` and race on
+  // the per-persona scratch path. A fixed `.tmp` name made the first
+  // process's `rm -f` silently delete the second process's in-flight file,
+  // and the second process's `mv` then failed with "cannot stat <TMP>". A
+  // unique suffix per invocation eliminates the collision; the final `mv`
+  // to the canonical `<vmPath>` is atomic within the filesystem and
+  // last-writer-wins, which is safe because synthesis is deterministic.
   const buildScript = [
     'set -e',
     `sudo mkdir -p ${shellQuote(BACKING_FILES_VM_DIR)}`,
-    `TMP=${shellQuote(`${vmPath}.tmp`)}`,
-    'sudo rm -f "$TMP"',
+    `TMP=$(sudo mktemp ${shellQuote(`${vmPath}.XXXXXX.tmp`)})`,
     `sudo truncate -s ${sizeMiB}M "$TMP"`,
     // mkfs.vfat emits informational warnings on stderr (e.g. "Number of
     // clusters for 32 bit FAT is less then suggested minimum") that we do
