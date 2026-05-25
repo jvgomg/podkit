@@ -12,7 +12,7 @@ the VM(s) that exercise them:
 
 | VM | Yaml | Role | Contents |
 |----|------|------|----------|
-| **Builder** | `podkit-linux-builder.yaml` | Compile `@podkit/libgpod-node` prebuilds + the podkit standalone binary | Bun, Node 22, build-essential, `libglib2.0-dev`, `libgdk-pixbuf-2.0-dev`, `libplist-dev`, cmake, meson, ninja, autoconf, libtool, intltool, perl XML::Parser |
+| **Builder** | `podkit-linux-builder.yaml` | Compile `@podkit/libgpod-node` prebuilds + the podkit standalone binary + the Linux `gpod-tool` test helper | Bun, Node 22, build-essential, `libgdk-pixbuf-2.0-dev`, `libglib2.0-dev`, `libgpod-dev` (for compiling `gpod-tool`), `libplist-dev`, cmake, meson, ninja, autoconf, libtool, intltool, perl XML::Parser |
 | **ABI verify** (spike-only) | `podkit-abi-verify.yaml` | Smoke-check that the binary loads on stock Debian with `ldd` showing only system libs | Stock Debian 12.10 + `ffmpeg` and `binutils`. **No `-dev` packages, no Bun, no Node, no source tree.** |
 | **Device-testing harness** | `podkit-device-harness.yaml` | Run VM device-integration tests against the compiled binary | Stock Debian 12.10 + kernel modules (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`), `ffmpeg`, runtime libgpod4 (for `gpod-tool` helper only), FunctionFS daemon, `gpod-tool`. **No dev tools, no `-dev` packages, no Bun, no Node, no source tree.** |
 
@@ -44,8 +44,10 @@ The yaml provisions in three system steps:
    `/etc/modules-load.d/podkit-device-harness.conf` for the USB gadget stack
    (`dummy_hcd`, `libcomposite`, `usb_f_mass_storage`, `usb_f_fs`); explicit
    `configfs` fstab line as a safety net.
-2. `gpod-tool` install from `/tmp/gpod-tool` if staged (see "gpod-tool
-   sourcing" below).
+2. Legacy interim handoff: `gpod-tool` install from `/tmp/gpod-tool` if
+   staged at first boot (see "gpod-tool sourcing" below). In practice this
+   step is now a no-op — `bun run harness:install` always transfers a
+   freshly-built `gpod-tool` to `/usr/local/bin/gpod-tool` post-boot.
 3. Hard guards that fail provisioning if `bun`, `node`, `npm`, or any `-dev`
    package was somehow installed.
 
@@ -82,22 +84,34 @@ gets removed for that snapshot. TASK-322.02 lands the snapshot setter.
 ### gpod-tool sourcing
 
 `gpod-tool` is built by `tools/gpod-tool/Makefile` and dynamically links
-libgpod-1.0 + glib-2.0. The host-side Linux build artefact is not yet wired
-up — TASK-322.03 will produce one from `@podkit/gpod-testing` build outputs
-and transfer it into the VM via `limactl copy` alongside the podkit binary.
+libgpod-1.0 + glib-2.0. It is a **required** test-time dependency: tests
+inside the harness VM populate iPod databases via `gpod-tool`, and the
+harness fails fast if the binary is missing.
 
-Interim handoff contract:
+The Linux build runs inside the `podkit-linux-builder` VM (which has
+`libgpod-dev` available via apt) and emits
+`test-packages/gpod-testing/bin/gpod-tool-linux-<arch>`. The turbo task
+`@podkit/gpod-testing#build:linux-binary` wraps the
+`build-gpod-tool-linux.sh` script that drives this. `bun run harness:install`
+invokes the task transitively and unconditionally transfers the resulting
+binary to `/usr/local/bin/gpod-tool` inside the harness VM (via the same
+`transferBinary` machinery used for podkit + the dummy-hcd-daemon).
 
-- The yaml's second provision step copies `/tmp/gpod-tool` →
-  `/usr/local/bin/gpod-tool` if the file exists when the VM boots.
-- Developers needing `gpod-tool` today can stage it before boot:
-  ```bash
-  cp /path/to/linux-built-gpod-tool /tmp/gpod-tool   # on the VM after boot
-  limactl shell podkit-device-harness -- sudo install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
-  ```
-- Or post-boot via `limactl copy`, then `install`.
+The harness VM's runtime `libgpod4` + `libgpod-common` + `libglib2.0-0` apt
+packages provide the ABI the binary loads against — there is no `-dev`
+package in the harness VM (which would defeat ADR-016's binary-only
+invariant).
 
-This contract will be replaced by TASK-322.03's `transferBinary` helper.
+To rebuild + reinstall:
+
+```bash
+bun run harness:install                                            # full reinstall
+bunx turbo run @podkit/gpod-testing#build:linux-binary             # build only
+```
+
+`PODKIT_GPOD_TOOL_BINARY` remains an optional environment override (point at
+a custom build for debugging); leave it unset to use the default at
+`test-packages/gpod-testing/bin/gpod-tool-linux-<arch>`.
 
 ### SystemState fixtures and the `no-libgpod` case
 

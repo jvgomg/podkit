@@ -314,7 +314,7 @@ async function cmdStatus(): Promise<number> {
   lines.push({
     ok: gpodOk,
     label: `gpod-tool (${DEFAULT_GPOD_TOOL_VM_PATH})`,
-    detail: gpodOk ? 'present' : 'missing (optional — set PODKIT_GPOD_TOOL_BINARY)',
+    detail: gpodOk ? 'present' : 'MISSING — run `bun run harness:install`',
   });
 
   const unitOk = await probeVmFileExists(DEFAULT_DUMMY_HCD_DAEMON_UNIT_VM_PATH);
@@ -352,9 +352,11 @@ async function cmdStatus(): Promise<number> {
   console.log(lines.map(fmtLine).join('\n'));
   console.log('');
 
-  // Required-for-ready: podkit + daemon + unit + all kernel modules. gpod-tool
-  // is optional (only some tests need it).
-  const requiredOk = podkitOk && daemonOk && unitOk && moduleNames.every((m) => loaded.has(m));
+  // Required-for-ready: podkit + daemon + gpod-tool + unit + all kernel
+  // modules. gpod-tool is now a required harness dependency (tests assume
+  // it is present inside the VM).
+  const requiredOk =
+    podkitOk && daemonOk && gpodOk && unitOk && moduleNames.every((m) => loaded.has(m));
   if (requiredOk) {
     console.log('Status: ready for `bun run test:vm`');
   } else {
@@ -389,6 +391,7 @@ async function cmdInstall(): Promise<number> {
       'run',
       '@podkit/device-testing#build:linux-binary',
       '@podkit/device-testing-daemon#build',
+      '@podkit/gpod-testing#build:linux-binary',
     ],
     { stdio: 'inherit', cwd: REPO_ROOT, env: process.env }
   );
@@ -440,27 +443,22 @@ async function cmdInstall(): Promise<number> {
       : `  installed (sha256=${daemonResult.hostSha256.slice(0, 12)}...)`
   );
 
-  // 4. gpod-tool — optional (controlled by PODKIT_GPOD_TOOL_BINARY env var).
+  // 4. gpod-tool — REQUIRED. The turbo step above built a fresh Linux
+  //    binary; treat a missing artefact the same way we treat podkit.
   const gpodToolPath = resolveDefaultGpodToolBinary();
-  if (gpodToolPath !== undefined) {
-    if (!fs.existsSync(gpodToolPath)) {
-      console.warn(
-        `[harness:install] PODKIT_GPOD_TOOL_BINARY=${gpodToolPath} but file does not exist — skipping.`
-      );
-    } else {
-      console.log(`[harness:install] transferring gpod-tool → ${VM}:${DEFAULT_GPOD_TOOL_VM_PATH}`);
-      const gpodResult = await transferGpodTool({ vmName: VM, binaryPath: gpodToolPath });
-      console.log(
-        gpodResult.skipped
-          ? `  skipped — sha256 matches (${gpodResult.hostSha256.slice(0, 12)}...)`
-          : `  installed (sha256=${gpodResult.hostSha256.slice(0, 12)}...)`
-      );
-    }
-  } else {
-    console.log(
-      '[harness:install] no gpod-tool configured (set PODKIT_GPOD_TOOL_BINARY to a Linux build to enable).'
+  if (!fs.existsSync(gpodToolPath)) {
+    console.error(
+      `[harness:install] gpod-tool linux binary not found at ${gpodToolPath}. Turbo claimed success but the artefact is missing.`
     );
+    return 1;
   }
+  console.log(`[harness:install] transferring gpod-tool → ${VM}:${DEFAULT_GPOD_TOOL_VM_PATH}`);
+  const gpodResult = await transferGpodTool({ vmName: VM, binaryPath: gpodToolPath });
+  console.log(
+    gpodResult.skipped
+      ? `  skipped — sha256 matches (${gpodResult.hostSha256.slice(0, 12)}...)`
+      : `  installed (sha256=${gpodResult.hostSha256.slice(0, 12)}...)`
+  );
 
   // 5. systemd unit — always run; helper sha256-skips when already current.
   console.log(

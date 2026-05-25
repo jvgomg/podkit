@@ -226,6 +226,16 @@
       ],
       "outputs": ["$TURBO_ROOT$/packages/podkit-cli/bin/podkit-linux-*"]
     },
+    "@podkit/gpod-testing#build:linux-binary": {
+      "dependsOn": [],
+      "env": ["PODKIT_HOST_ARCH"],
+      "inputs": [
+        "$TURBO_ROOT$/tools/gpod-tool/**",
+        "$TURBO_ROOT$/test-packages/device-testing/lima/podkit-linux-builder.yaml",
+        "$TURBO_ROOT$/test-packages/device-testing/scripts/build-gpod-tool-linux.sh"
+      ],
+      "outputs": ["bin/gpod-tool-linux-*"]
+    },
     "clean": {
       "cache": false
     }

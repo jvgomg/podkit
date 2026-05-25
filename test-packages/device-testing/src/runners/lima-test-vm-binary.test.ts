@@ -388,7 +388,7 @@ describe('transferGpodTool', () => {
     expect(caught).toBeDefined();
     expect(caught!.message).toContain('cannot read gpod-tool');
     expect(caught!.message).toContain(ghost);
-    expect(caught!.message).toContain('gpod-tool sourcing');
+    expect(caught!.message).toContain('bun run harness:install');
   });
 
   it('is idempotent on sha256 match (skips copy + install)', async () => {

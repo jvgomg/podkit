@@ -106,10 +106,9 @@ export async function transferGpodTool(opts: TransferBinaryOpts): Promise<Transf
     vmPath: opts.vmPath ?? DEFAULT_GPOD_TOOL_VM_PATH,
     label: 'gpod-tool',
     missingHint:
-      'Build a Linux gpod-tool first (host-side cross-build is not yet ' +
-      'wired up — see tools/gpod-tool/Makefile and test-packages/device-testing/' +
-      'lima/README.md §"gpod-tool sourcing"). Pass the resulting path via ' +
-      '`binaryPath`.',
+      'Run `bun run harness:install` to build + transfer a Linux gpod-tool ' +
+      '(or `bunx turbo run @podkit/gpod-testing#build:linux-binary` for the ' +
+      'build alone).',
   });
 }
 

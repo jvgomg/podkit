@@ -27,9 +27,11 @@
 #     an explicit /etc/fstab line is added as a belt-and-braces measure)
 #   - /usr/local/bin/podkit — empty placeholder; populated by the binary
 #     transfer step (limactl copy from the host's turbo cache)
-#   - /usr/local/bin/gpod-tool — populated by a placeholder provision step
-#     that expects a host-side binary at /tmp/gpod-tool. See README
-#     §"gpod-tool sourcing" for the current handoff contract.
+#   - /usr/local/bin/gpod-tool — REQUIRED. Transferred unconditionally by
+#     `bun run harness:install` (which builds it via the
+#     `@podkit/gpod-testing#build:linux-binary` turbo task inside the
+#     podkit-linux-builder VM). The legacy `/tmp/gpod-tool` provisioning
+#     step below remains for backwards-compat but is normally a no-op.
 #
 # What this VM explicitly DOES NOT have:
 #   - NO Bun, NO Node, NO npm/npx
@@ -194,20 +196,23 @@ provision:
       #!/usr/bin/env bash
       set -eux
 
-      # gpod-tool sourcing (interim contract)
+      # gpod-tool sourcing
       #
-      # gpod-tool is built by tools/gpod-tool/Makefile and dynamically links
-      # libgpod-1.0 + glib-2.0. Developers wanting to populate gpod-tool can
-      # `limactl copy <gpod-tool-linux> podkit-device-harness:/tmp/gpod-tool` after
-      # boot, then `limactl shell podkit-device-harness -- sudo install -m 0755
-      # /tmp/gpod-tool /usr/local/bin/gpod-tool`. The provisioning step below
-      # picks the file up automatically if it is staged BEFORE first boot.
-      # The runner also transfers it via PODKIT_GPOD_TOOL_BINARY if set.
+      # gpod-tool is a REQUIRED test-time dependency. The default source is
+      # `bun run harness:install`, which builds a Linux gpod-tool inside the
+      # podkit-linux-builder VM and transfers it to /usr/local/bin/gpod-tool
+      # post-boot via the harness's transferBinary helper.
+      #
+      # This provisioning step is the legacy "stage before first boot" path:
+      # if a developer has manually placed a binary at /tmp/gpod-tool before
+      # boot (rare — easier to just `bun run harness:install`), pick it up.
+      # Normal flow leaves /tmp/gpod-tool absent and this branch is a no-op.
       if [ -f /tmp/gpod-tool ]; then
         install -m 0755 /tmp/gpod-tool /usr/local/bin/gpod-tool
         echo "Installed gpod-tool from /tmp/gpod-tool"
       else
-        echo "NOTE: /tmp/gpod-tool not staged at boot — use the runner transfer step."
+        echo "NOTE: no /tmp/gpod-tool staged at boot — expected; the harness " \
+             "transferBinary step will install it post-boot."
       fi
 
   - mode: system

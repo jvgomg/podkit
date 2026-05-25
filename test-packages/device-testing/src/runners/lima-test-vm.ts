@@ -11,9 +11,11 @@
  *
  *   isAvailable() — returns true iff `limactl` is in PATH AND the
  *                   `podkit-device-harness` instance exists. Never throws.
- *   prepare()     — boots the VM if stopped, transfers the podkit binary,
- *                   transfers gpod-tool + the dummy-hcd-daemon (best-effort),
- *                   emits the persona sidecar at /var/device-testing/personas.json.
+ *   prepare()     — boots the VM if stopped, transfers the podkit binary
+ *                   (fatal if missing) and gpod-tool (fatal if missing —
+ *                   produce one with `bun run harness:install`), transfers
+ *                   the dummy-hcd-daemon (best-effort), emits the persona
+ *                   sidecar at /var/device-testing/personas.json.
  *   applyState()  — delegates to applyState({ vmName, stateId }) from
  *                   lima-test-vm-state.ts. Stages and runs apply-state.sh every
  *                   time (~800ms). No snapshot fast-path (see ADR-016).
@@ -97,12 +99,27 @@ export function resolveDefaultDummyHcdDaemonBinary(env: NodeJS.ProcessEnv = proc
   );
 }
 
-/** Resolve the host path of the gpod-tool linux binary. Override-only. */
-export function resolveDefaultGpodToolBinary(
-  env: NodeJS.ProcessEnv = process.env
-): string | undefined {
+/**
+ * Resolve the host path of the gpod-tool linux binary.
+ *
+ * gpod-tool is a REQUIRED part of the device-testing harness. The default
+ * resolves to the per-arch output of the
+ * `@podkit/gpod-testing#build:linux-binary` turbo task — produced by
+ * `bun run harness:install` (which invokes that task transitively). The
+ * `PODKIT_GPOD_TOOL_BINARY` env var remains an optional override for
+ * developers pointing at a custom build.
+ */
+export function resolveDefaultGpodToolBinary(env: NodeJS.ProcessEnv = process.env): string {
   const override = env['PODKIT_GPOD_TOOL_BINARY'];
-  return override && override.length > 0 ? override : undefined;
+  if (override && override.length > 0) return override;
+  const arch = vmArch();
+  return path.resolve(
+    repoRoot(),
+    'test-packages',
+    'gpod-testing',
+    'bin',
+    `gpod-tool-linux-${arch}`
+  );
 }
 
 /**
@@ -523,10 +540,12 @@ export interface CreateLimaTestVmRuntimeOpts {
    */
   resolveDummyHcdDaemonUnit?: () => string;
   /**
-   * Resolver for the gpod-tool binary path. Defaults to
-   * `PODKIT_GPOD_TOOL_BINARY` env var; absent → skip the transfer (warn only).
+   * Resolver for the gpod-tool binary path. Defaults to the per-arch output
+   * of `@podkit/gpod-testing#build:linux-binary` (a Linux build produced by
+   * `bun run harness:install`). gpod-tool is a required harness dependency;
+   * a missing host file fails the transfer with a descriptive error.
    */
-  resolveGpodToolBinary?: () => string | undefined;
+  resolveGpodToolBinary?: () => string;
   /** Persona set to emit in the sidecar. Defaults to the full registry. */
   personas?: Iterable<DevicePersona>;
 }
@@ -577,29 +596,16 @@ export function createLimaTestVmRuntime(opts: CreateLimaTestVmRuntimeOpts = {}):
         subprocess,
       });
 
-      // 3. Transfer gpod-tool — best effort. Many tests don't need it.
+      // 3. Transfer gpod-tool — REQUIRED. Tests inside the VM populate
+      //    iPod databases via gpod-tool; a missing host binary is fatal.
+      //    `bun run harness:install` produces the Linux build and stages it
+      //    at the resolver's default path.
       const gpodToolPath = resolveGpodToolBinary();
-      if (gpodToolPath !== undefined) {
-        try {
-          await transferGpodTool({
-            vmName,
-            binaryPath: gpodToolPath,
-            subprocess,
-          });
-        } catch (err) {
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[lima-test-vm] gpod-tool transfer failed (continuing): ` +
-              (err instanceof Error ? err.message : String(err))
-          );
-        }
-      } else {
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[lima-test-vm] no gpod-tool binary configured — set PODKIT_GPOD_TOOL_BINARY ` +
-            `to a Linux gpod-tool path if your test needs it.`
-        );
-      }
+      await transferGpodTool({
+        vmName,
+        binaryPath: gpodToolPath,
+        subprocess,
+      });
 
       // 4. Transfer the dummy-hcd-daemon — best-effort. Persona tests need
       //    it; doctor-only tests don't.

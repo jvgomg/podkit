@@ -81,8 +81,9 @@ provision:
         automake \
         libtool \
         gtk-doc-tools \
-        libglib2.0-dev \
         libgdk-pixbuf-2.0-dev \
+        libglib2.0-dev \
+        libgpod-dev \
         libplist-dev \
         libffi-dev \
         libsqlite3-dev \

@@ -106,7 +106,7 @@ Both Lima yamls pin Debian to the exact point release (`debian-12.10` or the cur
 
 The binary moves from builder VM to test VM via `limactl copy` (or equivalent atomic copy). The test VM never has access to the source tree or developer dependencies. If the binary references something it should bundle (a koffi prebuild, a glib symbol path, an iTunesDB schema file), the test fails because dev libraries aren't around to mask it.
 
-**What gpod-tool is and is not:** `gpod-tool` is a test-time dependency only. It is produced by `@podkit/gpod-testing` and installed into the test VM so test scripts can populate iPod databases in the synthetic persona. It is **not** bundled into the podkit binary and is **not** required to build podkit.
+**What gpod-tool is and is not:** `gpod-tool` is a test-time dependency only. It is produced by `@podkit/gpod-testing` (via the `@podkit/gpod-testing#build:linux-binary` turbo task, which compiles `tools/gpod-tool/Makefile` inside the builder VM against apt's `libgpod-dev`) and is always installed into the test VM by `bun run harness:install` — the harness treats it as required and fails fast if the binary is missing. It is **not** bundled into the podkit binary and is **not** required to build podkit.
 
 **State layering via `apply-state.sh`**:
 

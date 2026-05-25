@@ -14,7 +14,8 @@
   },
   "files": [
     "dist",
-    "scripts"
+    "scripts",
+    "bin"
   ],
   "bin": {
     "gpod-tests-parallel": "./scripts/run-tests-parallel.ts"
@@ -22,12 +23,13 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target bun && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
+    "build:linux-binary": "bash ../../test-packages/device-testing/scripts/build-gpod-tool-linux.sh",
     "generate-templates": "bun run scripts/generate-templates.ts",
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
     "typecheck": "tsc --noEmit",
-    "clean": "rm -rf dist templates"
+    "clean": "rm -rf dist templates bin"
   },
   "devDependencies": {
     "@types/bun": "latest",

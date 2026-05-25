@@ -105,6 +105,8 @@ let podkitSha: string;
 let daemonBinary: string;
 let daemonUnit: string;
 let daemonUnitSha: string;
+let gpodToolBinary: string;
+let gpodToolSha: string;
 
 beforeEach(() => {
   tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'podkit-runner-'));
@@ -120,6 +122,13 @@ beforeEach(() => {
   const unitBytes = Buffer.from('[Unit]\nDescription=fake-systemd-unit\n');
   fs.writeFileSync(daemonUnit, unitBytes);
   daemonUnitSha = createHash('sha256').update(unitBytes).digest('hex');
+
+  // gpod-tool is REQUIRED by prepare(). Materialise a fake binary so the
+  // sha256-probe path can be exercised without throwing on read.
+  gpodToolBinary = path.join(tmpRoot, 'gpod-tool-linux-x64');
+  const gpodBytes = Buffer.from('fake-gpod-tool-binary');
+  fs.writeFileSync(gpodToolBinary, gpodBytes);
+  gpodToolSha = createHash('sha256').update(gpodBytes).digest('hex');
 });
 
 afterEach(() => {
@@ -204,14 +213,16 @@ describe('runtime.prepare', () => {
   it('skips boot when the VM is already running and transfers podkit + sidecar', async () => {
     // Calls in order:
     //  1. instanceStatus → running
-    //  2. transferBinary probe (sha256sum) → match → skip
-    //  3. transferSystemdUnit probe → match → skip
-    //  4. ensurePersonaSidecar: limactl copy
-    //  5. ensurePersonaSidecar: sudo install
-    //  6. ensurePersonaSidecar: rm -f temp
+    //  2. podkit transferBinary probe (sha256sum) → match → skip
+    //  3. gpod-tool transferGpodTool probe (sha256sum) → match → skip
+    //  4. transferSystemdUnit probe → match → skip
+    //  5. ensurePersonaSidecar: limactl copy
+    //  6. ensurePersonaSidecar: sudo install
+    //  7. ensurePersonaSidecar: rm -f temp
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
-      ok(podkitSha), // sha256 match → skip
+      ok(podkitSha), // podkit sha match → skip
+      ok(gpodToolSha), // gpod-tool sha match → skip
       ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
@@ -223,7 +234,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'), // not present → skip
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined, // not configured → skip
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [], // empty registry → tiny sidecar
     });
 
@@ -245,7 +256,8 @@ describe('runtime.prepare', () => {
     const { runner, calls } = makeScriptedRunner([
       listJsonStopped(),
       ok(), // limactl start
-      ok(podkitSha), // sha256 match → skip
+      ok(podkitSha), // podkit sha match → skip
+      ok(gpodToolSha), // gpod-tool sha match → skip
       ok(daemonUnitSha), // systemd unit sha match → skip
       ok(), // copy sidecar
       ok(), // install sidecar
@@ -257,7 +269,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined,
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
     });
 
@@ -273,7 +285,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined,
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
     });
 
@@ -289,11 +301,12 @@ describe('runtime.prepare', () => {
   });
 
   it('transfers the dummy-hcd-daemon when the host binary exists', async () => {
-    // After boot-check, podkit probe, daemon probe, systemd unit probe,
-    // sidecar copy/install/cleanup.
+    // After boot-check, podkit probe, gpod-tool probe, daemon probe,
+    // systemd unit probe, sidecar copy/install/cleanup.
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
       ok(podkitSha), // podkit sha match → skip
+      ok(gpodToolSha), // gpod-tool sha match → skip
       // dummy-hcd-daemon transfer: probe → match (use same fake sha) so we
       // skip copy. To make this deterministic, compute the daemon sha.
       ok(createHash('sha256').update(fs.readFileSync(daemonBinary)).digest('hex')),
@@ -308,7 +321,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => daemonBinary,
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined,
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
     });
 
@@ -324,18 +337,14 @@ describe('runtime.prepare', () => {
     expect(daemonProbe).toBeDefined();
   });
 
-  it('warns but does not fail when gpod-tool transfer fails', async () => {
+  it('fails loudly when the gpod-tool binary is missing (required dependency)', async () => {
     const ghostGpodTool = path.join(tmpRoot, 'no-such-gpod-tool');
 
     const { runner } = makeScriptedRunner([
       listJsonRunning(),
       ok(podkitSha), // podkit skip
-      // No further calls — gpod-tool throws synchronously (missing file)
+      // gpod-tool transfer throws synchronously on the missing host file
       // BEFORE issuing any limactl call.
-      ok(daemonUnitSha), // systemd unit sha match → skip
-      ok(), // sidecar copy
-      ok(), // sidecar install
-      ok(), // sidecar cleanup
     ]);
 
     const runtime = createLimaTestVmRuntime({
@@ -347,8 +356,15 @@ describe('runtime.prepare', () => {
       personas: [],
     });
 
-    // Should not throw.
-    await runtime.prepare();
+    let caught: Error | undefined;
+    try {
+      await runtime.prepare();
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).toContain('cannot read gpod-tool');
+    expect(caught!.message).toContain('bun run harness:install');
   });
 
   it('fails loudly when the podkit binary is missing', async () => {
@@ -358,7 +374,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => path.join(tmpRoot, 'no-such-podkit'),
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined,
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
     });
 
@@ -378,6 +394,7 @@ describe('runtime.prepare', () => {
     const { runner, calls } = makeScriptedRunner([
       listJsonRunning(),
       ok(podkitSha), // podkit skip
+      ok(gpodToolSha), // gpod-tool skip
       ok('deadbeef'), // systemd unit probe — wrong sha
       ok(), // limactl copy host → /tmp
       ok(), // sudo install -m 0644
@@ -393,7 +410,7 @@ describe('runtime.prepare', () => {
       resolvePodkitBinary: () => podkitBinary,
       resolveDummyHcdDaemonBinary: () => path.join(tmpRoot, 'no-such-daemon'),
       resolveDummyHcdDaemonUnit: () => daemonUnit,
-      resolveGpodToolBinary: () => undefined,
+      resolveGpodToolBinary: () => gpodToolBinary,
       personas: [],
     });
 

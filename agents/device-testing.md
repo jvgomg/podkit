@@ -256,7 +256,7 @@ Single source of truth: `tools/prebuild/build-linux-glibc.sh`.
 |------|---------|
 | `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Builder VM — Debian 12.10 + full dev toolchain; produces linux-x64 glibc prebuilds + standalone binary |
 | `test-packages/device-testing/lima/podkit-abi-verify.yaml` | ABI verify VM — stock Debian 12.10 + ffmpeg only; no dev packages; smoke-checks `ldd` |
-| `test-packages/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`, TASK-322.01) — kernel modules + gpod-tool runtime libs; runs T3 tests |
+| `test-packages/device-testing/lima/podkit-device-harness.yaml` | Test VM (`podkit-device-harness`) — kernel modules + gpod-tool runtime libs; the gpod-tool binary itself is built by `@podkit/gpod-testing#build:linux-binary` and transferred unconditionally by `bun run harness:install`. Runs T3 tests. |
 
 For the full operator manual, see [`test-packages/device-testing/lima/README.md`](../test-packages/device-testing/lima/README.md).
 
@@ -265,7 +265,10 @@ For the full operator manual, see [`test-packages/device-testing/lima/README.md`
 ```bash
 bun run harness:install                # builds + transfers everything (turbo-cached)
 # or, build only (no transfer):
-bunx turbo run @podkit/device-testing#build:linux-binary @podkit/device-testing-daemon#build
+bunx turbo run \
+  @podkit/device-testing#build:linux-binary \
+  @podkit/device-testing-daemon#build \
+  @podkit/gpod-testing#build:linux-binary
 ```
 
 The build scripts (`build-linux-binary.sh`, `build-linux-prebuild.sh`) auto-create + auto-start the builder Lima VM (`podkit-linux-builder`) on demand, so a developer rarely touches that VM directly. To free RAM or force a fresh rebuild: `bun run harness:builder:stop` / `harness:builder:destroy`.

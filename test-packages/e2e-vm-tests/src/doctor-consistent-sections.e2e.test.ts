@@ -21,14 +21,13 @@
  *
  * The "iPod doctor → 3 sections" and "Echo Mini doctor → 2 sections (no
  * empty Device Readiness)" scenarios from the AC require a fully-resolved
- * device with a mounted filesystem holding an iTunesDB. The test VM lacks
- * gpod-tool (transfer is a no-op when `PODKIT_GPOD_TOOL_BINARY` is unset —
- * see `test-packages/device-testing/lima/podkit-device-harness.yaml` and `lima-test-vm.ts`'s
- * `resolveDefaultGpodToolBinary`), so we cannot drive `gpod-tool init`
- * inside the VM to populate a synthetic FAT32 image with a valid iPod
- * structure. The persona-side starter images are bare FAT32 — `podkit
- * doctor -d <name>` against them currently fails before reaching the
- * grouped-section renderer.
+ * device with a mounted filesystem holding an iTunesDB. The persona-side
+ * starter images are bare FAT32 — `podkit doctor -d <name>` against them
+ * currently fails before reaching the grouped-section renderer. Wiring
+ * `gpod-tool init` (now always present in the harness VM — installed by
+ * `bun run harness:install` via `@podkit/gpod-testing#build:linux-binary`)
+ * into the persona seeding step is the follow-up work that unblocks the
+ * full per-device-type assertion here.
  *
  * The full per-device-type 3-section vs 2-section assertion is covered
  * unit-side by `packages/podkit-cli/src/commands/doctor-grouped-render.

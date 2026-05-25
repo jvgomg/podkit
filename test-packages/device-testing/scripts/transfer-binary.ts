@@ -1,18 +1,21 @@
 #!/usr/bin/env bun
 /**
- * Standalone driver for `transferBinary` + `transferGpodTool`. Pushes the
- * latest linux-x64/arm64 podkit binary into the Lima test VM without
- * running the rest of the install pipeline. Useful when iterating only on
- * the podkit binary or gpod-tool; for the full install flow (binaries +
- * daemon + systemd unit) use `bun run harness:install` instead.
+ * Standalone driver for `transferBinary`. Pushes the latest
+ * linux-x64/arm64 podkit binary (and the dummy-hcd-daemon, if a host build
+ * exists) into the Lima test VM without running the rest of the install
+ * pipeline. Useful when iterating only on the podkit binary; for the full
+ * install flow (podkit + daemon + gpod-tool + systemd unit) use
+ * `bun run harness:install` instead.
  *
  * Resolution rules:
  *   - VM defaults to `podkit-device-harness` (override via PODKIT_DEVICE_HARNESS_VM_NAME).
  *   - Podkit binary resolved from `packages/podkit-cli/bin/podkit-linux-${arch}`
  *     where `${arch}` is `process.arch` mapped to `x64`/`arm64`. Override
  *     via PODKIT_LINUX_BINARY.
- *   - gpod-tool is best-effort: if the host artefact is absent, we warn and
- *     continue. Override via PODKIT_GPOD_TOOL_BINARY.
+ *
+ * Note: this script intentionally does NOT re-transfer gpod-tool. gpod-tool
+ * is a required harness dependency installed by `bun run harness:install`;
+ * use that command if you need to refresh it.
  *
  * @module
  */
@@ -20,7 +23,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { transferBinary, transferGpodTool } from '../src/runners/lima-test-vm-binary.js';
+import { transferBinary } from '../src/runners/lima-test-vm-binary.js';
 import {
   resolveDefaultDummyHcdDaemonBinary,
   DEFAULT_DUMMY_HCD_DAEMON_VM_PATH,
@@ -43,16 +46,6 @@ function resolvePodkitBinary(): string {
   if (override) return path.resolve(override);
   const arch = resolveArch();
   return path.join(REPO_ROOT, 'packages', 'podkit-cli', 'bin', `podkit-linux-${arch}`);
-}
-
-function resolveGpodToolBinary(): string {
-  // Host-side cross-build for gpod-tool is not yet wired up — see
-  // test-packages/device-testing/lima/README.md §"gpod-tool sourcing". Developers
-  // who built one out-of-band can point at it via env.
-  const override = process.env['PODKIT_GPOD_TOOL_BINARY'];
-  if (override) return path.resolve(override);
-  // Plausible default if a host build ever lands.
-  return path.join(REPO_ROOT, 'tools', 'gpod-tool', 'gpod-tool-linux');
 }
 
 async function main(): Promise<void> {
@@ -79,30 +72,6 @@ async function main(): Promise<void> {
   } else {
     console.log(
       `    installed at ${podkitResult.vmPath} (sha256=${podkitResult.hostSha256.slice(0, 12)}...)`
-    );
-  }
-
-  const gpodToolPath = resolveGpodToolBinary();
-  if (fs.existsSync(gpodToolPath)) {
-    console.log(`==> transferring gpod-tool to ${vmName}...`);
-    console.log(`    host: ${gpodToolPath}`);
-    const gpodResult = await transferGpodTool({
-      vmName,
-      binaryPath: gpodToolPath,
-    });
-    if (gpodResult.skipped) {
-      console.log(
-        `    skipped — ${vmName} already has matching sha256 (${gpodResult.hostSha256.slice(0, 12)}...)`
-      );
-    } else {
-      console.log(`    installed at ${gpodResult.vmPath}`);
-    }
-  } else {
-    console.log(
-      `==> skipping gpod-tool transfer: ${gpodToolPath} does not exist.\n` +
-        `    Host-side gpod-tool linux build is not yet wired up\n` +
-        `    (see test-packages/device-testing/lima/README.md §"gpod-tool sourcing").\n` +
-        `    Override the path via PODKIT_GPOD_TOOL_BINARY=<path>.`
     );
   }
 
