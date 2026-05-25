@@ -18,5 +18,6 @@
     "noImplicitOverride": true,
     "resolveJsonModule": true
   },
+  "files": [],
   "exclude": ["node_modules", "dist"]
 }
