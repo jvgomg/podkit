@@ -48,8 +48,9 @@ export interface CliOptions {
  * E2E tests run against the compiled CLI, not TypeScript source.
  */
 export function getCliPath(): string {
-  // Resolve relative to this package
-  return resolve(__dirname, '../../../podkit-cli/dist/main.js');
+  // __dirname is test-packages/e2e-host-tests/src/helpers/ — four `..` to repo
+  // root, then into packages/podkit-cli/dist/main.js.
+  return resolve(__dirname, '../../../../packages/podkit-cli/dist/main.js');
 }
 
 /**

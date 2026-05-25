@@ -530,7 +530,7 @@ export function personasRoot(): string {
   const thisFile = fileURLToPath(import.meta.url);
   const moduleDir = path.dirname(thisFile);
   const repoRoot = path.resolve(moduleDir, '..', '..', '..', '..');
-  return path.resolve(repoRoot, 'packages', 'device-testing', 'src', 'personas');
+  return path.resolve(repoRoot, 'test-packages', 'device-testing', 'src', 'personas');
 }
 
 /**

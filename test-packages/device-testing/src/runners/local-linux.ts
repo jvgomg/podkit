@@ -32,17 +32,8 @@ function defaultApplyStateScriptPath(): string {
   const thisFile = fileURLToPath(import.meta.url);
   const moduleDir = path.dirname(thisFile);
   // moduleDir is .../test-packages/device-testing/{src,dist}/runners/
-  return path.resolve(
-    moduleDir,
-    '..',
-    '..',
-    '..',
-    '..',
-    'tools',
-    'device-testing',
-    'scripts',
-    'apply-state.sh'
-  );
+  // scripts/apply-state.sh lives in the same package — two `..` segments up.
+  return path.resolve(moduleDir, '..', '..', 'scripts', 'apply-state.sh');
 }
 
 /**
