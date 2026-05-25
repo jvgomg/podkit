@@ -4,6 +4,26 @@ Canonical reference for agents writing tests for device identification, doctor c
 
 Also see [test-packages/device-testing/README.md](../test-packages/device-testing/README.md) for package-level API details, [ADR-016](../adr/adr-016-linux-vm-test-harness.md) for the full architecture decision, and [ADR-017](../adr/adr-017-device-persona-fixtures.md) for the fixture registry design.
 
+## Quick start (developer)
+
+First time:
+
+```bash
+bun install
+bun run harness:setup
+bun run test:vm
+```
+
+Subsequent runs:
+
+```bash
+bun run harness:start  # if VM is stopped
+bun run test:vm
+bun run harness:stop   # when done
+```
+
+`bun run harness:status` prints a single-screen health check of the VM, binaries, systemd unit, and kernel modules. `bun run harness:install` re-runs the turbo builds and re-transfers everything (cheap; sha256-skips no-op transfers). All `harness:*` scripts dispatch into `test-packages/device-testing/scripts/harness.ts`.
+
 ## Purpose
 
 `@podkit/device-testing` is the single package that supplies fixture data and the test runtime to every test tier. It exports:
@@ -293,16 +313,17 @@ describe('my VM suite', () => {
 **Running VM tests locally:**
 
 ```bash
-mise run device-testing:build-linux        # builds podkit + dummy-hcd-daemon
-mise run device-testing:transfer-binary    # copies both into podkit-device-harness
+bun run harness:install                    # builds podkit + dummy-hcd-daemon, transfers everything (sha256-skips no-ops)
 bun run test:vm                            # from repo root (or: bun run --cwd test-packages/device-testing test:vm)
 ```
+
+`bun run harness:setup` is the first-time superset (creates the VM, starts it, then runs `harness:install`). See §"Quick start" above. `mise run device-testing:build-linux` still works for build-only invocations (the harness install script uses the same turbo task internally).
 
 VM tests are excluded from the default `bun test` run via `bunfig.toml`
 `pathIgnorePatterns`. The `test:vm` script passes `src/vm` explicitly,
 which overrides the ignore pattern.
 
-**Preflight contract:** `bun run test:vm` runs `podkit-vm-preflight` before the test suite. If the Lima VM is not reachable, the preflight exits 1 with a remediation message listing the exact commands to bring it up. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
+**Preflight contract:** `bun run test:vm` runs `podkit-vm-preflight` before the test suite. If the Lima VM is not reachable, the preflight exits 1 with a remediation message pointing at `bun run harness:setup` / `harness:start` / `harness:status`. No tests run and nothing is silently skipped. To run non-VM tests instead, use `bun run test:unit` or `bun run test:integration`.
 
 **Do NOT add skipped tests for assertions blocked on a dep task** — pause
 that stream of work in code and document the dependency in the backlog

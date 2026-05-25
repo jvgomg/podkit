@@ -87,7 +87,7 @@ bun run test --filter <pkg>         # All tests for one package (unit + host + i
 bun test test-packages/<pkg>/src/foo.test.ts  # Single file (bypasses turbo)
 ```
 
-For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd test-packages/device-testing test:vm`).
+For VM tests: `bun run test:vm` from the repo root (or `bun run --cwd test-packages/device-testing test:vm`). The Lima VM is managed via `bun run harness:setup` (first-time), `harness:start` / `harness:stop`, and `harness:status` — see [agents/device-testing.md §"Quick start"](device-testing.md#quick-start-developer).
 
 ### Quick-reference: doctor invocations for state assertions
 

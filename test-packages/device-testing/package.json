@@ -29,7 +29,15 @@
     "build:linux-prebuild": "bash scripts/build-linux-prebuild.sh",
     "build:linux-binary": "bash scripts/build-linux-binary.sh",
     "build:backing-file": "bun run scripts/build-backing-file.ts",
-    "transfer-binary": "bun run scripts/transfer-binary.ts"
+    "transfer-binary": "bun run scripts/transfer-binary.ts",
+    "harness:create": "bun run scripts/harness.ts create",
+    "harness:start": "bun run scripts/harness.ts start",
+    "harness:stop": "bun run scripts/harness.ts stop",
+    "harness:destroy": "bun run scripts/harness.ts destroy",
+    "harness:shell": "bun run scripts/harness.ts shell",
+    "harness:status": "bun run scripts/harness.ts status",
+    "harness:install": "bun run scripts/harness.ts install",
+    "harness:setup": "bun run scripts/harness.ts setup"
   },
   "dependencies": {
     "@podkit/core": "workspace:*",

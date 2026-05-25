@@ -26,10 +26,12 @@ import { defaultSubprocessRunner } from '../src/subprocess.js';
 
 const REMEDIATION = [
   '',
-  'To run VM tests, ensure:',
-  '  1. Lima is installed:             `brew install lima` (macOS)',
-  '  2. The harness VM is provisioned: `limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness`',
-  '  3. The VM is currently running:   `limactl start podkit-device-harness` (resume) — see test-packages/device-testing/lima/README.md for first-run install steps',
+  'To bring the VM up:',
+  '  bun run harness:start         (resume if stopped)',
+  '  bun run harness:setup         (first-time setup: creates VM, builds + installs binaries)',
+  '  bun run harness:status        (see exactly what state things are in)',
+  '',
+  'Then re-run `bun run test:vm`.',
   '',
   'VM tests refuse to silently skip — bring the VM up or invoke a different test script (`bun run test:unit`, `bun run test:integration`).',
   '',

@@ -31,8 +31,11 @@ linkage problems cannot be masked by dev libraries on PATH.
 ### Start it
 
 ```bash
-limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
+bun run harness:create   # one-time: registers the Lima instance
+bun run harness:start    # boots / resumes it
 ```
+
+(`bun run harness:setup` rolls both steps plus the binary install into one.) The scripts live in [`test-packages/device-testing/scripts/harness.ts`](../scripts/harness.ts); see [agents/device-testing.md §"Quick start"](../../../agents/device-testing.md#quick-start-developer).
 
 The yaml provisions in three system steps:
 
@@ -175,8 +178,8 @@ for tag in $(limactl snapshot list podkit-device-harness --quiet | grep '^base-'
 done
 
 # Or nuke the VM entirely (slower; full re-provision on next boot)
-limactl delete podkit-device-harness --force
-limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
+bun run harness:destroy --yes
+bun run harness:setup
 ```
 
 Snapshots are stored inside the Lima VM's disk image — there are no extra
@@ -211,8 +214,8 @@ limactl shell podkit-abi-verify -- sudo install -m 0755 /tmp/podkit /usr/local/b
 limactl shell podkit-abi-verify -- ldd /usr/local/bin/podkit
 limactl shell podkit-abi-verify -- /usr/local/bin/podkit --version
 
-# 4) Start the device-testing harness VM (lives separately from the builder)
-limactl start test-packages/device-testing/lima/podkit-device-harness.yaml --name podkit-device-harness
+# 4) Bring up the device-testing harness VM (lives separately from the builder)
+bun run harness:setup                                       # create + start + install + status
 limactl shell podkit-device-harness -- which bun node npm   # must return empty
 ```
 

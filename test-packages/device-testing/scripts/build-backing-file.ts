@@ -75,7 +75,7 @@ async function main(): Promise<void> {
     const synth = persona.massStorageBackingFile!.synthesis!;
     console.log(`    ${persona.id}: ${synth.sizeMiB} MiB FAT32 label='${synth.label}'`);
     const result = await ensureBackingFile({ vmName: VM_NAME, persona });
-    const tag = result.skipped ? 'unchanged' : 'rebuilt';
+    const tag = result.wasAlreadyIdentical ? 'unchanged' : 'rebuilt';
     console.log(`      → ${result.vmPath} sha256=${result.sha256.slice(0, 16)}… (${tag})`);
   }
   console.log(`==> done.`);

@@ -49,6 +49,11 @@ docker compose -f tools/brew-test/docker-compose.yml up --build --exit-code-from
 # Produces @podkit/libgpod-node prebuilds + the podkit standalone binary
 # via the same shared script the GHA workflows use.
 # See: test-packages/device-testing/lima/podkit-linux-builder.yaml and test-packages/device-testing/lima/README.md
+#
+# Device-harness test VM lifecycle (create/start/stop/install/...) lives in
+# the @podkit/device-testing package as `bun run harness:*` scripts. See
+# root package.json for the friendly aliases, or test-packages/device-testing/
+# scripts/harness.ts for the implementation.
 # ---------------------------------------------------------------------------
 
 [tasks."device-testing:build-linux"]
@@ -68,10 +73,6 @@ run = "PODKIT_HOST_ARCH=$(uname -m) bunx turbo run @podkit/device-testing#build:
 [tasks."device-testing:build-daemon"]
 description = "Build only the dummy-hcd-daemon (Tier 3 FunctionFS daemon) standalone Linux binary"
 run = "bunx turbo run @podkit/device-testing#build:dummy-hcd-daemon"
-
-[tasks."device-testing:transfer-binary"]
-description = "Transfer the linux-x64/arm64 podkit binary into the Tier 3 test VM (also gpod-tool when host artefact exists)"
-run = "bun run --cwd test-packages/device-testing transfer-binary"
 
 [tasks."device-testing:builder:stop"]
 description = "Stop the builder VM (preserves state + caches)"

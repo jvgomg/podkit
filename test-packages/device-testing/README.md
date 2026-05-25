@@ -4,6 +4,23 @@ Shared fixture registries and the `TestRuntime` harness consumed by every unit t
 
 A single package consolidates fixtures + runners so unit-test mocks and VM/USB-gadget responses can never drift — they derive from the same TypeScript object.
 
+## Harness lifecycle
+
+Eight developer-facing scripts manage the `podkit-device-harness` Lima VM. All are exposed at the repo root as `bun run harness:<name>`; the implementation lives in [`scripts/harness.ts`](scripts/harness.ts).
+
+| Script | What it does |
+|--------|--------------|
+| `harness:create` | `limactl create` the VM (idempotent — no-op if it exists) |
+| `harness:start` | Resume a stopped VM |
+| `harness:stop` | Stop the VM (preserves state) |
+| `harness:destroy` | `limactl delete --force` (prompts unless `--yes`) |
+| `harness:shell` | Interactive shell inside the VM |
+| `harness:status` | Health check: VM state, SSH, binaries, systemd unit, kernel modules |
+| `harness:install` | Turbo-build podkit + dummy-hcd-daemon, transfer everything, install the systemd unit |
+| `harness:setup` | First-time onboarding: create + start + install + status |
+
+First-time flow: `bun install && bun run harness:setup && bun run test:vm`.
+
 ## Package structure
 
 ```
