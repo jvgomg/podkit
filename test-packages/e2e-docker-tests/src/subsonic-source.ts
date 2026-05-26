@@ -10,14 +10,23 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { getFixturesDir } from '../helpers/fixtures.js';
+import { getStaticFixturesRoot } from '@podkit/test-fixtures';
+import type { TestSource } from '@podkit/e2e-shared';
 import {
   startContainer,
   stopContainer,
   getContainerPort,
   runDockerCommand,
-} from '../docker/index.js';
-import type { TestSource } from './types.js';
+} from './docker/index.js';
+
+/**
+ * Audio fixtures root — the directory containing `goldberg-selections/`,
+ * `synthetic-tests/`, and `multi-format/`. Navidrome mounts this and indexes
+ * the resulting library.
+ */
+function getFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio');
+}
 
 /**
  * Configuration for the Navidrome Docker container

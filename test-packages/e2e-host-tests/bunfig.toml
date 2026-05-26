@@ -1,3 +1,4 @@
-[test]
-# Load signal handlers before any test files
-preload = ["./src/setup/preload.ts"]
+# No preload needed — docker container lifecycle and signal handlers moved
+# with the docker code to @podkit/e2e-docker-tests. Keep this file as a
+# placeholder so `bunfig.toml` overrides (e.g. test timeouts) can be added
+# without surprise.

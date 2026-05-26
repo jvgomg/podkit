@@ -1,0 +1,28 @@
+{
+  "name": "@podkit/e2e-docker-tests",
+  "version": "0.0.0",
+  "description": "End-to-end tests for podkit features that require a Docker harness (Subsonic / Navidrome).",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "gpod-tests-parallel --pattern '*.e2e.test.ts'",
+    "test:serial": "bun test",
+    "cleanup": "bun run src/scripts/cleanup-containers.ts",
+    "cleanup:force": "bun run src/scripts/cleanup-containers.ts --force",
+    "cleanup:list": "bun run src/scripts/cleanup-containers.ts --list",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/compatibility": "workspace:*",
+    "@podkit/e2e-host-tests": "workspace:*",
+    "@podkit/e2e-shared": "workspace:*",
+    "@podkit/gpod-testing": "workspace:*",
+    "@podkit/test-fixtures": "workspace:*",
+    "podkit": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest"
+  }
+}

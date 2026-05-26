@@ -41,3 +41,5 @@ export {
   type CheckResult,
   type PreflightCheck,
 } from './preflight.js';
+
+export { type SourceAvailabilityResult, type TestSource } from './test-source.js';

@@ -8,7 +8,6 @@
  * resolution they ultimately produce is the lib API.
  */
 
-import { access } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import {
@@ -202,26 +201,4 @@ export async function getAllTracks(): Promise<TestTrack[]> {
   const synthetic = await getAlbumTracks(Albums.SYNTHETIC_TESTS);
   const multiFormat = await getAlbumTracks(Albums.MULTI_FORMAT);
   return [...goldberg, ...synthetic, ...multiFormat];
-}
-
-/**
- * Check whether the audio fixture sets have been generated.
- *
- * Returns a boolean rather than throwing so legacy `skipIfUnavailable` call
- * sites continue to compile. Tests should prefer
- * `import { ensureFixturesExist } from '@podkit/test-fixtures'` at module
- * load — that throws with an actionable message and surfaces missing
- * fixtures as a real failure rather than a silent skip.
- *
- * @deprecated Migrate to `ensureFixturesExist('multi-format' | ...)` from
- * `@podkit/test-fixtures`. Will be removed once the e2e per-test
- * `skipIfUnavailable` pattern is gone.
- */
-export async function areFixturesAvailable(): Promise<boolean> {
-  try {
-    await access(getMultiFormatFixturesDir());
-    return true;
-  } catch {
-    return false;
-  }
 }

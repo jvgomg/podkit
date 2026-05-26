@@ -7,7 +7,7 @@
 
 import { existsSync } from 'node:fs';
 import { getFixturesDir } from '../helpers/fixtures.js';
-import type { TestSource } from './types.js';
+import type { TestSource } from '@podkit/e2e-shared';
 
 /**
  * Test source using local directory with test fixtures

@@ -7,35 +7,13 @@
  * tagging, and helpers for building temporary source directories.
  */
 
-import { access, cp, mkdir, rm } from 'node:fs/promises';
+import { cp, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getVideoFixturesDir } from '@podkit/test-fixtures';
 
 // Re-export the lib path resolver so existing imports continue to work.
 export { getVideoFixturesDir };
-
-/**
- * Check whether the video fixture set has been generated.
- *
- * Returns a boolean rather than throwing so legacy `skipIfUnavailable` call
- * sites continue to compile. Tests should prefer
- * `import { ensureFixturesExist } from '@podkit/test-fixtures'` at module
- * load.
- *
- * @deprecated Migrate to `ensureFixturesExist('video')` from
- * `@podkit/test-fixtures`. Will be removed once the e2e per-test
- * `skipIfUnavailable` pattern is gone.
- */
-export async function areVideoFixturesAvailable(): Promise<boolean> {
-  try {
-    await access(getVideoFixturesDir());
-    await access(join(getVideoFixturesDir(), 'compatible-h264.mp4'));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Video file categories based on compatibility with iPod.

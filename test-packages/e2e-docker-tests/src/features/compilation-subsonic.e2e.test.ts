@@ -18,11 +18,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { withTarget } from '../targets/index.js';
-import { runCliJson, cleanupTempConfig } from '../helpers/cli-runner.js';
-import { isDockerAvailable } from '../sources/index.js';
+import {
+  ensureFixturesExist,
+  requireBinary,
+  runCliJson,
+  cleanupTempConfig,
+} from '@podkit/e2e-shared';
+import { withTarget } from '@podkit/e2e-host-tests/targets';
+import { getTrackPath, Tracks } from '@podkit/e2e-host-tests/helpers/fixtures';
+import { isDockerAvailable } from '../subsonic-source.js';
 import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
-import { areFixturesAvailable, getTrackPath, Tracks } from '../helpers/fixtures.js';
+
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('multi-format');
+ensureFixturesExist('synthetic-tests');
 
 import type { SyncOutput } from 'podkit/types';
 
@@ -37,24 +47,11 @@ interface DeviceTrack {
 // Test Setup
 // =============================================================================
 
-const subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
 let dockerAvailable = false;
 let containerId: string | null = null;
 let tempDir: string;
 let serverPort: number;
 const password = 'testpass';
-
-/**
- * Check if metaflac is available.
- */
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Create compilation test fixtures for Navidrome.
@@ -155,26 +152,9 @@ async function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
 }
 
 beforeAll(async () => {
-  if (!subsonicE2eEnabled) {
-    console.log('Skipping Subsonic compilation tests (set SUBSONIC_E2E=1 to enable)');
-    return;
-  }
-
   dockerAvailable = await isDockerAvailable();
   if (!dockerAvailable) {
-    console.log('Skipping: Docker is not available');
-    return;
-  }
-
-  const fixturesAvailable = await areFixturesAvailable();
-  if (!fixturesAvailable) {
-    console.log('Skipping: audio fixtures not available');
-    return;
-  }
-
-  if (!isMetaflacAvailable()) {
-    console.log('Skipping: metaflac not available');
-    return;
+    throw new Error('Docker is not available — required for @podkit/e2e-docker-tests.');
   }
 
   // Create temp directories and fixtures
@@ -228,31 +208,20 @@ afterAll(async () => {
   }
 });
 
-function shouldRun(): boolean {
-  return subsonicE2eEnabled && dockerAvailable && containerId !== null;
-}
-
 // =============================================================================
 // Tests
 // =============================================================================
 
 describe('compilation albums via Subsonic', () => {
-  it.skipIf(!subsonicE2eEnabled)(
-    'syncs compilation flag from Navidrome to iPod',
-    async () => {
-      if (!shouldRun()) {
-        console.log('Skipping: Docker not available or setup failed');
-        return;
-      }
+  it('syncs compilation flag from Navidrome to iPod', async () => {
+    await withTarget(async (target) => {
+      // Create Subsonic config
+      const configDir = await mkdtemp(join(tmpdir(), 'podkit-comp-config-'));
+      const configPath = join(configDir, 'config.toml');
 
-      await withTarget(async (target) => {
-        // Create Subsonic config
-        const configDir = await mkdtemp(join(tmpdir(), 'podkit-comp-config-'));
-        const configPath = join(configDir, 'config.toml');
-
-        await writeFile(
-          configPath,
-          `version = 2
+      await writeFile(
+        configPath,
+        `version = 2
 
 [music.main]
 type = "subsonic"
@@ -262,63 +231,61 @@ username = "admin"
 [defaults]
 music = "main"
 `
+      );
+
+      try {
+        // Sync from Navidrome to iPod
+        const { result, json } = await runCliJson<SyncOutput>(
+          ['--config', configPath, 'sync', '--device', target.path, '--json'],
+          {
+            env: { SUBSONIC_PASSWORD: password },
+            timeout: 180000,
+          }
         );
 
-        try {
-          // Sync from Navidrome to iPod
-          const { result, json } = await runCliJson<SyncOutput>(
-            ['--config', configPath, 'sync', '--device', target.path, '--json'],
-            {
-              env: { SUBSONIC_PASSWORD: password },
-              timeout: 180000,
-            }
-          );
+        expect(result.exitCode).toBe(0);
+        expect(json?.success).toBe(true);
+        expect(json?.result?.completed).toBe(3);
 
-          expect(result.exitCode).toBe(0);
-          expect(json?.success).toBe(true);
-          expect(json?.result?.completed).toBe(3);
+        // Get tracks from iPod via CLI to check compilation flag
+        const { json: musicJson } = await runCliJson<DeviceTrack[]>(
+          [
+            '--config',
+            configPath,
+            'device',
+            'music',
+            '--tracks',
+            '--device',
+            target.path,
+            '--json',
+          ],
+          {
+            env: { SUBSONIC_PASSWORD: password },
+          }
+        );
 
-          // Get tracks from iPod via CLI to check compilation flag
-          const { json: musicJson } = await runCliJson<DeviceTrack[]>(
-            [
-              '--config',
-              configPath,
-              'device',
-              'music',
-              '--tracks',
-              '--device',
-              target.path,
-              '--json',
-            ],
-            {
-              env: { SUBSONIC_PASSWORD: password },
-            }
-          );
+        const tracks = musicJson ?? [];
+        expect(tracks.length).toBe(3);
 
-          const tracks = musicJson ?? [];
-          expect(tracks.length).toBe(3);
+        // Compilation tracks should have compilation: true
+        const compTrack1 = tracks.find((t) => t.title === 'Harmony');
+        expect(compTrack1).toBeDefined();
+        expect(compTrack1?.compilation).toBe(true);
 
-          // Compilation tracks should have compilation: true
-          const compTrack1 = tracks.find((t) => t.title === 'Harmony');
-          expect(compTrack1).toBeDefined();
-          expect(compTrack1?.compilation).toBe(true);
+        const compTrack2 = tracks.find((t) => t.title === 'Vibrato');
+        expect(compTrack2).toBeDefined();
+        expect(compTrack2?.compilation).toBe(true);
 
-          const compTrack2 = tracks.find((t) => t.title === 'Vibrato');
-          expect(compTrack2).toBeDefined();
-          expect(compTrack2?.compilation).toBe(true);
+        // Non-compilation track should have compilation: false
+        const regularTrack = tracks.find((t) => t.title === 'Tremolo');
+        expect(regularTrack).toBeDefined();
+        expect(regularTrack?.compilation).toBe(false);
 
-          // Non-compilation track should have compilation: false
-          const regularTrack = tracks.find((t) => t.title === 'Tremolo');
-          expect(regularTrack).toBeDefined();
-          expect(regularTrack?.compilation).toBe(false);
-
-          console.log('Compilation flag verified via Subsonic sync');
-        } finally {
-          await cleanupTempConfig(configPath);
-          await rm(configDir, { recursive: true, force: true }).catch(() => {});
-        }
-      });
-    },
-    300000
-  );
+        console.log('Compilation flag verified via Subsonic sync');
+      } finally {
+        await cleanupTempConfig(configPath);
+        await rm(configDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+  }, 300000);
 });

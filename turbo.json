@@ -107,6 +107,18 @@
     },
     "@podkit/e2e-host-tests#test:unit": { "dependsOn": [] },
     "@podkit/e2e-host-tests#test:integration": { "dependsOn": [] },
+    "@podkit/e2e-docker-tests#test": {
+      "dependsOn": [
+        "^build",
+        "@podkit/gpod-testing#generate-templates",
+        "@podkit/test-fixtures#generate-static-fixtures"
+      ],
+      "inputs": ["src/**"],
+      "outputs": [],
+      "cache": false
+    },
+    "@podkit/e2e-docker-tests#test:unit": { "dependsOn": [] },
+    "@podkit/e2e-docker-tests#test:integration": { "dependsOn": [] },
     "typecheck": {
       "dependsOn": ["^build"],
       "inputs": ["src/**", "tsconfig.json"],
