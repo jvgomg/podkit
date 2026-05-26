@@ -25,6 +25,7 @@ import { join, relative } from 'node:path';
 
 type Args = {
   pattern: string;
+  exclude: string[];
   concurrency: number;
   timeout: number;
   bail: boolean;
@@ -36,6 +37,7 @@ function parseArgs(): Args {
   const argv = process.argv.slice(2);
   const out: Args = {
     pattern: '*.integration.test.ts',
+    exclude: [],
     concurrency: parseInt(process.env.TEST_CONCURRENCY ?? '8', 10),
     timeout: parseInt(process.env.TEST_TIMEOUT ?? '30000', 10),
     bail: false,
@@ -45,6 +47,7 @@ function parseArgs(): Args {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--pattern' && argv[i + 1]) out.pattern = argv[++i]!;
+    else if (a === '--exclude' && argv[i + 1]) out.exclude.push(argv[++i]!);
     else if (a === '--concurrency' && argv[i + 1]) out.concurrency = parseInt(argv[++i]!, 10);
     else if (a === '--timeout' && argv[i + 1]) out.timeout = parseInt(argv[++i]!, 10);
     else if (a === '--root' && argv[i + 1]) out.root = argv[++i]!;
@@ -52,6 +55,15 @@ function parseArgs(): Args {
     else if (!a.startsWith('--')) out.pathFilters.push(a);
   }
   return out;
+}
+
+/**
+ * Convert a leading-`*` filename glob (e.g. `*.docker.e2e.test.ts`) into the
+ * suffix used by the file walker (`.docker.e2e.test.ts`). Patterns without a
+ * leading `*` are treated as literal substring matches against the basename.
+ */
+function patternToSuffix(pattern: string): string {
+  return pattern.startsWith('*') ? pattern.slice(1) : pattern;
 }
 
 function walk(dir: string, suffix: string, acc: string[] = []): string[] {
@@ -141,8 +153,18 @@ async function runAll(files: string[], args: Args): Promise<TestResult[]> {
 
 async function main() {
   const args = parseArgs();
-  const suffix = args.pattern.replace(/^\*/, '');
+  const suffix = patternToSuffix(args.pattern);
+  const excludeSuffixes = args.exclude.map(patternToSuffix);
   let files = walk(args.root, suffix).sort();
+  // Exclude files whose basename ends with any --exclude suffix. The `walk`
+  // matcher already produced `endsWith(suffix)` hits, so we run the same
+  // basename check for excludes to keep the matching semantics consistent.
+  if (excludeSuffixes.length > 0) {
+    files = files.filter((f) => {
+      const base = f.split('/').pop() ?? f;
+      return !excludeSuffixes.some((ex) => base.endsWith(ex));
+    });
+  }
   if (args.pathFilters.length > 0) {
     files = files.filter((f) => args.pathFilters.some((p) => f.includes(p)));
   }

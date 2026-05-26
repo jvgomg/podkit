@@ -6,7 +6,7 @@
  * CliContext via `runWithContext` and captures output via BufferSink.
  *
  * For built-binary smoke coverage (the wired-up `podkit device add`
- * command end-to-end), see test-packages/e2e-host-tests/src/commands/device.e2e.test.ts.
+ * command end-to-end), see test-packages/e2e-tests/src/commands/device.test.ts.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';

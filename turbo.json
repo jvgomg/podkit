@@ -95,7 +95,7 @@
       "outputs": [],
       "cache": false
     },
-    "@podkit/e2e-host-tests#test:e2e": {
+    "@podkit/e2e-tests#test:e2e": {
       "dependsOn": [
         "^build",
         "@podkit/gpod-testing#generate-templates",
@@ -104,7 +104,7 @@
       "inputs": ["src/**"],
       "outputs": []
     },
-    "@podkit/e2e-docker-tests#test:docker": {
+    "@podkit/e2e-tests#test:docker": {
       "dependsOn": [
         "^build",
         "@podkit/gpod-testing#generate-templates",

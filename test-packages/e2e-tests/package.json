@@ -1,0 +1,37 @@
+{
+  "name": "@podkit/e2e-tests",
+  "version": "0.0.0",
+  "description": "End-to-end tests for podkit. Includes both host-only tests and Docker-gated tests (Subsonic / Navidrome); the docker-requiring files use a `*.docker.test.ts` suffix.",
+  "type": "module",
+  "private": true,
+  "exports": {
+    "./helpers/fixtures": "./src/helpers/fixtures.ts",
+    "./helpers/video-fixtures": "./src/helpers/video-fixtures.ts",
+    "./targets": "./src/targets/index.ts"
+  },
+  "scripts": {
+    "test:e2e": "gpod-tests-parallel --pattern '*.test.ts' --exclude '*.docker.test.ts'",
+    "test:e2e:serial": "bun test --path-ignore-patterns='**/*.docker.test.ts'",
+    "test:e2e:dummy": "IPOD_TARGET=dummy gpod-tests-parallel --pattern '*.test.ts' --exclude '*.docker.test.ts'",
+    "test:e2e:real": "IPOD_TARGET=real bun test --path-ignore-patterns='**/*.docker.test.ts'",
+    "test:docker": "gpod-tests-parallel --pattern '*.docker.test.ts'",
+    "test:docker:serial": "bun test",
+    "cleanup": "bun run src/scripts/cleanup-containers.ts",
+    "cleanup:force": "bun run src/scripts/cleanup-containers.ts --force",
+    "cleanup:list": "bun run src/scripts/cleanup-containers.ts --list",
+    "preflight": "bun run src/helpers/preflight.ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/compatibility": "workspace:*",
+    "@podkit/e2e-shared": "workspace:*",
+    "@podkit/gpod-testing": "workspace:*",
+    "@podkit/test-fixtures": "workspace:*",
+    "podkit": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest"
+  }
+}

@@ -3,7 +3,8 @@
  *
  * Spawns the built podkit CLI as a subprocess and captures output, exactly as
  * a real user would invoke it. Subsonic / docker-specific config helpers live
- * in the package that owns those tests (`@podkit/e2e-docker-tests`), not here.
+ * next to the docker harness in `@podkit/e2e-tests` (under
+ * `src/helpers/subsonic-config.ts`), not here.
  *
  * @module
  */
@@ -200,8 +201,9 @@ export async function isCliAvailable(): Promise<boolean> {
 /**
  * Create a temporary config file with a directory-based music collection.
  *
- * Subsonic-style configs live in `@podkit/e2e-docker-tests` because they're
- * only meaningful next to the Docker harness that backs the Subsonic server.
+ * Subsonic-style configs live in `@podkit/e2e-tests/src/helpers/subsonic-config.ts`
+ * because they're only meaningful next to the Docker harness that backs the
+ * Subsonic server.
  *
  * @example
  * ```ts

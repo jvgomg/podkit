@@ -1,6 +1,6 @@
-# @podkit/e2e-host-tests
+# @podkit/e2e-tests
 
-End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation).
+End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation). Tests that require a Docker harness (Subsonic / Navidrome today; other containerised back-ends in future) live in this same package under a `*.docker.test.ts` filename suffix — the `test:e2e` task excludes that suffix, the `test:docker` task runs only those files.
 
 ## Running Tests
 
@@ -24,23 +24,23 @@ End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/
 
 **Note:** Tests that require libgpod (status, list from iPod, sync) need the native bindings to be built and accessible. The `init` command tests work without native bindings.
 
-### Run with Dummy iPod (Default)
+### Run host-only tests with Dummy iPod (default)
 
 ```bash
-# Run all E2E tests
+# Run all host-only E2E tests
 bun run test:e2e
 
-# Or from test-packages/e2e-host-tests
-bun run test
+# Same thing from this directory
+bun run --filter @podkit/e2e-tests test:e2e
 ```
 
 ### Run with Real iPod
 
-1. Connect your iPod and mount it
+1. Connect your iPod and mount it.
 
 2. Run pre-flight checks:
    ```bash
-   cd test-packages/e2e-host-tests
+   cd test-packages/e2e-tests
    IPOD_MOUNT=/Volumes/YourIPod bun run preflight
    ```
 
@@ -48,6 +48,18 @@ bun run test
    ```bash
    IPOD_MOUNT=/Volumes/YourIPod bun run test:e2e:real
    ```
+
+### Run Docker-gated tests
+
+```bash
+# From the repo root — runs only *.docker.test.ts files.
+bun run test:docker
+
+# Same thing from this directory
+bun run --filter @podkit/e2e-tests test:docker
+```
+
+Docker availability is checked in each file's `beforeAll`; missing Docker throws a focused error rather than silently skipping.
 
 ## Test Structure
 
@@ -59,43 +71,51 @@ src/
 │   ├── real.ts        # Uses IPOD_MOUNT env var
 │   └── factory.ts     # Creates target based on IPOD_TARGET env
 │
-├── sources/           # Music source abstraction (for remote sources)
-│   ├── types.ts       # TestSource interface
+├── sources/           # Music source abstraction
 │   ├── directory.ts   # Local directory source
-│   ├── subsonic.ts    # Navidrome Docker source
+│   ├── subsonic.ts    # Navidrome Docker source (used by docker tests)
 │   └── index.ts       # Factory and exports
 │
 ├── docker/            # Docker container management
-│   ├── constants.ts   # Labels (podkit.e2e.managed=true)
-│   ├── container-registry.ts  # Tracks active containers
-│   ├── container-manager.ts   # start/stop with auto-cleanup
-│   ├── signal-handler.ts      # SIGINT/SIGTERM handlers
-│   ├── orphan-cleaner.ts      # Find/remove orphaned containers
+│   ├── constants.ts          # Labels (podkit.e2e.managed=true)
+│   ├── container-registry.ts # Tracks active containers
+│   ├── container-manager.ts  # start/stop with auto-cleanup
+│   ├── signal-handler.ts     # SIGINT/SIGTERM handlers
+│   ├── orphan-cleaner.ts     # Find/remove orphaned containers
 │   └── index.ts
 │
 ├── setup/             # Test setup
-│   └── preload.ts     # Registers signal handlers (via bunfig.toml)
+│   └── preload.ts     # Registers docker signal handlers (via bunfig.toml)
 │
 ├── scripts/           # CLI utilities
-│   └── cleanup-containers.ts  # Manual container cleanup
+│   └── cleanup-containers.ts # Manual container cleanup
 │
 ├── helpers/           # Test utilities
-│   ├── cli-runner.ts  # Spawn CLI process, capture output
-│   ├── fixtures.ts    # Audio fixture catalogue (path resolution delegated to @podkit/test-fixtures)
-│   ├── video-fixtures.ts  # Video fixture catalogue (path resolution delegated to @podkit/test-fixtures)
-│   └── preflight.ts   # Pre-flight checks for real iPod
+│   ├── cli-runner.ts      # Spawn CLI process, capture output (re-exports from @podkit/e2e-shared)
+│   ├── cli-error.ts       # expectCliError for subprocess assertions
+│   ├── fixtures.ts        # Audio fixture catalogue
+│   ├── video-fixtures.ts  # Video fixture catalogue
+│   ├── subsonic-config.ts # createSubsonicConfig (Docker tests only)
+│   └── preflight.ts       # Pre-flight checks for real iPod
 │
-├── commands/          # Per-command tests
-│   ├── init.e2e.test.ts
-│   ├── status.e2e.test.ts
-│   ├── list.e2e.test.ts
-│   ├── sync.e2e.test.ts
-│   └── video-sync.e2e.test.ts
+├── commands/          # Per-command tests (host-only)
+│   ├── init.test.ts
+│   ├── status.test.ts
+│   ├── list.test.ts
+│   ├── sync.test.ts
+│   └── video-sync.test.ts
+│
+├── features/          # Feature-level tests (mix of host-only and docker-gated)
+│   ├── artwork-change.docker.test.ts        # Docker — Subsonic
+│   ├── compilation-subsonic.docker.test.ts  # Docker — Subsonic
+│   ├── ...
+│   └── (other host-only feature tests)
 │
 └── workflows/         # Multi-step workflow tests
-    ├── fresh-sync.e2e.test.ts
-    ├── incremental.e2e.test.ts
-    └── subsonic-sync.e2e.test.ts  # Docker-based (opt-in)
+    ├── fresh-sync.test.ts
+    ├── incremental.test.ts
+    ├── mixed-formats.test.ts
+    └── subsonic-sync.docker.test.ts          # Docker — Subsonic
 ```
 
 ## Environment Variables
@@ -104,7 +124,8 @@ src/
 |----------|-------------|---------|
 | `IPOD_TARGET` | Target type: `dummy` or `real` | `dummy` |
 | `IPOD_MOUNT` | Mount path for real iPod (required when `IPOD_TARGET=real`) | - |
-| `SUBSONIC_E2E` | Set to `1` to enable Docker-based Subsonic tests | - |
+
+There is no longer a `SUBSONIC_E2E=1` opt-in — the filename suffix gates Docker tests instead.
 
 ## Target Abstraction
 
@@ -146,7 +167,7 @@ it('syncs tracks', async () => {
 The CLI runner spawns the actual CLI binary as a subprocess:
 
 ```typescript
-import { runCli, runCliJson } from '../helpers/cli-runner';
+import { runCli, runCliJson } from '@podkit/e2e-shared';
 
 // Basic usage
 const result = await runCli(['status', '--device', '/path']);
@@ -175,29 +196,10 @@ Before running real iPod tests, pre-flight checks verify:
 9. Write permissions
 
 ```bash
-cd test-packages/e2e-host-tests
+cd test-packages/e2e-tests
 bun run preflight                           # Check basic requirements
 IPOD_MOUNT=/Volumes/iPod bun run preflight  # Include real iPod checks
 ```
-
-## Test Coverage
-
-### Per-Command Tests
-
-| Command | Tests |
-|---------|-------|
-| `init` | Config creation, `--force` overwrite, error handling |
-| `status` | Device info, JSON output, error handling |
-| `list` | Table/JSON/CSV formats, field selection |
-| `sync` | Dry-run, actual sync, quality presets, errors |
-| `video-sync` | Video sync via `sync -t video`, quality presets, content type categorization |
-
-### Workflow Tests
-
-| Workflow | Description |
-|----------|-------------|
-| Fresh sync | Empty iPod → init → sync → status → list |
-| Incremental | Sync subset → sync full → verify only new tracks added |
 
 ## Safety Notes
 
@@ -266,43 +268,36 @@ await withVideoSourceDir(async (sourceDir) => {
 
 ## Docker-Based Tests
 
-Some E2E tests require Docker to run external services (like Navidrome for Subsonic testing). These tests are disabled by default to avoid slow Docker operations in normal test runs.
+Tests that require Docker (Navidrome / Subsonic today; other containerised back-ends in future) use the `*.docker.test.ts` filename suffix. They co-locate with the host-only tests under `src/features/` and `src/workflows/`, which keeps mixed-adapter feature matrices (cells on directory and Subsonic adapters) in a single file when that's natural.
 
 ### Running Docker Tests
 
 ```bash
-# Run Subsonic E2E tests (requires Docker)
-SUBSONIC_E2E=1 bun test src/workflows/subsonic-sync.e2e.test.ts
-
-# Or use the convenience script
-bun run test:subsonic
+bun run test:docker
 ```
+
+Each docker test file's `beforeAll` calls `isDockerAvailable()` and throws a focused error if Docker isn't reachable — no silent skips.
 
 ### Container Cleanup
 
 Docker containers are automatically cleaned up via:
 - Normal test completion (afterAll hooks)
-- Signal handlers (Ctrl+C)
+- Signal handlers (Ctrl+C) registered in `src/setup/preload.ts` (loaded by `bunfig.toml`)
 - Process exit handlers
 
 If containers are left orphaned (e.g., after a crash), use the cleanup scripts:
 
 ```bash
-# List orphaned test containers
-bun run cleanup:docker:list
-
-# Remove stopped test containers
-bun run cleanup:docker
-
-# Force remove all test containers (including running)
-bun run cleanup:docker --force
+bun run cleanup:list   # List orphaned test containers
+bun run cleanup        # Remove stopped test containers
+bun run cleanup:force  # Force remove all test containers (including running)
 ```
 
 Containers are labeled with `podkit.e2e.managed=true` for identification.
 
 ### Test Source Abstraction
 
-Docker-based tests use the `TestSource` interface to abstract different music sources:
+Docker-based tests use the `TestSource` interface (defined in `@podkit/e2e-shared`) to abstract different music sources:
 
 ```typescript
 interface TestSource {
@@ -323,7 +318,7 @@ interface TestSource {
 
 To add a new Docker-based test source (e.g., Plex, Jellyfin):
 
-1. Create `src/sources/yourservice.ts` implementing `TestSource`
+1. Create `src/sources/yourservice.ts` implementing `TestSource`.
 2. Use the container manager for automatic cleanup:
    ```typescript
    import { startContainer, stopContainer } from '../docker/index.js';
@@ -344,8 +339,8 @@ To add a new Docker-based test source (e.g., Plex, Jellyfin):
      }
    }
    ```
-3. Export from `src/sources/index.ts`
-4. Create tests in `src/workflows/yourservice-sync.e2e.test.ts`
+3. Export from `src/sources/index.ts`.
+4. Create tests in `src/workflows/yourservice-sync.docker.test.ts` (note the `.docker.` suffix so the runner only picks them up under `test:docker`).
 
 ### Docker Infrastructure
 

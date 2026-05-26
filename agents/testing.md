@@ -184,7 +184,7 @@ bun run test                         # Runs both — reuses cached sub-tasks
 bun run test --filter podkit-core    # Same composition, scoped to one package
 ```
 
-E2E packages are kept out of the global compose by using non-`test` task names — `@podkit/e2e-host-tests` runs `test:e2e`, `@podkit/e2e-docker-tests` runs `test:docker`, `@podkit/e2e-vm-tests` runs `test:vm`. `bun run test` therefore only fans out to `test:unit` + `test:integration` across the workspace; the e2e suites only fire when explicitly requested via their named root scripts.
+E2E packages are kept out of the global compose by using non-`test` task names — `@podkit/e2e-tests` runs `test:e2e` and `test:docker` (different turbo tasks, separate cache keys), `@podkit/e2e-vm-tests` runs `test:vm`. `bun run test` therefore only fans out to `test:unit` + `test:integration` across the workspace; the e2e suites only fire when explicitly requested via their named root scripts.
 
 **Important:** Library-package `test` scripts are no-ops (`true`) because turbo handles the composition. Don't `cd` into a package and run `bun run test` directly — use turbo from the repo root. To run a single test file directly:
 
@@ -210,7 +210,7 @@ bun test -t "fails when no device"   # Match test name substring
 
 ## Interpreting Test Output
 
-Test output is prefixed with the package name (e.g., `@podkit/e2e-host-tests:test:`) because turborepo runs packages in parallel. Failures from different packages can be interleaved.
+Test output is prefixed with the package name (e.g., `@podkit/e2e-tests:test:`) because turborepo runs packages in parallel. Failures from different packages can be interleaved.
 
 **Finding failures quickly:**
 
@@ -240,7 +240,7 @@ If any tests failed, Bun also prints a count like `X pass, Y fail` — scan for 
 Turbo caches test results based on file inputs. Be aware of these pitfalls:
 
 - **Stale cache can mask failures.** If tests pass but you suspect they shouldn't (e.g., after changing behavior in an upstream package), clear the cache: `npx turbo run test --force`
-- **E2E tests depend on the built CLI.** The `@podkit/e2e-host-tests#test` task uses `^build` (upstream builds) in its cache key. If you change podkit-cli or podkit-core source, the e2e cache invalidates automatically. But if you only change test files, `bun run build` may not re-run — rebuild explicitly if needed.
+- **E2E tests depend on the built CLI.** The `@podkit/e2e-tests#test:e2e` and `#test:docker` tasks use `^build` (upstream builds) in their cache keys. If you change podkit-cli or podkit-core source, the e2e cache invalidates automatically. But if you only change test files, `bun run build` may not re-run — rebuild explicitly if needed.
 - **The `Cached: N cached` line in turbo output tells you what was reused.** If you expect a task to re-run but it shows as cached, the inputs may not cover what changed.
 
 ## Debugging E2E Failures
@@ -294,8 +294,8 @@ mise run test:linux:destroy      # Delete VMs entirely
 mise run test:linux:cache:clear  # Clear turbo cache without deleting VMs
 mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
-# Container cleanup (in test-packages/e2e-docker-tests/)
-bun run --filter @podkit/e2e-docker-tests cleanup
+# Container cleanup (in test-packages/e2e-tests/)
+bun run --filter @podkit/e2e-tests cleanup
 ```
 
 ## Test tiers and pathIgnorePatterns
@@ -330,7 +330,7 @@ The second form is what `gpod-tests-parallel` does under the hood; you only need
 
 ### What happens to preload?
 
-`bunfig.toml` no longer sets `preload`. Each integration / perf / e2e test file declares its own requirements at the top of the module via [Module-load preflight](#module-load-preflight) helpers — that's the single layer that catches missing system deps. There is no smart-preload, no argv-sniff, no `test/preload.ts`. (Exception: `@podkit/e2e-docker-tests` preloads signal handlers for graceful container cleanup. That's a process-level concern, not per-test.)
+`bunfig.toml` no longer sets `preload`. Each integration / perf / e2e test file declares its own requirements at the top of the module via [Module-load preflight](#module-load-preflight) helpers — that's the single layer that catches missing system deps. There is no smart-preload, no argv-sniff, no `test/preload.ts`. (Exception: `@podkit/e2e-tests` preloads docker signal handlers for graceful container cleanup. That's a process-level concern, not per-test.)
 
 ## Prerequisites for Integration Tests
 
@@ -433,7 +433,7 @@ const subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
 it.skipIf(!subsonicE2eEnabled)('syncs from Subsonic', async () => { /* … */ });
 ```
 
-If a whole suite needs Docker, the suite belongs in `@podkit/e2e-docker-tests` and its `beforeAll` should throw when Docker is unavailable. See [Test package layout](#test-package-layout).
+If a whole suite needs Docker, the suite belongs in `@podkit/e2e-tests` under a `*.docker.test.ts` filename, and its `beforeAll` should throw when Docker is unavailable. See [Test package layout](#test-package-layout).
 
 ### Don't: try/catch swallowing a fixture load
 
@@ -475,13 +475,13 @@ it('does the thing', async () => { /* runs unconditionally now */ });
 | `<workspace>/src/**/*.test.ts` | Pure unit test of library code. No subprocess, no fixtures bigger than a kilobyte. | The package's own `src/` tree. |
 | `<workspace>/src/**/*.integration.test.ts` | Tests library code with real system deps (ffmpeg / gpod-tool / libgpod-node) but no CLI subprocess. | Same package. |
 | `<workspace>/src/**/*.perf.test.ts` | Performance benchmark. Generates synthetic load; assertion is a wall-clock or count threshold. | Same package. |
-| `@podkit/e2e-host-tests` | Spawns the built CLI subprocess. Dummy or real iPod target. No Docker, no Lima VM. | `test-packages/e2e-host-tests/` |
-| `@podkit/e2e-docker-tests` | Anything needing a Docker container (Subsonic / Navidrome / future). | `test-packages/e2e-docker-tests/` |
+| `@podkit/e2e-tests` (`*.test.ts`) | Spawns the built CLI subprocess. Dummy or real iPod target. No Docker, no Lima VM. | `test-packages/e2e-tests/` |
+| `@podkit/e2e-tests` (`*.docker.test.ts`) | Same package; files needing a Docker container (Subsonic / Navidrome / future) use the `*.docker.test.ts` suffix so the `test:e2e` task can exclude them. | `test-packages/e2e-tests/` |
 | `@podkit/e2e-vm-tests` | Anything needing a Lima VM (`dummy_hcd` USB gadget, Linux kernel modules). | `test-packages/e2e-vm-tests/` |
-| `@podkit/e2e-shared` | Helpers shared across the three e2e packages: CLI runner, error-assertion, composable preflight checks. | Already exists; you import from it. |
+| `@podkit/e2e-shared` | Helpers shared across the e2e packages: CLI runner, error-assertion, composable preflight checks. | Already exists; you import from it. |
 | `@podkit/test-fixtures` | Anything that mints or describes a fixture (static set or dynamic mini-track). | Already exists; you import from it. |
 
-The three e2e packages all consume `@podkit/e2e-shared` (CLI runner + composable preflight) and `@podkit/test-fixtures` (path helpers + module-load preflight wrappers). `@podkit/e2e-docker-tests` additionally consumes `@podkit/e2e-host-tests` via subpath exports for the `withTarget` factory and the fixture catalogue (`Albums` / `Tracks` / `Videos` enums) — those are e2e-test concepts, not lib concepts, so they don't belong in test-fixtures or e2e-shared.
+The e2e packages all consume `@podkit/e2e-shared` (CLI runner + composable preflight) and `@podkit/test-fixtures` (path helpers + module-load preflight wrappers). The Docker-gated tests in `@podkit/e2e-tests/src/**/*.docker.test.ts` co-locate with the host-only tests so a single mixed feature matrix (cells on directory adapters and Subsonic adapters) can live in one file; the filename suffix is the only thing distinguishing them.
 
 ## Diagnosing environment issues
 
@@ -686,7 +686,7 @@ bun turbo run generate-templates --filter=@podkit/gpod-testing  # cached
 bun turbo run generate-templates --filter=@podkit/gpod-testing --force  # force rebuild
 ```
 
-Templates live in `test-packages/gpod-testing/templates/` (gitignored, ~290KB total). The turbo task invalidates on changes to the generation script, `src/templates.ts`, `src/test-ipod.ts`, `src/gpod-tool.ts`, or the `bin/gpod-tool` binary itself. Consuming integration test tasks (`@podkit/gpod-testing#test:integration`, the global `test:integration`, `@podkit/ipod-db#test:integration`, `@podkit/e2e-host-tests#test`, `@podkit/ipod-db#generate-fixtures`) declare it as a dependency, so templates rebuild automatically when needed.
+Templates live in `test-packages/gpod-testing/templates/` (gitignored, ~290KB total). The turbo task invalidates on changes to the generation script, `src/templates.ts`, `src/test-ipod.ts`, `src/gpod-tool.ts`, or the `bin/gpod-tool` binary itself. Consuming integration test tasks (`@podkit/gpod-testing#test:integration`, the global `test:integration`, `@podkit/ipod-db#test:integration`, `@podkit/e2e-tests#test:e2e`, `@podkit/e2e-tests#test:docker`, `@podkit/ipod-db#generate-fixtures`) declare it as a dependency, so templates rebuild automatically when needed.
 
 **Adding a new model:**
 1. Add the model number to `TEMPLATE_MODELS` in `test-packages/gpod-testing/src/templates.ts`.
@@ -715,7 +715,7 @@ ensureFixturesExist('multi-format');           // module-load preflight; throws 
 const dir = getMultiFormatFixturesDir();
 ```
 
-`ensureFixturesExist(set)` fails fast with an actionable error if the set has not been generated yet. Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task and of `@podkit/e2e-host-tests#test`, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../test-packages/test-fixtures/README.md) for the full set inventory and regen instructions.
+`ensureFixturesExist(set)` fails fast with an actionable error if the set has not been generated yet. Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task and of the `@podkit/e2e-tests#test:e2e` / `#test:docker` tasks, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../test-packages/test-fixtures/README.md) for the full set inventory and regen instructions.
 
 ## Dynamic Test Fixture Generator
 
@@ -743,7 +743,7 @@ See `test-packages/test-fixtures/README.md` for the full `generateMiniX` surface
 
 ## Writing CLI Unit and Integration Tests
 
-**Hard rule: never spawn the podkit CLI as a subprocess from a unit or integration test.** Subprocess invocation lives only in `test-packages/e2e-host-tests/`. The rule is enforced by an oxlint check (`no-restricted-imports` for `node:child_process` in `packages/podkit-cli/src/**/*.test.ts`) — see `oxlint.json`.
+**Hard rule: never spawn the podkit CLI as a subprocess from a unit or integration test.** Subprocess invocation lives only in `test-packages/e2e-tests/`. The rule is enforced by an oxlint check (`no-restricted-imports` for `node:child_process` in `packages/podkit-cli/src/**/*.test.ts`) — see `oxlint.json`.
 
 For tests that need to drive a CLI command, call its **runner function** in-process. Each runner is an exported `async function runX(options, out, deps?)` extracted from the Commander action callback. Examples:
 
@@ -957,7 +957,7 @@ For asserting on this shape in tests, use `expectCliError` from `../test-utils/c
 
 ### Test helper: `expectCliError`
 
-Both the in-process (`packages/podkit-cli/src/test-utils/cli-error.ts`) and subprocess (`test-packages/e2e-host-tests/src/helpers/cli-error.ts`) helpers collapse the standard "parse JSON, narrow, check fields" flow into one call:
+Both the in-process (`packages/podkit-cli/src/test-utils/cli-error.ts`) and subprocess (`test-packages/e2e-tests/src/helpers/cli-error.ts`) helpers collapse the standard "parse JSON, narrow, check fields" flow into one call:
 
 ```ts
 // in-process
@@ -989,7 +989,7 @@ The helper asserts `success === false`, matches `code` exactly, optionally subst
 
 ## Writing E2E Tests
 
-Use `@podkit/e2e-host-tests` helpers for CLI testing:
+Use `@podkit/e2e-tests` helpers for CLI testing:
 
 ```typescript
 import { withTarget } from '../targets';
@@ -1008,7 +1008,7 @@ it('syncs tracks to iPod', async () => {
 });
 ```
 
-See [test-packages/e2e-host-tests/README.md](../test-packages/e2e-host-tests/README.md) for full documentation.
+See [test-packages/e2e-tests/README.md](../test-packages/e2e-tests/README.md) for full documentation.
 
 **Config files must include `version = 1`.** Every test config — whether created via `createTempConfig()` or inline — must start with `version = 1`. Configs without a version field are treated as version 0 and cause a hard error requiring migration. Use the helpers when possible:
 
@@ -1032,32 +1032,32 @@ await writeFile(configPath, 'version = 1\n');
 
 ## Docker-Based E2E Tests
 
-E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-docker-tests` — a separate package so contributors who don't need them aren't paying the container-pull cost on every `bun run test:e2e`. See also [agents/docker.md](docker.md) for the Docker image architecture.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live alongside the host-only tests in `@podkit/e2e-tests` but use the `*.docker.test.ts` filename suffix. The `test:e2e` task excludes that suffix so contributors who don't need Docker aren't paying the container-pull cost on every `bun run test:e2e`; the `test:docker` task runs only those files. See also [agents/docker.md](docker.md) for the Docker image architecture.
 
 **Running Docker tests:**
 
 ```bash
-bun run test:docker                                # From the repo root, runs the full Docker suite.
-bun run --filter @podkit/e2e-docker-tests test     # Same thing, scoped explicitly.
+bun run test:docker                              # From the repo root, runs the full Docker suite.
+bun run --filter @podkit/e2e-tests test:docker   # Same thing, scoped explicitly.
 ```
 
-Docker availability is checked in each test file's `beforeAll`; missing Docker throws with a focused error instead of silently skipping the suite. There is no `SUBSONIC_E2E=1` flag — the package boundary is the gate.
+Docker availability is checked in each test file's `beforeAll`; missing Docker throws with a focused error instead of silently skipping the suite. There is no `SUBSONIC_E2E=1` flag — the filename suffix is the gate.
 
 **Container cleanup:**
 
-Containers are automatically cleaned up on test completion, Ctrl+C, and crashes via signal handlers registered in `test-packages/e2e-docker-tests/src/setup/preload.ts` (loaded by the package's `bunfig.toml`). If orphaned containers remain:
+Containers are automatically cleaned up on test completion, Ctrl+C, and crashes via signal handlers registered in `test-packages/e2e-tests/src/setup/preload.ts` (loaded by the package's `bunfig.toml`). If orphaned containers remain:
 
 ```bash
-bun run --filter @podkit/e2e-docker-tests cleanup       # Remove stopped containers
-bun run --filter @podkit/e2e-docker-tests cleanup:list  # List orphaned containers
-bun run --filter @podkit/e2e-docker-tests cleanup:force # Force remove all
+bun run --filter @podkit/e2e-tests cleanup       # Remove stopped containers
+bun run --filter @podkit/e2e-tests cleanup:list  # List orphaned containers
+bun run --filter @podkit/e2e-tests cleanup:force # Force remove all
 ```
 
 **Adding a new Docker test:**
 
-1. Add the test file under `test-packages/e2e-docker-tests/src/features/` or `workflows/`.
-2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-docker-tests/src/features/compilation-subsonic.e2e.test.ts` for the template.
-3. Spawn containers via `startContainer({...})` from `./docker` — they're auto-registered for cleanup:
+1. Add the test file under `test-packages/e2e-tests/src/features/` or `workflows/` with a `*.docker.test.ts` suffix.
+2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-tests/src/features/compilation-subsonic.docker.test.ts` for the template.
+3. Spawn containers via `startContainer({...})` from `../docker/index.js` — they're auto-registered for cleanup:
 
    ```ts
    import { startContainer, stopContainer } from '../docker/index.js';
@@ -1070,6 +1070,6 @@ bun run --filter @podkit/e2e-docker-tests cleanup:force # Force remove all
    });
    ```
 
-4. Use `withTarget` from `@podkit/e2e-host-tests/targets` to scope each test to a fresh iPod (dummy by default).
+4. Use `withTarget` from `../targets/index.js` to scope each test to a fresh iPod (dummy by default).
 
-See [test-packages/e2e-docker-tests/README.md](../test-packages/e2e-docker-tests/README.md) for the full layout.
+See [test-packages/e2e-tests/README.md](../test-packages/e2e-tests/README.md) for the full layout.

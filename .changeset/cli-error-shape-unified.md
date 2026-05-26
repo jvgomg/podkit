@@ -67,7 +67,7 @@ Update parsers to:
 
 ## New ergonomics
 
-`packages/podkit-cli/src/test-utils/cli-error.ts` and `test-packages/e2e-host-tests/src/helpers/cli-error.ts` export `expectCliError` for asserting on the canonical shape in one call.
+`packages/podkit-cli/src/test-utils/cli-error.ts` and `test-packages/e2e-tests/src/helpers/cli-error.ts` export `expectCliError` for asserting on the canonical shape in one call.
 
 `OutputContext` now takes an optional `ExitCodeSink` (default: writes `process.exitCode`; tests use `BufferExitCodeSink` to avoid process-global mutation).
 

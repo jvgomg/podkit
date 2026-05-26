@@ -1,0 +1,6 @@
+# The preload registers docker container signal handlers so SIGINT during a
+# `test:docker` run cleans up any spawned Navidrome / Subsonic containers.
+# Host-only `test:e2e` runs load it too — the preload is a no-op when Docker
+# isn't reachable (the orphan check catches its own errors).
+[test]
+preload = ["./src/setup/preload.ts"]

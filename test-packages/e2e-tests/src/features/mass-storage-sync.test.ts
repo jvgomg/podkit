@@ -1059,7 +1059,7 @@ device = "echomini"
 
       // Step 3: Run podkit doctor — should detect the orphan.
       // --no-system: keep the test focused on device-scope behaviour; see
-      // test-packages/e2e-host-tests/src/commands/doctor.e2e.test.ts for rationale.
+      // test-packages/e2e-tests/src/commands/doctor.test.ts for rationale.
       const { result: doctorResult1, json: doctorJson1 } = await runCliJson<DoctorOutput>([
         '--config',
         configPath,

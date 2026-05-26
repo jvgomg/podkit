@@ -7,6 +7,6 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@podkit/gpod-testing", "@podkit/e2e-host-tests"],
+  "ignore": ["@podkit/gpod-testing", "@podkit/e2e-tests"],
   "privatePackages": { "version": true, "tag": false }
 }

@@ -1,3 +1,0 @@
-[test]
-# Load signal handlers before any test files
-preload = ["./src/setup/preload.ts"]

@@ -113,7 +113,7 @@ bun run test:e2e:real
 Or from the e2e-tests package directly:
 
 ```bash
-cd test-packages/e2e-host-tests
+cd test-packages/e2e-tests
 IPOD_TARGET=real IPOD_MOUNT=/Volumes/IPOD bun test
 ```
 
@@ -172,4 +172,4 @@ If you have an iPod and want to help verify support:
 - [Supported Devices](/devices/supported-devices) - Complete compatibility list
 - [Testing](/developers/testing) - General testing strategy
 - `test-packages/gpod-testing/README.md` - Test utility documentation
-- `test-packages/e2e-host-tests/README.md` - E2E test documentation
+- `test-packages/e2e-tests/README.md` - E2E test documentation

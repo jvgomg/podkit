@@ -5,7 +5,7 @@
  * directories. No CLI subprocess. Each test scopes its own CliContext via
  * runWithContext so the suite is concurrency-friendly across files.
  *
- * For built-binary smoke coverage see `test-packages/e2e-host-tests/src/commands/collection.e2e.test.ts`.
+ * For built-binary smoke coverage see `test-packages/e2e-tests/src/commands/collection.test.ts`.
  */
 
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';

@@ -2,21 +2,20 @@
  * E2E tests for Subsonic sync workflow
  *
  * These tests verify the complete workflow: sync from Subsonic server to iPod via CLI.
- * They require Docker to run Navidrome and will skip gracefully if Docker is not available.
+ * They require Docker to run Navidrome. The suite throws on module-load if
+ * Docker is unavailable, so it shows up as a focused failure rather than a
+ * silent skip.
  *
- * To run these tests with Docker:
- * 1. Ensure Docker is running
- * 2. Run: SUBSONIC_E2E=1 bun test src/workflows/subsonic-sync.e2e.test.ts
- *
- * Without SUBSONIC_E2E=1, tests will skip to avoid slow Docker operations in normal test runs.
+ * To run:
+ *   bun run test:docker
  *
  * @tags docker
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
 import { runCli, runCliJson, cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
-import { withTarget } from '@podkit/e2e-host-tests/targets';
-import { SubsonicTestSource, isDockerAvailable } from '../subsonic-source.js';
+import { withTarget } from '../targets/index.js';
+import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic.js';
 import { createSubsonicConfig } from '../helpers/subsonic-config.js';
 
 import type { SyncOutput } from 'podkit/types';
@@ -35,7 +34,7 @@ beforeAll(async () => {
   // skip the suite quietly, which hid real coverage gaps.
   const dockerAvailable = await isDockerAvailable();
   if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-docker-tests.');
+    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
   }
 
   source = new SubsonicTestSource();

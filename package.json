@@ -31,7 +31,7 @@
     "harness:setup": "bun run --cwd test-packages/device-testing harness:setup",
     "harness:builder:stop": "bun run --cwd test-packages/device-testing harness:builder:stop",
     "harness:builder:destroy": "bun run --cwd test-packages/device-testing harness:builder:destroy",
-    "test:e2e:real": "IPOD_TARGET=real turbo run test:e2e --filter=@podkit/e2e-host-tests",
+    "test:e2e:real": "IPOD_TARGET=real turbo run test:e2e --filter=@podkit/e2e-tests",
     "lint": "oxlint --config oxlint.json .",
     "lint:fix": "oxlint --config oxlint.json --fix .",
     "format": "prettier --write .",

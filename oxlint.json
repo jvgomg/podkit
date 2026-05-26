@@ -21,13 +21,7 @@
       }
     },
     {
-      "files": ["**/e2e-host-tests/src/**/*.ts"],
-      "rules": {
-        "no-console": "off"
-      }
-    },
-    {
-      "files": ["**/e2e-docker-tests/src/**/*.ts"],
+      "files": ["**/e2e-tests/src/**/*.ts"],
       "rules": {
         "no-console": "off"
       }
@@ -109,11 +103,11 @@
             "paths": [
               {
                 "name": "node:child_process",
-                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in test-packages/e2e-host-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
+                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in test-packages/e2e-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
               },
               {
                 "name": "child_process",
-                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in test-packages/e2e-host-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
+                "message": "Spawning the podkit CLI as a subprocess is e2e-only. Put this test in test-packages/e2e-tests, or call the runner function in-process via runWithContext + runAction. See agents/testing.md."
               }
             ]
           }

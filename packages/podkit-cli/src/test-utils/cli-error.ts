@@ -10,7 +10,7 @@
  * stdout is a `BufferSink` and whose exitCode is a `BufferExitCodeSink`,
  * then pass both into `expectCliError`.
  *
- * For subprocess (e2e) tests, see `test-packages/e2e-host-tests/src/helpers/cli-error.ts`.
+ * For subprocess (e2e) tests, see `test-packages/e2e-tests/src/helpers/cli-error.ts`.
  */
 
 import { expect } from 'bun:test';

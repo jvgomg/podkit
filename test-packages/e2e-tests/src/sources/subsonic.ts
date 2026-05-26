@@ -17,7 +17,7 @@ import {
   stopContainer,
   getContainerPort,
   runDockerCommand,
-} from './docker/index.js';
+} from '../docker/index.js';
 
 /**
  * Audio fixtures root — the directory containing `goldberg-selections/`,

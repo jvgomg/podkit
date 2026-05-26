@@ -7,7 +7,7 @@
  * These tests require Docker to run Navidrome with compilation-tagged fixtures.
  *
  * To run:
- *   SUBSONIC_E2E=1 bun test src/features/compilation-subsonic.e2e.test.ts
+ *   bun run test:docker
  *
  * @tags docker
  */
@@ -24,9 +24,9 @@ import {
   runCliJson,
   cleanupTempConfig,
 } from '@podkit/e2e-shared';
-import { withTarget } from '@podkit/e2e-host-tests/targets';
-import { getTrackPath, Tracks } from '@podkit/e2e-host-tests/helpers/fixtures';
-import { isDockerAvailable } from '../subsonic-source.js';
+import { withTarget } from '../targets/index.js';
+import { getTrackPath, Tracks } from '../helpers/fixtures.js';
+import { isDockerAvailable } from '../sources/subsonic.js';
 import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
 
 requireMetaflac();
@@ -154,7 +154,7 @@ async function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
 beforeAll(async () => {
   dockerAvailable = await isDockerAvailable();
   if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for @podkit/e2e-docker-tests.');
+    throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
   }
 
   // Create temp directories and fixtures

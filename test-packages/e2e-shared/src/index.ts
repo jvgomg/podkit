@@ -1,11 +1,11 @@
 /**
  * @podkit/e2e-shared — cross-cutting helpers for end-to-end test packages.
  *
- * Consumed by `@podkit/e2e-host-tests`, `@podkit/e2e-docker-tests`, and
- * potentially `@podkit/e2e-vm-tests`. Owns generic CLI runner, CLI error
- * assertion helper, and composable preflight checks; package-specific
- * helpers (Subsonic config, docker container lifecycle, real-iPod
- * filesystem probes) belong with the package that knows their context.
+ * Consumed by `@podkit/e2e-tests` and potentially `@podkit/e2e-vm-tests`.
+ * Owns generic CLI runner, CLI error assertion helper, and composable
+ * preflight checks; package-specific helpers (Subsonic config, docker
+ * container lifecycle, real-iPod filesystem probes) belong with the package
+ * that knows their context.
  *
  * @module
  */

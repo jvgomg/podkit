@@ -15,7 +15,7 @@ This project uses [changesets](https://github.com/changesets/changesets) for ver
 - Test-only changes
 - Documentation-only changes
 - CI/CD changes, dev tooling
-- Changes to private packages (`@podkit/gpod-testing`, `@podkit/e2e-host-tests`, `@podkit/demo`, `@podkit/docs-site`)
+- Changes to private packages (`@podkit/gpod-testing`, `@podkit/e2e-tests`, `@podkit/demo`, `@podkit/docs-site`)
 
 ## How to Add a Changeset
 

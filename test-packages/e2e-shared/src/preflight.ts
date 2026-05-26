@@ -203,8 +203,8 @@ export function checkFixtureSet(set: StaticFixtureSet): PreflightCheck {
 // ---------------------------------------------------------------------------
 //
 // These run against a real iPod mounted at IPOD_MOUNT. They live here because
-// the e2e-host-tests harness uses them; e2e-vm-tests and e2e-docker-tests
-// would never include them in their check lists.
+// the e2e-tests host suite uses them; e2e-vm-tests and the docker-gated
+// `*.docker.test.ts` files would never include them in their check lists.
 
 /**
  * Verify the iPod mount path exists.

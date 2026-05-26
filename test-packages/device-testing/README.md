@@ -75,7 +75,7 @@ This package owns **harness self-tests** under `src/vm/`:
 
 Plus the shared helpers `vm-runtime-setup.ts` (state grouping + VM availability gate) and `persona-fixture.ts` (`withPersona` daemon lifecycle).
 
-**podkit feature tests** live in `@podkit/e2e-vm-tests` (`test-packages/e2e-vm-tests/`). They import the harness and exercise `device scan`, `doctor`, discovery reconciliation, dual-daemon lifecycles, mass-storage binding, etc. The split mirrors how `@podkit/e2e-host-tests` is a separate test app that imports podkit — see ADR-016 for the architecture.
+**podkit feature tests** live in `@podkit/e2e-vm-tests` (`test-packages/e2e-vm-tests/`). They import the harness and exercise `device scan`, `doctor`, discovery reconciliation, dual-daemon lifecycles, mass-storage binding, etc. The split mirrors how `@podkit/e2e-tests` is a separate test app that imports podkit — see ADR-016 for the architecture.
 
 `bun run test:vm` from the repo root runs **both** packages' VM test suites (the root script is unfiltered).
 

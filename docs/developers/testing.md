@@ -46,7 +46,7 @@ Tests that verify components work together with real external dependencies.
 - Testing FFmpeg transcoding with real audio files
 - Testing full sync workflows
 
-### End-to-End Tests (`test-packages/e2e-host-tests/`)
+### End-to-End Tests (`test-packages/e2e-tests/`)
 
 Tests that invoke the built CLI as a real user would. Run against dummy iPods (CI-safe) or real iPods (manual validation).
 
@@ -302,16 +302,16 @@ ffmpeg -version
 
 ## Docker-Based E2E Tests
 
-E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-docker-tests` — a separate package from the regular E2E suite. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-tests` under the `*.docker.test.ts` filename suffix — the regular `test:e2e` task excludes that suffix, and `test:docker` runs only those files. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
 
 ```bash
 # Run Docker-based tests
 bun run test:docker
 
 # Container cleanup
-bun run --filter @podkit/e2e-docker-tests cleanup:list   # List orphaned containers
-bun run --filter @podkit/e2e-docker-tests cleanup        # Remove stopped containers
-bun run --filter @podkit/e2e-docker-tests cleanup:force  # Force remove all
+bun run --filter @podkit/e2e-tests cleanup:list   # List orphaned containers
+bun run --filter @podkit/e2e-tests cleanup        # Remove stopped containers
+bun run --filter @podkit/e2e-tests cleanup:force  # Force remove all
 ```
 
 ## Brew Install Smoke Test
@@ -355,4 +355,4 @@ See [Quality Preset Device Testing](/developers/quality-preset-testing) for the 
 - [Device Hardware Testing](/developers/device-hardware-testing) - Manual test procedure for real iPod hardware
 - [Development Setup](/developers/development) - Setting up dev environment
 - `test-packages/gpod-testing/README.md` - Test utility documentation
-- `test-packages/e2e-host-tests/README.md` - E2E test documentation
+- `test-packages/e2e-tests/README.md` - E2E test documentation

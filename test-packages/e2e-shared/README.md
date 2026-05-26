@@ -4,12 +4,11 @@ Cross-cutting helpers used by every end-to-end test package in the monorepo.
 
 Owned: the generic CLI subprocess runner, the canonical-error assertion helper, and a library of composable preflight checks. Not owned: anything that depends on a specific test harness (Subsonic config, Docker container lifecycle, Lima VM probes, real-iPod filesystem inspection) — those live with the package that knows their context.
 
-Three consumers today:
+Consumers today:
 
 | Package | Uses |
 | --- | --- |
-| `@podkit/e2e-host-tests` | full set (runner + error + host preflight) |
-| `@podkit/e2e-docker-tests` (future) | runner + error + docker-specific preflight |
+| `@podkit/e2e-tests` | full set (runner + error + host preflight); the docker-gated `*.docker.test.ts` files import the runner + `TestSource` interface from here too |
 | `@podkit/e2e-vm-tests` | not yet — its harness predates this package |
 
 ## CLI runner

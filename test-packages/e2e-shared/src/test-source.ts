@@ -1,8 +1,8 @@
 /**
- * Test source abstraction shared by the e2e-host-tests and e2e-docker-tests
- * packages. Sources provide a uniform interface for different music
- * back-ends used in e2e testing (filesystem directory, Subsonic server,
- * etc.) so workflow tests can be parameterised over them.
+ * Test source abstraction shared by every e2e test package. Sources provide a
+ * uniform interface for different music back-ends used in e2e testing
+ * (filesystem directory, Subsonic server, etc.) so workflow tests can be
+ * parameterised over them.
  *
  * @module
  */

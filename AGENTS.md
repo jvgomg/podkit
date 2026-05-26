@@ -32,8 +32,7 @@ packages/            # Published / published-adjacent packages
 test-packages/             # Testing infrastructure (private, not published)
 ├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, Lima yamls, apply-state.sh
 ├── device-testing-daemon/ # FunctionFS userspace daemon — synthesises iPod USB gadget on dummy_hcd
-├── e2e-docker-tests/      # End-to-end tests requiring a Docker harness (Subsonic / Navidrome)
-├── e2e-host-tests/        # End-to-end CLI tests on the host (dummy + real iPod, no Docker)
+├── e2e-tests/             # End-to-end CLI tests on the host (dummy + real iPod). Docker-gated files use the `*.docker.test.ts` suffix
 ├── e2e-shared/            # Cross-cutting helpers shared by every e2e package (CLI runner, preflight, error assertions)
 ├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
 ├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
@@ -266,10 +265,10 @@ Key files to understand:
 | libgpod bindings | `packages/libgpod-node/src/index.ts` |
 | Test utilities | `test-packages/gpod-testing/src/index.ts` |
 | Shared e2e helpers | `test-packages/e2e-shared/src/index.ts` |
-| Host e2e helpers | `test-packages/e2e-host-tests/src/helpers/index.ts` |
-| Host e2e preflight | `test-packages/e2e-host-tests/src/helpers/preflight.ts` |
-| Docker e2e harness | `test-packages/e2e-docker-tests/src/docker/index.ts` |
-| Subsonic test source | `test-packages/e2e-docker-tests/src/subsonic-source.ts` |
+| E2E test helpers | `test-packages/e2e-tests/src/helpers/index.ts` |
+| E2E host preflight | `test-packages/e2e-tests/src/helpers/preflight.ts` |
+| Docker e2e harness | `test-packages/e2e-tests/src/docker/index.ts` |
+| Subsonic test source | `test-packages/e2e-tests/src/sources/subsonic.ts` |
 | VM test harness | `test-packages/device-testing/src/index.ts` |
 | VM test entry | `test-packages/e2e-vm-tests/src/` |
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |

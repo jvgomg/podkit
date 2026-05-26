@@ -126,7 +126,7 @@ Each `applyState` call takes ~800ms. The current 6-state matrix adds ~5s of stat
 | Builder Lima yaml | `test-packages/device-testing/lima/podkit-linux-builder.yaml` | Debian 12.10 VM with dev toolchain; produces linux-x64 prebuilds + standalone binary |
 | Test Lima yaml | `test-packages/device-testing/lima/podkit-device-harness.yaml` | Debian 12.10 VM with kernel modules + ffmpeg + gpod-tool only; runs the test suite against the binary |
 | `test-packages/device-testing/` | Harness library + self-tests | `DevicePersona` + `SystemState` registries, `TestRuntime` interface, `local-linux` + `lima-test-vm` runners, `SubprocessRunner` re-exports, plus the harness's own e2e self-tests (`personas-baseline`, `backing-file-content`) |
-| `test-packages/e2e-vm-tests/` | podkit feature VM tests | Pure consumer of `@podkit/device-testing`; exercises `podkit device scan`, `doctor`, discovery reconciliation, dual-daemon lifecycle, mass-storage binding, etc. against synthesised personas. Mirrors how `@podkit/e2e-host-tests` is a test app that imports podkit. |
+| `test-packages/e2e-vm-tests/` | podkit feature VM tests | Pure consumer of `@podkit/device-testing`; exercises `podkit device scan`, `doctor`, discovery reconciliation, dual-daemon lifecycle, mass-storage binding, etc. against synthesised personas. Mirrors how `@podkit/e2e-tests` is a test app that imports podkit. |
 
 **VM test backends:**
 
@@ -238,7 +238,7 @@ A spike (TASK-320) confirmed that GH Actions `ubuntu-latest` is not suitable for
 ### Reuse of existing infrastructure
 
 - `test-packages/gpod-testing/` — test iPod templates used by VM tests to populate the gadget filesystem
-- `test-packages/e2e-host-tests/` — existing target abstraction reused for CLI-level VM assertions
+- `test-packages/e2e-tests/` — existing target abstraction reused for CLI-level VM assertions
 - Injectable transports in `packages/ipod-firmware/` — reused unchanged by unit tests
 
 ## Consequences
