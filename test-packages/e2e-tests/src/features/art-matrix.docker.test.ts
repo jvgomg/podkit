@@ -1,37 +1,52 @@
 /**
  * Artwork-handling matrix — Subsonic / Navidrome adapter.
  *
- * Sister to `art-matrix.test.ts` (directory adapter). Navidrome indexes the
- * four `multi-format*` fixture albums; a single sync per scenario covers
- * all 8 codecs per scenario. We then read back the device tracks and check
- * `hasArtwork` per cell. A second sync per scenario probes idempotency —
- * no `artwork-added` / `artwork-updated` operations should appear for any
- * cell whose source state is unchanged.
+ * Companion to `art-matrix.test.ts`. Same shape, same axes
+ * (scenario × format × --check-artwork), same prediction-vs-observation
+ * model — but the source is a Navidrome container instead of the local
+ * filesystem.
  *
- * Adapter probe notes (see `packages/podkit-core/src/adapters/subsonic.ts:546`):
- *   - When `checkArtwork` is OFF (the default), the adapter sets
- *     `hasArtwork = true` for any song whose Navidrome `coverArt` ID is
- *     non-empty. Navidrome populates `coverArt` for every track regardless
- *     of whether real artwork exists — this is the well-known "infinite
- *     artwork-added loop" bug. The matrix's scenario-A cells encode that
- *     bug as `expectedBroken`.
- *   - With `checkArtwork` ON, the adapter probes Navidrome's placeholder
- *     image at connect time and filters it out, so scenario A behaves
- *     correctly. The matrix runs without `--check-artwork` to surface the
- *     default-path bug. A separate dimension could be added later, but
- *     that's outside scope.
+ * ## Rules (subsonic adapter)
  *
- * Cells with `expectedBroken` still run — we invert the pass/fail check so
- * the broken-map fails loudly when a fix lands.
+ * Source-side (`packages/podkit-core/src/adapters/subsonic.ts:540-552`):
+ *   - When Navidrome populates `song.coverArt` (which it does for every
+ *     track — album-level art is generated for every album), source.hasArtwork
+ *     is set true regardless of whether real art exists.
+ *   - `--check-artwork`: the adapter fetches via `getCoverArt`, validates the
+ *     response (size, content-type, placeholder hash filter), and computes
+ *     `source.artworkHash`. Navidrome's placeholder image is filtered out at
+ *     connect time, so a track with no real art reads false in this mode.
+ *   - Without `--check-artwork`: the adapter trusts `song.coverArt` and sets
+ *     hasArtwork=true. No hash is computed.
  *
- * @tags docker
+ * Device-side: the executor downloads the audio stream from Navidrome's
+ * `/stream` endpoint. Navidrome does NOT splice sidecar bytes into the
+ * stream — sidecar art is served separately via `/getCoverArt`. So the
+ * downloaded file's embedded art reflects the *source file*'s embedded art:
+ *   - scenario A: source file has none → downloaded file has none → device false
+ *   - scenario B: source file embeds art (formats permitting) → preserved
+ *   - scenario C: source file has none → downloaded file has none → device false
+ *     (sidecar bytes never reach the device)
+ *   - scenario D: same as B (source file embeds; sidecar is server-side noise)
+ *
+ * Idempotency: `detectUpgrades` fires `artwork-added` whenever
+ * source.hasArtwork=true && device.hasArtwork=false. The escape hatch is the
+ * syncTag.artworkHash, which is only written when source provides an
+ * artworkHash — i.e. when `--check-artwork` is on. So the asymmetric cells
+ * (source claims art but device file has none) churn forever without
+ * `--check-artwork`, and converge after the first sync writes the hash with
+ * `--check-artwork`.
+ *
+ * @module
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { ensureFixturesExist, cleanupTempConfig, runCli, runCliJson } from '@podkit/e2e-shared';
-import { withTarget } from '../targets/index.js';
-import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic.js';
-import { createSubsonicConfig } from '../helpers/subsonic-config.js';
+
+import { cleanupTempConfig, ensureFixturesExist, runCliJson } from '@podkit/e2e-shared';
+import { SCENARIO_ARTISTS } from '@podkit/test-fixtures';
+import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic';
+import { createSubsonicConfig } from '../helpers/subsonic-config';
+import { withTarget } from '../targets';
 
 import type { SyncOutput } from 'podkit/types';
 
@@ -41,56 +56,34 @@ ensureFixturesExist('multi-format-sidecar');
 ensureFixturesExist('multi-format-both');
 
 // ---------------------------------------------------------------------------
-// Matrix definition
+// Matrix axes (identical to the host matrix)
 // ---------------------------------------------------------------------------
 
 type Scenario = 'A-none' | 'B-embedded' | 'C-sidecar' | 'D-both';
-
 type Format = 'wav' | 'aiff' | 'flac' | 'alac' | 'mp3' | 'aac' | 'ogg' | 'opus';
 
-interface MatrixCell {
-  scenario: Scenario;
-  /** Album tag we filter by — fixture generator writes one of these per scenario. */
-  album: string;
-  format: Format;
-  /** Substring matched against the device track title (e.g. "WAV Test Track"). */
-  titleStartsWith: string;
-  /** What the device track's `hasArtwork` should be after the initial sync. */
-  expectedDeviceHasArtwork: boolean;
-  expectedBroken?: string;
-}
+const SCENARIOS: readonly Scenario[] = ['A-none', 'B-embedded', 'C-sidecar', 'D-both'];
+const FORMATS: readonly Format[] = ['wav', 'aiff', 'flac', 'alac', 'mp3', 'aac', 'ogg', 'opus'];
 
-const FORMAT_TITLE_PREFIX: Record<Format, string> = {
-  wav: 'WAV',
-  aiff: 'AIFF',
-  flac: 'FLAC',
-  alac: 'ALAC',
-  mp3: 'MP3',
-  aac: 'AAC',
-  ogg: 'OGG',
-  opus: 'Opus',
+const SCENARIO_ARTIST: Record<Scenario, string> = {
+  'A-none': SCENARIO_ARTISTS.none,
+  'B-embedded': SCENARIO_ARTISTS.embedded,
+  'C-sidecar': SCENARIO_ARTISTS.sidecar,
+  'D-both': SCENARIO_ARTISTS.both,
 };
 
-// Album category each format falls into — must match `audio-multi-format.ts`.
-const FORMAT_ALBUM_CATEGORY: Record<Format, string> = {
-  wav: 'Lossless Collection',
-  aiff: 'Lossless Collection',
-  flac: 'Lossless Collection',
-  alac: 'Lossless Collection',
-  mp3: 'Compatible Lossy',
-  aac: 'Compatible Lossy',
-  ogg: 'Incompatible Lossy',
-  opus: 'Incompatible Lossy',
+const FORMAT_TITLE: Record<Format, string> = {
+  wav: 'WAV Test Track',
+  aiff: 'AIFF Test Track',
+  flac: 'FLAC Test Track',
+  alac: 'ALAC Test Track',
+  mp3: 'MP3 Test Track',
+  aac: 'AAC Test Track',
+  ogg: 'OGG Test Track',
+  opus: 'Opus Test Track',
 };
 
-const SCENARIO_SUFFIX: Record<Scenario, string> = {
-  'A-none': '',
-  'B-embedded': ' (Embedded)',
-  'C-sidecar': ' (Sidecar)',
-  'D-both': ' (Both)',
-};
-
-const EMBEDS_ATTACHED_PIC: Record<Format, boolean> = {
+const FIXTURE_EMBEDS_ART: Record<Format, boolean> = {
   wav: false,
   aiff: false,
   flac: true,
@@ -101,155 +94,245 @@ const EMBEDS_ATTACHED_PIC: Record<Format, boolean> = {
   opus: false,
 };
 
-const FORMATS: Format[] = ['wav', 'aiff', 'flac', 'alac', 'mp3', 'aac', 'ogg', 'opus'];
-const SCENARIOS: Scenario[] = ['A-none', 'B-embedded', 'C-sidecar', 'D-both'];
+// ---------------------------------------------------------------------------
+// Prediction engine
+// ---------------------------------------------------------------------------
 
-/**
- * Observed reality from the matrix's first run. Every cell is broken today
- * for the Subsonic adapter — keep this map honest as fixes land.
- *
- * Common across nearly every cell: the second sync emits
- * `artwork-added` upgrades because the Subsonic adapter (without
- * `--check-artwork`) reports `source.hasArtwork=true` for any track whose
- * Navidrome `coverArt` ID is non-empty (which it always is). When the device
- * side has no artwork — either because the source file truly has none
- * (scenarios A, B-wav/aiff/ogg/opus, C/D where transcoding strips it) or
- * because the sync pipeline doesn't pass the sidecar through — the differ
- * sees source=true / device=false / no syncTag hash and flags artwork-added
- * indefinitely. That's the infinite artwork-added loop.
- *
- * AIFF tracks are completely missing from the device after sync — separate
- * issue (Navidrome may not index AIFF; podkit may filter the format out
- * client-side; or the gpod-tool readback fails). Distinct enough that it
- * gets its own broken-reason.
- *
- * The "ideal expected" device-hasArtwork column below describes what we
- * would *want* in a fixed world; the matrix records the *current* observed
- * value so the test runs cleanly. When podkit fixes the underlying behaviour
- * a cell's observed value moves toward the ideal — at which point the
- * matrix maintainer updates `expectedDeviceHasArtwork` and removes the
- * cell's `expectedBroken` entry.
- */
-interface CellPrediction {
-  expectedDeviceHasArtwork: boolean;
-  expectedBroken?: string;
+interface Expected {
+  trackPresent: boolean;
+  deviceHasArtwork: boolean | null;
+  idempotent: boolean;
+  reason: string;
 }
 
-function predict(scenario: Scenario, format: Format): CellPrediction {
-  const codecEmbeds = EMBEDS_ATTACHED_PIC[format];
-  const isAiff = format === 'aiff';
-
-  if (isAiff) {
+function predict(scenario: Scenario, format: Format, checkArtwork: boolean): Expected {
+  // Same AIFF bug as the host matrix: tracks never reach the device. The
+  // subsonic side surfaces this identically (source/sync2 sees no AIFF
+  // either, so no churn from a phantom re-add). When a fix lands, all 8
+  // AIFF cells flip and force a maintainer to investigate.
+  if (format === 'aiff') {
     return {
-      expectedDeviceHasArtwork: false,
-      expectedBroken: 'AIFF tracks are not present on the device after sync (no readback at all)',
+      trackPresent: false,
+      deviceHasArtwork: null,
+      idempotent: true,
+      reason: 'AIFF tracks do not land on the device (bug — pipeline drops AIFF)',
     };
   }
 
+  // Source-side: subsonic adapter behaviour.
+  let sourceHasArtwork: boolean;
+  let sourceHasArtworkHash: boolean;
+  if (checkArtwork) {
+    // Real fetch + placeholder filter. Scenario A has no real art so
+    // Navidrome serves the placeholder, which is filtered → false.
+    sourceHasArtwork = scenario !== 'A-none';
+    sourceHasArtworkHash = sourceHasArtwork;
+  } else {
+    // Optimistic-true on song.coverArt presence (which is universal).
+    sourceHasArtwork = true;
+    sourceHasArtworkHash = false;
+  }
+
+  // Device-side: the downloaded audio stream carries embedded art only when
+  // the source FILE had it. Sidecar bytes never reach the file body.
+  //
+  // BUT — `packages/podkit-core/src/artwork/album-cache.ts` shares the first
+  // successful artwork extraction across every track in the same album. So a
+  // format that can't carry embed (WAV/OGG/Opus) still ends up with art on the
+  // device if an earlier-processed sibling carried embed. Order matters and
+  // differs by adapter.
+  //
+  // For the Subsonic adapter, Navidrome's `getAlbum.songs` listing puts FLAC
+  // and ALAC ahead of WAV in the "Lossless Collection" album, so in scenarios
+  // B/D the FLAC/ALAC art is cached before WAV is processed and WAV inherits
+  // it. OGG/Opus share the "Incompatible Lossy" album where no track has
+  // embed, so the cache stays empty for that album and they remain artless.
+  //
+  // The host matrix sees the opposite for WAV: glob sorts `01-wav-track.wav`
+  // first, WAV extracts null, and that null poisons the cache for the whole
+  // album. The order-dependence itself is a podkit quirk worth noting.
+  const fileHasEmbed =
+    (scenario === 'B-embedded' || scenario === 'D-both') && FIXTURE_EMBEDS_ART[format];
+  // WAV is the only matrix format that shares an album with embed-capable
+  // tracks (FLAC, ALAC) in scenarios B/D and can therefore inherit art via
+  // the cache. OGG and Opus share an album that has no embed-capable members.
+  const inheritsArtFromSibling =
+    format === 'wav' && (scenario === 'B-embedded' || scenario === 'D-both');
+  const deviceHasArtwork = fileHasEmbed || inheritsArtFromSibling;
+
+  // Idempotency rules from detectUpgrades + syncTag write:
+  //   * Symmetric (both true or both false) → no churn.
+  //   * Asymmetric (source true, device false):
+  //       - With --check-artwork: source.artworkHash is written into the
+  //         syncTag on first sync; second sync's artwork-added check compares
+  //         hash and skips.
+  //       - Without --check-artwork: no hash to compare → artwork-added every
+  //         second sync.
+  //   * source false / device true is unreachable from these fixtures.
+  let idempotent: boolean;
+  let asymmetryReason: string | null = null;
+  if (sourceHasArtwork === deviceHasArtwork) {
+    idempotent = true;
+  } else if (sourceHasArtwork && !deviceHasArtwork) {
+    idempotent = sourceHasArtworkHash; // i.e. checkArtwork
+    asymmetryReason = sourceHasArtworkHash
+      ? 'source/device mismatch but syncTag hash breaks the loop'
+      : 'source/device mismatch with no hash → artwork-added every sync (optimistic-true bug)';
+  } else {
+    idempotent = false;
+    asymmetryReason = 'source has no art but device does (unexpected for these fixtures)';
+  }
+
+  let reason: string;
   if (scenario === 'A-none') {
-    return {
-      expectedDeviceHasArtwork: false,
-      expectedBroken:
-        'subsonic optimistic-true bug: source.hasArtwork=true (Navidrome always populates coverArt) but device track is artworkless → infinite artwork-added loop',
-    };
+    reason = checkArtwork
+      ? 'Navidrome placeholder filtered → source=false → symmetric'
+      : 'Navidrome reports coverArt → source=true (phantom) → asymmetric → optimistic-true loop';
+  } else if (inheritsArtFromSibling) {
+    reason = 'album cache hands WAV the FLAC/ALAC sibling art → device=true → symmetric';
+  } else if (scenario === 'C-sidecar' || !FIXTURE_EMBEDS_ART[format]) {
+    reason = checkArtwork
+      ? `device file has no embed → asymmetric → syncTag hash converges (no churn)`
+      : `device file has no embed → asymmetric, no hash → artwork-added every sync`;
+  } else {
+    reason = 'embedded art in source file → device has art → symmetric, idempotent';
   }
 
-  if (scenario === 'B-embedded') {
-    if (codecEmbeds) {
-      return {
-        expectedDeviceHasArtwork: true,
-        expectedBroken:
-          'device.hasArtwork matches, but second sync still flags artwork-added (no artworkHash recorded; differ retriggers on every run)',
-      };
-    }
-    // wav/ogg/opus: fixture file has no embedded art at all. WAV currently
-    // shows observed=true on the device (placeholder leaked through during
-    // transcode-and-re-embed); ogg/opus show observed=false but still churn.
-    if (format === 'wav') {
-      return {
-        expectedDeviceHasArtwork: true,
-        expectedBroken:
-          'WAV with no embedded art still ends up with device.hasArtwork=true (likely transcoded AAC embeds Navidrome placeholder) + artwork-added churn',
-      };
-    }
-    return {
-      expectedDeviceHasArtwork: false,
-      expectedBroken: `${format} has no embedded artwork support; optimistic-true bug still triggers churn`,
-    };
+  // Defensive: catch a class of rule mistakes by making sure asymmetric
+  // unbroken-by-hash cells advertise themselves clearly.
+  if (asymmetryReason && !reason.includes('hash') && !reason.includes('symmetric')) {
+    reason = `${reason} — ${asymmetryReason}`;
   }
 
-  if (scenario === 'C-sidecar') {
-    if (codecEmbeds) {
-      // Navidrome serves cover.jpg via getCoverArt, but the device track
-      // ends up with no embedded artwork. The sidecar→device pipeline is
-      // broken in addition to the loop bug.
-      return {
-        expectedDeviceHasArtwork: true,
-        expectedBroken:
-          'sidecar cover.jpg is served by Navidrome but the transcoded device track has no embedded artwork; differ keeps flagging artwork-added',
-      };
-    }
-    if (format === 'wav') {
-      return {
-        expectedDeviceHasArtwork: false,
-        expectedBroken:
-          'WAV transcoded device track has no artwork (sidecar not embedded by transcode pipeline) + artwork-added churn',
-      };
-    }
-    return {
-      expectedDeviceHasArtwork: false,
-      expectedBroken: `${format} sidecar not embedded during transcode + optimistic-true churn`,
-    };
-  }
-
-  // 'D-both'
-  if (codecEmbeds) {
-    return {
-      expectedDeviceHasArtwork: true,
-      expectedBroken:
-        'embedded source art carries through but artwork-added still fires on the second sync (no syncTag hash recorded for the subsonic path)',
-    };
-  }
-  if (format === 'wav') {
-    return {
-      expectedDeviceHasArtwork: true,
-      expectedBroken: 'WAV/both: device shows hasArtwork=true via transcode but still churns',
-    };
-  }
-  return {
-    expectedDeviceHasArtwork: false,
-    expectedBroken: `${format} cannot embed; sidecar visible to Navidrome but not threaded into transcode; loop bug applies`,
-  };
+  return { trackPresent: true, deviceHasArtwork, idempotent, reason };
 }
 
-function buildCells(): MatrixCell[] {
-  const cells: MatrixCell[] = [];
+// ---------------------------------------------------------------------------
+// Pass runner
+// ---------------------------------------------------------------------------
 
-  for (const scenario of SCENARIOS) {
-    for (const format of FORMATS) {
-      const album = `${FORMAT_ALBUM_CATEGORY[format]}${SCENARIO_SUFFIX[scenario]}`;
-      const prediction = predict(scenario, format);
-      cells.push({
-        scenario,
-        album,
-        format,
-        titleStartsWith: FORMAT_TITLE_PREFIX[format],
-        expectedDeviceHasArtwork: prediction.expectedDeviceHasArtwork,
-        expectedBroken: prediction.expectedBroken,
-      });
-    }
-  }
-
-  return cells;
+interface Observed {
+  trackPresent: boolean;
+  deviceHasArtwork: boolean | null;
+  idempotent: boolean;
+  secondSyncOps: Array<{ type: string; reason?: string }>;
 }
 
-const CELLS = buildCells();
+interface PassResult {
+  checkArtwork: boolean;
+  byKey: Map<string, Observed>;
+}
 
-// ---------------------------------------------------------------------------
-// Shared Navidrome harness
-// ---------------------------------------------------------------------------
+function cellKey(scenario: Scenario, format: Format): string {
+  return `${scenario}/${format}`;
+}
+
+function expectedOpString(scenario: Scenario, format: Format): string {
+  return `${SCENARIO_ARTIST[scenario]} - ${FORMAT_TITLE[format]}`;
+}
+
+const ARTWORK_OP_REASONS = new Set(['artwork-added', 'artwork-updated', 'artwork-removed']);
+const ADD_OP_TYPES = new Set(['add-transcode', 'add-direct-copy', 'add-optimized-copy']);
+const UPGRADE_OP_TYPES = new Set([
+  'upgrade-transcode',
+  'upgrade-direct-copy',
+  'upgrade-optimized-copy',
+]);
 
 let source: SubsonicTestSource | null = null;
+
+async function runPass(checkArtwork: boolean): Promise<PassResult> {
+  return withTarget<PassResult>(async (target) => {
+    const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
+
+    try {
+      const baseArgs = ['--config', configPath, 'sync', '--device', target.path, '--json'];
+      const initArgs = checkArtwork ? [...baseArgs, '--check-artwork'] : baseArgs;
+      const env = source!.getEnv();
+
+      const { result: initResult, json: initJson } = await runCliJson<SyncOutput>(initArgs, {
+        env,
+        timeout: 300000,
+      });
+      if (initResult.exitCode !== 0 || !initJson?.success) {
+        throw new Error(
+          `initial sync failed (checkArtwork=${checkArtwork}): exit=${initResult.exitCode}\n` +
+            `  json: ${JSON.stringify(initJson, null, 2)}\n` +
+            `  stderr: ${initResult.stderr}`
+        );
+      }
+
+      const deviceTracks = await target.getTracks();
+
+      const { result: dryResult, json: dryJson } = await runCliJson<SyncOutput>(
+        [...initArgs, '--dry-run'],
+        { env, timeout: 180000 }
+      );
+      if (dryResult.exitCode !== 0 || !dryJson) {
+        throw new Error(
+          `dry-run sync failed (checkArtwork=${checkArtwork}): exit=${dryResult.exitCode}`
+        );
+      }
+
+      const byKey = new Map<string, Observed>();
+      for (const scenario of SCENARIOS) {
+        for (const format of FORMATS) {
+          const opTarget = expectedOpString(scenario, format);
+          const trackArtist = SCENARIO_ARTIST[scenario];
+          const trackTitle = FORMAT_TITLE[format];
+
+          const device = deviceTracks.find(
+            (t) => t.artist === trackArtist && t.title === trackTitle
+          );
+
+          const matchingOps = (dryJson.operations ?? []).filter(
+            (op) => (op.track ?? '') === opTarget
+          );
+          const idempotent = !matchingOps.some(
+            (op) =>
+              op.type === 'upgrade-artwork' ||
+              ADD_OP_TYPES.has(op.type) ||
+              (UPGRADE_OP_TYPES.has(op.type) &&
+                op.reason !== undefined &&
+                ARTWORK_OP_REASONS.has(op.reason))
+          );
+
+          byKey.set(cellKey(scenario, format), {
+            trackPresent: device !== undefined,
+            deviceHasArtwork: device ? device.hasArtwork : null,
+            idempotent,
+            secondSyncOps: matchingOps.map((op) => ({ type: op.type, reason: op.reason })),
+          });
+        }
+      }
+
+      return { checkArtwork, byKey };
+    } finally {
+      await cleanupTempConfig(configPath);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Suite
+// ---------------------------------------------------------------------------
+
+let PASS_OFF: PassResult | null = null;
+let PASS_ON: PassResult | null = null;
+
+beforeAll(async () => {
+  if (!(await isDockerAvailable())) {
+    throw new Error('Docker is not available — required for the art-matrix subsonic suite.');
+  }
+
+  source = new SubsonicTestSource();
+  console.log('Starting Navidrome container for art matrix...');
+  await source.setup();
+  console.log(`Navidrome ready at ${source.serverUrl}`);
+
+  PASS_OFF = await runPass(false);
+  PASS_ON = await runPass(true);
+}, 1500000);
 
 afterAll(async () => {
   if (source) {
@@ -259,207 +342,45 @@ afterAll(async () => {
   }
 });
 
-// ---------------------------------------------------------------------------
-// Aggregated sync result, keyed by (album, titleStartsWith)
-// ---------------------------------------------------------------------------
+describe('artwork matrix — subsonic adapter', () => {
+  for (const checkArtwork of [false, true]) {
+    describe(`--check-artwork ${checkArtwork ? 'on' : 'off'}`, () => {
+      for (const scenario of SCENARIOS) {
+        for (const format of FORMATS) {
+          const expected = predict(scenario, format, checkArtwork);
+          it(`${scenario} / ${format}`, () => {
+            const pass = checkArtwork ? PASS_ON : PASS_OFF;
+            expect(pass).not.toBeNull();
+            const observed = pass!.byKey.get(cellKey(scenario, format));
+            expect(observed).toBeDefined();
 
-interface CellResult {
-  /** Device-side hasArtwork after initial sync. null if no matching track. */
-  deviceHasArtwork: boolean | null;
-  /** Whether the second sync produced an artwork-added or artwork-updated for this cell. */
-  secondSyncArtworkChurn: boolean;
-  /** Whether the second sync tried to add this cell as a new track. */
-  secondSyncAdd: boolean;
-}
+            const diffs: string[] = [];
+            if (observed!.trackPresent !== expected.trackPresent) {
+              diffs.push(
+                `  trackPresent: expected=${expected.trackPresent}, observed=${observed!.trackPresent}`
+              );
+            }
+            if (observed!.deviceHasArtwork !== expected.deviceHasArtwork) {
+              diffs.push(
+                `  deviceHasArtwork: expected=${expected.deviceHasArtwork}, observed=${observed!.deviceHasArtwork}`
+              );
+            }
+            if (observed!.idempotent !== expected.idempotent) {
+              diffs.push(
+                `  idempotent: expected=${expected.idempotent}, observed=${observed!.idempotent}`
+              );
+              diffs.push(`    secondSyncOps: ${JSON.stringify(observed!.secondSyncOps)}`);
+            }
 
-interface MatrixResults {
-  byKey: Map<string, CellResult>;
-  /** Set when the sync itself failed (so all cells fail uniformly). */
-  globalFailure?: string;
-  initialJson?: SyncOutput;
-  secondJson?: SyncOutput;
-}
-
-let MATRIX: MatrixResults | null = null;
-
-function cellKey(album: string, titleStartsWith: string): string {
-  return `${album}::${titleStartsWith}`;
-}
-
-/**
- * Run the full sync once, populate `MATRIX`, then run again to populate the
- * idempotency fields. Called from a single `it()` so we pay the cost once.
- */
-async function runMatrixOnce(): Promise<MatrixResults> {
-  if (!source) throw new Error('Subsonic source not initialised');
-
-  const results: MatrixResults = { byKey: new Map() };
-
-  await withTarget(async (target) => {
-    const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
-    try {
-      const { json: firstJson, result: firstResult } = await runCliJson<SyncOutput>(
-        ['--config', configPath, 'sync', '--device', target.path, '--json'],
-        {
-          env: source!.getEnv(),
-          timeout: 600000,
+            if (diffs.length > 0) {
+              throw new Error(
+                `Cell ${scenario}/${format} (--check-artwork ${checkArtwork ? 'on' : 'off'}) mismatched expectations:\n${diffs.join(
+                  '\n'
+                )}\n  rule: ${expected.reason}`
+              );
+            }
+          });
         }
-      );
-      results.initialJson = firstJson ?? undefined;
-
-      if (firstResult.exitCode !== 0 || !firstJson?.success) {
-        results.globalFailure = `initial sync failed: exit=${firstResult.exitCode}`;
-        return;
-      }
-
-      const deviceTracks = await target.getTracks();
-
-      // Seed cell results from device tracks (album + title).
-      for (const cell of CELLS) {
-        const t = deviceTracks.find(
-          (dt) =>
-            (dt.album ?? '') === cell.album &&
-            (dt.title ?? '').toUpperCase().startsWith(cell.titleStartsWith.toUpperCase())
-        );
-        results.byKey.set(cellKey(cell.album, cell.titleStartsWith), {
-          deviceHasArtwork: t ? t.hasArtwork : null,
-          secondSyncArtworkChurn: false,
-          secondSyncAdd: false,
-        });
-      }
-
-      // Second probe via --dry-run so we get the full plan/operations data.
-      // A real second sync hides the operations list once everything is in sync.
-      const second = await runCli(
-        ['--config', configPath, 'sync', '--device', target.path, '--dry-run', '--json'],
-        {
-          env: source!.getEnv(),
-          timeout: 300000,
-        }
-      );
-      const secondJson = JSON.parse(second.stdout) as SyncOutput;
-      results.secondJson = secondJson;
-
-      const ops = secondJson.operations ?? [];
-      for (const cell of CELLS) {
-        const key = cellKey(cell.album, cell.titleStartsWith);
-        const entry = results.byKey.get(key)!;
-        // operations[].track is "Artist - Title"; match by title prefix only.
-        // We cannot disambiguate by album in this string, so we also confirm
-        // the track exists on the device under the cell's album before we
-        // attribute churn to it.
-        for (const op of ops) {
-          const trackStr = op.track ?? '';
-          if (!trackStr.includes(cell.titleStartsWith)) continue;
-
-          // Conservative: every add-* operation that mentions the title is
-          // attributed to every album that shares it. Scenario suffixes make
-          // titles non-unique per (album, title) so we also need to verify.
-          // The cleanest disambiguation is the album field on the matching
-          // device track, but operations[] doesn't expose album. We accept
-          // the over-attribution and treat it as "any of the title-matching
-          // cells churn". For our matrix, the second sync should not produce
-          // ANY add-* operations for unchanged sources, so over-attribution
-          // is acceptable as a regression flag.
-          if (
-            op.type === 'add-transcode' ||
-            op.type === 'add-direct-copy' ||
-            op.type === 'add-optimized-copy'
-          ) {
-            entry.secondSyncAdd = true;
-          }
-          if (op.type === 'upgrade-artwork') {
-            entry.secondSyncArtworkChurn = true;
-          }
-          if (
-            (op.type === 'upgrade-transcode' ||
-              op.type === 'upgrade-direct-copy' ||
-              op.type === 'upgrade-optimized-copy') &&
-            (op.reason === 'artwork-added' || op.reason === 'artwork-updated')
-          ) {
-            entry.secondSyncArtworkChurn = true;
-          }
-        }
-      }
-    } finally {
-      await cleanupTempConfig(configPath);
-    }
-  });
-
-  return results;
-}
-
-beforeAll(async () => {
-  const dockerAvailable = await isDockerAvailable();
-  if (!dockerAvailable) {
-    throw new Error('Docker is not available — required for the art-matrix docker suite.');
-  }
-
-  source = new SubsonicTestSource();
-  console.log('Starting Navidrome container for art matrix...');
-  await source.setup();
-  console.log(`Navidrome ready at ${source.serverUrl}`);
-
-  MATRIX = await runMatrixOnce();
-  console.log(
-    `art-matrix subsonic: initial completed=${MATRIX.initialJson?.result?.completed ?? '?'}, ` +
-      `second updates=${MATRIX.secondJson?.plan?.tracksToUpdate ?? '?'}, ` +
-      `second breakdown=${JSON.stringify(MATRIX.secondJson?.plan?.updateBreakdown)}`
-  );
-
-  // Per-cell observed values printed once. Useful when a cell flips from
-  // expectedBroken to passing so the matrix maintainer sees the new state.
-  console.log('\nart-matrix subsonic: per-cell results');
-  for (const cell of CELLS) {
-    const r = MATRIX.byKey.get(cellKey(cell.album, cell.titleStartsWith));
-    console.log(
-      `  ${cell.scenario}/${cell.format}  album="${cell.album}"  ` +
-        `expected=${cell.expectedDeviceHasArtwork}  ` +
-        `observed=${r?.deviceHasArtwork}  ` +
-        `secondAdd=${r?.secondSyncAdd}  secondArtChurn=${r?.secondSyncArtworkChurn}`
-    );
-  }
-}, 1500000);
-
-// ---------------------------------------------------------------------------
-// Suite
-// ---------------------------------------------------------------------------
-
-describe('artwork matrix (subsonic adapter)', () => {
-  for (const cell of CELLS) {
-    const label = `${cell.scenario} / ${cell.format}`;
-    const desc = cell.expectedBroken ? `${label} [expectedBroken: ${cell.expectedBroken}]` : label;
-
-    it(desc, () => {
-      const matrix = MATRIX;
-      expect(matrix).not.toBeNull();
-      if (matrix!.globalFailure) {
-        throw new Error(`Matrix sync failed globally: ${matrix!.globalFailure}`);
-      }
-
-      const result = matrix!.byKey.get(cellKey(cell.album, cell.titleStartsWith));
-      expect(result).toBeDefined();
-
-      // Missing track on device is treated as an automatic broken cell.
-      const trackPresent = result!.deviceHasArtwork !== null;
-      const observed = result!.deviceHasArtwork === true;
-      const matchesExpectation = trackPresent && observed === cell.expectedDeviceHasArtwork;
-      const idempotent = !result!.secondSyncArtworkChurn && !result!.secondSyncAdd;
-
-      const ok = matchesExpectation && idempotent;
-
-      if (cell.expectedBroken) {
-        expect(ok).toBe(false);
-      } else {
-        if (!ok) {
-          throw new Error(
-            `Cell ${label} (album=${cell.album}) failed:\n` +
-              `  expectedDeviceHasArtwork=${cell.expectedDeviceHasArtwork}, observed=${observed}, deviceHasArtwork=${result!.deviceHasArtwork}\n` +
-              `  trackPresent=${trackPresent}\n` +
-              `  secondSyncAdd=${result!.secondSyncAdd}, secondSyncArtworkChurn=${result!.secondSyncArtworkChurn}`
-          );
-        }
-        expect(ok).toBe(true);
       }
     });
   }

@@ -13,6 +13,7 @@ export {
   generateMultiFormatEmbedded,
   generateMultiFormatSidecar,
   generateMultiFormatBoth,
+  SCENARIO_ARTISTS,
 } from './audio-multi-format.js';
 export { generateGoldberg } from './audio-goldberg.js';
 export { generateSyntheticTests } from './audio-synthetic-tests.js';

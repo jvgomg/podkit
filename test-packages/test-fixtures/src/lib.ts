@@ -48,6 +48,7 @@ export {
   getStaticFixturesRoot,
   getSyntheticTestsFixturesDir,
   getVideoFixturesDir,
+  SCENARIO_ARTISTS,
   STATIC_FIXTURE_GENERATORS,
   type StaticFixtureSet,
 } from './static/index.js';

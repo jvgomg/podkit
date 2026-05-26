@@ -33,9 +33,23 @@ import {
 } from './shared.js';
 
 const COMMON = {
-  artist: 'Multi-Format Test',
   date: '2026',
   genre: 'Electronic',
+} as const;
+
+/**
+ * Artist per scenario. Scenario A keeps the legacy `Multi-Format Test`
+ * because other tests already depend on it; B/C/D use distinct artists so
+ * that operations[].track strings in sync output (which embed the artist)
+ * disambiguate which scenario a given track came from. None of the four
+ * artists is a substring of another, so the Subsonic adapter's substring
+ * filter never aliases scenarios.
+ */
+const SCENARIO_ARTISTS = {
+  none: 'Multi-Format Test',
+  embedded: 'Multi-Format Embedded',
+  sidecar: 'Multi-Format Sidecar',
+  both: 'Multi-Format Both',
 } as const;
 
 /**
@@ -189,6 +203,8 @@ export const REQUIRED_ENCODERS = [
 ] as const;
 
 interface MultiFormatVariantOptions {
+  /** Artist tag for every track in this variant. See {@link SCENARIO_ARTISTS}. */
+  artist: string;
   /** Suffix appended to each album category tag, e.g. ' (Embedded)' → 'Lossless Collection (Embedded)'. */
   albumSuffix: string;
   /** If true, embed the cover JPEG into the output file's attached_pic stream. */
@@ -271,7 +287,7 @@ async function generateMultiFormatWithArt(
       ...track.extraArgs,
       ...metadataArgs({
         title: track.title,
-        artist: COMMON.artist,
+        artist: opts.artist,
         album: albumTag,
         track: track.track,
         date: COMMON.date,
@@ -300,6 +316,7 @@ async function generateMultiFormatWithArt(
  */
 export async function generateMultiFormat(outputDir: string): Promise<void> {
   await generateMultiFormatWithArt(outputDir, {
+    artist: SCENARIO_ARTISTS.none,
     albumSuffix: '',
     embedded: false,
     sidecar: false,
@@ -313,6 +330,7 @@ export async function generateMultiFormat(outputDir: string): Promise<void> {
  */
 export async function generateMultiFormatEmbedded(outputDir: string): Promise<void> {
   await generateMultiFormatWithArt(outputDir, {
+    artist: SCENARIO_ARTISTS.embedded,
     albumSuffix: ' (Embedded)',
     embedded: true,
     sidecar: false,
@@ -327,6 +345,7 @@ export async function generateMultiFormatEmbedded(outputDir: string): Promise<vo
  */
 export async function generateMultiFormatSidecar(outputDir: string): Promise<void> {
   await generateMultiFormatWithArt(outputDir, {
+    artist: SCENARIO_ARTISTS.sidecar,
     albumSuffix: ' (Sidecar)',
     embedded: false,
     sidecar: true,
@@ -341,6 +360,7 @@ export async function generateMultiFormatSidecar(outputDir: string): Promise<voi
  */
 export async function generateMultiFormatBoth(outputDir: string): Promise<void> {
   await generateMultiFormatWithArt(outputDir, {
+    artist: SCENARIO_ARTISTS.both,
     albumSuffix: ' (Both)',
     embedded: true,
     sidecar: true,
@@ -348,3 +368,6 @@ export async function generateMultiFormatBoth(outputDir: string): Promise<void> 
     sentinelLabel: 'multi-format-both',
   });
 }
+
+/** Exposed so the matrix tests can build the expected `Artist - Title` strings. */
+export { SCENARIO_ARTISTS };
