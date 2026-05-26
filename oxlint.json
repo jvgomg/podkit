@@ -2,13 +2,13 @@
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
   "rules": {
     "correctness": "error",
-    "suspicious": "warn",
+    "suspicious": "error",
     "pedantic": "off",
     "style": "off",
     "nursery": "off",
     "restriction": "off",
     "no-unused-vars": "error",
-    "no-console": "warn",
+    "no-console": "error",
     "eqeqeq": "error",
     "no-var": "error",
     "prefer-const": "error"
@@ -22,6 +22,18 @@
     },
     {
       "files": ["**/e2e-host-tests/src/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/e2e-docker-tests/src/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["**/e2e-shared/src/**/*.ts"],
       "rules": {
         "no-console": "off"
       }
