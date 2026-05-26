@@ -108,6 +108,16 @@ export function getMultiFormatBothFixturesDir(): string {
 }
 
 /**
+ * Path to the multi-format-embedded *alternative* set — identical metadata
+ * to {@link getMultiFormatEmbeddedFixturesDir} but with a different cover
+ * colour. Artwork-change tests swap files between the two variants to
+ * mutate the source artwork bytes without disturbing the track's match key.
+ */
+export function getMultiFormatEmbeddedAltFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-embedded-alt');
+}
+
+/**
  * Path to the goldberg-selections fixture set.
  *
  * Contents: 01-harmony.flac, 02-vibrato.flac, 03-tremolo.flac, cover.jpg
@@ -143,6 +153,7 @@ export function getVideoFixturesDir(): string {
 export type StaticFixtureSet =
   | 'multi-format'
   | 'multi-format-embedded'
+  | 'multi-format-embedded-alt'
   | 'multi-format-sidecar'
   | 'multi-format-both'
   | 'goldberg-selections'
@@ -155,6 +166,7 @@ export type StaticFixtureSet =
 const SET_DIR: Record<StaticFixtureSet, () => string> = {
   'multi-format': getMultiFormatFixturesDir,
   'multi-format-embedded': getMultiFormatEmbeddedFixturesDir,
+  'multi-format-embedded-alt': getMultiFormatEmbeddedAltFixturesDir,
   'multi-format-sidecar': getMultiFormatSidecarFixturesDir,
   'multi-format-both': getMultiFormatBothFixturesDir,
   'goldberg-selections': getGoldbergFixturesDir,

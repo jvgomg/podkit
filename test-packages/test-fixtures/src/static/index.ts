@@ -11,6 +11,7 @@
 export {
   generateMultiFormat,
   generateMultiFormatEmbedded,
+  generateMultiFormatEmbeddedAlt,
   generateMultiFormatSidecar,
   generateMultiFormatBoth,
   SCENARIO_ARTISTS,
@@ -24,6 +25,7 @@ export {
   getGoldbergFixturesDir,
   getMultiFormatFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
+  getMultiFormatEmbeddedAltFixturesDir,
   getMultiFormatSidecarFixturesDir,
   getMultiFormatBothFixturesDir,
   getStaticFixturesRoot,
@@ -37,12 +39,14 @@ import {
   generateMultiFormat,
   generateMultiFormatBoth,
   generateMultiFormatEmbedded,
+  generateMultiFormatEmbeddedAlt,
   generateMultiFormatSidecar,
 } from './audio-multi-format.js';
 import { generateSyntheticTests } from './audio-synthetic-tests.js';
 import {
   getGoldbergFixturesDir,
   getMultiFormatBothFixturesDir,
+  getMultiFormatEmbeddedAltFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
   getMultiFormatFixturesDir,
   getMultiFormatSidecarFixturesDir,
@@ -61,6 +65,7 @@ export async function generateAllStaticFixtures(): Promise<void> {
   await Promise.all([
     generateMultiFormat(getMultiFormatFixturesDir()),
     generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
+    generateMultiFormatEmbeddedAlt(getMultiFormatEmbeddedAltFixturesDir()),
     generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
     generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
     generateGoldberg(getGoldbergFixturesDir()),
@@ -79,6 +84,8 @@ export async function generateAllStaticFixtures(): Promise<void> {
 export const STATIC_FIXTURE_GENERATORS: Record<StaticFixtureSet, () => Promise<void>> = {
   'multi-format': () => generateMultiFormat(getMultiFormatFixturesDir()),
   'multi-format-embedded': () => generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
+  'multi-format-embedded-alt': () =>
+    generateMultiFormatEmbeddedAlt(getMultiFormatEmbeddedAltFixturesDir()),
   'multi-format-sidecar': () => generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
   'multi-format-both': () => generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
   'goldberg-selections': () => generateGoldberg(getGoldbergFixturesDir()),

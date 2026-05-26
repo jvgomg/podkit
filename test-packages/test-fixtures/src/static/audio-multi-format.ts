@@ -58,6 +58,7 @@ const SCENARIO_ARTISTS = {
  */
 const COVER_COLORS = {
   embedded: '#d94a4a',
+  embeddedAlt: '#4a4ad9',
   sidecar: '#4ad97c',
   both: '#9b4ad9',
 } as const;
@@ -366,6 +367,23 @@ export async function generateMultiFormatBoth(outputDir: string): Promise<void> 
     sidecar: true,
     coverColor: COVER_COLORS.both,
     sentinelLabel: 'multi-format-both',
+  });
+}
+
+/**
+ * Generate the multi-format set with embedded artwork only — same artist /
+ * album / title tags as {@link generateMultiFormatEmbedded}, but a different
+ * cover JPEG. Used by artwork-change tests to mutate the source cover bytes
+ * between syncs without disturbing the track's match key.
+ */
+export async function generateMultiFormatEmbeddedAlt(outputDir: string): Promise<void> {
+  await generateMultiFormatWithArt(outputDir, {
+    artist: SCENARIO_ARTISTS.embedded,
+    albumSuffix: ' (Embedded)',
+    embedded: true,
+    sidecar: false,
+    coverColor: COVER_COLORS.embeddedAlt,
+    sentinelLabel: 'multi-format-embedded-alt',
   });
 }
 
