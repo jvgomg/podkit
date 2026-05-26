@@ -5,8 +5,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "test": "gpod-tests-parallel --pattern '*.e2e.test.ts'",
-    "test:serial": "bun test",
+    "test:docker": "gpod-tests-parallel --pattern '*.e2e.test.ts'",
+    "test:docker:serial": "bun test",
     "cleanup": "bun run src/scripts/cleanup-containers.ts",
     "cleanup:force": "bun run src/scripts/cleanup-containers.ts --force",
     "cleanup:list": "bun run src/scripts/cleanup-containers.ts --list",

@@ -10,10 +10,10 @@
     "./targets": "./src/targets/index.ts"
   },
   "scripts": {
-    "test": "bun run src/scripts/run-parallel.ts",
-    "test:serial": "bun test",
-    "test:dummy": "IPOD_TARGET=dummy bun run src/scripts/run-parallel.ts",
-    "test:real": "IPOD_TARGET=real bun test",
+    "test:e2e": "bun run src/scripts/run-parallel.ts",
+    "test:e2e:serial": "bun test",
+    "test:e2e:dummy": "IPOD_TARGET=dummy bun run src/scripts/run-parallel.ts",
+    "test:e2e:real": "IPOD_TARGET=real bun test",
     "preflight": "bun run src/helpers/preflight.ts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"

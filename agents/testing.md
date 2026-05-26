@@ -184,9 +184,9 @@ bun run test                         # Runs both — reuses cached sub-tasks
 bun run test --filter podkit-core    # Same composition, scoped to one package
 ```
 
-E2E tests are separate — `bun run test:e2e` runs the `test` script in `@podkit/e2e-host-tests` directly (not composed).
+E2E packages are kept out of the global compose by using non-`test` task names — `@podkit/e2e-host-tests` runs `test:e2e`, `@podkit/e2e-docker-tests` runs `test:docker`, `@podkit/e2e-vm-tests` runs `test:vm`. `bun run test` therefore only fans out to `test:unit` + `test:integration` across the workspace; the e2e suites only fire when explicitly requested via their named root scripts.
 
-**Important:** Package `test` scripts are no-ops (`true`) because turbo handles the composition. Don't `cd` into a package and run `bun run test` directly — use turbo from the repo root. To run a single test file directly:
+**Important:** Library-package `test` scripts are no-ops (`true`) because turbo handles the composition. Don't `cd` into a package and run `bun run test` directly — use turbo from the repo root. To run a single test file directly:
 
 ```bash
 bun test packages/podkit-core/src/foo.test.ts  # Run a single file (bypasses turbo)
