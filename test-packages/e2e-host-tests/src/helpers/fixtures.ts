@@ -1,31 +1,45 @@
 /**
- * Test fixture paths for E2E tests.
+ * E2E-side semantic catalogue of the static audio fixture sets.
  *
- * Provides paths to pre-built FLAC test files with metadata and artwork.
- * See test/fixtures/audio/README.md for details on the test files.
+ * The fixture *files* are owned by `@podkit/test-fixtures` (see that
+ * package's README). This module layers on the e2e-test perspective: which
+ * track lives where, which has artwork, which category each multi-format
+ * track belongs to. Tests import these enums + selector helpers; the path
+ * resolution they ultimately produce is the lib API.
  */
 
-import { resolve, join } from 'node:path';
-import { readdir, access } from 'node:fs/promises';
+import { access } from 'node:fs/promises';
+import { join } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import {
+  getGoldbergFixturesDir,
+  getMultiFormatFixturesDir,
+  getStaticFixturesRoot,
+  getSyntheticTestsFixturesDir,
+} from '@podkit/test-fixtures';
 
 /**
- * Base path to the audio fixtures directory.
+ * Absolute path to the root of the static audio fixture sets.
+ *
+ * Resolves to `<test-fixtures-package>/fixtures/audio` — the parent of the
+ * three album subdirectories. Use {@link getAlbumDir} when you want a
+ * specific album rather than the root.
  */
 export function getFixturesDir(): string {
-  return resolve(__dirname, '../../../../test/fixtures/audio');
+  return join(getStaticFixturesRoot(), 'audio');
 }
 
 /**
  * Album directories available in fixtures.
  */
 export const Albums = {
-  /** Synthetic Classics - 3 tracks with chord/vibrato/tremolo tones */
+  /** Synthetic Classics — 3 tracks with chord/vibrato/tremolo tones */
   GOLDBERG_SELECTIONS: 'goldberg-selections',
 
-  /** Test Tones - 3 tracks including one without artwork */
+  /** Test Tones — 3 tracks including one without artwork */
   SYNTHETIC_TESTS: 'synthetic-tests',
 
-  /** Multi-Format - 8 tracks in various formats for testing mixed collections */
+  /** Multi-Format — 8 tracks in various formats for testing mixed collections */
   MULTI_FORMAT: 'multi-format',
 } as const;
 
@@ -35,31 +49,29 @@ export type AlbumDir = (typeof Albums)[keyof typeof Albums];
  * Information about a test audio file.
  */
 export interface TestTrack {
-  /** Absolute path to the file */
   path: string;
-
-  /** Filename without directory */
   filename: string;
-
-  /** Album directory name */
   album: AlbumDir;
-
-  /** Whether this track has embedded artwork */
   hasArtwork: boolean;
 }
 
 /**
- * Get the path to an album directory.
+ * Resolve the absolute directory for the named album by dispatching to the
+ * corresponding `@podkit/test-fixtures` lib function.
  */
 export function getAlbumDir(album: AlbumDir): string {
-  return join(getFixturesDir(), album);
+  switch (album) {
+    case 'goldberg-selections':
+      return getGoldbergFixturesDir();
+    case 'synthetic-tests':
+      return getSyntheticTestsFixturesDir();
+    case 'multi-format':
+      return getMultiFormatFixturesDir();
+  }
 }
 
 /**
- * Get path to a specific track file.
- *
- * @param album - Album directory
- * @param filename - Track filename (e.g., '01-harmony.flac')
+ * Get the absolute path to a specific track file inside an album.
  */
 export function getTrackPath(album: AlbumDir, filename: string): string {
   return join(getAlbumDir(album), filename);
@@ -70,41 +82,17 @@ export function getTrackPath(album: AlbumDir, filename: string): string {
  */
 export const Tracks = {
   // Goldberg Selections (Synthetic Classics album)
-  HARMONY: {
-    album: Albums.GOLDBERG_SELECTIONS,
-    filename: '01-harmony.flac',
-    hasArtwork: true,
-  },
-  VIBRATO: {
-    album: Albums.GOLDBERG_SELECTIONS,
-    filename: '02-vibrato.flac',
-    hasArtwork: true,
-  },
-  TREMOLO: {
-    album: Albums.GOLDBERG_SELECTIONS,
-    filename: '03-tremolo.flac',
-    hasArtwork: true,
-  },
+  HARMONY: { album: Albums.GOLDBERG_SELECTIONS, filename: '01-harmony.flac', hasArtwork: true },
+  VIBRATO: { album: Albums.GOLDBERG_SELECTIONS, filename: '02-vibrato.flac', hasArtwork: true },
+  TREMOLO: { album: Albums.GOLDBERG_SELECTIONS, filename: '03-tremolo.flac', hasArtwork: true },
 
   // Synthetic Tests (Test Tones album)
-  A440: {
-    album: Albums.SYNTHETIC_TESTS,
-    filename: '01-a440.flac',
-    hasArtwork: true,
-  },
-  SWEEP: {
-    album: Albums.SYNTHETIC_TESTS,
-    filename: '02-sweep.flac',
-    hasArtwork: true,
-  },
-  DUAL_TONE: {
-    album: Albums.SYNTHETIC_TESTS,
-    filename: '03-dual-tone.flac',
-    hasArtwork: false, // This track intentionally has no artwork
-  },
+  A440: { album: Albums.SYNTHETIC_TESTS, filename: '01-a440.flac', hasArtwork: true },
+  SWEEP: { album: Albums.SYNTHETIC_TESTS, filename: '02-sweep.flac', hasArtwork: true },
+  // Intentionally has no artwork — the only no-artwork fixture in the audio sets.
+  DUAL_TONE: { album: Albums.SYNTHETIC_TESTS, filename: '03-dual-tone.flac', hasArtwork: false },
 
-  // Multi-Format (mixed format collection)
-  // Lossless formats
+  // Multi-Format — Lossless
   WAV_TRACK: {
     album: Albums.MULTI_FORMAT,
     filename: '01-wav-track.wav',
@@ -133,7 +121,8 @@ export const Tracks = {
     format: 'm4a' as const,
     category: 'lossless' as const,
   },
-  // Compatible lossy formats (will be copied)
+
+  // Multi-Format — Compatible lossy (copied through, no transcode)
   MP3_TRACK: {
     album: Albums.MULTI_FORMAT,
     filename: '05-mp3-track.mp3',
@@ -148,7 +137,8 @@ export const Tracks = {
     format: 'm4a' as const,
     category: 'compatible-lossy' as const,
   },
-  // Incompatible lossy formats (will trigger warning)
+
+  // Multi-Format — Incompatible lossy (must transcode + emit lossy-to-lossy warning)
   OGG_TRACK: {
     album: Albums.MULTI_FORMAT,
     filename: '07-ogg-track.ogg',
@@ -177,19 +167,15 @@ export function getTrack(track: (typeof Tracks)[keyof typeof Tracks]): TestTrack
   };
 }
 
-/**
- * Supported audio file extensions.
- */
 const AUDIO_EXTENSIONS = ['.flac', '.wav', '.aiff', '.m4a', '.mp3', '.ogg', '.opus', '.aac'];
 
 /**
- * Get all track info for an album.
+ * Get all track info for an album by scanning its directory.
  */
 export async function getAlbumTracks(album: AlbumDir): Promise<TestTrack[]> {
   const albumDir = getAlbumDir(album);
   const files = await readdir(albumDir);
 
-  // Get artwork info from known tracks
   const artworkMap: Record<string, boolean> = {};
   for (const track of Object.values(Tracks)) {
     if (track.album === album) {
@@ -204,12 +190,12 @@ export async function getAlbumTracks(album: AlbumDir): Promise<TestTrack[]> {
       path: join(albumDir, filename),
       filename,
       album,
-      hasArtwork: artworkMap[filename] ?? true, // Assume artwork by default
+      hasArtwork: artworkMap[filename] ?? true,
     }));
 }
 
 /**
- * Get all available test tracks.
+ * Get all available test tracks across every album.
  */
 export async function getAllTracks(): Promise<TestTrack[]> {
   const goldberg = await getAlbumTracks(Albums.GOLDBERG_SELECTIONS);
@@ -219,13 +205,22 @@ export async function getAllTracks(): Promise<TestTrack[]> {
 }
 
 /**
- * Check if fixtures are available.
+ * Check whether the audio fixture sets have been generated.
+ *
+ * Returns a boolean rather than throwing so legacy `skipIfUnavailable` call
+ * sites continue to compile. Tests should prefer
+ * `import { ensureFixturesExist } from '@podkit/test-fixtures'` at module
+ * load — that throws with an actionable message and surfaces missing
+ * fixtures as a real failure rather than a silent skip.
+ *
+ * @deprecated Migrate to `ensureFixturesExist('multi-format' | ...)` from
+ * `@podkit/test-fixtures`. Will be removed once the e2e per-test
+ * `skipIfUnavailable` pattern is gone.
  */
 export async function areFixturesAvailable(): Promise<boolean> {
   try {
-    await access(getFixturesDir());
-    const tracks = await getAllTracks();
-    return tracks.length > 0;
+    await access(getMultiFormatFixturesDir());
+    return true;
   } catch {
     return false;
   }

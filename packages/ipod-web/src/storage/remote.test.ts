@@ -1,5 +1,25 @@
 import { describe, test, expect, mock, beforeEach, afterEach } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { RemoteStorage } from './remote.js';
+
+const FIXTURE_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../../../ipod-db/fixtures/databases/single-track/iPod_Control/iTunes/iTunesDB'
+);
+
+let itunesDbBuffer: ArrayBuffer;
+try {
+  const data = readFileSync(FIXTURE_PATH);
+  itunesDbBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
+} catch (err) {
+  throw new Error(
+    `iTunesDB fixture not found at ${FIXTURE_PATH}. ` +
+      `Run \`bun run generate-fixtures\` in packages/ipod-db.\n` +
+      `Underlying: ${err instanceof Error ? err.message : String(err)}`
+  );
+}
 
 // Flush all pending microtasks and macrotasks
 const flushPromises = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -127,21 +147,6 @@ describe('RemoteStorage', () => {
   });
 
   test('status becomes ready when database loads successfully', async () => {
-    const fs = await import('fs');
-    const path = await import('path');
-    const fixturePath = path.join(
-      process.cwd(),
-      'packages/ipod-db/fixtures/databases/single-track/iPod_Control/iTunes/iTunesDB'
-    );
-
-    let itunesDbBuffer: ArrayBuffer;
-    try {
-      const data = fs.readFileSync(fixturePath);
-      itunesDbBuffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
-    } catch {
-      return; // skip if fixture not available
-    }
-
     globalThis.fetch = mock((url: string) => {
       if ((url as string).includes('/database')) {
         return Promise.resolve(new Response(itunesDbBuffer));

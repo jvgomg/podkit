@@ -20,9 +20,9 @@
 
 import { execSync } from 'node:child_process';
 import { resolve } from 'node:path';
-import { COLORS, isValidColor } from './artwork.js';
-import { isValidFormat, VALID_FORMATS, type AudioFormat } from './convert.js';
-import { generate, type GenerateOptions } from './generator.js';
+import { COLORS, isValidColor } from '../src/artwork.js';
+import { isValidFormat, VALID_FORMATS, type AudioFormat } from '../src/convert.js';
+import { generate, type GenerateOptions } from '../src/generator.js';
 
 // ---------------------------------------------------------------------------
 // Dependency checks

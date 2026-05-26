@@ -4,39 +4,22 @@
 
 import { describe, it, expect } from 'bun:test';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import {
+  ensureFixturesExist,
+  getGoldbergFixturesDir,
+  getSyntheticTestsFixturesDir,
+} from '@podkit/test-fixtures';
 import { getFileDisplayMetadata, getFilesDisplayMetadata } from './extractor.js';
 
-// Find fixtures path by searching up from cwd or using known locations
-function findFixturesPath(): string {
-  const candidates = [
-    // From monorepo root (most common case)
-    join(process.cwd(), 'test/fixtures/audio'),
-    // From package directory
-    join(process.cwd(), '../../test/fixtures/audio'),
-    // Relative to this file's source location
-    join(import.meta.dir, '../../../../test/fixtures/audio'),
-  ];
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
 
-  for (const candidate of candidates) {
-    const testFile = join(candidate, 'goldberg-selections/01-harmony.flac');
-    if (existsSync(testFile)) {
-      return candidate;
-    }
-  }
+const GOLDBERG_DIR = getGoldbergFixturesDir();
+const SYNTHETIC_DIR = getSyntheticTestsFixturesDir();
 
-  // Return first candidate as fallback (tests will skip if invalid)
-  return candidates[0]!;
-}
-
-const FIXTURES_PATH = findFixturesPath();
-
-// Skip tests if fixtures not available (CI without test data)
-const hasFixtures = existsSync(join(FIXTURES_PATH, 'goldberg-selections/01-harmony.flac'));
-
-describe.skipIf(!hasFixtures)('getFileDisplayMetadata', () => {
+describe('getFileDisplayMetadata', () => {
   it('extracts artwork and bitrate from FLAC file with artwork', async () => {
-    const filePath = join(FIXTURES_PATH, 'goldberg-selections/01-harmony.flac');
+    const filePath = join(GOLDBERG_DIR, '01-harmony.flac');
     const metadata = await getFileDisplayMetadata(filePath);
 
     expect(metadata.hasArtwork).toBe(true);
@@ -45,7 +28,7 @@ describe.skipIf(!hasFixtures)('getFileDisplayMetadata', () => {
   });
 
   it('returns hasArtwork=false for file without artwork', async () => {
-    const filePath = join(FIXTURES_PATH, 'synthetic-tests/03-dual-tone.flac');
+    const filePath = join(SYNTHETIC_DIR, '03-dual-tone.flac');
     const metadata = await getFileDisplayMetadata(filePath);
 
     expect(metadata.hasArtwork).toBe(false);
@@ -61,7 +44,7 @@ describe.skipIf(!hasFixtures)('getFileDisplayMetadata', () => {
   });
 
   it('returns bitrate in kbps (not bps)', async () => {
-    const filePath = join(FIXTURES_PATH, 'goldberg-selections/01-harmony.flac');
+    const filePath = join(GOLDBERG_DIR, '01-harmony.flac');
     const metadata = await getFileDisplayMetadata(filePath);
 
     // Bitrate should be in reasonable kbps range (not raw bps)
@@ -71,12 +54,12 @@ describe.skipIf(!hasFixtures)('getFileDisplayMetadata', () => {
   });
 });
 
-describe.skipIf(!hasFixtures)('getFilesDisplayMetadata', () => {
+describe('getFilesDisplayMetadata', () => {
   it('extracts metadata from multiple files in parallel', async () => {
     const filePaths = [
-      join(FIXTURES_PATH, 'goldberg-selections/01-harmony.flac'),
-      join(FIXTURES_PATH, 'goldberg-selections/02-vibrato.flac'),
-      join(FIXTURES_PATH, 'synthetic-tests/03-dual-tone.flac'),
+      join(GOLDBERG_DIR, '01-harmony.flac'),
+      join(GOLDBERG_DIR, '02-vibrato.flac'),
+      join(SYNTHETIC_DIR, '03-dual-tone.flac'),
     ];
 
     const metadataMap = await getFilesDisplayMetadata(filePaths);
@@ -104,10 +87,7 @@ describe.skipIf(!hasFixtures)('getFilesDisplayMetadata', () => {
   });
 
   it('handles mix of valid and invalid files gracefully', async () => {
-    const filePaths = [
-      join(FIXTURES_PATH, 'goldberg-selections/01-harmony.flac'),
-      '/non/existent/file.flac',
-    ];
+    const filePaths = [join(GOLDBERG_DIR, '01-harmony.flac'), '/non/existent/file.flac'];
 
     const metadataMap = await getFilesDisplayMetadata(filePaths);
 

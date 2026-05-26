@@ -5,19 +5,19 @@
  */
 
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
-import { mkdtemp, rm, writeFile, stat } from 'node:fs/promises';
+import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
+import { ensureFixturesExist, getMultiFormatFixturesDir } from '@podkit/test-fixtures';
 import {
   FFmpegTranscoder,
   isFFmpegAvailable,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
+
+ensureFixturesExist('multi-format');
 import type { TranscodeProgress } from './types.js';
 
 let transcoder: FFmpegTranscoder;
@@ -376,31 +376,13 @@ describe('FFmpegTranscoder integration', () => {
 // =============================================================================
 
 describe('FFmpegTranscoder - multi-format inputs', () => {
-  const fixturesDir = join(__dirname, '../../../../test/fixtures/audio/multi-format');
+  const fixturesDir = getMultiFormatFixturesDir();
   let transcoder: FFmpegTranscoder;
   let outputDir: string;
 
   beforeAll(async () => {
     transcoder = new FFmpegTranscoder();
     outputDir = await mkdtemp(join(tmpdir(), 'podkit-multiformat-test-'));
-
-    // Verify fixtures exist
-    const requiredFiles = [
-      '01-wav-track.wav',
-      '02-aiff-track.aiff',
-      '03-flac-track.flac',
-      '04-alac-track.m4a',
-      '07-ogg-track.ogg',
-      '08-opus-track.opus',
-    ];
-    for (const file of requiredFiles) {
-      const exists = await stat(join(fixturesDir, file)).catch(() => null);
-      if (!exists) {
-        throw new Error(
-          `Missing test fixture: ${file}. Run generate.sh in test/fixtures/audio/multi-format/`
-        );
-      }
-    }
   });
 
   afterAll(async () => {

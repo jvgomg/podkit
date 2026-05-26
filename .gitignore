@@ -45,6 +45,7 @@ homebrew-tap/
 
 # Test fixture output
 test/manual-collection/
+test-packages/test-fixtures/fixtures/
 
 # Notes
 SCRATCH.md

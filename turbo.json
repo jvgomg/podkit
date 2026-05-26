@@ -75,12 +75,21 @@
       "outputs": []
     },
     "test:integration": {
-      "dependsOn": ["build", "^build", "@podkit/gpod-testing#generate-templates"],
+      "dependsOn": [
+        "build",
+        "^build",
+        "@podkit/gpod-testing#generate-templates",
+        "@podkit/test-fixtures#generate-static-fixtures"
+      ],
       "inputs": ["src/**", "test/**", "bunfig.toml", "package.json"],
       "outputs": []
     },
     "@podkit/e2e-host-tests#test": {
-      "dependsOn": ["^build", "@podkit/gpod-testing#generate-templates"],
+      "dependsOn": [
+        "^build",
+        "@podkit/gpod-testing#generate-templates",
+        "@podkit/test-fixtures#generate-static-fixtures"
+      ],
       "inputs": ["src/**"],
       "outputs": []
     },
@@ -139,7 +148,7 @@
       "inputs": [
         "src/**",
         "!src/**/*.test.ts",
-        "scripts/**",
+        "scripts/check-ffmpeg.ts",
         "package.json",
         "tsconfig.json",
         "tsconfig.build.json"
@@ -147,8 +156,13 @@
       "outputs": ["dist/**"]
     },
     "@podkit/test-fixtures#generate-fixtures": {
-      "inputs": ["src/**"],
+      "inputs": ["src/**", "scripts/generate-fixtures.ts"],
       "outputs": ["../../test/manual-collection/**"],
+      "cache": true
+    },
+    "@podkit/test-fixtures#generate-static-fixtures": {
+      "inputs": ["src/static/**", "src/encoder-guard.ts", "scripts/generate-static-fixtures.ts"],
+      "outputs": ["fixtures/**"],
       "cache": true
     },
     "@podkit/device-testing#test:vm": {

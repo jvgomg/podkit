@@ -535,9 +535,20 @@ PODKIT_DISABLE_TEMPLATE_CACHE=1 bun turbo run test:integration --force
 
 This forces every `createTestIpod()` call through the subprocess path. The env var is declared in `globalPassThroughEnv` in `turbo.json` so turbo passes it through to test runs.
 
-## Test Audio Fixtures
+## Test Audio + Video Fixtures
 
-Pre-built FLAC files with metadata and artwork are available in `test/fixtures/audio/` for integration tests. See [test/fixtures/audio/README.md](../test/fixtures/audio/README.md) for details.
+Static audio + video fixtures are owned by the `@podkit/test-fixtures` package. Outputs land under `test-packages/test-fixtures/fixtures/` (gitignored, regenerated on demand and cached by turbo).
+
+Locate fixtures from a test via the lib API — never hard-code paths from the repo root:
+
+```ts
+import { ensureFixturesExist, getMultiFormatFixturesDir } from '@podkit/test-fixtures';
+
+ensureFixturesExist('multi-format');           // module-load preflight; throws with regen hint
+const dir = getMultiFormatFixturesDir();
+```
+
+`ensureFixturesExist(set)` fails fast with an actionable error if the set has not been generated yet. Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task and of `@podkit/e2e-host-tests#test`, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../test-packages/test-fixtures/README.md) for the full set inventory and regen instructions.
 
 ## Test Fixture Generator
 

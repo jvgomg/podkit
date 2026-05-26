@@ -6,31 +6,20 @@
  * and probes technical information.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
-import * as path from 'node:path';
-import * as fs from 'node:fs';
+import { describe, it, expect } from 'bun:test';
+import { ensureFixturesExist, getVideoFixturesDir } from '@podkit/test-fixtures';
 import {
   VideoDirectoryAdapter,
   type VideoScanProgress,
   type VideoScanWarning,
 } from './directory-adapter.js';
 
-// Path to test fixtures
-const FIXTURES_DIR = path.resolve(__dirname, '../../../../test/fixtures/video');
-
-// Check if fixtures exist before running tests
-const fixturesExist = fs.existsSync(FIXTURES_DIR);
+ensureFixturesExist('video');
+const FIXTURES_DIR = getVideoFixturesDir();
 
 describe('VideoDirectoryAdapter integration', () => {
-  // Skip all tests if fixtures don't exist
-  beforeAll(() => {
-    if (!fixturesExist) {
-      console.log('Skipping integration tests: fixtures directory not found');
-    }
-  });
-
   describe('connect and scan', () => {
-    it.skipIf(!fixturesExist)('scans fixture directory for video files', async () => {
+    it('scans fixture directory for video files', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       await adapter.connect();
@@ -40,7 +29,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(count).toBeGreaterThanOrEqual(4);
     });
 
-    it.skipIf(!fixturesExist)('reports progress during scan', async () => {
+    it('reports progress during scan', async () => {
       const progressEvents: VideoScanProgress[] = [];
 
       const adapter = new VideoDirectoryAdapter({
@@ -61,7 +50,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(lastProgress?.processed).toBe(lastProgress?.total);
     });
 
-    it.skipIf(!fixturesExist)('only scans once when connect called multiple times', async () => {
+    it('only scans once when connect called multiple times', async () => {
       let progressCallCount = 0;
 
       const adapter = new VideoDirectoryAdapter({
@@ -80,7 +69,7 @@ describe('VideoDirectoryAdapter integration', () => {
   });
 
   describe('getItems', () => {
-    it.skipIf(!fixturesExist)('returns all scanned videos', async () => {
+    it('returns all scanned videos', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos = await adapter.getItems();
@@ -102,7 +91,7 @@ describe('VideoDirectoryAdapter integration', () => {
       }
     });
 
-    it.skipIf(!fixturesExist)('detects movie content type', async () => {
+    it('detects movie content type', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos = await adapter.getItems();
@@ -117,7 +106,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(movieVideo!.genre).toBe('Test');
     });
 
-    it.skipIf(!fixturesExist)('detects TV show content type', async () => {
+    it('detects TV show content type', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos = await adapter.getItems();
@@ -135,7 +124,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(tvVideo!.genre).toBe('Drama');
     });
 
-    it.skipIf(!fixturesExist)('extracts technical information', async () => {
+    it('extracts technical information', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos = await adapter.getItems();
@@ -149,7 +138,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(compatibleVideo!.height).toBe(480);
     });
 
-    it.skipIf(!fixturesExist)('handles different video containers', async () => {
+    it('handles different video containers', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos = await adapter.getItems();
@@ -168,7 +157,7 @@ describe('VideoDirectoryAdapter integration', () => {
   });
 
   describe('getFilteredItems', () => {
-    it.skipIf(!fixturesExist)('filters by content type', async () => {
+    it('filters by content type', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const movies = await adapter.getFilteredItems({ contentType: 'movie' });
@@ -178,7 +167,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(tvshows.every((v) => v.contentType === 'tvshow')).toBe(true);
     });
 
-    it.skipIf(!fixturesExist)('filters by year', async () => {
+    it('filters by year', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const videos2024 = await adapter.getFilteredItems({ year: 2024 });
@@ -187,7 +176,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(videos2024.every((v) => v.year === 2024)).toBe(true);
     });
 
-    it.skipIf(!fixturesExist)('filters by genre', async () => {
+    it('filters by genre', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const dramaVideos = await adapter.getFilteredItems({ genre: 'Drama' });
@@ -196,7 +185,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(dramaVideos.every((v) => v.genre?.toLowerCase().includes('drama'))).toBe(true);
     });
 
-    it.skipIf(!fixturesExist)('filters by path pattern', async () => {
+    it('filters by path pattern', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       const mp4Videos = await adapter.getFilteredItems({ pathPattern: '*.mp4' });
@@ -207,7 +196,7 @@ describe('VideoDirectoryAdapter integration', () => {
   });
 
   describe('custom extensions', () => {
-    it.skipIf(!fixturesExist)('only scans specified extensions', async () => {
+    it('only scans specified extensions', async () => {
       const adapter = new VideoDirectoryAdapter({
         path: FIXTURES_DIR,
         extensions: ['mp4'],
@@ -218,7 +207,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(videos.every((v) => v.filePath.endsWith('.mp4'))).toBe(true);
     });
 
-    it.skipIf(!fixturesExist)('scans multiple specified extensions', async () => {
+    it('scans multiple specified extensions', async () => {
       const adapter = new VideoDirectoryAdapter({
         path: FIXTURES_DIR,
         extensions: ['mp4', 'mkv'],
@@ -233,7 +222,7 @@ describe('VideoDirectoryAdapter integration', () => {
   });
 
   describe('disconnect', () => {
-    it.skipIf(!fixturesExist)('clears cache after disconnect', async () => {
+    it('clears cache after disconnect', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       await adapter.connect();
@@ -243,7 +232,7 @@ describe('VideoDirectoryAdapter integration', () => {
       expect(adapter.getVideoCount()).toBe(0);
     });
 
-    it.skipIf(!fixturesExist)('rescans after disconnect and reconnect', async () => {
+    it('rescans after disconnect and reconnect', async () => {
       const adapter = new VideoDirectoryAdapter({ path: FIXTURES_DIR });
 
       await adapter.connect();

@@ -10,9 +10,13 @@
 
 import { describe, expect, it, beforeEach, afterEach } from 'bun:test';
 import { mkdir, rm } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
+import {
+  ensureFixturesExist,
+  getStaticFixturesRoot,
+  getVideoFixturesDir,
+} from '@podkit/test-fixtures';
 import { runCollectionMusic, runCollectionVideo } from './collection.js';
 import { BufferExitCodeSink, OutputContext } from '../output/index.js';
 import { runWithContext, type CliContext } from '../context.js';
@@ -27,8 +31,17 @@ import {
   type LoadConfigResult,
 } from '../config/index.js';
 
-const AUDIO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/audio');
-const VIDEO_FIXTURES_PATH = resolve(__dirname, '../../../../test/fixtures/video');
+// Preflight: fail fast at module load if the static fixture sets have not been
+// generated. Turbo's `test:integration` task lists
+// `@podkit/test-fixtures#generate-static-fixtures` as a dependency, so this
+// only fires when the file is run outside the turbo graph.
+ensureFixturesExist('multi-format');
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
+ensureFixturesExist('video');
+
+const AUDIO_FIXTURES_PATH = join(getStaticFixturesRoot(), 'audio');
+const VIDEO_FIXTURES_PATH = getVideoFixturesDir();
 
 // =============================================================================
 // Helpers
@@ -329,10 +342,6 @@ describe('runCollectionMusic error paths', () => {
 // collection video
 // =============================================================================
 
-// Resolve at module load so it.skipIf evaluates synchronously at registration.
-const videoFixturesExist =
-  existsSync(VIDEO_FIXTURES_PATH) && existsSync(join(VIDEO_FIXTURES_PATH, 'compatible-h264.mp4'));
-
 describe('runCollectionVideo', () => {
   let emptyDir: string;
 
@@ -350,7 +359,7 @@ describe('runCollectionVideo', () => {
   // tight. Probe runs in ~300ms in isolation, ~3-4s under load.
   const VIDEO_PROBE_TIMEOUT_MS = 30000;
 
-  it.skipIf(!videoFixturesExist)(
+  it(
     'scans for video files and prints a Title column',
     async () => {
       const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));
@@ -362,7 +371,7 @@ describe('runCollectionVideo', () => {
     VIDEO_PROBE_TIMEOUT_MS
   );
 
-  it.skipIf(!videoFixturesExist)(
+  it(
     'returns video metadata in JSON',
     async () => {
       const ctx = makeContext(videoConfig(VIDEO_FIXTURES_PATH));

@@ -7,11 +7,12 @@
 
 import { describe, it, expect } from 'bun:test';
 import * as path from 'node:path';
+import { ensureFixturesExist, getVideoFixturesDir } from '@podkit/test-fixtures';
 import { EmbeddedVideoMetadataAdapter } from './metadata-embedded.js';
 import { isMovieMetadata, isTVShowMetadata } from './metadata.js';
 
-// Path to test fixtures
-const FIXTURES_DIR = path.resolve(__dirname, '../../../../test/fixtures/video');
+ensureFixturesExist('video');
+const FIXTURES_DIR = getVideoFixturesDir();
 
 describe('EmbeddedVideoMetadataAdapter integration', () => {
   describe('movie-with-metadata.mp4', () => {
