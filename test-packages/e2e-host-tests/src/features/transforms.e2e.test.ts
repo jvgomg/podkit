@@ -11,37 +11,30 @@
  * to verify the transform is applied during sync.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
+import { execSync } from 'node:child_process';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+// Tier-1 system dependencies. Fail loudly at module load instead of silently
+// passing every test — historically this suite used a `skipIfUnavailable()`
+// guard that masked missing tools as "all green".
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('multi-format');
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
 
 interface ListTrack {
   title: string;
   artist: string | null;
   album: string | null;
-}
-
-// =============================================================================
-// Test Fixture Helpers
-// =============================================================================
-
-/**
- * Check if metaflac is available for modifying FLAC metadata.
- */
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -189,33 +182,8 @@ music = "default"
 // =============================================================================
 
 describe('transforms: cleanArtists', () => {
-  let fixturesAvailable: boolean;
-  let metaflacAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-  });
-
-  /**
-   * Skip helper for tests that need metaflac.
-   */
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!metaflacAvailable) {
-      console.log('Skipping: metaflac not available (install flac package)');
-      return true;
-    }
-    return false;
-  }
-
   describe('basic sync with cleanArtists enabled', () => {
     it('cleans featured artists during sync', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         // Create test collection with featured artists
         const collectionDir = await createFeaturedArtistCollection();
@@ -272,8 +240,6 @@ describe('transforms: cleanArtists', () => {
     }, 120000);
 
     it('does not transform when cleanArtists is disabled', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -317,8 +283,6 @@ describe('transforms: cleanArtists', () => {
 
   describe('dry-run output', () => {
     it('shows transform info in dry-run JSON output', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -359,8 +323,6 @@ describe('transforms: cleanArtists', () => {
     }, 60000);
 
     it('shows transform info in dry-run text output', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -394,8 +356,6 @@ describe('transforms: cleanArtists', () => {
 
   describe('transform toggle workflow', () => {
     it('updates metadata when transform is enabled after initial sync', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -477,8 +437,6 @@ describe('transforms: cleanArtists', () => {
     }, 180000); // 3 min for two syncs
 
     it('reverts metadata when transform is disabled after initial sync', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -555,8 +513,6 @@ describe('transforms: cleanArtists', () => {
 
   describe('custom format and drop mode', () => {
     it('uses custom format string for featuring info', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -593,8 +549,6 @@ describe('transforms: cleanArtists', () => {
     }, 120000);
 
     it('drops featuring info in drop mode', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -648,8 +602,6 @@ describe('transforms: cleanArtists', () => {
     }, 120000);
 
     it('shows drop mode in text output', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -685,8 +637,6 @@ describe('transforms: cleanArtists', () => {
 
   describe('verbose mode', () => {
     it('shows before/after in verbose dry-run for update operations', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -740,8 +690,6 @@ describe('transforms: cleanArtists', () => {
     }, 120000);
 
     it('includes changes array in JSON update operations', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const collectionDir = await createFeaturedArtistCollection();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));

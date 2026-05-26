@@ -10,28 +10,21 @@
  * This validates the diff algorithm correctly identifies existing tracks.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, symlink, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, Albums, getAlbumTracks } from '../helpers/fixtures';
+import { Albums, getAlbumTracks } from '../helpers/fixtures';
 import type { SyncOutput } from 'podkit/types';
 
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
+
 describe('workflow: incremental sync', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-  });
-
   it('adds only new tracks on incremental sync', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       // Create a temp directory to simulate growing collection
       const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-incremental-'));

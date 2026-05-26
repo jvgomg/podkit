@@ -11,7 +11,7 @@
  * - ffmpeg (for transcoding)
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import {
   mkdtemp,
   rm,
@@ -27,11 +27,16 @@ import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
 
 // ── Output types (mirrors packages/podkit-cli/src/commands/doctor.ts) ────────
 
@@ -60,26 +65,6 @@ interface RepairOutput {
     errors?: number;
     errorDetails?: Array<{ artist: string; title: string; error: string }>;
   };
-}
-
-// ── Prerequisite checks ──────────────────────────────────────────────────────
-
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Test fixture helpers ─────────────────────────────────────────────────────
@@ -230,37 +215,11 @@ async function getDirectoryChecksums(dirPath: string): Promise<Map<string, strin
 // =============================================================================
 
 describe('podkit doctor --repair artwork-rebuild', () => {
-  let fixturesAvailable = false;
-  let metaflacAvailable = false;
-  let ffmpegAvailable = false;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
-  });
-
-  function canRun(): boolean {
-    return fixturesAvailable && metaflacAvailable && ffmpegAvailable;
-  }
-
-  function skipReason(): string | null {
-    if (!fixturesAvailable) return 'fixtures not available';
-    if (!metaflacAvailable) return 'metaflac not available';
-    if (!ffmpegAvailable) return 'ffmpeg not available';
-    return null;
-  }
-
   // ===========================================================================
   // Repair workflow
   // ===========================================================================
 
   it('repairs corrupted artwork and doctor passes afterward', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -300,11 +259,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   }, 180000);
 
   it('handles partial source matches — unmatched tracks get artwork cleared', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let fullCollectionDir: string | undefined;
@@ -353,11 +307,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   }, 180000);
 
   it('reports noArtwork when source files have no embedded artwork', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -388,11 +337,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   // ===========================================================================
 
   it('dry run reports changes without modifying files', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -437,11 +381,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   // ===========================================================================
 
   it('preserves quality and encoding in sync tags, only updates art=', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -472,11 +411,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   }, 180000);
 
   it('clears art= from sync tag when track has no source match', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -517,11 +451,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   // adapter call instrumentation respectively.
 
   it('second repair is a no-op when artwork is already correct', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -556,11 +485,6 @@ describe('podkit doctor --repair artwork-rebuild', () => {
   }, 240000);
 
   it('continues repairing remaining tracks when one source file is corrupt', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;

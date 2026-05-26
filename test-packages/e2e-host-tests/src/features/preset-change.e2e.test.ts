@@ -9,13 +9,16 @@
  * fallback for tracks without sync tags.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+
+ensureFixturesExist('goldberg-selections');
 
 import type { SyncOutput } from 'podkit/types';
 
@@ -67,18 +70,7 @@ music = "default"
 // =============================================================================
 
 describe('preset change detection', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-  });
-
   it('second sync at different quality succeeds without errors', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -131,11 +123,6 @@ describe('preset change detection', () => {
   }, 120000);
 
   it('skip-upgrades suppresses all file-replacement upgrades at different quality', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -196,11 +183,6 @@ describe('preset change detection', () => {
   }, 120000);
 
   it('second sync with same preset is idempotent (no work via sync tags)', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -244,11 +226,6 @@ describe('preset change detection', () => {
   }, 120000);
 
   it('sync tag detects preset change and re-transcodes', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -325,11 +302,6 @@ describe('preset change detection', () => {
   }, 180000);
 
   it('--force-sync-tags writes tags as plan operations', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;

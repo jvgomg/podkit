@@ -5,14 +5,14 @@
  * video type detection, and device compatibility.
  */
 
-import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import {
-  areVideoFixturesAvailable,
   createVideoSourceDir,
   cleanupVideoSourceDir,
   Videos,
@@ -22,6 +22,8 @@ import {
   getMovies,
   getTVShows,
 } from '../helpers/video-fixtures';
+
+ensureFixturesExist('video');
 
 interface VideoSyncOutput {
   success: boolean;
@@ -70,12 +72,6 @@ let tempConfigPaths: string[] = [];
 let tempSourceDirs: string[] = [];
 
 describe('podkit sync -t video', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areVideoFixturesAvailable();
-  });
-
   afterEach(async () => {
     // Clean up temp config files
     for (const configPath of tempConfigPaths) {
@@ -151,11 +147,6 @@ describe('podkit sync -t video', () => {
 
   describe('dry-run', () => {
     it('shows video sync plan without making changes', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);
@@ -183,11 +174,6 @@ describe('podkit sync -t video', () => {
     });
 
     it('outputs dry-run plan in JSON', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);
@@ -213,11 +199,6 @@ describe('podkit sync -t video', () => {
 
   describe('quality presets', () => {
     it('accepts --video-quality max', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);
@@ -242,11 +223,6 @@ describe('podkit sync -t video', () => {
     });
 
     it('accepts --video-quality low', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);
@@ -273,11 +249,6 @@ describe('podkit sync -t video', () => {
 
   describe('video type handling', () => {
     it('identifies compatible videos for passthrough', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       const passthroughVideos = getPassthroughVideos();
       if (passthroughVideos.length === 0) {
         console.log('Skipping: no passthrough videos in fixtures');
@@ -307,11 +278,6 @@ describe('podkit sync -t video', () => {
     });
 
     it('identifies videos needing transcode', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       const transcodeVideos = getTranscodeVideos();
       if (transcodeVideos.length === 0) {
         console.log('Skipping: no transcode videos in fixtures');
@@ -343,11 +309,6 @@ describe('podkit sync -t video', () => {
 
   describe('content type categorization', () => {
     it('categorizes movie files', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       const movies = getMovies();
       if (movies.length === 0) {
         console.log('Skipping: no movie fixtures available');
@@ -377,11 +338,6 @@ describe('podkit sync -t video', () => {
     });
 
     it('categorizes TV show files', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       const tvShows = getTVShows();
       if (tvShows.length === 0) {
         console.log('Skipping: no TV show fixtures available');
@@ -413,11 +369,6 @@ describe('podkit sync -t video', () => {
 
   describe('quiet mode', () => {
     it('suppresses output with --quiet', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);
@@ -445,11 +396,6 @@ describe('podkit sync -t video', () => {
 
   describe('verbose mode', () => {
     it('shows detailed output with --verbose', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: video fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([getVideo(Videos.COMPATIBLE_H264)]);
         tempSourceDirs.push(sourceDir);

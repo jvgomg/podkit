@@ -10,38 +10,28 @@
  * to verify the flag is correctly synced.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('multi-format');
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
 
 interface DeviceTrack {
   title: string;
   artist: string | null;
   album: string | null;
   compilation: boolean;
-}
-
-// =============================================================================
-// Test Fixture Helpers
-// =============================================================================
-
-/**
- * Check if metaflac is available for modifying FLAC metadata.
- */
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /**
@@ -177,29 +167,7 @@ async function getDeviceTracks(configPath: string, devicePath: string): Promise<
 // =============================================================================
 
 describe('compilation album support', () => {
-  let fixturesAvailable: boolean;
-  let metaflacAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-  });
-
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!metaflacAvailable) {
-      console.log('Skipping: metaflac not available (install flac package)');
-      return true;
-    }
-    return false;
-  }
-
   it('syncs compilation flag from FLAC metadata to iPod', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       const collectionDir = await createCompilationCollection();
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -250,8 +218,6 @@ describe('compilation album support', () => {
   }, 120000);
 
   it('reports compilation metadata correction on re-sync when tag changes', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       const collectionDir = await createCompilationCollection();
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));

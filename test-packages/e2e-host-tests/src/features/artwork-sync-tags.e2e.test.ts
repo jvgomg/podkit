@@ -11,38 +11,21 @@
  * - ffmpeg (for generating replacement artwork images)
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-// =============================================================================
-// Prerequisite Checks
-// =============================================================================
-
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
 
 // =============================================================================
 // Test Fixture Helpers
@@ -127,36 +110,10 @@ const FLAC_FILENAMES = ['01-harmony.flac', '02-vibrato.flac', '03-tremolo.flac']
 // =============================================================================
 
 describe('artwork sync tags (directory source)', () => {
-  let fixturesAvailable = false;
-  let metaflacAvailable = false;
-  let ffmpegAvailable = false;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
-  });
-
-  function canRun(): boolean {
-    return fixturesAvailable && metaflacAvailable && ffmpegAvailable;
-  }
-
-  function skipReason(): string | null {
-    if (!fixturesAvailable) return 'fixtures not available';
-    if (!metaflacAvailable) return 'metaflac not available';
-    if (!ffmpegAvailable) return 'ffmpeg not available';
-    return null;
-  }
-
   // ---------------------------------------------------------------------------
   // Test 1: Progressive artwork hash write (no --check-artwork needed)
   // ---------------------------------------------------------------------------
   it('progressive sync writes artwork hashes without --check-artwork', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -204,11 +161,6 @@ describe('artwork sync tags (directory source)', () => {
   // Test 2: artwork-removed detection
   // ---------------------------------------------------------------------------
   it('detects artwork-removed when artwork is stripped from source files', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -286,11 +238,6 @@ describe('artwork sync tags (directory source)', () => {
   // Test 3: artwork-added detection
   // ---------------------------------------------------------------------------
   it('detects artwork-added when artwork is embedded into a previously bare track', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -345,11 +292,6 @@ describe('artwork sync tags (directory source)', () => {
   // Test 4: artwork-updated via directory source
   // ---------------------------------------------------------------------------
   it('detects artwork-updated when artwork changes in source files', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -439,11 +381,6 @@ describe('artwork sync tags (directory source)', () => {
   // Test 5: --force-sync-tags --check-artwork establishes baselines
   // ---------------------------------------------------------------------------
   it('--force-sync-tags --check-artwork establishes artwork baselines', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -531,11 +468,6 @@ describe('artwork sync tags (directory source)', () => {
   // Test 6: Artwork hash survives preset change re-transcode
   // ---------------------------------------------------------------------------
   it('artwork hash survives preset change re-transcode', async () => {
-    if (!canRun()) {
-      console.log(`Skipping: ${skipReason()}`);
-      return;
-    }
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;

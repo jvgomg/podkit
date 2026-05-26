@@ -10,20 +10,21 @@
 import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli, runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
+import { Albums, getAlbumDir } from '../helpers/fixtures';
 import type { SyncOutput } from 'podkit/types';
+
+ensureFixturesExist('multi-format');
 
 // Track temp config paths for cleanup
 let tempConfigPaths: string[] = [];
 
 describe('mixed format collection sync', () => {
-  let fixturesAvailable: boolean;
   let multiFormatPath: string;
 
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
+  beforeAll(() => {
     multiFormatPath = getAlbumDir(Albums.MULTI_FORMAT);
   });
 
@@ -42,11 +43,6 @@ describe('mixed format collection sync', () => {
 
   describe('dry-run with mixed formats', () => {
     it('shows correct plan for mixed format collection', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -78,11 +74,6 @@ describe('mixed format collection sync', () => {
     });
 
     it('generates lossy-to-lossy warning for OGG and Opus files', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -108,11 +99,6 @@ describe('mixed format collection sync', () => {
     });
 
     it('shows warning in human-readable output', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -135,11 +121,6 @@ describe('mixed format collection sync', () => {
 
   describe('quality presets', () => {
     it('uses max preset for mixed collection', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -165,11 +146,6 @@ describe('mixed format collection sync', () => {
     });
 
     it('uses CBR encoding for all transcodes', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -196,11 +172,6 @@ describe('mixed format collection sync', () => {
 
   describe('actual sync with mixed formats', () => {
     it('syncs mixed format collection successfully', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -232,11 +203,6 @@ describe('mixed format collection sync', () => {
     }, 120000); // 2 min timeout for transcoding
 
     it('syncs with max quality', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -259,11 +225,6 @@ describe('mixed format collection sync', () => {
     }, 120000);
 
     it('syncs with low quality for smaller files', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);
@@ -288,11 +249,6 @@ describe('mixed format collection sync', () => {
 
   describe('verbose output', () => {
     it('shows detailed warning info with --verbose', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const configPath = await createTempConfig(multiFormatPath);
         tempConfigPaths.push(configPath);

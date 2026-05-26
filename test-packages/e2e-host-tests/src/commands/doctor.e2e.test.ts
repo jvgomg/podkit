@@ -7,18 +7,22 @@
  * For artwork repair tests, see ../features/doctor-repair.e2e.test.ts.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync, writeFileSync } from 'node:fs';
-import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 import { readdir, stat, truncate, writeFile } from 'node:fs/promises';
+
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
 
 // ── Output types (mirrors packages/podkit-cli/src/commands/doctor.ts) ────────
 
@@ -37,26 +41,6 @@ interface DoctorOutput {
   mountPoint: string;
   deviceModel: string;
   checks: DoctorCheckOutput[];
-}
-
-// ── Prerequisite checks ──────────────────────────────────────────────────────
-
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 // ── Test fixture helpers ─────────────────────────────────────────────────────
@@ -165,38 +149,12 @@ async function corruptIthmb(ipodPath: string): Promise<void> {
 // =============================================================================
 
 describe('podkit doctor', () => {
-  let fixturesAvailable = false;
-  let metaflacAvailable = false;
-  let ffmpegAvailable = false;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
-  });
-
-  function canRun(): boolean {
-    return fixturesAvailable && metaflacAvailable && ffmpegAvailable;
-  }
-
-  function skipReason(): string | null {
-    if (!fixturesAvailable) return 'fixtures not available';
-    if (!metaflacAvailable) return 'metaflac not available';
-    if (!ffmpegAvailable) return 'ffmpeg not available';
-    return null;
-  }
-
   // ===========================================================================
   // Diagnostic tests
   // ===========================================================================
 
   describe('diagnostics', () => {
     it('reports healthy for iPod with valid artwork', async () => {
-      if (!canRun()) {
-        console.log(`Skipping: ${skipReason()}`);
-        return;
-      }
-
       await withTarget(async (target) => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
         let collectionDir: string | undefined;
@@ -221,11 +179,6 @@ describe('podkit doctor', () => {
     }, 120000);
 
     it('reports failure when ithmb files are truncated', async () => {
-      if (!canRun()) {
-        console.log(`Skipping: ${skipReason()}`);
-        return;
-      }
-
       await withTarget(async (target) => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
         let collectionDir: string | undefined;
@@ -319,11 +272,6 @@ describe('podkit doctor', () => {
     }, 30000);
 
     it('produces valid JSON with correct schema for fail case', async () => {
-      if (!canRun()) {
-        console.log(`Skipping: ${skipReason()}`);
-        return;
-      }
-
       await withTarget(async (target) => {
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
         let collectionDir: string | undefined;

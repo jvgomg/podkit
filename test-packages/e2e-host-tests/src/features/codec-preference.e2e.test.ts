@@ -18,29 +18,20 @@
 import { describe, it, expect, beforeAll } from 'bun:test';
 import { mkdtemp, rm, writeFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
-import { areFixturesAvailable, getAlbumDir, Albums } from '../helpers/fixtures';
+import { getAlbumDir, Albums } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+ensureFixturesExist('goldberg-selections');
 
 // =============================================================================
 // Helpers
 // =============================================================================
-
-/**
- * Check if ffmpeg is available.
- */
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Create a temporary directory to act as a mass-storage device.
@@ -143,31 +134,13 @@ device = "test"
 // =============================================================================
 
 describe('codec preference: mass-storage sync', () => {
-  let fixturesAvailable: boolean;
-  let ffmpegAvailable: boolean;
   let goldbergPath: string;
 
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
+  beforeAll(() => {
     goldbergPath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
   });
 
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!ffmpegAvailable) {
-      console.log('Skipping: ffmpeg not available');
-      return true;
-    }
-    return false;
-  }
-
   it('syncs FLAC to Opus when codec preference is opus-first', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-codec-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -220,8 +193,6 @@ describe('codec preference: mass-storage sync', () => {
   }, 120000);
 
   it('syncs FLAC to AAC when codec preference is aac-first', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-codec-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -274,8 +245,6 @@ describe('codec preference: mass-storage sync', () => {
   }, 120000);
 
   it('re-syncs with new codec when codec preference changes from AAC to Opus', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-codec-resync-config-'));
     const configPath = join(configDir, 'config.toml');

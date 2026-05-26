@@ -4,25 +4,22 @@
  * Tests sync operations including dry-run, actual sync, and error handling.
  */
 
-import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli, runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
+import { Albums, getAlbumDir } from '../helpers/fixtures';
 import type { SyncOutput } from 'podkit/types';
+
+ensureFixturesExist('goldberg-selections');
 
 // Track temp config paths for cleanup
 let tempConfigPaths: string[] = [];
 
 describe('podkit sync', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-  });
-
   afterEach(async () => {
     // Clean up temp config files
     for (const configPath of tempConfigPaths) {
@@ -54,11 +51,6 @@ describe('podkit sync', () => {
     });
 
     it('fails when named device not found in config', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
       const configPath = await createTempConfig(sourcePath);
       tempConfigPaths.push(configPath);
@@ -97,11 +89,6 @@ describe('podkit sync', () => {
 
   describe('dry-run', () => {
     it('shows sync plan without making changes', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -127,11 +114,6 @@ describe('podkit sync', () => {
     });
 
     it('outputs dry-run plan in JSON', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -188,11 +170,6 @@ describe('podkit sync', () => {
 
   describe('actual sync', () => {
     it('syncs tracks to empty iPod', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -214,11 +191,6 @@ describe('podkit sync', () => {
     }, 60000); // 60s timeout for transcoding
 
     it('outputs sync result in JSON', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -243,11 +215,6 @@ describe('podkit sync', () => {
     }, 60000);
 
     it('uses specified quality preset', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -272,11 +239,6 @@ describe('podkit sync', () => {
 
   describe('incremental sync', () => {
     it('skips already synced tracks', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -306,11 +268,6 @@ describe('podkit sync', () => {
 
   describe('quiet mode', () => {
     it('suppresses progress output with --quiet', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -334,11 +291,6 @@ describe('podkit sync', () => {
 
   describe('eject behavior', () => {
     it('shows eject tip after successful sync', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -353,11 +305,6 @@ describe('podkit sync', () => {
     }, 60000);
 
     it('does NOT show eject tip on dry-run', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -379,11 +326,6 @@ describe('podkit sync', () => {
     });
 
     it('attempts to eject with --eject flag', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);
@@ -407,11 +349,6 @@ describe('podkit sync', () => {
     }, 60000);
 
     it('includes eject status in JSON output with --eject', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
         const configPath = await createTempConfig(sourcePath);

@@ -9,27 +9,19 @@
  * This validates the entire sync pipeline works end-to-end.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { join } from 'node:path';
 import { rm } from 'node:fs/promises';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli, runCliJson, createTempConfig } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
+import { Albums, getAlbumDir } from '../helpers/fixtures';
 import type { SyncOutput } from 'podkit/types';
 
+ensureFixturesExist('goldberg-selections');
+
 describe('workflow: fresh sync', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-  });
-
   it('completes full sync workflow: init -> sync -> verify', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-
     await withTarget(async (target) => {
       const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
 

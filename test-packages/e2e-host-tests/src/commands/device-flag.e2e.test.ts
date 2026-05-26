@@ -10,25 +10,22 @@
  * - Otherwise -> try named device lookup
  */
 
-import { describe, it, expect, beforeAll, afterEach } from 'bun:test';
+import { describe, it, expect, afterEach } from 'bun:test';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, Albums, getAlbumDir } from '../helpers/fixtures';
+import { Albums, getAlbumDir } from '../helpers/fixtures';
 import type { SyncOutput } from 'podkit/types';
+
+ensureFixturesExist('goldberg-selections');
 
 // Track temp directories for cleanup
 let tempDirs: string[] = [];
 
 describe('global --device flag', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-  });
-
   afterEach(async () => {
     // Clean up temp directories
     for (const dir of tempDirs) {
@@ -222,11 +219,6 @@ volumeName = "Terapod"
 
   describe('sync command with --device', () => {
     it('uses --device path for sync', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
 
@@ -263,11 +255,6 @@ music = "main"
     });
 
     it('outputs JSON with --device flag', async () => {
-      if (!fixturesAvailable) {
-        console.log('Skipping: fixtures not available');
-        return;
-      }
-
       await withTarget(async (target) => {
         const sourcePath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
 

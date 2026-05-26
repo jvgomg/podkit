@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 
+import { requireBinary } from '@podkit/test-fixtures';
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import {
@@ -22,6 +23,12 @@ import {
   buildAudioSyncTag,
   buildCopySyncTag,
 } from '../metadata/sync-tags.js';
+
+// This suite spawns ffmpeg to synthesise FLAC/M4A files on a temp "device".
+// Fail loudly at module load if ffmpeg is missing — historically each test
+// silently passed via a `skipIfNoFfmpeg()` guard, which hid coverage gaps.
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+
 const MUSIC_DIR = 'Music';
 
 // =============================================================================
@@ -43,15 +50,6 @@ function createTempDevice(): string {
 
 function removeTempDevice(dir: string): void {
   fs.rmSync(dir, { recursive: true, force: true });
-}
-
-function isFfmpegAvailable(): boolean {
-  try {
-    execFileSync('ffmpeg', ['-version'], { stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 /** Generate a minimal FLAC file in the device's Music/ directory */
@@ -124,7 +122,6 @@ function generateM4aOnDevice(
 
 describe('MassStorageAdapter sync tag round-trip', () => {
   let mountPoint: string;
-  const ffmpegAvailable = isFfmpegAvailable();
 
   beforeEach(() => {
     mountPoint = createTempDevice();
@@ -134,17 +131,7 @@ describe('MassStorageAdapter sync tag round-trip', () => {
     removeTempDevice(mountPoint);
   });
 
-  function skipIfNoFfmpeg() {
-    if (!ffmpegAvailable) {
-      console.log('Skipping: ffmpeg not available');
-      return true;
-    }
-    return false;
-  }
-
   test('FLAC: sync tag written by adapter is read back on re-open', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Test Artist/Test Album/01 - Test Song.flac`;
     generateFlacOnDevice(mountPoint, relPath, {
       title: 'Test Song',
@@ -180,8 +167,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('FLAC: sync tag with artwork hash survives round-trip', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - Song.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -206,8 +191,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('M4A: sync tag written by adapter is read back on re-open', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Test Artist/Test Album/01 - Test Song.m4a`;
     generateM4aOnDevice(mountPoint, relPath, {
       title: 'Test Song',
@@ -237,8 +220,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('sync tag update overwrites previous tag on re-open', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - Song.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -268,8 +249,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('addTrack with comment persists sync tag to new file', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     // Generate a source file outside the device
     const sourceDir = createTempDevice();
     const sourcePath = path.join(sourceDir, 'source.flac');
@@ -333,8 +312,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('managed file status survives round-trip with sync tags', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const sourceDir = createTempDevice();
     const sourcePath = path.join(sourceDir, 'source.flac');
     execFileSync(
@@ -394,8 +371,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   // ---------------------------------------------------------------------------
 
   test('writeSyncTag creates new tag when track has no comment', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - NoComment.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -425,8 +400,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('writeSyncTag merges fields into existing tag', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - Merge.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -461,8 +434,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('writeSyncTag with artworkHash: undefined removes the field', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - RemoveHash.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -501,8 +472,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('clearSyncTag removes tag, preserves surrounding text', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - ClearTag.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -541,8 +510,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('clearSyncTag on track with no sync tag is a no-op', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     const relPath = `${MUSIC_DIR}/Artist/Album/01 - NoTag.flac`;
     generateFlacOnDevice(mountPoint, relPath);
 
@@ -566,8 +533,6 @@ describe('MassStorageAdapter sync tag round-trip', () => {
   });
 
   test('addTrack with syncTag input embeds tag in comment', async () => {
-    if (skipIfNoFfmpeg()) return;
-
     // Generate a source file outside the device
     const sourceDir = createTempDevice();
     const sourcePath = path.join(sourceDir, 'source.flac');

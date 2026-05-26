@@ -22,41 +22,20 @@ import { existsSync, statSync } from 'node:fs';
 import { execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
-import { areFixturesAvailable, getAlbumDir, Albums, getAlbumTracks } from '../helpers/fixtures';
+import { getAlbumDir, Albums, getAlbumTracks } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireBinary('ffprobe', 'ships with ffmpeg', ['-version']);
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
 
 // =============================================================================
 // Helpers
 // =============================================================================
-
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isFfprobeAvailable(): boolean {
-  try {
-    execSync('which ffprobe', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 interface FlacMetadata {
   title: string;
@@ -269,37 +248,17 @@ device = "echomini"
 // =============================================================================
 
 describe('mass-storage sync: echo-mini device', () => {
-  let fixturesAvailable: boolean;
-  let ffmpegAvailable: boolean;
-  let ffprobeAvailable: boolean;
   let goldbergPath: string;
 
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
-    ffprobeAvailable = isFfprobeAvailable();
+  beforeAll(() => {
     goldbergPath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
   });
-
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!ffmpegAvailable) {
-      console.log('Skipping: ffmpeg not available');
-      return true;
-    }
-    return false;
-  }
 
   // ---------------------------------------------------------------------------
   // Basic sync
   // ---------------------------------------------------------------------------
 
   it('syncs FLAC collection to echo-mini device with correct structure, tags, and artwork', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -356,16 +315,14 @@ describe('mass-storage sync: echo-mini device', () => {
       expect(hasArtistDir).toBe(true);
 
       // Verify artwork is embedded (transferMode=portable preserves artwork)
-      if (ffprobeAvailable) {
-        for (const file of audioFiles) {
-          expect(hasEmbeddedArtwork(file)).toBe(true);
-        }
+      for (const file of audioFiles) {
+        expect(hasEmbeddedArtwork(file)).toBe(true);
+      }
 
-        // Verify artwork is resized to fit echo-mini's 127px max
-        const dims = getArtworkDimensions(audioFiles[0]!);
-        if (dims) {
-          expect(Math.max(dims.width, dims.height)).toBeLessThanOrEqual(127);
-        }
+      // Verify artwork is resized to fit echo-mini's 127px max
+      const dims = getArtworkDimensions(audioFiles[0]!);
+      if (dims) {
+        expect(Math.max(dims.width, dims.height)).toBeLessThanOrEqual(127);
       }
     } finally {
       await rm(devicePath, { recursive: true, force: true });
@@ -378,8 +335,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('incrementally adds only new tracks on second sync', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -477,8 +432,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('removes deleted source tracks with --delete flag', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -554,8 +507,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('--delete removes managed tracks no longer in source but preserves unmanaged files', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -654,8 +605,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('detects collision with unmanaged file at target path during dry-run', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -705,8 +654,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('preserves pre-existing unmanaged music without --delete', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -770,8 +717,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('re-transcodes when quality changes from max (FLAC copy) to high (AAC)', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -864,8 +809,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('shows tip about --force-transfer-mode when transfer mode changes', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -925,12 +868,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('converts artwork from yuvj444p to yuvj420p during sync', async () => {
-    if (skipIfUnavailable()) return;
-    if (!ffprobeAvailable) {
-      console.log('Skipping: ffprobe not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -987,8 +924,6 @@ describe('mass-storage sync: echo-mini device', () => {
   // ---------------------------------------------------------------------------
 
   it('falls back to aac when opus is preferred but not supported by echo-mini', async () => {
-    if (skipIfUnavailable()) return;
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1058,8 +993,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('detects and repairs orphan files on mass-storage device via doctor', async () => {
-    if (skipIfUnavailable()) return;
-
     interface DoctorCheckOutput {
       id: string;
       name: string;
@@ -1204,12 +1137,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('groups compilation tracks under albumArtist directory', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1288,12 +1215,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('relocates files on device when source albumArtist changes', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1403,12 +1324,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('relocates files when device pathTemplate changes between syncs', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1519,12 +1434,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('relocates existing files and adds new files in the same sync when pathTemplate changes', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1650,12 +1559,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('relocates, adds, and deletes in one sync when pathTemplate changes with --delete', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1801,12 +1704,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('mass-storage converges after metadata changes in at most one re-sync', async () => {
-    if (skipIfUnavailable()) return;
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');
@@ -1902,16 +1799,6 @@ device = "echomini"
   // ---------------------------------------------------------------------------
 
   it('transferMode = "portable" in config produces files whose embedded tags match source', async () => {
-    if (skipIfUnavailable()) return;
-    if (!ffprobeAvailable) {
-      console.log('Skipping: ffprobe not available');
-      return;
-    }
-    if (!isMetaflacAvailable()) {
-      console.log('Skipping: metaflac not available');
-      return;
-    }
-
     const devicePath = await createTempDevice();
     const configDir = await mkdtemp(join(tmpdir(), 'podkit-ms-config-'));
     const configPath = join(configDir, 'config.toml');

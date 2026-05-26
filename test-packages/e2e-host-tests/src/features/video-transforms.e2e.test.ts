@@ -10,18 +10,16 @@
  * Plex-standard folder structures with language markers.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, cp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCli } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import {
-  areVideoFixturesAvailable,
-  cleanupVideoSourceDir,
-  Videos,
-  getVideoPath,
-} from '../helpers/video-fixtures';
+import { cleanupVideoSourceDir, Videos, getVideoPath } from '../helpers/video-fixtures';
+
+ensureFixturesExist('video');
 
 // =============================================================================
 // Test Fixture Helpers
@@ -105,24 +103,8 @@ video = "main"
 // =============================================================================
 
 describe('video transforms: showLanguage', () => {
-  let fixturesAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areVideoFixturesAvailable();
-  });
-
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: video fixtures not available');
-      return true;
-    }
-    return false;
-  }
-
   describe('filename parsing with language markers', () => {
     it('detects language markers from folder names in dry-run', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const sourceDir = await createLanguageVideoSourceDir();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -159,8 +141,6 @@ describe('video transforms: showLanguage', () => {
 
   describe('showLanguage transform with expand', () => {
     it('syncs videos with expanded language markers', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const sourceDir = await createLanguageVideoSourceDir();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -205,8 +185,6 @@ describe('video transforms: showLanguage', () => {
 
   describe('showLanguage disabled', () => {
     it('strips language markers when showLanguage is disabled', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const sourceDir = await createLanguageVideoSourceDir();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -249,8 +227,6 @@ describe('video transforms: showLanguage', () => {
 
   describe('transform toggle workflow', () => {
     it('updates metadata without re-transfer when toggling showLanguage', async () => {
-      if (skipIfUnavailable()) return;
-
       await withTarget(async (target) => {
         const sourceDir = await createLanguageVideoSourceDir();
         const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));

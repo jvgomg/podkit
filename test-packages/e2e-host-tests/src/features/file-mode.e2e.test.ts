@@ -14,44 +14,27 @@
  */
 
 import { describe, it, expect, beforeAll } from 'bun:test';
+import { execSync } from 'node:child_process';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getAlbumDir, Albums } from '../helpers/fixtures';
+import { getAlbumDir, Albums } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
+
+// Tier-1 system dependencies. Fail loudly at module load instead of
+// passing silently — historic skipIfUnavailable masked missing tools.
+requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireBinary('ffprobe', 'ships with ffmpeg — install ffmpeg above', ['-version']);
+ensureFixturesExist('goldberg-selections');
 
 // =============================================================================
 // Helpers
 // =============================================================================
-
-/**
- * Check if ffprobe is available.
- */
-function isFfprobeAvailable(): boolean {
-  try {
-    execSync('which ffprobe', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Check if ffmpeg is available.
- */
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Recursively find all .m4a files in the iPod's music directory.
@@ -136,40 +119,13 @@ music = "default"
 // =============================================================================
 
 describe('transferMode: embedded artwork in transcoded files', () => {
-  let fixturesAvailable: boolean;
-  let ffprobeAvailable: boolean;
-  let ffmpegAvailable: boolean;
   let goldbergPath: string;
 
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    ffprobeAvailable = isFfprobeAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
+  beforeAll(() => {
     goldbergPath = getAlbumDir(Albums.GOLDBERG_SELECTIONS);
   });
 
-  /**
-   * Skip helper for tests that need fixtures, ffprobe, and ffmpeg.
-   */
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!ffprobeAvailable) {
-      console.log('Skipping: ffprobe not available');
-      return true;
-    }
-    if (!ffmpegAvailable) {
-      console.log('Skipping: ffmpeg not available');
-      return true;
-    }
-    return false;
-  }
-
   it('strips embedded artwork with transferMode "optimized"', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       // Create config with optimized transferMode
       const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {
@@ -206,8 +162,6 @@ describe('transferMode: embedded artwork in transcoded files', () => {
   }, 120000);
 
   it('preserves embedded artwork with transferMode "portable"', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       // Create config with portable transferMode
       const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {
@@ -244,8 +198,6 @@ describe('transferMode: embedded artwork in transcoded files', () => {
   }, 120000);
 
   it('defaults to fast when transferMode is not specified', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       // Create config WITHOUT transferMode (should default to fast)
       const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {});
@@ -279,8 +231,6 @@ describe('transferMode: embedded artwork in transcoded files', () => {
   }, 120000);
 
   it('respects --transfer-mode CLI flag override', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       // Create config with optimized
       const { configPath, configDir } = await createTransferModeConfig(goldbergPath, {

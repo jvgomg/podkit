@@ -18,33 +18,21 @@
  * it works purely through metadata comparison (genre, year, trackNumber, etc.)
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { mkdtemp, rm, copyFile, writeFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
+import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
-import { areFixturesAvailable, getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-// =============================================================================
-// Test Fixture Helpers
-// =============================================================================
-
-/**
- * Check if metaflac is available for modifying FLAC metadata.
- */
-function isMetaflacAvailable(): boolean {
-  try {
-    execSync('which metaflac', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
+requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+ensureFixturesExist('goldberg-selections');
 
 /**
  * Tracks used for upgrade testing — all from Goldberg Selections with artwork.
@@ -122,29 +110,7 @@ music = "default"
 // =============================================================================
 
 describe('self-healing sync: upgrade workflow', () => {
-  let fixturesAvailable: boolean;
-  let metaflacAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    metaflacAvailable = isMetaflacAvailable();
-  });
-
-  function skipIfUnavailable(): boolean {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return true;
-    }
-    if (!metaflacAvailable) {
-      console.log('Skipping: metaflac not available');
-      return true;
-    }
-    return false;
-  }
-
   it('detects and applies metadata corrections (genre change)', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -209,8 +175,6 @@ describe('self-healing sync: upgrade workflow', () => {
   }, 120000);
 
   it('reports metadata corrections in dry-run without applying them', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -273,8 +237,6 @@ describe('self-healing sync: upgrade workflow', () => {
   }, 120000);
 
   it('preserves track count through metadata correction cycle', async () => {
-    if (skipIfUnavailable()) return;
-
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -360,12 +322,6 @@ describe('self-healing sync: upgrade workflow', () => {
 // =============================================================================
 
 describe('self-healing sync: normalization update', () => {
-  beforeAll(async () => {
-    const fixtures = await areFixturesAvailable();
-    if (!fixtures) throw new Error('Test fixtures not available — run the fixture generator first');
-    if (!isMetaflacAvailable()) throw new Error('metaflac not found — install flac');
-  });
-
   it('initial sync writes soundcheck and re-sync is idempotent', async () => {
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
@@ -521,18 +477,6 @@ describe('self-healing sync: normalization update', () => {
 // =============================================================================
 
 /**
- * Check if ffmpeg is available for generating test files.
- */
-function isFfmpegAvailable(): boolean {
-  try {
-    execSync('which ffmpeg', { stdio: 'ignore' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Generate a short MP3 test file with specific metadata.
  */
 function generateMp3(
@@ -590,20 +534,10 @@ async function findIpodMusicFiles(ipodPath: string): Promise<string[]> {
 }
 
 describe('self-healing sync: format upgrade (MP3 → FLAC)', () => {
-  let fixturesAvailable: boolean;
-  let ffmpegAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    ffmpegAvailable = isFfmpegAvailable();
-  });
-
   it('upgrades MP3 to AAC with correct .m4a extension', async () => {
-    if (!fixturesAvailable || !ffmpegAvailable) {
-      console.log('Skipping: fixtures or ffmpeg not available');
-      return;
-    }
-
+    requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', [
+      '-version',
+    ]);
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       const collectionDir = await mkdtemp(join(tmpdir(), 'podkit-format-upgrade-'));

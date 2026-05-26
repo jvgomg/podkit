@@ -18,15 +18,20 @@
  *   preventing the test from hanging indefinitely.
  */
 
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
 import { spawn } from 'node:child_process';
 import { mkdtemp, rm, readdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestIpod } from '@podkit/gpod-testing';
-import { areFixturesAvailable, getFixturesDir } from '../helpers/fixtures';
-import { getCliPath, isCliAvailable } from '../helpers/cli-runner';
+import { ensureFixturesExist } from '@podkit/e2e-shared';
+import { getFixturesDir } from '../helpers/fixtures';
+import { getCliPath } from '../helpers/cli-runner';
+
+ensureFixturesExist('multi-format');
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
 
 // =============================================================================
 // Helpers
@@ -171,24 +176,7 @@ function spawnCli(
 // =============================================================================
 
 describe('graceful shutdown during sync', () => {
-  let fixturesAvailable: boolean;
-  let cliAvailable: boolean;
-
-  beforeAll(async () => {
-    fixturesAvailable = await areFixturesAvailable();
-    cliAvailable = await isCliAvailable();
-  });
-
   it('saves completed tracks and exits 130 on SIGINT', async () => {
-    if (!fixturesAvailable) {
-      console.log('Skipping: fixtures not available');
-      return;
-    }
-    if (!cliAvailable) {
-      console.log('Skipping: CLI not built');
-      return;
-    }
-
     // Use the fixtures audio root directory which contains subdirectories
     // with tracks in multiple formats. The collection scanner recursively
     // finds all audio files.
