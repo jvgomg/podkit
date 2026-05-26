@@ -3,6 +3,8 @@ import { mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createTestIpod, TestModels } from '@podkit/gpod-testing';
+import { requireFFmpeg, requireGpodTool } from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
 import {
   IpodDatabase,
   createMusicHandler,
@@ -12,6 +14,10 @@ import {
   createFFmpegTranscoder,
 } from '@podkit/core';
 import type { CollectionTrack, DeviceTrack } from '@podkit/core';
+
+requireFFmpeg();
+requireGpodTool();
+requireLibgpodNode();
 
 /**
  * Compute music diff using the unified SyncDiffer + MusicHandler pipeline.

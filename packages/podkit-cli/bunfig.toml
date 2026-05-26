@@ -1,4 +1,9 @@
 [test]
-# See packages/podkit-core/bunfig.toml for the rationale.
-preload = ["./test/preload.ts"]
+# Bare `bun test` skips integration tests — they need system deps that not
+# every contributor has installed. `bun run test:integration` clears this
+# with `--path-ignore-patterns=`. Tests that need ffmpeg / gpod-tool /
+# libgpod-node native bindings declare their requirements at the top of the
+# test file via `requireFFmpeg() / requireGpodTool() / requireLibgpodNode()`
+# from `@podkit/test-fixtures` (and `@podkit/libgpod-node` for the native
+# check). Missing deps surface as focused module-load errors.
 pathIgnorePatterns = ["**/*.integration.test.ts"]

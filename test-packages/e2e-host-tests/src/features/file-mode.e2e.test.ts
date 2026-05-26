@@ -19,7 +19,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import { ensureFixturesExist, requireFFmpeg, requireFfprobe } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { getAlbumDir, Albums } from '../helpers/fixtures';
@@ -28,8 +28,8 @@ import type { SyncOutput } from 'podkit/types';
 
 // Tier-1 system dependencies. Fail loudly at module load instead of
 // passing silently — historic skipIfUnavailable masked missing tools.
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
-requireBinary('ffprobe', 'ships with ffmpeg — install ffmpeg above', ['-version']);
+requireFFmpeg();
+requireFfprobe();
 ensureFixturesExist('goldberg-selections');
 
 // =============================================================================

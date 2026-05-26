@@ -20,7 +20,7 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   ensureFixturesExist,
-  requireBinary,
+  requireMetaflac,
   runCliJson,
   cleanupTempConfig,
 } from '@podkit/e2e-shared';
@@ -29,7 +29,7 @@ import { getTrackPath, Tracks } from '@podkit/e2e-host-tests/helpers/fixtures';
 import { isDockerAvailable } from '../subsonic-source.js';
 import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
 
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireMetaflac();
 ensureFixturesExist('goldberg-selections');
 ensureFixturesExist('multi-format');
 ensureFixturesExist('synthetic-tests');

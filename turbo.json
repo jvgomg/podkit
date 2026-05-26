@@ -69,7 +69,6 @@
         "!src/**/*.integration.test.ts",
         "!src/**/*.perf.test.ts",
         "!src/**/*.e2e.test.ts",
-        "test/preload.ts",
         "bunfig.toml",
         "package.json"
       ],

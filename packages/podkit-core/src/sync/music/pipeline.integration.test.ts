@@ -20,7 +20,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-
+import { requireFFmpeg, requireGpodTool } from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
 import {
   MusicPipeline,
   executeMusicPlan,
@@ -35,6 +36,10 @@ import { identifyCapabilities } from '../../device/resolve-capabilities.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { CollectionTrack } from '../../adapters/interface.js';
 import type { SyncPlan } from '../engine/types.js';
+
+requireFFmpeg();
+requireGpodTool();
+requireLibgpodNode();
 
 /** Test-local helper: build DeviceCapabilities from an IpodGenerationId. */
 function capsForGeneration(id: IpodGenerationId): DeviceCapabilities {

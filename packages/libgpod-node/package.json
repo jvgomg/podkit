@@ -35,6 +35,7 @@
   },
   "devDependencies": {
     "@podkit/gpod-testing": "workspace:*",
+    "@podkit/test-fixtures": "workspace:*",
     "@types/bun": "latest",
     "bun-types": "latest",
     "node-gyp": "^11.0.0",

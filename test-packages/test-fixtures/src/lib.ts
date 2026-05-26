@@ -46,4 +46,10 @@ export {
   type StaticFixtureSet,
 } from './static/index.js';
 
-export { requireBinary } from './require-binary.js';
+export {
+  requireBinary,
+  requireFFmpeg,
+  requireFfprobe,
+  requireGpodTool,
+  requireMetaflac,
+} from './require-binary.js';

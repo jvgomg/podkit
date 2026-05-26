@@ -1,4 +1,6 @@
 [test]
-# See packages/podkit-core/bunfig.toml for the rationale.
-preload = ["./test/preload.ts"]
+# See packages/podkit-cli/bunfig.toml for the rationale on why integration
+# tests are excluded by default. The VM-runner test harness lives in
+# *.e2e.test.ts files which are gated the same way; `bun run test:vm`
+# opts back in by passing the path explicitly.
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts"]

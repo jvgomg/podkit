@@ -13,8 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-
-import { requireBinary } from '@podkit/test-fixtures';
+import { requireFFmpeg } from '@podkit/test-fixtures';
 import { MassStorageAdapter, MassStorageTrack } from './mass-storage-adapter.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import {
@@ -27,7 +26,7 @@ import {
 // This suite spawns ffmpeg to synthesise FLAC/M4A files on a temp "device".
 // Fail loudly at module load if ffmpeg is missing — historically each test
 // silently passed via a `skipIfNoFfmpeg()` guard, which hid coverage gaps.
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireFFmpeg();
 
 const MUSIC_DIR = 'Music';
 

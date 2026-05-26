@@ -26,7 +26,15 @@ export { expectCliError, type CliErrorJson, type ExpectCliErrorMatch } from './c
 
 // Re-exported from @podkit/test-fixtures so the e2e-shared entry stays a
 // one-stop import for e2e harnesses.
-export { ensureFixturesExist, requireBinary, type StaticFixtureSet } from '@podkit/test-fixtures';
+export {
+  ensureFixturesExist,
+  requireBinary,
+  requireFFmpeg,
+  requireFfprobe,
+  requireGpodTool,
+  requireMetaflac,
+  type StaticFixtureSet,
+} from '@podkit/test-fixtures';
 
 export {
   checkCliBuilt,

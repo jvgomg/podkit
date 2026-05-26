@@ -136,3 +136,6 @@ export { isNativeAvailable, getVersion as getNativeVersion } from './binding';
 // Standalone device handle (capability queries without database)
 export { deviceFromMountPoint, deviceFromModelNumber } from './binding';
 export type { NativeDevice } from './binding';
+
+// Module-load preflight for test code that depends on the native bindings.
+export { requireLibgpodNode } from './preflight';

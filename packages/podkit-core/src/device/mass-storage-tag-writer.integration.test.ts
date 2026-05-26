@@ -18,9 +18,11 @@ import {
   generateMiniMp3,
   generateMiniOggOpus,
   generateMiniOggVorbis,
+  requireFFmpeg,
 } from '@podkit/test-fixtures';
-
 import { TagLibTagWriter, type TagFields } from './mass-storage-tag-writer.js';
+
+requireFFmpeg();
 
 // =============================================================================
 // Helpers

@@ -16,6 +16,8 @@ import {
   ensureFixturesExist,
   getStaticFixturesRoot,
   getVideoFixturesDir,
+  requireFFmpeg,
+  requireFfprobe,
 } from '@podkit/test-fixtures';
 import { runCollectionMusic, runCollectionVideo } from './collection.js';
 import { BufferExitCodeSink, OutputContext } from '../output/index.js';
@@ -30,6 +32,9 @@ import {
   type GlobalOptions,
   type LoadConfigResult,
 } from '../config/index.js';
+
+requireFFmpeg();
+requireFfprobe();
 
 // Preflight: fail fast at module load if the static fixture sets have not been
 // generated. Turbo's `test:integration` task lists

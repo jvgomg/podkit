@@ -29,7 +29,8 @@ import { execSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   ensureFixturesExist,
-  requireBinary,
+  requireFFmpeg,
+  requireMetaflac,
   runCliJson,
   cleanupTempConfig,
 } from '@podkit/e2e-shared';
@@ -40,8 +41,8 @@ import { startContainer, stopContainer, getContainerPort } from '../docker/index
 
 import type { SyncOutput } from 'podkit/types';
 
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireFFmpeg();
+requireMetaflac();
 ensureFixturesExist('goldberg-selections');
 ensureFixturesExist('synthetic-tests');
 

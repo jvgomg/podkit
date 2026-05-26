@@ -20,13 +20,13 @@ import { mkdtemp, rm, writeFile, readdir, stat } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import { ensureFixturesExist, requireFFmpeg } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { getAlbumDir, Albums } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
+requireFFmpeg();
 ensureFixturesExist('goldberg-selections');
 
 // =============================================================================

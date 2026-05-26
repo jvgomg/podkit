@@ -7,10 +7,11 @@
 
 import { describe, it, expect } from 'bun:test';
 import * as path from 'node:path';
-import { ensureFixturesExist, getVideoFixturesDir } from '@podkit/test-fixtures';
+import { ensureFixturesExist, getVideoFixturesDir, requireFfprobe } from '@podkit/test-fixtures';
 import { EmbeddedVideoMetadataAdapter } from './metadata-embedded.js';
 import { isMovieMetadata, isTVShowMetadata } from './metadata.js';
 
+requireFfprobe();
 ensureFixturesExist('video');
 const FIXTURES_DIR = getVideoFixturesDir();
 

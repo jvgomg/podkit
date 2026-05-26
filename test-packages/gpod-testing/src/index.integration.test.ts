@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeAll } from 'bun:test';
+import { describe, it, expect } from 'bun:test';
+import { requireGpodTool } from '@podkit/test-fixtures';
 import { stat } from 'node:fs/promises';
 import {
   createTestIpod,
@@ -11,14 +12,9 @@ import {
   GpodToolError,
 } from './index';
 
-describe('gpod-testing', () => {
-  beforeAll(async () => {
-    const available = await isGpodToolAvailable();
-    if (!available) {
-      throw new Error('gpod-tool not found in PATH. Run `mise run tools:build` first.');
-    }
-  });
+requireGpodTool();
 
+describe('gpod-testing', () => {
   describe('isGpodToolAvailable', () => {
     it('returns true when gpod-tool is installed', async () => {
       const available = await isGpodToolAvailable();

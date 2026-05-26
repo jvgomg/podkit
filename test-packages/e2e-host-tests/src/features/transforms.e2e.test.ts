@@ -16,7 +16,7 @@ import { execSync } from 'node:child_process';
 import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import { ensureFixturesExist, requireMetaflac } from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
@@ -26,7 +26,7 @@ import type { SyncOutput } from 'podkit/types';
 // Tier-1 system dependencies. Fail loudly at module load instead of silently
 // passing every test — historically this suite used a `skipIfUnavailable()`
 // guard that masked missing tools as "all green".
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireMetaflac();
 ensureFixturesExist('multi-format');
 ensureFixturesExist('goldberg-selections');
 ensureFixturesExist('synthetic-tests');

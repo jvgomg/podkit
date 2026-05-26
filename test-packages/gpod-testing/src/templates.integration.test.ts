@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import { existsSync, statSync } from 'node:fs';
+import { requireGpodTool } from '@podkit/test-fixtures';
 import { createTestIpod, TEMPLATE_MODELS, templatePath, templatesDir } from './index';
+
+requireGpodTool();
 
 describe('template fast-path', () => {
   it('templates directory exists (run `bun turbo generate-templates` if missing)', () => {

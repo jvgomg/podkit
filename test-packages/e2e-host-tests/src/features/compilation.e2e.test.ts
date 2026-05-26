@@ -15,14 +15,14 @@ import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import { ensureFixturesExist, requireMetaflac } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireMetaflac();
 ensureFixturesExist('multi-format');
 ensureFixturesExist('goldberg-selections');
 ensureFixturesExist('synthetic-tests');

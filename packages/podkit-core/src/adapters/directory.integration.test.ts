@@ -6,11 +6,14 @@
  */
 
 import { describe, expect, it, beforeAll, afterAll } from 'bun:test';
-import { DirectoryAdapter } from './directory.js';
 import { mkdir, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { requireFFmpeg } from '@podkit/test-fixtures';
+import { DirectoryAdapter } from './directory.js';
+
+requireFFmpeg();
 
 describe('DirectoryAdapter integration', () => {
   let testDir: string;

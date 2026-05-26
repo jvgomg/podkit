@@ -7,13 +7,14 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { ensureFixturesExist, getVideoFixturesDir } from '@podkit/test-fixtures';
+import { ensureFixturesExist, getVideoFixturesDir, requireFfprobe } from '@podkit/test-fixtures';
 import {
   VideoDirectoryAdapter,
   type VideoScanProgress,
   type VideoScanWarning,
 } from './directory-adapter.js';
 
+requireFfprobe();
 ensureFixturesExist('video');
 const FIXTURES_DIR = getVideoFixturesDir();
 

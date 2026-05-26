@@ -11,11 +11,16 @@
 
 import { describe, it, expect } from 'bun:test';
 import { withTestIpod } from '@podkit/gpod-testing';
+import { requireGpodTool } from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IpodDatabase } from './database.js';
 import { IpodError } from './errors.js';
+
+requireGpodTool();
+requireLibgpodNode();
 
 describe('IpodDatabase integration', () => {
   describe('open()', () => {

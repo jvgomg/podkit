@@ -9,6 +9,8 @@
 import { describe, expect, it, afterEach } from 'bun:test';
 import * as fs from 'node:fs';
 import { withTestIpod, TestModels } from '@podkit/gpod-testing';
+import { requireGpodTool } from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
 import {
   IpodDatabase,
   MediaType,
@@ -19,6 +21,9 @@ import {
 import { setContext, clearContext } from '../context.js';
 import type { PodkitConfig, GlobalOptions, LoadConfigResult } from '../config/index.js';
 import { DEFAULT_TRANSFORMS_CONFIG, DEFAULT_VIDEO_TRANSFORMS_CONFIG } from '../config/index.js';
+
+requireGpodTool();
+requireLibgpodNode();
 
 // Test helpers
 

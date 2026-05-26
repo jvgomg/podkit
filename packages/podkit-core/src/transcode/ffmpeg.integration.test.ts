@@ -9,16 +9,23 @@ import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { ensureFixturesExist, getMultiFormatFixturesDir } from '@podkit/test-fixtures';
+import {
+  ensureFixturesExist,
+  getMultiFormatFixturesDir,
+  requireFFmpeg,
+  requireFfprobe,
+} from '@podkit/test-fixtures';
 import {
   FFmpegTranscoder,
   isFFmpegAvailable,
   FFmpegNotFoundError,
   TranscodeError,
 } from './ffmpeg.js';
-
-ensureFixturesExist('multi-format');
 import type { TranscodeProgress } from './types.js';
+
+requireFFmpeg();
+requireFfprobe();
+ensureFixturesExist('multi-format');
 
 let transcoder: FFmpegTranscoder;
 let testDir: string;

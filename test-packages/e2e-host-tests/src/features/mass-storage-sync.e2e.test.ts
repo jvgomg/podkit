@@ -22,15 +22,20 @@ import { existsSync, statSync } from 'node:fs';
 import { execSync, execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import {
+  ensureFixturesExist,
+  requireFFmpeg,
+  requireFfprobe,
+  requireMetaflac,
+} from '@podkit/e2e-shared';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { getAlbumDir, Albums, getAlbumTracks } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
-requireBinary('ffprobe', 'ships with ffmpeg', ['-version']);
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireFFmpeg();
+requireFfprobe();
+requireMetaflac();
 ensureFixturesExist('goldberg-selections');
 
 // =============================================================================

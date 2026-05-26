@@ -32,10 +32,12 @@ packages/            # Published / published-adjacent packages
 test-packages/             # Testing infrastructure (private, not published)
 ├── device-testing/        # VM test harness — DevicePersona + SystemState registries, TestRuntime, Lima yamls, apply-state.sh
 ├── device-testing-daemon/ # FunctionFS userspace daemon — synthesises iPod USB gadget on dummy_hcd
-├── e2e-host-tests/        # End-to-end CLI tests on the host (dummy + real iPod)
+├── e2e-docker-tests/      # End-to-end tests requiring a Docker harness (Subsonic / Navidrome)
+├── e2e-host-tests/        # End-to-end CLI tests on the host (dummy + real iPod, no Docker)
+├── e2e-shared/            # Cross-cutting helpers shared by every e2e package (CLI runner, preflight, error assertions)
 ├── e2e-vm-tests/          # End-to-end podkit feature tests inside the Lima VM
 ├── gpod-testing/          # Test utilities for iPod environments (no hardware needed)
-└── test-fixtures/         # Test fixture generator (FLAC files with controllable metadata/artwork)
+└── test-fixtures/         # Static + dynamic test fixtures (audio + video, lib + CLI generators)
 
 tools/
 ├── demo/            # Live demo documentation for the virtual iPod system
@@ -57,7 +59,9 @@ bun run dev                      # Run in development mode
 bun run test                     # Run all tests (unit + integration)
 bun run test:unit                # Run unit tests only
 bun run test:integration         # Run integration tests only
-bun run test:e2e                 # Run E2E tests (dummy iPod)
+bun run test:perf                # Run *.perf.test.ts performance benchmarks (manual)
+bun run test:e2e                 # Run E2E tests (dummy iPod, no Docker)
+bun run test:docker              # Run Docker-gated E2E tests (Subsonic / Navidrome)
 bun run test --filter podkit-core # Run tests for specific package
 mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 
@@ -261,7 +265,11 @@ Key files to understand:
 | Core library | `packages/podkit-core/src/index.ts` |
 | libgpod bindings | `packages/libgpod-node/src/index.ts` |
 | Test utilities | `test-packages/gpod-testing/src/index.ts` |
-| E2E test helpers | `test-packages/e2e-host-tests/src/helpers/index.ts` |
+| Shared e2e helpers | `test-packages/e2e-shared/src/index.ts` |
+| Host e2e helpers | `test-packages/e2e-host-tests/src/helpers/index.ts` |
+| Host e2e preflight | `test-packages/e2e-host-tests/src/helpers/preflight.ts` |
+| Docker e2e harness | `test-packages/e2e-docker-tests/src/docker/index.ts` |
+| Subsonic test source | `test-packages/e2e-docker-tests/src/subsonic-source.ts` |
 | VM test harness | `test-packages/device-testing/src/index.ts` |
 | VM test entry | `test-packages/e2e-vm-tests/src/` |
 | FunctionFS daemon | `test-packages/device-testing-daemon/src/main.ts` |
@@ -271,7 +279,10 @@ Key files to understand:
 | gpod-tool CLI | `tools/gpod-tool/gpod-tool.c` |
 | Demo build | `packages/demo/build.ts` |
 | Demo tape | `packages/demo/demo.tape` |
-| Test fixture generator | `test-packages/test-fixtures/src/index.ts` |
+| Test fixtures lib | `test-packages/test-fixtures/src/lib.ts` |
+| Static fixture generators | `test-packages/test-fixtures/src/static/` |
+| Dynamic fixture CLI | `test-packages/test-fixtures/scripts/generate-fixtures.ts` |
+| Static fixture CLI | `test-packages/test-fixtures/scripts/generate-static-fixtures.ts` |
 | Docker entrypoint | `packages/podkit-docker/entrypoint.sh` |
 | Dockerfile | `packages/podkit-docker/Dockerfile` |
 | Linux device manager | `packages/podkit-core/src/device/platforms/linux.ts` |

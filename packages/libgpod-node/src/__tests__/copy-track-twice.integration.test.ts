@@ -13,8 +13,7 @@
 import { describe, it, expect } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import {
   withTestIpod,
@@ -23,44 +22,15 @@ import {
   LibgpodError,
   TEST_MP3_PATH,
 } from './helpers/test-setup';
+import { ensureFixturesExist, getMultiFormatFixturesDir } from '@podkit/test-fixtures';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+ensureFixturesExist('multi-format');
 
-// Second test file: a different MP3 with a different size
-const TEST_MP3_PATH_2 = join(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'test',
-  'fixtures',
-  'audio',
-  'multi-format',
-  '05-mp3-track.mp3'
-);
+// Second test file: a different MP3 from the multi-format fixture set.
+const TEST_MP3_PATH_2 = join(getMultiFormatFixturesDir(), '05-mp3-track.mp3');
 
-// AAC test file: for cross-format replacement tests (MP3 → AAC)
-const TEST_AAC_PATH = join(
-  __dirname,
-  '..',
-  '..',
-  '..',
-  '..',
-  'test',
-  'fixtures',
-  'audio',
-  'multi-format',
-  '06-aac-track.m4a'
-);
-
-// Verify test files exist
-if (!existsSync(TEST_MP3_PATH_2)) {
-  throw new Error(`Second test MP3 not found: ${TEST_MP3_PATH_2}`);
-}
-if (!existsSync(TEST_AAC_PATH)) {
-  throw new Error(`Test AAC not found: ${TEST_AAC_PATH}`);
-}
+// AAC test file: for cross-format replacement tests (MP3 → AAC).
+const TEST_AAC_PATH = join(getMultiFormatFixturesDir(), '06-aac-track.m4a');
 
 describe('copyTrackToDevice() called twice on same track', () => {
   it('second call is a no-op when track is already transferred', async () => {

@@ -18,22 +18,27 @@
 
 import { describe, it, expect } from 'bun:test';
 import { writeFile, readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 
 import { withTestIpod } from '@podkit/gpod-testing';
+import {
+  ensureFixturesExist,
+  getGoldbergFixturesDir,
+  getSyntheticTestsFixturesDir,
+} from '@podkit/test-fixtures';
 import { Database } from './helpers/test-setup';
 
 import { createMinimalJpeg } from './fixtures/images';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+ensureFixturesExist('goldberg-selections');
+ensureFixturesExist('synthetic-tests');
 
-// Path to the real test fixture cover images (visually distinct)
-// COVER_ALBUM_A: goldberg-selections cover (blue gradient, committed to git)
-// COVER_ALBUM_B: synthetic-tests cover (green gradient, committed to git)
-const FIXTURES_PATH = join(__dirname, '..', '..', '..', '..', 'test', 'fixtures', 'audio');
-const COVER_ALBUM_A = join(FIXTURES_PATH, 'goldberg-selections', 'cover.jpg');
-const COVER_ALBUM_B = join(FIXTURES_PATH, 'synthetic-tests', 'cover.jpg');
+// Real test fixture cover images (visually distinct), regenerated on demand
+// by `@podkit/test-fixtures` — goldberg uses a blue cover, synthetic-tests
+// uses a red one, so libgpod's content-based artwork dedup treats them as
+// separate entries.
+const COVER_ALBUM_A = join(getGoldbergFixturesDir(), 'cover.jpg');
+const COVER_ALBUM_B = join(getSyntheticTestsFixturesDir(), 'cover.jpg');
 
 // Image files are written into the per-test iPod directory (`ipod.path`) which
 // is created and cleaned up by withTestIpod. See sibling artwork.integration

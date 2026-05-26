@@ -9,9 +9,14 @@
 
 import { describe, it, expect } from 'bun:test';
 import { withTestIpod } from '@podkit/gpod-testing';
+import { requireGpodTool } from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
 import { IpodDatabase } from '../ipod/database.js';
 import { checkDatabase, checkReadiness } from './readiness.js';
 import type { PlatformDeviceInfo } from './types.js';
+
+requireGpodTool();
+requireLibgpodNode();
 
 function deviceInfoFor(mountPoint: string): PlatformDeviceInfo {
   return {

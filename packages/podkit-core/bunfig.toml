@@ -1,9 +1,9 @@
 [test]
-# Smart preload: integration-preflight loads only when an integration test is
-# in argv. See test/preload.ts.
-preload = ["./test/preload.ts"]
 # Bare `bun test` and `bun run test:unit` skip integration + perf tests by
 # default — they need system deps (libgpod-node, gpod-tool, ffmpeg) that not
 # every contributor has installed. `bun run test:integration` and `test:perf`
 # clear this with `--path-ignore-patterns=` and use a pattern filter.
+# Per-file requirements are declared at module load via requireFFmpeg() /
+# requireGpodTool() / requireLibgpodNode() from `@podkit/test-fixtures` and
+# `@podkit/libgpod-node`.
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.perf.test.ts"]

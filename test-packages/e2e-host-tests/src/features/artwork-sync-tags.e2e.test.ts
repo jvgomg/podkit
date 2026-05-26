@@ -16,15 +16,15 @@ import { mkdtemp, rm, copyFile, writeFile } from 'node:fs/promises';
 import { execSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ensureFixturesExist, requireBinary } from '@podkit/e2e-shared';
+import { ensureFixturesExist, requireFFmpeg, requireMetaflac } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
 
 import type { SyncOutput } from 'podkit/types';
 
-requireBinary('ffmpeg', 'brew install ffmpeg (macOS) or apt install ffmpeg (Linux)', ['-version']);
-requireBinary('metaflac', 'brew install flac (macOS) or apt install flac (Linux)');
+requireFFmpeg();
+requireMetaflac();
 ensureFixturesExist('goldberg-selections');
 
 // =============================================================================
