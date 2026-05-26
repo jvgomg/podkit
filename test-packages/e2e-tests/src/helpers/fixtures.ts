@@ -12,7 +12,10 @@ import { join } from 'node:path';
 import { readdir } from 'node:fs/promises';
 import {
   getGoldbergFixturesDir,
+  getMultiFormatBothFixturesDir,
+  getMultiFormatEmbeddedFixturesDir,
   getMultiFormatFixturesDir,
+  getMultiFormatSidecarFixturesDir,
   getStaticFixturesRoot,
   getSyntheticTestsFixturesDir,
 } from '@podkit/test-fixtures';
@@ -40,6 +43,15 @@ export const Albums = {
 
   /** Multi-Format — 8 tracks in various formats for testing mixed collections */
   MULTI_FORMAT: 'multi-format',
+
+  /** Multi-Format with embedded artwork — scenario B of the artwork matrix */
+  MULTI_FORMAT_EMBEDDED: 'multi-format-embedded',
+
+  /** Multi-Format with sidecar cover only — scenario C of the artwork matrix */
+  MULTI_FORMAT_SIDECAR: 'multi-format-sidecar',
+
+  /** Multi-Format with embedded artwork and sidecar cover — scenario D of the artwork matrix */
+  MULTI_FORMAT_BOTH: 'multi-format-both',
 } as const;
 
 export type AlbumDir = (typeof Albums)[keyof typeof Albums];
@@ -66,6 +78,12 @@ export function getAlbumDir(album: AlbumDir): string {
       return getSyntheticTestsFixturesDir();
     case 'multi-format':
       return getMultiFormatFixturesDir();
+    case 'multi-format-embedded':
+      return getMultiFormatEmbeddedFixturesDir();
+    case 'multi-format-sidecar':
+      return getMultiFormatSidecarFixturesDir();
+    case 'multi-format-both':
+      return getMultiFormatBothFixturesDir();
   }
 }
 

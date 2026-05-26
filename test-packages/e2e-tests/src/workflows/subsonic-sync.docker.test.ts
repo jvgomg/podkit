@@ -159,47 +159,7 @@ describe('Subsonic sync workflow', () => {
     }, 120000);
   });
 
-  describe('incremental sync', () => {
-    it('second sync shows no changes needed', async () => {
-      await withTarget(async (target) => {
-        const configPath = await createSubsonicConfig(source!.serverUrl, source!.username);
-
-        try {
-          // First sync
-          const firstSync = await runCli(
-            ['--config', configPath, 'sync', '--device', target.path],
-            {
-              env: source!.getEnv(),
-              timeout: 180000,
-            }
-          );
-          expect(firstSync.exitCode).toBe(0);
-
-          const trackCountAfterFirst = await target.getTrackCount();
-          expect(trackCountAfterFirst).toBeGreaterThan(0);
-          console.log(`First sync: ${trackCountAfterFirst} tracks`);
-
-          // Second sync - should find nothing to do
-          const secondSync = await runCli(
-            ['--config', configPath, 'sync', '--device', target.path],
-            {
-              env: source!.getEnv(),
-              timeout: 60000,
-            }
-          );
-
-          expect(secondSync.exitCode).toBe(0);
-          expect(secondSync.stdout).toContain('already in sync');
-
-          // Track count should be unchanged
-          const trackCountAfterSecond = await target.getTrackCount();
-          expect(trackCountAfterSecond).toBe(trackCountAfterFirst);
-        } finally {
-          await cleanupTempConfig(configPath);
-        }
-      });
-    }, 300000);
-  });
+  // Incremental-sync regression coverage moved to art-matrix.docker.test.ts (scenario A).
 
   describe('transcoding', () => {
     it('transcodes FLAC files from Subsonic to iPod-compatible format', async () => {

@@ -28,6 +28,7 @@ const REQUIRED_ENCODERS: EncoderRequirement[] = [
   { encoder: 'aac', codec: 'AAC', usedFor: 'AAC mini-track fixtures (M4A container)' },
   { encoder: 'libvorbis', codec: 'OGG Vorbis', usedFor: '.ogg mini-track fixtures' },
   { encoder: 'libopus', codec: 'Opus', usedFor: '.opus mini-track fixtures' },
+  { encoder: 'mjpeg', codec: 'JPEG', usedFor: 'embedded artwork + cover.jpg sidecars' },
 ];
 
 function detectPackageManager(): 'brew' | 'apt' | 'dnf' | 'apk' | 'pacman' | null {

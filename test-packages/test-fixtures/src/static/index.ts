@@ -1,14 +1,19 @@
 /**
  * Static fixture generators barrel.
  *
- * Re-exports the four generator entry points plus the path/preflight helpers
+ * Re-exports the generator entry points plus the path/preflight helpers
  * so consumers can import everything from `@podkit/test-fixtures` without
  * reaching into `static/` paths.
  *
  * @module
  */
 
-export { generateMultiFormat } from './audio-multi-format.js';
+export {
+  generateMultiFormat,
+  generateMultiFormatEmbedded,
+  generateMultiFormatSidecar,
+  generateMultiFormatBoth,
+} from './audio-multi-format.js';
 export { generateGoldberg } from './audio-goldberg.js';
 export { generateSyntheticTests } from './audio-synthetic-tests.js';
 export { generateVideo } from './video.js';
@@ -17,6 +22,9 @@ export {
   ensureFixturesExist,
   getGoldbergFixturesDir,
   getMultiFormatFixturesDir,
+  getMultiFormatEmbeddedFixturesDir,
+  getMultiFormatSidecarFixturesDir,
+  getMultiFormatBothFixturesDir,
   getStaticFixturesRoot,
   getSyntheticTestsFixturesDir,
   getVideoFixturesDir,
@@ -24,11 +32,19 @@ export {
 } from './paths.js';
 
 import { generateGoldberg } from './audio-goldberg.js';
-import { generateMultiFormat } from './audio-multi-format.js';
+import {
+  generateMultiFormat,
+  generateMultiFormatBoth,
+  generateMultiFormatEmbedded,
+  generateMultiFormatSidecar,
+} from './audio-multi-format.js';
 import { generateSyntheticTests } from './audio-synthetic-tests.js';
 import {
   getGoldbergFixturesDir,
+  getMultiFormatBothFixturesDir,
+  getMultiFormatEmbeddedFixturesDir,
   getMultiFormatFixturesDir,
+  getMultiFormatSidecarFixturesDir,
   getSyntheticTestsFixturesDir,
   getVideoFixturesDir,
   type StaticFixtureSet,
@@ -43,6 +59,9 @@ import { generateVideo } from './video.js';
 export async function generateAllStaticFixtures(): Promise<void> {
   await Promise.all([
     generateMultiFormat(getMultiFormatFixturesDir()),
+    generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
+    generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
+    generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
     generateGoldberg(getGoldbergFixturesDir()),
     generateSyntheticTests(getSyntheticTestsFixturesDir()),
     generateVideo(getVideoFixturesDir()),
@@ -58,6 +77,9 @@ export async function generateAllStaticFixtures(): Promise<void> {
  */
 export const STATIC_FIXTURE_GENERATORS: Record<StaticFixtureSet, () => Promise<void>> = {
   'multi-format': () => generateMultiFormat(getMultiFormatFixturesDir()),
+  'multi-format-embedded': () => generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
+  'multi-format-sidecar': () => generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
+  'multi-format-both': () => generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
   'goldberg-selections': () => generateGoldberg(getGoldbergFixturesDir()),
   'synthetic-tests': () => generateSyntheticTests(getSyntheticTestsFixturesDir()),
   video: () => generateVideo(getVideoFixturesDir()),

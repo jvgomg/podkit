@@ -80,6 +80,34 @@ export function getMultiFormatFixturesDir(): string {
 }
 
 /**
+ * Path to the multi-format set with embedded artwork (scenario B).
+ *
+ * Same 8 tracks as `multi-format`, each with a `cover.jpg` embedded via the
+ * codec's native attached-picture mechanism.
+ */
+export function getMultiFormatEmbeddedFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-embedded');
+}
+
+/**
+ * Path to the multi-format set with a sidecar cover only (scenario C).
+ *
+ * Same 8 tracks as `multi-format`, plus a `cover.jpg` next to them. The audio
+ * files themselves carry no embedded artwork.
+ */
+export function getMultiFormatSidecarFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-sidecar');
+}
+
+/**
+ * Path to the multi-format set with both embedded artwork and a sidecar
+ * cover (scenario D).
+ */
+export function getMultiFormatBothFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-both');
+}
+
+/**
  * Path to the goldberg-selections fixture set.
  *
  * Contents: 01-harmony.flac, 02-vibrato.flac, 03-tremolo.flac, cover.jpg
@@ -112,13 +140,23 @@ export function getVideoFixturesDir(): string {
  * Names of the static fixture sets, used by `ensureFixturesExist` and by
  * `scripts/generate-static-fixtures.ts --only <set>`.
  */
-export type StaticFixtureSet = 'multi-format' | 'goldberg-selections' | 'synthetic-tests' | 'video';
+export type StaticFixtureSet =
+  | 'multi-format'
+  | 'multi-format-embedded'
+  | 'multi-format-sidecar'
+  | 'multi-format-both'
+  | 'goldberg-selections'
+  | 'synthetic-tests'
+  | 'video';
 
 /**
  * Lookup table from set name to absolute directory.
  */
 const SET_DIR: Record<StaticFixtureSet, () => string> = {
   'multi-format': getMultiFormatFixturesDir,
+  'multi-format-embedded': getMultiFormatEmbeddedFixturesDir,
+  'multi-format-sidecar': getMultiFormatSidecarFixturesDir,
+  'multi-format-both': getMultiFormatBothFixturesDir,
   'goldberg-selections': getGoldbergFixturesDir,
   'synthetic-tests': getSyntheticTestsFixturesDir,
   video: getVideoFixturesDir,
