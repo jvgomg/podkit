@@ -67,6 +67,7 @@
       "inputs": [
         "src/**",
         "!src/**/*.integration.test.ts",
+        "!src/**/*.perf.test.ts",
         "!src/**/*.e2e.test.ts",
         "test/preload.ts",
         "bunfig.toml",
@@ -81,8 +82,19 @@
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
-      "inputs": ["src/**", "test/**", "bunfig.toml", "package.json"],
+      "inputs": ["src/**", "!src/**/*.perf.test.ts", "test/**", "bunfig.toml", "package.json"],
       "outputs": []
+    },
+    "test:perf": {
+      "dependsOn": [
+        "build",
+        "^build",
+        "@podkit/gpod-testing#generate-templates",
+        "@podkit/test-fixtures#generate-static-fixtures"
+      ],
+      "inputs": ["src/**/*.perf.test.ts", "src/**", "test/**", "bunfig.toml", "package.json"],
+      "outputs": [],
+      "cache": false
     },
     "@podkit/e2e-host-tests#test": {
       "dependsOn": [

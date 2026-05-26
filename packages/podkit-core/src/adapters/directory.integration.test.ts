@@ -224,67 +224,20 @@ describe('DirectoryAdapter integration', () => {
   });
 });
 
-describe('DirectoryAdapter performance', () => {
-  let testDir: string;
-
-  // This test generates many files to test performance
-  // Only run if explicitly enabled
-  const PERFORMANCE_TEST_ENABLED = process.env.PODKIT_PERFORMANCE_TEST === '1';
-
-  describe.skipIf(!PERFORMANCE_TEST_ENABLED)('large collection', () => {
-    beforeAll(async () => {
-      testDir = join(tmpdir(), `podkit-perf-${Date.now()}`);
-      await mkdir(testDir, { recursive: true });
-
-      // Generate 100 test files (simulating a subset of a large collection)
-      const fileCount = 100;
-
-      const promises = [];
-      for (let i = 0; i < fileCount; i++) {
-        const filePath = join(testDir, `track-${String(i).padStart(4, '0')}.mp3`);
-        promises.push(
-          generateTestAudio(filePath, 'mp3', {
-            title: `Track ${i}`,
-            artist: `Artist ${i % 10}`,
-            album: `Album ${i % 20}`,
-            track: `${(i % 12) + 1}/12`,
-            date: String(2020 + (i % 5)),
-          })
-        );
-      }
-      await Promise.all(promises);
-    });
-
-    afterAll(async () => {
-      if (testDir) {
-        await rm(testDir, { recursive: true, force: true });
-      }
-    });
-
-    it('scans 100 files in reasonable time', async () => {
-      const start = performance.now();
-
-      const adapter = new DirectoryAdapter({ path: testDir });
-      const tracks = await adapter.getItems();
-
-      const elapsed = performance.now() - start;
-
-      expect(tracks).toHaveLength(100);
-      // Should complete in under 10 seconds (generous for CI)
-      expect(elapsed).toBeLessThan(10000);
-    });
-  });
-});
+// The large-collection performance test moved to
+// `./directory.perf.test.ts` and runs via `bun run test:perf`. Default
+// `bun run test` / `test:integration` flows exclude `*.perf.test.ts` via
+// bunfig's `pathIgnorePatterns`.
 
 /**
- * Generate a minimal test audio file with metadata
+ * Generate a minimal test audio file with metadata.
  */
 async function generateTestAudio(
   filePath: string,
   format: string,
   metadata: Record<string, string>
 ): Promise<void> {
-  // Build FFmpeg metadata arguments
+  // Build ffmpeg metadata arguments
   const metadataArgs = Object.entries(metadata)
     .map(([key, value]) => ['-metadata', `${key}=${value}`])
     .flat();
@@ -298,15 +251,14 @@ async function generateTestAudio(
     '-t',
     '0.1',
     ...metadataArgs,
-    '-y', // Overwrite output
+    '-y',
     '-loglevel',
     'error',
     filePath,
   ];
 
-  // Use spawnSync to properly handle arguments with spaces
   const result = spawnSync('ffmpeg', args, { stdio: 'ignore' });
   if (result.status !== 0) {
-    throw new Error(`FFmpeg failed with status ${result.status}`);
+    throw new Error(`ffmpeg failed with status ${result.status} for ${format} file ${filePath}`);
   }
 }

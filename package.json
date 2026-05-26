@@ -17,6 +17,7 @@
     "test": "turbo run test",
     "test:unit": "turbo run test:unit",
     "test:integration": "turbo run test:integration",
+    "test:perf": "turbo run test:perf",
     "test:e2e": "turbo run test --filter=@podkit/e2e-host-tests",
     "test:vm": "turbo run test:vm",
     "harness:create": "bun run --cwd test-packages/device-testing harness:create",

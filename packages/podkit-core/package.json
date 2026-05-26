@@ -19,6 +19,7 @@
     "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
     "test:integration": "gpod-tests-parallel",
+    "test:perf": "gpod-tests-parallel --pattern '*.perf.test.ts'",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
