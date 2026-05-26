@@ -80,7 +80,10 @@ bun run test:e2e
 IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 
 # Run Docker-based E2E tests (Subsonic, etc.)
-bun run test:e2e:docker
+bun run test:docker
+
+# Run performance benchmarks (manual)
+bun run test:perf
 
 # Run tests for a specific package
 bun run test --filter @podkit/core
@@ -118,7 +121,7 @@ bun run test:e2e          # E2E with dummy iPod
 mise run test:linux        # Runs on both Debian + Alpine VMs
 
 # 4. Docker E2E (requires Docker — for Subsonic tests)
-bun run test:e2e:docker
+bun run test:docker
 ```
 
 ### Real hardware validation (device changes only)
@@ -137,7 +140,9 @@ IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 | `bun run test:integration` | Integration tests only (needs gpod-tool, FFmpeg) | After changing sync/transcode logic |
 | `bun run test:e2e` | E2E with dummy iPod | After CLI changes |
 | `bun run test:e2e:real` | E2E with real iPod (needs `IPOD_MOUNT`) | Device-related changes |
-| `bun run test:e2e:docker` | Docker-based E2E (Subsonic) | Subsonic adapter changes |
+| `bun run test:docker` | Docker-based E2E (Subsonic / Navidrome) | Subsonic adapter changes |
+| `bun run test:perf` | Performance benchmarks (`*.perf.test.ts`) | Suspect perf regression |
+| `bun run test:vm` | E2E inside the Lima VM harness | USB-gadget / dummy_hcd changes |
 | `mise run test:linux` | Full suite on Debian + Alpine Linux VMs | Linux/device manager changes |
 | `mise run test:linux:debian` | Full suite on Debian VM (glibc) | Quick Linux check |
 | `mise run test:linux:alpine` | Full suite on Alpine VM (musl) | Docker image parity |
@@ -203,14 +208,27 @@ it('adds a track to iPod', async () => {
 
 See `test-packages/gpod-testing/README.md` for full API documentation.
 
-## Test Audio Fixtures
+## Test Audio + Video Fixtures
 
-Pre-built FLAC files with complete metadata and embedded artwork are available in `test/fixtures/audio/`:
+Synthetic audio + video fixtures are owned by the `@podkit/test-fixtures` package. Outputs land under `test-packages/test-fixtures/fixtures/` (gitignored, regenerated on demand and cached by turbo).
 
-- 6 FLAC files organized as 2 albums (3 tracks each)
-- Complete metadata (artist, album, title, track number, year, genre)
-- Embedded album artwork (different per album)
-- One track without artwork for edge case testing
+Static sets:
+
+- `multi-format` — 8 codec samples (WAV, AIFF, FLAC, ALAC, MP3, AAC, OGG Vorbis, Opus).
+- `goldberg-selections` — 3 mono FLACs with shared album cover.
+- `synthetic-tests` — 3 mono FLACs; track 3 deliberately has no embedded artwork for the "no artwork" edge case.
+- `video` — 6 short videos covering passthrough / transcode-required / unsupported-codec / metadata-rich cases.
+
+Locate fixtures via the lib API — never hard-code paths from the repo root:
+
+```ts
+import { ensureFixturesExist, getMultiFormatFixturesDir } from '@podkit/test-fixtures';
+
+ensureFixturesExist('multi-format'); // module-load preflight; throws with regen hint
+const dir = getMultiFormatFixturesDir();
+```
+
+Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../../test-packages/test-fixtures/README.md) for the full inventory.
 
 For tests needing specific audio characteristics, generate files dynamically:
 
@@ -284,17 +302,16 @@ ffmpeg -version
 
 ## Docker-Based E2E Tests
 
-Some E2E tests require Docker for external services (Navidrome for Subsonic):
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-docker-tests` — a separate package from the regular E2E suite. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
 
 ```bash
 # Run Docker-based tests
-bun run test:e2e:docker
+bun run test:docker
 
 # Container cleanup
-cd test-packages/e2e-host-tests
-bun run cleanup:docker:list   # List orphaned containers
-bun run cleanup:docker        # Remove stopped containers
-bun run cleanup:docker --force  # Force remove all
+bun run --filter @podkit/e2e-docker-tests cleanup:list   # List orphaned containers
+bun run --filter @podkit/e2e-docker-tests cleanup        # Remove stopped containers
+bun run --filter @podkit/e2e-docker-tests cleanup:force  # Force remove all
 ```
 
 ## Brew Install Smoke Test

@@ -6,9 +6,16 @@ Also see [docs/developers/testing.md](../docs/developers/testing.md) for full te
 
 ## Quick Reference
 
-- **Unit tests** (`*.test.ts`): Fast, no external dependencies
-- **Integration tests** (`*.integration.test.ts`): Require gpod-tool, FFmpeg, etc.
-- **E2E tests** (`test-packages/e2e-host-tests/`): Full CLI workflow tests
+Tests are tiered by filename suffix. Each tier has a turbo task, a `bunfig.toml` `pathIgnorePatterns` gate, and a default position in the dev loop. See [Test tiers and pathIgnorePatterns](#test-tiers-and-pathignorepatterns) below for the wiring.
+
+| Suffix | Tier | Runs by default? | Requirements |
+| --- | --- | --- | --- |
+| `*.test.ts` | **Unit** — fast, in-process, no external deps. | Yes, in `bun test` / `test:unit`. | None. |
+| `*.integration.test.ts` | **Integration** — real system deps (ffmpeg, gpod-tool, libgpod-node native bindings, fixtures). | No — gated. Run via `test:integration`. | Whatever the test declares at module load via `requireFFmpeg()` &c. |
+| `*.perf.test.ts` | **Performance benchmark** — timing-sensitive, generates synthetic load. | No — gated. Run via `test:perf`. | Same as integration. |
+| `*.e2e.test.ts` (in `e2e-*` packages) | **End-to-end** — spawns the built CLI as a subprocess. | No — separate task. Run via `test:e2e` / `test:docker` / `test:vm`. | Built CLI + harness-specific deps. |
+
+**Hard rule:** integration / perf / e2e tests that depend on a tool or fixture call `requireX()` / `ensureFixturesExist()` at module load. Missing deps fail the suite loudly, not silently. See [Module-load preflight](#module-load-preflight) and [Test skip anti-patterns](#test-skip-anti-patterns).
 
 ## Per-OS Test Tagging
 
@@ -265,7 +272,7 @@ bun run test:e2e          # E2E with dummy iPod
 mise run test:linux        # Runs on Debian + Alpine VMs (requires: brew install lima)
 
 # 4. Docker E2E (Subsonic changes only)
-bun run test:e2e:docker
+bun run test:docker
 ```
 
 ## All Test Commands
@@ -274,9 +281,11 @@ bun run test:e2e:docker
 bun run test              # All tests (composed: runs test:unit + test:integration)
 bun run test:unit         # Unit tests only (cached independently)
 bun run test:integration  # Integration tests only (cached independently)
-bun run test:e2e          # E2E tests (dummy iPod, not composed)
+bun run test:perf         # Performance benchmarks (manual; not cached)
+bun run test:e2e          # E2E tests (dummy iPod, no Docker)
 bun run test:e2e:real     # E2E tests (real iPod, requires IPOD_MOUNT)
-bun run test:e2e:docker   # E2E tests requiring Docker (Subsonic, etc.)
+bun run test:docker       # E2E tests requiring Docker (Subsonic / Navidrome)
+bun run test:vm           # E2E tests inside the Lima VM harness
 mise run test:linux              # Run tests on Debian + Alpine VMs
 mise run test:linux:debian       # Debian (glibc) only
 mise run test:linux:alpine       # Alpine (musl, Docker parity) only
@@ -285,9 +294,43 @@ mise run test:linux:destroy      # Delete VMs entirely
 mise run test:linux:cache:clear  # Clear turbo cache without deleting VMs
 mise run tools:brew-test   # Homebrew install smoke test (after releases)
 
-# Container cleanup (in test-packages/e2e-host-tests/)
-cd test-packages/e2e-host-tests && bun run cleanup:docker
+# Container cleanup (in test-packages/e2e-docker-tests/)
+bun run --filter @podkit/e2e-docker-tests cleanup
 ```
+
+## Test tiers and pathIgnorePatterns
+
+The tiers in the [Quick Reference](#quick-reference) are enforced by **bunfig.toml `pathIgnorePatterns`** plus **turbo task wiring**. Together they decide what `bun test` actually runs in each scenario.
+
+### How the gates compose
+
+- Every package's `bunfig.toml` lists `pathIgnorePatterns` covering the slower tiers it owns. Examples:
+  - `packages/podkit-core/bunfig.toml` ignores `**/*.integration.test.ts` **and** `**/*.perf.test.ts` — so bare `bun test` runs only the fast unit tier.
+  - Most other packages ignore only `**/*.integration.test.ts` (no perf tests there).
+  - `test-packages/device-testing/bunfig.toml` also ignores `**/*.e2e.test.ts` so stray runs don't try to spin up VM personas.
+- Each task script clears the ignore for the tier it wants and filters in:
+  - `test:integration` → `gpod-tests-parallel` (default pattern `*.integration.test.ts`).
+  - `test:perf` → `gpod-tests-parallel --pattern '*.perf.test.ts'`.
+  - `test:e2e` / `test:docker` / `test:vm` → their package's own runner script.
+- Turbo wires `^build` + the appropriate fixture/template generator tasks before each tier, so `test:integration` and `test:perf` see freshly-built workspaces and ready-to-use fixtures.
+
+### Why `bun test` skips integration + perf
+
+Unit-only iteration is the fast loop. Contributors who haven't built gpod-tool or installed ffmpeg/metaflac still get clean unit-test runs because `pathIgnorePatterns` keeps those files out of the default match. Running `test:integration` or `test:perf` opts in explicitly.
+
+### Direct file invocation
+
+```bash
+bun test packages/podkit-core/src/foo.test.ts                      # Unit — works as-is.
+bun test --path-ignore-patterns= packages/podkit-core/src/foo.integration.test.ts
+                                                                    # Integration — must clear the gate.
+```
+
+The second form is what `gpod-tests-parallel` does under the hood; you only need it for ad-hoc one-off runs.
+
+### What happens to preload?
+
+`bunfig.toml` no longer sets `preload`. Each integration / perf / e2e test file declares its own requirements at the top of the module via [Module-load preflight](#module-load-preflight) helpers — that's the single layer that catches missing system deps. There is no smart-preload, no argv-sniff, no `test/preload.ts`. (Exception: `@podkit/e2e-docker-tests` preloads signal handlers for graceful container cleanup. That's a process-level concern, not per-test.)
 
 ## Prerequisites for Integration Tests
 
@@ -295,28 +338,152 @@ cd test-packages/e2e-host-tests && bun run cleanup:docker
 mise trust             # Trust mise config (first time only)
 mise install           # Pin to the bun version in mise.toml
 mise run tools:build   # Build gpod-tool CLI
+bun run build          # Build the libgpod-node native bindings + every workspace package
 ```
 
-### Preflight checks
+After that, integration tests will run. Each individual test file declares its own system-dep requirements via [Module-load preflight](#module-load-preflight); if anything is still missing, the suite fails with a focused error message pointing at the fix.
 
-Each package that has integration tests ships a `bunfig.toml` and a small `test/` directory:
+## Module-load preflight
 
+Integration / perf / e2e tests that depend on a system tool or a fixture set declare their requirements at the top of the test file. The helpers throw at module load, so bun:test surfaces missing deps as a real suite failure — no silent skips, no "tests passed" with no actual execution.
+
+### Available helpers
+
+All exported from `@podkit/test-fixtures` (and re-exported through `@podkit/e2e-shared` for the e2e harnesses):
+
+| Helper | Checks | Install hint emitted on failure |
+| --- | --- | --- |
+| `requireFFmpeg()` | `ffmpeg -version` runs cleanly. | `brew install ffmpeg` / `apt install ffmpeg` |
+| `requireFfprobe()` | `ffprobe -version` runs cleanly. | Ships with ffmpeg — install ffmpeg. |
+| `requireMetaflac()` | `metaflac --version` runs cleanly. | `brew install flac` / `apt install flac` |
+| `requireGpodTool()` | `gpod-tool --version` runs cleanly. | `mise run tools:build` |
+| `requireBinary(name, hint, [versionArgs])` | Generic — used by the wrappers above. Reach for it only when a test needs a tool that doesn't have its own wrapper yet. | Caller-supplied. |
+| `ensureFixturesExist(set)` | A `@podkit/test-fixtures` static set (`'multi-format'` / `'goldberg-selections'` / `'synthetic-tests'` / `'video'`) has been generated. | `bun run --filter @podkit/test-fixtures generate-static-fixtures` |
+
+The libgpod-node native-binding check lives in the package itself (avoids a workspace cycle):
+
+| Helper | Source | Checks |
+| --- | --- | --- |
+| `requireLibgpodNode()` | `@podkit/libgpod-node` | The N-API addon dlopens cleanly via the package's `isNativeAvailable()` predicate. |
+
+### Pattern
+
+```ts
+import {
+  ensureFixturesExist,
+  requireFFmpeg,
+  requireGpodTool,
+  requireMetaflac,
+} from '@podkit/test-fixtures';
+import { requireLibgpodNode } from '@podkit/libgpod-node';
+
+// Tier-1 system deps. Each call throws with a focused install hint if missing.
+requireFFmpeg();
+requireMetaflac();
+requireGpodTool();
+requireLibgpodNode();
+
+// Static fixture sets. Turbo runs `generate-static-fixtures` as a dep of
+// `test:integration` so under normal flows these are no-ops.
+ensureFixturesExist('multi-format');
+ensureFixturesExist('goldberg-selections');
+
+describe('my integration suite', () => { /* … */ });
 ```
-packages/<pkg>/
-  bunfig.toml                    # [test] preload + pathIgnorePatterns
-  test/preload.ts                # smart loader: only fires preflight when an integration test is in argv
-  test/integration-preflight.ts  # actual dep assertions (gpod-tool, libgpod-node binding, ffmpeg, fixtures)
+
+Calls go at module top level, **above** the first `describe`. They run once per test file (one `execFileSync` per binary, ~10 ms each).
+
+### When you DO need to skip
+
+The only acceptable form of skip is platform gating. Filename convention + `describe.skipIf`:
+
+```ts
+// foo.linux.test.ts
+import { describe, it } from 'bun:test';
+const isLinux = process.platform === 'linux';
+describe.skipIf(!isLinux)('Linux-only behaviour', () => { /* … */ });
 ```
 
-**Behavior:**
+The filename suffix (`.darwin.test.ts` / `.linux.test.ts`) makes intent visible. Use it when the test would never make sense on the other platform — not as a workaround for missing deps.
 
-- `bun test` (bare) and `bun run test:unit` honour `pathIgnorePatterns` and skip `*.integration.test.ts` files entirely — unit-only iteration works without libgpod-node or gpod-tool installed.
-- `bun run test:integration` clears the ignore (`--path-ignore-patterns=`) and filters to `.integration.` substring. The preload sees `.integration.` in argv, imports `integration-preflight.ts`, and that file throws if any required system dep is missing. **No silent skips.**
-- The preload also fires for direct invocations like `bun test src/foo.integration.test.ts`, so you cannot bypass dep checks by calling bun directly.
+## Test skip anti-patterns
 
-**Adding a new integration test in a package without these files yet:** add `bunfig.toml`, `test/preload.ts`, `test/integration-preflight.ts` (copy from another package), and update `package.json scripts.test:unit` / `test:integration` to the standard form.
+The patterns below are explicitly banned. They make missing-dep test failures look like green passes, which has historically hidden real coverage gaps.
 
-### Diagnosing environment issues
+### Don't: silent-pass skip helpers
+
+```ts
+//  Anti-pattern. Reporter shows this as PASSED when ffmpeg is missing.
+function skipIfNoFfmpeg(): boolean {
+  if (!ffmpegAvailable) { console.log('Skipping: ffmpeg'); return true; }
+  return false;
+}
+
+it('does the thing', async () => {
+  if (skipIfNoFfmpeg()) return;
+  // …
+});
+```
+
+### Don't: env-flag-gated `it.skipIf`
+
+```ts
+//  Anti-pattern. Default `bun test` silently skips all Docker tests.
+const subsonicE2eEnabled = process.env.SUBSONIC_E2E === '1';
+it.skipIf(!subsonicE2eEnabled)('syncs from Subsonic', async () => { /* … */ });
+```
+
+If a whole suite needs Docker, the suite belongs in `@podkit/e2e-docker-tests` and its `beforeAll` should throw when Docker is unavailable. See [Test package layout](#test-package-layout).
+
+### Don't: try/catch swallowing a fixture load
+
+```ts
+//  Anti-pattern. The test silently passes if the fixture is missing
+//     or unreadable, AND eats any other read error.
+let buf: ArrayBuffer;
+try {
+  buf = readFileSync(fixturePath).buffer;
+} catch {
+  return; // skip if fixture not available
+}
+```
+
+Use `ensureFixturesExist(set)` at module load.
+
+### Do: module-load throws
+
+```ts
+//  Same intent, no silent skip. Reporter shows a focused failure
+//     with an actionable install hint.
+requireFFmpeg();
+ensureFixturesExist('multi-format');
+
+it('does the thing', async () => { /* runs unconditionally now */ });
+```
+
+### Adding a new integration test
+
+1. Pick the right tier — see [Test package layout](#test-package-layout).
+2. Top of the file: call the `requireX()` and `ensureFixturesExist(...)` helpers for everything your test touches.
+3. No `bunfig.toml preload` to add; the tier gate is just the filename suffix (`*.integration.test.ts`).
+4. Pure unit tests don't need any preflight calls.
+
+## Test package layout
+
+| Test belongs in | When | Path |
+| --- | --- | --- |
+| `<workspace>/src/**/*.test.ts` | Pure unit test of library code. No subprocess, no fixtures bigger than a kilobyte. | The package's own `src/` tree. |
+| `<workspace>/src/**/*.integration.test.ts` | Tests library code with real system deps (ffmpeg / gpod-tool / libgpod-node) but no CLI subprocess. | Same package. |
+| `<workspace>/src/**/*.perf.test.ts` | Performance benchmark. Generates synthetic load; assertion is a wall-clock or count threshold. | Same package. |
+| `@podkit/e2e-host-tests` | Spawns the built CLI subprocess. Dummy or real iPod target. No Docker, no Lima VM. | `test-packages/e2e-host-tests/` |
+| `@podkit/e2e-docker-tests` | Anything needing a Docker container (Subsonic / Navidrome / future). | `test-packages/e2e-docker-tests/` |
+| `@podkit/e2e-vm-tests` | Anything needing a Lima VM (`dummy_hcd` USB gadget, Linux kernel modules). | `test-packages/e2e-vm-tests/` |
+| `@podkit/e2e-shared` | Helpers shared across the three e2e packages: CLI runner, error-assertion, composable preflight checks. | Already exists; you import from it. |
+| `@podkit/test-fixtures` | Anything that mints or describes a fixture (static set or dynamic mini-track). | Already exists; you import from it. |
+
+The three e2e packages all consume `@podkit/e2e-shared` (CLI runner + composable preflight) and `@podkit/test-fixtures` (path helpers + module-load preflight wrappers). `@podkit/e2e-docker-tests` additionally consumes `@podkit/e2e-host-tests` via subpath exports for the `withTarget` factory and the fixture catalogue (`Albums` / `Tracks` / `Videos` enums) — those are e2e-test concepts, not lib concepts, so they don't belong in test-fixtures or e2e-shared.
+
+## Diagnosing environment issues
 
 When integration tests pass but `podkit sync` produces no tracks (or similar silent failures), run the diagnostic suite against a virtual iPod:
 
@@ -550,20 +717,29 @@ const dir = getMultiFormatFixturesDir();
 
 `ensureFixturesExist(set)` fails fast with an actionable error if the set has not been generated yet. Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task and of `@podkit/e2e-host-tests#test`, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../test-packages/test-fixtures/README.md) for the full set inventory and regen instructions.
 
-## Test Fixture Generator
+## Dynamic Test Fixture Generator
 
-The `@podkit/test-fixtures` package generates FLAC files with controllable metadata and artwork for manual testing:
+`@podkit/test-fixtures` also has a **dynamic** fixture generator alongside the static sets — for handing a tester a tagged FLAC/MP3/AAC collection without writing a one-off script:
 
 ```bash
-bun run generate-fixtures                    # Default: 3 FLAC tracks with blue artwork
-bun run generate-fixtures --artwork red      # Regenerate with red artwork
-bun run generate-fixtures --artwork          # Random different artwork color
-bun run generate-fixtures --tracks 5         # Generate 5 tracks
-bun run generate-fixtures --format mp3       # Convert to MP3
-bun run generate-fixtures --replaygain -3.5  # Set specific ReplayGain value
+bun run --filter @podkit/test-fixtures generate-fixtures                  # Default: 3 FLAC tracks with blue artwork
+bun run --filter @podkit/test-fixtures generate-fixtures --artwork red    # Regenerate with red artwork
+bun run --filter @podkit/test-fixtures generate-fixtures --artwork        # Random different artwork color
+bun run --filter @podkit/test-fixtures generate-fixtures --tracks 5       # Generate 5 tracks
+bun run --filter @podkit/test-fixtures generate-fixtures --format mp3     # Convert to MP3
+bun run --filter @podkit/test-fixtures generate-fixtures --replaygain -3.5  # Set specific ReplayGain value
 ```
 
 Output goes to `test/manual-collection/` (gitignored). Without flags, output is deterministic and turbo-cached. Each variance flag (`--artwork`, `--format`, `--replaygain`) picks a random different value if no specific value is given. Requires FFmpeg and metaflac.
+
+For one-off dynamic fixtures **inside** a test (a single FLAC with specific tags, no on-disk side effect needed), import the lib helpers instead:
+
+```ts
+import { generateMiniFlac } from '@podkit/test-fixtures';
+const filePath = generateMiniFlac(tempDir, { filename: 'a.flac', title: 'Custom', artist: 'X' });
+```
+
+See `test-packages/test-fixtures/README.md` for the full `generateMiniX` surface.
 
 ## Writing CLI Unit and Integration Tests
 
@@ -856,37 +1032,44 @@ await writeFile(configPath, 'version = 1\n');
 
 ## Docker-Based E2E Tests
 
-Some E2E tests use Docker to run external services (Navidrome for Subsonic). These are opt-in to avoid slow operations. See also [agents/docker.md](docker.md) for the Docker image architecture.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-docker-tests` — a separate package so contributors who don't need them aren't paying the container-pull cost on every `bun run test:e2e`. See also [agents/docker.md](docker.md) for the Docker image architecture.
 
 **Running Docker tests:**
+
 ```bash
-cd test-packages/e2e-host-tests
-bun run test:subsonic  # Runs Subsonic E2E tests with Docker
+bun run test:docker                                # From the repo root, runs the full Docker suite.
+bun run --filter @podkit/e2e-docker-tests test     # Same thing, scoped explicitly.
 ```
+
+Docker availability is checked in each test file's `beforeAll`; missing Docker throws with a focused error instead of silently skipping the suite. There is no `SUBSONIC_E2E=1` flag — the package boundary is the gate.
 
 **Container cleanup:**
-Docker containers are automatically cleaned up on test completion, Ctrl+C, and crashes. If orphaned containers remain:
+
+Containers are automatically cleaned up on test completion, Ctrl+C, and crashes via signal handlers registered in `test-packages/e2e-docker-tests/src/setup/preload.ts` (loaded by the package's `bunfig.toml`). If orphaned containers remain:
 
 ```bash
-cd test-packages/e2e-host-tests
-bun run cleanup:docker:list   # List orphaned containers
-bun run cleanup:docker        # Remove stopped containers
-bun run cleanup:docker --force  # Force remove all
+bun run --filter @podkit/e2e-docker-tests cleanup       # Remove stopped containers
+bun run --filter @podkit/e2e-docker-tests cleanup:list  # List orphaned containers
+bun run --filter @podkit/e2e-docker-tests cleanup:force # Force remove all
 ```
 
-**Adding new Docker sources:**
-When implementing new Docker-based test sources, use the container manager at `test-packages/e2e-host-tests/src/docker/`:
+**Adding a new Docker test:**
 
-```typescript
-import { startContainer, stopContainer } from '../docker/index.js';
+1. Add the test file under `test-packages/e2e-docker-tests/src/features/` or `workflows/`.
+2. At the top: `requireBinary`/`requireFFmpeg`/`requireMetaflac` for tools your test execs, `ensureFixturesExist(...)` for fixture sets, and a `beforeAll` that calls `isDockerAvailable()` and throws if `false`. See `test-packages/e2e-docker-tests/src/features/compilation-subsonic.e2e.test.ts` for the template.
+3. Spawn containers via `startContainer({...})` from `./docker` — they're auto-registered for cleanup:
 
-// Containers are automatically labeled and registered for cleanup
-const result = await startContainer({
-  image: 'service/image:latest',
-  source: 'service-name',
-  ports: ['8080:8080'],
-  env: ['CONFIG=value'],
-});
-```
+   ```ts
+   import { startContainer, stopContainer } from '../docker/index.js';
 
-See [test-packages/e2e-host-tests/README.md](../test-packages/e2e-host-tests/README.md) for the full Docker infrastructure documentation.
+   const result = await startContainer({
+     image: 'service/image:latest',
+     source: 'service-name',
+     ports: ['0:8080'], // host port 0 → kernel assigns; multi-container concurrency safe
+     env: ['CONFIG=value'],
+   });
+   ```
+
+4. Use `withTarget` from `@podkit/e2e-host-tests/targets` to scope each test to a fresh iPod (dummy by default).
+
+See [test-packages/e2e-docker-tests/README.md](../test-packages/e2e-docker-tests/README.md) for the full layout.
