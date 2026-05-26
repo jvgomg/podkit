@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@podkit/compatibility": "workspace:*",
+    "@podkit/e2e-shared": "workspace:*",
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/test-fixtures": "workspace:*",
     "podkit": "workspace:*"

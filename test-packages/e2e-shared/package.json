@@ -1,0 +1,31 @@
+{
+  "name": "@podkit/e2e-shared",
+  "version": "0.0.0",
+  "description": "Cross-cutting helpers for end-to-end test packages (host, docker, vm).",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "bun run build:types && bun run build:bundle",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:bundle": "bun build src/index.ts --outdir dist --target node --external @podkit/gpod-testing --external @podkit/test-fixtures",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@podkit/gpod-testing": "workspace:*",
+    "@podkit/test-fixtures": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "bun-types": "latest",
+    "typescript": "^5.9.0"
+  }
+}

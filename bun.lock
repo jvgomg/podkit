@@ -275,6 +275,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@podkit/compatibility": "workspace:*",
+        "@podkit/e2e-shared": "workspace:*",
         "@podkit/gpod-testing": "workspace:*",
         "@podkit/test-fixtures": "workspace:*",
         "podkit": "workspace:*",
@@ -282,6 +283,19 @@
       "devDependencies": {
         "@types/bun": "latest",
         "bun-types": "latest",
+      },
+    },
+    "test-packages/e2e-shared": {
+      "name": "@podkit/e2e-shared",
+      "version": "0.0.0",
+      "dependencies": {
+        "@podkit/gpod-testing": "workspace:*",
+        "@podkit/test-fixtures": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+        "bun-types": "latest",
+        "typescript": "^5.9.0",
       },
     },
     "test-packages/e2e-vm-tests": {
@@ -684,6 +698,8 @@
     "@podkit/docs-site": ["@podkit/docs-site@workspace:packages/docs-site"],
 
     "@podkit/e2e-host-tests": ["@podkit/e2e-host-tests@workspace:test-packages/e2e-host-tests"],
+
+    "@podkit/e2e-shared": ["@podkit/e2e-shared@workspace:test-packages/e2e-shared"],
 
     "@podkit/e2e-vm-tests": ["@podkit/e2e-vm-tests@workspace:test-packages/e2e-vm-tests"],
 
