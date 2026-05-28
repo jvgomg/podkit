@@ -461,6 +461,28 @@ ensureFixturesExist('multi-format');
 it('does the thing', async () => { /* runs unconditionally now */ });
 ```
 
+### Do: deferred-bug skips that stay visible (matrix suites)
+
+The bans above are about skips that **hide** a missing dependency. The opposite
+case — deliberately fencing off a cell because *podkit itself is currently
+broken for it* — is sanctioned, but only when the skip stays visible and
+counted. The matrix harness (`e2e-tests/src/matrix/`) makes this explicit: its
+`skip()` returns a typed `SkipDecision`, and a bug-deferral must use
+`skipBug(reason, ref)` (rendered `[BUG] <ref>` by the runner) — never a generic
+or silent skip. Structural prunings use `skipRedundant` / `skipImpossible` /
+`skipEnvGated`. This keeps the dividing line sharp: a green run with only
+structural skips hides nothing; every `[BUG]` is tracked, deferred work.
+
+To enumerate the deferred work a matrix suite has captured:
+
+```sh
+grep -rn 'skipBug(' test-packages/e2e-tests/src   # the to-do list, no run needed
+# or, to see which cells: run with --reporter=junit and grep 'name="\[BUG\]'
+```
+
+See `test-packages/e2e-tests/src/matrix/README.md` §"Surfacing deferred work"
+and doc-039 §"Mass-storage sync gaps".
+
 ### Adding a new integration test
 
 1. Pick the right tier — see [Test package layout](#test-package-layout).

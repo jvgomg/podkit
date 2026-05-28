@@ -1,18 +1,18 @@
 /**
- * E2E tests for codec preference resolution in sync flows.
+ * Codec-preference *physical-output* smoke.
  *
- * Tests that the codec preference config correctly controls which output codec
- * is used when syncing FLAC sources to mass-storage devices that do not support
- * FLAC natively. This forces the sync engine to transcode, and the codec
- * preference determines the target codec:
+ * The codec-preference *decision* — which lossy codec podkit resolves to for a
+ * given (device, preference stack), and copy-vs-transcode per format — is
+ * asserted comprehensively across the device axis by the codec matrix
+ * (`matrix/codec-rules.ts` + `features/codec.test.ts`). What that decision
+ * matrix deliberately does NOT do is execute the transfer (it reads the
+ * dry-run plan), so it can't prove a real `.opus` file lands and plays.
  *
- * - `lossy: ['opus', 'aac']` -> `.opus` output (first supported wins)
- * - `lossy: ['aac']` -> `.m4a` output
- * - Changing codec preference triggers re-sync with new codec
- *
- * These tests use mass-storage (generic) device targets, not iPod targets,
- * because codec preference is most relevant for mass-storage DAPs with broad
- * codec support.
+ * This file is the thin physical complement: it actually transcodes FLAC to a
+ * preferred codec on a mass-storage device and checks the bytes on disk, plus
+ * the codec-change re-sync (changing the preference re-transcodes and leaves no
+ * stale files). The exhaustive per-format/per-device extension grid lives in
+ * the matrix; only the cases the matrix can't assert from a plan remain here.
  */
 
 import { describe, it, expect, beforeAll } from 'bun:test';
@@ -179,58 +179,6 @@ describe('codec preference: mass-storage sync', () => {
       const extensions = getExtensions(files);
       for (const ext of extensions) {
         expect(ext).toBe('.opus');
-      }
-
-      // All files should have non-zero size
-      for (const file of files) {
-        const stats = await stat(file);
-        expect(stats.size).toBeGreaterThan(0);
-      }
-    } finally {
-      await rm(devicePath, { recursive: true, force: true });
-      await rm(configDir, { recursive: true, force: true });
-    }
-  }, 120000);
-
-  it('syncs FLAC to AAC when codec preference is aac-first', async () => {
-    const devicePath = await createTempDevice();
-    const configDir = await mkdtemp(join(tmpdir(), 'podkit-codec-config-'));
-    const configPath = join(configDir, 'config.toml');
-
-    try {
-      // Device supports aac, mp3 but NOT flac — forces transcoding
-      await writeCodecConfig(configPath, {
-        musicPath: goldbergPath,
-        devicePath,
-        lossyCodecs: ['aac'],
-        supportedAudioCodecs: ['aac', 'mp3'],
-      });
-
-      const { result, json } = await runCliJson<SyncOutput>([
-        '--config',
-        configPath,
-        'sync',
-        '--device',
-        'test',
-        '--json',
-      ]);
-
-      if (result.exitCode !== 0) {
-        console.log('JSON:', JSON.stringify(json, null, 2));
-        console.log('STDERR:', result.stderr.slice(0, 2000));
-      }
-      expect(result.exitCode).toBe(0);
-      expect(json?.success).toBe(true);
-      expect(json?.result?.completed).toBe(3);
-
-      // Verify output files on the device
-      const files = await findMusicFiles(devicePath);
-      expect(files.length).toBe(3);
-
-      // All files should have .m4a extension (AAC container)
-      const extensions = getExtensions(files);
-      for (const ext of extensions) {
-        expect(ext).toBe('.m4a');
       }
 
       // All files should have non-zero size

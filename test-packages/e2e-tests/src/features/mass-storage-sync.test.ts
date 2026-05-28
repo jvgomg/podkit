@@ -5,6 +5,16 @@
  * devices. No real hardware needed — the device is a temp directory configured
  * with a device type (echo-mini or generic) in the config file.
  *
+ * This file is the mass-storage *structural / execution* smoke: directory
+ * layout, incremental add/remove, unmanaged-file safety, relocation,
+ * pathTemplate changes, orphan repair, compilation grouping, and physical
+ * codec/quality/transfer-mode output. The combinatorial *decisions* —
+ * copy-vs-transcode, resolved lossy codec, transfer-mode copy sub-type, and
+ * embedded-art survival across the device axis — are asserted declaratively by
+ * the matrix concerns (`matrix/codec-rules.ts`, `matrix/artwork-rules.ts`).
+ * The cases here are the ones that need a real transfer to disk, or that the
+ * matrix prunes because of a known mass-storage execution bug (see doc-039).
+ *
  * Scenarios covered:
  * - Basic sync: FLAC sources -> AAC on echo-mini device
  * - Incremental sync — add: new tracks synced, existing untouched
@@ -14,6 +24,7 @@
  * - Transfer mode change: fast -> portable, tip about --force-transfer-mode
  * - Artwork chroma handling: yuvj444p source -> yuvj420p on device
  * - Codec preference: opus unsupported by echo-mini -> falls back to aac
+ *   (physical complement to the codec decision matrix)
  */
 
 import { describe, it, expect, beforeAll } from 'bun:test';

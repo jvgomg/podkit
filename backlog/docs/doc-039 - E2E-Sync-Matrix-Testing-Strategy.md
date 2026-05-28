@@ -3,6 +3,7 @@ id: doc-039
 title: E2E Sync Matrix Testing Strategy
 type: specification
 created_date: '2026-05-28 07:51'
+updated_date: '2026-05-28 21:00'
 tags:
   - testing
   - e2e
@@ -44,6 +45,8 @@ Two abstractions exist but the matrices don't use them: `TestSource` (`e2e-share
 
 Duplication: `art-matrix.test.ts` and `art-matrix.docker.test.ts` independently re-declare `FORMATS`, `FORMAT_TITLE`, `SCENARIO_ARTIST`, the two-sync idempotency loop, the op-classification sets, and the "Cell X/Y mismatched" diff formatter. The change matrix duplicates a third time.
 
+> **Audit note (post-P4):** the rows above describe the pre-strategy state and are kept for historical context. As of P4 the device axis is live (codec + artwork concerns), codec preference and transfer mode are matrix axes, and the `art-matrix*` duplication is gone (shared `matrix/` machinery). See "Implementation status" below.
+
 ## The transcode-path reframe (a controlled axis, not an accident)
 
 The artwork matrix's `format` axis secretly conflates two independent things: the container's embed mechanism **and** whether the track is copied or transcoded. Under the default `quality=high` on a 5G iPod, lossless formats transcode to AAC, mp3/aac direct-copy, ogg/opus transcode — so "embedded art survives" tests a *different code path per format*, invisibly. A transcode-only regression could hide behind a copy-path pass (or vice versa).
@@ -63,27 +66,27 @@ The matrix should assert two distinct kinds of thing. Today only the first exist
 
 "Did the right bytes/metadata land on the device?" — track present, `deviceHasArtwork`, idempotent second sync, codec on device, file extension, sync-tag fields. Observed by reading device state (`getTracks()`) and dry-run operations.
 
-### 2. Decision assertions (future work — needs podkit changes or tooling)
+### 2. Decision assertions (partially realised in P4)
 
 "Did podkit *make the right decision* given the inputs?" — e.g. *"with device D and codec config C and no explicit transfer mode, did podkit auto-select transfer mode M?"*, or *"did it choose direct-copy vs transcode for format F on device D?"*. This is about the **reasoning**, not just the artifact.
 
-This dimension is currently hard to assert because podkit doesn't fully expose its decisions. Options, in rough order of effort:
+The codec concern (`matrix/codec-rules.ts`, landed in P4) realises a first slice of this from the **existing** JSON: it asserts the dry-run `operations[].type` (copy sub-type vs transcode) and the sync-wide resolved lossy codec (`json.codec`) — i.e. the codec podkit *chose*, read entirely from the plan with no transfer. Remaining decision surface still needs podkit changes:
 
-- **Parse `--json` sync output.** The dry-run already emits `operations[]` with `type` and `reason`. Extending the JSON to also surface the *resolved* config (chosen transfer mode, resolved lossy/lossless codec, per-track classification) would let the matrix assert decisions directly. Requires podkit changes to the JSON schema.
-- **Inspect sync tags on the synced output.** The `[podkit:v1 …]` comment tag already records `quality`, `codec`, `transfer` (see [[doc-014]]). A test-side sync-tag reader could assert the decision was persisted correctly. Requires a sync-tag-reading test helper (partially exists in `artwork-sync-tags.test.ts`).
-- **A dedicated `podkit sync --explain` / plan-dump mode.** Cleanest long-term: a machine-readable decision trace. Largest podkit change.
+- **Parse `--json` sync output.** The dry-run already emits `operations[]` with `type` and `reason`, and `codec`/`codecPreference`/`transferMode` at top level. Surfacing the *full* resolved config (per-track classification, auto-selected transfer mode) would let the matrix assert every decision directly.
+- **Inspect sync tags on the synced output.** The `[podkit:v1 …]` comment tag records `quality`, `codec`, `transfer` (see [[doc-014]]). A test-side reader could assert the decision was persisted.
+- **A dedicated `podkit sync --explain` / plan-dump mode.** Cleanest long-term machine-readable decision trace; largest podkit change.
 
-**Decision assertions are explicitly deferred.** They are the most valuable long-term extension of this strategy, but they need a podkit capability (richer JSON or a plan-dump) that does not exist yet. This doc records the intent so the harness is designed with a seam for it (the `observe()` step should be able to return a `decisions` block alongside `outcomes`).
+The remaining decision work (auto transfer-mode selection, full per-track classification) is tracked as TASK-357. The harness is designed with the seam: `diffCell` compares object-valued fields structurally, so a future `decisions` block diffs out of the box.
 
 ## The reference model (capability composition, not name branches)
 
 `predict()` must not grow a forest of `if (format === 'wav')` / `if (device === 'echo-mini')` branches — that explodes combinatorially as axes are added. Instead, express the rules as composition of small capability functions that mirror podkit's real semantics:
 
-- `sourceEmbedsArt(format, scenario)` — does the source *file* carry embedded art? (a fixture property)
-- `deviceAction(format, device, codecCfg)` — `copy | transcode-to-X | reject` (a reference mirror of the real classifier)
-- `deviceStoresArt(device)` — `database | embedded | none`
-- `artSurvives(action, device)` — does art reach the device given the action and its storage model?
-- `autoTransferMode(device, codecCfg)` — what mode podkit should auto-select (feeds decision assertions later)
+- `sourceEmbedsArt(scenario, format)` — does the source *file* carry embedded art? (a fixture property)
+- `effectiveSupportedCodecs(capabilities, kind)` — the codecs the planner treats as device-native output (mass-storage drops wav/aiff; iPod exempt)
+- `deviceAction(format, capabilities, pipeline, kind)` / `codecOutcome(...)` — `copy | transcode` + output codec/extension (a reference mirror of the real classifier)
+- `copyOpKind(capabilities, transferMode)` — `direct-copy | optimized-copy` (embedded-art devices + `optimized` mode route through FFmpeg)
+- `artworkReaches(sourceHadArt, capabilities)` — does art reach the device given its storage model?
 
 `predict()` becomes a thin composition of these. This *is* a reference model of podkit's sync semantics; the matrix's whole job is to assert the real system matches the reference model. When the two disagree, exactly one of them is wrong — and the `reason` string says which we currently believe.
 
@@ -91,11 +94,13 @@ This dimension is currently hard to assert because podkit doesn't fully expose i
 
 The full cross-product is large: ~8 formats × 4 artwork scenarios × 2 adapters × 3+ devices × 3 quality × 3 transfer × 2 check-artwork ≈ 3,500 cells. We do not run all of it. Two mechanisms keep it tractable:
 
-- **`skip(cell) → reason | null`** alongside `predict()`. Prunes:
-  - *Impossible* combos (e.g. sidecar-only artwork is meaningless for an adapter that can't read sidecars).
-  - *Redundant* combos (transfer mode is a no-op on non-embedded-art devices; don't cross it there).
-  - *Environment-gated* combos (subsonic needs Docker; real device needs hardware).
-- **Concern-scoped axis subsets.** Each matrix file fixes most axes and varies only the few relevant to its concern (the artwork matrix need not vary quality across all 3 presets; the codec matrix need not vary all 4 artwork scenarios). The full product is never materialised — each concern picks its slice.
+- **`skip(cell) → SkipDecision | null`** alongside `predict()` (landed in P4 on `MatrixDef`; skipped cells become `it.skip` and `runPass` consults the same predicate to avoid syncing them). The decision carries a **`kind`** that separates *permanent* prunings from *deferred work*:
+  - `skipRedundant` / `skipImpossible` / `skipEnvGated` (`kind` = `redundant`/`impossible`/`env`) — **structural**. The cell is not meaningful to assert, ever; these never become work.
+    - *Impossible*: sidecar-only artwork on an adapter that can't read sidecars.
+    - *Redundant*: transfer mode only changes the copy op-type on database-artwork devices; don't cross it elsewhere.
+    - *Env-gated*: subsonic needs Docker; real device needs hardware.
+  - `skipBug(reason, ref)` (`kind` = `bug`) — **deferred work**. The cell could be asserted but podkit is currently broken for it, so it's fenced rather than failing the suite. Bug skips render as `[BUG] <ref>` in the runner and are greppable as `skipBug(` in the source, so deferred work is always present, counted, and documented — never a silent gap. A green run whose skips are *all* structural means nothing is hidden behind a pass.
+- **Concern-scoped axis subsets.** Each matrix file fixes most axes and varies only the few relevant to its concern. The full product is never materialised — each concern picks its slice.
 
 ## Device axis: a generalised SyncTarget
 
@@ -103,60 +108,91 @@ The prerequisite for device-as-an-axis is replacing the iPod-specific `IpodTarge
 
 - `kind: 'ipod' | 'mass-storage'`, `model?`, and a `capabilities` snapshot (supported codecs, artwork storage model, max artwork resolution, video support).
 - A normalised `getTracks(): TrackInfo[]` that works for both backends — iPod via `@podkit/gpod-testing`, mass-storage via filesystem walk + ffprobe.
-- Construction from the existing capability sources: `@podkit/compatibility` `TESTABLE_MODELS` for iPod, `@podkit/devices-mass-storage` `BUILT_IN_PRESETS` for mass-storage.
+- Construction from the existing capability sources: `@podkit/devices-ipod` generation tables for iPod, `@podkit/devices-mass-storage` `BUILT_IN_PRESETS` for mass-storage.
 
-With this, the artwork/codec/transcode matrices can run across `[ipod-MA147, mass-storage-echo-mini, mass-storage-generic]` and `predict()` keys off `target.capabilities` rather than a hardcoded model. This is the **largest single piece of work** in the strategy.
+This landed in P3 (`targets/sync-target.ts` + `targets/mass-storage.ts`). P4 surfaces it as a matrix axis (`matrix/devices.ts`): `predict()` keys off `target.capabilities` rather than a hardcoded model.
 
 ## Proposed code organisation
 
-Split by **concern, not by adapter**. Extract the shared machinery so rules live exactly once.
+Split by **concern, not by adapter**. Extract the shared machinery so rules live exactly once. As-built after P4:
 
 ```
 test-packages/e2e-tests/src/matrix/
-  axes.ts             # typed axis enums + cartesian-product helper
-  harness.ts          # runMatrix(): product, 2-sync idempotency, op-classify, diff-report
-  reference-model.ts  # capability fns: sourceEmbedsArt, deviceAction, deviceStoresArt, artSurvives, autoTransferMode
-  skip.ts             # prune invalid / redundant / env-gated cells → reason | null
-  README.md           # philosophy, axis meanings, invalid-combo rules, how to add an axis
-  artwork.rules.ts    # predict() for the artwork concern — imported by BOTH host + docker files
-  artwork.host.test.ts
-  artwork.docker.test.ts
-  codec.rules.ts + codec.test.ts
-  transcode-fidelity.rules.ts + ...
+  axes.ts             # typed axis enums (Scenario, Format) + cartesian helpers
+  devices.ts          # device axis: DeviceSpec (id + raw caps + fresh-target factory) + deviceAddressing
+  harness.ts          # defineArtworkMatrix(): per-pass beforeAll, op-classify, diff-report, typed skip()
+  reference-model.ts  # capability fns: sourceEmbedsArt, effectiveSupportedCodecs, deviceAction, codecOutcome, copyOpKind, artworkReaches
+  README.md           # philosophy, axis meanings, skip taxonomy, how to add an axis
+  artwork-rules.ts    # artwork concern: predictDirectory (device-swept) / predictSubsonic / predictChange + skipArtworkCell — imported by host + docker files
+  codec-rules.ts      # codec concern (decision matrix): predictCodec + observeCodecMatrix + skipCodecCell
+features/
+  art-matrix.test.ts        # host directory artwork, device axis [ipod, echo-mini, generic]
+  art-matrix.docker.test.ts # subsonic artwork (Navidrome)
+  art-matrix-change.test.ts # artwork change-detection
+  codec.test.ts             # codec decision matrix (device × format × codec-config × transfer-mode)
 ```
+
+`skip()` lives on `MatrixDef` (no separate `skip.ts` was needed). Transcode-fidelity remains future work.
 
 Two structural notes:
 
-- **The docker filename gate is a hard constraint.** The test runner splits on the `*.docker.test.ts` suffix (`--exclude` for host, `--pattern` for docker). Subsonic cells therefore *cannot* share a file with host cells. Keep host/docker as two thin test files that import the same `.rules.ts` — this removes rule duplication while respecting the runner. (Re-plumbing the runner to tag-gate instead of filename-gate is out of scope.)
-- **`harness.ts` owns the duplicated machinery**: the cartesian walk, the fresh-sync + idempotency-sync sequence, the artwork op-classification sets, and the `Cell X/Y mismatched expectations` formatter — all currently copy-pasted across three files.
+- **The docker filename gate is a hard constraint.** The test runner splits on the `*.docker.test.ts` suffix (`--exclude` for host, `--pattern` for docker). Subsonic cells therefore *cannot* share a file with host cells. Keep host/docker as two thin test files that import the same `-rules.ts` — this removes rule duplication while respecting the runner.
+- **`harness.ts` owns the duplicated machinery**: the cartesian walk, the fresh-sync sequence, the op-classification sets, and the `Cell X/Y mismatched expectations` formatter.
 
 ## Concrete test gaps to close (with existing variables)
 
 Independent of the reorg, these are real missing cells:
 
-1. **Transfer mode × artwork** — `optimized` strips embedded art on DB-artwork devices; `portable` preserves it. Absent from the artwork matrix entirely.
-2. **Copy-path vs transcode-path × artwork** — the rigid-codec reframe above.
-3. **`artwork-removed` transition** — the change matrix covers added/updated but never source-loses-art.
-4. **Artwork resize** — embedded-art devices resize; iPod has `artworkMaxResolution`. Not asserted.
-5. **Compilation / album-artist × album-cache** — the album cache keys on `(artist, album)`; various-artist compilations are a collision/split risk (relevant after the TASK-355.03 cache rework).
+1. **Transfer mode × artwork** — `optimized` strips embedded art on DB-artwork devices; `portable` preserves it. The transfer-mode axis exists (codec concern); crossing it with *artwork* outcome is still open (P5).
+2. **Copy-path vs transcode-path × artwork** — the rigid-codec reframe above. ✅ done (P2 `pipeline` axis).
+3. **`artwork-removed` transition** — the change matrix covers added/updated but never source-loses-art. (P5)
+4. **Artwork resize** — embedded-art devices resize; iPod has `artworkMaxResolution`. Not asserted. (P5)
+5. **Compilation / album-artist × album-cache** — the album cache keys on `(artist, album)`; various-artist compilations are a collision/split risk. (P5)
+
+## Mass-storage sync gaps (discovered during P4)
+
+Adding the device axis to real-sync matrices surfaced reproducible podkit execution/convergence bugs on mass-storage devices. They are **not** test bugs — the artwork matrix keeps the affected cells *present* but fences them with typed `skipBug` cells (rendered `[BUG]` in the runner, counted, never silently dropped); the codec concern stays on the dry-run plan and so never hits them. None has a dedicated backlog task yet (TASK-198 implemented optimized-copy FFmpeg args for iPod-canonical formats — ALAC/MP3/AAC — only; OGG/vorbis was never covered).
+
+> One issue found during P4 turned out to be a **test-helper bug, not a podkit bug**, and was fixed rather than skipped: `MassStorageTarget.getTracks` read ffprobe tag keys case-sensitively, so FLAC files copied by FFmpeg — which writes Vorbis comment fields upper-case (`TITLE`/`ARTIST`) — matched nothing on the device. The helper now lower-cases tag keys (Vorbis field names are case-insensitive by spec).
+
+1. **OGG optimized-copy aborts on embedded-artwork mass-storage devices.** On `echo-mini` (vorbis is device-native, primary artwork source `embedded`), an OGG source is classified as copy → routed to `optimized-copy` (FFmpeg passthrough). The re-mux into an OGG container fails, and the failure aborts the rest of the run (only the tracks processed before it land — e.g. 2/8). Reproduces even with `artwork = false`. echo-mini therefore stays in the artwork axis with **all** its cells `skipBug`-fenced (per-cell skip can't rescue it — the whole sync aborts, so no cell is observable). `generic` is unaffected (no vorbis support → OGG transcodes to AAC); `rockbox` is sidecar-primary so OGG direct-copies (8ok/1fail — a separate single-track failure).
+
+2. **OGG/Opus → AAC never converges on mass-storage.** On `generic`, OGG and Opus sources transcode to AAC and then re-fire `add-transcode` on **every** subsequent sync (confirmed across 4 syncs). The incompatible-lossy → AAC output is not matched back to its source on re-scan. The artwork matrix `skipBug`s OGG/Opus on mass-storage.
+
+3. **`prefer-copy` (quality=max) does not converge on mass-storage.** The second sync re-fires `preset-upgrade` for several tracks. This is a quality/preset-convergence defect, **not** an artwork one: the artwork matrix asserts `prefer-copy` on mass-storage and passes (it does not assert preset idempotency), so it is *not* skipped there. The loop is currently uncaught by any matrix — a dedicated preset-convergence check (or a mass-storage arm of `preset-change.test.ts`, which is iPod-only today) would catch it.
 
 ## Migration plan (phased, de-risked)
 
-1. **Strategy doc + backlog** (this doc + tasks). Align before code.
-2. **Extract `harness.ts` + `reference-model.ts` against the EXISTING artwork matrix.** Prove it reproduces today's green cells with zero behaviour change. Lowest-risk first concrete step.
-3. **Add the rigid-codec transcode-vs-copy axis** to the artwork concern.
-4. **Generalise `SyncTarget`** (iPod + mass-storage, capability-carrying). Largest piece; unblocks the device axis.
-5. **Add device + transfer-mode axes**; migrate `codec-preference` / `mass-storage-sync` imperative tests into concern matrices.
-6. **Future: decision assertions** — gated on podkit exposing resolved-config in `--json` or a plan-dump; add the `decisions` block to `observe()`.
+1. **Strategy doc + backlog** (this doc + tasks). Align before code. ✅
+2. **Extract `harness.ts` + `reference-model.ts` against the EXISTING artwork matrix.** Prove cell-for-cell parity. ✅ (TASK-356.01)
+3. **Add the rigid-codec transcode-vs-copy axis** to the artwork concern. ✅ (TASK-356.02)
+4. **Generalise `SyncTarget`** (iPod + mass-storage, capability-carrying). ✅ (TASK-356.03)
+5. **Add device + transfer-mode axes**; migrate `codec-preference` into a concern matrix. ✅ (TASK-356.04 — see "Implementation status").
+6. **Close concrete artwork gaps** (transfer×artwork, artwork-removed, resize, compilation). ◻ TASK-356.05.
+7. **Future: decision assertions** — partially realised (codec `json.codec`); rest gated on richer `--json` / plan-dump. ◻ TASK-357.
+
+## Implementation status (P4 landed)
+
+- **Device axis** (`matrix/devices.ts`): `DeviceSpec` over `[ipod-MA147, ms-echo-mini, ms-generic, ms-rockbox]`, each carrying raw `capabilities` and a fresh-target factory; `deviceAddressing()` resolves `--device <path>` (iPod) vs `--device <name>` + `[devices.*]` stanza (mass-storage).
+- **Codec concern** (`matrix/codec-rules.ts`, `features/codec.test.ts`): a **decision matrix** over device × format × codec-config (`opus-first`/`aac-first`) × transfer-mode. Reads the dry-run plan only — asserts the `add-*` op type and resolved lossy codec (`json.codec`). 80 cells asserted, 112 pruned (all structural `skipRedundant`). Subsumes `codec-preference.test.ts` at the decision level (opus selection on rockbox, aac fallback elsewhere).
+- **Transfer-mode axis**: `fast | optimized | portable`, asserted via `copyOpKind` (direct vs optimized copy). Pruned to the device where it differs (database-artwork iPod) via `skipRedundant` to avoid redundant syncs.
+- **Typed `skip()`**: `MatrixDef.skip` returns a `SkipDecision` with a `kind`. `redundant`/`impossible`/`env` are *structural* (permanent, never work); `bug` (via `skipBug(reason, ref)`) is *deferred work*. The runner tags them `[skip:kind]` vs `[BUG] <ref>`; the source is greppable for `skipBug(`. This is the dividing line that lets a developer see, at a glance, that a green run with only structural skips hides nothing.
+- **Artwork matrix device axis**: `art-matrix.test.ts` sweeps `[ipod-MA147, ms-echo-mini, ms-generic]` (224 cells asserted, 160 `[BUG]`-skipped). `predictDirectory` keys off `target.capabilities`. echo-mini stays *in* the axis with all its cells `skipBug`-fenced (the OGG abort makes the whole sync unobservable) rather than being dropped, so the deferred coverage is visible. generic's OGG/Opus cells are `skipBug` (#2); `prefer-copy` is asserted (its bug is out of artwork's concern). `observeStaticArtwork`/`createPipelineConfig` were generalised for mass-storage addressing; the subsonic docker matrix was re-verified green.
+- **`codec-preference.test.ts`** reduced to a physical-output smoke (real `.opus` transcode to disk + codec-change re-sync) — the part the decision matrix can't assert from a plan. **`mass-storage-sync.test.ts`** kept as structural/execution smoke (relocation, pathTemplate, delete, orphan repair, compilation, portable tags) — it was never a codec/artwork matrix in disguise.
+- **`effectiveSupportedCodecs`**: the mass-storage WAV/AIFF-output exception (`MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS`) is mirrored in the reference model; iPod is exempt.
+- **Test-helper fix**: `MassStorageTarget.getTracks` now reads ffprobe tag keys case-insensitively (FFmpeg writes FLAC Vorbis tags upper-case). This was a harness bug masquerading as a missing-track failure; fixed, not skipped.
 
 ## Tradeoffs & risks
 
 - This refactors working, green tests. Payoff: adding an axis becomes declarative instead of a new bespoke file. Risk: churn on passing tests + an abstraction that over-fits if axes are guessed wrong. **Mitigation: build the harness against the existing artwork matrix first (phase 2) and prove cell-for-cell parity before adding anything.**
 - The reference model is a second implementation of podkit's classifier logic. If it drifts from the real classifier it produces false failures. **Mitigation: keep it minimal and capability-driven; where feasible, have the reference model and the real code share the same capability tables (`@podkit/device-types`, `@podkit/devices-*`).**
 - Combinatorial blow-up if `skip()` is under-specified. **Mitigation: concern-scoped subsets; never materialise the global product.**
+- The codec concern asserts decisions from the **dry-run plan**, not the executed transfer. This is deliberate (fast, immune to unrelated execution bugs like the OGG abort), but means physical-output coverage must come from the smoke tests (`codec-preference.test.ts`, `mass-storage-sync.test.ts`). Keep both dimensions in mind when adding cells.
+- **A green suite is not by itself "no bugs."** Known bugs live as `[BUG]`/`skipBug` cells, by design. The honest signal is: suite green **and** zero `[BUG]` skips **and** all remaining skips structural. Read the skip kinds, not just the pass count.
 
 ## Open questions
 
-- Decision-assertion mechanism: richer `--json` vs sync-tag inspection vs `--explain` plan-dump — which does podkit adopt? (Needs a separate PRD; likely the JSON route is cheapest first.)
+- Decision-assertion mechanism: richer `--json` vs sync-tag inspection vs `--explain` plan-dump — which does podkit adopt? (TASK-357; likely the JSON route is cheapest first.)
 - Should the reference model live in `e2e-tests` or be promoted to a shared package so unit tests can reuse it?
 - Real-hardware (`IPOD_TARGET=real`) and VM (`e2e-vm-tests`) targets — do they participate in the same matrix harness, or stay separate smoke suites?
+- Should the mass-storage sync gaps above get dedicated bug tasks, and should the OGG/vorbis optimized-copy path be a follow-up to TASK-198?

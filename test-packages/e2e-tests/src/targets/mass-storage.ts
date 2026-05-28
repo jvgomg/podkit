@@ -46,8 +46,30 @@ interface FfprobeTags {
 }
 
 interface FfprobeResult {
-  format?: { tags?: FfprobeTags; bit_rate?: string; duration?: string };
+  format?: { tags?: Record<string, string>; bit_rate?: string; duration?: string };
   streams?: Array<{ codec_type?: string; sample_rate?: string }>;
+}
+
+/**
+ * Lower-case the tag keys ffprobe returns. Vorbis comment field names
+ * (FLAC/OGG) are case-insensitive *by spec*, and FFmpeg writes them upper-case
+ * (`TITLE`/`ARTIST`) when it muxes a FLAC — so a case-sensitive `tags.title`
+ * lookup would miss every copied FLAC. Normalising keys makes this reader
+ * spec-compliant, which is all that's needed for track matching.
+ *
+ * Note this deliberately reads device files with ffprobe — an *independent*
+ * tool — rather than podkit's own `music-metadata`. Reusing podkit's reader
+ * would couple the verification to the system under test: a bug in podkit's
+ * write path (or in music-metadata) could be mutually masked because the test
+ * would interpret the bytes exactly as the code that wrote them did. Keep this
+ * reader independent; just keep it spec-correct.
+ */
+function normalizeTags(raw: Record<string, string> | undefined): FfprobeTags {
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw ?? {})) {
+    out[key.toLowerCase()] = value;
+  }
+  return out as FfprobeTags;
 }
 
 /** Recursively collect audio files under a directory. */
@@ -139,7 +161,7 @@ export class MassStorageTarget implements SyncTarget {
       } catch {
         continue; // skip unreadable files
       }
-      const tags = probe.format?.tags ?? {};
+      const tags = normalizeTags(probe.format?.tags);
       const hasArtwork = (probe.streams ?? []).some((s) => s.codec_type === 'video');
       const audioStream = (probe.streams ?? []).find((s) => s.codec_type === 'audio');
       tracks.push({

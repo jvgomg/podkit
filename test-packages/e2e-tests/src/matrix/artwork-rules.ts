@@ -28,9 +28,9 @@ import {
   getMultiFormatEmbeddedAltFixturesDir,
 } from '@podkit/test-fixtures';
 import type { SyncOutput } from 'podkit/types';
-import type { DeviceCapabilities } from '@podkit/device-types';
 
-import { ipodCapabilitiesForModel, type IpodTarget } from '../targets';
+import { type IpodTarget, type SyncTarget } from '../targets';
+import { DEVICE_SPEC_BY_ID, deviceAddressing, type DeviceId } from './devices.js';
 import {
   FORMATS,
   FORMAT_TITLE,
@@ -48,17 +48,28 @@ import {
   PIPELINES,
   type Pipeline,
 } from './reference-model.js';
-
-/** Capabilities of the host artwork matrix's iPod target (iPod Video 5G). */
-const HOST_IPOD_CAPS: DeviceCapabilities = ipodCapabilitiesForModel('MA147');
 import {
   findDeviceTrack,
   formatOpsString,
   isArtworkIdempotent,
   opsForTrack,
+  skipBug,
   type CellExpectation,
   type OpSummary,
+  type SkipDecision,
 } from './harness.js';
+
+/**
+ * Devices the host artwork matrix sweeps. iPod (database artwork) and
+ * `ms-generic` (embedded artwork, no native vorbis → OGG transcodes away) sync
+ * cleanly. `ms-echo-mini` is included so its cells are *present and visible*,
+ * but they are all `skipBug`-fenced: its vorbis-native + embedded-art combo
+ * makes OGG route through `optimized-copy`, which fails and aborts the whole
+ * sync (doc-039 §"Mass-storage sync gaps" #1). Keeping echo-mini in the axis —
+ * rather than silently dropping it — means the deferred coverage shows up as
+ * `[BUG]` skips you can count, not as an invisible gap.
+ */
+export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
 // ---------------------------------------------------------------------------
 // Cell expectation / observation shapes
@@ -129,23 +140,93 @@ export function pipelineCellLabel(cell: PipelineCell): string {
   return `${cell.scenario} / ${cell.format} / ${cell.pipeline}`;
 }
 
+/** A pipeline cell extended with the device axis (doc-039 P4). */
+export interface PipelineDeviceCell extends PipelineCell {
+  device: DeviceId;
+}
+
+/** The full device × scenario × format × pipeline product. */
+export function pipelineDeviceCells(): PipelineDeviceCell[] {
+  const cells: PipelineDeviceCell[] = [];
+  for (const device of ARTWORK_DEVICE_IDS) {
+    for (const { scenario, format, pipeline } of pipelineCells()) {
+      cells.push({ device, scenario, format, pipeline });
+    }
+  }
+  return cells;
+}
+
+export function pipelineDeviceCellKey(cell: PipelineDeviceCell): string {
+  return `${cell.device}/${cell.scenario}/${cell.format}/${cell.pipeline}`;
+}
+export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
+  return `${cell.device} / ${cell.scenario} / ${cell.format} / ${cell.pipeline}`;
+}
+
+/**
+ * Classify the mass-storage cells the artwork matrix can't currently assert.
+ * Every return here is a `bug` skip — **deferred work**, not a structural
+ * prune — so a green run with these present still shows exactly what needs
+ * fixing (grep `[BUG]` / `skipBug(`). All are recorded in doc-039
+ * §"Mass-storage sync gaps".
+ *
+ * iPod and `ms-generic` sweep the full product (both pipelines, all formats
+ * except the two below). Note `prefer-copy` on mass-storage is **not** skipped:
+ * its real bug (a `preset-upgrade` re-sync loop) is a quality/preset-convergence
+ * defect that this *artwork* matrix does not assert, so the artwork cells pass.
+ */
+export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
+  if (DEVICE_SPEC_BY_ID[cell.device].kind !== 'mass-storage') return null;
+
+  // echo-mini: vorbis-native + embedded-art → OGG routes through optimized-copy,
+  // which fails and aborts the whole sync, so no cell is observable.
+  if (cell.device === 'ms-echo-mini') {
+    return cell.format === 'ogg'
+      ? skipBug(
+          'OGG optimized-copy fails on this vorbis-native, embedded-art device — FFmpeg cannot re-mux into the OGG container',
+          'doc-039 §Mass-storage sync gaps #1'
+        )
+      : skipBug(
+          'blocked by the OGG optimized-copy failure, which aborts the whole sync — no per-track outcome is observable until #1 is fixed',
+          'doc-039 §Mass-storage sync gaps #1'
+        );
+  }
+
+  // generic (and any embedded-art device that transcodes these): an OGG/Opus
+  // source transcoded to AAC is re-added on every subsequent sync.
+  if (cell.format === 'ogg' || cell.format === 'opus') {
+    return skipBug(
+      `${cell.format} transcoded to AAC is re-added every sync on mass-storage (incompatible-lossy → AAC source/device matching gap)`,
+      'doc-039 §Mass-storage sync gaps #2'
+    );
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Predictions
 // ---------------------------------------------------------------------------
 
 /**
- * Directory adapter, with the pinned codec pipeline controlling whether each
- * format is copied or transcoded (P2). Only embedded art is visible (no
- * sidecar reads). Both the copy and transcode paths preserve embedded art on
- * a database-artwork device, so `deviceHasArtwork` mirrors the source's embed
- * state regardless of the chosen action — and is now asserted under BOTH
- * paths. Source and device agree, so every cell is idempotent.
+ * Directory adapter, swept across the device axis. The pinned codec pipeline
+ * controls copy-vs-transcode (P2); the device's capabilities decide both that
+ * action and whether art reaches the device. Only embedded art is visible (no
+ * sidecar reads), and both the copy and transcode paths preserve/re-embed it,
+ * so `deviceHasArtwork` mirrors the source's embed state on any device whose
+ * `artworkSources` is non-empty. Predictions key off `target.capabilities`,
+ * never the device name. The non-converging mass-storage cells are pruned by
+ * `skipArtworkCell`, so every asserted cell is idempotent.
  */
-export function predictDirectory(cell: PipelineCell, _checkArtwork: boolean): StaticArtExpected {
-  const { scenario, format, pipeline } = cell;
-  const action = deviceAction(format, HOST_IPOD_CAPS, pipeline);
-  const deviceHasArtwork = artworkReaches(sourceEmbedsArt(scenario, format), HOST_IPOD_CAPS);
-  const idempotent = true;
+export function predictDirectory(
+  cell: PipelineDeviceCell,
+  _checkArtwork: boolean
+): StaticArtExpected {
+  const { scenario, format, pipeline, device } = cell;
+  const spec = DEVICE_SPEC_BY_ID[device];
+  const action = deviceAction(format, spec.capabilities, pipeline, spec.kind);
+  const deviceHasArtwork = artworkReaches(sourceEmbedsArt(scenario, format), spec.capabilities);
+  const store = spec.kind === 'ipod' ? 'database-artwork' : 'embedded-artwork';
 
   let reason: string;
   if (scenario === 'A-none') {
@@ -155,10 +236,10 @@ export function predictDirectory(cell: PipelineCell, _checkArtwork: boolean): St
   } else if (!FIXTURE_EMBEDS_ART[format]) {
     reason = `${format} carries no embedded art in fixture → collapses onto A (${action} path)`;
   } else {
-    reason = `embedded art preserved through the ${action} path on a database-artwork device`;
+    reason = `embedded art preserved through the ${action} path on a ${store} device`;
   }
 
-  return { trackPresent: true, deviceHasArtwork, idempotent, reason };
+  return { trackPresent: true, deviceHasArtwork, idempotent: true, reason };
 }
 
 /**
@@ -261,7 +342,7 @@ function runOpts(timeout: number, env?: Record<string, string>): CliRunOpts {
  * only in the config (and env) they hand in.
  */
 export async function observeStaticArtwork(opts: {
-  target: IpodTarget;
+  target: SyncTarget;
   configPath: string;
   checkArtwork: boolean;
   env?: Record<string, string>;
@@ -269,7 +350,8 @@ export async function observeStaticArtwork(opts: {
   dryTimeoutMs?: number;
 }): Promise<Map<string, StaticArtObserved>> {
   const { target, configPath, checkArtwork, env } = opts;
-  const baseArgs = ['--config', configPath, 'sync', '--device', target.path, '--json'];
+  const { deviceArg } = deviceAddressing(target);
+  const baseArgs = ['--config', configPath, 'sync', '--device', deviceArg, '--json'];
   const initArgs = checkArtwork ? [...baseArgs, '--check-artwork'] : baseArgs;
 
   const { result: initResult, json: initJson } = await runCliJson<SyncOutput>(
@@ -322,7 +404,11 @@ export async function observeStaticArtwork(opts: {
  * - `transcode-aac`: `quality=high` + lossy `['aac']` → lossless +
  *   incompatible formats transcode to AAC.
  */
-export async function createPipelineConfig(musicRoot: string, pipeline: Pipeline): Promise<string> {
+export async function createPipelineConfig(
+  musicRoot: string,
+  pipeline: Pipeline,
+  device?: { fragment: string; name: string }
+): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), `podkit-art-pipeline-${pipeline}-`));
   const configPath = join(dir, 'config.toml');
   const quality = pipeline === 'prefer-copy' ? 'max' : 'high';
@@ -330,17 +416,19 @@ export async function createPipelineConfig(musicRoot: string, pipeline: Pipeline
     pipeline === 'prefer-copy'
       ? '[codec]\nlossy = ["aac"]\nlossless = ["source"]\n'
       : '[codec]\nlossy = ["aac"]\n';
+  const deviceBlock = device ? `${device.fragment}` : '';
+  const defaultsDevice = device ? `device = "${device.name}"\n` : '';
   const content = `version = 2
 
 quality = "${quality}"
 
-${codecBlock}
+${codecBlock}${deviceBlock}
 [music.main]
 path = "${musicRoot}"
 
 [defaults]
 music = "main"
-`;
+${defaultsDevice}`;
   await writeFile(configPath, content);
   return configPath;
 }

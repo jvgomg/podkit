@@ -23,16 +23,18 @@ import { ensureFixturesExist, cleanupTempConfig } from '@podkit/e2e-shared';
 import { getStaticFixturesRoot } from '@podkit/test-fixtures';
 import { join } from 'node:path';
 
-import { withTarget } from '../targets';
+import { DEVICE_SPEC_BY_ID, deviceAddressing } from '../matrix/devices';
 import { PIPELINES } from '../matrix/reference-model';
 import { defineArtworkMatrix } from '../matrix/harness';
 import {
+  ARTWORK_DEVICE_IDS,
   createPipelineConfig,
   observeStaticArtwork,
-  pipelineCellKey,
-  pipelineCellLabel,
-  pipelineCells,
+  pipelineDeviceCellKey,
+  pipelineDeviceCellLabel,
+  pipelineDeviceCells,
   predictDirectory,
+  skipArtworkCell,
   staticCellKey,
   type StaticArtObserved,
 } from '../matrix/artwork-rules';
@@ -52,37 +54,49 @@ function getSourceRoot(): string {
   return join(getStaticFixturesRoot(), 'audio');
 }
 
+/** Skip whole syncs that have no asserted cell (e.g. mass-storage prefer-copy). */
+function syncIsLive(device: (typeof ARTWORK_DEVICE_IDS)[number], pipeline: string): boolean {
+  return pipelineDeviceCells().some(
+    (c) => c.device === device && c.pipeline === pipeline && skipArtworkCell(c) === null
+  );
+}
+
 async function runPass(checkArtwork: boolean): Promise<Map<string, StaticArtObserved>> {
   const merged = new Map<string, StaticArtObserved>();
-  // Each pipeline syncs onto its OWN fresh iPod — sharing one device would let
-  // the second pipeline's sync diff against the first's tracks and fire preset
-  // changes, polluting the idempotency observation.
-  for (const pipeline of PIPELINES) {
-    const partial = await withTarget((target) => {
-      return (async () => {
-        const configPath = await createPipelineConfig(getSourceRoot(), pipeline);
-        try {
-          return await observeStaticArtwork({ target, configPath, checkArtwork });
-        } finally {
-          await cleanupTempConfig(configPath);
+  // Each (device × pipeline) syncs onto its OWN fresh target — sharing one
+  // would let a later sync diff against an earlier sync's tracks and fire
+  // preset/codec changes, polluting the idempotency observation.
+  for (const deviceId of ARTWORK_DEVICE_IDS) {
+    const spec = DEVICE_SPEC_BY_ID[deviceId];
+    for (const pipeline of PIPELINES) {
+      if (!syncIsLive(deviceId, pipeline)) continue;
+      const target = await spec.create();
+      const { deviceArg, configFragment } = deviceAddressing(target);
+      const device = configFragment ? { fragment: configFragment, name: deviceArg } : undefined;
+      const configPath = await createPipelineConfig(getSourceRoot(), pipeline, device);
+      try {
+        const partial = await observeStaticArtwork({ target, configPath, checkArtwork });
+        for (const cell of pipelineDeviceCells()) {
+          if (cell.device !== deviceId || cell.pipeline !== pipeline) continue;
+          const observed = partial.get(staticCellKey(cell));
+          if (observed) merged.set(pipelineDeviceCellKey(cell), observed);
         }
-      })();
-    });
-    for (const cell of pipelineCells()) {
-      if (cell.pipeline !== pipeline) continue;
-      const observed = partial.get(staticCellKey(cell));
-      if (observed) merged.set(pipelineCellKey(cell), observed);
+      } finally {
+        await cleanupTempConfig(configPath);
+        await target.cleanup();
+      }
     }
   }
   return merged;
 }
 
 defineArtworkMatrix({
-  title: 'artwork matrix — directory adapter',
-  cells: pipelineCells(),
-  cellKey: pipelineCellKey,
-  cellLabel: pipelineCellLabel,
+  title: 'artwork matrix — directory adapter, device axis',
+  cells: pipelineDeviceCells(),
+  cellKey: pipelineDeviceCellKey,
+  cellLabel: pipelineDeviceCellLabel,
   predict: predictDirectory,
+  skip: skipArtworkCell,
   runPass,
-  timeoutMs: 1500000,
+  timeoutMs: 1800000,
 });

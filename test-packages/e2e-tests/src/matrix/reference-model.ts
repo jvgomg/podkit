@@ -13,7 +13,20 @@
  */
 
 import type { AudioCodec, DeviceCapabilities } from '@podkit/device-types';
+import { MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS } from '@podkit/devices-mass-storage';
 import type { Scenario, Format } from './axes.js';
+
+/**
+ * Whether the device stores metadata in its own database (iPod) or only in
+ * the audio files (mass-storage). Mass-storage refuses to emit some codecs it
+ * can otherwise play, because tag-writing into those containers is unreliable
+ * (see `effectiveSupportedCodecs`); iPod is exempt.
+ */
+export type DeviceKind = 'ipod' | 'mass-storage';
+
+/** File-preparation strategy. Mirrors podkit's `TransferMode`. */
+export type TransferMode = 'fast' | 'optimized' | 'portable';
+export const TRANSFER_MODES: readonly TransferMode[] = ['fast', 'optimized', 'portable'];
 
 /**
  * Whether the source *file* for a format carries embedded cover art when the
@@ -87,37 +100,155 @@ const FORMAT_CODEC: Record<Format, AudioCodec> = {
 
 const LOSSLESS_FORMATS: ReadonlySet<Format> = new Set(['wav', 'aiff', 'flac', 'alac']);
 
+/** Codec → the file extension podkit writes for it (transcode output). */
+export const CODEC_EXTENSION: Record<AudioCodec, string> = {
+  aac: '.m4a',
+  alac: '.m4a',
+  mp3: '.mp3',
+  flac: '.flac',
+  vorbis: '.ogg',
+  opus: '.opus',
+  wav: '.wav',
+  aiff: '.aiff',
+};
+
+/** Source format → its on-disk extension (the copy-path output extension). */
+export const SOURCE_EXTENSION: Record<Format, string> = {
+  wav: '.wav',
+  aiff: '.aiff',
+  flac: '.flac',
+  alac: '.m4a',
+  mp3: '.mp3',
+  aac: '.m4a',
+  ogg: '.ogg',
+  opus: '.opus',
+};
+
 /**
- * Reference mirror of podkit's classifier decision for a (format, device,
- * pipeline): does the track get copied or transcoded?
+ * The codecs the planner actually treats as device-native for output.
  *
- * Independent re-implementation (not an import of `@podkit/core`) so the
- * matrix prediction stays independent of the system under test (doc-039
- * §"The reference model"). Captures the classifier's first rule:
+ * Mass-storage drops `MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS` (wav/aiff) even
+ * when the firmware lists them — tag-writing into RIFF/IFF containers is
+ * unreliable, so podkit transcodes those sources to a managed codec. iPod is
+ * exempt: its metadata lives in the iTunesDB, not the file. This mirrors the
+ * filter the mass-storage adapter applies to `supportedAudioCodecs` before the
+ * classifier sees it.
+ */
+export function effectiveSupportedCodecs(
+  capabilities: DeviceCapabilities,
+  kind: DeviceKind
+): AudioCodec[] {
+  if (kind === 'ipod') return capabilities.supportedAudioCodecs;
+  return capabilities.supportedAudioCodecs.filter(
+    (c) => !MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS.includes(c)
+  );
+}
+
+/**
+ * Core copy-vs-transcode decision, keyed off the device's *effective* codecs
+ * and a resolved quality label. Captures the classifier's first rule:
  *
  *   copy ⟺ the device plays the codec natively AND we are not forcing a
  *          lossless source down a lossy preset.
  *
- * Everything else transcodes. This is exact for the two pinned pipelines on
- * an iPod; the broad-codec mass-storage cases arrive with P4 (and will add the
- * WAV/AIFF mass-storage-output exception then).
+ * Everything else transcodes. Independent re-implementation (not an import of
+ * `@podkit/core`) so the matrix prediction stays independent of the system
+ * under test (doc-039 §"The reference model").
+ */
+function audioActionCore(
+  format: Format,
+  capabilities: DeviceCapabilities,
+  kind: DeviceKind,
+  resolvedQuality: 'lossless' | 'high' | 'medium' | 'low'
+): AudioAction {
+  const codec = FORMAT_CODEC[format];
+  const deviceNative = effectiveSupportedCodecs(capabilities, kind).includes(codec);
+  const isLossless = LOSSLESS_FORMATS.has(format);
+  const forcedLossyDowngrade = isLossless && resolvedQuality !== 'lossless';
+  return deviceNative && !forcedLossyDowngrade ? 'copy' : 'transcode';
+}
+
+/**
+ * Reference mirror of podkit's classifier decision for a (format, device,
+ * pipeline): does the track get copied or transcoded? `kind` selects the
+ * effective-codec view (mass-storage drops wav/aiff as output).
  */
 export function deviceAction(
   format: Format,
   capabilities: DeviceCapabilities,
-  pipeline: Pipeline
+  pipeline: Pipeline,
+  kind: DeviceKind = 'ipod'
 ): AudioAction {
-  const codec = FORMAT_CODEC[format];
-  const deviceNative = capabilities.supportedAudioCodecs.includes(codec);
-  const isLossless = LOSSLESS_FORMATS.has(format);
-  const resolvedQuality = pipeline === 'prefer-copy' ? 'lossless' : 'high';
+  return audioActionCore(
+    format,
+    capabilities,
+    kind,
+    pipeline === 'prefer-copy' ? 'lossless' : 'high'
+  );
+}
 
-  // Lossless source + non-lossless preset → transcode even when device-native.
-  const forcedLossyDowngrade = isLossless && resolvedQuality !== 'lossless';
-  if (deviceNative && !forcedLossyDowngrade) {
-    return 'copy';
+/**
+ * First codec in a lossy preference stack that the device can actually emit.
+ * Mirrors podkit's "first supported lossy codec wins" resolution. Returns
+ * `undefined` if the device supports none of them (the matrix should not
+ * exercise that — every device under test emits AAC).
+ */
+export function resolvedLossyCodec(
+  lossyStack: readonly AudioCodec[],
+  capabilities: DeviceCapabilities,
+  kind: DeviceKind
+): AudioCodec | undefined {
+  const effective = effectiveSupportedCodecs(capabilities, kind);
+  return lossyStack.find((c) => effective.includes(c));
+}
+
+/** Predicted output of a sync under an explicit lossy stack + quality label. */
+export interface CodecOutcome {
+  action: AudioAction;
+  /** Output codec when transcoding; `undefined` on the copy path. */
+  codec: AudioCodec | undefined;
+  /** Output file extension (source extension on copy, codec extension on transcode). */
+  extension: string;
+}
+
+/**
+ * Predict the copy-vs-transcode action and the resulting output extension for
+ * a (format, device, lossy stack, quality) cell — the codec concern's core.
+ */
+export function codecOutcome(
+  format: Format,
+  capabilities: DeviceCapabilities,
+  kind: DeviceKind,
+  lossyStack: readonly AudioCodec[],
+  resolvedQuality: 'lossless' | 'high' | 'medium' | 'low'
+): CodecOutcome {
+  const action = audioActionCore(format, capabilities, kind, resolvedQuality);
+  if (action === 'copy') {
+    return { action, codec: undefined, extension: SOURCE_EXTENSION[format] };
   }
-  return 'transcode';
+  const codec = resolvedLossyCodec(lossyStack, capabilities, kind);
+  return { action, codec, extension: codec ? CODEC_EXTENSION[codec] : '<none>' };
+}
+
+/**
+ * The `add-*`/`upgrade-*` copy sub-type podkit emits for a *copied* track,
+ * given the device's artwork model and the transfer mode. Mirrors
+ * `classifier.resolveCopyAction`: a device whose *primary* artwork source is
+ * `embedded`, or any device under `optimized` mode, routes copies through
+ * FFmpeg passthrough (`optimized-copy`); otherwise a plain `direct-copy`.
+ *
+ * The primary-artwork branch is driven by the device's capabilities, NOT by
+ * whether artwork syncing is enabled: an embedded-artwork device still
+ * re-muxes every copy through FFmpeg even with `artwork = false` (verified
+ * empirically — generic/echo-mini copies are `optimized-copy` regardless).
+ */
+export function copyOpKind(
+  capabilities: DeviceCapabilities,
+  transferMode: TransferMode
+): 'direct-copy' | 'optimized-copy' {
+  if (capabilities.artworkSources[0] === 'embedded') return 'optimized-copy';
+  if (transferMode === 'optimized') return 'optimized-copy';
+  return 'direct-copy';
 }
 
 /**

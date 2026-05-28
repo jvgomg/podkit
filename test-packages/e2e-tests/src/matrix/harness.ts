@@ -64,6 +64,16 @@ export function isArtworkIdempotent(ops: OpSummary[]): boolean {
   );
 }
 
+/**
+ * Whether a track's second-sync operations contain no track-add or
+ * file-replacement upgrade — the "nothing left to do" signal for concerns
+ * (like the codec matrix) where any add/upgrade on the second sync means the
+ * first sync didn't converge.
+ */
+export function isStableNoFileOp(ops: OpSummary[]): boolean {
+  return !ops.some((op) => ADD_OP_TYPES.has(op.type) || UPGRADE_OP_TYPES.has(op.type));
+}
+
 /** Sorted `type:reason` join — the change matrix's op fingerprint. */
 export function formatOpsString(ops: OpSummary[]): string {
   return ops
@@ -115,10 +125,76 @@ export function diffCell(
       diffs.push(`  ${key}: expected=${render(e)}, observed=${render(o)}`);
     }
   }
-  if (diffs.length > 0 && 'secondSyncOps' in observed) {
-    diffs.push(`    secondSyncOps: ${JSON.stringify(observed['secondSyncOps'])}`);
+  if (diffs.length > 0) {
+    // Echo any operation-trace field (e.g. `secondSyncOps`, `planOps`) to aid
+    // diagnosis of a mismatched cell.
+    for (const key of Object.keys(observed)) {
+      if (key.endsWith('Ops')) {
+        diffs.push(`    ${key}: ${JSON.stringify(observed[key])}`);
+      }
+    }
   }
   return diffs;
+}
+
+// ---------------------------------------------------------------------------
+// Skip taxonomy
+// ---------------------------------------------------------------------------
+
+/**
+ * Why a cell is not asserted. The `kind` is load-bearing — it separates
+ * *permanent* prunings from *deferred work*:
+ *
+ * - `redundant` / `impossible` / `env` — **structural**. The cell is not
+ *   meaningful to assert, ever. These are correct-by-design and never become
+ *   work. A structural skip is not a bug.
+ * - `bug` — **deferred work**. The cell *could* be asserted but podkit's
+ *   behaviour is currently broken, so it's fenced off rather than failing the
+ *   suite. Every `bug` skip is a known defect that needs fixing; `ref` points
+ *   at where it's tracked (a task id or a doc section).
+ *
+ * This is the dividing line the suite makes visible: a green run with only
+ * structural skips has nothing hidden; any `bug` skip is outstanding work.
+ * Grep the source for `skipBug(` (or filter the runner output for `[BUG]`) to
+ * enumerate exactly what needs attention.
+ */
+export type SkipKind = 'redundant' | 'impossible' | 'env' | 'bug';
+
+export interface SkipDecision {
+  kind: SkipKind;
+  reason: string;
+  /** For `bug` skips: where the defect is tracked (task id / doc section). */
+  ref?: string;
+}
+
+/** A cell that is permanently not worth asserting (a no-op everywhere it's pruned). */
+export function skipRedundant(reason: string): SkipDecision {
+  return { kind: 'redundant', reason };
+}
+/** A cell that cannot exist (e.g. sidecar art on a non-sidecar adapter). */
+export function skipImpossible(reason: string): SkipDecision {
+  return { kind: 'impossible', reason };
+}
+/** A cell gated on an absent environment (Docker, real hardware). */
+export function skipEnvGated(reason: string): SkipDecision {
+  return { kind: 'env', reason };
+}
+/**
+ * A cell fenced off because podkit is currently broken for it — **deferred
+ * work, not a permanent prune**. Pass a `ref` (task id / doc section) so the
+ * defect is traceable.
+ */
+export function skipBug(reason: string, ref?: string): SkipDecision {
+  return ref !== undefined ? { kind: 'bug', reason, ref } : { kind: 'bug', reason };
+}
+
+/** Render a skip decision as the `it.skip` title suffix, tagging bugs loudly. */
+function skipTitle(label: string, d: SkipDecision): string {
+  if (d.kind === 'bug') {
+    const ref = d.ref ? ` ${d.ref}` : '';
+    return `[BUG]${ref} ${label} — ${d.reason}`;
+  }
+  return `[skip:${d.kind}] ${label} — ${d.reason}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -145,6 +221,15 @@ export interface MatrixDef<Cell, Expected extends CellExpectation, Observed> {
   passLabel?: (pass: boolean) => string;
   /** Predicted outcome for a cell under a given pass. */
   predict: (cell: Cell, pass: boolean) => Expected;
+  /**
+   * Prune a cell from the asserted product, or `null` to assert it. Returns a
+   * typed {@link SkipDecision} so structural prunings (`redundant`/`impossible`
+   * /`env`) are distinguishable from `bug` deferrals at a glance — in the code
+   * (the `skipBug(` call site) and in the runner (`[BUG]` vs `[skip:kind]`).
+   * Skipped cells are not looked up in the observed map, so `runPass` may
+   * consult the same predicate to avoid syncing them.
+   */
+  skip?: (cell: Cell) => SkipDecision | null;
   /** Run one pass (a fresh sync sequence) → observed map keyed by `cellKey`. */
   runPass: (pass: boolean) => Promise<Map<string, Observed>>;
   /** Optional one-time setup before any pass runs (e.g. start a container). */
@@ -186,6 +271,11 @@ export function defineArtworkMatrix<
     for (const pass of passes) {
       describe(passLabel(pass), () => {
         for (const cell of def.cells) {
+          const skip = def.skip?.(cell) ?? null;
+          if (skip !== null) {
+            it.skip(skipTitle(def.cellLabel(cell), skip), () => {});
+            continue;
+          }
           const expected = def.predict(cell, pass);
           it(def.cellLabel(cell), () => {
             const byKey = resultsByPass.get(pass);
