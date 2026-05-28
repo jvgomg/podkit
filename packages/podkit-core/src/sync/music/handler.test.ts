@@ -1150,6 +1150,84 @@ describe('MusicHandler', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // postProcessCodecChanges via postProcessDiff
+  // ---------------------------------------------------------------------------
+
+  describe('postProcessCodecChanges', () => {
+    function makeCodecDiff(
+      source: CollectionTrack,
+      device: DeviceTrack
+    ): UnifiedSyncDiff<CollectionTrack, DeviceTrack> {
+      return {
+        toAdd: [],
+        toRemove: [],
+        existing: [{ source, device }],
+        toUpdate: [],
+      };
+    }
+
+    // Regression test for TASK-355.04: an MP3 source on a device that natively
+    // plays MP3 is direct-copied by the classifier, not transcoded to the
+    // resolvedLossyCodec. The pre-fix logic assumed any lossy source would be
+    // transcoded with `resolvedLossyCodec` and fired a spurious `codec-changed`
+    // upgrade on every subsequent sync.
+    test('does not fire codec-changed for an MP3 source that is direct-copied to MP3', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          codecPreference: { lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['mp3', 'aac'],
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, codec: 'mp3' });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=copy codec=mp3 transfer=fast]') ?? undefined,
+      });
+      const diff = makeCodecDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      const codecChange = diff.toUpdate.find((u) => u.reasons.includes('codec-changed'));
+      expect(codecChange).toBeUndefined();
+    });
+
+    // Companion: an MP3 source on a device that does NOT support MP3 natively
+    // would actually be transcoded to AAC — codec-changed is the correct call.
+    test('does fire codec-changed for an MP3 source on an MP3-incompatible device', () => {
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'high',
+          codecPreference: { lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac'], // no MP3
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'mp3', lossless: false, codec: 'mp3' });
+      const device = makeDeviceTrack({
+        filetype: 'MPEG audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=mp3]') ?? undefined,
+      });
+      const diff = makeCodecDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      const codecChange = diff.toUpdate.find((u) => u.reasons.includes('codec-changed'));
+      expect(codecChange).toBeDefined();
+      expect(codecChange!.changes![0]!.from).toBe('mp3');
+      expect(codecChange!.changes![0]!.to).toBe('aac');
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // postProcessForceTranscode via postProcessDiff (extended scenarios)
   // ---------------------------------------------------------------------------
 

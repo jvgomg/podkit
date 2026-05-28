@@ -84,14 +84,14 @@ const FORMAT_TITLE: Record<Format, string> = {
 };
 
 const FIXTURE_EMBEDS_ART: Record<Format, boolean> = {
-  wav: false,
-  aiff: false,
+  wav: true,
+  aiff: true,
   flac: true,
   alac: true,
   mp3: true,
   aac: true,
-  ogg: false,
-  opus: false,
+  ogg: true,
+  opus: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -106,19 +106,6 @@ interface Expected {
 }
 
 function predict(scenario: Scenario, format: Format, checkArtwork: boolean): Expected {
-  // Same AIFF bug as the host matrix: tracks never reach the device. The
-  // subsonic side surfaces this identically (source/sync2 sees no AIFF
-  // either, so no churn from a phantom re-add). When a fix lands, all 8
-  // AIFF cells flip and force a maintainer to investigate.
-  if (format === 'aiff') {
-    return {
-      trackPresent: false,
-      deviceHasArtwork: null,
-      idempotent: true,
-      reason: 'AIFF tracks do not land on the device (bug — pipeline drops AIFF)',
-    };
-  }
-
   // Source-side: subsonic adapter behaviour.
   let sourceHasArtwork: boolean;
   let sourceHasArtworkHash: boolean;
@@ -135,30 +122,12 @@ function predict(scenario: Scenario, format: Format, checkArtwork: boolean): Exp
 
   // Device-side: the downloaded audio stream carries embedded art only when
   // the source FILE had it. Sidecar bytes never reach the file body.
-  //
-  // BUT — `packages/podkit-core/src/artwork/album-cache.ts` shares the first
-  // successful artwork extraction across every track in the same album. So a
-  // format that can't carry embed (WAV/OGG/Opus) still ends up with art on the
-  // device if an earlier-processed sibling carried embed. Order matters and
-  // differs by adapter.
-  //
-  // For the Subsonic adapter, Navidrome's `getAlbum.songs` listing puts FLAC
-  // and ALAC ahead of WAV in the "Lossless Collection" album, so in scenarios
-  // B/D the FLAC/ALAC art is cached before WAV is processed and WAV inherits
-  // it. OGG/Opus share the "Incompatible Lossy" album where no track has
-  // embed, so the cache stays empty for that album and they remain artless.
-  //
-  // The host matrix sees the opposite for WAV: glob sorts `01-wav-track.wav`
-  // first, WAV extracts null, and that null poisons the cache for the whole
-  // album. The order-dependence itself is a podkit quirk worth noting.
-  const fileHasEmbed =
+  // Every multi-format track now has its own working embed strategy (WAV
+  // via post-process `id3 ` chunk; OGG/Opus via METADATA_BLOCK_PICTURE), so
+  // each format's device-side artwork is determined purely by whether the
+  // fixture variant included embed for it — no cross-track inheritance.
+  const deviceHasArtwork =
     (scenario === 'B-embedded' || scenario === 'D-both') && FIXTURE_EMBEDS_ART[format];
-  // WAV is the only matrix format that shares an album with embed-capable
-  // tracks (FLAC, ALAC) in scenarios B/D and can therefore inherit art via
-  // the cache. OGG and Opus share an album that has no embed-capable members.
-  const inheritsArtFromSibling =
-    format === 'wav' && (scenario === 'B-embedded' || scenario === 'D-both');
-  const deviceHasArtwork = fileHasEmbed || inheritsArtFromSibling;
 
   // Idempotency rules from detectUpgrades + syncTag write:
   //   * Symmetric (both true or both false) → no churn.
@@ -188,8 +157,6 @@ function predict(scenario: Scenario, format: Format, checkArtwork: boolean): Exp
     reason = checkArtwork
       ? 'Navidrome placeholder filtered → source=false → symmetric'
       : 'Navidrome reports coverArt → source=true (phantom) → asymmetric → optimistic-true loop';
-  } else if (inheritsArtFromSibling) {
-    reason = 'album cache hands WAV the FLAC/ALAC sibling art → device=true → symmetric';
   } else if (scenario === 'C-sidecar' || !FIXTURE_EMBEDS_ART[format]) {
     reason = checkArtwork
       ? `device file has no embed → asymmetric → syncTag hash converges (no churn)`

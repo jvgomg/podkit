@@ -385,6 +385,37 @@ function isOggExtension(filePath: string): boolean {
 }
 
 /**
+ * Container preference rank for album-artwork resolution.
+ *
+ * Lower = more likely to actually carry embedded art in the wild and so a
+ * better choice for the album cache to extract from first. Used by
+ * {@link MusicPipeline.buildAlbumCandidates} to sort sibling source paths.
+ *
+ * Real-world expectation: FLAC/ALAC/MP3/AAC/AIFF reliably carry an
+ * `attached_pic` / ID3v2 APIC frame. WAV / OGG / Opus *can* carry art
+ * (`id3 ` RIFF chunk; `METADATA_BLOCK_PICTURE` Vorbis comment), but most
+ * casual encoders don't emit it.
+ */
+function artworkContainerRank(filePath: string): number {
+  const ext = extname(filePath).toLowerCase();
+  switch (ext) {
+    case '.flac':
+    case '.m4a':
+    case '.aac':
+    case '.mp3':
+    case '.aiff':
+    case '.aif':
+      return 0;
+    case '.wav':
+    case '.ogg':
+    case '.opus':
+      return 1;
+    default:
+      return 2;
+  }
+}
+
+/**
  * Get a human-readable filetype label based on file extension.
  *
  * Used for the iPod database `filetype` field which displays the format
@@ -624,6 +655,17 @@ export class MusicPipeline implements SyncExecutor {
   private audioNormalization?: string;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
+  /**
+   * Per-album sibling candidate paths used to make album-cache resolution
+   * deterministic across scan orderings.
+   *
+   * Populated once per `execute()` by {@link buildAlbumCandidates} when the
+   * adapter exposes local files (directory adapter). Empty for remote
+   * adapters (Subsonic) — those fall back to the cache's single-source mode
+   * so non-local sibling paths don't poison the album with extraction
+   * failures.
+   */
+  private albumCandidates = new Map<string, readonly string[]>();
   /** Album-level cache for resized artwork — avoids redundant FFmpeg spawns for tracks on the same album */
   private resizedArtworkCache = new Map<string, Buffer>();
 
@@ -731,7 +773,14 @@ export class MusicPipeline implements SyncExecutor {
     // Clear state from previous execution
     this.clearWarnings();
     this.artworkCache.clear();
+    this.albumCandidates.clear();
     this.resizedArtworkCache.clear();
+
+    // Pre-compute per-album sibling candidates so the artwork cache can
+    // resolve "album art" deterministically regardless of which track is
+    // processed first. See `albumCandidates` field comment for the gating
+    // rule (directory adapter only).
+    this.buildAlbumCandidates(plan, adapter);
 
     // Merge retry config with defaults
     const mergedRetryConfig: Required<RetryConfig> = {
@@ -1317,6 +1366,41 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
+   * Build per-album sibling candidate lists from the sync plan.
+   *
+   * Only meaningful for adapters where `source.filePath` resolves to a real
+   * local file (currently just the directory adapter). For remote adapters
+   * (Subsonic) the field is a server-side path or a `subsonic://` URI that
+   * the local FFmpeg can't read — leaving the candidate map empty means the
+   * cache falls back to single-source mode (which never caches a null).
+   *
+   * Within each album, candidates are sorted by container preference: paths
+   * whose extension is known to support embedded art reliably come first,
+   * so the cache stops at the first sibling that actually carries a cover.
+   */
+  private buildAlbumCandidates(plan: SyncPlan, adapter?: CollectionAdapter): void {
+    if (adapter?.adapterType !== 'directory') return;
+
+    const groups = new Map<string, string[]>();
+    for (const op of plan.operations) {
+      const source = (op as { source?: CollectionTrack }).source;
+      if (!source) continue;
+      const key = getAlbumKey({ artist: source.artist ?? '', album: source.album ?? '' });
+      const list = groups.get(key);
+      if (list) {
+        list.push(source.filePath);
+      } else {
+        groups.set(key, [source.filePath]);
+      }
+    }
+
+    for (const [key, paths] of groups) {
+      paths.sort((a, b) => artworkContainerRank(a) - artworkContainerRank(b));
+      this.albumCandidates.set(key, paths);
+    }
+  }
+
+  /**
    * Extract and transfer artwork for a track.
    *
    * Handles artwork extraction from source file and transfers it to iPod.
@@ -1330,9 +1414,12 @@ export class MusicPipeline implements SyncExecutor {
     sourceFilePath: string
   ): Promise<string | undefined> {
     try {
+      const albumKey = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
+      const candidates = this.albumCandidates.get(albumKey);
       const cached = await this.artworkCache.get(
         { artist: track.artist ?? '', album: track.album ?? '' },
-        sourceFilePath
+        sourceFilePath,
+        candidates ? { candidates } : undefined
       );
       if (cached) {
         track.setArtworkFromData(cached.data);

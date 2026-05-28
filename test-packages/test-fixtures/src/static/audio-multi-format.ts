@@ -25,8 +25,10 @@
 import { join } from 'node:path';
 import { requireEncoder } from '../encoder-guard.js';
 import {
+  buildMetadataBlockPicture,
   ensureDir,
   generateCoverJpeg,
+  injectId3v2ApicIntoWav,
   metadataArgs,
   runFfmpeg,
   writeGeneratedSentinel,
@@ -81,14 +83,22 @@ interface MultiFormatTrack {
   /** Extra ffmpeg args specific to this codec (bitrate, quality flags). */
   extraArgs: readonly string[];
   /**
-   * Whether the container can carry an attached-picture stream via the same
-   * `-c:v mjpeg -disposition:v attached_pic` invocation used everywhere else.
+   * How to embed cover art into this track when the variant calls for it.
    *
-   * False for WAV and AIFF — ffmpeg's wav/aiff muxers reject video streams
-   * outright. We still generate the audio file in those embedded scenarios;
-   * the matrix then records device.hasArtwork=false as the expected outcome.
+   * - `'attached_pic'`: standard `-c:v mjpeg -disposition:v attached_pic`
+   *   invocation. Used by FLAC / ALAC / MP3 / AAC and by AIFF when paired
+   *   with `-write_id3v2 1` in `extraArgs`.
+   * - `'vorbis_comment'`: ffmpeg writes a `METADATA_BLOCK_PICTURE` Vorbis
+   *   comment containing a base64-encoded FLAC PICTURE block (the official
+   *   Xiph convention). Used for OGG / Opus, whose muxers reject any video
+   *   stream but accept the `-metadata METADATA_BLOCK_PICTURE=<base64>` flag.
+   * - `'wav_id3_chunk'`: ffmpeg writes audio only; a post-process step
+   *   appends an `id3 ` RIFF chunk with an ID3v2.3 APIC frame. WAV's muxer
+   *   rejects video streams outright, so the tag has to be spliced manually
+   *   (see {@link injectId3v2ApicIntoWav}). iTunes / `music-metadata` /
+   *   Windows Media Player all read this chunk back as the cover.
    */
-  supportsAttachedPic: boolean;
+  embedStrategy: 'attached_pic' | 'vorbis_comment' | 'wav_id3_chunk';
 }
 
 const TRACKS: readonly MultiFormatTrack[] = [
@@ -101,7 +111,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'pcm_s16le',
     sampleRate: 44100,
     extraArgs: [],
-    supportsAttachedPic: false,
+    embedStrategy: 'wav_id3_chunk',
   },
   {
     filename: '02-aiff-track.aiff',
@@ -111,8 +121,13 @@ const TRACKS: readonly MultiFormatTrack[] = [
     frequency: 523.25,
     encoder: 'pcm_s16be',
     sampleRate: 44100,
-    extraArgs: [],
-    supportsAttachedPic: false,
+    // ffmpeg's AIFF muxer only writes native NAME/AUTH/ANNO/(c) chunks by
+    // default — anything outside those (artist/album/track/date/genre) is
+    // silently dropped and attached_pic is rejected. `-write_id3v2 1` adds
+    // an ID3v2 tag to the AIFF FORM, which Apple/iTunes uses in the wild
+    // and which music-metadata / iTunes / podkit all read correctly.
+    extraArgs: ['-write_id3v2', '1'],
+    embedStrategy: 'attached_pic',
   },
   {
     filename: '03-flac-track.flac',
@@ -123,7 +138,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'flac',
     sampleRate: 44100,
     extraArgs: [],
-    supportsAttachedPic: true,
+    embedStrategy: 'attached_pic',
   },
   {
     filename: '04-alac-track.m4a',
@@ -134,7 +149,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'alac',
     sampleRate: 44100,
     extraArgs: [],
-    supportsAttachedPic: true,
+    embedStrategy: 'attached_pic',
   },
   {
     filename: '05-mp3-track.mp3',
@@ -145,7 +160,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'libmp3lame',
     sampleRate: 44100,
     extraArgs: ['-q:a', '0'],
-    supportsAttachedPic: true,
+    embedStrategy: 'attached_pic',
   },
   {
     filename: '06-aac-track.m4a',
@@ -156,7 +171,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'aac',
     sampleRate: 44100,
     extraArgs: ['-b:a', '256k'],
-    supportsAttachedPic: true,
+    embedStrategy: 'attached_pic',
   },
   {
     filename: '07-ogg-track.ogg',
@@ -167,12 +182,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'libvorbis',
     sampleRate: 44100,
     extraArgs: ['-q:a', '7'],
-    // Embedded art in OGG/Opus uses METADATA_BLOCK_PICTURE in Vorbis comments
-    // (base64-encoded FLAC PICTURE block). ffmpeg refuses to mux an image
-    // stream into the OGG container directly, and producing the base64
-    // payload manually is outside this generator's scope. The matrix records
-    // the embedded scenario as expectedBroken for OGG/Opus.
-    supportsAttachedPic: false,
+    embedStrategy: 'vorbis_comment',
   },
   {
     filename: '08-opus-track.opus',
@@ -183,7 +193,7 @@ const TRACKS: readonly MultiFormatTrack[] = [
     encoder: 'libopus',
     sampleRate: 48000,
     extraArgs: ['-b:a', '128k'],
-    supportsAttachedPic: false,
+    embedStrategy: 'vorbis_comment',
   },
 ];
 
@@ -221,11 +231,9 @@ interface MultiFormatVariantOptions {
 /**
  * Core generator. All four public variants delegate here.
  *
- * When `embedded` is true, runs ffmpeg with the cover as an extra input and
- * the appropriate `-map` / `attached_pic` flags so the output file embeds
- * the image. For containers without standard art support (WAV, AIFF), ffmpeg
- * is asked to embed it anyway — whether the read-back round-trips is part of
- * what the matrix discovers.
+ * When `embedded` is true, every track gets a cover embedded via its
+ * format-specific strategy — see {@link MultiFormatTrack.embedStrategy} for
+ * the per-format details.
  */
 async function generateMultiFormatWithArt(
   outputDir: string,
@@ -244,13 +252,26 @@ async function generateMultiFormatWithArt(
     await generateCoverJpeg(coverPath, opts.coverColor);
   }
 
+  // Pre-compute the Vorbis-comment cover blob once per album; OGG and Opus
+  // tracks share it. (Hot-loop reuse: building the base64 is cheap but
+  // re-reading the JPEG per track is wasteful.)
+  const vorbisCoverValue = opts.embedded ? await buildMetadataBlockPicture(coverPath) : '';
+
   for (const track of TRACKS) {
     const outPath = join(outputDir, track.filename);
     const albumTag = `${track.albumCategory}${opts.albumSuffix}`;
-    const embedIntoThisTrack = opts.embedded && track.supportsAttachedPic;
+    const embedThis = opts.embedded;
+    const meta = metadataArgs({
+      title: track.title,
+      artist: opts.artist,
+      album: albumTag,
+      track: track.track,
+      date: COMMON.date,
+      genre: COMMON.genre,
+    });
 
     const args: string[] = [];
-    if (embedIntoThisTrack) {
+    if (embedThis && track.embedStrategy === 'attached_pic') {
       // Cover is input 0 (image), audio is generated by lavfi as input 1.
       args.push(
         '-i',
@@ -280,24 +301,31 @@ async function generateMultiFormatWithArt(
         track.encoder
       );
     }
-    args.push(
-      '-ar',
-      String(track.sampleRate),
-      '-ac',
-      '2',
-      ...track.extraArgs,
-      ...metadataArgs({
+    args.push('-ar', String(track.sampleRate), '-ac', '2', ...track.extraArgs, ...meta);
+    if (embedThis && track.embedStrategy === 'vorbis_comment') {
+      // libvorbis / libopus accept the FLAC PICTURE block as a Vorbis
+      // comment via the standard -metadata key=value path.
+      args.push('-metadata', `METADATA_BLOCK_PICTURE=${vorbisCoverValue}`);
+    }
+    args.push(outPath);
+
+    await runFfmpeg(args);
+
+    if (embedThis && track.embedStrategy === 'wav_id3_chunk') {
+      // ffmpeg's WAV muxer refuses video streams, so the tag is spliced in
+      // after the audio is written. We mirror title/artist/album into the
+      // ID3 frames because TagLib (Navidrome) prefers ID3 over the LIST INFO
+      // chunk ffmpeg already wrote and would otherwise see the track as
+      // Unknown. See injectId3v2ApicIntoWav() for the RIFF chunk layout.
+      await injectId3v2ApicIntoWav(outPath, coverPath, {
         title: track.title,
         artist: opts.artist,
         album: albumTag,
         track: track.track,
         date: COMMON.date,
         genre: COMMON.genre,
-      }),
-      outPath
-    );
-
-    await runFfmpeg(args);
+      });
+    }
   }
 
   // The cover sidecar is left in place when sidecar=true, removed when

@@ -506,20 +506,25 @@ export class MusicHandler implements ContentTypeHandler<
         existingCodec = 'aac';
       }
 
-      // Determine what codec we'd use now
+      // Determine what codec we'd use now.
+      //
+      // Both the lossless and lossy branches delegate to the classifier
+      // instead of assuming the resolved codec applies. The classifier knows
+      // when a compatible source would be COPIED rather than transcoded — e.g.
+      // an MP3 source on a device that natively plays MP3 is direct-copied,
+      // not transcoded to the resolvedLossyCodec. Treating that as a codec
+      // change would fire a spurious upgrade-direct-copy `codec-changed` op
+      // on every subsequent sync.
       let targetCodec: string | undefined;
+      const classification = this.classifier.classify(match.source);
+      if (classification.action.type !== 'transcode') {
+        // Source would be direct/optimized copied — no codec change to detect.
+        return null;
+      }
       if (sourceLossless && this.config.resolvedQuality === 'lossless' && resolvedLosslessStack) {
-        // Walk the lossless stack to find the target codec for this source
-        const classification = this.classifier.classify(match.source);
-        if (classification.action.type === 'transcode') {
-          targetCodec = classification.action.preset.targetCodec ?? 'alac';
-        } else {
-          // Direct/optimized copy — no codec change applicable
-          return null;
-        }
+        targetCodec = classification.action.preset.targetCodec ?? 'alac';
       } else if (!sourceLossless || this.config.resolvedQuality !== 'lossless') {
-        // Lossy transcoding path
-        targetCodec = resolvedLossyCodec;
+        targetCodec = classification.action.preset.targetCodec ?? resolvedLossyCodec;
       }
 
       if (!targetCodec || existingCodec === targetCodec) return null;

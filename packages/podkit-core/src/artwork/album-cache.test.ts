@@ -63,7 +63,7 @@ describe('AlbumArtworkCache', () => {
     expect(cache.size).toBe(1);
   });
 
-  it('caches null results (no artwork) to avoid re-extraction', async () => {
+  it('does not cache a null result in single-source mode (avoids poisoning the album)', async () => {
     let extractCount = 0;
     const cache = new AlbumArtworkCache({
       extractArtwork: async () => {
@@ -76,7 +76,70 @@ describe('AlbumArtworkCache', () => {
     await cache.get(track, '/fake/track1.flac');
     await cache.get(track, '/fake/track2.flac');
 
-    expect(extractCount).toBe(1);
+    // Both calls extracted — the null result is intentionally not cached so
+    // a later caller with sibling candidates can still discover album art.
+    expect(extractCount).toBe(2);
+    expect(cache.size).toBe(0);
+  });
+
+  it('caches null in candidates mode once every candidate yields null', async () => {
+    let extractCount = 0;
+    const cache = new AlbumArtworkCache({
+      extractArtwork: async () => {
+        extractCount++;
+        return null;
+      },
+    });
+
+    const track = { artist: 'Artist', album: 'Album' };
+    await cache.get(track, '/fake/a.wav', {
+      candidates: ['/fake/a.wav', '/fake/b.ogg'],
+    });
+    // Second call sees the cached null — no further extraction.
+    await cache.get(track, '/fake/a.wav', {
+      candidates: ['/fake/a.wav', '/fake/b.ogg'],
+    });
+
+    expect(extractCount).toBe(2); // both candidates tried on first call
+    expect(cache.size).toBe(1);
+  });
+
+  it('with candidates: returns first positive regardless of which track called', async () => {
+    const fakeArtworkPath = '/fake/with-art.flac';
+    const cache = new AlbumArtworkCache({
+      extractArtwork: async (path) => (path === fakeArtworkPath ? fakeArtwork : null),
+    });
+
+    const track = { artist: 'Artist', album: 'Album' };
+    // Caller is the WAV track, but the album's candidate list puts FLAC
+    // first — cache resolves to FLAC's art for the WAV track to inherit.
+    const entry = await cache.get(track, '/fake/no-art.wav', {
+      candidates: ['/fake/no-art.wav', fakeArtworkPath, '/fake/other.alac'],
+    });
+
+    expect(entry).not.toBeNull();
+    expect(entry!.data).toEqual(fakeArtwork.data);
+  });
+
+  it('with candidates: order-independent outcome across two different first-track orderings', async () => {
+    // Same album, same candidates list, two different processing orders.
+    // The fixture: one of the candidates (path 'b') has art; the rest don't.
+    const make = () =>
+      new AlbumArtworkCache({
+        extractArtwork: async (path) => (path === '/album/b.flac' ? fakeArtwork : null),
+      });
+    const track = { artist: 'Artist', album: 'Album' };
+    const candidates = ['/album/b.flac', '/album/a.wav', '/album/c.ogg'];
+
+    const cacheA = make();
+    const orderA = await cacheA.get(track, '/album/a.wav', { candidates });
+    const cacheB = make();
+    const orderB = await cacheB.get(track, '/album/c.ogg', { candidates });
+
+    expect(orderA).not.toBeNull();
+    expect(orderB).not.toBeNull();
+    expect(orderA!.data).toEqual(orderB!.data);
+    expect(orderA!.hash).toBe(orderB!.hash);
   });
 
   it('treats different albums as separate cache entries', async () => {

@@ -10,7 +10,13 @@ import { mkdir, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { requireFFmpeg } from '@podkit/test-fixtures';
+import {
+  ensureFixturesExist,
+  getMultiFormatFixturesDir,
+  getMultiFormatEmbeddedFixturesDir,
+  requireFFmpeg,
+  SCENARIO_ARTISTS,
+} from '@podkit/test-fixtures';
 import { DirectoryAdapter } from './directory.js';
 
 requireFFmpeg();
@@ -224,6 +230,38 @@ describe('DirectoryAdapter integration', () => {
 
     await adapter.disconnect();
     expect(adapter.getTrackCount()).toBe(0);
+  });
+});
+
+// Pinning test for the AIFF fixture metadata round-trip. ffmpeg's AIFF muxer
+// writes only `title`/`author`/`annotation`/`copyright` chunks by default,
+// silently dropping `artist`/`album`/`track`/`genre`. The multi-format
+// generator opts AIFF into `-write_id3v2 1` so the full tag set survives;
+// this test fails loudly if that flag ever gets removed.
+describe('DirectoryAdapter — AIFF multi-format fixture', () => {
+  ensureFixturesExist('multi-format');
+  ensureFixturesExist('multi-format-embedded');
+
+  it('reads artist/album/track from a plain AIFF fixture', async () => {
+    const adapter = new DirectoryAdapter({ path: getMultiFormatFixturesDir() });
+    const tracks = await adapter.getItems();
+    const aiff = tracks.find((t) => t.filePath.endsWith('02-aiff-track.aiff'));
+    expect(aiff).toBeDefined();
+    expect(aiff!.title).toBe('AIFF Test Track');
+    expect(aiff!.artist).toBe(SCENARIO_ARTISTS.none);
+    expect(aiff!.album).toBe('Lossless Collection');
+    expect(aiff!.trackNumber).toBe(2);
+    expect(aiff!.hasArtwork).toBe(false);
+  });
+
+  it('reads embedded artwork from an AIFF fixture with attached_pic', async () => {
+    const adapter = new DirectoryAdapter({ path: getMultiFormatEmbeddedFixturesDir() });
+    const tracks = await adapter.getItems();
+    const aiff = tracks.find((t) => t.filePath.endsWith('02-aiff-track.aiff'));
+    expect(aiff).toBeDefined();
+    expect(aiff!.artist).toBe(SCENARIO_ARTISTS.embedded);
+    expect(aiff!.album).toBe('Lossless Collection (Embedded)');
+    expect(aiff!.hasArtwork).toBe(true);
   });
 });
 

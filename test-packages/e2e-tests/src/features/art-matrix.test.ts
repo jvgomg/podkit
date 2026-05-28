@@ -85,22 +85,21 @@ const FORMAT_TITLE: Record<Format, string> = {
 };
 
 /**
- * Whether the fixture for this format actually embeds an attached_pic stream
- * when the variant calls for it (B and D). Driven by what the WAV/AIFF/OGG/Opus
- * muxers accept — see `audio-multi-format.ts` for the source of truth.
- *
- * Cells where this is false in scenarios B/D collapse onto scenarios A/C
- * (no embedded art reaches the source-side adapter).
+ * Whether the fixture for this format embeds cover art when the variant
+ * calls for it (B and D). Every format now opts into a working embed
+ * strategy in `audio-multi-format.ts` (attached_pic for FLAC/ALAC/MP3/AAC/
+ * AIFF, METADATA_BLOCK_PICTURE for OGG/Opus, post-process `id3 ` RIFF chunk
+ * for WAV).
  */
 const FIXTURE_EMBEDS_ART: Record<Format, boolean> = {
-  wav: false,
-  aiff: false,
+  wav: true,
+  aiff: true,
   flac: true,
   alac: true,
   mp3: true,
   aac: true,
-  ogg: false,
-  opus: false,
+  ogg: true,
+  opus: true,
 };
 
 // ---------------------------------------------------------------------------
@@ -119,22 +118,6 @@ interface Expected {
 }
 
 function predict(scenario: Scenario, format: Format, _checkArtwork: boolean): Expected {
-  // Known bug: AIFF tracks do not survive the sync pipeline onto the device,
-  // regardless of artwork state. The track is read from the source but never
-  // appears in the iTunesDB. Symptom is identical across every scenario and
-  // both --check-artwork values, so the failure is in the transfer/database
-  // path, not in artwork handling. Captured as expected behaviour today so
-  // this matrix isn't drowned in AIFF-shaped noise; a fix will flip all 8
-  // AIFF cells and force a maintainer to investigate.
-  if (format === 'aiff') {
-    return {
-      trackPresent: false,
-      deviceHasArtwork: null,
-      idempotent: true,
-      reason: 'AIFF tracks do not land on the device (bug — pipeline drops AIFF)',
-    };
-  }
-
   // Directory adapter only sees embedded art. Sidecar scenarios collapse
   // onto their non-sidecar counterparts.
   const fixtureHasEmbeddedSlot = scenario === 'B-embedded' || scenario === 'D-both';
@@ -154,7 +137,7 @@ function predict(scenario: Scenario, format: Format, _checkArtwork: boolean): Ex
   } else if (scenario === 'C-sidecar') {
     reason = 'sidecar invisible to directory adapter → collapses onto A';
   } else if (!FIXTURE_EMBEDS_ART[format]) {
-    reason = `${format} container cannot carry attached_pic in fixture → adapter sees no art → collapses onto A`;
+    reason = `${format} container does not carry embedded art in fixture → collapses onto A`;
   } else {
     reason = 'embedded art preserved through copy/transcode pipeline';
   }

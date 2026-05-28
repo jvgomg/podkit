@@ -29,11 +29,10 @@
  *     writes the old hash into the syncTag, sync 2 compares against the
  *     new hash and fires `artwork-updated`.
  *
- * For formats that don't carry embedded art in the fixture (WAV / AIFF /
- * OGG / Opus), the alt variant is also embed-less, so there is nothing to
- * change. Those cells stay at no-op regardless of the flag. AIFF is
- * additionally absent from the device entirely — see the standing AIFF
- * note on the static matrix.
+ * Every format in the multi-format set now carries embedded cover art in
+ * the embedded / both variants (see `audio-multi-format.ts` for the per-
+ * format strategy), so every format is eligible to detect an artwork-update
+ * when the alt variant swaps the cover bytes.
  *
  * Subsonic / Navidrome coverage of artwork-change is deferred: mutating
  * source files behind Navidrome requires triggering a library rescan and
@@ -91,14 +90,14 @@ const FORMAT_TITLE: Record<Format, string> = {
  * the source-side adapter.
  */
 const FIXTURE_EMBEDS_ART: Record<Format, boolean> = {
-  wav: false,
-  aiff: false,
+  wav: true,
+  aiff: true,
   flac: true,
   alac: true,
   mp3: true,
   aac: true,
-  ogg: false,
-  opus: false,
+  ogg: true,
+  opus: true,
 };
 
 const ARTIST = SCENARIO_ARTISTS.embedded;
@@ -124,16 +123,6 @@ interface Expected {
 }
 
 function predict(format: Format, checkArtwork: boolean): Expected {
-  // AIFF tracks never reach the device — same pipeline drop seen in the
-  // static matrix. No track, no diff, no detection.
-  if (format === 'aiff') {
-    return {
-      trackPresent: false,
-      ops: '',
-      reason: 'AIFF tracks do not land on the device (bug — pipeline drops AIFF)',
-    };
-  }
-
   if (!FIXTURE_EMBEDS_ART[format]) {
     return {
       trackPresent: true,
@@ -149,21 +138,6 @@ function predict(format: Format, checkArtwork: boolean): Expected {
       trackPresent: true,
       ops: 'upgrade-artwork:artwork-updated',
       reason: 'source.artworkHash differs from syncTag.artworkHash → artwork-updated fires',
-    };
-  }
-
-  // MP3 quirk: without --check-artwork the post-mutation second sync produces
-  // a `codec-changed` upgrade-direct-copy op for the MP3 track. None of the
-  // other embed-capable formats (FLAC, ALAC, AAC) show this. Likely because
-  // the syncTag.codec field interaction with MP3's lossy-copy path differs
-  // from the other formats — captured here so a future fix surfaces; see the
-  // backlog task on `postProcessCodecChanges`.
-  if (format === 'mp3') {
-    return {
-      trackPresent: true,
-      ops: 'upgrade-direct-copy:codec-changed',
-      reason:
-        'no --check-artwork → cover-swap silently missed, but MP3 also produces a spurious codec-changed op every sync (bug — codec-changed for unchanged codec)',
     };
   }
 
