@@ -5,24 +5,19 @@
  * gpod-testing) and real iPod devices, using the same test code.
  */
 
-import type { TrackInfo, VerifyResult } from '@podkit/gpod-testing';
+import type { VerifyResult } from '@podkit/gpod-testing';
+import type { SyncTarget } from './sync-target';
 
 /**
- * An iPod target for E2E testing.
+ * An iPod target for E2E testing — a {@link SyncTarget} specialised to iPod
+ * devices (adds iTunesDB-specific operations).
  *
  * Implementations exist for:
  * - Dummy iPods (via @podkit/gpod-testing)
  * - Real iPod devices (via mount point)
  */
-export interface IpodTarget {
-  /** Absolute path to the iPod mount point */
-  readonly path: string;
-
-  /** Display name for logging/debugging */
-  readonly name: string;
-
-  /** Whether this is a real device (affects cleanup behavior) */
-  readonly isRealDevice: boolean;
+export interface IpodTarget extends SyncTarget {
+  readonly kind: 'ipod';
 
   /**
    * Get the number of tracks on the iPod.
@@ -30,22 +25,9 @@ export interface IpodTarget {
   getTrackCount(): Promise<number>;
 
   /**
-   * Get all tracks on the iPod.
-   */
-  getTracks(): Promise<TrackInfo[]>;
-
-  /**
    * Verify the iPod database integrity.
    */
   verify(): Promise<VerifyResult>;
-
-  /**
-   * Clean up the target.
-   *
-   * For dummy iPods: deletes the temp directory
-   * For real iPods: no-op (never auto-delete user data)
-   */
-  cleanup(): Promise<void>;
 }
 
 /**
@@ -66,6 +48,8 @@ export interface IpodTargetFactory {
 export interface TargetOptions {
   /** Name for the iPod (used in dummy targets) */
   name?: string;
+  /** iPod model number to create (dummy targets only; defaults to MA147). */
+  model?: string;
 }
 
 /**

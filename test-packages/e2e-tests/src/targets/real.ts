@@ -7,17 +7,25 @@
 
 import { gpodTool } from '@podkit/gpod-testing';
 import type { TrackInfo, VerifyResult } from '@podkit/gpod-testing';
+import type { DeviceCapabilities } from '@podkit/device-types';
 import type { IpodTarget, IpodTargetFactory, TargetOptions } from './types';
+import { ipodCapabilitiesForModel, type DeviceConfigFragment } from './sync-target';
+
+/** Capability fallback when a real device's exact model can't be resolved. */
+const FALLBACK_MODEL = 'MA147';
 
 /**
  * A real iPod target using an actual mounted device.
  */
 export class RealIpodTarget implements IpodTarget {
+  readonly kind = 'ipod' as const;
   readonly isRealDevice = true;
 
   private constructor(
     readonly path: string,
-    readonly name: string
+    readonly name: string,
+    readonly model: string,
+    readonly capabilities: DeviceCapabilities
   ) {}
 
   /**
@@ -54,7 +62,22 @@ export class RealIpodTarget implements IpodTarget {
       // Use default name if we can't read the database
     }
 
-    return new RealIpodTarget(mountPath, name);
+    // Resolve capabilities from the requested model, falling back to the 5G
+    // baseline when the real device's exact model isn't supplied.
+    const model = options?.model ?? FALLBACK_MODEL;
+    let capabilities: DeviceCapabilities;
+    try {
+      capabilities = ipodCapabilitiesForModel(model);
+    } catch {
+      capabilities = ipodCapabilitiesForModel(FALLBACK_MODEL);
+    }
+
+    return new RealIpodTarget(mountPath, name, model, capabilities);
+  }
+
+  /** iPods are addressed by path and auto-detected — no device config block. */
+  deviceConfig(): DeviceConfigFragment | null {
+    return null;
   }
 
   async getTrackCount(): Promise<number> {

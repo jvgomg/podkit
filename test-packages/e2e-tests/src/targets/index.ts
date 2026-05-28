@@ -13,7 +13,17 @@
  * ```
  */
 
-export { createTarget, withTarget, createTargetFactory, getTargetType } from './factory';
+export {
+  createTarget,
+  withTarget,
+  createTargetFactory,
+  getTargetType,
+  createMassStorageTarget,
+  withMassStorageTarget,
+  MassStorageTarget,
+} from './factory';
 export { DummyIpodTarget, DummyIpodTargetFactory } from './dummy';
 export { RealIpodTarget, RealIpodTargetFactory } from './real';
 export type { IpodTarget, IpodTargetFactory, TargetType, TargetOptions } from './types';
+export type { SyncTarget, SyncTargetKind, DeviceConfigFragment } from './sync-target';
+export { ipodCapabilitiesForModel } from './sync-target';

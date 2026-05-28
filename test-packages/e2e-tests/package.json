@@ -25,6 +25,9 @@
   },
   "dependencies": {
     "@podkit/compatibility": "workspace:*",
+    "@podkit/device-types": "workspace:*",
+    "@podkit/devices-ipod": "workspace:*",
+    "@podkit/devices-mass-storage": "workspace:*",
     "@podkit/e2e-shared": "workspace:*",
     "@podkit/gpod-testing": "workspace:*",
     "@podkit/test-fixtures": "workspace:*",

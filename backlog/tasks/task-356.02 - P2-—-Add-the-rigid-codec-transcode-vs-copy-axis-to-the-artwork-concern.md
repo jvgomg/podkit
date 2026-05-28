@@ -4,6 +4,7 @@ title: P2 — Add the rigid-codec transcode-vs-copy axis to the artwork concern
 status: To Do
 assignee: []
 created_date: '2026-05-28 08:00'
+updated_date: '2026-05-28 08:20'
 labels:
   - testing
   - e2e
@@ -12,6 +13,7 @@ labels:
   - codec
 dependencies:
   - TASK-356.01
+  - TASK-356.03
 references:
   - backlog/docs/doc-039 - E2E-Sync-Matrix-Testing-Strategy.md
 parent_task_id: TASK-356
@@ -42,3 +44,9 @@ Depends on P1 (the harness + reference model must exist first).
 - [ ] #3 Artwork survival asserted separately for the copy path and the transcode path, every format
 - [ ] #4 Matrices green with the new axis
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-28: Now also depends on TASK-356.03. P2's 'copy-everything' pinned config (quality=max, lossless ['source'], device supports every codec) is degenerate on the iPod target — MA147 has no native FLAC/OGG/Opus, so the classifier transcodes those regardless of config. A literal copy-everything needs the broad-codec mass-storage device that P3 delivers, so P3 runs first. Per design decision: deviceAction() will be an INDEPENDENT re-implementation of podkit's classifier in the reference model (not an import of @podkit/core) so the prediction stays independent of the system under test.
+<!-- SECTION:NOTES:END -->

@@ -1,9 +1,10 @@
 ---
 id: TASK-356.03
 title: P3 — Generalise IpodTarget into a capability-carrying SyncTarget
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-05-28 08:00'
+updated_date: '2026-05-28 08:20'
 labels:
   - testing
   - e2e

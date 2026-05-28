@@ -6,9 +6,12 @@
  * - IPOD_TARGET=real: Uses real iPod at IPOD_MOUNT path
  */
 
+import type { BuiltInPresetId } from '@podkit/devices-mass-storage';
 import type { IpodTarget, IpodTargetFactory, TargetType, TargetOptions } from './types';
+import type { SyncTarget } from './sync-target';
 import { DummyIpodTargetFactory } from './dummy';
 import { RealIpodTargetFactory } from './real';
+import { MassStorageTarget } from './mass-storage';
 
 /**
  * Get the target type from environment.
@@ -83,5 +86,34 @@ export async function withTarget<T>(
   }
 }
 
+/**
+ * Create a mass-storage `SyncTarget` backed by a temp directory + built-in
+ * preset. No hardware required.
+ */
+export async function createMassStorageTarget(options?: {
+  preset?: BuiltInPresetId;
+  name?: string;
+  deviceName?: string;
+}): Promise<MassStorageTarget> {
+  return MassStorageTarget.create(options);
+}
+
+/**
+ * Run a function with a mass-storage target, cleaning up afterward.
+ */
+export async function withMassStorageTarget<T>(
+  fn: (target: MassStorageTarget) => Promise<T>,
+  options?: { preset?: BuiltInPresetId; name?: string; deviceName?: string }
+): Promise<T> {
+  const target = await createMassStorageTarget(options);
+  try {
+    return await fn(target);
+  } finally {
+    await target.cleanup();
+  }
+}
+
 // Re-export types
 export type { IpodTarget, IpodTargetFactory, TargetType, TargetOptions } from './types';
+export type { SyncTarget, SyncTargetKind, DeviceConfigFragment } from './sync-target';
+export { MassStorageTarget } from './mass-storage';
