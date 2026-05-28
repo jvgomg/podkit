@@ -4,15 +4,18 @@ title: Extend art-matrix-change coverage to the Subsonic / Navidrome adapter
 status: To Do
 assignee: []
 created_date: '2026-05-26 22:50'
+updated_date: '2026-05-28 08:02'
 labels:
   - enhancement
   - artwork
   - testing
   - subsonic
-dependencies: []
+dependencies:
+  - TASK-356.01
 references:
   - test-packages/e2e-tests/src/sources/subsonic.ts
   - test-packages/e2e-tests/src/features/art-matrix-change.test.ts
+  - backlog/docs/doc-039 - E2E-Sync-Matrix-Testing-Strategy.md
 parent_task_id: TASK-355
 priority: low
 ordinal: 65000
@@ -56,3 +59,9 @@ The reason for the gap: changing a file served by Navidrome requires rewriting t
 - [ ] #2 art-matrix-change.docker.test.ts file created and green
 - [ ] #3 Coverage matches art-matrix-change.test.ts (same axes, same fixtures)
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-28: Now depends on TASK-356.01 (matrix harness extraction). Build the Subsonic change-matrix on the shared harness + rules module rather than hand-rolling a fourth copy of the per-file matrix machinery — otherwise this becomes throwaway as soon as 356.01 lands. The `SubsonicTestSource.mutateLibrary()` mutate+rescan plumbing is the substantive, harness-independent part and can be prototyped early. See doc-039 §'Proposed code organisation' for how host/docker files share one `.rules.ts`. NB the embedded-art fixtures changed under TASK-355.03 — WAV/OGG/Opus now carry embedded art, so the expected change-detection cells differ from this task's original write-up.
+<!-- SECTION:NOTES:END -->

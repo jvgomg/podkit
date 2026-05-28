@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-05-26 22:49'
+updated_date: '2026-05-28 08:02'
 labels:
   - bug
   - artwork
@@ -17,6 +18,7 @@ references:
   - 'packages/podkit-core/src/adapters/subsonic.ts:540'
   - 'packages/podkit-core/src/sync/engine/upgrades.ts:274'
   - test-packages/e2e-tests/src/features/art-matrix.docker.test.ts
+  - backlog/docs/doc-039 - E2E-Sync-Matrix-Testing-Strategy.md
 parent_task_id: TASK-355
 priority: high
 ordinal: 62000
@@ -78,3 +80,9 @@ TASK-142 covers the executor-side fallback for fetching artwork via `adapter.get
 - [ ] #3 Approach documented in a code comment at the adapter site (subsonic.ts:540-552)
 - [ ] #4 Unit test added at packages/podkit-core/src/adapters/subsonic.test.ts asserting the new (loop-free) behaviour on a no-art track
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-28: Stays an independent production bug fix (not blocked by the TASK-356 harness work). Two freshness notes after TASK-355.03 landed: (1) the affected-cell list above is now narrower — WAV/OGG/Opus carry embedded art in the fixtures and the album cache no longer poisons, so the remaining loop is primarily the scenario-A 'no real art but Navidrome reports a placeholder coverArt ID' case. (2) AC#2 'update art-matrix.docker.test.ts predictor' — if TASK-356.01 lands first, that predictor will live in a shared `.rules.ts` module, not inline in the docker test file; update it there. The core root cause (optimistic hasArtwork=true on a placeholder coverArt ID) is unchanged.
+<!-- SECTION:NOTES:END -->
