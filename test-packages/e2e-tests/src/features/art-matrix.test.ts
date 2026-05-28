@@ -1,35 +1,39 @@
 /**
  * Artwork-handling matrix — directory adapter.
  *
- * Walks the (scenario × format × --check-artwork) grid for podkit's directory
- * source adapter. For each cell, after a fresh sync we observe whether the
- * track landed, whether `device.hasArtwork` matches the prediction, and
- * whether a second sync avoids any artwork-churn op.
+ * Walks the (scenario × format × pipeline × --check-artwork) grid for podkit's
+ * directory source adapter. The `pipeline` axis pins a codec config so the
+ * copy path and the transcode path are exercised deliberately rather than as
+ * an accident of each format's default (doc-039 P2):
  *
- * The matrix is a frozen snapshot of current behaviour: the prediction (see
- * `predictDirectory` in `../matrix/artwork-rules.ts`) *is* the assertion. When
- * a code change flips a cell, the test fails and the maintainer accepts the
- * change (update the rule) or reverts the regression. No `expectedBroken`.
+ *   - `prefer-copy`   (quality=max, lossless ['source']): device-native
+ *     formats (ALAC/WAV/AIFF/MP3/AAC) copy; FLAC/OGG/Opus transcode.
+ *   - `transcode-aac` (quality=high, lossy ['aac']): lossless + incompatible
+ *     formats transcode to AAC; MP3/AAC copy.
  *
- * Shared machinery (axes, reference model, op-classification, the two-pass
- * orchestration, the diff/assert) lives in `../matrix/`; this file only wires
- * the directory source into it. See doc-039 for the strategy.
+ * For each cell, after a fresh sync we observe whether the track landed,
+ * whether `device.hasArtwork` matches the prediction, and whether a second
+ * sync avoids artwork churn. The prediction (`predictDirectory`) *is* the
+ * assertion. Shared machinery lives in `../matrix/`.
  *
  * @module
  */
 
-import { ensureFixturesExist, cleanupTempConfig, createTempConfig } from '@podkit/e2e-shared';
+import { ensureFixturesExist, cleanupTempConfig } from '@podkit/e2e-shared';
 import { getStaticFixturesRoot } from '@podkit/test-fixtures';
 import { join } from 'node:path';
 
 import { withTarget } from '../targets';
-import { scenarioFormatCells } from '../matrix/axes';
+import { PIPELINES } from '../matrix/reference-model';
 import { defineArtworkMatrix } from '../matrix/harness';
 import {
+  createPipelineConfig,
   observeStaticArtwork,
+  pipelineCellKey,
+  pipelineCellLabel,
+  pipelineCells,
   predictDirectory,
   staticCellKey,
-  staticCellLabel,
   type StaticArtObserved,
 } from '../matrix/artwork-rules';
 
@@ -41,7 +45,7 @@ ensureFixturesExist('multi-format-both');
 /**
  * The directory adapter scans the static fixtures root recursively. That root
  * contains goldberg, synthetic-tests, and the four multi-format scenarios as
- * siblings. The matrix only asserts on the 32 multi-format cells, so the extra
+ * siblings. The matrix only asserts on the multi-format cells, so the extra
  * non-matrix tracks come along harmlessly.
  */
 function getSourceRoot(): string {
@@ -49,21 +53,36 @@ function getSourceRoot(): string {
 }
 
 async function runPass(checkArtwork: boolean): Promise<Map<string, StaticArtObserved>> {
-  return withTarget(async (target) => {
-    const configPath = await createTempConfig(getSourceRoot());
-    try {
-      return await observeStaticArtwork({ target, configPath, checkArtwork });
-    } finally {
-      await cleanupTempConfig(configPath);
+  const merged = new Map<string, StaticArtObserved>();
+  // Each pipeline syncs onto its OWN fresh iPod — sharing one device would let
+  // the second pipeline's sync diff against the first's tracks and fire preset
+  // changes, polluting the idempotency observation.
+  for (const pipeline of PIPELINES) {
+    const partial = await withTarget((target) => {
+      return (async () => {
+        const configPath = await createPipelineConfig(getSourceRoot(), pipeline);
+        try {
+          return await observeStaticArtwork({ target, configPath, checkArtwork });
+        } finally {
+          await cleanupTempConfig(configPath);
+        }
+      })();
+    });
+    for (const cell of pipelineCells()) {
+      if (cell.pipeline !== pipeline) continue;
+      const observed = partial.get(staticCellKey(cell));
+      if (observed) merged.set(pipelineCellKey(cell), observed);
     }
-  });
+  }
+  return merged;
 }
 
 defineArtworkMatrix({
   title: 'artwork matrix — directory adapter',
-  cells: scenarioFormatCells(),
-  cellKey: staticCellKey,
-  cellLabel: staticCellLabel,
+  cells: pipelineCells(),
+  cellKey: pipelineCellKey,
+  cellLabel: pipelineCellLabel,
   predict: predictDirectory,
   runPass,
+  timeoutMs: 1500000,
 });

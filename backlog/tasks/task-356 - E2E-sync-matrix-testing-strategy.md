@@ -4,6 +4,7 @@ title: E2E sync matrix testing strategy
 status: To Do
 assignee: []
 created_date: '2026-05-28 07:59'
+updated_date: '2026-05-28 11:46'
 labels:
   - testing
   - e2e
@@ -47,3 +48,20 @@ TASK-355 (artwork bugs) is the artwork-specific predecessor that proved the patt
 - [ ] #2 doc-039 kept in sync as axes/reference-model evolve during implementation
 - [ ] #3 Decision-assertion PRD task filed and linked
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+## Handoff (2026-05-28)
+
+**Done & committed** (all test-only, no production code, branch local/unpushed):
+- P1 (356.01) `1389ddad` — shared matrix harness in `test-packages/e2e-tests/src/matrix/` (axes, reference-model, harness, artwork-rules, README). The 3 art-matrix files are thin wrappers now.
+- P3 (356.03) `e86faf95` — `SyncTarget` abstraction (`targets/sync-target.ts` + `targets/mass-storage.ts`); `IpodTarget extends SyncTarget`; mass-storage target generates its own `[devices.*]` TOML + ffprobe `getTracks()`.
+- P2 (356.02) `6bea59fd` — transcode-vs-copy `pipeline` axis on the host artwork matrix (128 cells); `deviceAction()` + `artworkReaches()` in the reference model.
+
+**Remaining:** P4 (356.04, unblocked) → then P5 (356.05). TASK-357 (decision-assertion exposure) is an independent PRD, unstarted.
+
+**Start here:** P4 (356.04) — see that task's notes for the concrete design forks. Recommended order: (a) add `skip(cell)` to the harness `MatrixDef` first (doc-039 calls for it; not built yet), (b) wire device as an axis on the artwork matrix using `target.capabilities` + `target.deviceConfig()` (replacing the hardcoded `HOST_IPOD_CAPS` in artwork-rules), (c) extend `deviceAction()` with the mass-storage WAV/AIFF-output exception, (d) migrate the imperative `codec-preference.test.ts` + `mass-storage-sync.test.ts` last.
+
+**Workflow that worked:** typecheck (`bun run typecheck --filter @podkit/e2e-tests`) + oxlint, then run host matrices (`bun run test:e2e -- art-matrix`), then docker (`bun run test:docker -- art-matrix.docker`), commit per phase. doc-039 is the source of truth — keep it in sync as axes are added.
+<!-- SECTION:NOTES:END -->

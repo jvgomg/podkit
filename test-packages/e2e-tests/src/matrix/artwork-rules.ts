@@ -17,7 +17,7 @@
  * @module
  */
 
-import { mkdtemp, cp, rm } from 'node:fs/promises';
+import { mkdtemp, cp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -28,17 +28,29 @@ import {
   getMultiFormatEmbeddedAltFixturesDir,
 } from '@podkit/test-fixtures';
 import type { SyncOutput } from 'podkit/types';
+import type { DeviceCapabilities } from '@podkit/device-types';
 
-import type { IpodTarget } from '../targets';
+import { ipodCapabilitiesForModel, type IpodTarget } from '../targets';
 import {
   FORMATS,
   FORMAT_TITLE,
   SCENARIO_ARTIST,
+  SCENARIOS,
   scenarioFormatCells,
   type Format,
   type ScenarioFormatCell,
 } from './axes.js';
-import { FIXTURE_EMBEDS_ART, sourceEmbedsArt } from './reference-model.js';
+import {
+  FIXTURE_EMBEDS_ART,
+  artworkReaches,
+  deviceAction,
+  sourceEmbedsArt,
+  PIPELINES,
+  type Pipeline,
+} from './reference-model.js';
+
+/** Capabilities of the host artwork matrix's iPod target (iPod Video 5G). */
+const HOST_IPOD_CAPS: DeviceCapabilities = ipodCapabilitiesForModel('MA147');
 import {
   findDeviceTrack,
   formatOpsString,
@@ -92,35 +104,58 @@ export function staticCellLabel(cell: ScenarioFormatCell): string {
   return `${cell.scenario} / ${cell.format}`;
 }
 
+/** A static artwork cell extended with the pinned codec pipeline. */
+export interface PipelineCell extends ScenarioFormatCell {
+  pipeline: Pipeline;
+}
+
+/** The full scenario × format × pipeline product. */
+export function pipelineCells(): PipelineCell[] {
+  const cells: PipelineCell[] = [];
+  for (const scenario of SCENARIOS) {
+    for (const format of FORMATS) {
+      for (const pipeline of PIPELINES) {
+        cells.push({ scenario, format, pipeline });
+      }
+    }
+  }
+  return cells;
+}
+
+export function pipelineCellKey(cell: PipelineCell): string {
+  return `${cell.scenario}/${cell.format}/${cell.pipeline}`;
+}
+export function pipelineCellLabel(cell: PipelineCell): string {
+  return `${cell.scenario} / ${cell.format} / ${cell.pipeline}`;
+}
+
 // ---------------------------------------------------------------------------
 // Predictions
 // ---------------------------------------------------------------------------
 
 /**
- * Directory adapter: only embedded art is visible (no sidecar reads). Copy
- * preserves embedded art and transcode re-embeds it, so the device mirrors
- * the source file's embed state, which keeps every cell symmetric and
- * idempotent.
+ * Directory adapter, with the pinned codec pipeline controlling whether each
+ * format is copied or transcoded (P2). Only embedded art is visible (no
+ * sidecar reads). Both the copy and transcode paths preserve embedded art on
+ * a database-artwork device, so `deviceHasArtwork` mirrors the source's embed
+ * state regardless of the chosen action — and is now asserted under BOTH
+ * paths. Source and device agree, so every cell is idempotent.
  */
-export function predictDirectory(
-  cell: ScenarioFormatCell,
-  _checkArtwork: boolean
-): StaticArtExpected {
-  const { scenario, format } = cell;
-  const deviceHasArtwork = sourceEmbedsArt(scenario, format);
-  // Source and device agree (directory adapter reports the file's real state),
-  // so there is never an add/removed asymmetry → always idempotent.
+export function predictDirectory(cell: PipelineCell, _checkArtwork: boolean): StaticArtExpected {
+  const { scenario, format, pipeline } = cell;
+  const action = deviceAction(format, HOST_IPOD_CAPS, pipeline);
+  const deviceHasArtwork = artworkReaches(sourceEmbedsArt(scenario, format), HOST_IPOD_CAPS);
   const idempotent = true;
 
   let reason: string;
   if (scenario === 'A-none') {
-    reason = 'no art anywhere → device gets none → idempotent';
+    reason = `no art anywhere → device gets none (${action} path)`;
   } else if (scenario === 'C-sidecar') {
-    reason = 'sidecar invisible to directory adapter → collapses onto A';
+    reason = `sidecar invisible to directory adapter → collapses onto A (${action} path)`;
   } else if (!FIXTURE_EMBEDS_ART[format]) {
-    reason = `${format} container does not carry embedded art in fixture → collapses onto A`;
+    reason = `${format} carries no embedded art in fixture → collapses onto A (${action} path)`;
   } else {
-    reason = 'embedded art preserved through copy/transcode pipeline';
+    reason = `embedded art preserved through the ${action} path on a database-artwork device`;
   }
 
   return { trackPresent: true, deviceHasArtwork, idempotent, reason };
@@ -276,6 +311,38 @@ export async function observeStaticArtwork(opts: {
     });
   }
   return byKey;
+}
+
+/**
+ * Write a directory-source config pinned to a codec pipeline, returning the
+ * config path (in its own temp dir, so `cleanupTempConfig` removes it).
+ *
+ * - `prefer-copy`: `quality=max` + lossless `['source']` → device-native
+ *   formats copy.
+ * - `transcode-aac`: `quality=high` + lossy `['aac']` → lossless +
+ *   incompatible formats transcode to AAC.
+ */
+export async function createPipelineConfig(musicRoot: string, pipeline: Pipeline): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), `podkit-art-pipeline-${pipeline}-`));
+  const configPath = join(dir, 'config.toml');
+  const quality = pipeline === 'prefer-copy' ? 'max' : 'high';
+  const codecBlock =
+    pipeline === 'prefer-copy'
+      ? '[codec]\nlossy = ["aac"]\nlossless = ["source"]\n'
+      : '[codec]\nlossy = ["aac"]\n';
+  const content = `version = 2
+
+quality = "${quality}"
+
+${codecBlock}
+[music.main]
+path = "${musicRoot}"
+
+[defaults]
+music = "main"
+`;
+  await writeFile(configPath, content);
+  return configPath;
 }
 
 /**

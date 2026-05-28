@@ -12,6 +12,7 @@
  * @module
  */
 
+import type { AudioCodec, DeviceCapabilities } from '@podkit/device-types';
 import type { Scenario, Format } from './axes.js';
 
 /**
@@ -49,4 +50,84 @@ export function fixtureHasEmbeddedSlot(scenario: Scenario): boolean {
  */
 export function sourceEmbedsArt(scenario: Scenario, format: Format): boolean {
   return fixtureHasEmbeddedSlot(scenario) && FIXTURE_EMBEDS_ART[format];
+}
+
+// ---------------------------------------------------------------------------
+// Pipeline (transcode-vs-copy) axis
+// ---------------------------------------------------------------------------
+
+/**
+ * A pinned codec configuration that controls whether a source is copied or
+ * transcoded, independent of the format's "natural" default path:
+ *
+ * - `prefer-copy`: `quality=max` + lossless stack `['source']`. Device-native
+ *   formats (lossless or compatible-lossy) are copied; formats the device
+ *   can't play natively still transcode.
+ * - `transcode-aac`: `quality=high` + lossy `['aac']`. Lossless and
+ *   incompatible-lossy sources transcode to AAC; compatible-lossy (mp3/aac)
+ *   still copy.
+ */
+export type Pipeline = 'prefer-copy' | 'transcode-aac';
+export const PIPELINES: readonly Pipeline[] = ['prefer-copy', 'transcode-aac'];
+
+/** The action podkit takes for a source: copy the file or transcode it. */
+export type AudioAction = 'copy' | 'transcode';
+
+/** Source format → the codec name podkit classifies it as. */
+const FORMAT_CODEC: Record<Format, AudioCodec> = {
+  wav: 'wav',
+  aiff: 'aiff',
+  flac: 'flac',
+  alac: 'alac',
+  mp3: 'mp3',
+  aac: 'aac',
+  ogg: 'vorbis',
+  opus: 'opus',
+};
+
+const LOSSLESS_FORMATS: ReadonlySet<Format> = new Set(['wav', 'aiff', 'flac', 'alac']);
+
+/**
+ * Reference mirror of podkit's classifier decision for a (format, device,
+ * pipeline): does the track get copied or transcoded?
+ *
+ * Independent re-implementation (not an import of `@podkit/core`) so the
+ * matrix prediction stays independent of the system under test (doc-039
+ * §"The reference model"). Captures the classifier's first rule:
+ *
+ *   copy ⟺ the device plays the codec natively AND we are not forcing a
+ *          lossless source down a lossy preset.
+ *
+ * Everything else transcodes. This is exact for the two pinned pipelines on
+ * an iPod; the broad-codec mass-storage cases arrive with P4 (and will add the
+ * WAV/AIFF mass-storage-output exception then).
+ */
+export function deviceAction(
+  format: Format,
+  capabilities: DeviceCapabilities,
+  pipeline: Pipeline
+): AudioAction {
+  const codec = FORMAT_CODEC[format];
+  const deviceNative = capabilities.supportedAudioCodecs.includes(codec);
+  const isLossless = LOSSLESS_FORMATS.has(format);
+  const resolvedQuality = pipeline === 'prefer-copy' ? 'lossless' : 'high';
+
+  // Lossless source + non-lossless preset → transcode even when device-native.
+  const forcedLossyDowngrade = isLossless && resolvedQuality !== 'lossless';
+  if (deviceNative && !forcedLossyDowngrade) {
+    return 'copy';
+  }
+  return 'transcode';
+}
+
+/**
+ * Does embedded source art reach the device given the action taken?
+ *
+ * Copy preserves the embedded picture and transcode re-embeds it, so the
+ * codec action never drops art — survival depends only on the source having
+ * had art and the device having somewhere to store it. (Transfer-mode
+ * stripping — `optimized` — is a separate axis, P5.)
+ */
+export function artworkReaches(sourceHadArt: boolean, capabilities: DeviceCapabilities): boolean {
+  return sourceHadArt && capabilities.artworkSources.length > 0;
 }
