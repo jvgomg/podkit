@@ -7,7 +7,7 @@
  * silent skip.
  *
  * To run:
- *   bun run test:docker
+ *   bun run test:e2e:docker
  *
  * @tags docker
  */

@@ -11,7 +11,7 @@ import { spawn } from 'node:child_process';
 import { containerRegistry } from './container-registry.js';
 import { LABELS, generateContainerName } from './constants.js';
 
-interface StartContainerOptions {
+export interface StartContainerOptions {
   image: string;
   source: string; // Source identifier (e.g., 'subsonic')
   ports?: string[]; // Port mappings: ['4533:4533']

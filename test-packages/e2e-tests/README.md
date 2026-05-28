@@ -1,6 +1,6 @@
 # @podkit/e2e-tests
 
-End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation). Tests that require a Docker harness (Subsonic / Navidrome today; other containerised back-ends in future) live in this same package under a `*.docker.test.ts` filename suffix — the `test:e2e` task excludes that suffix, the `test:docker` task runs only those files.
+End-to-end tests for the podkit CLI. Tests invoke the built CLI artifact (`dist/main.js`) as a real user would, against both dummy iPods (CI) and real iPods (manual validation). Tests that require a Docker harness (Subsonic / Navidrome today; other containerised back-ends in future) live in this same package under a `*.docker.test.ts` filename suffix — the `test:e2e` task excludes that suffix, the `test:e2e:docker` task runs only those files.
 
 ## Running Tests
 
@@ -53,10 +53,10 @@ bun run --filter @podkit/e2e-tests test:e2e
 
 ```bash
 # From the repo root — runs only *.docker.test.ts files.
-bun run test:docker
+bun run test:e2e:docker
 
 # Same thing from this directory
-bun run --filter @podkit/e2e-tests test:docker
+bun run --filter @podkit/e2e-tests test:e2e:docker
 ```
 
 Docker availability is checked in each file's `beforeAll`; missing Docker throws a focused error rather than silently skipping.
@@ -273,7 +273,7 @@ Tests that require Docker (Navidrome / Subsonic today; other containerised back-
 ### Running Docker Tests
 
 ```bash
-bun run test:docker
+bun run test:e2e:docker
 ```
 
 Each docker test file's `beforeAll` calls `isDockerAvailable()` and throws a focused error if Docker isn't reachable — no silent skips.
@@ -340,7 +340,7 @@ To add a new Docker-based test source (e.g., Plex, Jellyfin):
    }
    ```
 3. Export from `src/sources/index.ts`.
-4. Create tests in `src/workflows/yourservice-sync.docker.test.ts` (note the `.docker.` suffix so the runner only picks them up under `test:docker`).
+4. Create tests in `src/workflows/yourservice-sync.docker.test.ts` (note the `.docker.` suffix so the runner only picks them up under `test:e2e:docker`).
 
 ### Docker Infrastructure
 

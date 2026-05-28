@@ -80,7 +80,7 @@ bun run test:e2e
 IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 
 # Run Docker-based E2E tests (Subsonic, etc.)
-bun run test:docker
+bun run test:e2e:docker
 
 # Run performance benchmarks (manual)
 bun run test:perf
@@ -121,7 +121,7 @@ bun run test:e2e          # E2E with dummy iPod
 mise run test:linux        # Runs on both Debian + Alpine VMs
 
 # 4. Docker E2E (requires Docker — for Subsonic tests)
-bun run test:docker
+bun run test:e2e:docker
 ```
 
 ### Real hardware validation (device changes only)
@@ -140,7 +140,7 @@ IPOD_MOUNT=/Volumes/iPod bun run test:e2e:real
 | `bun run test:integration` | Integration tests only (needs gpod-tool, FFmpeg) | After changing sync/transcode logic |
 | `bun run test:e2e` | E2E with dummy iPod | After CLI changes |
 | `bun run test:e2e:real` | E2E with real iPod (needs `IPOD_MOUNT`) | Device-related changes |
-| `bun run test:docker` | Docker-based E2E (Subsonic / Navidrome) | Subsonic adapter changes |
+| `bun run test:e2e:docker` | Docker-based E2E (Subsonic / Navidrome) | Subsonic adapter changes |
 | `bun run test:perf` | Performance benchmarks (`*.perf.test.ts`) | Suspect perf regression |
 | `bun run test:vm` | E2E inside the Lima VM harness | USB-gadget / dummy_hcd changes |
 | `mise run test:linux` | Full suite on Debian + Alpine Linux VMs | Linux/device manager changes |
@@ -302,11 +302,11 @@ ffmpeg -version
 
 ## Docker-Based E2E Tests
 
-E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-tests` under the `*.docker.test.ts` filename suffix — the regular `test:e2e` task excludes that suffix, and `test:docker` runs only those files. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
+E2E tests that need Docker (Navidrome for Subsonic, future containerised back-ends) live in `@podkit/e2e-tests` under the `*.docker.test.ts` filename suffix — the regular `test:e2e` task excludes that suffix, and `test:e2e:docker` runs only those files. Docker availability is enforced in `beforeAll`; missing Docker throws a focused error.
 
 ```bash
 # Run Docker-based tests
-bun run test:docker
+bun run test:e2e:docker
 
 # Container cleanup
 bun run --filter @podkit/e2e-tests cleanup:list   # List orphaned containers

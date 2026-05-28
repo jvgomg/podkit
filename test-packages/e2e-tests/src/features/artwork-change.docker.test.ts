@@ -16,7 +16,7 @@
  * These tests require Docker to run Navidrome.
  *
  * To run:
- *   bun run test:docker
+ *   bun run test:e2e:docker
  *
  * @tags docker
  */
@@ -37,7 +37,7 @@ import {
 import { withTarget } from '../targets/index.js';
 import { getTrackPath, Tracks } from '../helpers/fixtures.js';
 import { isDockerAvailable } from '../sources/subsonic.js';
-import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
+import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
 
 import type { SyncOutput } from 'podkit/types';
 
@@ -51,12 +51,12 @@ ensureFixturesExist('synthetic-tests');
 // =============================================================================
 
 let dockerAvailable = false;
-let containerId: string | null = null;
+let navidromeContainer: NavidromeContainer | null = null;
 let tempDir: string;
 let musicDir: string;
 let dataDir: string;
 let serverPort: number;
-const password = 'testpass';
+let password: string;
 
 /**
  * Create test fixtures for artwork change detection.
@@ -156,61 +156,6 @@ function restoreArtworkInFixtures(targetMusicDir: string): void {
 }
 
 /**
- * Wait for Navidrome HTTP + auth to be ready.
- */
-async function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
-  const startTime = Date.now();
-  const pingUrl = `http://localhost:${port}/rest/ping?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json`;
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(pingUrl);
-      if (response.ok) {
-        const data = (await response.json()) as Record<string, unknown>;
-        const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
-        if (subsonicResponse?.status === 'ok') {
-          return;
-        }
-      }
-    } catch {
-      // Keep trying
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  throw new Error(`Navidrome server did not start within ${timeoutMs}ms`);
-}
-
-/**
- * Wait for Navidrome to finish scanning and have at least the expected album count.
- */
-async function waitForLibraryScan(port: number, minAlbums = 1, timeoutMs = 60000): Promise<void> {
-  const startTime = Date.now();
-  const albumsUrl = `http://localhost:${port}/rest/getAlbumList2?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json&type=alphabeticalByName&size=10`;
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(albumsUrl);
-      if (response.ok) {
-        const data = (await response.json()) as Record<string, unknown>;
-        const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
-        const albumList = subsonicResponse?.albumList2 as Record<string, unknown> | undefined;
-        const albums = albumList?.album as unknown[] | undefined;
-
-        if (albums && albums.length >= minAlbums) {
-          return;
-        }
-      }
-    } catch {
-      // Keep trying
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  throw new Error(`Navidrome library scan did not complete within ${timeoutMs}ms`);
-}
-
-/**
  * Update the Subsonic URL port in a config file.
  *
  * After a docker restart with dynamic port allocation, the host port changes.
@@ -228,34 +173,19 @@ async function updateConfigPort(configPath: string, newPort: number): Promise<vo
 /**
  * Restart the Navidrome container with a fresh database.
  *
- * Clears the data directory (database + artwork cache) and restarts the container.
- * On restart, Navidrome creates a fresh database and rescans all files, including
- * re-extracting artwork. This is the most reliable way to force Navidrome to serve
- * updated artwork after modifying source files.
- *
- * When using dynamic port allocation (port 0), docker restart assigns a new host
- * port. Pass `configPath` to automatically update config files with the new port.
+ * Forces Navidrome to rebuild from scratch and re-extract artwork — the most
+ * reliable way to serve updated artwork after modifying source files, since
+ * Navidrome caches artwork aggressively. The restart reassigns the host port,
+ * so config files created with the old port are updated when `configPath` is
+ * passed.
  */
 async function restartNavidrome(configPath?: string): Promise<void> {
-  // Clear data directory so Navidrome starts from scratch
-  await rm(dataDir, { recursive: true, force: true });
-  await mkdir(dataDir, { recursive: true });
+  await navidromeContainer!.restart();
+  serverPort = navidromeContainer!.port;
 
-  // Restart the container
-  execSync(`docker restart ${containerId}`, { stdio: 'ignore', timeout: 30000 });
-
-  // Re-query the assigned port (docker restart assigns a new host port
-  // when the container was started with -p 0:containerPort)
-  serverPort = await getContainerPort(containerId!, 4533);
-
-  // Update config file if provided
   if (configPath) {
     await updateConfigPort(configPath, serverPort);
   }
-
-  // Wait for fresh server + library scan
-  await waitForServer(serverPort);
-  await waitForLibraryScan(serverPort);
 }
 
 /**
@@ -301,38 +231,23 @@ beforeAll(async () => {
 
   await createArtworkFixtures(musicDir);
 
-  // Start Navidrome container
-  // Mount music as read-write so we can modify artwork between syncs
-  // Use port 0 to let Docker/OS assign a free host port (avoids conflicts
-  // when multiple Docker-based test files run concurrently)
-  const result = await startContainer({
-    image: 'deluan/navidrome:latest',
-    source: 'subsonic-artwork',
-    ports: ['0:4533'],
-    volumes: [`${musicDir}:/music`, `${dataDir}:/data`],
-    env: [
-      `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
-      'ND_MUSICFOLDER=/music',
-      'ND_DATAFOLDER=/data',
-      'ND_SCANSCHEDULE=@startup',
-      'ND_LOGLEVEL=warn',
-    ],
+  // Mount music read-write so tests can modify artwork between syncs.
+  navidromeContainer = await startNavidromeContainer({
+    musicDir,
+    dataDir,
+    writable: true,
+    label: 'subsonic-artwork',
   });
-
-  containerId = result.containerId;
-  serverPort = await getContainerPort(result.containerId, 4533);
-  console.log(`Navidrome container started on port ${serverPort}`);
-
-  await waitForServer(serverPort);
-  await waitForLibraryScan(serverPort);
-  console.log('Navidrome ready with artwork fixtures');
+  serverPort = navidromeContainer.port;
+  password = navidromeContainer.password;
+  console.log(`Navidrome ready with artwork fixtures on port ${serverPort}`);
 }, 120000);
 
 afterAll(async () => {
-  if (containerId) {
+  if (navidromeContainer) {
     console.log('Stopping Navidrome container...');
-    await stopContainer(containerId);
-    containerId = null;
+    await navidromeContainer.stop();
+    navidromeContainer = null;
   }
 
   if (tempDir) {

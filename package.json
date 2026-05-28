@@ -19,7 +19,7 @@
     "test:integration": "turbo run test:integration",
     "test:perf": "turbo run test:perf",
     "test:e2e": "turbo run test:e2e",
-    "test:docker": "turbo run test:docker",
+    "test:e2e:docker": "turbo run test:e2e:docker",
     "test:vm": "turbo run test:vm",
     "harness:create": "bun run --cwd test-packages/device-testing harness:create",
     "harness:start": "bun run --cwd test-packages/device-testing harness:start",

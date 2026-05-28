@@ -20,6 +20,16 @@ export const LABELS = {
   startedAt: (timestamp: number) => `${LABEL_PREFIX}.started=${timestamp}`,
 } as const;
 
+/**
+ * Navidrome image, pinned by digest.
+ *
+ * Pinned (not `:latest`) so the image identity is part of the Turbo input hash
+ * — `test:e2e:docker` can be cached safely, and re-runs use the exact image the
+ * tests were validated against. Bump this digest to pick up a new Navidrome.
+ */
+export const NAVIDROME_IMAGE =
+  'deluan/navidrome@sha256:a5dce8f33304714dd138e870cca0dcab3d937ca236be1a9f2b97da009d1a0048';
+
 /** Container name prefix for easy identification */
 export const CONTAINER_NAME_PREFIX = 'podkit-e2e-';
 

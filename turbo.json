@@ -104,15 +104,14 @@
       "inputs": ["src/**"],
       "outputs": []
     },
-    "@podkit/e2e-tests#test:docker": {
+    "@podkit/e2e-tests#test:e2e:docker": {
       "dependsOn": [
         "^build",
         "@podkit/gpod-testing#generate-templates",
         "@podkit/test-fixtures#generate-static-fixtures"
       ],
       "inputs": ["src/**"],
-      "outputs": [],
-      "cache": false
+      "outputs": []
     },
     "typecheck": {
       "dependsOn": ["^build"],

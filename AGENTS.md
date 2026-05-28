@@ -60,7 +60,7 @@ bun run test:unit                # Run unit tests only
 bun run test:integration         # Run integration tests only
 bun run test:perf                # Run *.perf.test.ts performance benchmarks (manual)
 bun run test:e2e                 # Run E2E tests (dummy iPod, no Docker)
-bun run test:docker              # Run Docker-gated E2E tests (Subsonic / Navidrome)
+bun run test:e2e:docker              # Run Docker-gated E2E tests (Subsonic / Navidrome)
 bun run test --filter podkit-core # Run tests for specific package
 mise run test:linux               # Run tests on Debian + Alpine Linux VMs
 

@@ -7,7 +7,7 @@
  * These tests require Docker to run Navidrome with compilation-tagged fixtures.
  *
  * To run:
- *   bun run test:docker
+ *   bun run test:e2e:docker
  *
  * @tags docker
  */
@@ -27,7 +27,7 @@ import {
 import { withTarget } from '../targets/index.js';
 import { getTrackPath, Tracks } from '../helpers/fixtures.js';
 import { isDockerAvailable } from '../sources/subsonic.js';
-import { startContainer, stopContainer, getContainerPort } from '../docker/index.js';
+import { startNavidromeContainer, type NavidromeContainer } from '../docker/index.js';
 
 requireMetaflac();
 ensureFixturesExist('goldberg-selections');
@@ -48,10 +48,10 @@ interface DeviceTrack {
 // =============================================================================
 
 let dockerAvailable = false;
-let containerId: string | null = null;
+let navidromeContainer: NavidromeContainer | null = null;
 let tempDir: string;
 let serverPort: number;
-const password = 'testpass';
+let password: string;
 
 /**
  * Create compilation test fixtures for Navidrome.
@@ -95,62 +95,6 @@ async function createCompilationFixtures(musicDir: string): Promise<void> {
   );
 }
 
-/**
- * Wait for Navidrome to finish scanning and have albums indexed.
- */
-async function waitForLibraryScan(port: number, timeoutMs = 60000): Promise<void> {
-  const startTime = Date.now();
-  const albumsUrl = `http://localhost:${port}/rest/getAlbumList2?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json&type=alphabeticalByName&size=10`;
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(albumsUrl);
-      if (response.ok) {
-        const data = (await response.json()) as Record<string, unknown>;
-        const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
-        const albumList = subsonicResponse?.albumList2 as Record<string, unknown> | undefined;
-        const albums = albumList?.album as unknown[] | undefined;
-
-        // Wait until we have at least 2 albums (compilation + solo)
-        if (albums && albums.length >= 2) {
-          return;
-        }
-      }
-    } catch {
-      // Keep trying
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  throw new Error(`Navidrome library scan did not complete within ${timeoutMs}ms`);
-}
-
-/**
- * Wait for Navidrome HTTP + auth to be ready.
- */
-async function waitForServer(port: number, timeoutMs = 30000): Promise<void> {
-  const startTime = Date.now();
-  const pingUrl = `http://localhost:${port}/rest/ping?u=admin&p=${password}&c=podkit-test&v=1.16.1&f=json`;
-
-  while (Date.now() - startTime < timeoutMs) {
-    try {
-      const response = await fetch(pingUrl);
-      if (response.ok) {
-        const data = (await response.json()) as Record<string, unknown>;
-        const subsonicResponse = data['subsonic-response'] as Record<string, unknown> | undefined;
-        if (subsonicResponse?.status === 'ok') {
-          return;
-        }
-      }
-    } catch {
-      // Keep trying
-    }
-    await new Promise((resolve) => setTimeout(resolve, 500));
-  }
-
-  throw new Error(`Navidrome server did not start within ${timeoutMs}ms`);
-}
-
 beforeAll(async () => {
   dockerAvailable = await isDockerAvailable();
   if (!dockerAvailable) {
@@ -166,37 +110,23 @@ beforeAll(async () => {
 
   await createCompilationFixtures(musicDir);
 
-  // Start Navidrome container
-  // Use port 0 to let Docker/OS assign a free host port (avoids conflicts
-  // when multiple Docker-based test files run concurrently)
-  const result = await startContainer({
-    image: 'deluan/navidrome:latest',
-    source: 'subsonic-compilation',
-    ports: ['0:4533'],
-    volumes: [`${musicDir}:/music:ro`, `${dataDir}:/data`],
-    env: [
-      `ND_DEVAUTOCREATEADMINPASSWORD=${password}`,
-      'ND_MUSICFOLDER=/music',
-      'ND_DATAFOLDER=/data',
-      'ND_SCANSCHEDULE=@startup',
-      'ND_LOGLEVEL=warn',
-    ],
+  // Wait for both albums (compilation + solo) to be indexed.
+  navidromeContainer = await startNavidromeContainer({
+    musicDir,
+    dataDir,
+    label: 'subsonic-compilation',
+    minAlbums: 2,
   });
-
-  containerId = result.containerId;
-  serverPort = await getContainerPort(result.containerId, 4533);
-  console.log(`Navidrome container started on port ${serverPort}`);
-
-  await waitForServer(serverPort);
-  await waitForLibraryScan(serverPort);
-  console.log('Navidrome ready with compilation fixtures');
+  serverPort = navidromeContainer.port;
+  password = navidromeContainer.password;
+  console.log(`Navidrome ready with compilation fixtures on port ${serverPort}`);
 }, 120000);
 
 afterAll(async () => {
-  if (containerId) {
+  if (navidromeContainer) {
     console.log('Stopping Navidrome container...');
-    await stopContainer(containerId);
-    containerId = null;
+    await navidromeContainer.stop();
+    navidromeContainer = null;
   }
 
   if (tempDir) {
