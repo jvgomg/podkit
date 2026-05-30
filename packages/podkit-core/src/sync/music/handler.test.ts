@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { MusicHandler, createMusicHandler } from './handler.js';
 import type { MusicSyncConfig } from './config.js';
-import type { CollectionTrack } from '../../adapters/interface.js';
+import type { CollectionTrack, MusicAdapter } from '../../adapters/interface.js';
 import type { DeviceTrack } from '../../device/adapter.js';
 import type { SyncPlan } from '../engine/types.js';
 import type { MusicOperation } from './types.js';
@@ -485,6 +485,60 @@ describe('MusicHandler', () => {
       const warnings = h.collectPlanWarnings(ops);
       const resizeWarning = warnings.find((w) => w.type === 'embedded-artwork-resize');
       expect(resizeWarning).toBeUndefined();
+    });
+
+    test('forwards adapter-scoped plan warnings (artwork-detection-disabled)', () => {
+      // Adapters opt in by implementing getPlanWarnings — the handler must
+      // splice them into the plan so the CLI/JSON surface shows them.
+      const adapterWarning = {
+        type: 'artwork-detection-disabled' as const,
+        message: 'fast mode: artwork-change detection is disabled',
+        tracks: [],
+      };
+      const fakeAdapter = {
+        name: 'fake',
+        adapterType: 'fake',
+        async connect() {},
+        async getItems() {
+          return [];
+        },
+        async getFilteredItems() {
+          return [];
+        },
+        async getFileAccess() {
+          return { type: 'path' as const, path: '/dev/null' };
+        },
+        async disconnect() {},
+        getPlanWarnings() {
+          return [adapterWarning];
+        },
+      };
+
+      const h = createMusicHandler(makeConfig({ adapter: fakeAdapter satisfies MusicAdapter }));
+      const warnings = h.collectPlanWarnings([]);
+      expect(warnings).toContainEqual(adapterWarning);
+    });
+
+    test('omits adapter warnings when adapter has no getPlanWarnings', () => {
+      const fakeAdapter = {
+        name: 'fake',
+        adapterType: 'fake',
+        async connect() {},
+        async getItems() {
+          return [];
+        },
+        async getFilteredItems() {
+          return [];
+        },
+        async getFileAccess() {
+          return { type: 'path' as const, path: '/dev/null' };
+        },
+        async disconnect() {},
+        // No getPlanWarnings — the handler must tolerate this.
+      };
+      const h = createMusicHandler(makeConfig({ adapter: fakeAdapter satisfies MusicAdapter }));
+      const warnings = h.collectPlanWarnings([]);
+      expect(warnings.filter((w) => w.type === 'artwork-detection-disabled')).toEqual([]);
     });
   });
 

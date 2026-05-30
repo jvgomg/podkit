@@ -885,6 +885,13 @@ export class MusicHandler implements ContentTypeHandler<
       });
     }
 
+    // Surface adapter-scoped plan warnings (e.g. Subsonic's fast-mode notice).
+    // Adapters opt in by implementing getPlanWarnings — most omit it.
+    const adapter = this.config.raw.adapter;
+    if (adapter?.getPlanWarnings) {
+      warnings.push(...adapter.getPlanWarnings());
+    }
+
     return warnings;
   }
 

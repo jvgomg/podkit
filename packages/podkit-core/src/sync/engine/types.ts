@@ -135,7 +135,11 @@ export type SourceCategory = 'lossless' | 'compatible-lossy' | 'incompatible-los
 /**
  * Warning types that can occur during sync planning
  */
-export type SyncWarningType = 'lossy-to-lossy' | 'space-constraint' | 'embedded-artwork-resize';
+export type SyncWarningType =
+  | 'lossy-to-lossy'
+  | 'space-constraint'
+  | 'embedded-artwork-resize'
+  | 'artwork-detection-disabled';
 
 /**
  * A warning generated during sync planning

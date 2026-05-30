@@ -43,6 +43,28 @@ describe('SubsonicAdapter configuration', () => {
   });
 });
 
+describe('SubsonicAdapter getPlanWarnings', () => {
+  it('returns artwork-detection-disabled warning when checkArtwork is off', () => {
+    const adapter = createTestAdapter({ checkArtwork: false });
+    const warnings = adapter.getPlanWarnings();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]!.type).toBe('artwork-detection-disabled');
+    expect(warnings[0]!.message).toContain('fast mode');
+    expect(warnings[0]!.message).toContain('--check-artwork');
+    expect(warnings[0]!.tracks).toEqual([]);
+  });
+
+  it('returns no warnings when checkArtwork is on', () => {
+    const adapter = createTestAdapter({ checkArtwork: true });
+    expect(adapter.getPlanWarnings()).toEqual([]);
+  });
+
+  it('warns by default (checkArtwork omitted) — adapter defaults to fast mode', () => {
+    const adapter = createTestAdapter({});
+    expect(adapter.getPlanWarnings()).toHaveLength(1);
+  });
+});
+
 // =============================================================================
 // Metadata Mapping Tests (using public methods)
 // =============================================================================

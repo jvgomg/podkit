@@ -578,7 +578,9 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
           out.print(
             `Warning: ${warning.tracks.length} track${warning.tracks.length === 1 ? '' : 's'} require lossy-to-lossy conversion`
           );
-        } else if (warning.type === 'embedded-artwork-resize') {
+        } else {
+          // embedded-artwork-resize, artwork-detection-disabled, space-constraint —
+          // all use the message-as-written form (the warning carries its own copy).
           out.print(`Warning: ${warning.message}`);
         }
       }

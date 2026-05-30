@@ -151,6 +151,20 @@ export interface CollectionAdapter<TItem = CollectionTrack, TFilter = TrackFilte
    * Disconnect from source and cleanup resources
    */
   disconnect(): Promise<void>;
+
+  /**
+   * Adapter-scoped plan warnings, surfaced alongside handler warnings in the
+   * SyncPlan. Optional — adapters without degraded modes can omit it.
+   *
+   * Called synchronously during plan construction (after `connect()` but
+   * before `getItems()`). Must NOT perform I/O: any state needed to decide
+   * whether to warn should be set up in the constructor or `connect()`.
+   *
+   * Example: the Subsonic adapter returns an `artwork-detection-disabled`
+   * warning when `checkArtwork` is off, since it cannot honestly populate
+   * `hasArtwork` and any artwork-added/-removed change is silently missed.
+   */
+  getPlanWarnings?(): import('../sync/engine/types.js').SyncWarning[];
 }
 
 /**

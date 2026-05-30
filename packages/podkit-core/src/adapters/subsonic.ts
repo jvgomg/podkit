@@ -9,6 +9,7 @@ import SubsonicAPI from 'subsonic-api';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { TrackFilter, AudioFileType } from '../types.js';
+import type { SyncWarning } from '../sync/engine/types.js';
 import type { AudioNormalization } from '../metadata/normalization.js';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
@@ -455,6 +456,30 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
     this.connected = false;
     this.artworkCache.clear();
     this.placeholderHash = null;
+  }
+
+  /**
+   * Surface a plan warning when running in fast mode (`checkArtwork` off).
+   *
+   * The Subsonic API has no reliable artwork-presence field — Navidrome serves
+   * a placeholder image for every album. Without `--check-artwork` we leave
+   * `hasArtwork` undefined, which short-circuits both artwork-added and
+   * artwork-removed change detection. Users see otherwise-idempotent syncs
+   * that silently miss real artwork changes; this warning makes the trade-off
+   * visible on every plan.
+   */
+  getPlanWarnings(): SyncWarning[] {
+    if (this.checkArtwork) return [];
+    return [
+      {
+        type: 'artwork-detection-disabled',
+        message:
+          'Subsonic source running in fast mode: artwork-change detection is disabled. ' +
+          'Real artwork additions or removals on the server will NOT be propagated to the device. ' +
+          'Pass --check-artwork (or set checkArtwork = true in config) to enable per-album hash probing.',
+        tracks: [],
+      },
+    ];
   }
 
   /**
