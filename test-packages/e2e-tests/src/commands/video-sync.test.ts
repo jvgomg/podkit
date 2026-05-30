@@ -10,6 +10,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureFixturesExist } from '@podkit/e2e-shared';
+import type { SyncOutput } from 'podkit/types';
 import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import {
@@ -25,27 +26,11 @@ import {
 
 ensureFixturesExist('video');
 
-interface VideoSyncOutput {
-  success: boolean;
-  dryRun: boolean;
-  plan?: {
-    videosToAdd: number;
-    videosToRemove: number;
-    videosToTranscode: number;
-    videosToCopy: number;
-  };
-  operations?: Array<{
-    type: 'transcode' | 'copy' | 'remove';
-    video: string;
-    status?: 'pending' | 'completed' | 'failed' | 'skipped';
-  }>;
-  result?: {
-    completed: number;
-    failed: number;
-    skipped: number;
-  };
-  error?: string;
-}
+// Video sync uses the shared SyncOutput type — its `plan.tracksToAdd` /
+// `tracksToCopy` / `tracksToTranscode` fields are populated from the video
+// presenter (commands/video-presenter.ts), and `plan.videoSummary` carries
+// the movie/show split for category checks. (The "tracks" naming is shared
+// with music sync, not "videos".)
 
 /**
  * Create a temp config file with a video collection
@@ -130,7 +115,7 @@ describe('podkit sync -t video', () => {
     });
 
     it('outputs validation errors in JSON', async () => {
-      const { result, json } = await runCliJson<VideoSyncOutput>([
+      const { result, json } = await runCliJson<SyncOutput>([
         '--config',
         '/nonexistent/config.toml',
         'sync',
@@ -180,7 +165,7 @@ describe('podkit sync -t video', () => {
         const configPath = await createVideoConfig(sourceDir);
         tempConfigPaths.push(configPath);
 
-        const { result } = await runCliJson<VideoSyncOutput>([
+        const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
@@ -193,6 +178,11 @@ describe('podkit sync -t video', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
+        expect(json!.success).toBe(true);
+        expect(json!.dryRun).toBe(true);
+        expect(json!.plan).toBeDefined();
+        // Single-video fixture → exactly 1 video planned.
+        expect(json!.plan!.tracksToAdd).toBe(1);
       });
     });
   });
@@ -257,12 +247,17 @@ describe('podkit sync -t video', () => {
       expect(passthroughVideos.length).toBe(4);
 
       await withTarget(async (target) => {
-        const sourceDir = await createVideoSourceDir([passthroughVideos[0]!]);
+        // The dummy target is an iPod Video 5G (MA147) which only handles
+        // H.264 Baseline up to L1.3. LOW_QUALITY (320x240, Baseline L1.3) is
+        // the one passthrough fixture that actually matches that ceiling.
+        // COMPATIBLE_H264 (640x480, Main L3.1) is "compatible" for newer
+        // iPods but the 5G needs to transcode it.
+        const sourceDir = await createVideoSourceDir([getVideo(Videos.LOW_QUALITY)]);
         tempSourceDirs.push(sourceDir);
         const configPath = await createVideoConfig(sourceDir);
         tempConfigPaths.push(configPath);
 
-        const { result } = await runCliJson<VideoSyncOutput>([
+        const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
@@ -275,6 +270,10 @@ describe('podkit sync -t video', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
+        expect(json!.plan).toBeDefined();
+        // iPod-Video-5G-compatible fixture → planner picks the copy path.
+        expect(json!.plan!.tracksToCopy).toBe(1);
+        expect(json!.plan!.tracksToTranscode).toBe(0);
       });
     });
 
@@ -288,7 +287,7 @@ describe('podkit sync -t video', () => {
         const configPath = await createVideoConfig(sourceDir);
         tempConfigPaths.push(configPath);
 
-        const { result } = await runCliJson<VideoSyncOutput>([
+        const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
@@ -301,6 +300,10 @@ describe('podkit sync -t video', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
+        expect(json!.plan).toBeDefined();
+        // Incompatible fixture → planner picks the transcode path, not copy.
+        expect(json!.plan!.tracksToTranscode).toBe(1);
+        expect(json!.plan!.tracksToCopy).toBe(0);
       });
     });
   });
@@ -316,7 +319,7 @@ describe('podkit sync -t video', () => {
         const configPath = await createVideoConfig(sourceDir);
         tempConfigPaths.push(configPath);
 
-        const { result } = await runCliJson<VideoSyncOutput>([
+        const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
@@ -329,6 +332,10 @@ describe('podkit sync -t video', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
+        expect(json!.plan).toBeDefined();
+        // Movie fixture → planner categorises as movie, not TV show.
+        expect(json!.plan!.videoSummary?.movieCount).toBe(1);
+        expect(json!.plan!.videoSummary?.showCount).toBe(0);
       });
     });
 
@@ -342,7 +349,7 @@ describe('podkit sync -t video', () => {
         const configPath = await createVideoConfig(sourceDir);
         tempConfigPaths.push(configPath);
 
-        const { result } = await runCliJson<VideoSyncOutput>([
+        const { result, json } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
           'sync',
@@ -355,6 +362,11 @@ describe('podkit sync -t video', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
+        expect(json!.plan).toBeDefined();
+        // TV-show fixture → planner categorises as TV show, not movie.
+        expect(json!.plan!.videoSummary?.showCount).toBe(1);
+        expect(json!.plan!.videoSummary?.movieCount).toBe(0);
+        expect(json!.plan!.videoSummary?.episodeCount).toBe(1);
       });
     });
   });

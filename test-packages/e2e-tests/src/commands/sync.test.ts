@@ -105,7 +105,9 @@ describe('podkit sync', () => {
 
         expect(result.exitCode).toBe(0);
         expect(result.stdout).toContain('Dry Run');
-        expect(result.stdout).toContain('Tracks to add');
+        // Goldberg-selections fixture has 3 tracks; assert the count line
+        // explicitly rather than just the label.
+        expect(result.stdout).toMatch(/Tracks to add:\s*3/);
 
         // Verify no changes were made
         const trackCount = await target.getTrackCount();

@@ -246,7 +246,13 @@ volumeName = "test"
       expect(json).not.toBeNull();
       expect(json!.success).toBe(true);
       expect(json!.initialized).toBe(true);
-      expect(json!.device.modelName).toBeDefined();
+      // `device add` on an empty dir falls back to "Unknown iPod" when there
+      // is no SysInfo or other identity hint, while `device init` defaults to
+      // an iPod Video 5G shape. Both are valid — assert the field is a
+      // non-empty string rather than coupling to either path's specific
+      // default.
+      expect(typeof json!.device.modelName).toBe('string');
+      expect(json!.device.modelName.length).toBeGreaterThan(0);
     });
   });
 
@@ -345,7 +351,11 @@ volumeName = "Test iPod"
       expect(json).not.toBeNull();
       expect(json!.success).toBe(true);
       expect(json!.mountPoint).toBe(target.path);
-      expect(json!.modelName).toBeDefined();
+      // Dummy target uses MA147 (iPod Video 5G). `device reset` reads
+      // `ipod.device.modelName` directly from libgpod's own model table
+      // (e.g. "Video (Black)"), not podkit's longer `displayName` — assert
+      // the libgpod shape.
+      expect(json!.modelName).toMatch(/Video/i);
     });
   });
 
@@ -623,7 +633,8 @@ volumeName = "New iPod"
     expect(result.exitCode).toBe(0);
     expect(json).not.toBeNull();
     expect(json!.success).toBe(true);
-    expect(json!.modelName).toBeDefined();
+    // Default init: iPod Video 5G shape via libgpod ("Video (Black)").
+    expect(json!.modelName).toMatch(/Video/i);
     expect(json!.mountPoint).toBe(uninitDir);
   });
 });
@@ -968,6 +979,7 @@ describe('podkit device init with readiness', () => {
     expect(json).not.toBeNull();
     expect(json!.success).toBe(true);
     expect(json!.mountPoint).toBe(ipodPath);
-    expect(json!.modelName).toBeDefined();
+    // Default init: iPod Video 5G shape via libgpod ("Video (Black)").
+    expect(json!.modelName).toMatch(/Video/i);
   });
 });

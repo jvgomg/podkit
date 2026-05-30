@@ -46,7 +46,10 @@ describe('workflow: fresh sync', () => {
         ]);
         expect(dryRunResult.exitCode).toBe(0);
         expect(dryRunResult.stdout).toContain('Dry Run');
-        expect(dryRunResult.stdout).toContain('3'); // 3 tracks
+        // Goldberg-selections fixture has 3 tracks; pin the count to the
+        // specific output line so a stray "3" elsewhere in the output (e.g.
+        // a count of something else) can't satisfy the assertion.
+        expect(dryRunResult.stdout).toMatch(/Tracks to add:\s*3/);
 
         // Step 3: Execute actual sync
         console.log('Step 3: Execute sync');

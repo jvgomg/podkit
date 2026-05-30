@@ -212,9 +212,13 @@ describe('Subsonic sync workflow', () => {
 
 describe('Subsonic test infrastructure', () => {
   it('can check Docker availability', async () => {
+    // This test file is .docker.test.ts: it only runs when the docker e2e
+    // suite is selected, and the test:e2e:docker harness gates the entire
+    // run on Docker actually being available. So the check must return true
+    // — a false would mean the harness ran us with no Docker, which is the
+    // exact regression this assertion protects against.
     const available = await isDockerAvailable();
-    // Just verify the check runs without error
-    expect(typeof available).toBe('boolean');
+    expect(available).toBe(true);
   });
 
   it('source factory creates SubsonicTestSource', () => {

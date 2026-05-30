@@ -301,7 +301,7 @@ describe('preset change detection', () => {
     });
   }, 180000);
 
-  it('--force-sync-tags writes tags as plan operations', async () => {
+  it('--force-sync-tags --check-artwork establishes art= baselines on existing tracks', async () => {
     await withTarget(async (target) => {
       const configDir = await mkdtemp(join(tmpdir(), 'podkit-config-'));
       let collectionDir: string | undefined;
@@ -313,7 +313,8 @@ describe('preset change detection', () => {
           quality: 'medium',
         });
 
-        // Sync without sync tags (simulate pre-sync-tag tracks by clearing comments after)
+        // Initial sync without --check-artwork: tracks are written with sync
+        // tags that have no `art=` hash (the adapter doesn't compute one).
         const { result: result1 } = await runCliJson<SyncOutput>([
           '--config',
           configPath,
@@ -323,10 +324,42 @@ describe('preset change detection', () => {
           '--json',
         ]);
         expect(result1.exitCode).toBe(0);
+        expect((await target.getTracks()).length).toBe(3);
 
-        // Verify tracks were synced
-        const tracks = await target.getTracks();
-        expect(tracks.length).toBe(3);
+        // Same config + same flags → idempotent re-sync (sync tags match).
+        const { json: baselineJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--dry-run',
+          '--json',
+        ]);
+        expect(baselineJson!.plan!.tracksToUpdate).toBe(0);
+
+        // --force-sync-tags --check-artwork enters postProcessSyncTags
+        // (handler.ts:662) and, for each lossless track whose syncTag is
+        // missing the artwork hash, emits a sync-tag-write op to write the
+        // baseline. The goldberg fixtures embed artwork, so all 3 lossless
+        // tracks gain an art= hash and re-fire.
+        const { result: forceResult, json: forceJson } = await runCliJson<SyncOutput>([
+          '--config',
+          configPath,
+          'sync',
+          '--device',
+          target.path,
+          '--force-sync-tags',
+          '--check-artwork',
+          '--dry-run',
+          '--json',
+        ]);
+        expect(forceResult.exitCode).toBe(0);
+        expect(forceJson!.plan).toBeDefined();
+        expect(forceJson!.plan!.tracksToUpdate).toBe(3);
+        expect(forceJson!.plan!.tracksToAdd).toBe(0);
+        const breakdown = forceJson!.plan!.updateBreakdown ?? {};
+        expect(breakdown['sync-tag-write'] ?? 0).toBe(3);
       } finally {
         if (collectionDir) await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });

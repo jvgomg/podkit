@@ -15,7 +15,8 @@ import { mkdtemp, rm, cp, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureFixturesExist } from '@podkit/e2e-shared';
-import { runCli } from '../helpers/cli-runner';
+import type { SyncOutput } from 'podkit/types';
+import { runCli, runCliJson } from '../helpers/cli-runner';
 import { withTarget } from '../targets';
 import { cleanupVideoSourceDir, Videos, getVideoPath } from '../helpers/video-fixtures';
 
@@ -260,7 +261,7 @@ describe('video transforms: showLanguage', () => {
             showLanguage: { enabled: true, format: '({})', expand: true },
           });
 
-          const dryRun = await runCli([
+          const { result: dryRun, json: dryJson } = await runCliJson<SyncOutput>([
             '--config',
             configExpand,
             'sync',
@@ -269,11 +270,19 @@ describe('video transforms: showLanguage', () => {
             '--device',
             target.path,
             '--dry-run',
+            '--json',
           ]);
 
           expect(dryRun.exitCode).toBe(0);
-          // Should show metadata updates, not new adds
-          expect(dryRun.stdout).toContain('update');
+          // Should show metadata updates for both language videos, not new adds.
+          // toContain('update') is too loose — it also matches "no updates" or
+          // "Updates: 0" lines in text mode.
+          //
+          // video-presenter shares the `tracks*` plan field naming with music
+          // sync (commands/video-presenter.ts:298-316), not `videos*`.
+          expect(dryJson!.plan).toBeDefined();
+          expect(dryJson!.plan!.tracksToAdd).toBe(0);
+          expect(dryJson!.plan!.tracksToUpdate).toBe(2);
 
           // Step 3: Actually sync with expanded format
           const result2 = await runCli([
