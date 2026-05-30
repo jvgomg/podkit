@@ -17,6 +17,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as mm from 'music-metadata';
 
+import { atomicCopyFile, atomicWriteFile } from '../utils/atomic-fs.js';
+
 import type {
   DeviceAdapter,
   DeviceTrack,
@@ -375,8 +377,11 @@ export class MassStorageTrack implements DeviceTrack {
     // Create parent directories
     fs.mkdirSync(dir, { recursive: true });
 
-    // Copy the file
-    fs.copyFileSync(sourcePath, absolutePath);
+    // Atomic copy: write to a sibling .podkit-tmp path, then rename. If a
+    // sync is killed mid-copy, the destination is either absent or the
+    // previous version — never a partial file at the final path that the
+    // manifest will silently mark as managed.
+    atomicCopyFile(sourcePath, absolutePath);
 
     // Update size from the copied file
     const stats = fs.statSync(absolutePath);
@@ -892,15 +897,25 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   }
 
   copyTrackFile(track: MassStorageTrack, sourcePath: string): MassStorageTrack {
-    const updated = track.copyFile(sourcePath);
+    try {
+      const updated = track.copyFile(sourcePath);
 
-    // Replace in our track list (copyFile returns a new instance with hasFile/size updated)
-    const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
-    if (index >= 0) {
-      this.tracks[index] = updated;
+      // Replace in our track list (copyFile returns a new instance with hasFile/size updated)
+      const index = this.tracks.findIndex((t) => t.filePath === track.filePath);
+      if (index >= 0) {
+        this.tracks[index] = updated;
+      }
+
+      return updated;
+    } catch (err) {
+      // Roll back the managedFiles entry that addTrack added. Otherwise a
+      // later checkpoint save() (driven by a different successful track)
+      // would persist a phantom path the file copy never produced — the
+      // exact "manifest references missing file" class that
+      // orphans-mass-storage.test.ts test #2 documents.
+      this.managedFiles.delete(track.filePath);
+      throw err;
     }
-
-    return updated;
   }
 
   removeTrack(track: MassStorageTrack, options?: { deleteFile?: boolean }): void {
@@ -958,10 +973,10 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       targetAbsolutePath = absolutePath;
     }
 
-    // Copy the new file to the target path
+    // Copy the new file to the target path (atomic: temp + rename)
     const dir = path.dirname(targetAbsolutePath);
     fs.mkdirSync(dir, { recursive: true });
-    fs.copyFileSync(newFilePath, targetAbsolutePath);
+    atomicCopyFile(newFilePath, targetAbsolutePath);
 
     // If path changed, delete the old file and update bookkeeping
     if (targetRelativePath !== track.filePath) {
@@ -1190,8 +1205,11 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     const stateDir = path.join(this.mountPoint, PODKIT_DIR);
     fs.mkdirSync(stateDir, { recursive: true });
 
+    // Atomic write: a SIGKILL mid-write must not leave a truncated manifest
+    // (loadManifest swallows parse errors and treats the device as having no
+    // managed files — invisible debris on every subsequent sync).
     const manifestPath = path.join(stateDir, MANIFEST_FILE);
-    fs.writeFileSync(manifestPath, JSON.stringify(this.manifest) + '\n', 'utf-8');
+    atomicWriteFile(manifestPath, JSON.stringify(this.manifest) + '\n', 'utf-8');
   }
 
   close(): void {

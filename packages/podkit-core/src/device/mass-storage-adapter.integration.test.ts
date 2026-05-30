@@ -595,3 +595,150 @@ describe('MassStorageAdapter sync tag round-trip', () => {
     }
   });
 });
+
+describe('MassStorageAdapter crash resilience under partial writes', () => {
+  let mountPoint: string;
+
+  beforeEach(() => {
+    mountPoint = createTempDevice();
+  });
+
+  afterEach(() => {
+    removeTempDevice(mountPoint);
+  });
+
+  test('SIGKILL between file write and manifest update leaves clean state', async () => {
+    // Simulate a process killed AFTER copyTrackFile renamed the file into
+    // place but BEFORE save() persisted the manifest. The desirable end state:
+    //   - file is fully on disk (atomic rename completed)
+    //   - manifest does NOT reference the file (save never ran)
+    //   - no .podkit-tmp debris anywhere on the device
+    // Pre-fix the manifest could be truncated by a kill mid-writeFileSync
+    // and `loadManifest` would silently swallow the parse error.
+    const sourceDir = createTempDevice();
+    const sourcePath = path.join(sourceDir, 'source.flac');
+    generateFlacOnDevice(sourceDir, 'source.flac');
+
+    try {
+      const adapter1 = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+      const track = adapter1.addTrack({
+        title: 'Crashed Mid-Sync',
+        artist: 'Artist',
+        album: 'Album',
+        trackNumber: 1,
+        filetype: 'flac',
+      });
+      adapter1.copyTrackFile(track, sourcePath);
+      // SIMULATED CRASH: skip save() — the manifest is never persisted.
+      adapter1.close();
+
+      // Reopen and inspect raw disk state.
+      const adapter2 = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+      const tracks2 = adapter2.getTracks();
+      expect(tracks2).toHaveLength(1);
+      // File copy was atomic — the audio file is fully on disk, unmanaged.
+      expect((tracks2[0] as MassStorageTrack).managed).toBe(false);
+      adapter2.close();
+
+      // No .podkit-tmp debris anywhere under the mount.
+      const stragglers = listAllPaths(mountPoint).filter((p) => p.endsWith('.podkit-tmp'));
+      expect(stragglers).toEqual([]);
+
+      // Manifest either doesn't exist or contains an empty managedFiles list —
+      // never a truncated JSON document.
+      const manifestPath = path.join(mountPoint, '.podkit', 'state.json');
+      if (fs.existsSync(manifestPath)) {
+        const raw = fs.readFileSync(manifestPath, 'utf-8');
+        const parsed = JSON.parse(raw); // must parse — no truncation
+        expect(parsed.managedFiles ?? []).not.toContain(tracks2[0]!.filePath);
+      }
+    } finally {
+      removeTempDevice(sourceDir);
+    }
+  });
+
+  test('copyTrackFile failure rolls managedFiles entry back', async () => {
+    // addTrack adds the desired path to managedFiles in memory. If
+    // copyTrackFile then throws (bad source, ENOSPC, etc.), a later
+    // checkpoint save() driven by a different successful track would persist
+    // a phantom path the file copy never produced. The rollback in
+    // copyTrackFile's catch closes that creation pathway for "manifest
+    // references missing file" debris.
+    const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+    const track = adapter.addTrack({
+      title: 'WillFail',
+      artist: 'Artist',
+      album: 'Album',
+      trackNumber: 1,
+      filetype: 'flac',
+    });
+
+    expect(() => adapter.copyTrackFile(track, '/nonexistent/source.flac')).toThrow();
+
+    // Save with no successful tracks to capture the post-rollback state.
+    await adapter.save();
+    adapter.close();
+
+    const manifestPath = path.join(mountPoint, '.podkit', 'state.json');
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    expect(manifest.managedFiles).not.toContain(track.filePath);
+  });
+
+  test('failed manifest save throws and leaves no .podkit-tmp debris', async () => {
+    // Force save() to fail at the rename step by making the manifest path a
+    // directory: writeFileSync to <path>.podkit-tmp succeeds, but
+    // renameSync(<path>.podkit-tmp, <path>) cannot overwrite a directory.
+    // The atomic helper must rethrow AND best-effort unlink the temp so no
+    // .podkit-tmp file is left on the device.
+    //
+    // (The "preserves prior content" half of the atomic-write contract is
+    // covered by the unit tests in utils/atomic-fs.test.ts — proving it at
+    // adapter level requires a failure mode that itself destroys prior
+    // content for the setup, which makes the assertion circular.)
+    const manifestPath = path.join(mountPoint, '.podkit', 'state.json');
+    fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+    fs.mkdirSync(manifestPath); // block rename target
+
+    const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES);
+    adapter.addTrack({
+      title: 'WillNotPersist',
+      artist: 'Artist',
+      album: 'Album',
+      trackNumber: 1,
+      filetype: 'flac',
+    });
+
+    let saveThrew = false;
+    try {
+      await adapter.save();
+    } catch {
+      saveThrew = true;
+    }
+    expect(saveThrew).toBe(true);
+    adapter.close();
+
+    // Atomic helper rethrows + best-effort unlinks the temp.
+    const stragglers = listAllPaths(mountPoint).filter((p) => p.endsWith('.podkit-tmp'));
+    expect(stragglers).toEqual([]);
+  });
+});
+
+/** Recursively list every file path under a directory. */
+function listAllPaths(root: string): string[] {
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const p = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else out.push(p);
+    }
+  };
+  walk(root);
+  return out;
+}

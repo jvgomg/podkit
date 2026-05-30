@@ -26,12 +26,14 @@
  * @module
  */
 
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, stat, rename } from 'node:fs/promises';
 import { join, basename, extname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+
+import { PODKIT_TEMP_SUFFIX } from '../../utils/atomic-fs.js';
 
 import { AsyncQueue } from '../../utils/async-queue.js';
 import { streamToTempFile, cleanupTempFile } from '../../utils/stream.js';
@@ -1528,10 +1530,12 @@ export class MusicPipeline implements SyncExecutor {
   ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
     const { source, preset: presetRef } = operation;
 
-    // Generate output path in temp directory — derive extension from target codec
+    // Generate output path in temp directory — derive extension from target codec.
+    // FFmpeg writes to <outputPath>.podkit-tmp first; we rename on success.
     const baseName = basename(source.filePath, extname(source.filePath));
     const outputExt = getTranscodeOutputExtension(presetRef);
     const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${outputExt}`);
+    const tmpOutputPath = outputPath + PODKIT_TEMP_SUFFIX;
 
     // Transcode the file — use EncoderConfig when targetCodec is set
     const transcodePreset = buildTranscodePreset(
@@ -1540,14 +1544,20 @@ export class MusicPipeline implements SyncExecutor {
         | import('../../transcode/types.js').EncodingMode
         | undefined
     );
-    const result = await this.transcoder.transcode(source.filePath, outputPath, transcodePreset, {
-      signal,
-      transferMode: this.transferMode as
-        | import('../../transcode/types.js').TransferMode
-        | undefined,
-      artworkResize: this.artworkResize,
-      replayGain: this.buildReplayGainOption(source),
-    });
+    const result = await this.transcoder.transcode(
+      source.filePath,
+      tmpOutputPath,
+      transcodePreset,
+      {
+        signal,
+        transferMode: this.transferMode as
+          | import('../../transcode/types.js').TransferMode
+          | undefined,
+        artworkResize: this.artworkResize,
+        replayGain: this.buildReplayGainOption(source),
+      }
+    );
+    await rename(tmpOutputPath, outputPath);
 
     // Add track to device database
     const trackInput: DeviceTrackInput = {
@@ -1831,10 +1841,13 @@ export class MusicPipeline implements SyncExecutor {
     const fileAccess = prefetchedAccess ?? (await getTrackFilePath(source, adapter));
     const inputPath = fileAccess.path;
 
-    // Generate output path in temp directory — derive extension from target codec
+    // Generate output path in temp directory — derive extension from target codec.
+    // FFmpeg writes to <outputPath>.podkit-tmp first; we rename on success so a
+    // crashed/killed transcode never surfaces a partial file under outputPath.
     const baseName = basename(source.filePath, extname(source.filePath));
     const outputExt = getTranscodeOutputExtension(presetRef);
     const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${outputExt}`);
+    const tmpOutputPath = outputPath + PODKIT_TEMP_SUFFIX;
 
     // Transcode the file — use EncoderConfig when targetCodec is set
     const transcodePreset = buildTranscodePreset(
@@ -1843,7 +1856,7 @@ export class MusicPipeline implements SyncExecutor {
         | import('../../transcode/types.js').EncodingMode
         | undefined
     );
-    const result = await this.transcoder.transcode(inputPath, outputPath, transcodePreset, {
+    const result = await this.transcoder.transcode(inputPath, tmpOutputPath, transcodePreset, {
       signal,
       transferMode: this.transferMode as
         | import('../../transcode/types.js').TransferMode
@@ -1851,6 +1864,7 @@ export class MusicPipeline implements SyncExecutor {
       artworkResize: this.artworkResize,
       replayGain: this.buildReplayGainOption(operation.source),
     });
+    await rename(tmpOutputPath, outputPath);
 
     return {
       operation,
@@ -1937,17 +1951,20 @@ export class MusicPipeline implements SyncExecutor {
     // Determine format for FFmpeg args
     const format = getOptimizedCopyFormat(source);
 
-    // Generate output path — keep same extension as input
+    // Generate output path — keep same extension as input. FFmpeg writes to
+    // <outputPath>.podkit-tmp first; we rename on success.
     const ext = extname(source.filePath);
     const baseName = basename(source.filePath, ext);
     const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${ext}`);
+    const tmpOutputPath = outputPath + PODKIT_TEMP_SUFFIX;
 
     // Build FFmpeg args and run
-    const args = buildOptimizedCopyArgs(inputPath, outputPath, format, {
+    const args = buildOptimizedCopyArgs(inputPath, tmpOutputPath, format, {
       artworkResize: this.artworkResize,
       replayGain: this.buildReplayGainOption(source),
     });
     await this.runFFmpeg(args, signal);
+    await rename(tmpOutputPath, outputPath);
 
     // Get output file size
     const outputStat = await stat(outputPath);

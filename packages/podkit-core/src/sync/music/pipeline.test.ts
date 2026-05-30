@@ -31,6 +31,7 @@ import type { CollectionTrack, CollectionAdapter, FileAccess } from '../../adapt
 import type { AudioFileType, TrackFilter } from '../../types.js';
 import type { DeviceTrack, SyncOperation, SyncPlan } from '../engine/types.js';
 import { Readable } from 'node:stream';
+import { writeFileSync } from 'node:fs';
 
 // =============================================================================
 // Mock Types
@@ -146,12 +147,18 @@ function createMockDeviceAdapter(initialTracks: DeviceTrack[] = []): MockDeviceA
 
 function createMockTranscoder(): MockTranscoder {
   return {
-    transcode: mock(async () => ({
-      outputPath: '/tmp/output.m4a',
-      size: 5000000,
-      duration: 1000,
-      bitrate: 256,
-    })),
+    // Mock writes an empty file at the requested output path so the
+    // pipeline's post-transcode `rename(<output>.podkit-tmp -> <output>)`
+    // (atomic-write contract) succeeds.
+    transcode: mock(async (_input: string, output: string) => {
+      writeFileSync(output, '');
+      return {
+        outputPath: output,
+        size: 5000000,
+        duration: 1000,
+        bitrate: 256,
+      };
+    }),
     detect: mock(async () => ({
       version: '6.0',
       path: '/usr/bin/ffmpeg',
@@ -404,12 +411,15 @@ describe('MusicPipeline - basic execution', () => {
 
   it('uses FFmpeg output bitrate (not source bitrate) for transcode operation', async () => {
     // Mock transcoder to return a specific bitrate different from source
-    mockTranscoder.transcode = mock(async () => ({
-      outputPath: '/tmp/output.m4a',
-      size: 5000000,
-      duration: 1000,
-      bitrate: 128,
-    }));
+    mockTranscoder.transcode = mock(async (_input: string, output: string) => {
+      writeFileSync(output, '');
+      return {
+        outputPath: output,
+        size: 5000000,
+        duration: 1000,
+        bitrate: 128,
+      };
+    });
     deps = createDependencies(mockAdapter, mockTranscoder);
 
     const executor = new MusicPipeline(deps);
@@ -1306,7 +1316,8 @@ describe('transcode with targetCodec', () => {
     // Check the output path passed to transcode has .m4a extension
     const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
     const outputPath = transcodeCall[1] as string;
-    expect(outputPath).toMatch(/\.m4a$/);
+    // Atomic-write contract: ffmpeg writes to <output>.podkit-tmp then renames.
+    expect(outputPath).toMatch(/\.m4a\.podkit-tmp$/);
 
     // Check preset is passed as string (legacy AAC path)
     const preset = transcodeCall[2];
@@ -1339,7 +1350,7 @@ describe('transcode with targetCodec', () => {
     // Check the output path has .opus extension
     const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
     const outputPath = transcodeCall[1] as string;
-    expect(outputPath).toMatch(/\.opus$/);
+    expect(outputPath).toMatch(/\.opus\.podkit-tmp$/);
 
     // Check preset is an EncoderConfig with codec: 'opus'
     const preset = transcodeCall[2] as { codec: string; bitrateKbps: number };
@@ -1372,7 +1383,7 @@ describe('transcode with targetCodec', () => {
 
     const transcodeCall = mockTranscoder.transcode.mock.calls[0]!;
     const outputPath = transcodeCall[1] as string;
-    expect(outputPath).toMatch(/\.mp3$/);
+    expect(outputPath).toMatch(/\.mp3\.podkit-tmp$/);
 
     const preset = transcodeCall[2] as { codec: string; bitrateKbps: number };
     expect(preset.codec).toBe('mp3');
@@ -1454,7 +1465,7 @@ describe('transcode with targetCodec', () => {
     const preset = transcodeCall[2] as { codec: string };
     expect(preset.codec).toBe('flac');
     // Output path should have .flac extension
-    expect(transcodeCall[1]).toMatch(/\.flac$/);
+    expect(transcodeCall[1]).toMatch(/\.flac\.podkit-tmp$/);
   });
 });
 
@@ -1553,13 +1564,14 @@ describe('MusicPipeline - retry logic', () => {
 
   it('retries transcode operation once on failure then succeeds', async () => {
     let transcodeAttempts = 0;
-    mockTranscoder.transcode = mock(async () => {
+    mockTranscoder.transcode = mock(async (_input: string, output: string) => {
       transcodeAttempts++;
       if (transcodeAttempts === 1) {
         throw new Error('FFmpeg transient failure');
       }
+      writeFileSync(output, '');
       return {
-        outputPath: '/tmp/output.m4a',
+        outputPath: output,
         size: 5000000,
         duration: 1000,
         bitrate: 256,
@@ -1715,13 +1727,14 @@ describe('MusicPipeline - retry logic', () => {
 
   it('includes retry attempt in progress events', async () => {
     let transcodeAttempts = 0;
-    mockTranscoder.transcode = mock(async () => {
+    mockTranscoder.transcode = mock(async (_input: string, output: string) => {
       transcodeAttempts++;
       if (transcodeAttempts === 1) {
         throw new Error('FFmpeg transient failure');
       }
+      writeFileSync(output, '');
       return {
-        outputPath: '/tmp/output.m4a',
+        outputPath: output,
         size: 5000000,
         duration: 1000,
         bitrate: 256,
@@ -2678,12 +2691,13 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
 
     // Track when transcoding happens
     const transcodeLog: Array<{ trackId: string; startTime: number; endTime: number }> = [];
-    transcoder.transcode = mock(async (input: string) => {
+    transcoder.transcode = mock(async (input: string, output: string) => {
       const startTime = Date.now();
       await new Promise((r) => setTimeout(r, 30)); // Simulate transcoding work
       const endTime = Date.now();
       transcodeLog.push({ trackId: input, startTime, endTime });
-      return { outputPath: '/tmp/output.m4a', size: 5000000, duration: 1000, bitrate: 256 };
+      writeFileSync(output, '');
+      return { outputPath: output, size: 5000000, duration: 1000, bitrate: 256 };
     });
 
     const plan: SyncPlan = {
@@ -2895,9 +2909,10 @@ describe('MusicPipeline - prefetch pipeline (ADR-011)', () => {
     const { adapter } = createMockStreamAdapter({ downloadDelayMs: 5 });
 
     // Slow transcoding so abort happens during pipeline
-    transcoder.transcode = mock(async () => {
+    transcoder.transcode = mock(async (_input: string, output: string) => {
       await new Promise((r) => setTimeout(r, 50));
-      return { outputPath: '/tmp/output.m4a', size: 5000000, duration: 1000, bitrate: 256 };
+      writeFileSync(output, '');
+      return { outputPath: output, size: 5000000, duration: 1000, bitrate: 256 };
     });
 
     const plan: SyncPlan = {
