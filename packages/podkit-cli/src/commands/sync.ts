@@ -239,6 +239,19 @@ export interface SyncOutput {
   transferMode?: string;
   transforms?: TransformInfo[];
   skipUpgrades?: boolean;
+  /**
+   * Sync plan summary. **Populated under `--dry-run`** and on the **not-enough-
+   * space error path** (where `success: false, dryRun: false, error: '...'`
+   * accompany it; see `sync-presenter.ts` around line 537). A clean real (non-
+   * dry) sync emits `result` instead. Tests that ran `sync` without `--dry-run`
+   * and asserted against `plan.tracksToUpdate` etc. on a successful sync are
+   * silently asserting against `undefined`; use `result.completed` to inspect
+   * what a real sync did.
+   *
+   * Field naming is shared with music sync — video sync also populates
+   * `tracksToAdd` / `tracksToCopy` / `tracksToTranscode` (NOT `videosTo*`) and
+   * surfaces movie/show split via `videoSummary`.
+   */
   plan?: {
     tracksToAdd: number;
     tracksToRemove: number;
@@ -280,6 +293,12 @@ export interface SyncOutput {
     changes?: Array<{ field: string; from: string; to: string }>;
     reason?: string;
   }>;
+  /**
+   * Real-run outcome counts. **Populated only on non-dry-run syncs.** A
+   * `--dry-run` emits `plan` instead. Idempotency tests should assert
+   * `result.completed === 0`; detect+apply tests should assert
+   * `result.completed > 0` (or an exact count where the fixture pins it).
+   */
   result?: {
     completed: number;
     failed: number;

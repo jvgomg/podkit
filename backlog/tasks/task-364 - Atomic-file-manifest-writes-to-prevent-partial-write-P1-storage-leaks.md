@@ -4,13 +4,14 @@ title: Atomic file/manifest writes to prevent partial-write P1 storage leaks
 status: To Do
 assignee: []
 created_date: '2026-05-30 17:46'
+updated_date: '2026-05-30 19:45'
 labels:
   - sync
   - mass-storage
   - reliability
   - tech-debt
 dependencies: []
-priority: medium
+priority: high
 ordinal: 87000
 ---
 
@@ -50,4 +51,11 @@ The manifest write should also order the operations so the file write completes 
 - [ ] #5 Integration test simulating a SIGKILL between file write and manifest update verifies no .podkit-tmp debris and no manifest entry for the half-written file.
 - [ ] #6 The three pinning tests in orphans-mass-storage.test.ts "adapter-failure debris" describe block stay green (they document the detection gap; this task closes the production gap that creates the debris in the first place).
 <!-- SECTION:DESCRIPTION:END -->
+
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-30 (Claude): Bumped priority Medium → High. The TASK-361 audit surfaced three classes of partial-write debris that silently leak storage forever on a user's real device (interrupted copies, malformed FFmpeg outputs, manifest corruption). That's user-facing data loss, not tech debt. Closing this task also closes the production gap that TASK-365's detection work is currently working around.
+<!-- SECTION:NOTES:END -->

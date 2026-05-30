@@ -22,7 +22,8 @@ describe('iPod model compatibility', () => {
           async (ipod) => {
             const info = await ipod.info();
             expect(info.path).toBeTruthy();
-            expect(info.playlistCount).toBeGreaterThanOrEqual(1); // master playlist
+            // Fresh init has exactly one playlist — the auto-created master.
+            expect(info.playlistCount).toBe(1);
           },
           { model: model.modelNumber }
         );

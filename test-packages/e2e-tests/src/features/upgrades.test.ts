@@ -159,11 +159,11 @@ describe('self-healing sync: upgrade workflow', () => {
         const tracksAfterCorrection = await target.getTracks();
         expect(tracksAfterCorrection.length).toBe(3);
 
-        // Step 5: Verify updates were applied — at least one operation ran
-        // and the device track count is unchanged (no adds). Detailed plan
+        // Step 5: Verify updates were applied. changeGenre + changeYear hit
+        // every fixture track, so all 3 should complete. Detailed plan
         // breakdown is asserted in the sibling dry-run test below;
         // non-dry-run sync output does not carry `plan`.
-        expect(json2!.result!.completed).toBeGreaterThan(0);
+        expect(json2!.result!.completed).toBe(3);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
@@ -217,9 +217,9 @@ describe('self-healing sync: upgrade workflow', () => {
         expect(json?.success).toBe(true);
         expect(json?.dryRun).toBe(true);
 
-        // Should report metadata corrections
+        // Should report metadata corrections for all 3 fixture tracks.
         expect(json!.plan).toBeDefined();
-        expect(json!.plan!.tracksToUpdate).toBeGreaterThan(0);
+        expect(json!.plan!.tracksToUpdate).toBe(3);
         expect(json!.plan!.tracksToAdd).toBe(0);
 
         // Track count should be unchanged (dry-run didn't modify anything)

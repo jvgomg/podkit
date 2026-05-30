@@ -257,9 +257,12 @@ describe('codec preference: mass-storage sync', () => {
       expect(result2.exitCode).toBe(0);
       expect(json2?.success).toBe(true);
 
-      // Verify re-sync produced files (should be updates, not additions)
-      // completed > 0 means tracks were re-processed (codec change detected)
-      expect(json2?.result?.completed).toBeGreaterThan(0);
+      // Verify re-sync re-processed all 3 fixture tracks under the new codec
+      // (not new additions — track count stays 3 below). All 3 are FLAC and
+      // get transcoded; the music handler's codec-change pass skips tracks
+      // the classifier would direct-copy, so this exact count assumes the
+      // fixture has no compatible-lossy sources.
+      expect(json2?.result?.completed).toBe(3);
 
       // Verify output files are now .opus
       const resyncFiles = await findMusicFiles(devicePath);
