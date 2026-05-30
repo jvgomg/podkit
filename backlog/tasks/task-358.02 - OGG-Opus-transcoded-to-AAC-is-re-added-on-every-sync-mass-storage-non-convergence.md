@@ -6,6 +6,7 @@ title: >-
 status: To Do
 assignee: []
 created_date: '2026-05-28 21:13'
+updated_date: '2026-05-30 10:11'
 labels:
   - bug
   - mass-storage
@@ -37,4 +38,11 @@ Currently fenced in the artwork matrix: `ms-generic` `ogg`/`opus` cells are `ski
 - [ ] #1 A mass-storage sync of an OGG or Opus source converges: the second sync plans no add/transcode for that track
 - [ ] #2 Root cause identified (manifest/diff key, or source-codec normalisation) and fixed in the mass-storage adapter / sync diff
 - [ ] #3 The ms-generic ogg/opus skipBug fences in skipArtworkCell are removed and the cells assert idempotency
+- [ ] #4 The ms-echo-mini opus skipBug fence in skipArtworkCell is removed and the cell asserts idempotency
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Repro scope expanded after TASK-358.01: echo-mini now actually runs OGG (vorbis-native → optimized-copy) and Opus (transcodes to AAC). The OGG path on echo-mini converges (it's a copy, not a transcode). The Opus path on echo-mini hits the same re-add loop as ms-generic OGG/Opus because Opus is not in echo-mini's native codecs and transcodes to AAC. So the bug now reproduces on `ms-echo-mini` Opus too — the artwork matrix's `skipArtworkCell` fences that cell with the same #2 reason. When the root cause is fixed, both ms-generic ogg/opus AND ms-echo-mini opus fences should be removed.
+<!-- SECTION:NOTES:END -->

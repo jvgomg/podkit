@@ -434,9 +434,18 @@ export class VideoHandler implements ContentTypeHandler<
 
     try {
       for (const op of operations) {
-        // Use a context with the shared transcode dir
+        if (ctx.signal?.aborted) break;
         const batchCtx: ExecutionContext = { ...ctx, tempDir: transcodeDir };
-        yield* this.execute(op, batchCtx);
+        try {
+          yield* this.execute(op, batchCtx);
+        } catch (err) {
+          // Per-op fault tolerance: yield a failed event so the engine layer
+          // can decide via continueOnError whether to keep going. Without this
+          // the generator dies on the first throw and remaining ops never run.
+          const error = err instanceof Error ? err : new Error(String(err));
+          yield { operation: op, phase: 'failed', error };
+          if (!ctx.continueOnError) break;
+        }
       }
     } finally {
       if (hasTranscodes && !ctx.dryRun) {

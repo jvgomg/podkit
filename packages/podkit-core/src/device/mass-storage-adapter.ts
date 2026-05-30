@@ -1450,7 +1450,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
  * are appropriate for iPod but not for filesystem paths. This function
  * normalizes both forms to a dotted extension.
  */
-function resolveFileExtension(filetype: string): string {
+export function resolveFileExtension(filetype: string): string {
   // Already looks like a bare extension (short, no spaces) — just prefix with dot
   if (!filetype.includes(' ') && filetype.length <= 5) {
     return filetype.startsWith('.') ? filetype : `.${filetype}`;

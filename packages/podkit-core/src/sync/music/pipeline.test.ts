@@ -18,6 +18,7 @@ import {
   MusicPipeline,
   createMusicPipeline,
   executeMusicPlan,
+  getFileTypeLabel,
   getMusicOperationDisplayName,
   categorizeError,
   getRetriesForCategory,
@@ -25,6 +26,7 @@ import {
   type ExecutorDependencies,
   type ExecutorProgress,
 } from './pipeline.js';
+import { resolveFileExtension } from '../../device/mass-storage-adapter.js';
 import type { CollectionTrack, CollectionAdapter, FileAccess } from '../../adapters/interface.js';
 import type { AudioFileType, TrackFilter } from '../../types.js';
 import type { DeviceTrack, SyncOperation, SyncPlan } from '../engine/types.js';
@@ -212,6 +214,54 @@ function createDependencies(
     transcoder: transcoder as unknown as ExecutorDependencies['transcoder'],
   };
 }
+
+// =============================================================================
+// getFileTypeLabel Tests
+// =============================================================================
+
+describe('getFileTypeLabel', () => {
+  it.each([
+    ['/x/foo.mp3', 'MPEG audio file'],
+    ['/x/foo.m4a', 'AAC audio file'],
+    ['/x/foo.aac', 'AAC audio file'],
+    ['/x/foo.alac', 'ALAC audio file'],
+    ['/x/foo.opus', 'Opus audio file'],
+    ['/x/foo.flac', 'FLAC audio file'],
+    ['/x/foo.ogg', 'Ogg Vorbis audio file'],
+    ['/x/foo.wav', 'WAV audio file'],
+    ['/x/foo.aiff', 'AIFF audio file'],
+    ['/x/foo.aif', 'AIFF audio file'],
+  ])('maps %s → %s', (path, expected) => {
+    expect(getFileTypeLabel(path)).toBe(expected);
+  });
+
+  it('uppercase extensions match (case-insensitive)', () => {
+    expect(getFileTypeLabel('/x/song.OGG')).toBe('Ogg Vorbis audio file');
+  });
+
+  it('returns the generic fallback for unknown extensions', () => {
+    expect(getFileTypeLabel('/x/song.weird')).toBe('Audio file');
+  });
+
+  it.each([
+    ['.mp3', '.mp3'],
+    ['.m4a', '.m4a'],
+    ['.aac', '.m4a'],
+    ['.alac', '.m4a'],
+    ['.opus', '.opus'],
+    ['.flac', '.flac'],
+    ['.ogg', '.ogg'],
+    ['.wav', '.wav'],
+    ['.aiff', '.aiff'],
+    ['.aif', '.aiff'],
+  ])(
+    'label for %s round-trips through resolveFileExtension (locks the bug where .ogg → "Audio file" → .Audio file filename)',
+    (sourceExt, expectedRoundTripExt) => {
+      const label = getFileTypeLabel(`/x/song${sourceExt}`);
+      expect(resolveFileExtension(label)).toBe(expectedRoundTripExt);
+    }
+  );
+});
 
 // =============================================================================
 // getMusicOperationDisplayName Tests

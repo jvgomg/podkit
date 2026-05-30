@@ -14,6 +14,7 @@
 
 import type { AudioCodec, DeviceCapabilities } from '@podkit/device-types';
 import { MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS } from '@podkit/devices-mass-storage';
+import { predictArtworkScaleSize } from '@podkit/core';
 import type { Scenario, Format } from './axes.js';
 
 /**
@@ -316,7 +317,7 @@ export function expectedFileArtworkSize(
 ): number {
   const max = capabilities.artworkMaxResolution;
   if (capabilities.artworkSources[0] === 'embedded' && max !== null) {
-    return Math.min(sourceSize, max);
+    return predictArtworkScaleSize(sourceSize, max);
   }
   return sourceSize;
 }

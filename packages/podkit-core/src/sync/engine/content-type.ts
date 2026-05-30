@@ -48,6 +48,13 @@ export interface ExecutionContext {
   signal?: AbortSignal;
   dryRun?: boolean;
   tempDir?: string;
+  /**
+   * Continue executing remaining operations after a per-track failure.
+   * Plumbed by the engine executor from `SyncExecuteOptions.continueOnError`
+   * so batch-handlers honour the same gate the engine does — without it a
+   * single failing track aborts the whole run.
+   */
+  continueOnError?: boolean;
 }
 
 // =============================================================================

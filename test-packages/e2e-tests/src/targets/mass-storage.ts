@@ -47,7 +47,11 @@ interface FfprobeTags {
 
 interface FfprobeResult {
   format?: { tags?: Record<string, string>; bit_rate?: string; duration?: string };
-  streams?: Array<{ codec_type?: string; sample_rate?: string }>;
+  streams?: Array<{
+    codec_type?: string;
+    sample_rate?: string;
+    tags?: Record<string, string>;
+  }>;
 }
 
 /**
@@ -100,7 +104,9 @@ async function ffprobe(filePath: string): Promise<FfprobeResult> {
     '-v',
     'error',
     '-show_entries',
-    'format=bit_rate,duration:format_tags=title,artist,album,track:stream=codec_type,sample_rate',
+    // Vorbis comments (OGG/Opus) live on the audio stream, not the container,
+    // so probe both — getTracks merges them with format_tags taking precedence.
+    'format=bit_rate,duration:format_tags=title,artist,album,track:stream=codec_type,sample_rate,index:stream_tags=title,artist,album,track',
     '-of',
     'json',
     filePath,
@@ -166,9 +172,11 @@ export class MassStorageTarget implements SyncTarget {
       } catch {
         continue; // skip unreadable files
       }
-      const tags = normalizeTags(probe.format?.tags);
-      const hasArtwork = (probe.streams ?? []).some((s) => s.codec_type === 'video');
+      // Merge container-level and audio-stream tags (Vorbis comments on
+      // OGG/Opus live on the stream); container tags win on collision.
       const audioStream = (probe.streams ?? []).find((s) => s.codec_type === 'audio');
+      const tags = normalizeTags({ ...audioStream?.tags, ...probe.format?.tags });
+      const hasArtwork = (probe.streams ?? []).some((s) => s.codec_type === 'video');
       tracks.push({
         id: id++,
         title: tags.title ?? '',

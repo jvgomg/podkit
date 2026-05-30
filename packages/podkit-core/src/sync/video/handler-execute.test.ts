@@ -588,7 +588,7 @@ describe('VideoHandler execution', () => {
       expect(mockRm).not.toHaveBeenCalled();
     });
 
-    it('cleans up temp dir even when an operation throws', async () => {
+    it('cleans up temp dir even when an operation fails', async () => {
       const mockIpod = createMockIpod();
       // First op: transcode (will trigger temp dir creation)
       // Second op: remove with nonexistent track (will throw)
@@ -617,11 +617,47 @@ describe('VideoHandler execution', () => {
         tempDir: '/tmp/batch',
       };
 
-      await expect(collectProgress(handler.executeBatch!(ops, ctx))).rejects.toThrow();
+      const events = await collectProgress(handler.executeBatch!(ops, ctx));
 
-      // Even though an error occurred, cleanup should still happen (finally block)
+      // The failing op yields a 'failed' event instead of throwing — the
+      // engine layer reads it and applies continueOnError. The finally block
+      // still runs, so cleanup happens.
+      const failedEvents = events.filter((e) => e.phase === 'failed');
+      expect(failedEvents.length).toBeGreaterThan(0);
       expect(mockMkdir).toHaveBeenCalledTimes(1);
       expect(mockRm).toHaveBeenCalledTimes(1);
+    });
+
+    it('continues to remaining ops when ctx.continueOnError is true and one op fails', async () => {
+      const mockIpod = createMockIpod();
+      const ops: VideoOperation[] = [
+        {
+          type: 'video-remove',
+          video: {
+            id: 'nonexistent',
+            filePath: 'nonexistent',
+            contentType: 'movie' as const,
+            title: 'Missing',
+          },
+        },
+        {
+          type: 'video-copy',
+          source: makeVideoSource(),
+        },
+      ];
+      mockIpod.getTracks.mockReturnValue([]);
+      const ctx: ExecutionContext = {
+        device: mockIpod as unknown as DeviceAdapter,
+        tempDir: '/tmp/batch',
+        continueOnError: true,
+      };
+
+      const events = await collectProgress(handler.executeBatch!(ops, ctx));
+
+      const failed = events.filter((e) => e.phase === 'failed');
+      const reachedSecond = events.some((e) => e.operation.type === 'video-copy');
+      expect(failed.length).toBeGreaterThan(0);
+      expect(reachedSecond).toBe(true);
     });
   });
 

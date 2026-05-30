@@ -4,6 +4,7 @@ title: Remove silent-pass guards and swallowed-error probes in e2e tests
 status: To Do
 assignee: []
 created_date: '2026-05-28 21:27'
+updated_date: '2026-05-30 10:11'
 labels:
   - testing
   - e2e
@@ -36,3 +37,9 @@ Sites:
 - [ ] #3 video-sync silent early-returns replaced with module-load fixture preflight
 - [ ] #4 Full e2e suite still green
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+Reference pattern (already in tree as of TASK-358.01): the artwork-matrix observers (`test-packages/e2e-tests/src/matrix/artwork-rules.ts` `observeStaticArtwork`) assert `result.failed === expectedFailures` (default 0) and `dryJson.result.failed === 0` exactly, instead of tolerating any partial-failure. Sites listed above should mirror that style — an `if (data) { expect... }` becomes `expect(data).toBeDefined(); expect(data!.x)...`. Probe try/catch returning falsy is the same anti-pattern — let it throw and the test fails with a real reason.
+<!-- SECTION:NOTES:END -->

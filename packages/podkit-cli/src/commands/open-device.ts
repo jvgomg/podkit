@@ -206,14 +206,17 @@ export async function openDevice(
     }
     const capabilities = core.identifyCapabilities(model);
 
-    const deviceSupportsAlac = capabilities.supportedAudioCodecs.includes('alac');
-
     const adapter = new core.IpodDeviceAdapter(ipod, capabilities);
 
+    // Mirror the mass-storage branch and read capabilities back off the
+    // adapter — keeps the contract uniform across device kinds. iPod adapter
+    // does no filtering today, but the symmetry means a future filter would
+    // automatically reach downstream config + classifier.
+    const effectiveCaps = adapter.capabilities;
     return {
       adapter,
-      capabilities,
-      deviceSupportsAlac,
+      capabilities: effectiveCaps,
+      deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
       isIpodDevice: true,
       ipod,
     };
@@ -274,10 +277,16 @@ export async function openDevice(
       : undefined;
   const adapter = await core.MassStorageAdapter.open(path, resolvedCaps, adapterOptions);
 
+  // Use the adapter's view of capabilities so downstream config + classifier
+  // see the same filtered supportedAudioCodecs the adapter applies (e.g. wav
+  // and aiff dropped on mass-storage). Without this the planner thinks WAV is
+  // device-native on echo-mini and routes through optimized-copy with an
+  // m4a container, which FFmpeg rejects.
+  const effectiveCaps = adapter.capabilities;
   return {
     adapter,
-    capabilities: resolvedCaps,
-    deviceSupportsAlac: resolvedCaps.supportedAudioCodecs.includes('alac'),
+    capabilities: effectiveCaps,
+    deviceSupportsAlac: effectiveCaps.supportedAudioCodecs.includes('alac'),
     isIpodDevice: false,
   };
 }

@@ -153,6 +153,7 @@ export class SyncExecutor<TSource, TDevice, TOp extends BaseOperation = SyncOper
       signal,
       dryRun,
       tempDir,
+      continueOnError,
     };
 
     // Path 1: Batch execution (when handler has executeBatch and not dry-run)

@@ -225,6 +225,7 @@ export type {
   FFmpegTranscoderConfig,
   OptimizedCopyFormat,
 } from './transcode/ffmpeg.js';
+export { predictArtworkScaleSize } from './transcode/ffmpeg-prediction.js';
 
 // Codec metadata
 export type { TranscodeTargetCodec, CodecMetadata } from './transcode/codecs.js';

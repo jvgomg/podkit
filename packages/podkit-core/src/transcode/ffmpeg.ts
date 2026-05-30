@@ -588,9 +588,14 @@ export function buildAlacArgs(
 }
 
 /**
- * Optimized copy output format — determines container format flag
+ * Optimized copy output format — determines container format flag.
+ *
+ * `vorbis` and `opus` both stream-copy into an OGG container with embedded
+ * artwork stripped (the OGG muxer cannot write image streams — see
+ * `ARTWORK_EMBEDDABLE_FORMATS`); they are distinct so the caller's input
+ * extension and filetype label stay accurate.
  */
-export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a' | 'opus' | 'flac';
+export type OptimizedCopyFormat = 'alac' | 'mp3' | 'm4a' | 'opus' | 'flac' | 'vorbis';
 
 /**
  * Build FFmpeg arguments for optimized-copy (stream copy with artwork processing).
@@ -620,6 +625,7 @@ export function buildOptimizedCopyArgs(
   let ffmpegFormat: string;
   switch (format) {
     case 'opus':
+    case 'vorbis':
       ffmpegFormat = 'ogg';
       break;
     case 'flac':

@@ -913,7 +913,7 @@ export class MusicHandler implements ContentTypeHandler<
         encodingMode: this.config.raw.encoding,
         customBitrate: this.config.raw.customBitrate,
       },
-      continueOnError: this.config.raw.continueOnError,
+      continueOnError: this.config.raw.continueOnError ?? ctx.continueOnError,
       retryConfig: this.config.raw.retryConfig,
       transferMode: this.config.transferMode,
       artworkResize: this.config.artworkResize,

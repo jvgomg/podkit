@@ -77,14 +77,11 @@ import {
 } from './harness.js';
 
 /**
- * Devices the host artwork matrix sweeps. iPod (database artwork) and
- * `ms-generic` (embedded artwork, no native vorbis → OGG transcodes away) sync
- * cleanly. `ms-echo-mini` is included so its cells are *present and visible*,
- * but they are all `skipBug`-fenced: its vorbis-native + embedded-art combo
- * makes OGG route through `optimized-copy`, which fails and aborts the whole
- * sync (doc-039 §"Mass-storage sync gaps" #1). Keeping echo-mini in the axis —
- * rather than silently dropping it — means the deferred coverage shows up as
- * `[BUG]` skips you can count, not as an invisible gap.
+ * Devices the host artwork matrix sweeps. iPod (database artwork) and the
+ * embedded-art mass-storage presets. `ms-echo-mini` natively plays vorbis, so
+ * OGG sources optimized-copy cleanly; its Opus cells still hit the mass-storage
+ * AAC re-add loop and stay `skipBug`-fenced. `ms-generic` lacks both vorbis
+ * and opus, so both formats hit the same loop.
  */
 export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
@@ -234,31 +231,24 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
  * fixing (grep `[BUG]` / `skipBug(`). All are recorded in doc-039
  * §"Mass-storage sync gaps".
  *
- * iPod and `ms-generic` sweep the full product (both pipelines, all formats
- * except the two below). Note `prefer-copy` on mass-storage is **not** skipped:
- * its real bug (a `preset-upgrade` re-sync loop) is a quality/preset-convergence
- * defect that this *artwork* matrix does not assert, so the artwork cells pass.
+ * Note `prefer-copy` on mass-storage is **not** skipped: its real bug (a
+ * `preset-upgrade` re-sync loop) is a quality/preset-convergence defect that
+ * this *artwork* matrix does not assert, so the artwork cells pass.
  */
 export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
-  if (DEVICE_SPEC_BY_ID[cell.device].kind !== 'mass-storage') return null;
+  const spec = DEVICE_SPEC_BY_ID[cell.device];
+  if (spec.kind !== 'mass-storage') return null;
 
-  // echo-mini: vorbis-native + embedded-art → OGG routes through optimized-copy,
-  // which fails and aborts the whole sync, so no cell is observable.
-  if (cell.device === 'ms-echo-mini') {
-    return cell.format === 'ogg'
-      ? skipBug(
-          'OGG optimized-copy fails on this vorbis-native, embedded-art device — FFmpeg cannot re-mux into the OGG container',
-          'doc-039 §Mass-storage sync gaps #1'
-        )
-      : skipBug(
-          'blocked by the OGG optimized-copy failure, which aborts the whole sync — no per-track outcome is observable until #1 is fixed',
-          'doc-039 §Mass-storage sync gaps #1'
-        );
-  }
-
-  // generic (and any embedded-art device that transcodes these): an OGG/Opus
-  // source transcoded to AAC is re-added on every subsequent sync.
-  if (cell.format === 'ogg' || cell.format === 'opus') {
+  // Incompatible-lossy sources (OGG/Opus) that the device cannot play natively
+  // get transcoded to AAC, and the AAC output is re-added on every sync
+  // (doc-039 §"Mass-storage sync gaps" #2). echo-mini natively plays vorbis →
+  // OGG optimized-copies and converges; Opus still transcodes. Generic plays
+  // neither, so both transcode and loop.
+  const native = spec.capabilities.supportedAudioCodecs;
+  if (
+    (cell.format === 'ogg' && !native.includes('vorbis')) ||
+    (cell.format === 'opus' && !native.includes('opus'))
+  ) {
     return skipBug(
       `${cell.format} transcoded to AAC is re-added every sync on mass-storage (incompatible-lossy → AAC source/device matching gap)`,
       'doc-039 §Mass-storage sync gaps #2'
@@ -596,8 +586,13 @@ export function predictTransferArtwork(
  */
 export const RESIZE_FORMATS: readonly Format[] = ['flac', 'alac', 'mp3', 'aac', 'aiff'];
 
-/** Devices the resize matrix sweeps: an embedded-art device + the iPod. */
-export const RESIZE_DEVICE_IDS: readonly DeviceId[] = ['ms-generic', 'ipod-MA147'];
+/**
+ * Devices the resize matrix sweeps: two embedded-art devices with very
+ * different `artworkMaxResolution` (generic 500, echo-mini 127) so a regression
+ * that hardcoded the wrong max would show up on at least one of them, plus the
+ * iPod for the database-artwork side.
+ */
+export const RESIZE_DEVICE_IDS: readonly DeviceId[] = ['ms-generic', 'ms-echo-mini', 'ipod-MA147'];
 
 /** A device × format × transfer-mode cell of the resize matrix. */
 export interface ResizeCell {
@@ -712,8 +707,18 @@ export async function observeStaticArtwork(opts: {
   env?: Record<string, string>;
   initTimeoutMs?: number;
   dryTimeoutMs?: number;
+  /**
+   * The number of per-track sync failures the caller expects to see — the
+   * count of skipBug cells whose first-sync execution legitimately fails
+   * (e.g. unhandled container, transcode error). The harness asserts
+   * `result.failed === expectedFailures` exactly, so an unexpected regression
+   * surfaces immediately instead of being swallowed by a permissive guard.
+   * Omit to expect 0 failures.
+   */
+  expectedFailures?: number;
 }): Promise<Map<string, StaticArtObserved>> {
   const { target, configPath, checkArtwork, env } = opts;
+  const expectedFailures = opts.expectedFailures ?? 0;
   const { deviceArg } = deviceAddressing(target);
   const baseArgs = ['--config', configPath, 'sync', '--device', deviceArg, '--json'];
   const initArgs = checkArtwork ? [...baseArgs, '--check-artwork'] : baseArgs;
@@ -722,9 +727,10 @@ export async function observeStaticArtwork(opts: {
     initArgs,
     runOpts(opts.initTimeoutMs ?? 240000, env)
   );
-  if (initResult.exitCode !== 0 || !initJson?.success) {
+  if (!initJson?.success || (initJson.result?.failed ?? 0) !== expectedFailures) {
     throw new Error(
-      `initial sync failed (checkArtwork=${checkArtwork}): exit=${initResult.exitCode}\n` +
+      `initial sync failed (checkArtwork=${checkArtwork}): exit=${initResult.exitCode}, ` +
+        `expectedFailures=${expectedFailures}, observedFailed=${initJson?.result?.failed ?? 'n/a'}\n` +
         `  args: ${JSON.stringify(initArgs)}\n` +
         `  json: ${JSON.stringify(initJson, null, 2)}\n` +
         `  stderr: ${initResult.stderr}`
@@ -733,13 +739,17 @@ export async function observeStaticArtwork(opts: {
 
   const deviceTracks = await target.getTracks();
 
+  // Dry-run plans the next sync. It performs no I/O so a failed=0 dry-run is
+  // strictly correct; any per-track "failed" entry would be a planning bug,
+  // not a transfer failure. A null/unparseable JSON is still hard-fail.
   const { result: dryResult, json: dryJson } = await runCliJson<SyncOutput>(
     [...initArgs, '--dry-run'],
     runOpts(opts.dryTimeoutMs ?? 120000, env)
   );
-  if (dryResult.exitCode !== 0 || !dryJson) {
+  if (!dryJson || (dryJson.result?.failed ?? 0) !== 0) {
     throw new Error(
-      `dry-run sync failed (checkArtwork=${checkArtwork}): exit=${dryResult.exitCode}`
+      `dry-run sync failed (checkArtwork=${checkArtwork}): exit=${dryResult.exitCode}, ` +
+        `observedFailed=${dryJson?.result?.failed ?? 'n/a'}`
     );
   }
 

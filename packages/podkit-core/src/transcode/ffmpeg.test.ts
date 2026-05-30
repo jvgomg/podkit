@@ -1139,6 +1139,24 @@ describe('buildOptimizedCopyArgs — new formats', () => {
     expect(args).not.toContain('mjpeg');
   });
 
+  it('uses -f ogg for vorbis format (OGG/Vorbis stream-copy)', () => {
+    const args = buildOptimizedCopyArgs('/in.ogg', '/out.ogg', 'vorbis');
+
+    expect(args).toContain('-f');
+    expect(args).toContain('ogg');
+    expect(args).not.toContain('ipod');
+    expect(args).toContain('-c:a');
+    expect(args).toContain('copy');
+  });
+
+  it('strips artwork for vorbis even with artworkResize (OGG cannot embed MJPEG)', () => {
+    const args = buildOptimizedCopyArgs('/in.ogg', '/out.ogg', 'vorbis', { artworkResize: 600 });
+
+    expect(args).toContain('-vn');
+    expect(args).not.toContain('-c:v');
+    expect(args).not.toContain('mjpeg');
+  });
+
   it('resizes artwork for flac with artworkResize (FLAC muxer converts to METADATA_BLOCK_PICTURE)', () => {
     const args = buildOptimizedCopyArgs('/in.flac', '/out.flac', 'flac', { artworkResize: 320 });
 

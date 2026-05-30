@@ -248,6 +248,30 @@ describe('SyncExecutor', () => {
       expect(result.failed).toBe(0);
     });
 
+    it('propagates continueOnError into the ExecutionContext for executeBatch handlers', async () => {
+      let seenContinueOnError: boolean | undefined;
+
+      const handler = createMockHandler({
+        async *executeBatch(
+          operations: SyncOperation[],
+          ctx: ExecutionContext
+        ): AsyncGenerator<OperationProgress> {
+          seenContinueOnError = ctx.continueOnError;
+          for (const op of operations) {
+            yield { operation: op, phase: 'starting' };
+            yield { operation: op, phase: 'complete' };
+          }
+        },
+      });
+
+      const executor = new SyncExecutor(handler);
+      const plan = makePlan([makeCopyOp('a.mp3')]);
+
+      await consumeExecutor(executor.execute(plan, { device: {} as any, continueOnError: true }));
+
+      expect(seenContinueOnError).toBe(true);
+    });
+
     it('does not use executeBatch in dry-run mode', async () => {
       let batchCalled = false;
 

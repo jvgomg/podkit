@@ -2467,6 +2467,10 @@ export class VideoTrackClassifier {
 export function buildOptimizedCopyArgs(_src: string, _dst: string): string[] {
   return [];
 }
+export function predictArtworkScaleSize(sourceSize: number, maxDim: number): number {
+  const n = Math.min(sourceSize, maxDim);
+  return n - (n % 2);
+}
 export function calculateVideoOperationSize(_op: any): number {
   return 0;
 }

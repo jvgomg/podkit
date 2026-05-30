@@ -430,28 +430,69 @@ export function getFileTypeLabel(filePath: string): string {
     case '.aac':
       return 'AAC audio file';
     case '.alac':
-      return 'Apple Lossless audio file';
+      // Match CODEC_METADATA.alac.filetypeLabel so the mass-storage adapter's
+      // resolveFileExtension round-trips this label back to .m4a (ALAC's real
+      // container) instead of landing a `.Apple Lossless audio file` filename.
+      return 'ALAC audio file';
     case '.opus':
       return 'Opus audio file';
     case '.flac':
       return 'FLAC audio file';
+    case '.ogg':
+      return 'Ogg Vorbis audio file';
+    case '.wav':
+      return 'WAV audio file';
+    case '.aiff':
+    case '.aif':
+      return 'AIFF audio file';
     default:
       return 'Audio file';
   }
 }
 
 /**
- * Determine the FFmpeg format argument for an optimized-copy operation.
+ * Map a track's source `fileType` to the FFmpeg container format used for
+ * optimized-copy. Exhaustive over `AudioFileType`: adding a new file type
+ * forces an explicit decision here (the compiler points at the never branch).
  *
- * Maps the track's file type and codec to the container format that FFmpeg
- * should use when stream-copying audio with artwork stripped.
+ * ALAC files are stored in the same .m4a container as AAC; the codec is the
+ * disambiguator, so it overrides the fileType-based mapping when present.
  */
 function getOptimizedCopyFormat(track: CollectionTrack): OptimizedCopyFormat {
-  if (track.fileType === 'mp3') return 'mp3';
-  if (track.codec?.toLowerCase() === 'alac' || track.fileType === 'alac') return 'alac';
-  if (track.fileType === 'opus') return 'opus';
-  if (track.fileType === 'flac') return 'flac';
-  return 'm4a'; // m4a, aac, and other M4A-container formats
+  if (track.codec?.toLowerCase() === 'alac') return 'alac';
+  switch (track.fileType) {
+    case 'mp3':
+      return 'mp3';
+    case 'alac':
+      return 'alac';
+    case 'opus':
+      return 'opus';
+    case 'ogg':
+      return 'vorbis';
+    case 'flac':
+      return 'flac';
+    case 'm4a':
+    case 'aac':
+      return 'm4a';
+    case 'wav':
+    case 'aiff':
+      // WAV/AIFF aren't valid optimized-copy outputs on any device today —
+      // mass-storage filters them and iPod transcodes lossless to ALAC/AAC.
+      // Surface the misuse early instead of corrupting the file with the
+      // wrong container.
+      throw new Error(
+        `optimized-copy unsupported for ${track.fileType} sources (would need a separate container handler)`
+      );
+    default:
+      return assertNever(
+        track.fileType,
+        `unhandled fileType for optimized-copy: ${track.fileType}`
+      );
+  }
+}
+
+function assertNever(_value: never, message: string): never {
+  throw new Error(message);
 }
 
 /**
@@ -1943,17 +1984,27 @@ export class MusicPipeline implements SyncExecutor {
         stderr += data.toString();
       });
 
+      // Detach the abort listener on every exit path (close, error, kill), not
+      // just successful close — otherwise an FFmpeg that errors before exit
+      // leaves the listener attached to the (often longer-lived) AbortSignal.
+      const cleanup = signal ? () => signal.removeEventListener('abort', onAbort) : () => {};
+      const onAbort = signal
+        ? () => {
+            proc.kill('SIGTERM');
+            cleanup();
+            reject(new Error('Operation aborted'));
+          }
+        : () => {};
       if (signal) {
-        const onAbort = () => {
-          proc.kill('SIGTERM');
-          reject(new Error('Operation aborted'));
-        };
         signal.addEventListener('abort', onAbort, { once: true });
-        proc.on('close', () => signal.removeEventListener('abort', onAbort));
       }
 
-      proc.on('error', (err: Error) => reject(err));
+      proc.on('error', (err: Error) => {
+        cleanup();
+        reject(err);
+      });
       proc.on('close', (code) => {
+        cleanup();
         if (code !== 0) {
           reject(
             new Error(`FFmpeg optimized-copy failed with code ${code}: ${stderr.slice(-1000)}`)
