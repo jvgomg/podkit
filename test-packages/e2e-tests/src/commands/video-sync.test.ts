@@ -250,10 +250,11 @@ describe('podkit sync -t video', () => {
   describe('video type handling', () => {
     it('identifies compatible videos for passthrough', async () => {
       const passthroughVideos = getPassthroughVideos();
-      if (passthroughVideos.length === 0) {
-        console.log('Skipping: no passthrough videos in fixtures');
-        return;
-      }
+      // Videos catalogue is static (helpers/video-fixtures.ts) with 4
+      // passthrough entries. ensureFixturesExist('video') at module load
+      // validates the on-disk files; pinning the exact count here turns the
+      // assert into a regression detector for the catalogue itself.
+      expect(passthroughVideos.length).toBe(4);
 
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([passthroughVideos[0]!]);
@@ -279,10 +280,7 @@ describe('podkit sync -t video', () => {
 
     it('identifies videos needing transcode', async () => {
       const transcodeVideos = getTranscodeVideos();
-      if (transcodeVideos.length === 0) {
-        console.log('Skipping: no transcode videos in fixtures');
-        return;
-      }
+      expect(transcodeVideos.length).toBe(2);
 
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([transcodeVideos[0]!]);
@@ -310,10 +308,7 @@ describe('podkit sync -t video', () => {
   describe('content type categorization', () => {
     it('categorizes movie files', async () => {
       const movies = getMovies();
-      if (movies.length === 0) {
-        console.log('Skipping: no movie fixtures available');
-        return;
-      }
+      expect(movies.length).toBe(1);
 
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([movies[0]!]);
@@ -339,10 +334,7 @@ describe('podkit sync -t video', () => {
 
     it('categorizes TV show files', async () => {
       const tvShows = getTVShows();
-      if (tvShows.length === 0) {
-        console.log('Skipping: no TV show fixtures available');
-        return;
-      }
+      expect(tvShows.length).toBe(1);
 
       await withTarget(async (target) => {
         const sourceDir = await createVideoSourceDir([tvShows[0]!]);

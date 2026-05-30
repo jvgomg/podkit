@@ -159,12 +159,11 @@ describe('self-healing sync: upgrade workflow', () => {
         const tracksAfterCorrection = await target.getTracks();
         expect(tracksAfterCorrection.length).toBe(3);
 
-        // Step 5: Verify updates were detected
-        if (json2?.plan) {
-          // Metadata corrections show as updates (not upgrades, which are file-replacement)
-          expect(json2.plan.tracksToUpdate).toBeGreaterThan(0);
-          expect(json2.plan.tracksToAdd).toBe(0);
-        }
+        // Step 5: Verify updates were applied — at least one operation ran
+        // and the device track count is unchanged (no adds). Detailed plan
+        // breakdown is asserted in the sibling dry-run test below;
+        // non-dry-run sync output does not carry `plan`.
+        expect(json2!.result!.completed).toBeGreaterThan(0);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
@@ -219,10 +218,9 @@ describe('self-healing sync: upgrade workflow', () => {
         expect(json?.dryRun).toBe(true);
 
         // Should report metadata corrections
-        if (json?.plan) {
-          expect(json.plan.tracksToUpdate).toBeGreaterThan(0);
-          expect(json.plan.tracksToAdd).toBe(0);
-        }
+        expect(json!.plan).toBeDefined();
+        expect(json!.plan!.tracksToUpdate).toBeGreaterThan(0);
+        expect(json!.plan!.tracksToAdd).toBe(0);
 
         // Track count should be unchanged (dry-run didn't modify anything)
         const countAfterDryRun = (await target.getTracks()).length;
@@ -298,11 +296,9 @@ describe('self-healing sync: upgrade workflow', () => {
           '--json',
         ]);
 
-        if (json4?.plan) {
-          expect(json4.plan.tracksToUpdate).toBe(0);
-          expect(json4.plan.tracksToAdd).toBe(0);
-          expect(json4.plan.tracksExisting).toBe(3);
-        }
+        // Idempotency: a no-change re-sync should perform zero operations.
+        // (Non-dry-run sync output has no `plan`; assert on `result` instead.)
+        expect(json4!.result!.completed).toBe(0);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
@@ -370,11 +366,8 @@ describe('self-healing sync: normalization update', () => {
         expect(result2.exitCode).toBe(0);
         expect(json2?.success).toBe(true);
 
-        if (json2?.plan) {
-          expect(json2.plan.tracksToUpdate).toBe(0);
-          expect(json2.plan.tracksToAdd).toBe(0);
-          expect(json2.plan.tracksExisting).toBe(3);
-        }
+        // Idempotency: a no-change re-sync should perform zero operations.
+        expect(json2!.result!.completed).toBe(0);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
@@ -436,10 +429,8 @@ describe('self-healing sync: normalization update', () => {
         expect(result2.exitCode).toBe(0);
         expect(json2?.success).toBe(true);
 
-        if (json2?.plan) {
-          expect(json2.plan.tracksToUpdate).toBe(3);
-          expect(json2.plan.tracksToAdd).toBe(0);
-        }
+        // Normalization change applied to all 3 tracks (no adds, no removes).
+        expect(json2!.result!.completed).toBe(3);
 
         // Step 4: Re-sync again — should be idempotent now
         const { result: result3, json: json3 } = await runCliJson<SyncOutput>([
@@ -452,10 +443,8 @@ describe('self-healing sync: normalization update', () => {
         ]);
 
         expect(result3.exitCode).toBe(0);
-        if (json3?.plan) {
-          expect(json3.plan.tracksToUpdate).toBe(0);
-          expect(json3.plan.tracksExisting).toBe(3);
-        }
+        // Idempotent: third sync (re-sync with no changes) does no work.
+        expect(json3!.result!.completed).toBe(0);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
@@ -512,22 +501,23 @@ function generateFlac(
 
 /**
  * Recursively find all audio files on the iPod's music directory.
+ *
+ * Uses withFileTypes to filter for directories explicitly rather than
+ * relying on a try/catch around readdir to swallow ENOTDIR — a swallowed
+ * error would have hidden permission failures or filesystem corruption.
  */
 async function findIpodMusicFiles(ipodPath: string): Promise<string[]> {
   const musicDir = join(ipodPath, 'iPod_Control', 'Music');
   if (!existsSync(musicDir)) return [];
 
   const files: string[] = [];
-  const subdirs = await readdir(musicDir);
-  for (const subdir of subdirs) {
-    const subdirPath = join(musicDir, subdir);
-    try {
-      const entries = await readdir(subdirPath);
-      for (const entry of entries) {
-        files.push(join(subdirPath, entry));
-      }
-    } catch {
-      // Not a directory
+  const entries = await readdir(musicDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const subdirPath = join(musicDir, entry.name);
+    const subEntries = await readdir(subdirPath);
+    for (const subEntry of subEntries) {
+      files.push(join(subdirPath, subEntry));
     }
   }
   return files;

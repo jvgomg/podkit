@@ -160,54 +160,50 @@ function getExtensions(files: string[]): string[] {
 
 /**
  * Check the pixel format of embedded artwork using ffprobe.
+ *
+ * Throws if ffprobe fails — a broken probe is a real test failure, not "no
+ * artwork". Returns null only when ffprobe ran cleanly but returned an empty
+ * pix_fmt (file has no video stream).
  */
 function getArtworkPixFmt(filePath: string): string | null {
-  try {
-    const result = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 "${filePath}"`,
-      { encoding: 'utf-8' }
-    );
-    return result.trim() || null;
-  } catch {
-    return null;
-  }
+  const result = execSync(
+    `ffprobe -v error -select_streams v:0 -show_entries stream=pix_fmt -of csv=p=0 "${filePath}"`,
+    { encoding: 'utf-8' }
+  );
+  return result.trim() || null;
 }
 
 /**
- * Check whether a file has embedded artwork.
+ * Check whether a file has embedded artwork. Throws if ffprobe fails so a
+ * broken probe surfaces as a test failure rather than reading as "no artwork".
+ * ffprobe exits 0 on streamless files (returns `{"streams":[]}`), so callers
+ * asserting `=== false` won't see a spurious throw.
  */
 function hasEmbeddedArtwork(filePath: string): boolean {
-  try {
-    const result = execSync(
-      `ffprobe -v error -show_entries stream=codec_type -of json "${filePath}"`,
-      { encoding: 'utf-8' }
-    );
-    const data = JSON.parse(result);
-    const streams = data.streams ?? [];
-    return streams.some((s: { codec_type: string }) => s.codec_type === 'video');
-  } catch {
-    return false;
-  }
+  const result = execSync(
+    `ffprobe -v error -show_entries stream=codec_type -of json "${filePath}"`,
+    { encoding: 'utf-8' }
+  );
+  const data = JSON.parse(result);
+  const streams = data.streams ?? [];
+  return streams.some((s: { codec_type: string }) => s.codec_type === 'video');
 }
 
 /**
- * Get artwork dimensions from a file using ffprobe.
+ * Get artwork dimensions from a file using ffprobe. Throws if ffprobe fails.
+ * Returns null only when the file has no video stream at all.
  */
 function getArtworkDimensions(filePath: string): { width: number; height: number } | null {
-  try {
-    const result = execSync(
-      `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of json "${filePath}"`,
-      { encoding: 'utf-8' }
-    );
-    const data = JSON.parse(result);
-    const stream = data.streams?.[0];
-    if (stream?.width && stream?.height) {
-      return { width: stream.width, height: stream.height };
-    }
-    return null;
-  } catch {
-    return null;
+  const result = execSync(
+    `ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of json "${filePath}"`,
+    { encoding: 'utf-8' }
+  );
+  const data = JSON.parse(result);
+  const stream = data.streams?.[0];
+  if (stream?.width && stream?.height) {
+    return { width: stream.width, height: stream.height };
   }
+  return null;
 }
 
 /**
@@ -335,11 +331,13 @@ describe('mass-storage sync: echo-mini device', () => {
         expect(hasEmbeddedArtwork(file)).toBe(true);
       }
 
-      // Verify artwork is resized to fit echo-mini's 127px max
+      // Verify artwork is resized to fit echo-mini's 127px max.
+      // Source has embedded art and transferMode=portable preserves it, so a
+      // missing video stream here is a real regression — assert rather than
+      // skip on null.
       const dims = getArtworkDimensions(audioFiles[0]!);
-      if (dims) {
-        expect(Math.max(dims.width, dims.height)).toBeLessThanOrEqual(127);
-      }
+      expect(dims).not.toBeNull();
+      expect(Math.max(dims!.width, dims!.height)).toBeLessThanOrEqual(127);
     } finally {
       await rm(devicePath, { recursive: true, force: true });
       await rm(configDir, { recursive: true, force: true });
@@ -417,12 +415,13 @@ describe('mass-storage sync: echo-mini device', () => {
       audioFiles = await findDeviceAudioFiles(devicePath, '');
       expect(audioFiles.length).toBe(6); // Total: 3 + 3
 
-      // Verify original files were not re-written
+      // Verify original files were not re-written. Every original file must
+      // still be on disk with its original mtime — a missing file would be a
+      // regression masquerading as "not re-written".
       for (const [file, mtime] of initialMtimes) {
-        if (existsSync(file)) {
-          const s = await stat(file);
-          expect(s.mtimeMs).toBe(mtime);
-        }
+        expect(existsSync(file)).toBe(true);
+        const s = await stat(file);
+        expect(s.mtimeMs).toBe(mtime);
       }
 
       // Third sync: no-op
@@ -1294,11 +1293,11 @@ device = "echomini"
       expect(filesAfter[0]!.endsWith('.m4a')).toBe(true);
 
       // Old origin directory must be empty (file was moved, not re-transcoded).
-      // The adapter may also remove the now-empty dir tree; tolerate either.
-      if (existsSync(originDir)) {
-        const remaining = await readdir(originDir);
-        expect(remaining.length).toBe(0);
-      }
+      // The adapter may also remove the now-empty dir tree; both are valid.
+      // Asserted as a single boolean so a non-empty surviving dir fails loudly
+      // instead of being silently skipped along the missing-dir branch.
+      const originRemaining = existsSync(originDir) ? await readdir(originDir) : [];
+      expect(originRemaining.length).toBe(0);
 
       // No bytes transferred — the file was relocated via fs.rename and had
       // its tags rewritten in place, not re-transcoded. The on-disk size
@@ -1420,12 +1419,10 @@ device = "echomini"
       expect(j2?.result?.bytesTransferred).toBe(0);
 
       // The old "Solo Artist/Debut/" dir tree must not still hold the file.
-      // The adapter may leave the empty directory or prune it — tolerate either,
-      // but it must NOT contain the original file.
-      if (existsSync(defaultDir)) {
-        const remaining = await readdir(defaultDir);
-        expect(remaining.length).toBe(0);
-      }
+      // The adapter may leave the empty directory or prune it — both valid,
+      // asserted as a single boolean so a surviving file fails loudly.
+      const defaultDirRemaining = existsSync(defaultDir) ? await readdir(defaultDir) : [];
+      expect(defaultDirRemaining.length).toBe(0);
 
       // Third sync with same template: no-op.
       const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
@@ -1539,11 +1536,10 @@ device = "echomini"
       // Relocated track is the same file: byte-equal to the pre-sync version.
       expect(statSync(relocated[0]!).size).toBe(existingSizeBefore);
 
-      // Old top-level "Alpha Artist" dir must not still hold a file.
-      if (existsSync(oldDir)) {
-        const remaining = await readdir(oldDir);
-        expect(remaining.length).toBe(0);
-      }
+      // Old top-level "Alpha Artist" dir must not still hold a file. Adapter
+      // may have pruned the empty directory; both valid.
+      const oldDirRemaining = existsSync(oldDir) ? await readdir(oldDir) : [];
+      expect(oldDirRemaining.length).toBe(0);
 
       // Third sync: no transfers — everything is in place.
       const { result: r3, json: j3 } = await runCliJson<SyncOutput>([
@@ -1683,10 +1679,8 @@ device = "echomini"
 
       // Old directories should be empty (or pruned).
       for (const dir of [keeperOldDir, doomedOldDir]) {
-        if (existsSync(dir)) {
-          const remaining = await readdir(dir);
-          expect(remaining.length).toBe(0);
-        }
+        const remaining = existsSync(dir) ? await readdir(dir) : [];
+        expect(remaining.length).toBe(0);
       }
 
       // Follow-up sync is a no-op for transfers.

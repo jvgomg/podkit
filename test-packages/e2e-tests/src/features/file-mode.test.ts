@@ -66,20 +66,22 @@ async function findTranscodedFiles(ipodPath: string): Promise<string[]> {
  * Check whether a file has an embedded video/image stream (artwork).
  *
  * Uses ffprobe to inspect streams. Embedded artwork appears as a video
- * stream with codec_type "video" (typically mjpeg or png).
+ * stream with codec_type "video" (typically mjpeg or png). Throws if ffprobe
+ * fails so a broken probe surfaces as a test failure rather than reading as
+ * "no artwork".
+ *
+ * ffprobe with `-v error -show_entries stream=codec_type` exits 0 even when
+ * the file has zero streams (returns `{"streams":[]}`), so callers asserting
+ * `=== false` (stripped-artwork files) are not at risk of a spurious throw.
  */
 function hasEmbeddedArtwork(filePath: string): boolean {
-  try {
-    const result = execSync(
-      `ffprobe -v error -show_entries stream=codec_type -of json "${filePath}"`,
-      { encoding: 'utf-8' }
-    );
-    const data = JSON.parse(result);
-    const streams = data.streams ?? [];
-    return streams.some((s: { codec_type: string }) => s.codec_type === 'video');
-  } catch {
-    return false;
-  }
+  const result = execSync(
+    `ffprobe -v error -show_entries stream=codec_type -of json "${filePath}"`,
+    { encoding: 'utf-8' }
+  );
+  const data = JSON.parse(result);
+  const streams = data.streams ?? [];
+  return streams.some((s: { codec_type: string }) => s.codec_type === 'video');
 }
 
 /**

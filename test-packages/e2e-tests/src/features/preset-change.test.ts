@@ -166,14 +166,13 @@ describe('preset change detection', () => {
         expect(dryResult.exitCode).toBe(0);
 
         // With skip-upgrades, no file-replacement upgrades should be planned
-        if (dryJson?.plan) {
-          const breakdown = dryJson.plan.updateBreakdown ?? {};
-          expect(breakdown['format-upgrade'] ?? 0).toBe(0);
-          expect(breakdown['quality-upgrade'] ?? 0).toBe(0);
-          expect(breakdown['preset-upgrade'] ?? 0).toBe(0);
-          expect(breakdown['preset-downgrade'] ?? 0).toBe(0);
-          expect(breakdown['artwork-added'] ?? 0).toBe(0);
-        }
+        expect(dryJson!.plan).toBeDefined();
+        const breakdown = dryJson!.plan!.updateBreakdown ?? {};
+        expect(breakdown['format-upgrade'] ?? 0).toBe(0);
+        expect(breakdown['quality-upgrade'] ?? 0).toBe(0);
+        expect(breakdown['preset-upgrade'] ?? 0).toBe(0);
+        expect(breakdown['preset-downgrade'] ?? 0).toBe(0);
+        expect(breakdown['artwork-added'] ?? 0).toBe(0);
       } finally {
         if (collectionDir) {
           await rm(collectionDir, { recursive: true, force: true });
