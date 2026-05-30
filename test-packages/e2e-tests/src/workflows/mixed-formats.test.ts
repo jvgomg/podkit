@@ -65,11 +65,11 @@ describe('mixed format collection sync', () => {
         // 8 tracks total in multi-format directory
         expect(json?.plan?.tracksToAdd).toBe(8);
 
-        // Compatible lossy (MP3, AAC) should be copied
-        // expect(json?.plan?.tracksToCopy).toBe(2);
+        // Compatible lossy (MP3, AAC) → direct copy
+        expect(json?.plan?.tracksToCopy).toBe(2);
 
-        // Lossless (WAV, AIFF, FLAC, ALAC) + incompatible lossy (OGG, Opus) should be transcoded
-        // expect(json?.plan?.tracksToTranscode).toBe(6);
+        // Lossless (WAV, AIFF, FLAC, ALAC) + incompatible lossy (OGG, Opus) → transcode
+        expect(json?.plan?.tracksToTranscode).toBe(6);
       });
     });
 
@@ -264,11 +264,16 @@ describe('mixed format collection sync', () => {
         ]);
 
         expect(result.exitCode).toBe(0);
-        // Verbose should show track names in warning
-        expect(
-          result.stdout.toLowerCase().includes('ogg') ||
-            result.stdout.toLowerCase().includes('opus')
-        ).toBe(true);
+        // Verbose should show BOTH lossy-to-lossy formats in the warning.
+        // The fixture has one OGG and one Opus track; an OR-assertion would
+        // silently pass if either format went missing from the verbose output.
+        // Both strings appear in at least two places: the lossy-to-lossy
+        // warning message lists "OGG, Opus" explicitly, and the operations
+        // list (always shown for <20 ops) renders track titles like
+        // "OGG Test Track" / "Opus Test Track".
+        const lowerStdout = result.stdout.toLowerCase();
+        expect(lowerStdout).toContain('ogg');
+        expect(lowerStdout).toContain('opus');
       });
     });
   });
