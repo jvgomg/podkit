@@ -338,4 +338,101 @@ describe('orphanFilesMassStorageCheck', () => {
       expect(orphanFilesMassStorageCheck.applicableTo).toEqual(['mass-storage']);
     });
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Adapter-failure debris coverage
+  //
+  // These tests pin the current behaviour for three classes of debris a sync
+  // can leave on disk. Each test passes today; each documents a real
+  // detection gap that a future production fix will close. When that fix
+  // lands, the assertion here flips to the new (caught) behaviour — which
+  // is exactly the signal the gap-fixing PR should produce.
+  // ──────────────────────────────────────────────────────────────────────────
+  describe('adapter-failure debris (current detection gaps)', () => {
+    it('does NOT flag weird-extension legacy debris like `.Audio file`', async () => {
+      // An aborted OGG/WAV/AIFF sync on a mass-storage device could once
+      // leave files with the literal extension `.Audio file` (a
+      // `getFileTypeLabel` fallback, since fixed). The orphan check's
+      // `isMediaExtension` predicate (mass-storage-utils.ts:478) only
+      // matches the AUDIO_EXTENSIONS allowlist, so the file is silently
+      // skipped — invisible debris.
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+        // Legacy debris. Note the literal ".Audio file" extension (space +
+        // uppercase A) — not a real audio format, not in AUDIO_EXTENSIONS,
+        // currently invisible to orphan scan.
+        'Music/Artist/Album/02 - Broken.Audio file': 'partial bytes',
+      });
+      await writeManifest(tempDir, ['Music/Artist/Album/01 - Track.m4a']);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
+      // Gap: the broken file is on disk but not flagged. The check passes
+      // with orphanCount=0 because `isMediaExtension` skips `.Audio file`
+      // entirely during the scan. Closing the gap (adding a known-debris
+      // allowlist) will introduce a separate `debrisCount` detail field; pin
+      // it as undefined today so the flip is unambiguous (test #1: status
+      // → 'warn', debrisCount → 1).
+      expect(result.status).toBe('pass');
+      expect(result.details?.orphanCount).toBe(0);
+      expect(result.details?.wastedBytes).toBe(0);
+      expect((result.details as Record<string, unknown> | undefined)?.debrisCount).toBeUndefined();
+    });
+
+    it('does NOT flag manifest entries that point to missing files', async () => {
+      // The orphan check looks one way: files on disk that aren't in the
+      // manifest. It does not detect the reverse — manifest entries whose
+      // file has been deleted out-of-band or was never fully written. A
+      // sync that aborted after writing the manifest entry but before the
+      // file copy completed leaves this exact state.
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+      });
+      await writeManifest(tempDir, [
+        'Music/Artist/Album/01 - Track.m4a',
+        // Manifest references a track that doesn't exist on disk —
+        // either deleted manually or never fully written by an aborted sync.
+        'Music/Artist/Album/02 - Missing.m4a',
+      ]);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
+      // Gap: the manifest's phantom entry is never checked against the FS.
+      // A symmetric scan would catch it. Pin the field the future fix will
+      // populate (`missingTrackedFiles`) as undefined today, alongside
+      // orphanCount=0 — that way a fix that flips status but writes to the
+      // wrong field cannot satisfy the assertions.
+      expect(result.status).toBe('pass');
+      expect(result.details?.orphanCount).toBe(0);
+      expect(
+        (result.details as Record<string, unknown> | undefined)?.missingTrackedFiles
+      ).toBeUndefined();
+    });
+
+    it('does NOT detect partial-write debris when the file is in the manifest', async () => {
+      // If a sync writes the manifest entry BEFORE the file copy completes
+      // (the current mass-storage-adapter.ts:379 path: `fs.copyFileSync`
+      // directly to the destination, no atomic rename), an interrupted sync
+      // leaves a partial file with the recognized extension and a manifest
+      // entry pointing at it. The orphan check trusts the manifest and skips
+      // it — there is no size/integrity verification.
+      await createFiles(tempDir, {
+        // Partial write: file exists, in manifest, but only 12 bytes of an
+        // expected multi-megabyte audio file.
+        'Music/Artist/Album/01 - Partial.m4a': 'partial    ',
+      });
+      await writeManifest(tempDir, ['Music/Artist/Album/01 - Partial.m4a']);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
+      // Gap: even though the file is corrupt/incomplete, it's "managed" per
+      // the manifest, so the orphan check passes. A size/checksum probe
+      // (or atomic-write writer) is required to catch this class.
+      expect(result.status).toBe('pass');
+      expect(result.details?.orphanCount).toBe(0);
+    });
+  });
 });
