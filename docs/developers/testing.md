@@ -228,7 +228,7 @@ ensureFixturesExist('multi-format'); // module-load preflight; throws with regen
 const dir = getMultiFormatFixturesDir();
 ```
 
-Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task, so under normal flows the preflight is a no-op. See [test-packages/test-fixtures/README.md](../../test-packages/test-fixtures/README.md) for the full inventory.
+Turbo wires `@podkit/test-fixtures#generate-static-fixtures` as a dependency of every `test:integration` task, so under normal flows the preflight is a no-op. See test-packages/test-fixtures/README.md for the full inventory.
 
 For tests needing specific audio characteristics, generate files dynamically:
 
