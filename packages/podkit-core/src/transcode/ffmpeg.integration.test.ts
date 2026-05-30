@@ -558,18 +558,17 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       expect(data.format?.tags?.album).toBe('Lossless Collection');
     });
 
-    // Note: OGG/Vorbis stores metadata in stream tags (not format tags).
-    // FFmpeg's -map_metadata 0 doesn't automatically copy stream-level metadata.
-    // This is a known limitation - users with OGG collections should expect
-    // metadata to not be preserved during transcoding. A workaround would require
-    // -map_metadata 0:s:0 which is format-specific. Skipping this test for now.
-    it.skip('preserves metadata from OGG (known limitation)', async () => {
+    // OGG/Vorbis (and Opus) store metadata in stream tags. The transcoder's
+    // chained `-map_metadata 0 -map_metadata 0:s:0` lifts the stream-0 tags
+    // up to the output's global metadata; without the second flag, M4A
+    // outputs from these sources carry no title/artist/album and re-add
+    // every sync against the source collection.
+    it('preserves metadata from OGG (stream-tag source)', async () => {
       const input = join(fixturesDir, '07-ogg-track.ogg');
       const output = join(outputDir, 'ogg-metadata.m4a');
 
       await transcoder.transcode(input, output, 'high');
 
-      // OGG metadata is stored in stream tags, which FFmpeg may map to format tags in M4A
       const result = await new Promise<string>((resolve, reject) => {
         const proc = spawn('ffprobe', [
           '-v',
@@ -589,13 +588,45 @@ describe('FFmpegTranscoder - multi-format inputs', () => {
       });
 
       const data = JSON.parse(result);
-      // Metadata could be in format_tags or stream_tags depending on FFmpeg version/encoder
       const formatTags = data.format?.tags || {};
       const streamTags = data.streams?.[0]?.tags || {};
       const tags = { ...streamTags, ...formatTags };
 
-      // OGG source has title in stream tags - should be preserved somewhere
       expect(tags.title || tags.TITLE).toBe('OGG Test Track');
+      expect(tags.artist || tags.ARTIST).toBe('Multi-Format Test');
+      expect(tags.album || tags.ALBUM).toBe('Incompatible Lossy');
+    });
+
+    it('preserves metadata from Opus (stream-tag source)', async () => {
+      const input = join(fixturesDir, '08-opus-track.opus');
+      const output = join(outputDir, 'opus-metadata.m4a');
+
+      await transcoder.transcode(input, output, 'high');
+
+      const result = await new Promise<string>((resolve, reject) => {
+        const proc = spawn('ffprobe', [
+          '-v',
+          'error',
+          '-show_entries',
+          'format_tags:stream_tags',
+          '-of',
+          'json',
+          output,
+        ]);
+        let stdout = '';
+        proc.stdout.on('data', (data: Buffer) => {
+          stdout += data.toString();
+        });
+        proc.on('close', () => resolve(stdout));
+        proc.on('error', reject);
+      });
+
+      const data = JSON.parse(result);
+      const formatTags = data.format?.tags || {};
+      const streamTags = data.streams?.[0]?.tags || {};
+      const tags = { ...streamTags, ...formatTags };
+
+      expect(tags.title || tags.TITLE).toBe('Opus Test Track');
       expect(tags.artist || tags.ARTIST).toBe('Multi-Format Test');
       expect(tags.album || tags.ALBUM).toBe('Incompatible Lossy');
     });

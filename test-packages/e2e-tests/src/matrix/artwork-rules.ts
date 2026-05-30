@@ -70,18 +70,15 @@ import {
   formatOpsString,
   isArtworkIdempotent,
   opsForTrack,
-  skipBug,
   type CellExpectation,
   type OpSummary,
   type SkipDecision,
 } from './harness.js';
 
 /**
- * Devices the host artwork matrix sweeps. iPod (database artwork) and the
- * embedded-art mass-storage presets. `ms-echo-mini` natively plays vorbis, so
- * OGG sources optimized-copy cleanly; its Opus cells still hit the mass-storage
- * AAC re-add loop and stay `skipBug`-fenced. `ms-generic` lacks both vorbis
- * and opus, so both formats hit the same loop.
+ * Devices the host artwork matrix sweeps. iPod (database artwork) and two
+ * embedded-art mass-storage presets. Every cell asserts real behaviour — no
+ * skipBug fences left in this matrix.
  */
 export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
@@ -225,36 +222,16 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
 }
 
 /**
- * Classify the mass-storage cells the artwork matrix can't currently assert.
- * Every return here is a `bug` skip — **deferred work**, not a structural
- * prune — so a green run with these present still shows exactly what needs
- * fixing (grep `[BUG]` / `skipBug(`). All are recorded in doc-039
- * §"Mass-storage sync gaps".
+ * The artwork matrix swept every mass-storage cell once the OGG/Opus → AAC
+ * re-add loop was closed (the chained `-map_metadata` mapping in the
+ * transcoder lifts Vorbis stream tags into the M4A output's global tags, so
+ * incompatible-lossy sources now match their AAC outputs on re-scan).
  *
- * Note `prefer-copy` on mass-storage is **not** skipped: its real bug (a
- * `preset-upgrade` re-sync loop) is a quality/preset-convergence defect that
- * this *artwork* matrix does not assert, so the artwork cells pass.
+ * `prefer-copy` on mass-storage stays unskipped: its `preset-upgrade` loop is
+ * a quality/preset-convergence defect this *artwork* matrix doesn't assert,
+ * so artwork cells pass through it.
  */
-export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
-  const spec = DEVICE_SPEC_BY_ID[cell.device];
-  if (spec.kind !== 'mass-storage') return null;
-
-  // Incompatible-lossy sources (OGG/Opus) that the device cannot play natively
-  // get transcoded to AAC, and the AAC output is re-added on every sync
-  // (doc-039 §"Mass-storage sync gaps" #2). echo-mini natively plays vorbis →
-  // OGG optimized-copies and converges; Opus still transcodes. Generic plays
-  // neither, so both transcode and loop.
-  const native = spec.capabilities.supportedAudioCodecs;
-  if (
-    (cell.format === 'ogg' && !native.includes('vorbis')) ||
-    (cell.format === 'opus' && !native.includes('opus'))
-  ) {
-    return skipBug(
-      `${cell.format} transcoded to AAC is re-added every sync on mass-storage (incompatible-lossy → AAC source/device matching gap)`,
-      'doc-039 §Mass-storage sync gaps #2'
-    );
-  }
-
+export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null {
   return null;
 }
 

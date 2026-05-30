@@ -3,10 +3,10 @@ id: TASK-358.02
 title: >-
   OGG/Opus transcoded to AAC is re-added on every sync (mass-storage
   non-convergence)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 21:13'
-updated_date: '2026-05-30 10:11'
+updated_date: '2026-05-30 11:16'
 labels:
   - bug
   - mass-storage
@@ -35,14 +35,36 @@ Currently fenced in the artwork matrix: `ms-generic` `ogg`/`opus` cells are `ski
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 A mass-storage sync of an OGG or Opus source converges: the second sync plans no add/transcode for that track
-- [ ] #2 Root cause identified (manifest/diff key, or source-codec normalisation) and fixed in the mass-storage adapter / sync diff
-- [ ] #3 The ms-generic ogg/opus skipBug fences in skipArtworkCell are removed and the cells assert idempotency
-- [ ] #4 The ms-echo-mini opus skipBug fence in skipArtworkCell is removed and the cell asserts idempotency
+- [x] #1 A mass-storage sync of an OGG or Opus source converges: the second sync plans no add/transcode for that track
+- [x] #2 Root cause identified (manifest/diff key, or source-codec normalisation) and fixed in the mass-storage adapter / sync diff
+- [x] #3 The ms-generic ogg/opus skipBug fences in skipArtworkCell are removed and the cells assert idempotency
+- [x] #4 The ms-echo-mini opus skipBug fence in skipArtworkCell is removed and the cell asserts idempotency
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
-Repro scope expanded after TASK-358.01: echo-mini now actually runs OGG (vorbis-native → optimized-copy) and Opus (transcodes to AAC). The OGG path on echo-mini converges (it's a copy, not a transcode). The Opus path on echo-mini hits the same re-add loop as ms-generic OGG/Opus because Opus is not in echo-mini's native codecs and transcodes to AAC. So the bug now reproduces on `ms-echo-mini` Opus too — the artwork matrix's `skipArtworkCell` fences that cell with the same #2 reason. When the root cause is fixed, both ms-generic ogg/opus AND ms-echo-mini opus fences should be removed.
+Root cause was metadata loss, not a diff-key issue. FFmpeg's `-map_metadata 0` copies *format-level* tags only; OGG/Vorbis and Opus carry their tags on the audio stream (Vorbis comments are a stream construct), so the transcoded M4A output landed with no title/artist/album. With no metadata to match against, the source/device matcher (`getMatchKey` on artist+title+album) couldn't recognise the AAC output as the OGG/Opus source's existing track, so the dry-run kept re-firing `add-transcode`.
+
+**Fix.** Added a `pushSourceMetadataMapping` helper that emits the chained `-map_metadata 0 -map_metadata 0:s:0` pair across every codec builder in `transcode/ffmpeg.ts` (`buildTranscodeArgs`, `buildOpusArgs`, `buildMp3Args`, `buildFlacArgs`, `buildAlacArgs`, `buildOptimizedCopyArgs`). The second mapping promotes input stream-0 metadata to the output's global tags — a no-op for sources that already had format-level tags (FLAC, MP3, M4A, ALAC, WAV, AIFF), and the missing piece for OGG/Opus.
+
+This is the exact fix prescribed by TASK-354 — both tasks share the root cause, so 358.02 closing also closes 354.
+
+**Verification:**
+- Direct repro: ms-generic sync of multi-format-embedded → first sync 8 completed, second dry-run `tracksExisting: 8 / tracksToTranscode: 0` (was 6/2 before).
+- Un-skipped the OGG metadata-preservation integration test at `ffmpeg.integration.test.ts` and added an equivalent Opus test — both pass.
+- `skipArtworkCell` reduced to `return null` (every cell asserts real behaviour); `skipBug` import dropped from artwork-rules.ts.
+- Full host e2e: 31/31. Docker matrix: 1/1. Unit: 2812/2812. Core integration: green. Typecheck + oxlint clean.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Same root cause as TASK-354 — `-map_metadata 0` only copies format-level tags, and OGG/Opus store theirs on the audio stream. The transcoded M4A output had no title/artist/album to match against, so the diff fired `add-transcode` forever.
+
+Added `pushSourceMetadataMapping` to ffmpeg.ts and replaced every `-map_metadata 0` site with the chained `0 + 0:s:0` pair. Stream-tag sources (OGG/Opus) now round-trip through transcode; format-tag sources (everything else) are unaffected.
+
+The artwork matrix's `skipArtworkCell` is now a no-op `return null` — all skipBug fences gone. Both ms-generic ogg/opus and ms-echo-mini opus cells assert real idempotency. Un-skipped the long-skipped OGG metadata test in `ffmpeg.integration.test.ts` and added an Opus equivalent.
+
+This also closes TASK-354 (same fix, same root cause).
+<!-- SECTION:FINAL_SUMMARY:END -->

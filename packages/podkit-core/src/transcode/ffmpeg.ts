@@ -280,7 +280,7 @@ export function buildTranscodeArgs(
   args.push('-ar', String(codecMeta.sampleRate));
 
   // Preserve metadata from source
-  args.push('-map_metadata', '0');
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices, overrides source tags after copy)
   pushReplayGainMetadata(args, options?.replayGain);
@@ -315,6 +315,20 @@ export function buildTranscodeArgs(
  * (upstream tickets #4448, #9044 remain open). OGG/Opus artwork must use sidecar files.
  */
 const ARTWORK_EMBEDDABLE_FORMATS = new Set(['ipod', 'mp3', 'flac']);
+
+/**
+ * Push the FFmpeg flags that copy source metadata into the output.
+ *
+ * `-map_metadata 0` copies *global* (format-level) tags. OGG and Opus carry
+ * their tags on the audio stream (Vorbis comments are a stream-level
+ * construct), so chain a second mapping that promotes stream-0 metadata to
+ * the output's global tags. The second flag is a no-op for sources that
+ * already had format-level tags (FLAC, MP3, M4A, ALAC, WAV, AIFF), so the
+ * chain is safe across every supported source format.
+ */
+function pushSourceMetadataMapping(args: string[]): void {
+  args.push('-map_metadata', '0', '-map_metadata', '0:s:0');
+}
 
 /**
  * Push artwork handling args onto an args array based on transfer mode and artwork resize.
@@ -432,7 +446,7 @@ export function buildOpusArgs(
   args.push('-vbr', config.encoding === 'vbr' ? 'on' : 'off');
 
   // Preserve metadata from source
-  args.push('-map_metadata', '0');
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
@@ -485,7 +499,7 @@ export function buildMp3Args(
   args.push('-ar', String(codecMeta.sampleRate));
 
   // Preserve metadata from source
-  args.push('-map_metadata', '0');
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
@@ -526,7 +540,7 @@ export function buildFlacArgs(
   // No sample rate conversion — preserve source sample rate
 
   // Preserve metadata from source
-  args.push('-map_metadata', '0');
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
@@ -564,7 +578,7 @@ export function buildAlacArgs(
   args.push('-ar', String(codecMeta.sampleRate));
 
   // Preserve metadata from source
-  args.push('-map_metadata', '0');
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
@@ -616,7 +630,8 @@ export function buildOptimizedCopyArgs(
 ): string[] {
   const artworkResize = options?.artworkResize;
 
-  const args: string[] = ['-i', input, '-c:a', 'copy', '-map_metadata', '0'];
+  const args: string[] = ['-i', input, '-c:a', 'copy'];
+  pushSourceMetadataMapping(args);
 
   // ReplayGain metadata (for mass-storage devices)
   pushReplayGainMetadata(args, options?.replayGain);
