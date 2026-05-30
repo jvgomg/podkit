@@ -393,6 +393,60 @@ export function predictChange(cell: ChangeCell, checkArtwork: boolean): ChangeEx
   };
 }
 
+/**
+ * Subsonic change detection: same `transition` axis as the directory case but
+ * with the Subsonic adapter's added wrinkle — Navidrome's `coverArt` ID is
+ * present whether the source has real art or not, so without `--check-artwork`
+ * the adapter leaves `hasArtwork` undefined for every track. detectUpgrades
+ * short-circuits both the artwork-added and artwork-removed rules when
+ * hasArtwork is undefined, so neither transition is observable on the cheap
+ * path: a cover swap AND an art removal are both silently missed (whereas
+ * directory's `removed` is observable cheaply because directory reports a real
+ * `hasArtwork=false` after the strip).
+ *
+ * With `--check-artwork` the adapter fetches each cover, filters Navidrome's
+ * placeholder, and writes a syncTag hash. Then:
+ *   - `removed`: source.hasArtwork goes true → false (placeholder filtered),
+ *     and the diff fires artwork-removed.
+ *   - `updated`: hash differs from the syncTag's, and artwork-updated fires.
+ */
+export function predictSubsonicChange(cell: ChangeCell, checkArtwork: boolean): ChangeExpected {
+  const { format, transition } = cell;
+  if (!FIXTURE_EMBEDS_ART[format]) {
+    return {
+      trackPresent: true,
+      ops: '',
+      convergesAfterApply: true,
+      reason: `${format} cannot carry embedded art in the fixture — source never had art to ${transition === 'removed' ? 'lose' : 'change'} → no diff to detect`,
+    };
+  }
+  if (!checkArtwork) {
+    return {
+      trackPresent: true,
+      ops: '',
+      convergesAfterApply: true,
+      reason:
+        'no --check-artwork → Subsonic adapter leaves hasArtwork=undefined → engine skips both artwork-added and artwork-removed → cover swap and art removal are silently missed (the cheap-path limitation --check-artwork closes)',
+    };
+  }
+  if (transition === 'removed') {
+    return {
+      trackPresent: true,
+      ops: 'upgrade-artwork:artwork-removed',
+      convergesAfterApply: true,
+      reason:
+        '--check-artwork on → adapter filters Navidrome placeholder → hasArtwork=false vs device hasArtwork=true → artwork-removed fires; once applied the device track also has no art → converges',
+    };
+  }
+  return {
+    trackPresent: true,
+    ops: 'upgrade-artwork:artwork-updated',
+    convergesAfterApply: true,
+    reason:
+      '--check-artwork on → adapter computes the new artworkHash and compares vs syncTag → artwork-updated fires; once applied the syncTag hash matches the new cover → converges',
+  };
+}
+
 /** Expected outcome for a compilation cell (extends the static shape). */
 export interface CompilationExpected extends StaticArtExpected {
   /**
@@ -1080,6 +1134,162 @@ export async function observeChangePass(opts: {
       await rm(sourceRoot, { recursive: true, force: true });
     } catch {
       // ignore cleanup errors
+    }
+  }
+}
+
+/**
+ * Change-detection pass for the Subsonic adapter. Mirrors
+ * {@link observeChangePass} but with Navidrome between podkit and the source.
+ *
+ * Every library mutation forces a container restart with a fresh database (via
+ * {@link MutableLibrarySource.mutateLibrary}) — Navidrome's artwork cache is
+ * keyed on the path-derived coverArt ID, so a startScan endpoint can serve
+ * stale art for the same file path. Restart-with-clean-DB is heavy (~10-30s)
+ * but bulletproof.
+ *
+ * The Subsonic server URL's port may change across restarts on
+ * dynamic-port-allocated environments, so we rebuild the podkit config after
+ * every mutation rather than caching one upfront.
+ */
+export interface MutableLibrarySource {
+  readonly serverUrl: string;
+  readonly username: string;
+  getEnv(): Record<string, string>;
+  mutateLibrary(
+    fn: (musicDir: string) => Promise<void>,
+    opts?: { minAlbums?: number }
+  ): Promise<void>;
+}
+
+export async function observeChangePassSubsonic(opts: {
+  target: IpodTarget;
+  source: MutableLibrarySource;
+  buildConfig: (source: MutableLibrarySource) => Promise<string>;
+  checkArtwork: boolean;
+  transition: ChangeTransition;
+  syncTimeoutMs?: number;
+  dryTimeoutMs?: number;
+}): Promise<Map<string, ChangeObserved>> {
+  const { target, source, buildConfig, checkArtwork, transition } = opts;
+  const altFixturesDir = CHANGE_ALT_FIXTURE[transition]();
+  const artist = SCENARIO_ARTISTS.embedded;
+  const env = source.getEnv();
+  const initSyncTimeout = opts.syncTimeoutMs ?? 240000;
+  const dryTimeout = opts.dryTimeoutMs ?? 120000;
+  const ALBUM_DIR = 'multi-format-embedded';
+  const configsToCleanup: string[] = [];
+
+  // Track every fresh config so a mid-run failure doesn't leak temp dirs.
+  async function freshConfig(): Promise<string> {
+    const cfg = await buildConfig(source);
+    configsToCleanup.push(cfg);
+    return cfg;
+  }
+
+  function syncArgs(configPath: string, extra: string[] = []): string[] {
+    const base = ['--config', configPath, 'sync', '--device', target.path, '--json', ...extra];
+    return checkArtwork ? [...base, '--check-artwork'] : base;
+  }
+
+  try {
+    // 1. Reset library to the embedded fixtures (full restart for clean state).
+    await source.mutateLibrary(
+      async (musicDir) => {
+        const albumDir = join(musicDir, ALBUM_DIR);
+        await rm(albumDir, { recursive: true, force: true });
+        await cp(getMultiFormatEmbeddedFixturesDir(), albumDir, { recursive: true });
+      },
+      { minAlbums: 1 }
+    );
+
+    // 2. Initial sync.
+    let configPath = await freshConfig();
+    const { result: initResult, json: initJson } = await runCliJson<SyncOutput>(
+      syncArgs(configPath),
+      runOpts(initSyncTimeout, env)
+    );
+    if (initResult.exitCode !== 0 || !initJson?.success) {
+      throw new Error(
+        `subsonic initial sync failed (checkArtwork=${checkArtwork}, transition=${transition}): exit=${initResult.exitCode}\n` +
+          `  stderr: ${initResult.stderr.slice(0, 2000)}`
+      );
+    }
+
+    // 3. Record per-format presence on the device.
+    const deviceTracks = await target.getTracks();
+    const presenceByFormat = new Map<Format, boolean>();
+    for (const format of FORMATS) {
+      presenceByFormat.set(
+        format,
+        deviceTracks.some((t) => t.artist === artist && t.title === FORMAT_TITLE[format])
+      );
+    }
+
+    // 4. Mutate the library: swap embedded for the transition's alt variant.
+    await source.mutateLibrary(
+      async (musicDir) => {
+        const albumDir = join(musicDir, ALBUM_DIR);
+        await rm(albumDir, { recursive: true, force: true });
+        await cp(altFixturesDir, albumDir, { recursive: true });
+      },
+      { minAlbums: 1 }
+    );
+
+    // 5. Dry-run after the mutation — what does podkit propose?
+    configPath = await freshConfig();
+    const { result: dryResult, json: dryJson } = await runCliJson<SyncOutput>(
+      syncArgs(configPath, ['--dry-run']),
+      runOpts(dryTimeout, env)
+    );
+    if (dryResult.exitCode !== 0 || !dryJson || !dryJson.success) {
+      throw new Error(
+        `subsonic dry-run failed (checkArtwork=${checkArtwork}, transition=${transition}): exit=${dryResult.exitCode}, success=${dryJson?.success}\n` +
+          `  stderr: ${dryResult.stderr.slice(0, 2000)}`
+      );
+    }
+
+    // 6. Apply the detected change and verify convergence on the next dry-run.
+    configPath = await freshConfig();
+    const { result: applyResult, json: applyJson } = await runCliJson<SyncOutput>(
+      syncArgs(configPath),
+      runOpts(initSyncTimeout, env)
+    );
+    if (applyResult.exitCode !== 0 || !applyJson?.success) {
+      throw new Error(
+        `subsonic apply sync failed (checkArtwork=${checkArtwork}, transition=${transition}): exit=${applyResult.exitCode}\n` +
+          `  stderr: ${applyResult.stderr.slice(0, 2000)}`
+      );
+    }
+
+    configPath = await freshConfig();
+    const { result: convResult, json: convJson } = await runCliJson<SyncOutput>(
+      syncArgs(configPath, ['--dry-run']),
+      runOpts(dryTimeout, env)
+    );
+    if (convResult.exitCode !== 0 || !convJson || !convJson.success) {
+      throw new Error(
+        `subsonic convergence dry-run failed (checkArtwork=${checkArtwork}, transition=${transition}): exit=${convResult.exitCode}, success=${convJson?.success}\n` +
+          `  stderr: ${convResult.stderr.slice(0, 2000)}`
+      );
+    }
+
+    const byKey = new Map<string, ChangeObserved>();
+    for (const format of FORMATS) {
+      const ops = opsForTrack(dryJson, artist, FORMAT_TITLE[format]);
+      const convOps = opsForTrack(convJson, artist, FORMAT_TITLE[format]);
+      byKey.set(format, {
+        trackPresent: presenceByFormat.get(format) ?? false,
+        ops: formatOpsString(ops),
+        convergesAfterApply: isArtworkIdempotent(convOps),
+        secondSyncOps: ops,
+        thirdSyncOps: convOps,
+      });
+    }
+    return byKey;
+  } finally {
+    for (const cfg of configsToCleanup) {
+      await cleanupTempConfig(cfg);
     }
   }
 }

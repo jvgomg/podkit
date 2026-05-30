@@ -1,9 +1,10 @@
 ---
 id: TASK-359
 title: E2E test review — clear fixes (test hardening + defined issues)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 21:27'
+updated_date: '2026-05-30 21:30'
 labels:
   - testing
   - e2e
@@ -27,3 +28,9 @@ Subtasks are status "To Do" = ready for a developer.
 
 (Not tasked — working-as-intended: eject failing on the dummy iPod target is a test-environment limitation, tolerated deliberately.)
 <!-- SECTION:DESCRIPTION:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-30 (Claude): Closing umbrella — all 4 subtasks landed in commits 9e8c4d68..af14266d in the prior session: TASK-359.01 (exact-count assertions + relationship invariants), .02 (remove silent-pass guards + swallowed-error probes), .03 (fix hollow / no-op / loose-string tests), .04 (re-enable mixed-formats copy/transcode split assertions). Full e2e + docker e2e gates green throughout.
+<!-- SECTION:NOTES:END -->

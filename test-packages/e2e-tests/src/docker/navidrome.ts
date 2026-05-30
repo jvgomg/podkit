@@ -194,6 +194,11 @@ async function waitForLibraryScan(
   minAlbums: number,
   timeoutMs: number
 ): Promise<void> {
+  // minAlbums=0 means the caller (typically a writable-mount setup with no
+  // initial fixtures) doesn't care about the scan completion — startup is
+  // good enough. Return as soon as the server answers, no album poll needed.
+  if (minAlbums === 0) return;
+
   const startTime = Date.now();
   const albumsUrl = subsonicUrl(port, password, 'getAlbumList2', {
     type: 'alphabeticalByName',

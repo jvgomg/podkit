@@ -1,9 +1,10 @@
 ---
 id: TASK-366
 title: '--check-artwork UX: flip default or surface required-flag status'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-30 19:46'
+updated_date: '2026-05-30 21:29'
 labels:
   - sync
   - ux
@@ -47,9 +48,49 @@ Option 1 is the cleanest user experience; option 2 splits the difference (cost o
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Design decision recorded (which of the 3 options, with rationale).
+- [x] #1 Design decision recorded (which of the 3 options, with rationale).
 - [ ] #2 If flipping default: CLI flag default updated, `--no-check-artwork` opt-out added, integration tests updated for the new default.
 - [ ] #3 If docs prominence: `sync --help` text mentions the flag's role in change detection; the artwork-related docs page calls it out near the top.
 - [ ] #4 The matrix predictor in `test-packages/e2e-tests/src/matrix/artwork-rules.ts` reflects the new default if changed.
 <!-- SECTION:DESCRIPTION:END -->
+
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-30 (Claude / Opus 4.7): Landed in commit `3b53dd8b` — option 4 ("Surface a warning in dry-run output / JSON when --check-artwork is off and the source can't honestly report artwork without it").
+
+**Why option 4**: cheapest of the four with the best discoverability. No runtime cost change (fast mode stays fast for users who don't care). User sees the trade-off on every plan, can opt in if they care. Doesn't impose per-album HTTP cost on cost-conscious users (option 1) or create asymmetric per-source defaults (option 2).
+
+**Implementation**
+
+- New `SyncWarningType: 'artwork-detection-disabled'`.
+- New optional `CollectionAdapter.getPlanWarnings(): SyncWarning[]`. Adapters opt in. Called synchronously during plan construction (must not perform I/O — JSDoc'd).
+- `SubsonicAdapter.getPlanWarnings()` returns the warning when `checkArtwork === false`, none when true. Triggers on default config too (default is false in the adapter).
+- `MusicHandler.collectPlanWarnings` forwards adapter warnings.
+- `music-presenter.ts` warning display switch simplified: `lossy-to-lossy` keeps its custom format; every other type falls through to a generic message-as-written form. Side effect: `space-constraint` warnings (previously silently swallowed by the specific-cases switch) are now printed. No test asserted the prior silence; called out in commit.
+- JSON output: existing serializer handles it generically (`PlanWarningInfo` shape unchanged).
+
+**Coverage**
+
+- `SubsonicAdapter.getPlanWarnings`: warning fires when `checkArtwork: false`, warning empty when `checkArtwork: true`, warns by default (omitted = false).
+- `MusicHandler.collectPlanWarnings`: forwards adapter warnings into the plan; tolerates adapters without `getPlanWarnings`.
+- Existing Subsonic + handler tests still green.
+
+**Sonnet review changes**
+
+- Test fake adapter was cast `as never` — replaced with `satisfies MusicAdapter` so future interface signature changes break the fake.
+- Added JSDoc to `getPlanWarnings` noting it's called pre-getItems and must not perform I/O.
+
+**Out of scope**
+
+- Directory adapter: deliberately not warning. Without `--check-artwork`, directory hasArtwork is honest (it reads file tags); only the artwork-updated rule misses (hash-vs-hash comparison). Less severe than Subsonic's "all artwork-add/-remove silently invisible" failure mode.
+- AC #2 (flip default): not the chosen approach. Marked unchecked.
+
+**Gates**
+
+typecheck (core + e2e), oxlint, unit (core), integration (core), docker e2e (Subsonic + artwork) — all green locally on macOS.
+
+AC #3 and #4 unchecked — option 4 was chosen, so the conditional AC clauses for option 3 (docs) and the default-change matrix predictor don't apply. Only #1 (design recorded) is materially completed by this task. The warning surface IS the user-discovery mechanism.
+<!-- SECTION:NOTES:END -->

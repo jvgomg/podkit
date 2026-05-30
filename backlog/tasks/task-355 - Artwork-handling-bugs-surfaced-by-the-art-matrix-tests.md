@@ -1,9 +1,10 @@
 ---
 id: TASK-355
 title: Artwork-handling bugs surfaced by the art-matrix tests
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-26 22:48'
+updated_date: '2026-05-30 22:11'
 labels:
   - bug
   - artwork
@@ -47,6 +48,14 @@ Each subtask is independently grabbable. None depend on the others. All target t
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All subtasks reach Done
-- [ ] #2 All three art-matrix test files remain green after each subtask lands
+- [x] #1 All subtasks reach Done
+- [x] #2 All three art-matrix test files remain green after each subtask lands
 <!-- AC:END -->
+
+
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-30 (Claude): Closing umbrella — all 5 subtasks landed across prior sessions and this one. .01 (AIFF tracks vanish), .02 (Subsonic optimistic hasArtwork loop), .03 (album-artwork cache order-dependent), .04 (MP3 spurious codec-changed after cover swap), .05 (Subsonic/Navidrome change-matrix coverage). The artwork stream surfaced by the art-matrix tests is closed.
+<!-- SECTION:NOTES:END -->
