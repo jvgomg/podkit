@@ -63,7 +63,9 @@ describe('gpod-testing', () => {
       } finally {
         await ipod.cleanup();
       }
-    });
+    }, // Custom name bypasses the template fast path; two gpod-tool subprocess
+    // spawns can exceed the 5s default under parallel integration load.
+    15000);
 
     it('succeeds with models requiring FirewireID (iPod Classic 6th gen+)', async () => {
       // MB565 (iPod Classic 120GB) requires FirewireID in SysInfo
@@ -76,7 +78,7 @@ describe('gpod-testing', () => {
       } finally {
         await ipod.cleanup();
       }
-    });
+    }, 15000);
 
     it('allows adding tracks', async () => {
       const ipod = await createTestIpod();
