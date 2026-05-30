@@ -21,8 +21,8 @@
  * @tags docker
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
-import { mkdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'bun:test';
+import { mkdir, readdir, rm, copyFile, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
@@ -135,23 +135,14 @@ function addArtworkToTrack(trackPath: string, tempDir: string): void {
 }
 
 /**
- * Re-embed artwork into goldberg FLAC files (restores artwork after stripping).
- *
- * Used to restore fixture state between tests that share the same musicDir.
+ * Wipe the Navidrome musicDir clean. Each test then populates only the
+ * fixtures it needs — full isolation so a test's `completed` count is bounded
+ * to its own files, not what an earlier test happened to leave behind.
  */
-function restoreArtworkInFixtures(targetMusicDir: string): void {
-  const albumDir = join(targetMusicDir, 'Synthetic Classics', 'Goldberg Selections');
-  const coverPath = join(albumDir, 'cover-restore.jpg');
-
-  // Generate a green image to distinguish from original blue and replacement red
-  execSync(`ffmpeg -y -f lavfi -i color=c=green:s=500x500:d=1 -frames:v 1 "${coverPath}"`, {
-    stdio: 'ignore',
-  });
-
-  const trackFiles = ['01-harmony.flac', '02-vibrato.flac', '03-tremolo.flac'];
-  for (const filename of trackFiles) {
-    const trackPath = join(albumDir, filename);
-    execSync(`metaflac --import-picture-from="${coverPath}" "${trackPath}"`, { stdio: 'ignore' });
+async function resetMusicDir(): Promise<void> {
+  const entries = await readdir(musicDir);
+  for (const entry of entries) {
+    await rm(join(musicDir, entry), { recursive: true, force: true });
   }
 }
 
@@ -180,7 +171,10 @@ async function updateConfigPort(configPath: string, newPort: number): Promise<vo
  * passed.
  */
 async function restartNavidrome(configPath?: string): Promise<void> {
-  await navidromeContainer!.restart();
+  // After per-test fixture setup, musicDir contains at least one album.
+  // Wait for the post-restart scan to index it before returning so the next
+  // sync doesn't see a stale/empty library.
+  await navidromeContainer!.restart({ minAlbums: 1 });
   serverPort = navidromeContainer!.port;
 
   if (configPath) {
@@ -222,13 +216,13 @@ beforeAll(async () => {
     throw new Error('Docker is not available — required for @podkit/e2e-tests docker suite.');
   }
 
-  // Create temp directories and fixtures
+  // Create temp directories + a starter fixture so Navidrome's initial scan
+  // sees at least one album. beforeEach wipes this before every test.
   tempDir = join(tmpdir(), `podkit-artwork-change-${randomUUID()}`);
   musicDir = join(tempDir, 'music');
   dataDir = join(tempDir, 'data');
   await mkdir(musicDir, { recursive: true });
   await mkdir(dataDir, { recursive: true });
-
   await createArtworkFixtures(musicDir);
 
   // Mount music read-write so tests can modify artwork between syncs.
@@ -240,8 +234,16 @@ beforeAll(async () => {
   });
   serverPort = navidromeContainer.port;
   password = navidromeContainer.password;
-  console.log(`Navidrome ready with artwork fixtures on port ${serverPort}`);
+  console.log(`Navidrome ready on port ${serverPort}`);
 }, 120000);
+
+// Each test populates its own fixtures from a clean slate. Without this the
+// three tests share one library: a goldberg fixture from an earlier test
+// would still be served when the artwork-added test syncs its dual-tone,
+// making the `completed === 1` assertion fuzzy.
+beforeEach(async () => {
+  await resetMusicDir();
+});
 
 afterAll(async () => {
   if (navidromeContainer) {
@@ -265,6 +267,9 @@ afterAll(async () => {
 
 describe('artwork change detection (Subsonic)', () => {
   it('detects changed artwork via Subsonic after re-embedding', async () => {
+    await createArtworkFixtures(musicDir);
+    await restartNavidrome();
+
     await withTarget(async (target) => {
       const configPath = await createArtworkCheckConfig(serverPort);
 
@@ -337,9 +342,8 @@ describe('artwork change detection (Subsonic)', () => {
 
         expect(verifyResult.exitCode).toBe(0);
         expect(verifyJson?.dryRun).toBe(true);
-        // Should have no updates pending (artwork hashes match)
-        const preChangeUpdates = verifyJson?.plan?.tracksToUpdate ?? 0;
-        console.log(`Pre-change verification: ${preChangeUpdates} updates pending`);
+        // Baselines are established; the next dry-run shows nothing pending.
+        expect(verifyJson?.plan?.tracksToUpdate).toBe(0);
 
         // ------------------------------------------------------------------
         // Step 3: Replace artwork in source FLAC files
@@ -456,17 +460,15 @@ describe('artwork change detection (Subsonic)', () => {
     // After stripping artwork, getCoverArt returns the placeholder, which is
     // filtered out → hasArtwork=false → artwork-removed correctly detected.
 
+    await createArtworkFixtures(musicDir);
+    await restartNavidrome();
+
     await withTarget(async (target) => {
       const configPath = await createArtworkCheckConfig(serverPort);
 
       try {
-        // Step 1: Ensure goldberg tracks have artwork
-        console.log('artwork-removed Step 1: Restoring artwork in goldberg fixtures...');
-        restoreArtworkInFixtures(musicDir);
-        await restartNavidrome(configPath);
-
-        // Step 2: Initial sync (artwork present)
-        console.log('artwork-removed Step 2: Initial sync with artwork present...');
+        // Step 1: Initial sync — fixtures already have artwork.
+        console.log('artwork-removed Step 1: Initial sync with artwork present...');
         const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>(
           ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
@@ -474,16 +476,16 @@ describe('artwork change detection (Subsonic)', () => {
         expect(syncResult.exitCode).toBe(0);
         expect(syncJson?.result?.completed).toBe(3);
 
-        // Step 3: Strip all artwork from goldberg FLACs
-        console.log('artwork-removed Step 3: Stripping artwork from source files...');
+        // Step 2: Strip all artwork from goldberg FLACs.
+        console.log('artwork-removed Step 2: Stripping artwork from source files...');
         stripArtworkFromFixtures(musicDir);
 
-        // Step 4: Restart Navidrome (fresh DB, rescans artworkless files)
-        console.log('artwork-removed Step 4: Restarting Navidrome...');
+        // Step 3: Restart Navidrome (fresh DB, rescans artworkless files).
+        console.log('artwork-removed Step 3: Restarting Navidrome...');
         await restartNavidrome(configPath);
 
-        // Step 5: Dry-run to detect artwork-removed
-        console.log('artwork-removed Step 5: Dry-run to detect artwork-removed...');
+        // Step 4: Dry-run to detect artwork-removed.
+        console.log('artwork-removed Step 4: Dry-run to detect artwork-removed...');
         const { result: dryRunResult, json: dryRunJson } = await runCliJson<SyncOutput>(
           [
             '--config',
@@ -505,16 +507,16 @@ describe('artwork change detection (Subsonic)', () => {
         console.log(`artwork-removed result: ${JSON.stringify(breakdown)}`);
         expect(breakdown?.['artwork-removed']).toBe(3);
 
-        // Step 6: Apply
-        console.log('artwork-removed Step 6: Applying...');
+        // Step 5: Apply.
+        console.log('artwork-removed Step 5: Applying...');
         const { result: applyResult } = await runCliJson<SyncOutput>(
           ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
         );
         expect(applyResult.exitCode).toBe(0);
 
-        // Step 7: Verify idempotency
-        console.log('artwork-removed Step 7: Verifying idempotency...');
+        // Step 6: Verify idempotency.
+        console.log('artwork-removed Step 6: Verifying idempotency...');
         const { json: idempotentJson } = await runCliJson<SyncOutput>(
           [
             '--config',
@@ -562,12 +564,8 @@ describe('artwork change detection (Subsonic)', () => {
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
         );
         expect(syncResult.exitCode).toBe(0);
-        // Navidrome's library still carries the 3 goldberg tracks from earlier
-        // tests in this suite (it shares one musicDir + container). Initial
-        // sync to a fresh iPod copies them all alongside the new dual-tone;
-        // the exact count isn't the subject — the artwork-added detection at
-        // step 5 is.
-        expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(1);
+        // Only dual-tone is in the library — beforeEach wipes everything else.
+        expect(syncJson?.result?.completed).toBe(1);
 
         // Step 3: Add artwork to the dual-tone track
         console.log('artwork-added Step 3: Adding artwork to dual-tone track...');
@@ -600,13 +598,15 @@ describe('artwork change detection (Subsonic)', () => {
         console.log(`artwork-added result: ${JSON.stringify(breakdown)}`);
         expect(breakdown?.['artwork-added']).toBe(1);
 
-        // Step 6: Apply
+        // Step 6: Apply.
         console.log('artwork-added Step 6: Applying...');
-        const { result: applyResult } = await runCliJson<SyncOutput>(
+        const { result: applyResult, json: applyJson } = await runCliJson<SyncOutput>(
           ['--config', configPath, 'sync', '--device', target.path, '--check-artwork', '--json'],
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
         );
         expect(applyResult.exitCode).toBe(0);
+        // Exactly one track in the library; the artwork-added op completes it.
+        expect(applyJson?.result?.completed).toBe(1);
 
         // Step 7: Verify idempotency
         console.log('artwork-added Step 7: Verifying idempotency...');
