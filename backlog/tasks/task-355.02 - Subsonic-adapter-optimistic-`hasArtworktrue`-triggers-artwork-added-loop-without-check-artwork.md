@@ -3,10 +3,11 @@ id: TASK-355.02
 title: >-
   Subsonic adapter optimistic `hasArtwork=true` triggers artwork-added loop
   without --check-artwork
-status: To Do
-assignee: []
+status: Done
+assignee:
+  - claude
 created_date: '2026-05-26 22:49'
-updated_date: '2026-05-28 08:02'
+updated_date: '2026-05-30 14:23'
 labels:
   - bug
   - artwork
@@ -75,14 +76,53 @@ TASK-142 covers the executor-side fallback for fetching artwork via `adapter.get
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Subsonic sync without --check-artwork is idempotent across all art scenarios — second sync produces no artwork-added ops for tracks that haven't actually changed
-- [ ] #2 art-matrix.docker.test.ts predictor updated to reflect the fix
-- [ ] #3 Approach documented in a code comment at the adapter site (subsonic.ts:540-552)
-- [ ] #4 Unit test added at packages/podkit-core/src/adapters/subsonic.test.ts asserting the new (loop-free) behaviour on a no-art track
+- [x] #1 Subsonic sync without --check-artwork is idempotent across all art scenarios — second sync produces no artwork-added ops for tracks that haven't actually changed
+- [x] #2 art-matrix.docker.test.ts predictor updated to reflect the fix
+- [x] #3 Approach documented in a code comment at the adapter site (subsonic.ts:540-552)
+- [x] #4 Unit test added at packages/podkit-core/src/adapters/subsonic.test.ts asserting the new (loop-free) behaviour on a no-art track
 <!-- AC:END -->
 
 ## Implementation Notes
 
 <!-- SECTION:NOTES:BEGIN -->
 2026-05-28: Stays an independent production bug fix (not blocked by the TASK-356 harness work). Two freshness notes after TASK-355.03 landed: (1) the affected-cell list above is now narrower — WAV/OGG/Opus carry embedded art in the fixtures and the album cache no longer poisons, so the remaining loop is primarily the scenario-A 'no real art but Navidrome reports a placeholder coverArt ID' case. (2) AC#2 'update art-matrix.docker.test.ts predictor' — if TASK-356.01 lands first, that predictor will live in a shared `.rules.ts` module, not inline in the docker test file; update it there. The core root cause (optimistic hasArtwork=true on a placeholder coverArt ID) is unchanged.
+
+2026-05-30 (Claude): Direction 1 picked — adapter sets `hasArtwork = undefined` when `coverArt` is present but `checkArtwork` is off. The CollectionTrack contract already documents undefined as "treated as unknown — no upgrade triggered", and detectUpgrades' strict `=== true` short-circuits cleanly. No engine changes needed.
+
+Changes:
+- packages/podkit-core/src/adapters/subsonic.ts: removed optimistic-true branch in mapSongToTrack; updated the class JSDoc and the inline comment block at the decision site.
+- packages/podkit-core/src/adapters/subsonic.test.ts: updated the fast-path test to assert `undefined`; added a new `loop-free artwork (TASK-355.02)` describe asserting (a) hasArtwork=undefined for a coverArt-present/checkArtwork-off track and (b) detectUpgrades returns no `artwork-added` reason for an undefined source vs device=false pair.
+- packages/podkit-core/src/adapters/subsonic.integration.test.ts: updated the matching assertion from `true` to `undefined`.
+- test-packages/e2e-tests/src/matrix/artwork-rules.ts: rewrote predictSubsonic. Without checkArtwork every cell is now idempotent; with checkArtwork the existing model is unchanged.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Summary
+
+Subsonic adapter no longer fires `artwork-added` every sync for tracks whose source server (Navidrome) reports a `coverArt` ID for placeholder-only albums. Without `--check-artwork` the adapter now leaves `source.hasArtwork` undefined; detectUpgrades' strict `=== true` rule short-circuits, so syncs are idempotent. With `--check-artwork` behaviour is unchanged: the adapter fetches each cover, filters Navidrome's placeholder, and writes a syncTag hash that converges genuine source/device mismatches.
+
+## Files
+
+- packages/podkit-core/src/adapters/subsonic.ts — fix + docs
+- packages/podkit-core/src/adapters/subsonic.test.ts — updated fast-path test + new TASK-355.02 loop-free describe
+- packages/podkit-core/src/adapters/subsonic.integration.test.ts — updated matching assertion
+- test-packages/e2e-tests/src/matrix/artwork-rules.ts — rewrote predictSubsonic
+
+## Tests
+
+- bun run typecheck --filter @podkit/core ✓
+- bun run typecheck --filter @podkit/e2e-tests ✓
+- bunx oxlint touched files ✓
+- bun test packages/podkit-core/src/adapters/subsonic.test.ts → 41 pass / 0 fail
+- bun run test:unit --filter @podkit/core → 2812 pass / 0 fail
+- bun run test:integration --filter @podkit/core → 12 files pass
+- bun test --path-ignore-patterns= packages/podkit-core/src/adapters/subsonic.integration.test.ts → 29 pass / 0 fail
+- bun run test:e2e:docker → 4 pass / 0 fail (art-matrix.docker.test.ts 64s, predictor-vs-observation contract)
+
+## Risks / follow-ups
+
+- TASK-142 (executor adapter fallback) is complementary. Once it lands, sidecar/no-embed sources will start getting art on the *add* path — a behaviour gain, not a regression. predictSubsonic will need a follow-up tweak then (the `deviceHasArtwork = sourceEmbedsArt(...)` line assumes only file-body embed reaches the device; that assumption changes when the executor can fetch from the adapter).
+- A track on device with no art whose source has real embed will no longer trigger artwork-added without `--check-artwork`. The user can opt into `--check-artwork` to get artwork-change detection. Deliberate trade per the task body's "drop optimistic-true" direction.
+<!-- SECTION:FINAL_SUMMARY:END -->

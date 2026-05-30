@@ -255,11 +255,18 @@ function getCodec(suffix: string | undefined, contentType: string | undefined): 
  * image for albums without real artwork. Gonic only populates `coverArt` when
  * artwork exists and returns error code 70 for missing artwork.
  *
- * To handle both servers correctly, the adapter probes for placeholder images
- * at connect time by requesting `getCoverArt` with an empty `id`. If the server
- * returns an image (as Navidrome does), its hash is stored and used to filter
- * placeholder responses during scanning. Servers that return errors for missing
- * artwork (like Gonic) simply have no placeholder hash, and filtering is a no-op.
+ * Without `--check-artwork` the adapter leaves `hasArtwork` undefined whenever
+ * a `coverArt` ID is present — coverArt alone can't distinguish a real cover
+ * from Navidrome's placeholder, and reporting `true` would fire artwork-added
+ * forever for placeholder albums (no hash to converge against). Undefined
+ * means "unknown", and the upgrade engine skips its artwork-added rule.
+ *
+ * With `--check-artwork` the adapter probes for placeholder images at connect
+ * time by requesting `getCoverArt` with an empty `id`. If the server returns
+ * an image (as Navidrome does), its hash is stored and used to filter
+ * placeholder responses during scanning. Servers that return errors for
+ * missing artwork (like Gonic) simply have no placeholder hash, and filtering
+ * is a no-op.
  */
 export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, TrackFilter> {
   readonly name = 'subsonic';
@@ -533,23 +540,28 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
     // filters server-generated placeholders (detected during connect), and
     // enables artwork-added, artwork-removed, and artwork-updated detection.
     //
-    // The artworkHash is always returned when artwork is fetched, enabling
-    // progressive sync tag writes that prevent infinite artwork-added loops
-    // for tracks where the server has album-level artwork but the audio file
-    // has no embedded artwork (see TASK-142).
+    // When checkArtwork is off and a coverArt ID is present, hasArtwork is
+    // left undefined — meaning "unknown". Navidrome (and other servers)
+    // populate coverArt for every track even when only a placeholder image is
+    // served, so an optimistic `true` produces a permanent source/device
+    // asymmetry that fires `artwork-added` on every sync (no syncTag hash to
+    // converge it). The CollectionTrack contract documents undefined as
+    // "treated as unknown — no upgrade triggered", and detectUpgrades uses
+    // strict `=== true`, so undefined short-circuits the artwork-added rule.
+    // Real-embed sources still surface art via the executor's extract step on
+    // the initial add; subsequent syncs see device.hasArtwork=true and stay
+    // idempotent. Users wanting full artwork-change detection opt in to
+    // --check-artwork.
     let hasArtwork: boolean | undefined;
     let artworkHash: string | undefined;
     if (this.checkArtwork && song.coverArt) {
       const artworkInfo = await this.fetchArtworkInfo(song.coverArt);
       hasArtwork = artworkInfo.hasArtwork;
       artworkHash = artworkInfo.hash;
-    } else if (song.coverArt) {
-      // coverArt ID exists but we're not fetching — optimistically report true.
-      // This avoids HTTP calls; placeholder filtering only matters during sync.
-      hasArtwork = true;
-    } else {
+    } else if (!song.coverArt) {
       hasArtwork = false;
     }
+    // else: coverArt present but checkArtwork off → leave hasArtwork undefined.
 
     return {
       // Use Subsonic ID as track ID

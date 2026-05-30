@@ -275,11 +275,16 @@ export function predictDirectory(
 
 /**
  * Subsonic adapter: Navidrome reports a `coverArt` ID for every track, so the
- * source side optimistically claims art unless `--check-artwork` fetches and
- * filters Navidrome's placeholder. The device side mirrors the downloaded
- * file's embed state (sidecar bytes never reach the stream). Asymmetric cells
- * (source claims art, device file has none) churn forever without a hash and
- * converge once `--check-artwork` writes the syncTag hash.
+ * adapter can't distinguish a real cover from Navidrome's placeholder without
+ * fetching. Without `--check-artwork` the adapter leaves `source.hasArtwork`
+ * undefined; detectUpgrades treats undefined as "unknown" and short-circuits
+ * both the artwork-added and artwork-removed rules, so every cell is
+ * idempotent regardless of source/device asymmetry. With `--check-artwork`
+ * the adapter fetches each cover, filters Navidrome's placeholder, and writes
+ * a syncTag hash that converges any genuine source/device mismatch.
+ *
+ * The device side mirrors the downloaded file's embed state (sidecar bytes
+ * never reach the stream), independent of the adapter's hasArtwork reporting.
  */
 export function predictSubsonic(
   cell: ScenarioFormatCell,
@@ -287,39 +292,37 @@ export function predictSubsonic(
 ): StaticArtExpected {
   const { scenario, format } = cell;
 
-  const sourceHasArtwork = checkArtwork ? scenario !== 'A-none' : true;
-  const sourceHasArtworkHash = checkArtwork ? sourceHasArtwork : false;
   const deviceHasArtwork = sourceEmbedsArt(scenario, format);
 
-  let idempotent: boolean;
-  let asymmetryReason: string | null = null;
-  if (sourceHasArtwork === deviceHasArtwork) {
-    idempotent = true;
-  } else if (sourceHasArtwork && !deviceHasArtwork) {
-    idempotent = sourceHasArtworkHash;
-    asymmetryReason = sourceHasArtworkHash
-      ? 'source/device mismatch but syncTag hash breaks the loop'
-      : 'source/device mismatch with no hash → artwork-added every sync (optimistic-true bug)';
-  } else {
-    idempotent = false;
-    asymmetryReason = 'source has no art but device does (unexpected for these fixtures)';
+  // Without checkArtwork: source.hasArtwork=undefined → engine skips
+  // artwork-added/removed entirely → idempotent on every cell.
+  if (!checkArtwork) {
+    let reason: string;
+    if (scenario === 'A-none') {
+      reason =
+        'Navidrome reports coverArt but adapter leaves hasArtwork=undefined → engine skips artwork-added → idempotent';
+    } else if (scenario === 'C-sidecar' || !FIXTURE_EMBEDS_ART[format]) {
+      reason =
+        'device file has no embed but source.hasArtwork=undefined → engine skips artwork-added → idempotent';
+    } else {
+      reason =
+        'embedded art in source file → device has art; source.hasArtwork=undefined either way → idempotent';
+    }
+    return { trackPresent: true, deviceHasArtwork, idempotent: true, reason };
   }
+
+  // With checkArtwork: adapter fetches, filters placeholders, writes a hash.
+  // Genuine mismatches converge via the syncTag hash.
+  const sourceHasArtwork = scenario !== 'A-none';
+  const idempotent = sourceHasArtwork === deviceHasArtwork || sourceHasArtwork;
 
   let reason: string;
   if (scenario === 'A-none') {
-    reason = checkArtwork
-      ? 'Navidrome placeholder filtered → source=false → symmetric'
-      : 'Navidrome reports coverArt → source=true (phantom) → asymmetric → optimistic-true loop';
+    reason = 'Navidrome placeholder filtered → source=false → symmetric';
   } else if (scenario === 'C-sidecar' || !FIXTURE_EMBEDS_ART[format]) {
-    reason = checkArtwork
-      ? `device file has no embed → asymmetric → syncTag hash converges (no churn)`
-      : `device file has no embed → asymmetric, no hash → artwork-added every sync`;
+    reason = 'device file has no embed → asymmetric → syncTag hash converges (no churn)';
   } else {
     reason = 'embedded art in source file → device has art → symmetric, idempotent';
-  }
-
-  if (asymmetryReason && !reason.includes('hash') && !reason.includes('symmetric')) {
-    reason = `${reason} — ${asymmetryReason}`;
   }
 
   return { trackPresent: true, deviceHasArtwork, idempotent, reason };

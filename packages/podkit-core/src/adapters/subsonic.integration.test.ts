@@ -694,9 +694,11 @@ describe('SubsonicAdapter artwork presence detection', () => {
     const adapter = createAdapter(false);
     const tracks = await adapter.getItems();
 
-    // When checkArtwork is false but coverArt ID exists, optimistically report true
-    // without making any HTTP calls
-    expect(tracks[0]?.hasArtwork).toBe(true);
+    // With checkArtwork off, hasArtwork stays undefined: the coverArt ID alone
+    // can't distinguish a real cover from Navidrome's placeholder, and
+    // reporting true would fire artwork-added forever for placeholder albums.
+    // No HTTP call is made either way.
+    expect(tracks[0]?.hasArtwork).toBeUndefined();
     expect(tracks[0]?.artworkHash).toBeUndefined();
     expect(serverState.coverArtRequests['al-1']).toBeUndefined();
   });

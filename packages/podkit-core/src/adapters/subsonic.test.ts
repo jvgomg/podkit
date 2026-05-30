@@ -10,6 +10,8 @@ import type { SubsonicAdapterConfig } from './subsonic.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
+import { detectUpgrades } from '../sync/engine/upgrades.js';
+import type { DeviceTrack } from '../device/adapter.js';
 
 // We need to mock the subsonic-api module before importing SubsonicAdapter
 // Since bun:test doesn't have vi.mock, we'll test the adapter's behavior
@@ -371,7 +373,7 @@ describe('SubsonicAdapter artwork presence detection', () => {
     expect(track.artworkHash).toBeUndefined();
   });
 
-  it('skips artwork detection when checkArtwork is false (fast path)', async () => {
+  it('leaves hasArtwork undefined when checkArtwork is false (fast path)', async () => {
     let fetchCount = 0;
     const { mapSong } = createMockedAdapter({
       getCoverArt: async () => {
@@ -381,9 +383,11 @@ describe('SubsonicAdapter artwork presence detection', () => {
       checkArtwork: false,
     });
     const track = await mapSong({ coverArt: 'al-123' });
-    // When checkArtwork is false but coverArt ID exists, optimistically report true
-    // without making any HTTP calls
-    expect(track.hasArtwork).toBe(true);
+    // coverArt ID alone can't distinguish a real cover from Navidrome's
+    // placeholder, so without checkArtwork hasArtwork stays undefined
+    // ("unknown") and detectUpgrades' strict `=== true` short-circuits the
+    // artwork-added rule. See "loop-free" test below for the engine contract.
+    expect(track.hasArtwork).toBeUndefined();
     expect(track.artworkHash).toBeUndefined();
     expect(fetchCount).toBe(0);
   });
@@ -536,6 +540,91 @@ describe('SubsonicAdapter artwork presence detection', () => {
     expect(fetchCount).toBe(2);
     expect(t1.hasArtwork).toBe(true);
     expect(t2.hasArtwork).toBe(false);
+  });
+});
+
+// =============================================================================
+// Loop-free artwork: no artwork-added churn without --check-artwork
+// =============================================================================
+
+/**
+ * Without `--check-artwork` the adapter cannot distinguish a real cover from
+ * Navidrome's placeholder, so it leaves `hasArtwork` undefined. detectUpgrades'
+ * strict `source.hasArtwork === true` check short-circuits, preventing the
+ * artwork-added churn that an optimistic `true` would produce on every sync
+ * for placeholder-only albums.
+ */
+describe('SubsonicAdapter loop-free artwork', () => {
+  const song = (overrides?: Partial<Child>): Child => ({
+    id: 'song-1',
+    isDir: false,
+    title: 'Test Song',
+    artist: 'Test Artist',
+    album: 'Test Album',
+    ...overrides,
+  });
+  const album = (overrides?: Partial<AlbumWithSongsID3>): AlbumWithSongsID3 => ({
+    id: 'album-1',
+    name: 'Test Album',
+    artist: 'Test Artist',
+    songCount: 1,
+    duration: 300,
+    created: new Date('2024-01-01T00:00:00Z'),
+    ...overrides,
+  });
+
+  function deviceTrackWithoutArt(): DeviceTrack {
+    // Minimal shape: only the fields detectUpgrades reads (hasArtwork, syncTag,
+    // filetype, bitrate, normalization, metadata). Cast covers the operation
+    // methods that aren't invoked by detectUpgrades.
+    return {
+      filePath: '/ipod/Test Song.m4a',
+      title: 'Test Song',
+      artist: 'Test Artist',
+      album: 'Test Album',
+      duration: 300_000,
+      bitrate: 256,
+      sampleRate: 44100,
+      size: 5_000_000,
+      filetype: 'AAC audio file',
+      hasArtwork: false,
+      hasFile: true,
+      compilation: false,
+      mediaType: 1,
+      syncTag: null,
+    } as unknown as DeviceTrack;
+  }
+
+  it('source.hasArtwork is undefined when Navidrome reports coverArt but checkArtwork is off', async () => {
+    const adapter = new SubsonicAdapter({
+      url: 'https://test.example.com',
+      username: 'u',
+      password: 'p',
+      checkArtwork: false,
+    });
+    const track = await (adapter as any)['mapSongToTrack'](
+      song({ coverArt: 'al-placeholder' }),
+      album()
+    );
+    expect(track.hasArtwork).toBeUndefined();
+    expect(track.artworkHash).toBeUndefined();
+  });
+
+  it('detectUpgrades does not fire artwork-added for an undefined source.hasArtwork', async () => {
+    const adapter = new SubsonicAdapter({
+      url: 'https://test.example.com',
+      username: 'u',
+      password: 'p',
+      checkArtwork: false,
+    });
+    const source = await (adapter as any)['mapSongToTrack'](
+      song({ coverArt: 'al-placeholder' }),
+      album()
+    );
+    const ipod = deviceTrackWithoutArt();
+
+    const reasons = detectUpgrades(source, ipod);
+    expect(reasons).not.toContain('artwork-added');
   });
 });
 
