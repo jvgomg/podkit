@@ -21,8 +21,10 @@ import {
   PODKIT_DIR,
   MANIFEST_FILE,
   isMediaExtension,
+  isDebrisExtension,
   type MassStorageManifest,
 } from '../../device/mass-storage-utils.js';
+import { atomicWriteFile } from '../../utils/atomic-fs.js';
 import type { ContentPaths } from '@podkit/devices-mass-storage';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -55,13 +57,19 @@ async function loadManagedFiles(mountPoint: string): Promise<Set<string> | undef
 }
 
 /**
- * Recursively scan a directory for media files, returning their absolute paths.
+ * Recursively scan a directory and categorise each file as media or
+ * adapter-failure debris (weird-extension residue from aborted syncs).
  *
  * Skips dotfiles (._*, .DS_Store, etc.), the .podkit directory, and any
- * directories listed in `excludeDirs` (absolute paths).
+ * directories listed in `excludeDirs` (absolute paths). One traversal returns
+ * both categories so the orphan check doesn't double-walk.
  */
-async function scanMediaFiles(dir: string, excludeDirs: Set<string>): Promise<string[]> {
-  const results: string[] = [];
+async function scanFiles(
+  dir: string,
+  excludeDirs: Set<string>
+): Promise<{ media: string[]; debris: string[] }> {
+  const media: string[] = [];
+  const debris: string[] = [];
 
   async function walk(currentDir: string): Promise<void> {
     let entries;
@@ -83,26 +91,27 @@ async function scanMediaFiles(dir: string, excludeDirs: Set<string>): Promise<st
         await walk(fullPath);
       } else if (entry.isFile()) {
         const ext = extname(entry.name);
-        if (ext && isMediaExtension(ext)) {
-          results.push(fullPath);
+        if (!ext) continue;
+        if (isMediaExtension(ext)) {
+          media.push(fullPath);
+        } else if (isDebrisExtension(ext)) {
+          debris.push(fullPath);
         }
       }
     }
   }
 
   await walk(dir);
-  return results;
+  return { media, debris };
 }
 
 /**
- * Get the size of each orphan file, returning entries with path and size.
+ * Get the size of each file, returning entries with path and size.
  * Files that can't be stat'd are included with size 0.
  */
-async function getOrphanSizes(
-  orphanPaths: string[]
-): Promise<Array<{ path: string; size: number }>> {
+async function getFileSizes(paths: string[]): Promise<Array<{ path: string; size: number }>> {
   const results: Array<{ path: string; size: number }> = [];
-  for (const filePath of orphanPaths) {
+  for (const filePath of paths) {
     try {
       const s = await stat(filePath);
       results.push({ path: filePath, size: s.size });
@@ -165,32 +174,66 @@ function resolveContentDirs(
 }
 
 /**
- * Find orphan files by scanning content directories and comparing against
- * the manifest's managed files set.
+ * Find orphan files, adapter-failure debris, and manifest entries with no
+ * backing file. Scans content directories once and joins with the manifest's
+ * managed-files set both ways:
+ *   - Disk-side: media files not in the manifest → orphans
+ *   - Disk-side: weird-extension residue → debris
+ *   - Manifest-side: tracked paths with no file on disk → missingTrackedFiles
+ *     (typically caused by user-deleted files; the
+ *     copyTrackFile-failure-before-save pathway was closed by TASK-364)
  */
-async function findOrphans(
+async function findIssues(
   mountPoint: string,
   contentPaths: ContentPaths,
   managedFiles: Set<string>
-): Promise<{ orphanPaths: string[]; totalFiles: number }> {
+): Promise<{
+  orphanPaths: string[];
+  debrisPaths: string[];
+  missingTrackedFiles: string[];
+  totalFiles: number;
+}> {
   const { scanDirs, excludeDirs } = resolveContentDirs(mountPoint, contentPaths);
 
-  const allFiles: string[] = [];
+  const allMedia: string[] = [];
+  const allDebris: string[] = [];
   for (const dir of scanDirs) {
-    const files = await scanMediaFiles(dir, excludeDirs);
-    allFiles.push(...files);
+    const { media, debris } = await scanFiles(dir, excludeDirs);
+    allMedia.push(...media);
+    allDebris.push(...debris);
   }
 
   // Deduplicate in case of overlapping scans
-  const uniqueFiles = [...new Set(allFiles)];
+  const uniqueMedia = [...new Set(allMedia)];
+  const uniqueDebris = [...new Set(allDebris)];
 
-  const orphanPaths = uniqueFiles.filter((f) => {
+  const orphanPaths = uniqueMedia.filter((f) => {
     // Normalize to NFC — macOS filesystems may return NFD from readdir
     const relativePath = relative(mountPoint, f).normalize('NFC');
     return !managedFiles.has(relativePath);
   });
 
-  return { orphanPaths, totalFiles: uniqueFiles.length };
+  // Symmetric pass: manifest entries with no file on disk. stat() per entry
+  // is fine for typical libraries (one syscall per managed file, parallel via
+  // Promise.all).
+  const missingChecks = await Promise.all(
+    [...managedFiles].map(async (rel) => {
+      try {
+        await stat(join(mountPoint, rel));
+        return null;
+      } catch {
+        return rel;
+      }
+    })
+  );
+  const missingTrackedFiles = missingChecks.filter((r): r is string => r !== null);
+
+  return {
+    orphanPaths,
+    debrisPaths: uniqueDebris,
+    missingTrackedFiles,
+    totalFiles: uniqueMedia.length,
+  };
 }
 
 /**
@@ -236,27 +279,54 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
       };
     }
 
-    const { orphanPaths, totalFiles } = await findOrphans(
+    const { orphanPaths, debrisPaths, missingTrackedFiles, totalFiles } = await findIssues(
       ctx.mountPoint,
       ctx.contentPaths,
       managedFiles
     );
 
-    if (orphanPaths.length === 0) {
+    if (orphanPaths.length === 0 && debrisPaths.length === 0 && missingTrackedFiles.length === 0) {
       return {
         status: 'pass',
         summary: `All ${totalFiles} file${totalFiles === 1 ? '' : 's'} on disk are tracked in the manifest`,
         repairable: false,
-        details: { orphanCount: 0, wastedBytes: 0, orphans: [] },
+        details: {
+          orphanCount: 0,
+          wastedBytes: 0,
+          orphans: [],
+          debrisCount: 0,
+          debris: [],
+          missingTrackedFiles: [],
+        },
       };
     }
 
-    const orphans = await getOrphanSizes(orphanPaths);
-    const totalSize = orphans.reduce((sum, o) => sum + o.size, 0);
+    const orphans = await getFileSizes(orphanPaths);
+    const debris = await getFileSizes(debrisPaths);
+    const totalSize =
+      orphans.reduce((sum, o) => sum + o.size, 0) + debris.reduce((sum, d) => sum + d.size, 0);
+
+    // Build a summary that lists only the non-zero issue classes. Keeps
+    // "${N} orphan files" as the leading phrase when orphans are the only
+    // class — preserves existing summary-substring assertions.
+    const parts: string[] = [];
+    if (orphans.length > 0) {
+      parts.push(`${orphans.length} orphan file${orphans.length === 1 ? '' : 's'}`);
+    }
+    if (debris.length > 0) {
+      parts.push(`${debris.length} debris file${debris.length === 1 ? '' : 's'}`);
+    }
+    if (missingTrackedFiles.length > 0) {
+      parts.push(
+        `${missingTrackedFiles.length} missing manifest entr${
+          missingTrackedFiles.length === 1 ? 'y' : 'ies'
+        }`
+      );
+    }
 
     return {
       status: 'warn',
-      summary: `${orphans.length} orphan file${orphans.length === 1 ? '' : 's'} found (${formatBytes(totalSize)} wasted)`,
+      summary: `${parts.join(' + ')} found (${formatBytes(totalSize)} wasted)`,
       repairable: true,
       details: {
         orphanCount: orphans.length,
@@ -264,12 +334,16 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         wastedBytes: totalSize,
         wastedFormatted: formatBytes(totalSize),
         orphans: orphans.map((o) => ({ path: o.path, size: o.size })),
+        debrisCount: debris.length,
+        debris: debris.map((d) => ({ path: d.path, size: d.size })),
+        missingTrackedFiles,
       },
     };
   },
 
   repair: {
-    description: 'Delete orphaned files not tracked in the state manifest',
+    description:
+      'Delete orphans + adapter-failure debris and prune manifest entries with no backing file',
     requirements: ['writable-device'],
 
     async run(ctx: RepairContext, options?: RepairRunOptions): Promise<RepairResult> {
@@ -282,29 +356,46 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
         return { success: false, summary: 'No state manifest found' };
       }
 
-      const { orphanPaths } = await findOrphans(ctx.mountPoint, ctx.contentPaths, managedFiles);
-      const orphans = await getOrphanSizes(orphanPaths);
-      const totalSize = orphans.reduce((sum, o) => sum + o.size, 0);
+      const { orphanPaths, debrisPaths, missingTrackedFiles } = await findIssues(
+        ctx.mountPoint,
+        ctx.contentPaths,
+        managedFiles
+      );
+      const orphans = await getFileSizes(orphanPaths);
+      const debris = await getFileSizes(debrisPaths);
+      const deletables = [...orphans, ...debris];
+      const totalSize = deletables.reduce((sum, e) => sum + e.size, 0);
+      const phantomCount = missingTrackedFiles.length;
 
-      if (orphans.length === 0) {
-        return { success: true, summary: 'No orphan files to delete' };
+      if (deletables.length === 0 && phantomCount === 0) {
+        return { success: true, summary: 'Nothing to clean up' };
       }
 
-      // Dry run — report what would be deleted
+      // Dry run — report what would be cleaned
       if (options?.dryRun) {
+        const parts: string[] = [];
+        if (orphans.length > 0)
+          parts.push(`${orphans.length} orphan file${orphans.length === 1 ? '' : 's'}`);
+        if (debris.length > 0)
+          parts.push(`${debris.length} debris file${debris.length === 1 ? '' : 's'}`);
+        if (phantomCount > 0)
+          parts.push(`${phantomCount} phantom manifest entr${phantomCount === 1 ? 'y' : 'ies'}`);
         return {
           success: true,
-          summary: `Dry run: ${orphans.length} orphan file${orphans.length === 1 ? '' : 's'} would be deleted, freeing ${formatBytes(totalSize)}`,
+          summary: `Dry run: ${parts.join(' + ')} would be cleaned, freeing ${formatBytes(totalSize)}`,
           details: {
             orphanCount: orphans.length,
+            debrisCount: debris.length,
+            phantomCount,
             freedBytes: totalSize,
             freedFormatted: formatBytes(totalSize),
-            files: orphans.map((o) => ({ path: o.path, size: o.size })),
+            files: deletables.map((e) => ({ path: e.path, size: e.size })),
+            missingTrackedFiles,
           },
         };
       }
 
-      // Real run — delete orphans
+      // Real run — delete orphans + debris, then prune phantom manifest entries
       let deleted = 0;
       let freedBytes = 0;
       const errors: string[] = [];
@@ -312,22 +403,22 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
       // Determine content root directories for cleanup boundary
       const { scanDirs } = resolveContentDirs(ctx.mountPoint, ctx.contentPaths);
 
-      for (let i = 0; i < orphans.length; i++) {
-        const orphan = orphans[i]!;
+      for (let i = 0; i < deletables.length; i++) {
+        const entry = deletables[i]!;
         options?.onProgress?.({
           phase: 'deleting',
           current: i + 1,
-          total: orphans.length,
-          path: orphan.path,
+          total: deletables.length,
+          path: entry.path,
         });
 
         try {
-          await unlink(orphan.path);
+          await unlink(entry.path);
           deleted++;
-          freedBytes += orphan.size;
+          freedBytes += entry.size;
 
           // Clean up empty directories — walk up to the content root
-          const parentDir = dirname(orphan.path);
+          const parentDir = dirname(entry.path);
           for (const contentRoot of scanDirs) {
             if (parentDir.startsWith(contentRoot)) {
               await cleanEmptyDirs(parentDir, contentRoot);
@@ -336,16 +427,53 @@ export const orphanFilesMassStorageCheck: DiagnosticCheck = {
           }
         } catch (error) {
           errors.push(
-            `Failed to delete ${orphan.path}: ${error instanceof Error ? error.message : String(error)}`
+            `Failed to delete ${entry.path}: ${error instanceof Error ? error.message : String(error)}`
           );
         }
       }
 
+      // Prune phantom manifest entries by rewriting the manifest atomically.
+      // Re-read on disk to avoid clobbering concurrent edits, then drop the
+      // missing entries from managedFiles. `phantomsPruned` is only set after
+      // atomicWriteFile completes — otherwise a failed rewrite would report
+      // a non-zero prune count alongside a "failed to prune" error.
+      let phantomsPruned = 0;
+      if (phantomCount > 0) {
+        try {
+          const manifestPath = join(ctx.mountPoint, PODKIT_DIR, MANIFEST_FILE);
+          const raw = await readFile(manifestPath, 'utf-8');
+          const parsed = JSON.parse(raw) as MassStorageManifest;
+          if (parsed.version === 1 && Array.isArray(parsed.managedFiles)) {
+            const missingSet = new Set(missingTrackedFiles);
+            const before = parsed.managedFiles.length;
+            parsed.managedFiles = parsed.managedFiles.filter(
+              (p) => !missingSet.has(p.normalize('NFC'))
+            );
+            atomicWriteFile(manifestPath, JSON.stringify(parsed) + '\n', 'utf-8');
+            phantomsPruned = before - parsed.managedFiles.length;
+          }
+        } catch (error) {
+          errors.push(
+            `Failed to prune phantom manifest entries: ${error instanceof Error ? error.message : String(error)}`
+          );
+        }
+      }
+
+      const summaryParts: string[] = [];
+      summaryParts.push(`Deleted ${deleted} file${deleted === 1 ? '' : 's'}`);
+      if (phantomsPruned > 0) {
+        summaryParts.push(
+          `pruned ${phantomsPruned} phantom manifest entr${phantomsPruned === 1 ? 'y' : 'ies'}`
+        );
+      }
+      summaryParts.push(`freed ${formatBytes(freedBytes)}`);
+
       return {
         success: errors.length === 0,
-        summary: `Deleted ${deleted} orphan file${deleted === 1 ? '' : 's'}, freed ${formatBytes(freedBytes)}${errors.length > 0 ? ` (${errors.length} error${errors.length === 1 ? '' : 's'})` : ''}`,
+        summary: `${summaryParts.join(', ')}${errors.length > 0 ? ` (${errors.length} error${errors.length === 1 ? '' : 's'})` : ''}`,
         details: {
           deleted,
+          phantomsPruned,
           freedBytes,
           freedFormatted: formatBytes(freedBytes),
           errors: errors.length > 0 ? errors : undefined,

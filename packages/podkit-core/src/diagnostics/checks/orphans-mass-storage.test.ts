@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
-import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, mkdir, writeFile, readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -233,7 +233,7 @@ describe('orphanFilesMassStorageCheck', () => {
       const result = await orphanFilesMassStorageCheck.repair!.run(ctx);
 
       expect(result.success).toBe(true);
-      expect(result.summary).toContain('Deleted 2 orphan files');
+      expect(result.summary).toContain('Deleted 2 files');
       expect(result.details?.deleted).toBe(2);
       expect(result.details?.freedBytes as number).toBeGreaterThan(0);
 
@@ -307,7 +307,7 @@ describe('orphanFilesMassStorageCheck', () => {
       const result = await orphanFilesMassStorageCheck.repair!.run(ctx);
 
       expect(result.success).toBe(true);
-      expect(result.summary).toBe('No orphan files to delete');
+      expect(result.summary).toBe('Nothing to clean up');
     });
 
     it('should have writable-device requirement', () => {
@@ -329,6 +329,72 @@ describe('orphanFilesMassStorageCheck', () => {
       expect(result.success).toBe(false);
       expect(result.summary).toContain('No state manifest found');
     });
+
+    it('deletes debris files alongside orphans', async () => {
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+        'Music/Artist/Album/02 - Broken.Audio file': 'legacy debris',
+        'Music/Artist/Album/03 - Crashed.flac.podkit-tmp': 'in-flight residue',
+      });
+      await writeManifest(tempDir, ['Music/Artist/Album/01 - Track.m4a']);
+
+      const ctx = makeRepairCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.repair!.run(ctx);
+
+      expect(result.success).toBe(true);
+      expect(result.details?.deleted).toBe(2);
+      expect(existsSync(join(tempDir, 'Music/Artist/Album/02 - Broken.Audio file'))).toBe(false);
+      expect(existsSync(join(tempDir, 'Music/Artist/Album/03 - Crashed.flac.podkit-tmp'))).toBe(
+        false
+      );
+      expect(existsSync(join(tempDir, 'Music/Artist/Album/01 - Track.m4a'))).toBe(true);
+    });
+
+    it('prunes phantom manifest entries via atomic manifest rewrite', async () => {
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+      });
+      await writeManifest(tempDir, [
+        'Music/Artist/Album/01 - Track.m4a',
+        'Music/Artist/Album/02 - Missing.m4a',
+        'Music/Artist/Album/03 - AlsoMissing.flac',
+      ]);
+
+      const ctx = makeRepairCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.repair!.run(ctx);
+
+      expect(result.success).toBe(true);
+      expect((result.details as Record<string, unknown>).phantomsPruned).toBe(2);
+
+      // Manifest rewritten with only the surviving entry.
+      const manifestRaw = await readFile(join(tempDir, '.podkit/state.json'), 'utf-8');
+      const manifest = JSON.parse(manifestRaw) as MassStorageManifest;
+      expect(manifest.managedFiles).toEqual(['Music/Artist/Album/01 - Track.m4a']);
+    });
+
+    it('dry-run reports all three issue classes without writing', async () => {
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+        'Music/Artist/Album/orphan.mp3': 'orphan audio',
+        'Music/Artist/Album/02 - Broken.Audio file': 'debris',
+      });
+      await writeManifest(tempDir, [
+        'Music/Artist/Album/01 - Track.m4a',
+        'Music/Artist/Album/missing.m4a',
+      ]);
+
+      const ctx = makeRepairCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.repair!.run(ctx, { dryRun: true });
+
+      expect(result.success).toBe(true);
+      expect(result.summary).toContain('Dry run');
+      expect(result.summary).toContain('1 orphan file');
+      expect(result.summary).toContain('1 debris file');
+      expect(result.summary).toContain('1 phantom manifest entry');
+      // Files untouched.
+      expect(existsSync(join(tempDir, 'Music/Artist/Album/orphan.mp3'))).toBe(true);
+      expect(existsSync(join(tempDir, 'Music/Artist/Album/02 - Broken.Audio file'))).toBe(true);
+    });
   });
 
   describe('metadata', () => {
@@ -342,25 +408,20 @@ describe('orphanFilesMassStorageCheck', () => {
   // ──────────────────────────────────────────────────────────────────────────
   // Adapter-failure debris coverage
   //
-  // These tests pin the current behaviour for three classes of debris a sync
-  // can leave on disk. Each test passes today; each documents a real
-  // detection gap that a future production fix will close. When that fix
-  // lands, the assertion here flips to the new (caught) behaviour — which
-  // is exactly the signal the gap-fixing PR should produce.
+  // Three classes of debris a sync can leave on disk. Two are now caught
+  // (weird-extension residue + manifest entries with no backing file). The
+  // third (partial-write of a file still tracked in the manifest) remains a
+  // known gap — needs a size/checksum probe or atomic-write writer to detect.
   // ──────────────────────────────────────────────────────────────────────────
-  describe('adapter-failure debris (current detection gaps)', () => {
-    it('does NOT flag weird-extension legacy debris like `.Audio file`', async () => {
+  describe('adapter-failure debris', () => {
+    it('flags weird-extension legacy debris like `.Audio file`', async () => {
       // An aborted OGG/WAV/AIFF sync on a mass-storage device could once
       // leave files with the literal extension `.Audio file` (a
-      // `getFileTypeLabel` fallback, since fixed). The orphan check's
-      // `isMediaExtension` predicate (mass-storage-utils.ts:478) only
-      // matches the AUDIO_EXTENSIONS allowlist, so the file is silently
-      // skipped — invisible debris.
+      // `getFileTypeLabel` fallback, since fixed). Orphan scan now matches
+      // these against `KNOWN_DEBRIS_EXTENSIONS` and surfaces them in a
+      // dedicated `debris` detail field.
       await createFiles(tempDir, {
         'Music/Artist/Album/01 - Track.m4a': 'audio data',
-        // Legacy debris. Note the literal ".Audio file" extension (space +
-        // uppercase A) — not a real audio format, not in AUDIO_EXTENSIONS,
-        // currently invisible to orphan scan.
         'Music/Artist/Album/02 - Broken.Audio file': 'partial bytes',
       });
       await writeManifest(tempDir, ['Music/Artist/Album/01 - Track.m4a']);
@@ -368,47 +429,55 @@ describe('orphanFilesMassStorageCheck', () => {
       const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
       const result = await orphanFilesMassStorageCheck.check(ctx);
 
-      // Gap: the broken file is on disk but not flagged. The check passes
-      // with orphanCount=0 because `isMediaExtension` skips `.Audio file`
-      // entirely during the scan. Closing the gap (adding a known-debris
-      // allowlist) will introduce a separate `debrisCount` detail field; pin
-      // it as undefined today so the flip is unambiguous (test #1: status
-      // → 'warn', debrisCount → 1).
-      expect(result.status).toBe('pass');
+      expect(result.status).toBe('warn');
+      // No regular orphans — `.Audio file` isn't matched by `isMediaExtension`
+      // and never inflates the orphanCount.
       expect(result.details?.orphanCount).toBe(0);
-      expect(result.details?.wastedBytes).toBe(0);
-      expect((result.details as Record<string, unknown> | undefined)?.debrisCount).toBeUndefined();
+      expect((result.details as Record<string, unknown>).debrisCount).toBe(1);
+      const debris = (result.details as Record<string, unknown>).debris as Array<{
+        path: string;
+      }>;
+      expect(debris[0]!.path).toContain('02 - Broken.Audio file');
+      expect(result.repairable).toBe(true);
     });
 
-    it('does NOT flag manifest entries that point to missing files', async () => {
-      // The orphan check looks one way: files on disk that aren't in the
-      // manifest. It does not detect the reverse — manifest entries whose
-      // file has been deleted out-of-band or was never fully written. A
-      // sync that aborted after writing the manifest entry but before the
-      // file copy completed leaves this exact state.
+    it('flags `.podkit-tmp` in-flight write residue as debris', async () => {
+      // The atomic-write helper uses `.podkit-tmp` as the in-flight suffix.
+      // Presence after a sync completes implies the writer crashed between
+      // copy and rename. Should surface for repair, never silently linger.
+      await createFiles(tempDir, {
+        'Music/Artist/Album/01 - Track.m4a': 'audio data',
+        'Music/Artist/Album/02 - Crashed.m4a.podkit-tmp': 'half written',
+      });
+      await writeManifest(tempDir, ['Music/Artist/Album/01 - Track.m4a']);
+
+      const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
+      const result = await orphanFilesMassStorageCheck.check(ctx);
+
+      expect(result.status).toBe('warn');
+      expect((result.details as Record<string, unknown>).debrisCount).toBe(1);
+    });
+
+    it('flags manifest entries that point to missing files', async () => {
+      // Symmetric pass: manifest entries whose file has been deleted out of
+      // band (or was never copied because of a now-closed
+      // copyTrackFile-failure pathway). Surfaced as `missingTrackedFiles`.
       await createFiles(tempDir, {
         'Music/Artist/Album/01 - Track.m4a': 'audio data',
       });
       await writeManifest(tempDir, [
         'Music/Artist/Album/01 - Track.m4a',
-        // Manifest references a track that doesn't exist on disk —
-        // either deleted manually or never fully written by an aborted sync.
         'Music/Artist/Album/02 - Missing.m4a',
       ]);
 
       const ctx = makeCtx(tempDir, DEFAULT_CONTENT_PATHS);
       const result = await orphanFilesMassStorageCheck.check(ctx);
 
-      // Gap: the manifest's phantom entry is never checked against the FS.
-      // A symmetric scan would catch it. Pin the field the future fix will
-      // populate (`missingTrackedFiles`) as undefined today, alongside
-      // orphanCount=0 — that way a fix that flips status but writes to the
-      // wrong field cannot satisfy the assertions.
-      expect(result.status).toBe('pass');
+      expect(result.status).toBe('warn');
       expect(result.details?.orphanCount).toBe(0);
-      expect(
-        (result.details as Record<string, unknown> | undefined)?.missingTrackedFiles
-      ).toBeUndefined();
+      const missing = (result.details as Record<string, unknown>).missingTrackedFiles as string[];
+      expect(missing).toEqual(['Music/Artist/Album/02 - Missing.m4a']);
+      expect(result.repairable).toBe(true);
     });
 
     it('does NOT detect partial-write debris when the file is in the manifest', async () => {

@@ -92,6 +92,21 @@ export const AUDIO_EXTENSIONS = new Set([
 /** Video file extensions recognized during device scanning */
 export const VIDEO_EXTENSIONS = new Set(['.m4v', '.mp4', '.mov', '.avi', '.mkv']);
 
+/**
+ * File extensions that should never legitimately exist on a synced device —
+ * they're all created by failed/aborted syncs. Orphan-detection flags them as
+ * adapter-failure debris (separate from regular orphans, which are typically
+ * user-placed files podkit didn't write).
+ *
+ * - `.Audio file` — legacy pre-TASK-358.01 debris (a `getFileTypeLabel`
+ *   fallback that became a literal extension on aborted OGG/WAV/AIFF syncs).
+ *   Now fixed at the source but historical devices still carry these.
+ * - `.podkit-tmp` — in-flight write suffix used by `atomic-fs`. A successful
+ *   atomic write renames it away; presence at scan time means a sync crashed
+ *   between the temp-file write and the rename.
+ */
+export const KNOWN_DEBRIS_EXTENSIONS = new Set(['.Audio file', '.podkit-tmp']);
+
 // =============================================================================
 // Filename Sanitization
 // =============================================================================
@@ -477,4 +492,12 @@ export function isVideoExtension(ext: string): boolean {
  */
 export function isMediaExtension(ext: string): boolean {
   return isAudioExtension(ext) || isVideoExtension(ext);
+}
+
+/**
+ * Check if a file extension is known adapter-failure debris (case-sensitive,
+ * since `.Audio file` is a literal exact-string match — not lowercased).
+ */
+export function isDebrisExtension(ext: string): boolean {
+  return KNOWN_DEBRIS_EXTENSIONS.has(ext);
 }
