@@ -27,14 +27,24 @@ encode current-but-wrong behaviour as a living regression catalogue.
 |------|------|
 | `axes.ts` | Typed axis values (`Scenario`, `Format`), the artist/title maps, `trackId`, cell builders. The home for new axes. |
 | `devices.ts` | The **device axis**: `DeviceSpec` (id + raw capabilities + a fresh-target factory) for `[ipod-MA147, ms-echo-mini, ms-generic, ms-rockbox]`, and `deviceAddressing()` (path vs. `[devices.*]` stanza). |
-| `reference-model.ts` | Capability functions (`sourceEmbedsArt`, `effectiveSupportedCodecs`, `deviceAction`, `codecOutcome`, `copyOpKind`, `artworkReaches`) — a small model of podkit's sync semantics that `predict()` composes. **Not** per-format/per-device `if` branches. |
+| `reference-model.ts` | Capability functions (`sourceEmbedsArt`, `effectiveSupportedCodecs`, `deviceAction`, `codecOutcome`, `copyOpKind`, `artworkReaches`, `fileArtworkSurvives`, `expectedFileArtworkSize`) — a small model of podkit's sync semantics that `predict()` composes. **Not** per-format/per-device `if` branches. |
 | `harness.ts` | Generic engine: op-classification, `opsForTrack`/`isArtworkIdempotent`/`isStableNoFileOp`/`formatOpsString`/`findDeviceTrack`, the cell diff, and `defineArtworkMatrix()` (per-pass `beforeAll` + `describe`/`it` generation, with `skip()` support). |
-| `artwork-rules.ts` | The artwork concern: `predictDirectory` (device-swept) / `predictSubsonic` / `predictChange`, `skipArtworkCell`, and the `observe*` sync sequences shared by the test files. |
+| `device-artwork.ts` | The **device-file artwork reader**: `probeFileArtwork` ffprobes the audio files written to a device for attached-picture presence + dimensions (works on either backend); `probeIpodDbArtwork` reads the iTunesDB ArtworkDB thumbnail sizes via `@podkit/ipod-db`. The only way to observe transfer-mode strip (#1) and resize (#3), which are invisible to the plan and to `TrackInfo.hasArtwork`. |
+| `artwork-rules.ts` | The artwork concern: `predictDirectory` (device-swept) / `predictSubsonic` / `predictChange` (transition-swept) / `predictCompilation` / `predictTransferArtwork` / `predictResize`, `skipArtworkCell`, and the `observe*` sync sequences shared by the test files. |
 | `codec-rules.ts` | The codec concern (a **decision matrix**): `predictCodec` + `observeCodecMatrix`. Reads the dry-run plan only — no transfer — so it asserts copy-vs-transcode op type and resolved lossy codec across the device × format × codec-config × transfer-mode product. |
 
-The thin test files (`features/art-matrix*.test.ts`, `features/codec.test.ts`)
-only choose a source, devices, and wire a predictor + pass-runner into
-`defineArtworkMatrix`.
+The thin test files only choose a source, devices, and wire a predictor +
+pass-runner into `defineArtworkMatrix`:
+
+| File | Concern |
+|------|---------|
+| `art-matrix.test.ts` | directory artwork, device × scenario × format × pipeline |
+| `art-matrix.docker.test.ts` | Subsonic artwork (Navidrome) |
+| `art-matrix-change.test.ts` | artwork change detection, transition (updated/removed) × format; asserts the applied change converges (no churn loop) |
+| `art-matrix-compilation.test.ts` | various-artist album → album-cache `(artist,album)` split, iPod; proves no collision by matching each anchor's DB-thumbnail colour to its own cover |
+| `art-matrix-transfer.test.ts` | transfer-mode × artwork file strip/preserve (DB vs file), iPod |
+| `art-matrix-resize.test.ts` | cover resize vs `artworkMaxResolution` × transfer-mode, generic + iPod |
+| `codec.test.ts` | codec decision matrix (plan-only) |
 
 ## Why `predict()` composes the reference model
 

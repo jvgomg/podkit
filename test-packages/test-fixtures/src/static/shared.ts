@@ -59,19 +59,25 @@ export function metadataArgs(meta: Record<string, string | number | undefined>):
 }
 
 /**
- * Generate a solid-colour 500x500 JPEG cover at the given path.
+ * Generate a solid-colour square JPEG cover at the given path.
  *
  * Used as embedded artwork for FLAC fixtures + the standalone `cover.jpg`
- * sidecar each album ships.
+ * sidecar each album ships. Defaults to 500x500; pass `size` for a larger
+ * cover (e.g. the resize-matrix fixture, which needs a source bigger than a
+ * device's `artworkMaxResolution` to observe a downscale).
  */
-export async function generateCoverJpeg(outPath: string, hexColor: string): Promise<void> {
+export async function generateCoverJpeg(
+  outPath: string,
+  hexColor: string,
+  size = 500
+): Promise<void> {
   requireEncoder('mjpeg');
   await ensureDir(dirname(outPath));
   await runFfmpeg([
     '-f',
     'lavfi',
     '-i',
-    `color=c=${hexColor}:s=500x500:d=1,format=rgb24`,
+    `color=c=${hexColor}:s=${size}x${size}:d=1,format=rgb24`,
     '-frames:v',
     '1',
     outPath,

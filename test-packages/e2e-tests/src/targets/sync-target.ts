@@ -16,6 +16,13 @@ import { identify, getCapabilities } from '@podkit/devices-ipod';
 export type SyncTargetKind = 'ipod' | 'mass-storage';
 
 /**
+ * Path segments, relative to an iPod mount, under which libgpod stores the
+ * audio files (`iPod_Control/Music/F00../…`). Shared by the dummy and real
+ * iPod targets' `musicRoot()`.
+ */
+export const IPOD_MUSIC_SUBPATH = ['iPod_Control', 'Music'] as const;
+
+/**
  * A `[devices.<name>]` config block plus the name to reference it by.
  *
  * Mass-storage devices must declare a `type = "<preset>"` stanza so podkit
@@ -49,6 +56,13 @@ export interface SyncTarget {
   readonly capabilities: DeviceCapabilities;
   /** Device config block to merge into a sync config, or `null` when path-addressed. */
   deviceConfig(): DeviceConfigFragment | null;
+  /**
+   * Filesystem root under which the device's *audio files* live. Tests that
+   * read the written files directly (e.g. ffprobe their embedded artwork —
+   * see `matrix/device-artwork.ts`) walk this root. iPod:
+   * `<path>/iPod_Control/Music`; mass-storage: `<path>/<musicDir>`.
+   */
+  musicRoot(): string;
   /** Tracks currently on the device, normalised across backends. */
   getTracks(): Promise<TrackInfo[]>;
   /** Release resources. No-op for real devices. */

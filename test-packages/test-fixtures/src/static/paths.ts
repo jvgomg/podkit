@@ -118,6 +118,35 @@ export function getMultiFormatEmbeddedAltFixturesDir(): string {
 }
 
 /**
+ * Path to the multi-format-embedded *stripped* set — identical metadata to
+ * {@link getMultiFormatEmbeddedFixturesDir} but with no embedded artwork.
+ * The artwork-change matrix swaps embedded → stripped to model the source
+ * losing its cover without disturbing the track's match key.
+ */
+export function getMultiFormatEmbeddedStrippedFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-embedded-stripped');
+}
+
+/**
+ * Path to the multi-format set with a high-resolution (1024px) embedded cover —
+ * same tracks as the embedded variant but a cover larger than any device's
+ * `artworkMaxResolution`, so the resize matrix can observe a real downscale.
+ */
+export function getMultiFormatEmbeddedHiresFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-embedded-hires');
+}
+
+/**
+ * Path to the multi-format *compilation* set — the 8 tracks as a various-artist
+ * album: distinct per-track artist, shared album / album_artist / compilation
+ * flag, art embedded only in the embed-capable anchors. Exercises the album
+ * artwork cache's `(artist, album)` keying.
+ */
+export function getMultiFormatCompilationFixturesDir(): string {
+  return join(getStaticFixturesRoot(), 'audio', 'multi-format-compilation');
+}
+
+/**
  * Path to the goldberg-selections fixture set.
  *
  * Contents: 01-harmony.flac, 02-vibrato.flac, 03-tremolo.flac, cover.jpg
@@ -154,6 +183,9 @@ export type StaticFixtureSet =
   | 'multi-format'
   | 'multi-format-embedded'
   | 'multi-format-embedded-alt'
+  | 'multi-format-embedded-stripped'
+  | 'multi-format-embedded-hires'
+  | 'multi-format-compilation'
   | 'multi-format-sidecar'
   | 'multi-format-both'
   | 'goldberg-selections'
@@ -167,6 +199,9 @@ const SET_DIR: Record<StaticFixtureSet, () => string> = {
   'multi-format': getMultiFormatFixturesDir,
   'multi-format-embedded': getMultiFormatEmbeddedFixturesDir,
   'multi-format-embedded-alt': getMultiFormatEmbeddedAltFixturesDir,
+  'multi-format-embedded-stripped': getMultiFormatEmbeddedStrippedFixturesDir,
+  'multi-format-embedded-hires': getMultiFormatEmbeddedHiresFixturesDir,
+  'multi-format-compilation': getMultiFormatCompilationFixturesDir,
   'multi-format-sidecar': getMultiFormatSidecarFixturesDir,
   'multi-format-both': getMultiFormatBothFixturesDir,
   'goldberg-selections': getGoldbergFixturesDir,

@@ -12,8 +12,18 @@ export {
   generateMultiFormat,
   generateMultiFormatEmbedded,
   generateMultiFormatEmbeddedAlt,
+  generateMultiFormatEmbeddedStripped,
+  generateMultiFormatEmbeddedHires,
+  generateMultiFormatCompilation,
   generateMultiFormatSidecar,
   generateMultiFormatBoth,
+  compilationArtist,
+  compilationTrackEmbeds,
+  compilationCoverColor,
+  COMPILATION_ALBUM,
+  COMPILATION_ALBUM_ARTIST,
+  HIRES_ARTIST,
+  HIRES_COVER_SIZE,
   SCENARIO_ARTISTS,
 } from './audio-multi-format.js';
 export { generateGoldberg } from './audio-goldberg.js';
@@ -26,6 +36,9 @@ export {
   getMultiFormatFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
   getMultiFormatEmbeddedAltFixturesDir,
+  getMultiFormatEmbeddedStrippedFixturesDir,
+  getMultiFormatEmbeddedHiresFixturesDir,
+  getMultiFormatCompilationFixturesDir,
   getMultiFormatSidecarFixturesDir,
   getMultiFormatBothFixturesDir,
   getStaticFixturesRoot,
@@ -38,16 +51,22 @@ import { generateGoldberg } from './audio-goldberg.js';
 import {
   generateMultiFormat,
   generateMultiFormatBoth,
+  generateMultiFormatCompilation,
   generateMultiFormatEmbedded,
   generateMultiFormatEmbeddedAlt,
+  generateMultiFormatEmbeddedHires,
+  generateMultiFormatEmbeddedStripped,
   generateMultiFormatSidecar,
 } from './audio-multi-format.js';
 import { generateSyntheticTests } from './audio-synthetic-tests.js';
 import {
   getGoldbergFixturesDir,
   getMultiFormatBothFixturesDir,
+  getMultiFormatCompilationFixturesDir,
   getMultiFormatEmbeddedAltFixturesDir,
   getMultiFormatEmbeddedFixturesDir,
+  getMultiFormatEmbeddedHiresFixturesDir,
+  getMultiFormatEmbeddedStrippedFixturesDir,
   getMultiFormatFixturesDir,
   getMultiFormatSidecarFixturesDir,
   getSyntheticTestsFixturesDir,
@@ -66,6 +85,9 @@ export async function generateAllStaticFixtures(): Promise<void> {
     generateMultiFormat(getMultiFormatFixturesDir()),
     generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
     generateMultiFormatEmbeddedAlt(getMultiFormatEmbeddedAltFixturesDir()),
+    generateMultiFormatEmbeddedStripped(getMultiFormatEmbeddedStrippedFixturesDir()),
+    generateMultiFormatEmbeddedHires(getMultiFormatEmbeddedHiresFixturesDir()),
+    generateMultiFormatCompilation(getMultiFormatCompilationFixturesDir()),
     generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
     generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
     generateGoldberg(getGoldbergFixturesDir()),
@@ -86,6 +108,12 @@ export const STATIC_FIXTURE_GENERATORS: Record<StaticFixtureSet, () => Promise<v
   'multi-format-embedded': () => generateMultiFormatEmbedded(getMultiFormatEmbeddedFixturesDir()),
   'multi-format-embedded-alt': () =>
     generateMultiFormatEmbeddedAlt(getMultiFormatEmbeddedAltFixturesDir()),
+  'multi-format-embedded-stripped': () =>
+    generateMultiFormatEmbeddedStripped(getMultiFormatEmbeddedStrippedFixturesDir()),
+  'multi-format-embedded-hires': () =>
+    generateMultiFormatEmbeddedHires(getMultiFormatEmbeddedHiresFixturesDir()),
+  'multi-format-compilation': () =>
+    generateMultiFormatCompilation(getMultiFormatCompilationFixturesDir()),
   'multi-format-sidecar': () => generateMultiFormatSidecar(getMultiFormatSidecarFixturesDir()),
   'multi-format-both': () => generateMultiFormatBoth(getMultiFormatBothFixturesDir()),
   'goldberg-selections': () => generateGoldberg(getGoldbergFixturesDir()),

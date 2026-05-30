@@ -5,11 +5,17 @@
  * automatically modifies or deletes user data - cleanup is a no-op.
  */
 
+import { join } from 'node:path';
+
 import { gpodTool } from '@podkit/gpod-testing';
 import type { TrackInfo, VerifyResult } from '@podkit/gpod-testing';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { IpodTarget, IpodTargetFactory, TargetOptions } from './types';
-import { ipodCapabilitiesForModel, type DeviceConfigFragment } from './sync-target';
+import {
+  ipodCapabilitiesForModel,
+  IPOD_MUSIC_SUBPATH,
+  type DeviceConfigFragment,
+} from './sync-target';
 
 /** Capability fallback when a real device's exact model can't be resolved. */
 const FALLBACK_MODEL = 'MA147';
@@ -78,6 +84,10 @@ export class RealIpodTarget implements IpodTarget {
   /** iPods are addressed by path and auto-detected — no device config block. */
   deviceConfig(): DeviceConfigFragment | null {
     return null;
+  }
+
+  musicRoot(): string {
+    return join(this.path, ...IPOD_MUSIC_SUBPATH);
   }
 
   async getTrackCount(): Promise<number> {

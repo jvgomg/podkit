@@ -256,9 +256,67 @@ export function copyOpKind(
  *
  * Copy preserves the embedded picture and transcode re-embeds it, so the
  * codec action never drops art — survival depends only on the source having
- * had art and the device having somewhere to store it. (Transfer-mode
- * stripping — `optimized` — is a separate axis, P5.)
+ * had art and the device having somewhere to store it. This is the
+ * device-level "does the device show art" question (the iTunesDB on iPod, the
+ * file on mass-storage); for whether the on-device *file* keeps its embedded
+ * cover under a given transfer mode, see {@link fileArtworkSurvives}.
  */
 export function artworkReaches(sourceHadArt: boolean, capabilities: DeviceCapabilities): boolean {
   return sourceHadArt && capabilities.artworkSources.length > 0;
+}
+
+/**
+ * Does the embedded cover survive **in the file written to the device**, given
+ * the action and transfer mode? This is distinct from {@link artworkReaches}:
+ * on a database-artwork device the cover lands in the iTunesDB regardless, so
+ * `artworkReaches` stays true even when the file's embedded copy is stripped.
+ *
+ * Capability-driven (doc-012 §"Behavior Matrix"):
+ *
+ * - **Embedded-artwork device** (`artworkSources[0] === 'embedded'`): the file
+ *   *is* the art source, so the executor always keeps the cover in the file
+ *   (resizing it to `artworkMaxResolution`), regardless of transfer mode.
+ * - **Database-artwork device** (iPod): the file's embedded cover is redundant
+ *   (art lives in the iTunesDB), so transfer mode decides its fate —
+ *   `portable` preserves it; `optimized` strips it on every path; `fast`
+ *   strips only on the transcode path (a direct copy keeps it for free,
+ *   stripping would be extra work the device doesn't need).
+ */
+export function fileArtworkSurvives(
+  action: AudioAction,
+  transferMode: TransferMode,
+  sourceHadArt: boolean,
+  capabilities: DeviceCapabilities
+): boolean {
+  if (!sourceHadArt) return false;
+  if (capabilities.artworkSources[0] === 'embedded') return true;
+  if (transferMode === 'portable') return true;
+  if (transferMode === 'optimized') return false;
+  return action === 'copy';
+}
+
+/**
+ * Expected square edge length of the cover **in the device file**, given the
+ * source cover's size. Resize only ever downscales (never upscales — doc-012
+ * §"Source artwork is smaller than device max"):
+ *
+ * - **Embedded-artwork device**: the file is the art source, so the executor
+ *   shrinks the cover to `artworkMaxResolution` (the FFmpeg `artworkResize`
+ *   path) → `min(source, max)`.
+ * - **Database-artwork device** (iPod): the file's cover is left at source
+ *   size — the iPod resizes only its iTunesDB thumbnail (to
+ *   `artworkMaxResolution`), not the file — so the file stays at `source`.
+ *
+ * Assumes the cover survives in the file at all (e.g. a `portable` sync on
+ * iPod, or any sync on an embedded device); see {@link fileArtworkSurvives}.
+ */
+export function expectedFileArtworkSize(
+  sourceSize: number,
+  capabilities: DeviceCapabilities
+): number {
+  const max = capabilities.artworkMaxResolution;
+  if (capabilities.artworkSources[0] === 'embedded' && max !== null) {
+    return Math.min(sourceSize, max);
+  }
+  return sourceSize;
 }

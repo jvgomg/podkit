@@ -147,6 +147,11 @@ export class MassStorageTarget implements SyncTarget {
     };
   }
 
+  musicRoot(): string {
+    const musicDir = this.preset.contentPaths.musicDir;
+    return musicDir ? join(this.path, musicDir) : this.path;
+  }
+
   async getTracks(): Promise<TrackInfo[]> {
     const musicDir = this.preset.contentPaths.musicDir;
     const searchRoot = musicDir ? join(this.path, musicDir) : this.path;

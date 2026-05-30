@@ -2,15 +2,20 @@
  * Artwork change-detection matrix — directory adapter.
  *
  * Where `art-matrix.test.ts` probes state after a single fresh sync, this one
- * probes podkit's ability to detect source artwork changing between syncs:
- * sync cover A, swap the source for cover B (identical tags, different cover
- * bytes), dry-run a second sync, observe which operations fire.
+ * probes podkit's ability to detect source artwork *changing* between syncs.
+ * Two mutations are swept (the `transition` axis):
+ *
+ *   - `updated`: sync cover A, swap the source for cover B (identical tags,
+ *     different cover bytes), dry-run a second sync.
+ *   - `removed`: sync the embedded variant, swap in the stripped variant
+ *     (identical tags, no embedded art), dry-run a second sync.
  *
  * `--check-artwork` exists because the cheap path can't detect artwork-only
- * changes: without it the directory adapter never computes
- * `source.artworkHash`, so the cover-swap is silently missed; with it the hash
- * mismatch fires `artwork-updated`. The predictor (`predictChange`) and the
- * mutate-between-syncs sequence (`observeChangePass`) live in
+ * changes: podkit's self-healing is metadata-based (ADR-009) and only ever
+ * *adds* art, so neither a swap nor a removal is seen without it. With it, the
+ * `source.artworkHash` vs `syncTag.artworkHash` comparison fires
+ * `artwork-updated` / `artwork-removed`. The predictor (`predictChange`) and
+ * the mutate-between-syncs sequence (`observeChangePass`) live in
  * `../matrix/artwork-rules.ts`.
  *
  * Subsonic coverage of artwork-change is deferred (TASK-355.05) — it needs
@@ -22,22 +27,42 @@
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 
 import { withTarget } from '../targets';
-import { FORMATS } from '../matrix/axes';
 import { defineArtworkMatrix } from '../matrix/harness';
-import { observeChangePass, predictChange, type ChangeObserved } from '../matrix/artwork-rules';
+import {
+  CHANGE_TRANSITIONS,
+  changeCellKey,
+  changeCellLabel,
+  changeCells,
+  observeChangePass,
+  predictChange,
+  type ChangeObserved,
+} from '../matrix/artwork-rules';
 
 ensureFixturesExist('multi-format-embedded');
 ensureFixturesExist('multi-format-embedded-alt');
+ensureFixturesExist('multi-format-embedded-stripped');
 
 async function runPass(checkArtwork: boolean): Promise<Map<string, ChangeObserved>> {
-  return withTarget((target) => observeChangePass({ target, checkArtwork }));
+  const merged = new Map<string, ChangeObserved>();
+  for (const transition of CHANGE_TRANSITIONS) {
+    // Each transition mutates its own source root and syncs onto its OWN fresh
+    // target — sharing one would let the second transition diff against the
+    // first transition's tracks and pollute the observation.
+    const partial = await withTarget((target) =>
+      observeChangePass({ target, checkArtwork, transition })
+    );
+    for (const [format, observed] of partial) {
+      merged.set(`${transition}/${format}`, observed);
+    }
+  }
+  return merged;
 }
 
 defineArtworkMatrix({
   title: 'artwork change detection — directory adapter',
-  cells: FORMATS,
-  cellKey: (format) => format,
-  cellLabel: (format) => format,
+  cells: changeCells(),
+  cellKey: changeCellKey,
+  cellLabel: changeCellLabel,
   predict: predictChange,
   runPass,
 });

@@ -143,11 +143,11 @@ Two structural notes:
 
 Independent of the reorg, these are real missing cells:
 
-1. **Transfer mode × artwork** — `optimized` strips embedded art on DB-artwork devices; `portable` preserves it. The transfer-mode axis exists (codec concern); crossing it with *artwork* outcome is still open (P5).
+1. **Transfer mode × artwork** — `optimized` strips embedded art on DB-artwork devices; `portable` preserves it. ✅ done (P5, `art-matrix-transfer.test.ts`). The strip is in the *file*, not the iTunesDB, so it needed a new device-file reader (`matrix/device-artwork.ts`): the matrix asserts `dbHasArtwork` stays true while `fileHasArt` follows the strip rule (`fileArtworkSurvives`).
 2. **Copy-path vs transcode-path × artwork** — the rigid-codec reframe above. ✅ done (P2 `pipeline` axis).
-3. **`artwork-removed` transition** — the change matrix covers added/updated but never source-loses-art. (P5)
-4. **Artwork resize** — embedded-art devices resize; iPod has `artworkMaxResolution`. Not asserted. (P5)
-5. **Compilation / album-artist × album-cache** — the album cache keys on `(artist, album)`; various-artist compilations are a collision/split risk. (P5)
+3. **`artwork-removed` transition** — the change matrix covers added/updated but never source-loses-art. ✅ done (P5, `transition` axis in `art-matrix-change.test.ts`). Finding: removal fires `artwork-removed` **hash-free** on both passes — `hasArtwork` is a metadata field the self-healing diff compares (ADR-009) — whereas an *update* (same presence, changed bytes) still needs `--check-artwork`. The matrix also applies the change for real and re-runs: every transition **converges** (a third dry-run is clean — no churn loop).
+4. **Artwork resize** — embedded-art devices resize; iPod has `artworkMaxResolution`. ✅ done (P5, `art-matrix-resize.test.ts`, hires 1024px fixture, swept across **all three transfer modes**). Embedded device (`generic`, max 500) downscales the file cover to 500 in every mode; iPod leaves the *file* at source where it survives (portable / fast direct copy) and resizes only the iTunesDB thumbnail (read back via `@podkit/ipod-db`, bounded by its 320 max in every mode — empirically 200/100). Confirms transfer mode does not change the resize *size*.
+5. **Compilation / album-artist × album-cache** — the album cache keys on `(artist, album)`; various-artist compilations are a collision/split risk. ✅ done (P5, `art-matrix-compilation.test.ts`). Finding: it's a **split, not a collision** — each differing-artist track forms its own single-element candidate group, so a bare track inherits no sibling cover (anchors get art, bare WAV/OGG/Opus do not). No-collision is **proven by bytes, not inferred**: each anchor carries a distinct cover colour and the matrix decodes its iTunesDB thumbnail (`@podkit/ipod-db`) and classifies the sampled colour back to that track's own cover — a coarser key that bled art across artists would flip the cell. (File-level hashing would not work: the file cover comes straight from the source, bypassing the cache; the iTunesDB thumbnail is the cache's actual output.) Pins the deliberate `(artist, album)` keying from TASK-355.03.
 
 ## Mass-storage sync gaps (discovered during P4)
 
@@ -168,7 +168,7 @@ Adding the device axis to real-sync matrices surfaced reproducible podkit execut
 3. **Add the rigid-codec transcode-vs-copy axis** to the artwork concern. ✅ (TASK-356.02)
 4. **Generalise `SyncTarget`** (iPod + mass-storage, capability-carrying). ✅ (TASK-356.03)
 5. **Add device + transfer-mode axes**; migrate `codec-preference` into a concern matrix. ✅ (TASK-356.04 — see "Implementation status").
-6. **Close concrete artwork gaps** (transfer×artwork, artwork-removed, resize, compilation). ◻ TASK-356.05.
+6. **Close concrete artwork gaps** (transfer×artwork, artwork-removed, resize, compilation). ✅ TASK-356.05.
 7. **Future: decision assertions** — partially realised (codec `json.codec`); rest gated on richer `--json` / plan-dump. ◻ TASK-357.
 
 ## Implementation status (P4 landed)
@@ -181,6 +181,56 @@ Adding the device axis to real-sync matrices surfaced reproducible podkit execut
 - **`codec-preference.test.ts`** reduced to a physical-output smoke (real `.opus` transcode to disk + codec-change re-sync) — the part the decision matrix can't assert from a plan. **`mass-storage-sync.test.ts`** kept as structural/execution smoke (relocation, pathTemplate, delete, orphan repair, compilation, portable tags) — it was never a codec/artwork matrix in disguise.
 - **`effectiveSupportedCodecs`**: the mass-storage WAV/AIFF-output exception (`MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS`) is mirrored in the reference model; iPod is exempt.
 - **Test-helper fix**: `MassStorageTarget.getTracks` now reads ffprobe tag keys case-insensitively (FFmpeg writes FLAC Vorbis tags upper-case). This was a harness bug masquerading as a missing-track failure; fixed, not skipped.
+
+## Implementation status (P5 landed)
+
+P5 (TASK-356.05) closed the four concrete artwork gaps. Two of them needed a
+**new observation dimension** — the bytes of the *file written to the device* —
+because the relevant behaviour is invisible to both the dry-run plan and
+`TrackInfo.hasArtwork`:
+
+- **Device-file artwork reader** (`matrix/device-artwork.ts`): `probeFileArtwork`
+  ffprobes a device's audio files for attached-picture presence + pixel
+  dimensions (works on iPod and mass-storage alike — podkit writes the title/
+  artist tags into the file, so tag-matching needs no knowledge of libgpod's
+  hashed filenames); `probeIpodDbArtwork` reads the iTunesDB ArtworkDB thumbnail
+  *sizes* and `probeIpodDbArtworkColor` decodes the thumbnail and samples its
+  centre *colour*, both via `@podkit/ipod-db`. All independent of podkit's write
+  path (the same anti-mutual-masking rationale as `MassStorageTarget.getTracks`):
+  podkit writes via libgpod (C), these read back via ffprobe / a separate TS
+  parser. `SyncTarget` gained `musicRoot()` to point the reader at the files.
+- **#1 transfer-mode × artwork** (`art-matrix-transfer.test.ts`, iPod): asserts
+  the gap between the two artwork signals — the iTunesDB always keeps the cover
+  (`dbHasArtwork`), while the *file* is stripped per mode (`fileArtworkSurvives`:
+  `portable` keeps, `optimized` strips everywhere, `fast` keeps copies / strips
+  transcodes — doc-012).
+- **#2 artwork-removed** (`art-matrix-change.test.ts`, `transition` axis):
+  removal fires `artwork-removed` hash-free on both passes (metadata `hasArtwork`
+  comparison, ADR-009); an update needs `--check-artwork`. The change is then
+  applied for real and a third dry-run confirms it **converges** (no churn loop).
+- **#3 resize** (`art-matrix-resize.test.ts`, hires 1024px fixture, all three
+  transfer modes): embedded device downscales the file cover to
+  `artworkMaxResolution` in every mode (`expectedFileArtworkSize`); iPod leaves
+  the file at source where it survives and resizes only the iTunesDB thumbnail
+  (asserted ≤ its max via `probeIpodDbArtwork`, in every mode).
+- **#4 compilation** (`art-matrix-compilation.test.ts`, iPod): the album cache's
+  `(artist, album)` key makes various-artist compilations *split* (no
+  cross-artist cover sharing), not collide — bare tracks are orphaned. No
+  collision is proven by decoding each anchor's iTunesDB thumbnail and matching
+  its sampled colour back to that track's own distinct cover
+  (`probeIpodDbArtworkColor`). Pins the deliberate TASK-355.03 keying.
+- **Fixtures added**: `multi-format-embedded-stripped` (embedded tags, no art),
+  `multi-format-compilation` (distinct per-track artist, shared album/
+  album_artist/compilation, art only in the embed-capable anchors), and
+  `multi-format-embedded-hires` (1024px cover). The generator gained per-track
+  `artistFor`, shared-`album`/`albumArtist`/`compilation`, per-track `embedTrack`,
+  and `coverSize` options.
+
+Known limitation surfaced (not yet a task): a compilation track that carries no
+embedded art of its own gets no cover, because the `(artist, album)` key denies
+it a differing-artist sibling's cover. The all-anchor-embed fixture makes this
+visible (bare WAV/OGG/Opus cells); whether compilations *should* share art
+across artists is a product decision, not pinned as a bug.
 
 ## Tradeoffs & risks
 

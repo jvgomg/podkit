@@ -5,11 +5,17 @@
  * automatically cleaned up after tests complete.
  */
 
+import { join } from 'node:path';
+
 import { createTestIpod } from '@podkit/gpod-testing';
 import type { TrackInfo, VerifyResult } from '@podkit/gpod-testing';
 import type { DeviceCapabilities } from '@podkit/device-types';
 import type { IpodTarget, IpodTargetFactory, TargetOptions } from './types';
-import { ipodCapabilitiesForModel, type DeviceConfigFragment } from './sync-target';
+import {
+  ipodCapabilitiesForModel,
+  IPOD_MUSIC_SUBPATH,
+  type DeviceConfigFragment,
+} from './sync-target';
 
 /** Default dummy-iPod model — iPod Video 5th gen. */
 const DEFAULT_MODEL = 'MA147';
@@ -44,6 +50,10 @@ export class DummyIpodTarget implements IpodTarget {
   /** iPods are addressed by path and auto-detected — no device config block. */
   deviceConfig(): DeviceConfigFragment | null {
     return null;
+  }
+
+  musicRoot(): string {
+    return join(this.path, ...IPOD_MUSIC_SUBPATH);
   }
 
   async getTrackCount(): Promise<number> {
