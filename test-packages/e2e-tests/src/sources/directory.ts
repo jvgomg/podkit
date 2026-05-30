@@ -26,11 +26,6 @@ export class DirectoryTestSource implements TestSource {
     return this.fixturesPath;
   }
 
-  get trackCount(): number {
-    // The standard audio fixtures have 4 test tracks
-    return 4;
-  }
-
   async setup(): Promise<void> {
     // No setup needed for local fixtures
   }

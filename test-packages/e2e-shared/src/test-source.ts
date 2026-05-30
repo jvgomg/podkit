@@ -14,9 +14,6 @@ export interface TestSource {
   /** Source URL or path the CLI consumes. */
   readonly sourceUrl: string;
 
-  /** Number of tracks the source provides. */
-  readonly trackCount: number;
-
   /** True when the source needs a Docker container to be running. */
   readonly requiresDocker: boolean;
 

@@ -54,7 +54,6 @@ export class SubsonicTestSource implements TestSource {
   /** Host port — the constructor value is a placeholder until {@link setup}. */
   private port: number;
   private container: NavidromeContainer | null = null;
-  private tracksLoaded = 0;
 
   constructor(port?: number) {
     this.tempDir = join(tmpdir(), `podkit-subsonic-test-${randomUUID()}`);
@@ -76,10 +75,6 @@ export class SubsonicTestSource implements TestSource {
     return this.username_;
   }
 
-  get trackCount(): number {
-    return this.tracksLoaded;
-  }
-
   async setup(): Promise<void> {
     if (!(await this.isAvailable())) {
       throw new Error('Docker is not available');
@@ -88,14 +83,14 @@ export class SubsonicTestSource implements TestSource {
     await mkdir(this.musicDir, { recursive: true });
     await mkdir(this.dataDir, { recursive: true });
 
-    // Copy test fixtures to the music directory:
-    //   - goldberg-selections: 3 FLAC files
-    //   - synthetic-tests: 3 FLAC files
-    //   - multi-format: 8 files (WAV, AIFF, FLAC, ALAC, MP3, AAC, OGG, Opus)
+    // Copy the full @podkit/test-fixtures audio tree into Navidrome's
+    // library. The inventory grows over time (matrix variants, new album
+    // fixtures) and Navidrome additionally filters by codec/metadata, so
+    // there's no useful absolute track count to surface — tests assert
+    // relationship invariants instead (e.g. iPod trackCount === completed).
     const fixturesPath = getFixturesDir();
     if (existsSync(fixturesPath)) {
       await cp(fixturesPath, this.musicDir, { recursive: true });
-      this.tracksLoaded = 14; // 14 audio files across 3 albums
     }
 
     this.container = await startNavidromeContainer({
