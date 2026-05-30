@@ -1128,6 +1128,100 @@ describe('MusicHandler', () => {
       expect(diff.toUpdate).toHaveLength(0);
     });
 
+    test('keeps lossless source as existing when lossless stack falls back to high+aac (mass-storage)', () => {
+      // quality=max + lossless=['source'] on a device whose codecs can't satisfy
+      // the source's lossless codec — the per-track preset falls back to high
+      // (lossy=aac). The previous syncTag legitimately reads quality=high; the
+      // detector must NOT compare it against config-wide quality=lossless and
+      // fire a phantom preset-upgrade.
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          codecPreference: { lossless: ['source'], lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+            artworkSources: ['embedded'],
+            audioNormalization: 'none',
+          }),
+        })
+      );
+      // WAV: lossless=['source'] can't satisfy (wav isn't a transcode target).
+      const source = makeCollectionTrack({ fileType: 'wav', lossless: true, codec: 'pcm_s16le' });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=aac]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('keeps ALAC source as existing when lossless stack falls back on iPod-without-ALAC support', () => {
+      // Older iPod: caps don't include ALAC (legacy iPod min set). Lossless
+      // stack ['source', 'flac'] can't be satisfied — the per-track preset
+      // falls back to high+aac. The persisted quality=high syncTag must NOT
+      // read as a mismatch against config-wide quality=lossless.
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          codecPreference: { lossless: ['source', 'flac'], lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3'],
+            artworkSources: ['database'],
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'flac', lossless: true });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 256,
+        syncTag: parseSyncTag('[podkit:v1 quality=high encoding=vbr codec=aac]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.existing).toHaveLength(1);
+      expect(diff.toUpdate).toHaveLength(0);
+    });
+
+    test('a genuine quality change on a fallback-to-high track still fires preset-upgrade', () => {
+      // Same fallback path as the convergence test, but the persisted syncTag
+      // is quality=low (e.g. the user previously had quality=low). The
+      // per-track expected tag is quality=high — a real change should still
+      // surface, despite both sides being on the lossy fallback path.
+      const h = createMusicHandler(
+        makeConfig({
+          quality: 'max',
+          codecPreference: { lossless: ['source'], lossy: ['aac'] },
+          encoderAvailability: { hasEncoder: () => true },
+          capabilities: makeCapabilities({
+            supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+            artworkSources: ['embedded'],
+            audioNormalization: 'none',
+          }),
+        })
+      );
+      const source = makeCollectionTrack({ fileType: 'wav', lossless: true, codec: 'pcm_s16le' });
+      const device = makeDeviceTrack({
+        filetype: 'AAC audio file',
+        bitrate: 96,
+        syncTag: parseSyncTag('[podkit:v1 quality=low encoding=vbr codec=aac]') ?? undefined,
+      });
+      const diff = makePresetDiff(source, device);
+
+      h.postProcessDiff(diff);
+
+      expect(diff.toUpdate).toHaveLength(1);
+      expect(diff.toUpdate[0]!.reasons[0]).toBe('preset-upgrade');
+    });
+
     test('keeps ALAC track as existing when isAlacPreset is true', () => {
       const h = createMusicHandler(
         makeConfig({

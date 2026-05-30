@@ -15,8 +15,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { runCliJson } from '../helpers/cli-runner';
-import { withTarget } from '../targets';
+import { withTarget, withMassStorageTarget } from '../targets';
 import { getTrackPath, Tracks, type AlbumDir } from '../helpers/fixtures';
+import { getMultiFormatEmbeddedFixturesDir } from '@podkit/test-fixtures';
 
 ensureFixturesExist('goldberg-selections');
 
@@ -332,5 +333,74 @@ describe('preset change detection', () => {
         await rm(configDir, { recursive: true, force: true });
       }
     });
+  }, 120000);
+
+  // Mass-storage arm: quality=max + lossless=['source'] on a device whose
+  // supported codecs don't cover every lossless source. WAV/AIFF/ALAC sources
+  // can't satisfy the lossless stack on `generic` (caps: aac/mp3/flac), so
+  // the planner falls back per-track to lossy=high+aac. The persisted syncTag
+  // therefore says `quality=high`, but the config-wide `resolvedQuality` is
+  // 'lossless' — the second sync used to re-fire `preset-upgrade` forever.
+  it('mass-storage quality=max lossless=[source] converges across re-sync', async () => {
+    await withMassStorageTarget(
+      async (target) => {
+        const configDir = await mkdtemp(join(tmpdir(), 'podkit-preset-ms-'));
+        try {
+          const stanza = target.deviceConfig();
+          const configPath = join(configDir, 'config.toml');
+          await writeFile(
+            configPath,
+            `version = 2
+
+quality = "max"
+
+[codec]
+lossy = ["aac"]
+lossless = ["source"]
+
+[music.default]
+path = "${getMultiFormatEmbeddedFixturesDir()}"
+
+${stanza?.toml ?? ''}
+
+[defaults]
+music = "default"
+device = "${stanza?.name ?? ''}"
+`
+          );
+
+          const { result: result1, json: json1 } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--json',
+          ]);
+          expect(result1.exitCode).toBe(0);
+          expect(json1?.success).toBe(true);
+
+          const { result: dryResult, json: dryJson } = await runCliJson<SyncOutput>([
+            '--config',
+            configPath,
+            'sync',
+            '--device',
+            stanza?.name ?? target.path,
+            '--dry-run',
+            '--json',
+          ]);
+          expect(dryResult.exitCode).toBe(0);
+
+          const breakdown = dryJson?.plan?.updateBreakdown ?? {};
+          expect(breakdown['preset-upgrade'] ?? 0).toBe(0);
+          expect(breakdown['preset-downgrade'] ?? 0).toBe(0);
+          expect(dryJson?.plan?.tracksToTranscode ?? 0).toBe(0);
+          expect(dryJson?.plan?.tracksToCopy ?? 0).toBe(0);
+        } finally {
+          await rm(configDir, { recursive: true, force: true });
+        }
+      },
+      { preset: 'generic' }
+    );
   }, 120000);
 });

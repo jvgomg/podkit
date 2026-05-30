@@ -58,6 +58,7 @@ import { partitionExisting, sweepAllExisting, formatDryRunFromPlan } from '../en
 import type { MusicSyncConfig, ResolvedMusicConfig } from './config.js';
 import { resolveMusicConfig } from './config.js';
 import { MusicTrackClassifier, classifierFromConfig } from './classifier.js';
+import type { TrackClassification } from './classifier.js';
 import { MusicOperationFactory } from './operation-factory.js';
 
 // =============================================================================
@@ -75,6 +76,38 @@ const QUALITY_TIER_ORDER: Record<string, number> = {
   max: 3, // video uses 'max' directly; audio resolves 'max' to 'lossless' or 'high' before tagging
   lossless: 3,
 };
+
+/**
+ * What the next sync would write into a track's syncTag, given the classifier's
+ * per-track decision. Used by `postProcessPresetChanges` to decide whether the
+ * persisted syncTag still represents the current intent.
+ *
+ * Returns `undefined` when the classifier action wouldn't produce a *transcode*
+ * syncTag — i.e. direct-copy and optimized-copy. Those land a `quality=copy`
+ * syncTag handled by the in-sync short-circuit, not this comparison.
+ *
+ * The classifier's per-track preset is what matters here, not config-wide
+ * `resolvedQuality`: a `quality=max` + `lossless=["source"]` config falls back
+ * to `lossy=high` per-track when no lossless target satisfies the device for a
+ * given source (e.g. WAV/AIFF/ALAC on a mass-storage device whose codecs don't
+ * cover them). A config-wide expected tag (`quality=lossless`) would then
+ * compare against the legitimately-written `quality=high` syncTag and fire a
+ * phantom `preset-upgrade` on every sync.
+ */
+export function expectedSyncTagFromClassification(
+  classification: TrackClassification,
+  config: { encoding?: string; customBitrate?: number; resolvedLossyCodec?: string }
+): SyncTagData | undefined {
+  if (classification.action.type !== 'transcode') return undefined;
+  const { preset } = classification.action;
+  return buildAudioSyncTag(
+    preset.name,
+    config.encoding,
+    preset.bitrateOverride ?? config.customBitrate,
+    undefined,
+    preset.targetCodec ?? config.resolvedLossyCodec
+  );
+}
 
 /**
  * Determine the direction of a sync tag mismatch.
@@ -384,6 +417,11 @@ export class MusicHandler implements ContentTypeHandler<
    *
    * Sync tag priority: if a track has a sync tag, use exact comparison against
    * the current config. If no sync tag, fall back to bitrate tolerance detection.
+   *
+   * This detector handles the *preset* dimension (quality / encoding / bitrate)
+   * only. Codec dimension (lossy = ['aac'] vs ['opus']) is the responsibility
+   * of `postProcessCodecChanges`, so `syncTagMatchesConfig` does not compare
+   * codec — a codec change shows up via that detector, not as a preset-upgrade.
    */
   private postProcessPresetChanges(diff: UnifiedSyncDiff<CollectionTrack, DeviceTrack>): void {
     const shouldCheckPreset =
@@ -399,36 +437,27 @@ export class MusicHandler implements ContentTypeHandler<
       isAlacPreset: this.config.isAlacPreset,
     };
 
-    // Build expected sync tag from current config (for sync tag comparison)
-    const resolvedQuality = this.config.resolvedQuality;
-    const expectedSyncTag = resolvedQuality
-      ? buildAudioSyncTag(
-          resolvedQuality,
-          this.config.raw.encoding,
-          this.config.raw.customBitrate,
-          undefined,
-          this.config.resolvedLossyCodec
-        )
-      : undefined;
-
     partitionExisting(diff, (match) => {
       // Only check lossless-source tracks (lossy are copied as-is)
       if (!isSourceLossless(match.source)) return null;
 
-      // Try sync tag comparison first
       const syncTag = match.device.syncTag;
-      let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
+      const classification = this.classifier.classify(match.source);
 
       // When the device sync tag says 'copy' and the classifier would also route
       // this source as a copy (device natively supports the codec), it's in sync
       // regardless of the configured quality preset.
-      if (syncTag?.quality === 'copy') {
-        const classification = this.classifier.classify(match.source);
-        if (classification.action.type !== 'transcode') {
-          return null; // copy -> copy, in sync
-        }
+      if (syncTag?.quality === 'copy' && classification.action.type !== 'transcode') {
+        return null; // copy -> copy, in sync
       }
 
+      const expectedSyncTag = expectedSyncTagFromClassification(classification, {
+        encoding: this.config.raw.encoding,
+        customBitrate: this.config.raw.customBitrate,
+        resolvedLossyCodec: this.config.resolvedLossyCodec,
+      });
+
+      let presetChange: 'preset-upgrade' | 'preset-downgrade' | null = null;
       if (syncTag && expectedSyncTag) {
         // Sync tag exists — use exact comparison
         if (!syncTagMatchesConfig(syncTag, expectedSyncTag)) {
@@ -448,7 +477,21 @@ export class MusicHandler implements ContentTypeHandler<
 
       if (!presetChange) return null;
 
-      const changes: MetadataChange[] = this.config.isAlacPreset
+      // Derive the change record from what the classifier would *actually*
+      // produce for this track, not the config-wide ALAC-preset flag. Under
+      // quality=max + lossless=[source] the same config can produce an ALAC
+      // upgrade for one track and a bitrate upgrade for another (depending on
+      // whether the lossless stack matched), and the change reason should
+      // reflect the per-track outcome.
+      // Legacy lossless transcode (no explicit targetCodec) implicitly targets
+      // ALAC — preserve that label. A modern lossless stack with an explicit
+      // targetCodec gets the precise label.
+      const wouldProduceAlac =
+        classification.action.type === 'transcode' &&
+        classification.action.preset.name === 'lossless' &&
+        (classification.action.preset.targetCodec === 'alac' ||
+          classification.action.preset.targetCodec === undefined);
+      const changes: MetadataChange[] = wouldProduceAlac
         ? [
             {
               field: 'lossless' as const,
