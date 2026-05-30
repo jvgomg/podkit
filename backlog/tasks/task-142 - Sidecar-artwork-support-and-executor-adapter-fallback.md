@@ -4,6 +4,7 @@ title: Sidecar artwork support and executor adapter fallback
 status: To Do
 assignee: []
 created_date: '2026-03-17 14:58'
+updated_date: '2026-05-30 08:19'
 labels:
   - enhancement
   - artwork
@@ -17,6 +18,10 @@ references:
   - packages/podkit-core/src/artwork/extractor.ts
   - packages/podkit-core/src/adapters/directory.ts
   - test/fixtures/audio/multi-format/generate.sh
+  - test-packages/e2e-tests/src/matrix/artwork-rules.ts
+  - test-packages/e2e-tests/src/matrix/reference-model.ts
+documentation:
+  - backlog/docs/doc-012 - Spec-Transfer-Mode-Behavior-Matrix.md
 priority: medium
 ---
 
@@ -56,4 +61,21 @@ When a directory has `cover.jpg`/`folder.jpg` alongside audio files but no embed
 - [ ] #4 Integration tests for executor adapter fallback
 - [ ] #5 Integration tests for directory sidecar detection
 - [ ] #6 test/fixtures/audio/multi-format/generate.sh cover.jpg creation uncommented
+- [ ] #7 E2E matrix reference model gains a sidecar-primary branch when this lands: `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives` and `expectedFileArtworkSize` currently only branch on embedded vs database (sidecar-primary falls through to database, untested); rockbox is added to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` to assert the executor's sidecar transfer-mode behaviour cell-for-cell.
 <!-- AC:END -->
+
+## Implementation Notes
+
+<!-- SECTION:NOTES:BEGIN -->
+2026-05-29 (e2e matrix audit): The "directory adapter only reports embedded artwork" gap (AC #2/#3) is now reconfirmed in code and documented in passing across the e2e artwork matrix — capturing the references here so the gap is not lost:
+- packages/podkit-core/src/adapters/directory.ts: parseFile() derives hasArtwork purely from music-metadata common.picture (embedded pictures). It never scans the track's directory for cover.jpg/folder.jpg/cover.png/folder.png. No sidecar code path exists.
+- test-packages/e2e-tests/src/matrix/artwork-rules.ts predictDirectory(): the C-sidecar scenario 'collapses onto A' with reason 'sidecar invisible to directory adapter'. D-both behaves as B-embedded (only the embedded slot counts).
+- test-packages/e2e-tests/src/matrix/reference-model.ts sourceEmbedsArt(): notes 'Sidecar cover.jpg bytes never reach the file body' so C/D embed iff the format's file body embeds.
+- backlog/docs/doc-012 (Spec: Transfer Mode Behavior Matrix) documents 'Sidecar Artwork Devices' as Future / Not implemented in v1.
+These are documentation/test artifacts of the gap, not a separate fix; this task (AC #2/#3/#6) remains the place that closes the directory-adapter sidecar-read side.
+
+2026-05-30 (TASK-356.05 follow-up): the **device/target-side** matrix model has the same shape of gap as the source-adapter side already noted above. Pinning location so it lands with the executor work in this task, not lost:
+- `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives(action, transferMode, sourceHadArt, capabilities)` and `expectedFileArtworkSize(sourceSize, capabilities)` branch only on `artworkSources[0] === 'embedded'` (embedded device → keep+resize) vs. anything else (treated as database → portable preserves / optimized strips / fast keeps copies). A sidecar-primary device (`rockbox`: `artworkSources = ['sidecar','embedded']`, max 320) currently falls through the database branch by default — fine while rockbox isn't swept by these matrices, but the moment it is the predictions will be wrong. doc-012 §"Sidecar Artwork Devices (Future)" sketches the expected matrix (transcode: strip embedded + create device-res sidecar; copy: direct/optimized + create device-res sidecar) — pin against it.
+- `test-packages/e2e-tests/src/features/art-matrix-transfer.test.ts` sweeps iPod only today; `art-matrix-resize.test.ts` sweeps `RESIZE_DEVICE_IDS = ['ms-generic','ipod-MA147']`. Both should add rockbox once the sidecar transfer-mode model exists. AC added above covers this.
+- This is paired with TASK-356.06 on the source side (Subsonic/Navidrome serves sidecar art via API): these two tasks close the sidecar surface from both ends.
+<!-- SECTION:NOTES:END -->
