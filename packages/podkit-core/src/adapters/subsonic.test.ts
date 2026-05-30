@@ -626,6 +626,34 @@ describe('SubsonicAdapter loop-free artwork', () => {
     const reasons = detectUpgrades(source, ipod);
     expect(reasons).not.toContain('artwork-added');
   });
+
+  it('detectUpgrades stays silent when a stale syncTag.artworkHash lingers from a prior --check-artwork sync', async () => {
+    // Scenario: a user ran one sync with --check-artwork (which wrote
+    // artworkHash to the iPod's syncTag), then disabled the flag. The adapter
+    // now reports hasArtwork=undefined and artworkHash=undefined. The
+    // artwork-updated rule is gated on `source.artworkHash` being set, so the
+    // stale device-side hash must not be the trigger; if a refactor ever
+    // relaxed that gate it would re-introduce an artwork-updated loop here.
+    const adapter = new SubsonicAdapter({
+      url: 'https://test.example.com',
+      username: 'u',
+      password: 'p',
+      checkArtwork: false,
+    });
+    const source = await (adapter as any)['mapSongToTrack'](song({ coverArt: 'al-real' }), album());
+    const ipodWithStaleHash = {
+      ...deviceTrackWithoutArt(),
+      hasArtwork: true,
+      syncTag: { artworkHash: 'stale_old_hash_from_prior_sync' },
+    } as unknown as DeviceTrack;
+
+    const reasons = detectUpgrades(source, ipodWithStaleHash);
+    expect(reasons).not.toContain('artwork-added');
+    // artwork-removed requires source.hasArtwork === false (not undefined);
+    // included to pin the strict-equality contract on that rule too.
+    expect(reasons).not.toContain('artwork-removed');
+    expect(reasons).not.toContain('artwork-updated');
+  });
 });
 
 // =============================================================================

@@ -312,7 +312,16 @@ export function predictSubsonic(
   }
 
   // With checkArtwork: adapter fetches, filters placeholders, writes a hash.
-  // Genuine mismatches converge via the syncTag hash.
+  // Idempotent unless source claims no art but device has art — for these
+  // fixtures that case never arises, so every cell converges:
+  //   - source === device: symmetric (A-none; B-embedded and D-both with an
+  //     embed-capable format)
+  //   - source true, device false (C-sidecar; B-embedded/D-both with a
+  //     no-embed format): asymmetric on the first sync, but the artwork-added
+  //     rule's inner check writes the fetched artworkHash into the syncTag, so
+  //     the second sync sees source.artworkHash === syncTag.artworkHash and
+  //     skips. Tracked as idempotent because the matrix's second-sync dry-run
+  //     produces no ops.
   const sourceHasArtwork = scenario !== 'A-none';
   const idempotent = sourceHasArtwork === deviceHasArtwork || sourceHasArtwork;
 
