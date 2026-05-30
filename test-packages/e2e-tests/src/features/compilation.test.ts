@@ -255,8 +255,8 @@ describe('compilation album support', () => {
         expect(result2.exitCode).toBe(0);
         expect(json2?.success).toBe(true);
 
-        // The track should be reported as needing a metadata correction update
-        expect(json2?.plan?.tracksToUpdate).toBeGreaterThanOrEqual(1);
+        // Only the one track whose COMPILATION tag changed needs an update.
+        expect(json2?.plan?.tracksToUpdate).toBe(1);
       } finally {
         await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });

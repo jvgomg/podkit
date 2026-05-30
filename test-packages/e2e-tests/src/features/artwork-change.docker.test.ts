@@ -285,10 +285,10 @@ describe('artwork change detection (Subsonic)', () => {
         expect(syncResult.exitCode).toBe(0);
         expect(syncJson?.success).toBe(true);
         // Should sync the 3 goldberg-selections tracks
-        expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(3);
+        expect(syncJson?.result?.completed).toBe(3);
 
         const trackCount = await target.getTrackCount();
-        expect(trackCount).toBeGreaterThanOrEqual(3);
+        expect(trackCount).toBe(3);
         console.log(`Initial sync completed: ${syncJson?.result?.completed} tracks`);
 
         // ------------------------------------------------------------------
@@ -396,12 +396,10 @@ describe('artwork change detection (Subsonic)', () => {
         console.log(`Artwork change detection result:`);
         console.log(`  Tracks to update: ${updateCount}`);
         console.log(`  Update breakdown: ${JSON.stringify(breakdown)}`);
-        expect(updateCount).toBeGreaterThan(0);
-        expect(breakdown).toBeDefined();
-        expect(breakdown?.['artwork-updated']).toBeGreaterThan(0);
-
         // All 3 tracks share the same album artwork, so all should be detected
-        expect(breakdown?.['artwork-updated']).toBeGreaterThanOrEqual(3);
+        expect(updateCount).toBe(3);
+        expect(breakdown).toBeDefined();
+        expect(breakdown?.['artwork-updated']).toBe(3);
 
         console.log('Artwork change detection verified');
 
@@ -419,7 +417,7 @@ describe('artwork change detection (Subsonic)', () => {
 
         expect(updateResult.exitCode).toBe(0);
         expect(updateJson?.success).toBe(true);
-        expect(updateJson?.result?.completed).toBeGreaterThanOrEqual(3);
+        expect(updateJson?.result?.completed).toBe(3);
         console.log(`Artwork sync completed: ${updateJson?.result?.completed} tracks updated`);
 
         // ------------------------------------------------------------------
@@ -474,7 +472,7 @@ describe('artwork change detection (Subsonic)', () => {
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
         );
         expect(syncResult.exitCode).toBe(0);
-        expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(3);
+        expect(syncJson?.result?.completed).toBe(3);
 
         // Step 3: Strip all artwork from goldberg FLACs
         console.log('artwork-removed Step 3: Stripping artwork from source files...');
@@ -505,7 +503,7 @@ describe('artwork change detection (Subsonic)', () => {
           | Record<string, number | undefined>
           | undefined;
         console.log(`artwork-removed result: ${JSON.stringify(breakdown)}`);
-        expect(breakdown?.['artwork-removed']).toBeGreaterThanOrEqual(3);
+        expect(breakdown?.['artwork-removed']).toBe(3);
 
         // Step 6: Apply
         console.log('artwork-removed Step 6: Applying...');
@@ -564,6 +562,11 @@ describe('artwork change detection (Subsonic)', () => {
           { env: { SUBSONIC_PASSWORD: password }, timeout: 180000 }
         );
         expect(syncResult.exitCode).toBe(0);
+        // Navidrome's library still carries the 3 goldberg tracks from earlier
+        // tests in this suite (it shares one musicDir + container). Initial
+        // sync to a fresh iPod copies them all alongside the new dual-tone;
+        // the exact count isn't the subject — the artwork-added detection at
+        // step 5 is.
         expect(syncJson?.result?.completed).toBeGreaterThanOrEqual(1);
 
         // Step 3: Add artwork to the dual-tone track
@@ -595,7 +598,7 @@ describe('artwork change detection (Subsonic)', () => {
           | Record<string, number | undefined>
           | undefined;
         console.log(`artwork-added result: ${JSON.stringify(breakdown)}`);
-        expect(breakdown?.['artwork-added']).toBeGreaterThanOrEqual(1);
+        expect(breakdown?.['artwork-added']).toBe(1);
 
         // Step 6: Apply
         console.log('artwork-added Step 6: Applying...');

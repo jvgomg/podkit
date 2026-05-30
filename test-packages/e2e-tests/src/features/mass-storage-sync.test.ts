@@ -1095,7 +1095,7 @@ device = "echomini"
       // Verify details contain orphan count and wasted bytes
       const details1 = orphanCheck1!.details as Record<string, unknown>;
       expect(details1.orphanCount).toBe(1);
-      expect(details1.wastedBytes as number).toBeGreaterThan(0);
+      expect(details1.wastedBytes as number).toBe(2048);
 
       // Step 4: Run podkit doctor --repair to clean up the orphan
       const { result: repairResult, json: repairJson } = await runCliJson<RepairOutput>([

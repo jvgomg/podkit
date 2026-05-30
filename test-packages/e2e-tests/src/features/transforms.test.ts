@@ -401,10 +401,10 @@ describe('transforms: cleanArtists', () => {
             '--json',
           ]);
 
-          // Should show tracks to update (not add)
+          // 2 of the 3 tracks have feat. patterns; Solo Artist is unchanged.
           expect(dryRunJson?.plan?.tracksToAdd).toBe(0);
-          expect(dryRunJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
-          expect(dryRunJson?.plan?.updateBreakdown?.['transform-apply']).toBeGreaterThan(0);
+          expect(dryRunJson?.plan?.tracksToUpdate).toBe(2);
+          expect(dryRunJson?.plan?.updateBreakdown?.['transform-apply']).toBe(2);
 
           // Actually sync
           const { result: result2, json: syncJson } = await runCliJson<SyncOutput>([
@@ -483,9 +483,9 @@ describe('transforms: cleanArtists', () => {
             '--json',
           ]);
 
-          // Should show transform-remove updates
-          expect(dryRunJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
-          expect(dryRunJson?.plan?.updateBreakdown?.['transform-remove']).toBeGreaterThan(0);
+          // 2 of the 3 tracks have feat. patterns; Solo Artist is unchanged.
+          expect(dryRunJson?.plan?.tracksToUpdate).toBe(2);
+          expect(dryRunJson?.plan?.updateBreakdown?.['transform-remove']).toBe(2);
 
           // Actually sync
           await runCliJson<SyncOutput>([
@@ -728,9 +728,10 @@ describe('transforms: cleanArtists', () => {
             '--json',
           ]);
 
-          // Find update-metadata operations
+          // Find update-metadata operations.
+          // 2 of the 3 tracks have feat. patterns; Solo Artist emits no op.
           const updateOps = json?.operations?.filter((op) => op.type === 'update-metadata');
-          expect(updateOps?.length).toBeGreaterThan(0);
+          expect(updateOps?.length).toBe(2);
 
           // Should have changes array with before/after
           const opWithChanges = updateOps?.find((op) => op.changes && op.changes.length > 0);

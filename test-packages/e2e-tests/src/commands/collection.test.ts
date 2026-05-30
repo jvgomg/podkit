@@ -46,6 +46,10 @@ describe('podkit collection music (e2e)', () => {
 
       expect(result.exitCode).toBe(0);
       expect(Array.isArray(json)).toBe(true);
+      // Audio fixture inventory evolves (multi-format variants are regenerated
+      // as the matrix grows); this asserts the command surfaces tracks, not an
+      // exact fixture count. The `title` property check on the first element
+      // covers the structural contract.
       expect(json!.length).toBeGreaterThan(0);
       expect(json![0]).toHaveProperty('title');
     } finally {
@@ -91,6 +95,8 @@ describe('podkit collection video (e2e)', () => {
 
         expect(result.exitCode).toBe(0);
         expect(Array.isArray(json)).toBe(true);
+        // Video fixture inventory may change as new format variants are added;
+        // assert the command surfaces videos, not an exact count.
         expect(json!.length).toBeGreaterThan(0);
         expect(json![0]).toHaveProperty('title');
       } finally {

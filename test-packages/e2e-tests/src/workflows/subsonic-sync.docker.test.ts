@@ -78,17 +78,20 @@ describe('Subsonic sync workflow', () => {
 
           expect(result.exitCode).toBe(0);
           expect(json?.success).toBe(true);
-          // Should have synced at least the 6 FLAC files from test fixtures
-          expect(json?.result?.completed).toBeGreaterThanOrEqual(6);
-
-          // Verify tracks were added to iPod
+          // SubsonicTestSource copies @podkit/test-fixtures' full audio tree
+          // into Navidrome; that inventory evolves as the matrix grows and
+          // Navidrome filters by codec/metadata, so the absolute count can't
+          // be pinned here. The relationship "everything Navidrome served
+          // survived sync to the iPod" is the real invariant.
+          const completed = json!.result!.completed;
+          expect(completed).toBeGreaterThan(0);
           const trackCount = await target.getTrackCount();
-          expect(trackCount).toBeGreaterThanOrEqual(6);
+          expect(trackCount).toBe(completed);
 
           // Verify database integrity
           const verify = await target.verify();
           expect(verify.valid).toBe(true);
-          expect(verify.trackCount).toBeGreaterThanOrEqual(6);
+          expect(verify.trackCount).toBe(completed);
 
           console.log(`Synced ${json?.result?.completed} tracks from Subsonic`);
         } finally {
@@ -149,9 +152,14 @@ describe('Subsonic sync workflow', () => {
           expect(json?.success).toBe(true);
           expect(json?.dryRun).toBe(true);
           expect(json?.plan).toBeDefined();
-          expect(json?.plan?.tracksToAdd).toBeGreaterThanOrEqual(6);
-          // FLAC files should be transcoded
-          expect(json?.plan?.tracksToTranscode).toBeGreaterThanOrEqual(6);
+          // Inventory evolves and is mixed (FLAC + MP3 + AAC + …) so the
+          // exact add/transcode split shifts as fixtures change. Assert the
+          // plan is non-trivial and any transcodes are a subset of adds.
+          const tracksToAdd = json!.plan!.tracksToAdd ?? 0;
+          const tracksToTranscode = json!.plan!.tracksToTranscode ?? 0;
+          expect(tracksToAdd).toBeGreaterThan(0);
+          expect(tracksToTranscode).toBeGreaterThan(0);
+          expect(tracksToTranscode).toBeLessThanOrEqual(tracksToAdd);
         } finally {
           await cleanupTempConfig(configPath);
         }
@@ -179,8 +187,10 @@ describe('Subsonic sync workflow', () => {
           expect(result.exitCode).toBe(0);
           expect(json?.success).toBe(true);
 
-          // Verify tracks were synced
+          // Verify the relationship: every Subsonic-served track survived
+          // the sync onto the iPod. Absolute count varies with fixtures.
           const trackCount = await target.getTrackCount();
+          expect(trackCount).toBe(json!.result!.completed);
           expect(trackCount).toBeGreaterThan(0);
 
           // Verify database is valid (implicitly checks files exist and are readable)

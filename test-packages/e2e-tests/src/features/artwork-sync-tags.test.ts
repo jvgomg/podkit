@@ -195,12 +195,12 @@ describe('artwork sync tags (directory source)', () => {
           '--json',
         ]);
         expect(dryResult.exitCode).toBe(0);
-        expect(dryJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
+        expect(dryJson?.plan?.tracksToUpdate).toBe(3);
 
         const breakdown = dryJson?.plan?.updateBreakdown as
           | Record<string, number | undefined>
           | undefined;
-        expect(breakdown?.['artwork-removed']).toBeGreaterThan(0);
+        expect(breakdown?.['artwork-removed']).toBe(3);
 
         // Actually sync the removal
         const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>([
@@ -275,12 +275,12 @@ describe('artwork sync tags (directory source)', () => {
           '--json',
         ]);
         expect(dryResult.exitCode).toBe(0);
-        expect(dryJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
+        expect(dryJson?.plan?.tracksToUpdate).toBe(1);
 
         const breakdown = dryJson?.plan?.updateBreakdown as
           | Record<string, number | undefined>
           | undefined;
-        expect(breakdown?.['artwork-added']).toBeGreaterThan(0);
+        expect(breakdown?.['artwork-added']).toBe(1);
       } finally {
         if (collectionDir) await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });
@@ -337,12 +337,12 @@ describe('artwork sync tags (directory source)', () => {
           '--json',
         ]);
         expect(dryResult.exitCode).toBe(0);
-        expect(dryJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
+        expect(dryJson?.plan?.tracksToUpdate).toBe(3);
 
         const breakdown = dryJson?.plan?.updateBreakdown as
           | Record<string, number | undefined>
           | undefined;
-        expect(breakdown?.['artwork-updated']).toBeGreaterThan(0);
+        expect(breakdown?.['artwork-updated']).toBe(3);
 
         // Actually sync the artwork update
         const { result: syncResult, json: syncJson } = await runCliJson<SyncOutput>([
@@ -451,12 +451,12 @@ describe('artwork sync tags (directory source)', () => {
           '--json',
         ]);
         expect(changeResult.exitCode).toBe(0);
-        expect(changeJson?.plan?.tracksToUpdate).toBeGreaterThan(0);
+        expect(changeJson?.plan?.tracksToUpdate).toBe(3);
 
         const breakdown = changeJson?.plan?.updateBreakdown as
           | Record<string, number | undefined>
           | undefined;
-        expect(breakdown?.['artwork-updated']).toBeGreaterThan(0);
+        expect(breakdown?.['artwork-updated']).toBe(3);
       } finally {
         if (collectionDir) await rm(collectionDir, { recursive: true, force: true });
         await rm(configDir, { recursive: true, force: true });
