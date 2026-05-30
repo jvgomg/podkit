@@ -282,7 +282,9 @@ async function observeCodecTriplet(opts: {
           `  stderr: ${result.stderr.slice(0, 1500)}`
       );
     }
-    const resolvedCodec = json.codec ?? null;
+    // Decision attribution layer: TASK-357 moved the resolved lossy codec
+    // from the top-level `json.codec` into `json.decisions.lossyCodec.value`.
+    const resolvedCodec = json.decisions?.lossyCodec.value ?? null;
 
     const byKey = new Map<string, CodecObserved>();
     for (const format of FORMATS) {

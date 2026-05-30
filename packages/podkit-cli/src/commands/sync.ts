@@ -91,6 +91,7 @@ import {
   type VideoContentConfig,
   type GenericSyncResult,
 } from './sync-presenter.js';
+import { buildSyncDecisions } from './sync-decisions.js';
 import {
   resolveCleanArtistsTransform,
   computeTransformWarnings,
@@ -233,10 +234,15 @@ export interface SyncOutput {
   dryRun: boolean;
   source?: string;
   device?: string;
-  quality?: string;
-  codec?: string;
-  codecPreference?: string[];
-  transferMode?: string;
+  /**
+   * Sync-wide decisions with provenance attribution. Replaces the previous
+   * top-level `quality`/`codec`/`codecPreference`/`transferMode` strings.
+   * Consumers that need only the value read `decisions.transferMode.value`,
+   * etc.; consumers that need to assert "where did this come from?" (matrix
+   * tests, doctor surfaces) read `decisions.transferMode.source`. See
+   * doc-040 (PRD) and {@link SyncDecisions}.
+   */
+  decisions?: import('./sync-decisions.js').SyncDecisions;
   transforms?: TransformInfo[];
   skipUpgrades?: boolean;
   /**
@@ -292,6 +298,19 @@ export interface SyncOutput {
     error?: string;
     changes?: Array<{ field: string; from: string; to: string }>;
     reason?: string;
+    /**
+     * Source track's codec (e.g. 'flac', 'mp3'). Set for add/upgrade variants
+     * where a source file exists; undefined for `remove`/`update-metadata`/
+     * `update-sync-tag`/`relocate` (no source codec).
+     */
+    inputCodec?: string;
+    /**
+     * Resolved output codec the planner chose (e.g. 'aac' for `add-transcode`,
+     * 'flac' for `add-direct-copy` of a FLAC source). Disambiguates which
+     * codec a `transcode` op targets without scraping operation type strings.
+     * Undefined for ops that don't write a file.
+     */
+    outputCodec?: string;
   }>;
   /**
    * Real-run outcome counts. **Populated only on non-dry-run syncs.** A
@@ -936,6 +955,10 @@ export async function runSync(
   let anyError = false;
   let totalArtworkMissingBaseline = 0;
   let totalTransferModeMismatch = 0;
+  // Captured per-collection inside the music loop so the non-dry-run
+  // aggregate JSON can surface decision provenance. Decisions are device-wide,
+  // so the last collection's value is equivalent to any other's.
+  let lastDecisions: import('./sync-decisions.js').SyncDecisions | undefined;
 
   const shutdown = createShutdownController();
   shutdown.install();
@@ -993,6 +1016,7 @@ export async function runSync(
     // ----- Resolve codec preferences -----
     const effectiveCodecPreference = deviceConfig?.codec ?? config.codec ?? undefined;
     const lossyStack = effectiveCodecPreference?.lossy ?? core.DEFAULT_LOSSY_STACK;
+    const losslessStack = effectiveCodecPreference?.lossless ?? core.DEFAULT_LOSSLESS_STACK;
     let resolvedLossyCodec: string | undefined;
 
     if (hasMusicToSync && deviceCapabilities) {
@@ -1027,6 +1051,52 @@ export async function runSync(
           out.print(`=== Music: ${collection.name} ===`);
         }
 
+        // Resolve once for both checkArtwork value and decisions provenance.
+        const resolvedForDecisions = resolveDeviceSettings(
+          config,
+          '',
+          deviceConfig ?? {},
+          null,
+          false,
+          false
+        );
+        // The lossless stack may be the literal string 'source' (pass-through
+        // sentinel). Normalise to null for the JSON shape — `null` means "no
+        // lossless transcode target chosen". The preference array itself
+        // preserves 'source' as the first entry for assertion purposes.
+        const firstLossless = losslessStack[0];
+        const resolvedLossless =
+          firstLossless === 'source' || firstLossless === undefined ? null : firstLossless;
+        const decisions = buildSyncDecisions({
+          resolved: {
+            transferMode: resolvedForDecisions.transferMode,
+            audio: resolvedForDecisions.audio,
+            checkArtwork: resolvedForDecisions.checkArtwork,
+          },
+          overrides: {
+            transferMode: options.transferMode,
+            quality: options.quality,
+            audioQuality: options.audioQuality,
+            checkArtwork: options.checkArtwork,
+          },
+          resolvedLossyCodec,
+          resolvedLosslessCodec: resolvedLossless,
+          lossyPreference: lossyStack,
+          losslessPreference: losslessStack,
+          // Treat key presence as "user configured codec preference", not
+          // array length — a user who explicitly writes `[codec]` with empty
+          // arrays to suppress defaults still configured it.
+          codecPreferenceFromConfig:
+            config.codec?.lossy !== undefined ||
+            config.codec?.lossless !== undefined ||
+            deviceConfig?.codec?.lossy !== undefined ||
+            deviceConfig?.codec?.lossless !== undefined,
+        });
+        // Capture for the aggregate non-dry-run JSON emitted after all
+        // collections complete (sync.ts further down). Decisions are
+        // device-wide — the last collection's decisions are equivalent.
+        lastDecisions = decisions;
+
         const musicConfig: MusicContentConfig = {
           type: 'music',
           effectiveTransforms,
@@ -1044,16 +1114,14 @@ export async function runSync(
           forceTransferMode: options.forceTransferMode ?? config.forceTransferMode ?? false,
           forceSyncTags: options.forceSyncTags ?? config.forceSyncTags ?? false,
           forceMetadata: options.forceMetadata ?? false,
-          checkArtwork:
-            options.checkArtwork ??
-            resolveDeviceSettings(config, '', deviceConfig ?? {}, null, false, false).checkArtwork
-              .value,
+          checkArtwork: decisions.checkArtwork.value,
           transcoder,
           capabilities: deviceCapabilities,
           effectiveCodecPreference,
           resolvedLossyCodec,
           lossyPreferenceStack: [...lossyStack],
           transcoderCapabilities,
+          decisions,
         };
         const result = await genericSyncCollection(
           new MusicPresenter(),
@@ -1227,6 +1295,7 @@ export async function runSync(
           success: true,
           status: cleanRun ? 'ok' : 'partial-failure',
           dryRun: false,
+          decisions: lastDecisions,
           result: {
             completed: totalCompleted,
             failed: totalFailed,

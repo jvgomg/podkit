@@ -66,6 +66,12 @@ export interface MusicContentConfig {
   lossyPreferenceStack?: string[];
   /** Transcoder capabilities (for encoder availability in codec resolution) */
   transcoderCapabilities?: import('@podkit/core').TranscoderCapabilities;
+  /**
+   * Sync-wide decisions with provenance, surfaced in `--json` output via the
+   * `decisions` block. Built by {@link buildSyncDecisions} in sync.ts. See
+   * doc-040 (PRD) for the JSON contract.
+   */
+  decisions?: import('./sync-decisions.js').SyncDecisions;
 }
 
 /**

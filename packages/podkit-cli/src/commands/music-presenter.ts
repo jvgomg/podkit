@@ -42,6 +42,7 @@ import type {
   VideoContentConfig,
 } from './sync-presenter.js';
 import { formatDuration, formatTransformsConfig } from './sync-presenter.js';
+import { codecsForOp } from './sync-decisions.js';
 import type { MusicCollectionConfig } from '../config/index.js';
 
 /**
@@ -604,10 +605,13 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
     const config = contentConfig as MusicContentConfig;
 
     const operations: SyncOutput['operations'] = plan.operations.map((op: MusicOperation) => {
+      const codecs = codecsForOp(op as never, config.resolvedLossyCodec);
       const base = {
         type: op.type,
         track: core.getMusicOperationDisplayName(op),
         status: 'pending' as const,
+        ...(codecs.inputCodec !== undefined ? { inputCodec: codecs.inputCodec } : {}),
+        ...(codecs.outputCodec !== undefined ? { outputCodec: codecs.outputCodec } : {}),
       };
       if (op.type === 'update-metadata') {
         const updateInfo = diff.toUpdate.find(
@@ -698,10 +702,7 @@ export class MusicPresenter implements ContentTypePresenter<CollectionTrack, Dev
       dryRun: true,
       source: sourcePath,
       device: devicePath,
-      quality: config.effectiveQuality,
-      codec: config.resolvedLossyCodec,
-      codecPreference: config.lossyPreferenceStack,
-      transferMode: config.effectiveTransferMode,
+      decisions: config.decisions,
       transforms: transformsInfo.length > 0 ? transformsInfo : undefined,
       skipUpgrades: config.skipUpgrades || undefined,
       plan: {

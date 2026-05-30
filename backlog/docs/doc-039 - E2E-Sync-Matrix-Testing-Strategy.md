@@ -76,7 +76,7 @@ The codec concern (`matrix/codec-rules.ts`, landed in P4) realises a first slice
 - **Inspect sync tags on the synced output.** The `[podkit:v1 …]` comment tag records `quality`, `codec`, `transfer` (see [[doc-014]]). A test-side reader could assert the decision was persisted.
 - **A dedicated `podkit sync --explain` / plan-dump mode.** Cleanest long-term machine-readable decision trace; largest podkit change.
 
-The remaining decision work (auto transfer-mode selection, full per-track classification) is tracked as TASK-357. The harness is designed with the seam: `diffCell` compares object-valued fields structurally, so a future `decisions` block diffs out of the box.
+The first slice of TASK-357 has landed: the dry-run `--json` now carries a top-level `decisions: { transferMode: {value, source}, lossyCodec, losslessCodec, quality, checkArtwork, ... }` block (provenance attribution via `'cli' | 'device' | 'global' | 'global-quality' | 'device-quality' | 'default'` `source`), and each `operations[]` entry carries `inputCodec` / `outputCodec`. The matrix `diffCell` already diffs object-valued fields structurally, so consumers compose the decisions block directly into the cell's `Expected` shape with no harness change. See [[doc-040]] for the PRD. Remaining work tracked under TASK-357 follow-ups: `'auto'` source attribution for planner-driven choices, sync-tag inspection helper, and a dedicated `--explain` mode.
 
 ## The reference model (capability composition, not name branches)
 
