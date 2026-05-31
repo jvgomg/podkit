@@ -86,6 +86,21 @@ export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-m
 // Cell expectation / observation shapes
 // ---------------------------------------------------------------------------
 
+/**
+ * Provenance attribution mirror of `DecisionSource` from
+ * `packages/podkit-cli/src/commands/sync-decisions.ts`. See codec-rules.ts
+ * for the rationale (test package doesn't import from the CLI's source tree).
+ */
+type DecisionSource =
+  | 'default'
+  | 'global'
+  | 'global-quality'
+  | 'device'
+  | 'device-quality'
+  | 'unsupported'
+  | 'unknown'
+  | 'cli';
+
 /** Expected outcome for a static (single fresh sync) artwork cell. */
 export interface StaticArtExpected extends CellExpectation {
   trackPresent: boolean;
@@ -93,12 +108,32 @@ export interface StaticArtExpected extends CellExpectation {
   deviceHasArtwork: boolean | null;
   /** Second sync produced no artwork-churn op for this track. */
   idempotent: boolean;
+  /**
+   * Provenance of `--check-artwork`'s resolved value
+   * (`json.decisions.checkArtwork.source`). The matrix runPass passes
+   * `--check-artwork` as a CLI flag when enabled and omits it otherwise, so:
+   *   - checkArtwork true  → expect `'cli'`
+   *   - checkArtwork false → expect `'default'` (config doesn't set it)
+   * Catches a CLI-flag plumbing regression that silently used config/default.
+   */
+  checkArtworkSource: DecisionSource;
+  /**
+   * Whether the sync emitted the `artwork-detection-disabled` plan warning
+   * (TASK-366). Subsonic adapter fires it iff `!checkArtwork`; directory
+   * adapter never fires it. A correlation cell with `checkArtworkSource`
+   * pins the warning ↔ resolved-value relationship — a regression in either
+   * feature alone (warning silently dropped, or warning fires after
+   * checkArtwork is on) flips this.
+   */
+  artworkDetectionDisabledWarning: boolean;
 }
 
 export interface StaticArtObserved extends Record<string, unknown> {
   trackPresent: boolean;
   deviceHasArtwork: boolean | null;
   idempotent: boolean;
+  checkArtworkSource: DecisionSource | null;
+  artworkDetectionDisabledWarning: boolean;
   secondSyncOps: OpSummary[];
 }
 
@@ -251,7 +286,7 @@ export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null 
  */
 export function predictDirectory(
   cell: PipelineDeviceCell,
-  _checkArtwork: boolean
+  checkArtwork: boolean
 ): StaticArtExpected {
   const { scenario, format, pipeline, device } = cell;
   const spec = DEVICE_SPEC_BY_ID[device];
@@ -270,7 +305,18 @@ export function predictDirectory(
     reason = `embedded art preserved through the ${action} path on a ${store} device`;
   }
 
-  return { trackPresent: true, deviceHasArtwork, idempotent: true, reason };
+  return {
+    trackPresent: true,
+    deviceHasArtwork,
+    idempotent: true,
+    // ASSUMPTION: the host matrix's `createPipelineConfig` never writes
+    // `checkArtwork = ...` into the TOML. CLI flag → 'cli'; otherwise the
+    // resolver falls through to 'default'.
+    checkArtworkSource: checkArtwork ? 'cli' : 'default',
+    // Directory adapter never emits the warning — it's Subsonic-only.
+    artworkDetectionDisabledWarning: false,
+    reason,
+  };
 }
 
 /**
@@ -308,7 +354,21 @@ export function predictSubsonic(
       reason =
         'embedded art in source file → device has art; source.hasArtwork=undefined either way → idempotent';
     }
-    return { trackPresent: true, deviceHasArtwork, idempotent: true, reason };
+    return {
+      trackPresent: true,
+      deviceHasArtwork,
+      idempotent: true,
+      // ASSUMPTION: the artwork-matrix configs (createSubsonicConfig +
+      // createPipelineConfig) never write `checkArtwork = ...` into the
+      // TOML. With no config-level value and no CLI flag, the resolver
+      // returns 'default'. If a future config helper sets it, this pin
+      // must flip to 'global' / 'device' as appropriate.
+      checkArtworkSource: 'default',
+      // Subsonic adapter fires `artwork-detection-disabled` precisely when
+      // checkArtwork is off — that's the warning's whole reason for existing.
+      artworkDetectionDisabledWarning: true,
+      reason,
+    };
   }
 
   // With checkArtwork: adapter fetches, filters placeholders, writes a hash.
@@ -334,7 +394,16 @@ export function predictSubsonic(
     reason = 'embedded art in source file → device has art → symmetric, idempotent';
   }
 
-  return { trackPresent: true, deviceHasArtwork, idempotent, reason };
+  return {
+    trackPresent: true,
+    deviceHasArtwork,
+    idempotent,
+    checkArtworkSource: 'cli',
+    // Subsonic + checkArtwork on → warning suppressed (the cheap-path
+    // limitation it warns about no longer applies).
+    artworkDetectionDisabledWarning: false,
+    reason,
+  };
 }
 
 /**
@@ -512,12 +581,16 @@ function classifyAnchorColor(sample: RgbColor): string | null {
  * code change that started sharing art across a compilation's artists would
  * flip the bare cells; a coarser key that collided would flip `dbArtOwnColor`.
  */
-export function predictCompilation(format: Format, _checkArtwork: boolean): CompilationExpected {
+export function predictCompilation(format: Format, checkArtwork: boolean): CompilationExpected {
   const embeds = compilationTrackEmbeds(FORMAT_TITLE[format]);
   return {
     trackPresent: true,
     deviceHasArtwork: embeds,
     idempotent: true,
+    checkArtworkSource: checkArtwork ? 'cli' : 'default',
+    // Compilation matrix uses a directory adapter, so the Subsonic-only
+    // warning never fires.
+    artworkDetectionDisabledWarning: false,
     dbArtOwnColor: embeds ? true : null,
     reason: embeds
       ? `${format} is an embed-capable anchor carrying its own distinct cover → reaches the iPod artwork DB with its own colour (no cache collision)`
@@ -796,6 +869,15 @@ export async function observeStaticArtwork(opts: {
     );
   }
 
+  // Decision attribution: TASK-357's --json `decisions.checkArtwork.source` is
+  // sync-wide, so we read it once and apply to every cell in this pass.
+  const checkArtworkSource = (dryJson.decisions?.checkArtwork.source ??
+    null) as DecisionSource | null;
+  // TASK-366's `artwork-detection-disabled` plan warning is also sync-wide
+  // (one warning per dry-run). Same one-shot read.
+  const artworkDetectionDisabledWarning =
+    dryJson.planWarnings?.some((w) => w.type === 'artwork-detection-disabled') ?? false;
+
   const byKey = new Map<string, StaticArtObserved>();
   for (const cell of scenarioFormatCells()) {
     const artist = SCENARIO_ARTIST[cell.scenario];
@@ -806,6 +888,8 @@ export async function observeStaticArtwork(opts: {
       trackPresent: device !== undefined,
       deviceHasArtwork: device ? device.hasArtwork : null,
       idempotent: isArtworkIdempotent(ops),
+      checkArtworkSource,
+      artworkDetectionDisabledWarning,
       secondSyncOps: ops,
     });
   }
@@ -853,6 +937,11 @@ export async function observeCompilation(opts: {
     );
   }
 
+  const checkArtworkSource = (dryJson.decisions?.checkArtwork.source ??
+    null) as DecisionSource | null;
+  const artworkDetectionDisabledWarning =
+    dryJson.planWarnings?.some((w) => w.type === 'artwork-detection-disabled') ?? false;
+
   const byKey = new Map<string, CompilationObserved>();
   for (const format of FORMATS) {
     const title = FORMAT_TITLE[format];
@@ -869,6 +958,8 @@ export async function observeCompilation(opts: {
       trackPresent: device !== undefined,
       deviceHasArtwork: device ? device.hasArtwork : null,
       idempotent: isArtworkIdempotent(ops),
+      checkArtworkSource,
+      artworkDetectionDisabledWarning,
       dbArtOwnColor,
       secondSyncOps: ops,
     });

@@ -59,6 +59,24 @@ import {
   type SkipDecision,
 } from './harness.js';
 
+/**
+ * `Format` axis values are codec names ('aac', 'alac'). The directory adapter
+ * reports the file's `fileType` (container/extension). For the .m4a container
+ * — used by both AAC and ALAC sources — `fileType` is 'm4a'. This map
+ * normalises the predictor's expected output for direct/optimized copy ops
+ * (transcode ops emit the codec name, not the container, so they bypass it).
+ */
+const FORMAT_FILETYPE: Record<Format, string> = {
+  wav: 'wav',
+  aiff: 'aiff',
+  flac: 'flac',
+  alac: 'm4a',
+  mp3: 'mp3',
+  aac: 'm4a',
+  ogg: 'ogg',
+  opus: 'opus',
+};
+
 // ---------------------------------------------------------------------------
 // Codec-config axis
 // ---------------------------------------------------------------------------
@@ -145,16 +163,50 @@ function syncIsLive(device: DeviceId, config: CodecConfigId, transferMode: Trans
 // Expectation / observation shapes
 // ---------------------------------------------------------------------------
 
+/**
+ * Provenance attribution mirror of the `DecisionSource` union exported by
+ * `packages/podkit-cli/src/commands/sync-decisions.ts`. Kept local to the
+ * matrix to avoid the test package reaching into the CLI's source tree; if
+ * podkit grows a new source value the matrix predictor will need updating
+ * anyway (the diff fails until both sides agree).
+ */
+type DecisionSource =
+  | 'default'
+  | 'global'
+  | 'global-quality'
+  | 'device'
+  | 'device-quality'
+  | 'unsupported'
+  | 'unknown'
+  | 'cli';
+
 export interface CodecExpected extends CellExpectation {
   /** The single `add-*` op type planned for this track on a fresh device. */
   addOp: string;
-  /** Sync-wide resolved lossy codec (`json.codec`). */
+  /** Sync-wide resolved lossy codec (`json.decisions.lossyCodec.value`). */
   resolvedCodec: string | null;
+  /**
+   * Provenance of `resolvedCodec` (`json.decisions.lossyCodec.source`).
+   * The codec concern always writes `[codec] lossy = [...]` to the config, so
+   * every cell expects `'global'`. A regression in the resolver that produced
+   * the right codec via the wrong inheritance path (e.g. swallowed the
+   * device-level setting and fell through to the default) would flip this.
+   */
+  lossyCodecSource: DecisionSource;
+  /**
+   * Per-op `outputCodec` for the single `add-*` op (`json.operations[*].outputCodec`).
+   * Disambiguates transcode-to-AAC vs transcode-to-Opus — both are
+   * `add-transcode` at the op-type level. Null when no add op fired (which
+   * shouldn't happen on a fresh-device dry-run of a known-format track).
+   */
+  outputCodec: string | null;
 }
 
 export interface CodecObserved extends Record<string, unknown> {
   addOp: string;
   resolvedCodec: string | null;
+  lossyCodecSource: DecisionSource | null;
+  outputCodec: string | null;
   planOps: OpSummary[];
 }
 
@@ -169,20 +221,37 @@ export function predictCodec(cell: CodecCell): CodecExpected {
   const resolved = resolvedLossyCodec(config.lossy, spec.capabilities, spec.kind) ?? null;
 
   let addOp: string;
+  let outputCodec: string | null;
   let reason: string;
   if (outcome.action === 'transcode') {
     addOp = 'add-transcode';
+    // Transcode rewrites the audio stream into the resolved lossy codec.
+    outputCodec = resolved;
     reason = `${cell.format} → transcode to ${resolved ?? '<none>'} (${outcome.extension}); preference ${config.lossy.join('>')} resolves to ${resolved ?? '<none>'} on this device`;
   } else {
     const kind = copyOpKind(spec.capabilities, cell.transferMode);
     addOp = `add-${kind}`;
+    // Copy variants leave the file unchanged — output equals the source's
+    // `fileType` (container/extension). For .m4a sources (AAC + ALAC) podkit
+    // reports 'm4a', not the codec name; FORMAT_FILETYPE handles that.
+    outputCodec = FORMAT_FILETYPE[cell.format];
     reason =
       kind === 'optimized-copy'
         ? `${cell.format} is device-native → copy, routed through FFmpeg (${spec.capabilities.artworkSources[0] === 'embedded' ? 'embedded-art device' : 'optimized mode'})`
         : `${cell.format} is device-native → direct copy (fast/portable, non-embedded-art device)`;
   }
 
-  return { addOp, resolvedCodec: resolved, reason };
+  return {
+    addOp,
+    resolvedCodec: resolved,
+    // Every codec-matrix cell writes `[codec] lossy = [...]` to the config, so
+    // attribution is always `'global'`. A 'default' here means the resolver
+    // silently dropped the config block; a 'device' means a config we don't
+    // write somehow ended up at the device level.
+    lossyCodecSource: 'global',
+    outputCodec,
+    reason,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -283,14 +352,30 @@ async function observeCodecTriplet(opts: {
       );
     }
     // Decision attribution layer: TASK-357 moved the resolved lossy codec
-    // from the top-level `json.codec` into `json.decisions.lossyCodec.value`.
+    // from the top-level `json.codec` into `json.decisions.lossyCodec.value`,
+    // and added `json.decisions.lossyCodec.source` for provenance.
     const resolvedCodec = json.decisions?.lossyCodec.value ?? null;
+    const lossyCodecSource = (json.decisions?.lossyCodec.source ?? null) as DecisionSource | null;
 
     const byKey = new Map<string, CodecObserved>();
     for (const format of FORMATS) {
       const planOps = planOpsForTitle(json, FORMAT_TITLE[format]);
+      const addOp = addOpType(planOps);
+      // Per-op outputCodec lives on the operation entry. Disambiguates
+      // transcode-to-AAC vs transcode-to-Opus at cell granularity.
+      const addOpEntry = (json.operations ?? []).find(
+        (op) =>
+          (op.track ?? '').endsWith(` - ${FORMAT_TITLE[format]}`) &&
+          op.type.startsWith(ADD_OP_PREFIX)
+      );
       const key = codecCellKey({ device: spec.id, format, config: config.id, transferMode });
-      byKey.set(key, { addOp: addOpType(planOps) ?? '<none>', resolvedCodec, planOps });
+      byKey.set(key, {
+        addOp: addOp ?? '<none>',
+        resolvedCodec,
+        lossyCodecSource,
+        outputCodec: addOpEntry?.outputCodec ?? null,
+        planOps,
+      });
     }
     return byKey;
   } finally {
