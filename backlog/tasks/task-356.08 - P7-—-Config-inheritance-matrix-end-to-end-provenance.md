@@ -1,9 +1,10 @@
 ---
 id: TASK-356.08
 title: P7 — Config-inheritance matrix (end-to-end provenance)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-31 22:09'
+updated_date: '2026-05-31 22:51'
 labels:
   - testing
   - e2e
@@ -56,3 +57,17 @@ Each cell writes a minimal TOML config that pins the setting at one and only one
 - At least: 6 source levels × 3 settings = 18 cells, all asserting both value and source exactly.
 - A regression in the resolver-chain ordering flips ≥1 cell (verify by mutating `resolveDeviceSettings` temporarily — at least one new cell must turn red).
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Added `matrix/config-rules.ts` and `features/config.test.ts`. Walks (setting × source-level) for the 7 SyncDecisions keys × 6 levels = 42 combinations: 21 asserting, 4 bug-fenced (codec/device → filed as TASK-367), 17 impossible-pruned.
+
+Asserted cells cover every reachable provenance source on `transferMode` / `quality` / `checkArtwork` (`default`/`global`/`device`/`cli` for scalars; `global-quality`/`device-quality` additionally for `quality`) and `default`/`global` on the four codec keys.
+
+Regression sensitivity verified: swapping the order in `resolveSimple` so device source mis-attributes as `'global'` flips `transferMode/device` red (mutation tested with a forced rebuild of `packages/podkit-cli/dist/main.js`).
+
+Surfaced TASK-367 — device-level `[codec]` and `[devices.<n>.codec]` both flip `codecPreferenceFromConfig=true`, but `buildSyncDecisions` always emits `source: 'global'`. The 4 device-level codec cells are visibly fenced with `skipBug('TASK-367')` rather than silently passing.
+
+Files: `test-packages/e2e-tests/src/matrix/config-rules.ts`, `test-packages/e2e-tests/src/features/config.test.ts`.
+<!-- SECTION:FINAL_SUMMARY:END -->
