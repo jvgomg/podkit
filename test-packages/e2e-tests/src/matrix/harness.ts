@@ -215,9 +215,9 @@ export interface MatrixDef<Cell, Expected extends CellExpectation, Observed> {
   cellKey: (cell: Cell) => string;
   /** Human label for the `it` block. */
   cellLabel: (cell: Cell) => string;
-  /** The pass dimension. Defaults to `[false, true]` (--check-artwork). */
-  passes?: readonly boolean[];
-  /** Label for a pass value. Defaults to `--check-artwork on/off`. */
+  /** The pass dimension — each value is run through `runPass` once. */
+  passes: readonly boolean[];
+  /** Label for a pass value. Defaults to `String(pass)`. */
   passLabel?: (pass: boolean) => string;
   /** Predicted outcome for a cell under a given pass. */
   predict: (cell: Cell, pass: boolean) => Expected;
@@ -244,14 +244,19 @@ export interface MatrixDef<Cell, Expected extends CellExpectation, Observed> {
  * Register a matrix: orchestrates `setup` + every `runPass` in `beforeAll`,
  * then emits one `describe` per pass and one `it` per cell asserting
  * `predict === observe`.
+ *
+ * Generic across concerns — artwork, codec, config-inheritance, and future
+ * matrices all wire through this. The `pass` dimension is whatever the
+ * concern defines (e.g. `--check-artwork on/off` for artwork; a single
+ * dummy pass for concerns that don't fan).
  */
-export function defineArtworkMatrix<
+export function defineMatrix<
   Cell,
   Expected extends CellExpectation,
   Observed extends Record<string, unknown>,
 >(def: MatrixDef<Cell, Expected, Observed>): void {
-  const passes = def.passes ?? [false, true];
-  const passLabel = def.passLabel ?? ((pass: boolean) => `--check-artwork ${pass ? 'on' : 'off'}`);
+  const passes = def.passes;
+  const passLabel = def.passLabel ?? ((pass: boolean) => String(pass));
   const resultsByPass = new Map<boolean, Map<string, Observed>>();
 
   beforeAll(async () => {

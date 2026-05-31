@@ -17,7 +17,7 @@
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { getMultiFormatFixturesDir } from '@podkit/test-fixtures';
 
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   codecCellKey,
   codecCellLabel,
@@ -34,7 +34,7 @@ async function runPass(): Promise<Map<string, CodecObserved>> {
   return observeCodecMatrix(getMultiFormatFixturesDir());
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'codec matrix — directory adapter, device axis',
   cells: codecCells(),
   cellKey: codecCellKey,

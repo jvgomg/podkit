@@ -20,7 +20,7 @@ import { SubsonicTestSource, isDockerAvailable } from '../sources/subsonic';
 import { createSubsonicConfig } from '../helpers/subsonic-config';
 import { withTarget } from '../targets';
 import { scenarioFormatCells } from '../matrix/axes';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   observeStaticArtwork,
   predictSubsonic,
@@ -54,11 +54,13 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, StaticArtObse
   });
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork matrix — subsonic adapter',
   cells: scenarioFormatCells(),
   cellKey: staticCellKey,
   cellLabel: staticCellLabel,
+  passes: [false, true],
+  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
   predict: predictSubsonic,
   runPass,
   timeoutMs: 1500000,

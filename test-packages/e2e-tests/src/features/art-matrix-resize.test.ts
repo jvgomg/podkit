@@ -27,7 +27,7 @@ import { cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
 import { getMultiFormatEmbeddedHiresFixturesDir } from '@podkit/test-fixtures';
 
 import { DEVICE_SPEC_BY_ID, deviceAddressing } from '../matrix/devices';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import { TRANSFER_MODES } from '../matrix/reference-model';
 import {
   RESIZE_DEVICE_IDS,
@@ -71,7 +71,7 @@ async function runPass(): Promise<Map<string, ResizeObserved>> {
   return merged;
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork matrix — resize vs artworkMaxResolution',
   cells: resizeCells(),
   cellKey: resizeCellKey,

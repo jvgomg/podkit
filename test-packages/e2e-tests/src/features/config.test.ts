@@ -17,7 +17,7 @@
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 import { getMultiFormatFixturesDir } from '@podkit/test-fixtures';
 
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   configCellKey,
   configCellLabel,
@@ -34,7 +34,7 @@ async function runPass(): Promise<Map<string, ConfigObserved>> {
   return observeConfigMatrix(getMultiFormatFixturesDir());
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'config-inheritance matrix — decisions provenance',
   cells: configCells(),
   cellKey: configCellKey,

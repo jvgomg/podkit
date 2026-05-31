@@ -27,7 +27,7 @@
 import { ensureFixturesExist } from '@podkit/e2e-shared';
 
 import { withTarget } from '../targets';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   CHANGE_TRANSITIONS,
   changeCellKey,
@@ -58,11 +58,13 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, ChangeObserve
   return merged;
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork change detection — directory adapter',
   cells: changeCells(),
   cellKey: changeCellKey,
   cellLabel: changeCellLabel,
+  passes: [false, true],
+  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
   predict: predictChange,
   runPass,
 });

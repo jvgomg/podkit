@@ -27,7 +27,7 @@ import { getMultiFormatCompilationFixturesDir } from '@podkit/test-fixtures';
 
 import { withTarget } from '../targets';
 import { FORMATS } from '../matrix/axes';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   createPipelineConfig,
   observeCompilation,
@@ -51,11 +51,13 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, CompilationOb
   });
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork matrix — compilation (various-artist album), iPod',
   cells: FORMATS,
   cellKey: (format) => format,
   cellLabel: (format) => format,
+  passes: [false, true],
+  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
   predict: predictCompilation,
   runPass,
 });

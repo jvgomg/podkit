@@ -25,7 +25,7 @@ import { join } from 'node:path';
 
 import { DEVICE_SPEC_BY_ID, deviceAddressing } from '../matrix/devices';
 import { PIPELINES } from '../matrix/reference-model';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import {
   ARTWORK_DEVICE_IDS,
   createPipelineConfig,
@@ -90,11 +90,13 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, StaticArtObse
   return merged;
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork matrix — directory adapter, device axis',
   cells: pipelineDeviceCells(),
   cellKey: pipelineDeviceCellKey,
   cellLabel: pipelineDeviceCellLabel,
+  passes: [false, true],
+  passLabel: (pass) => `--check-artwork ${pass ? 'on' : 'off'}`,
   predict: predictDirectory,
   skip: skipArtworkCell,
   runPass,

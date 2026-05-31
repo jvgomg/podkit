@@ -25,7 +25,7 @@ import { cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
 import { getMultiFormatEmbeddedFixturesDir } from '@podkit/test-fixtures';
 
 import { withTarget } from '../targets';
-import { defineArtworkMatrix } from '../matrix/harness';
+import { defineMatrix } from '../matrix/harness';
 import { TRANSFER_MODES } from '../matrix/reference-model';
 import {
   createPipelineConfig,
@@ -59,7 +59,7 @@ async function runPass(checkArtwork: boolean): Promise<Map<string, TransferArtOb
   return merged;
 }
 
-defineArtworkMatrix({
+defineMatrix({
   title: 'artwork matrix — transfer-mode × artwork (file strip), iPod',
   cells: transferArtCells(),
   cellKey: transferArtCellKey,

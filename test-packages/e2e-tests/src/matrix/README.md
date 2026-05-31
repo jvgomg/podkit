@@ -28,13 +28,14 @@ encode current-but-wrong behaviour as a living regression catalogue.
 | `axes.ts` | Typed axis values (`Scenario`, `Format`), the artist/title maps, `trackId`, cell builders. The home for new axes. |
 | `devices.ts` | The **device axis**: `DeviceSpec` (id + raw capabilities + a fresh-target factory) for `[ipod-MA147, ms-echo-mini, ms-generic, ms-rockbox]`, and `deviceAddressing()` (path vs. `[devices.*]` stanza). |
 | `reference-model.ts` | Capability functions (`sourceEmbedsArt`, `effectiveSupportedCodecs`, `deviceAction`, `codecOutcome`, `copyOpKind`, `artworkReaches`, `fileArtworkSurvives`, `expectedFileArtworkSize`) — a small model of podkit's sync semantics that `predict()` composes. **Not** per-format/per-device `if` branches. |
-| `harness.ts` | Generic engine: op-classification, `opsForTrack`/`isArtworkIdempotent`/`isStableNoFileOp`/`formatOpsString`/`findDeviceTrack`, the cell diff, and `defineArtworkMatrix()` (per-pass `beforeAll` + `describe`/`it` generation, with `skip()` support). |
+| `harness.ts` | Generic engine: op-classification, `opsForTrack`/`isArtworkIdempotent`/`isStableNoFileOp`/`formatOpsString`/`findDeviceTrack`, the cell diff, and `defineMatrix()` (per-pass `beforeAll` + `describe`/`it` generation, with `skip()` support). |
 | `device-artwork.ts` | The **device-file artwork reader**: `probeFileArtwork` ffprobes the audio files written to a device for attached-picture presence + dimensions (works on either backend); `probeIpodDbArtwork` reads the iTunesDB ArtworkDB thumbnail sizes via `@podkit/ipod-db`. The only way to observe transfer-mode strip (#1) and resize (#3), which are invisible to the plan and to `TrackInfo.hasArtwork`. |
 | `artwork-rules.ts` | The artwork concern: `predictDirectory` (device-swept) / `predictSubsonic` / `predictChange` (transition-swept) / `predictCompilation` / `predictTransferArtwork` / `predictResize`, `skipArtworkCell`, and the `observe*` sync sequences shared by the test files. |
 | `codec-rules.ts` | The codec concern (a **decision matrix**): `predictCodec` + `observeCodecMatrix`. Reads the dry-run plan only — no transfer — so it asserts copy-vs-transcode op type and resolved lossy codec across the device × format × codec-config × transfer-mode product. |
+| `config-rules.ts` | The config-inheritance concern (decision matrix): `predictConfig` + `observeConfigMatrix`. Sweeps each `SyncDecisions` key through every reachable provenance source (`default`/`global`/`global-quality`/`device`/`device-quality`/`cli`) and asserts `json.decisions.<setting>.{value, source}` exactly. |
 
 The thin test files only choose a source, devices, and wire a predictor +
-pass-runner into `defineArtworkMatrix`:
+pass-runner into `defineMatrix`:
 
 | File | Concern |
 |------|---------|
@@ -45,6 +46,7 @@ pass-runner into `defineArtworkMatrix`:
 | `art-matrix-transfer.test.ts` | transfer-mode × artwork file strip/preserve (DB vs file), iPod |
 | `art-matrix-resize.test.ts` | cover resize vs `artworkMaxResolution` × transfer-mode, generic + iPod |
 | `codec.test.ts` | codec decision matrix (plan-only) |
+| `config.test.ts` | config-inheritance decision matrix (decisions provenance, plan-only) |
 
 ## Why `predict()` composes the reference model
 
@@ -56,12 +58,13 @@ capabilities, not the number of cells. When the reference model and the real
 system disagree, exactly one is wrong; the cell's `reason` says which we
 currently believe.
 
-## The `--check-artwork` pass dimension
+## The pass dimension
 
-`defineArtworkMatrix` runs each matrix twice (`[false, true]`) — this is the
-`passes` dimension. Each value gets its own `runPass`, and the predictor
-receives the pass value. Override `passes` / `passLabel` for non-artwork
-concerns.
+`defineMatrix` runs each matrix once per value of `passes`, calling `runPass`
+for each value and passing it to the predictor. Artwork matrices set
+`passes: [false, true]` with `passLabel` = `--check-artwork on/off` to cover
+the artwork-change-detection flag. Decision-matrix concerns (codec, config)
+typically use `passes: [false]` with a static label.
 
 ## Host vs docker (filename gate)
 
@@ -72,7 +75,7 @@ that import the **same** `artwork-rules.ts` — duplication lives in neither.
 
 ## Pruning with `skip()` — and the structural-vs-bug distinction
 
-`defineArtworkMatrix` takes an optional `skip(cell) → SkipDecision | null`. A
+`defineMatrix` takes an optional `skip(cell) → SkipDecision | null`. A
 skipped cell becomes an `it.skip` and is never looked up in the observed map,
 so `runPass` consults the same predicate to avoid syncing the pruned combo.
 
