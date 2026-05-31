@@ -1521,3 +1521,55 @@ describe('TASK-305 AC #7..#9: verbose orphan summary', () => {
     expect(rows.find((l) => /^\s*1\.0 KB/.test(l.trim().replace(/^\s+/, '')))).toBeUndefined();
   });
 });
+
+// ── --system-only sugar + scope conflict ────────────────────────────────────
+
+describe('--system-only flag (sugar for --scope system)', () => {
+  it('throws SCOPE_CONFLICT when paired with --scope all', async () => {
+    const ctx = makeContext({ device: undefined });
+    const { out, stdout, exitCode } = makeOut();
+
+    await runAction1(ctx, out, () =>
+      runDoctorAction({ systemOnly: true, scope: 'all' }, out, {
+        loadCore: async () => makeFakeCore({}) as typeof import('@podkit/core'),
+      })
+    );
+
+    expectCliError(stdout, exitCode, {
+      code: DoctorErrorCodes.SCOPE_CONFLICT,
+      error: /--system-only conflicts with --scope all/,
+      exitCode: 1,
+    });
+  });
+
+  it('throws SCOPE_CONFLICT when paired with --scope device', async () => {
+    const ctx = makeContext({ device: undefined });
+    const { out, stdout, exitCode } = makeOut();
+
+    await runAction1(ctx, out, () =>
+      runDoctorAction({ systemOnly: true, scope: 'device' }, out, {
+        loadCore: async () => makeFakeCore({}) as typeof import('@podkit/core'),
+      })
+    );
+
+    expectCliError(stdout, exitCode, {
+      code: DoctorErrorCodes.SCOPE_CONFLICT,
+      error: /--system-only conflicts with --scope device/,
+      exitCode: 1,
+    });
+  });
+
+  it('is a no-op when paired with --scope system (both explicit and consistent)', async () => {
+    const ctx = makeContext({ device: undefined });
+    const { out, exitCode } = makeOut();
+    const fakeCore = makeFakeCore({ report: { checks: [] } });
+
+    await runAction1(ctx, out, () =>
+      runDoctorAction({ systemOnly: true, scope: 'system' }, out, {
+        loadCore: async () => fakeCore as typeof import('@podkit/core'),
+      })
+    );
+
+    expect(exitCode.get() ?? 0).toBe(0);
+  });
+});

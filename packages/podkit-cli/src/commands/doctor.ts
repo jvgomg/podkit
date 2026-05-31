@@ -52,6 +52,7 @@ export const DoctorErrorCodes = {
   IPOD_DATABASE_OPEN_FAILED: 'IPOD_DATABASE_OPEN_FAILED',
   COLLECTION_NOT_FOUND: 'COLLECTION_NOT_FOUND',
   ADAPTER_CONNECT_FAILED: 'ADAPTER_CONNECT_FAILED',
+  SCOPE_CONFLICT: 'SCOPE_CONFLICT',
 } as const;
 export type DoctorErrorCode = (typeof DoctorErrorCodes)[keyof typeof DoctorErrorCodes];
 
@@ -162,6 +163,13 @@ interface DoctorOptions {
    * honours `--no-system`.
    */
   scope?: DoctorScope;
+  /**
+   * Discoverable sugar for `--scope system`. Equivalent in every way; lives
+   * because users coming from "I don't have an iPod connected, just check
+   * my host" don't reach for `--scope system` first. Symmetrical with
+   * `--no-system` (device-only).
+   */
+  systemOnly?: boolean;
 }
 
 /**
@@ -174,9 +182,9 @@ interface DoctorOptions {
  * Exported for unit-test coverage of the flag matrix (TASK-333 AC #6).
  */
 export function resolveDoctorScopes(
-  options: Pick<DoctorOptions, 'scope' | 'system'>
+  options: Pick<DoctorOptions, 'scope' | 'system' | 'systemOnly'>
 ): ReadonlyArray<'system' | 'device-readiness' | 'database-health'> {
-  const scope: DoctorScope = options.scope ?? 'all';
+  const scope: DoctorScope = options.systemOnly ? 'system' : (options.scope ?? 'all');
   const deviceScopes = ['device-readiness', 'database-health'] as const;
   if (scope === 'system') return ['system'];
   if (scope === 'device') return deviceScopes;
@@ -288,13 +296,19 @@ export const doctorCommand = new Command('doctor')
   .option('--dry-run', 'preview repair without modifying the iPod')
   .option('--format <fmt>', 'output format for file lists (csv)')
   .option('--no-system', 'skip system-scope checks (FFmpeg, SCSI transport, udev rule, etc.)')
+  .option(
+    '--system-only',
+    'run system-scope checks only (no device required); same as --scope system'
+  )
   .addOption(
+    // No commander-level `.default('all')` — the default is applied at the use
+    // site (`options.scope ?? 'all'`) so the conflict check between
+    // `--system-only` and a user-passed `--scope` can distinguish "user wrote
+    // --scope all" from "scope absent, defaulted to all".
     new Option(
       '--scope <scope>',
-      'restrict checks: system-only (no device required), device-only (requires -d), or all'
-    )
-      .choices(['system', 'device', 'all'])
-      .default('all')
+      'restrict checks: system-only (no device required), device-only (requires -d), or all (default)'
+    ).choices(['system', 'device', 'all'])
   )
   .action(async (options: DoctorOptions) => {
     const { globalOpts } = getContext();
@@ -317,7 +331,16 @@ export async function runDoctorAction(
   deps: DoctorDeps = {}
 ): Promise<void> {
   const { config, globalOpts } = getContext();
-  const scope: DoctorScope = options.scope ?? 'all';
+  // `--system-only` is sugar for `--scope system`; passing both is allowed
+  // (both are explicit and consistent), but a conflicting `--scope device`
+  // / `--scope all` is rejected here so the user isn't silently overridden.
+  if (options.systemOnly && options.scope !== undefined && options.scope !== 'system') {
+    throw new CliError({
+      message: `--system-only conflicts with --scope ${options.scope}. Pick one.`,
+      code: DoctorErrorCodes.SCOPE_CONFLICT,
+    });
+  }
+  const scope: DoctorScope = options.systemOnly ? 'system' : (options.scope ?? 'all');
 
   // System-only mode: no device or registered config required. Repair
   // owns its own scope detection (system-scope repairs already bypass
@@ -437,7 +460,7 @@ export async function runDoctorAction(
   const resolved = await resolveDevice(out, deps);
   if ('error' in resolved) {
     throw new CliError({
-      message: resolved.error,
+      message: `${resolved.error}\n\nTo run host-environment checks without a device, use \`podkit doctor --system-only\`.`,
       code: DoctorErrorCodes.DEVICE_NOT_RESOLVED,
     });
   }

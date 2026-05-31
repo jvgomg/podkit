@@ -10,6 +10,8 @@ import { statfsSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import { parseCliDeviceArg, resolveEffectiveDevice } from '../../device-resolver.js';
 import type { ResolvedDevice } from '../../device-resolver.js';
+import { CliError } from '../../errors.js';
+import { DeviceErrorCodes } from './error-codes.js';
 import {
   type DisplayTrack,
   type FieldName,
@@ -50,6 +52,53 @@ export interface DeviceOpDeps extends CoreLoaderDeps {
 // =============================================================================
 // Cross-subcommand helpers
 // =============================================================================
+
+/**
+ * Resolve a device name from the two equivalent forms — the subcommand's
+ * positional argument and the program-level `-d <name>` flag.
+ *
+ * Both forms are equally valid: `podkit device add terapod` and
+ * `podkit -d terapod device add` produce the same outcome. When both are
+ * given and agree (`-d terapod device add terapod`) that's accepted — the
+ * user is being explicit, not making a mistake. When they disagree the
+ * call is rejected so a typo can't silently win.
+ *
+ * @param positional - the value the subcommand received as `<name>`
+ * @param globalDeviceArg - the program-level `-d <name>` value (or path; the
+ *   caller validates name-shape separately if it matters)
+ * @param commandLabel - the subcommand label used in error messages, e.g.
+ *   `'add'`, `'remove'` — yields "Usage: podkit device add <name>" output
+ */
+export function resolveDeviceName(
+  positional: string | undefined,
+  globalDeviceArg: string | undefined,
+  commandLabel: string
+): string {
+  // Treat empty / whitespace-only as missing — `device add ""` and
+  // `device add "   "` should both surface the same DEVICE_REQUIRED
+  // message the entirely-absent case gets, not slip through to the
+  // downstream regex / lookup with a misleading code.
+  const trimmedPositional = positional?.trim() || undefined;
+  const trimmedGlobal = globalDeviceArg?.trim() || undefined;
+  if (
+    trimmedPositional !== undefined &&
+    trimmedGlobal !== undefined &&
+    trimmedPositional !== trimmedGlobal
+  ) {
+    throw new CliError({
+      message: `Conflicting device names: positional "${trimmedPositional}" vs -d "${trimmedGlobal}". Pass only one.`,
+      code: DeviceErrorCodes.DEVICE_ARG_CONFLICT,
+    });
+  }
+  const name = trimmedPositional ?? trimmedGlobal;
+  if (!name) {
+    throw new CliError({
+      message: `Missing device name. Usage: podkit device ${commandLabel} <name>  (or: podkit -d <name> device ${commandLabel}).`,
+      code: DeviceErrorCodes.DEVICE_REQUIRED,
+    });
+  }
+  return name;
+}
 
 /**
  * Get storage information for a mount point.

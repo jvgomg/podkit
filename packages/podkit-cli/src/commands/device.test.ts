@@ -127,15 +127,22 @@ describe('device command', () => {
       expect(pathOption).toBeDefined();
     });
 
-    it('add subcommand uses global --device for name', () => {
+    it('add subcommand accepts an optional positional name', () => {
       const addCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'add');
-      // No positional name argument — uses global --device flag
-      expect(addCmd?.registeredArguments).toHaveLength(0);
+      // Equivalent to `-d <name>` at the program level; resolveDeviceName
+      // accepts either form and rejects a silent disagreement.
+      expect(addCmd?.registeredArguments).toHaveLength(1);
+      const arg = addCmd?.registeredArguments[0];
+      expect(arg?.name()).toBe('name');
+      expect(arg?.required).toBe(false);
     });
 
-    it('remove subcommand uses global --device for name', () => {
+    it('remove subcommand accepts an optional positional name', () => {
       const removeCmd = deviceCommand.commands.find((cmd) => cmd.name() === 'remove');
-      expect(removeCmd?.registeredArguments).toHaveLength(0);
+      expect(removeCmd?.registeredArguments).toHaveLength(1);
+      const arg = removeCmd?.registeredArguments[0];
+      expect(arg?.name()).toBe('name');
+      expect(arg?.required).toBe(false);
     });
 
     it('remove subcommand has --confirm option', () => {

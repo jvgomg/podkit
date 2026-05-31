@@ -8,23 +8,19 @@ import { CliError, runAction } from '../../errors.js';
 import { removeDevice, setDefaultDevice, DEFAULT_CONFIG_PATH } from '../../config/index.js';
 import { OutputContext } from '../../output/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
+import { resolveDeviceName } from './shared.js';
 import type { DeviceRemoveOutput } from './output-types.js';
 
 export const removeSubcommand = new Command('remove')
   .description('remove a device from config')
+  .argument('[name]', 'device name (alternative to passing -d <name> at the program level)')
   .option('--confirm', 'skip confirmation prompt')
-  .action(async (options: { confirm?: boolean }) => {
+  .action(async (positionalName: string | undefined, options: { confirm?: boolean }) => {
     const { config, globalOpts, configResult } = getContext();
-    const name = globalOpts.device;
     const out = OutputContext.fromGlobalOpts(globalOpts);
 
     await runAction(out, async () => {
-      if (!name) {
-        throw new CliError({
-          message: 'Missing required --device flag. Usage: podkit device remove -d <name>',
-          code: DeviceErrorCodes.DEVICE_REQUIRED,
-        });
-      }
+      const name = resolveDeviceName(positionalName, globalOpts.device, 'remove');
 
       const devices = config.devices || {};
       const defaultDevice = config.defaults?.device;

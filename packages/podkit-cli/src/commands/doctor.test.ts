@@ -97,8 +97,11 @@ describe('doctor --scope option', () => {
     expect(scopeOption.argChoices).toEqual(['system', 'device', 'all']);
   });
 
-  it.concurrent('defaults to all', () => {
-    expect(scopeOption.defaultValue).toBe('all');
+  it.concurrent('has no commander-level default (defaulted at use site instead)', () => {
+    // Reason: `--system-only` needs to distinguish "user wrote --scope all"
+    // from "scope absent". A commander default would prevent that.
+    // resolveDoctorScopes / runDoctorAction apply `scope ?? 'all'`.
+    expect(scopeOption.defaultValue).toBeUndefined();
   });
 
   it.concurrent('rejects unknown scope values at parse time', async () => {
@@ -203,6 +206,24 @@ describe('resolveDoctorScopes()', () => {
       expect(resolveDoctorScopes({ scope: c.scope, system: c.system })).toEqual(c.expected);
     });
   }
+
+  // `--system-only` is sugar for `--scope system`. Cover that the sugar
+  // wins over any other scope value the user might pass alongside it, and
+  // that it's a no-op when --scope=system anyway.
+  describe('--system-only sugar', () => {
+    it.concurrent('--system-only ⇒ [system]', () => {
+      expect(resolveDoctorScopes({ systemOnly: true })).toEqual(['system']);
+    });
+    it.concurrent('--system-only overrides unset scope', () => {
+      expect(resolveDoctorScopes({ systemOnly: true, scope: undefined })).toEqual(['system']);
+    });
+    it.concurrent('--system-only with --scope system is a no-op', () => {
+      expect(resolveDoctorScopes({ systemOnly: true, scope: 'system' })).toEqual(['system']);
+    });
+    it.concurrent('--system-only false (absent) falls through to --scope default', () => {
+      expect(resolveDoctorScopes({ systemOnly: false, scope: 'device' })).toEqual(DEVICE);
+    });
+  });
 });
 
 // ── runSystemOnlyDoctor: scope is forwarded to runDiagnostics ─────────────

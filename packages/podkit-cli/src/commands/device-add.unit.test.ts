@@ -148,14 +148,26 @@ function runAdd(
 // =============================================================================
 
 describe('runDeviceAdd: device flag + name validation', () => {
-  it('rejects when --device is missing', async () => {
+  it('rejects when neither positional name nor -d is given', async () => {
     const ctx = makeContext({ device: undefined });
     const { out, stdout, exitCode } = makeOut();
     await runAdd(ctx, {}, out);
     expect(exitCode.get()).toBe(1);
     const err = stdout.json<AddOutputError>();
     expect(err.success).toBe(false);
-    expect(err.error).toContain('--device');
+    // Usage hint shows both forms — the program-level `-d` and the positional.
+    expect(err.error).toContain('podkit device add <name>');
+    expect(err.error).toContain('-d');
+  });
+
+  it('rejects when positional and -d disagree', async () => {
+    const ctx = makeContext({ device: 'from-d' });
+    const { out, stdout, exitCode } = makeOut();
+    await runAdd(ctx, { type: 'echo-mini', name: 'from-positional' }, out);
+    expect(exitCode.get()).toBe(1);
+    const err = stdout.json<AddOutputError>();
+    expect(err.error).toContain('from-d');
+    expect(err.error).toContain('from-positional');
   });
 
   it('rejects an invalid device name (must start with a letter)', async () => {

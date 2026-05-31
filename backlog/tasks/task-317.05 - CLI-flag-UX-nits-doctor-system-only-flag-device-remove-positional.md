@@ -1,10 +1,10 @@
 ---
 id: TASK-317.05
 title: 'CLI flag UX nits: doctor system-only flag + device remove positional'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-09 15:21'
-updated_date: '2026-05-09 20:29'
+updated_date: '2026-05-31 23:36'
 labels:
   - cli
   - ux
@@ -56,3 +56,23 @@ See AC list. No real-hardware verification needed; CLI-only changes verified via
 <!-- SECTION:NOTES:BEGIN -->
 Linux reproduction of Bug 2 confirmed on linka (2026-05-09) during TASK-313: `podkit device add --path /media/james/disk` errors with `Missing required --device flag. Usage: podkit device add -d <name>` — same wording, same omission of the `-d` hint as the macOS reproduction. So the fix lands cross-platform: same code path. No additional Linux-specific work needed.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Two CLI ergonomics fixes from the m-18 hardware sweep.
+
+**Bug 1 — `podkit doctor --system-only`**: new flag, sugar for `--scope system`. Lets users run host-environment checks (FFmpeg, SCSI transport, udev, etc.) without a device connected. Required removing the commander-level `default('all')` on `--scope` so the conflict check between `--system-only` and a user-passed `--scope <other>` can distinguish "user wrote --scope all" from "scope absent". Default now applied at use site (`scope ?? 'all'`). Conflict throws new `DoctorErrorCodes.SCOPE_CONFLICT`. Improved the device-not-resolved error to suggest `--system-only`.
+
+**Bug 2 — `device add <name>` / `device remove <name>` positional**: both subcommands now accept the device name as an optional positional argument. Previously the only path was program-level `-d <name>`, which gave a non-obvious "too many arguments" error when users tried the natural `podkit device add terapod` form. Both forms are accepted; a disagreement between positional and `-d` throws `DEVICE_ARG_CONFLICT`. Whitespace and empty-string positionals are normalised so `device add ""` produces `DEVICE_REQUIRED`, not `DEVICE_NOT_FOUND`.
+
+New helper: `resolveDeviceName(positional, globalDeviceArg, commandLabel)` in `device/shared.ts`. Two-form usage hint everywhere.
+
+**Tests** (1354 unit tests pass): `resolveDeviceName` unit (7 cases: positional / -d / agreement / conflict / DEVICE_REQUIRED with hint / per-command label / empty + whitespace), `resolveDoctorScopes` matrix extended for `systemOnly` (4 cases), `runDoctorAction` integration for `SCOPE_CONFLICT` (3 cases — all/device conflict, system no-op), `runDeviceAdd` integration for positional/-d disagreement, structural tests in `device.test.ts` updated for the new `[name]` argument.
+
+Sonnet review caught 3 real bugs pre-commit (empty-string passthrough, wrong error code, missing runner-level conflict coverage); all addressed.
+
+CLI-only change — AC #6 ("No real-hardware verification required") satisfied. CLI smoke-tested manually: `doctor --system-only --json` returns clean system-only report; `--system-only --scope device` errors with SCOPE_CONFLICT; `device add foo --type generic --path /tmp/foo` accepts the positional; `device remove` with no args yields the two-form usage hint.
+
+Files: `commands/doctor.ts`, `commands/device/{add,remove,shared,error-codes}.ts`, `commands/device/shared.test.ts` (new), test updates in `commands/{doctor,doctor-flag-matrix,device,device-add.unit}.test.ts`.
+<!-- SECTION:FINAL_SUMMARY:END -->

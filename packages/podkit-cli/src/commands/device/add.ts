@@ -30,7 +30,7 @@ import type { IpodIdentityAssessment } from '@podkit/core';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
-import { formatIFlashEvidence, formatIFlashMountExplanation } from './shared.js';
+import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
 import type { DeviceAddOutput } from './output-types.js';
 import { printCapabilitySummary, confirmUnsupportedDeviceAdd } from './capability-summary.js';
 
@@ -118,6 +118,7 @@ interface AddOptions {
 
 export const addSubcommand = new Command('add')
   .description('detect and add a device to config')
+  .argument('[name]', 'device name (alternative to passing -d <name> at the program level)')
   .addOption(new Option('--type <type>', 'device type').choices([...DEVICE_TYPES]))
   .option('--path <path>', 'path to device mount point')
   .option('-y, --yes', 'skip confirmation prompts')
@@ -167,10 +168,10 @@ export const addSubcommand = new Command('add')
     '--tv-shows-dir <name>',
     'TV shows directory name on device (default: Video/Shows, mass-storage only)'
   )
-  .action(async (options: AddOptions & { path?: string }) => {
+  .action(async (positionalName: string | undefined, options: AddOptions & { path?: string }) => {
     const { globalOpts } = getContext();
     const out = OutputContext.fromGlobalOpts(globalOpts);
-    await runAction(out, () => runDeviceAdd(options, out));
+    await runAction(out, () => runDeviceAdd({ ...options, name: positionalName }, out));
   });
 
 /**
@@ -221,26 +222,18 @@ export interface DeviceAddDeps {
  * device manager, confirm prompts, and the dynamic `@podkit/core` import.
  */
 export async function runDeviceAdd(
-  options: AddOptions & { path?: string },
+  options: AddOptions & { path?: string; name?: string },
   out: OutputContext,
   deps: DeviceAddDeps = {}
 ): Promise<void> {
   const { globalOpts, configResult } = getContext();
-  const name = globalOpts.device;
+  const name = resolveDeviceName(options.name, globalOpts.device, 'add');
   const explicitPath = options.path;
   const autoConfirm = options.yes ?? false;
   const confirmFn = deps.confirm ?? confirm;
   const loadCore = deps.loadCore ?? (() => import('@podkit/core'));
   const assessIdentity = deps.assessIdentity ?? assessIpodIdentity;
   const platform = deps.platform ?? process.platform;
-
-  // Require --device flag
-  if (!name) {
-    throw new CliError({
-      message: 'Missing required --device flag. Usage: podkit device add -d <name>',
-      code: DeviceErrorCodes.DEVICE_REQUIRED,
-    });
-  }
 
   // Validate device name
   if (!/^[a-zA-Z][a-zA-Z0-9_-]*$/.test(name)) {
