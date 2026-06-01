@@ -183,14 +183,41 @@ export function skipConfigCell(cell: ConfigCell): SkipDecision | null {
 // Expectation / observation shapes
 // ---------------------------------------------------------------------------
 
+/**
+ * Source-attribution map for the four codec keys in the decisions block.
+ *
+ * Codec cells assert ALL FOUR sources, not just the cell's primary setting.
+ * The pinned stack's two keys (scalar + preference) must share the cell's
+ * level; the un-pinned stack's two keys must fall back to `'default'`.
+ *
+ * Catches two regression shapes the single-key source assertion misses:
+ *   1. Intra-stack drift — `lossyCodec.source` and `lossyPreference.source`
+ *      diverge despite both being driven by `lossyCodecSource` in sync.ts.
+ *   2. Single-source contamination (the original TASK-367 bug) — one source
+ *      is stamped onto all four keys regardless of which level was pinned.
+ */
+export interface CodecSources {
+  lossyCodec: SourceLevel;
+  losslessCodec: SourceLevel;
+  lossyPreference: SourceLevel;
+  losslessPreference: SourceLevel;
+}
+
 export interface ConfigExpected extends CellExpectation {
   value: unknown;
   source: SourceLevel;
+  /**
+   * For codec cells only: expected source for every codec key in the
+   * decisions block. Undefined on non-codec cells (the harness diff skips
+   * keys absent from expected).
+   */
+  codecSources?: CodecSources;
 }
 
 export interface ConfigObserved extends Record<string, unknown> {
   value: unknown;
   source: string | null;
+  codecSources?: { [K in keyof CodecSources]: string };
 }
 
 // ---------------------------------------------------------------------------
@@ -337,29 +364,61 @@ function predictQuality(cell: ConfigCell): ConfigExpected {
   }
 }
 
+/**
+ * Build the expected `CodecSources` map for a codec cell.
+ *
+ * Each codec cell pins ONE stack (lossy or lossless, determined by the cell's
+ * `setting`) at ONE level. The pinned stack's scalar + preference both share
+ * the cell's level (they're driven by the same `lossyCodecSource` or
+ * `losslessCodecSource` variable in sync.ts). The un-pinned stack's two keys
+ * always fall back to `'default'` because the cell's TOML doesn't write that
+ * stack at any level.
+ */
+function expectedCodecSources(cell: ConfigCell): CodecSources {
+  const lossyPinned = cell.setting === 'lossyCodec' || cell.setting === 'lossyPreference';
+  const losslessPinned = cell.setting === 'losslessCodec' || cell.setting === 'losslessPreference';
+  const lossySource: SourceLevel = lossyPinned ? cell.level : 'default';
+  const losslessSource: SourceLevel = losslessPinned ? cell.level : 'default';
+  // Key order matches the observer below — diffCell compares via JSON.stringify
+  // and key insertion order matters.
+  return {
+    lossyCodec: lossySource,
+    losslessCodec: losslessSource,
+    lossyPreference: lossySource,
+    losslessPreference: losslessSource,
+  };
+}
+
 function predictCodecScalar(
   cell: ConfigCell,
   opts: { defaultValue: string | null; nonDefaultValue: string }
 ): ConfigExpected {
+  const codecSources = expectedCodecSources(cell);
   if (cell.level === 'default') {
     return {
       value: opts.defaultValue,
       source: 'default',
-      reason: 'no [codec] block → codec-source=default → source=default',
+      codecSources,
+      reason:
+        'no [codec] block → all four codec keys attributed to default; lossy + lossless sources independent',
     };
   }
   if (cell.level === 'global') {
     return {
       value: opts.nonDefaultValue,
       source: 'global',
-      reason: '[codec] block at top level → codec-source=global → source=global',
+      codecSources,
+      reason:
+        '[codec] block at top level → pinned stack scalar+preference share source=global; un-pinned stack stays default',
     };
   }
   if (cell.level === 'device') {
     return {
       value: opts.nonDefaultValue,
       source: 'device',
-      reason: '[devices.<name>.codec] block → codec-source=device → source=device',
+      codecSources,
+      reason:
+        '[devices.<name>.codec] block → pinned stack scalar+preference share source=device; un-pinned stack stays default',
     };
   }
   // cli / quality-fold pruned as impossible.
@@ -370,25 +429,31 @@ function predictCodecPreference(
   cell: ConfigCell,
   opts: { defaultValue: readonly string[]; nonDefaultValue: readonly string[] }
 ): ConfigExpected {
+  const codecSources = expectedCodecSources(cell);
   if (cell.level === 'default') {
     return {
       value: opts.defaultValue,
       source: 'default',
-      reason: 'no [codec] block → preference stack is DEFAULT_*_STACK with source=default',
+      codecSources,
+      reason: 'no [codec] block → preference stack is DEFAULT_*_STACK; all four codec keys default',
     };
   }
   if (cell.level === 'global') {
     return {
       value: opts.nonDefaultValue,
       source: 'global',
-      reason: '[codec] preference array at top level → source=global',
+      codecSources,
+      reason:
+        '[codec] preference array at top level → pinned stack source=global on both scalar+preference; un-pinned stack stays default',
     };
   }
   if (cell.level === 'device') {
     return {
       value: opts.nonDefaultValue,
       source: 'device',
-      reason: '[devices.<name>.codec] preference array → source=device',
+      codecSources,
+      reason:
+        '[devices.<name>.codec] preference array → pinned stack source=device on both scalar+preference; un-pinned stack stays default',
     };
   }
   throw new Error(`unexpected codec-preference cell level: ${cell.level}`);
@@ -526,10 +591,23 @@ function cellCliArgs(cell: ConfigCell): string[] {
  * non-dry-run path on an early-failing sync — should never happen here, but
  * defensive so the diff message is "missing observed cell" rather than a
  * crash).
+ *
+ * For codec settings, also returns a `codecSources` map of all four codec
+ * keys' sources. This catches intra-stack drift (scalar vs preference for
+ * the same stack) and single-source contamination (one source stamped onto
+ * all four keys, the original TASK-367 bug shape).
  */
 function readDecisionForSetting(json: SyncOutput, setting: ConfigSetting): ConfigObserved {
   const decisions = json.decisions;
   if (!decisions) return { value: null, source: null };
+  const codecSources = isCodec(setting)
+    ? {
+        lossyCodec: decisions.lossyCodec.source,
+        losslessCodec: decisions.losslessCodec.source,
+        lossyPreference: decisions.lossyPreference.source,
+        losslessPreference: decisions.losslessPreference.source,
+      }
+    : undefined;
   switch (setting) {
     case 'transferMode':
       return { value: decisions.transferMode.value, source: decisions.transferMode.source };
@@ -541,21 +619,25 @@ function readDecisionForSetting(json: SyncOutput, setting: ConfigSetting): Confi
       return {
         value: decisions.lossyCodec.value ?? null,
         source: decisions.lossyCodec.source,
+        codecSources,
       };
     case 'losslessCodec':
       return {
         value: decisions.losslessCodec.value ?? null,
         source: decisions.losslessCodec.source,
+        codecSources,
       };
     case 'lossyPreference':
       return {
         value: [...decisions.lossyPreference.value],
         source: decisions.lossyPreference.source,
+        codecSources,
       };
     case 'losslessPreference':
       return {
         value: [...decisions.losslessPreference.value],
         source: decisions.losslessPreference.source,
+        codecSources,
       };
   }
 }
