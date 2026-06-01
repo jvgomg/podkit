@@ -355,6 +355,120 @@ describe('TagLibTagWriter', () => {
   });
 
   // ---------------------------------------------------------------------------
+  // writeTags — ReplayGain round-trip across containers
+  // ---------------------------------------------------------------------------
+
+  describe('writeTags — ReplayGain', () => {
+    /**
+     * Re-open via the same taglib bindings podkit ships with and read back
+     * the four ReplayGain accessors. Validates the in-and-out cycle goes
+     * through the format-specific tag block (Vorbis comments on FLAC/OGG/
+     * Opus, TXXX:REPLAYGAIN_* on MP3, iTunes-style atoms on M4A) without
+     * the caller having to care which dialect was used.
+     */
+    function readReplayGain(filePath: string): {
+      trackGain: number;
+      trackPeak: number;
+      albumGain: number;
+      albumPeak: number;
+    } {
+      const { File: TagFile } = require('node-taglib-sharp');
+      const file = TagFile.createFromPath(filePath);
+      try {
+        return {
+          trackGain: file.tag.replayGainTrackGain,
+          trackPeak: file.tag.replayGainTrackPeak,
+          albumGain: file.tag.replayGainAlbumGain,
+          albumPeak: file.tag.replayGainAlbumPeak,
+        };
+      } finally {
+        file.dispose();
+      }
+    }
+
+    /** Per-format coverage of all four fields round-tripping cleanly. */
+    const cases: Array<{
+      format: 'FLAC' | 'MP3' | 'M4A' | 'OGG' | 'Opus';
+      generate: (dir: string, filename: string) => string;
+      ext: string;
+    }> = [
+      { format: 'FLAC', generate: (d, n) => generateFlac(d, n), ext: 'flac' },
+      { format: 'MP3', generate: (d, n) => generateMp3(d, n), ext: 'mp3' },
+      { format: 'M4A', generate: (d, n) => generateM4a(d, n), ext: 'm4a' },
+      // OGG/Vorbis and Opus share Vorbis comments but the container framing
+      // differs; both are exercised to catch any per-format quirk.
+      { format: 'OGG', generate: (d, n) => generateOgg(d, n), ext: 'ogg' },
+      { format: 'Opus', generate: (d, n) => generateOpus(d, n), ext: 'opus' },
+    ];
+
+    for (const c of cases) {
+      test(`${c.format}: writes all four ReplayGain fields and reads them back`, async () => {
+        const filePath = c.generate(tempDir, `rg-all.${c.ext}`);
+        await writer.writeTags(filePath, {
+          replayGain: {
+            trackGain: -7.42,
+            trackPeak: 0.9876,
+            albumGain: -6.5,
+            albumPeak: 0.99,
+          },
+        });
+
+        const observed = readReplayGain(filePath);
+        // Tag formats serialise these as strings ("-7.42 dB", "0.987600",
+        // …) and taglib parses them back into floats, so allow a tiny
+        // tolerance for round-trip drift.
+        expect(observed.trackGain).toBeCloseTo(-7.42, 2);
+        expect(observed.trackPeak).toBeCloseTo(0.9876, 4);
+        expect(observed.albumGain).toBeCloseTo(-6.5, 2);
+        expect(observed.albumPeak).toBeCloseTo(0.99, 2);
+      });
+
+      test(`${c.format}: writes only trackGain when other fields are absent`, async () => {
+        const filePath = c.generate(tempDir, `rg-track-only.${c.ext}`);
+        await writer.writeTags(filePath, {
+          replayGain: { trackGain: -3.21 },
+        });
+
+        const observed = readReplayGain(filePath);
+        expect(observed.trackGain).toBeCloseTo(-3.21, 2);
+      });
+
+      test(`${c.format}: coalesces textual + ReplayGain in one save`, async () => {
+        // The whole point of the refactor: when both kinds of update fire,
+        // they ride on one taglib roundtrip. We can't observe the I/O
+        // directly through music-metadata, but we can prove the writeTags
+        // call accepts both and both survive the round-trip.
+        const filePath = c.generate(tempDir, `rg-combined.${c.ext}`);
+        await writer.writeTags(filePath, {
+          title: 'Coalesced Title',
+          artist: 'Coalesced Artist',
+          replayGain: { trackGain: -4.0, trackPeak: 0.5 },
+        });
+
+        const observed = readReplayGain(filePath);
+        expect(observed.trackGain).toBeCloseTo(-4.0, 2);
+        expect(observed.trackPeak).toBeCloseTo(0.5, 4);
+        const metadata = await mm.parseFile(filePath, { skipCovers: true });
+        expect(metadata.common.title).toBe('Coalesced Title');
+        expect(metadata.common.artist).toBe('Coalesced Artist');
+      });
+    }
+
+    test('FLAC: omitting replayGain leaves existing tags untouched', async () => {
+      const filePath = generateFlac(tempDir, 'rg-leave.flac');
+      await writer.writeTags(filePath, {
+        replayGain: { trackGain: -2.0, trackPeak: 0.7 },
+      });
+      // Subsequent write with no replayGain field must not clobber.
+      await writer.writeTags(filePath, { title: 'New Title' });
+
+      const observed = readReplayGain(filePath);
+      expect(observed.trackGain).toBeCloseTo(-2.0, 2);
+      expect(observed.trackPeak).toBeCloseTo(0.7, 4);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // writePicture (unchanged — kept as a separate concern from textual tags)
   // ---------------------------------------------------------------------------
 

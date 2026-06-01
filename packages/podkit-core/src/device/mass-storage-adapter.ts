@@ -483,16 +483,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private pendingTagWrites = new Map<string, TagFields>();
 
   /**
-   * Pending ReplayGain tag writes, keyed by relative file path.
-   * Accumulated by updateTrack() when soundcheck changes on a replaygain device.
-   * Flushed by save().
-   */
-  private pendingReplayGainWrites = new Map<
-    string,
-    { trackGain: number; trackPeak?: number; albumGain?: number; albumPeak?: number }
-  >();
-
-  /**
    * Pending picture writes, keyed by relative file path.
    * Accumulated by updateTrack() for OGG/Opus files where FFmpeg can't embed artwork.
    * Flushed by save() via tagWriter.writePicture().
@@ -725,11 +715,26 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Merge a partial set of tag fields into the pending-write map for a file.
    * Later writes overwrite earlier values for the same field; unrelated
    * fields are preserved. Empty field sets are a no-op.
+   *
+   * `replayGain` is deep-merged separately from the spread so a later
+   * `{ replayGain: { trackGain } }` doesn't clobber a previously-queued
+   * `{ replayGain: { trackGain, trackPeak } }`. Today every caller passes
+   * a fully-populated `ReplayGainFields` object so the shallow-merge case
+   * never fires in production — the deep-merge is a future-proofing
+   * guard against partial RG updates accumulating across calls.
    */
   private queueTagWrite(filePath: string, fields: TagFields): void {
     if (Object.keys(fields).length === 0) return;
     const existing = this.pendingTagWrites.get(filePath);
-    this.pendingTagWrites.set(filePath, existing ? { ...existing, ...fields } : { ...fields });
+    if (!existing) {
+      this.pendingTagWrites.set(filePath, { ...fields });
+      return;
+    }
+    const merged: TagFields = { ...existing, ...fields };
+    if (existing.replayGain && fields.replayGain) {
+      merged.replayGain = { ...existing.replayGain, ...fields.replayGain };
+    }
+    this.pendingTagWrites.set(filePath, merged);
   }
 
   /**
@@ -823,6 +828,8 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // Queue ReplayGain tag write when:
     // 1. Normalization changed on a replaygain device (collection updated normalization data)
     // 2. writeReplayGainTags is explicitly set (e.g., after transcoding M4A files)
+    // The replay-gain payload rides on the same pending-tags map so save()
+    // touches each file at most once even when textual + RG updates collide.
     const normalizationChanged =
       fields.normalization !== undefined &&
       normalizationToSoundcheck(fields.normalization) !==
@@ -833,7 +840,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     ) {
       const rg = this.buildReplayGainData(fields.normalization ?? track.normalization);
       if (rg) {
-        this.pendingReplayGainWrites.set(updated.filePath, rg);
+        this.queueTagWrite(updated.filePath, { replayGain: rg });
       }
     }
 
@@ -869,11 +876,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       const val = this.pendingTagWrites.get(oldPath)!;
       this.pendingTagWrites.delete(oldPath);
       this.pendingTagWrites.set(finalPath, val);
-    }
-    if (this.pendingReplayGainWrites.has(oldPath)) {
-      const val = this.pendingReplayGainWrites.get(oldPath)!;
-      this.pendingReplayGainWrites.delete(oldPath);
-      this.pendingReplayGainWrites.set(finalPath, val);
     }
     if (this.pendingPictureWrites.has(oldPath)) {
       const val = this.pendingPictureWrites.get(oldPath)!;
@@ -999,13 +1001,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         const fields = this.pendingTagWrites.get(track.filePath)!;
         this.pendingTagWrites.delete(track.filePath);
         this.pendingTagWrites.set(targetRelativePath, fields);
-      }
-
-      // Update pendingReplayGainWrites if keyed on old path
-      if (this.pendingReplayGainWrites.has(track.filePath)) {
-        const rg = this.pendingReplayGainWrites.get(track.filePath)!;
-        this.pendingReplayGainWrites.delete(track.filePath);
-        this.pendingReplayGainWrites.set(targetRelativePath, rg);
       }
 
       // Update pendingPictureWrites if keyed on old path
@@ -1172,21 +1167,6 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         // tags as the source of truth on rescan.
         throw new TagWriteError(failures);
       }
-    }
-
-    // Flush pending ReplayGain tag writes to audio files
-    if (this.pendingReplayGainWrites.size > 0) {
-      const writes = [...this.pendingReplayGainWrites.entries()].map(([filePath, rg]) =>
-        this.tagWriter.writeReplayGain(
-          path.join(this.mountPoint, filePath),
-          rg.trackGain,
-          rg.trackPeak,
-          rg.albumGain,
-          rg.albumPeak
-        )
-      );
-      await Promise.all(writes);
-      this.pendingReplayGainWrites.clear();
     }
 
     // Flush pending picture writes (OGG/Opus artwork embedding)

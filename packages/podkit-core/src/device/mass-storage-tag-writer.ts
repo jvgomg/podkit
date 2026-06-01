@@ -73,12 +73,35 @@ export async function runWithConcurrency<T>(
 }
 
 /**
+ * ReplayGain fields written into the tag block alongside textual metadata.
+ *
+ * `trackGain` is required; the peak/album fields are independent and only
+ * applied when defined. The taglib accessors map these into the right
+ * tag-format dialect — Vorbis comments on FLAC/OGG/Opus, ID3v2 `TXXX`
+ * frames on MP3, and `----:com.apple.iTunes:REPLAYGAIN_*` freeform atoms
+ * on M4A (NOT the iTunNORM atom — that's a different normalisation
+ * mechanism only soundcheck-style devices read).
+ */
+export interface ReplayGainFields {
+  trackGain: number;
+  trackPeak?: number;
+  albumGain?: number;
+  albumPeak?: number;
+}
+
+/**
  * Subset of audio-file metadata fields podkit can write to disk.
  *
  * All fields are optional: undefined means "leave the existing tag value
  * unchanged"; a defined value (including the empty string / number 0) is
  * applied as-is. Callers are expected to omit fields they have not
  * actually changed so the read-modify-write cycle stays minimal.
+ *
+ * `replayGain` rides on the same tag block and is applied in the same
+ * read-modify-write cycle as the textual fields — folding the formerly-
+ * separate `writeReplayGain` path into `writeTags` halves the taglib I/O
+ * when a track has both kinds of pending updates (common after a transcode
+ * on a `audioNormalization === 'replaygain'` device).
  */
 export interface TagFields {
   title?: string;
@@ -91,6 +114,7 @@ export interface TagFields {
   discNumber?: number;
   compilation?: boolean;
   comment?: string;
+  replayGain?: ReplayGainFields;
 }
 
 /** Loose shape covering the readable subset (e.g. a DeviceTrack or the input payload). */
@@ -175,18 +199,13 @@ export function diffTagFields(current: TagFieldsSource, fields: TagFieldsSource)
  */
 export interface TagWriter {
   /**
-   * Apply a partial set of textual metadata fields to a file's tag block.
-   * Opens, mutates, saves, and disposes in a single operation.
+   * Apply a partial set of metadata fields (textual + ReplayGain) to a
+   * file's tag block in a single read-modify-write cycle. Picture writes
+   * stay separate because binary embedding has format-specific quirks
+   * (METADATA_BLOCK_PICTURE on OGG, cover atom on M4A) that don't share
+   * enough surface with text-tag writes to merge cleanly.
    */
   writeTags(filePath: string, fields: TagFields): Promise<void>;
-
-  writeReplayGain(
-    filePath: string,
-    trackGain: number,
-    trackPeak?: number,
-    albumGain?: number,
-    albumPeak?: number
-  ): Promise<void>;
 
   writePicture(filePath: string, imageData: Buffer): Promise<void>;
 }
@@ -216,30 +235,12 @@ export class TagLibTagWriter implements TagWriter {
       if (fields.discNumber !== undefined) tag.disc = fields.discNumber;
       if (fields.compilation !== undefined) tag.isCompilation = fields.compilation;
       if (fields.comment !== undefined) tag.comment = fields.comment;
-      file.save();
-    } finally {
-      file.dispose();
-    }
-  }
-
-  async writeReplayGain(
-    filePath: string,
-    trackGain: number,
-    trackPeak?: number,
-    albumGain?: number,
-    albumPeak?: number
-  ): Promise<void> {
-    const file = TagFile.createFromPath(filePath);
-    try {
-      file.tag.replayGainTrackGain = trackGain;
-      if (trackPeak !== undefined) {
-        file.tag.replayGainTrackPeak = trackPeak;
-      }
-      if (albumGain !== undefined) {
-        file.tag.replayGainAlbumGain = albumGain;
-      }
-      if (albumPeak !== undefined) {
-        file.tag.replayGainAlbumPeak = albumPeak;
+      if (fields.replayGain !== undefined) {
+        const rg = fields.replayGain;
+        tag.replayGainTrackGain = rg.trackGain;
+        if (rg.trackPeak !== undefined) tag.replayGainTrackPeak = rg.trackPeak;
+        if (rg.albumGain !== undefined) tag.replayGainAlbumGain = rg.albumGain;
+        if (rg.albumPeak !== undefined) tag.replayGainAlbumPeak = rg.albumPeak;
       }
       file.save();
     } finally {

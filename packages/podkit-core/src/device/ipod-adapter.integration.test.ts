@@ -626,7 +626,6 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
       async writeTags(filePath, fields) {
         calls.push({ filePath, fields });
       },
-      async writeReplayGain() {},
       async writePicture() {},
     };
     return writer;
@@ -852,7 +851,6 @@ describe('IpodDeviceAdapter normalization round-trip', () => {
           async writeTags() {
             throw new Error('synthetic taglib failure');
           },
-          async writeReplayGain() {},
           async writePicture() {},
         };
 

@@ -1407,7 +1407,6 @@ describe('MassStorageAdapter', () => {
         async writeTags(filePath: string, fields: TagFields) {
           calls.push({ filePath, fields });
         },
-        async writeReplayGain(_filePath: string, _trackGain: number, _trackPeak?: number) {},
         async writePicture(_filePath: string, _imageData: Buffer) {},
       };
     }
@@ -1639,9 +1638,6 @@ describe('MassStorageAdapter', () => {
 
       const failingWriter: TagWriter = {
         async writeTags() {
-          throw new Error('FFmpeg exploded');
-        },
-        async writeReplayGain() {
           throw new Error('FFmpeg exploded');
         },
         async writePicture() {
@@ -1945,6 +1941,101 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  describe('ReplayGain coalescing', () => {
+    /**
+     * The refactor folded `pendingReplayGainWrites` into `pendingTagWrites`.
+     * These tests pin the adapter-level queueing behaviour: when does a
+     * `replaygain`-normalisation device queue a ReplayGain tag write, and
+     * does it ride on the same writeTags call as a co-occurring textual
+     * tag change?
+     */
+    const REPLAYGAIN_CAPABILITIES: DeviceCapabilities = {
+      ...TEST_CAPABILITIES,
+      audioNormalization: 'replaygain',
+    };
+
+    function createMockTagWriter(): TagWriter & {
+      calls: Array<{ filePath: string; fields: TagFields }>;
+    } {
+      const calls: Array<{ filePath: string; fields: TagFields }> = [];
+      return {
+        calls,
+        async writeTags(filePath: string, fields: TagFields) {
+          calls.push({ filePath, fields });
+        },
+        async writePicture(_filePath: string, _imageData: Buffer) {},
+      };
+    }
+
+    test('writeReplayGainTags=true with a normalization update queues a replayGain entry on a replaygain device', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, REPLAYGAIN_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, {
+        writeReplayGainTags: true,
+        normalization: { source: 'replaygain', trackGain: -7.42, trackPeak: 0.987 },
+      });
+      await adapter.save();
+
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.fields.replayGain).toBeDefined();
+      expect(tagWriter.calls[0]!.fields.replayGain!.trackGain).toBeCloseTo(-7.42, 2);
+    });
+
+    test('textual + ReplayGain ride on a single writeTags call (one taglib roundtrip)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+      const tagWriter = createMockTagWriter();
+      const adapter = await MassStorageAdapter.open(mountPoint, REPLAYGAIN_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, {
+        title: 'New Title',
+        writeReplayGainTags: true,
+        normalization: { source: 'replaygain', trackGain: -5.0 },
+      });
+      await adapter.save();
+
+      // One call, both kinds of update on it — the core claim of the refactor.
+      expect(tagWriter.calls).toHaveLength(1);
+      expect(tagWriter.calls[0]!.fields.title).toBe('New Title');
+      expect(tagWriter.calls[0]!.fields.replayGain!.trackGain).toBeCloseTo(-5.0, 2);
+    });
+
+    test('does NOT queue ReplayGain on a non-replaygain device', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - Song.flac');
+      const tagWriter = createMockTagWriter();
+      // Default TEST_CAPABILITIES has audioNormalization: 'none'.
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - Song.flac': { title: 'Song', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const track = adapter.getTracks()[0]!;
+      adapter.updateTrack(track, {
+        writeReplayGainTags: true,
+        normalization: { source: 'replaygain', trackGain: -7.0 },
+      });
+      await adapter.save();
+
+      // The replaygain gate refuses to queue when the device doesn't read RG.
+      expect(tagWriter.calls).toHaveLength(0);
+    });
+  });
+
   describe('embedded picture writes', () => {
     function createMockTagWriterWithPicture(): TagWriter & {
       commentCalls: Array<{ filePath: string; comment: string }>;
@@ -1960,7 +2051,6 @@ describe('MassStorageAdapter', () => {
             commentCalls.push({ filePath, comment: fields.comment });
           }
         },
-        async writeReplayGain() {},
         async writePicture(filePath: string, imageData: Buffer) {
           pictureCalls.push({ filePath, imageData });
         },
