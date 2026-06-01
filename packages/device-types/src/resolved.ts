@@ -131,15 +131,28 @@ export function resolveChainOptional<T, Source extends string>(
  *
  * Avoids hand-written `{ artworkMaxResolution: r.artworkMaxResolution.value, … }`
  * fan-outs every time a caller needs the bare shape.
+ *
+ * The input type accepts interfaces with optional Resolved fields
+ * (e.g. `ResolvedDeviceCapabilities.containerConstraints?`); the runtime
+ * walks `Object.keys` and skips entries whose value is `undefined`, so
+ * optional fields drop out of the projection naturally.
+ *
+ * The output type loses the optional marker — TypeScript's distributive
+ * conditional narrows `Resolved<V,_> | undefined` to `V`. Call sites
+ * that consume a known concrete shape (like `DeviceCapabilities`) can
+ * `as DeviceCapabilities` the result; the runtime is safe because the
+ * sparse fields stay absent.
  */
-export function projectResolved<R extends Record<string, Resolved<unknown, string>>>(
+export function projectResolved<R extends object>(
   resolved: R
-): { [K in keyof R]: R[K] extends Resolved<infer V, string> ? V : never } {
-  const out = {} as { [K in keyof R]: R[K] extends Resolved<infer V, string> ? V : never };
+): { [K in keyof R]: R[K] extends Resolved<infer V, string> | undefined ? V : never } {
+  const out = {} as {
+    [K in keyof R]: R[K] extends Resolved<infer V, string> | undefined ? V : never;
+  };
   for (const key of Object.keys(resolved) as Array<keyof R>) {
     // The cast is local to the projection helper; consumers see the
     // statically-typed result above.
-    const entry = resolved[key];
+    const entry = resolved[key] as Resolved<unknown, string> | undefined;
     if (entry !== undefined) {
       (out as Record<string, unknown>)[key as string] = entry.value;
     }

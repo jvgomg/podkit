@@ -20,7 +20,7 @@ import type {
   ResolvedDeviceCapabilities,
   CapabilitySource,
 } from '@podkit/device-types';
-import { resolveChain } from '@podkit/device-types';
+import { projectResolved, resolveChain } from '@podkit/device-types';
 import type { MassStoragePreset } from './presets/types.js';
 import { BUILT_IN_PRESETS } from './presets/built-in.js';
 
@@ -103,27 +103,15 @@ export function getCapabilities(
   opts: GetCapabilitiesOptions
 ): DeviceCapabilities {
   // Backward-compat wrapper: route through the provenance-aware
-  // resolver with the legacy "single overrides blob" attributed to
-  // `device-config` (the existing CLI plumbing layers per-device on top
-  // of deviceDefaults before passing the merged blob in here), then
-  // strip provenance for the bare-values return type. `containerConstraints`
-  // is sparse (optional), so it's projected separately.
+  // resolver, then strip the `{ value, source }` shell via
+  // `projectResolved`. The cast handles `containerConstraints?` —
+  // `projectResolved` walks `Object.keys` and skips undefined entries
+  // at runtime, but the mapped type loses the optional marker.
   const resolved = getCapabilitiesResolved(identity, {
     presets: opts.presets,
     deviceConfigOverrides: opts.overrides,
   });
-  const bare: DeviceCapabilities = {
-    artworkSources: [...resolved.artworkSources.value],
-    artworkMaxResolution: resolved.artworkMaxResolution.value,
-    supportedAudioCodecs: [...resolved.supportedAudioCodecs.value],
-    supportsVideo: resolved.supportsVideo.value,
-    audioNormalization: resolved.audioNormalization.value,
-    supportsAlbumArtistBrowsing: resolved.supportsAlbumArtistBrowsing.value,
-  };
-  if (resolved.containerConstraints !== undefined) {
-    bare.containerConstraints = resolved.containerConstraints.value;
-  }
-  return bare;
+  return projectResolved(resolved) as DeviceCapabilities;
 }
 
 /**

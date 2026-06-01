@@ -39,6 +39,7 @@ import type {
   FirmwareCapabilities,
   ResolvedDeviceCapabilities,
 } from '@podkit/device-types';
+import { projectResolved } from '@podkit/device-types';
 
 import { GENERATIONS } from './tables/generations.js';
 import type { IpodModel } from './types.js';
@@ -79,16 +80,10 @@ export function getCapabilities(
 ): DeviceCapabilities {
   // Backward-compat: project the resolved variant down to bare values.
   // Sharing the merge logic with `getCapabilitiesResolved` keeps the two
-  // entry points byte-for-byte equivalent.
+  // entry points byte-for-byte equivalent. iPod synthesisers don't emit
+  // `containerConstraints`, so the cast is harmless here.
   const resolved = getCapabilitiesResolved(identity, opts);
-  return {
-    artworkSources: resolved.artworkSources.value,
-    artworkMaxResolution: resolved.artworkMaxResolution.value,
-    supportedAudioCodecs: resolved.supportedAudioCodecs.value,
-    supportsVideo: resolved.supportsVideo.value,
-    audioNormalization: resolved.audioNormalization.value,
-    supportsAlbumArtistBrowsing: resolved.supportsAlbumArtistBrowsing.value,
-  };
+  return projectResolved(resolved) as DeviceCapabilities;
 }
 
 /**

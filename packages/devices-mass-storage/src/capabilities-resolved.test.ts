@@ -149,9 +149,9 @@ describe('getCapabilities (bare wrapper) parity vs getCapabilitiesResolved', () 
   it('containerConstraints projection — bare wrapper includes when override supplies it', () => {
     const bare = getCapabilities(ECHO_IDENTITY, {
       presets: BUILT_IN_PRESETS,
-      overrides: { containerConstraints: { aac: ['m4a'] } },
+      overrides: { containerConstraints: { aac: ['mp4'] } },
     });
-    expect(bare.containerConstraints).toEqual({ aac: ['m4a'] });
+    expect(bare.containerConstraints).toEqual({ aac: ['mp4'] });
   });
 });
 
@@ -164,10 +164,10 @@ describe('getCapabilitiesResolved — containerConstraints (sparse)', () => {
   it('includes the field when any layer supplies constraints', () => {
     const r = getCapabilitiesResolved(ECHO_IDENTITY, {
       presets: BUILT_IN_PRESETS,
-      deviceConfigOverrides: { containerConstraints: { aac: ['m4a'] } },
+      deviceConfigOverrides: { containerConstraints: { aac: ['mp4'] } },
     });
     expect(r.containerConstraints).toBeDefined();
     expect(r.containerConstraints!.source).toBe('device-config');
-    expect(r.containerConstraints!.value).toEqual({ aac: ['m4a'] });
+    expect(r.containerConstraints!.value).toEqual({ aac: ['mp4'] });
   });
 });
