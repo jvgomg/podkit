@@ -2,7 +2,7 @@
 
 A living document covering the iPod device identification problem space: strategies, platform implementations, device compatibility, and architectural direction.
 
-Last updated: 2026-05-02 (research phase complete)
+Last updated: 2026-06-01 (m-18 hardware sweep folded in: USB inquiry boundary refined to nano 3G; cascade primitive now drives sync, device info, doctor)
 
 ## Problem Statement
 
@@ -26,7 +26,7 @@ There are four strategies for identifying an iPod, divided into two categories:
 **Active strategies** query the iPod's firmware for device capability data:
 
 - **SCSI Inquiry** — SCSI VPD page 0xC0
-- **USB Inquiry** — Apple vendor USB control transfer (preferred for 5G+)
+- **USB Inquiry** — Apple vendor USB control transfer (preferred for nano 3G+ and Classic 6G+; iPod 5G/5.5G fail)
 
 ### USB Enumeration
 
@@ -173,7 +173,7 @@ Reads 4096-byte chunks, incrementing the page index until a short read signals e
 | iPod 1G-2G | Unknown (likely no) | — |
 | iPod 3G | **No** | — |
 | iPod 4G / Photo | **No** | — |
-| iPod 5G (Video) | **No** | — |
+| iPod 5G / 5.5G (Video) | **No** | — (verified on TERAPOD 5.5G during m-18 sweep) |
 | iPod Classic (6G) | **Yes** | No |
 | iPod mini 1G-2G | **No** | — |
 | iPod nano 1G-2G | **No** | — |
@@ -184,6 +184,8 @@ Reads 4096-byte chunks, incrementing the page index until a short read signals e
 | iPod Touch / iPhone | **No** (use libimobiledevice) | — |
 
 The USB method was added to libgpod specifically because the **nano 5G returned incomplete data via SCSI** (missing artwork format information). However, the USB vendor control transfer itself works on devices back to the nano 3G and Classic 6G. The libgpod comment "useful for Nano5G" reflects that USB was **required** for nano 5G, not that it was introduced for it.
+
+**Boundary refinement (m-18 sweep):** The boundary sits between iPod 5.5G (USB fails) and **nano 3G (USB works)**, not between iPod 5.5G and nano 4G as earlier summaries implied. Verified on real hardware: TERAPOD (iPod 5.5G, V9M serial) — USB control transfer does not respond; nano 3G (8GB Black) — USB inquiry returns ~12,131 bytes of SysInfoExtended XML. Notable: nano 3G's USB-derived SIE is **byte-stable across reads** (no per-read crypto blob, unlike nano 4G / nano 7G).
 
 **Platform support:** Cross-platform via libusb. Works on macOS and Linux.
 
@@ -235,16 +237,19 @@ The architectural direction is toward treating firmware-reported data as the aut
 
 Different podkit commands compose these strategies differently:
 
-**`podkit sync`** — Currently only uses filesystem identity (libgpod reads SysInfo/SysInfoExtended from the mounted partition). This is a hard constraint of the libgpod dependency. USB enumeration runs during device discovery to find and validate the device.
+**`podkit sync`** — Resolves device identity via `assessIpodIdentity` in `@podkit/core` (a cascade wrapper around `resolveIpodModel` in `@podkit/devices-ipod`), composing USB enumeration + SysInfoExtended + SysInfo + serial-suffix lookup. libgpod is no longer consulted for identity; it still owns the database operations. On unsupported generations (hashAB nano 6G/7G, iOS) the cascade returns `notSupportedReason` and `sync` refuses cleanly with the canonical unsupported-device wording before any track plan is generated.
 
-**`podkit device scan`** — Uses USB enumeration to discover connected iPods and identify them at generation level. Could benefit from active inquiry to provide richer device information in the scan output.
+**`podkit device scan`** — Uses USB enumeration to discover connected iPods and identify them at generation level via the cascade. Scan entries surface the resolved model display name (e.g. `iPod touch (5th generation)`) rather than `Unknown iPod (USB only)` when the cascade can name the device.
 
-**`podkit device info`** — Uses USB enumeration and filesystem identity. Could use active inquiry for consistency checking and richer output.
+**`podkit device info`** — Composes with the cascade. The libgpod-derived identity display path was replaced with `resolveIpodModel(bag).displayName` so what the user sees mirrors what `sync` will refuse / proceed on.
 
 **`podkit doctor`** — The repair context where active inquiry matters most. `--repair sysinfo-extended` currently uses USB inquiry to read firmware data and write it to the filesystem, bridging active inquiry to filesystem identity. This is the write-back loop: active inquiry populates the filesystem so that libgpod can use it at sync time.
 
+**Existing `podkit doctor` checks (m-18 sweep):**
+- `sysinfo-modelnum-mismatch` (and its `--repair sysinfo-modelnum-mismatch` action) detects when on-disk `SysInfo.ModelNumStr` disagrees with the firmware-derived identity (serial-suffix lookup via SIE, or live USB descriptors as fallback). Surfaces a `warn` and rewrites ModelNumStr from firmware-truth after backing up the original. Targets the TERAPOD-style case where SysInfo was hand-edited or copied from another device.
+- `sysinfo-consistency` compares ModelNumStr vs USB-derived generation (existing).
+
 **Future `podkit doctor` checks:**
-- Verify that filesystem identity matches firmware-reported data (detect stale/corrupt files).
 - Report which inquiry methods are available on the current system (iPodDriver.kext present? libusb linked?).
 - Warn when a device is identified at generation level but could be identified more precisely.
 
@@ -288,27 +293,21 @@ The primary source for understanding the three inquiry backends:
 - `packages/podkit-core/src/device/sysinfo-extended.ts` — The orchestrator for reading/writing SysInfoExtended.
 - `packages/podkit-core/src/device/usb-discovery.ts` — USB device discovery and unsupported device detection.
 
-### Live device testing (2026-05-02)
+### Live device testing
 
-Two iPods were tested during the development of this document:
+The hardware inventory and per-device inquiry results live in [`documents/test-devices.md`](./test-devices.md). That file is the authoritative log — this section summarises the inquiry-method findings that shaped the boundary research.
 
-**iPod nano 2nd Generation (4GB Green, model A487)**
-- USB Product ID: `0x1260`
-- FireWire GUID: `000A27001A0647CB`
-- Serial: `YM7275YSVQH` (suffix VQH)
-- SCSI inquiry: **works** (26 VPD subpages, 6,279 bytes XML)
-- USB inquiry: **fails** (device does not respond to vendor control transfer)
-- SysInfo: empty (0 bytes)
-- SysInfoExtended: not present
-- Checksum type: none
+Initial sweep (2026-05-02): nano 2G (4GB Green) + nano 4G (8GB Black). SCSI works on both; USB fails on nano 2G, works on nano 4G.
 
-**iPod nano 4th Generation (8GB, model unknown)**
-- USB Product ID: `0x1263`
-- FireWire GUID: `000A27001DCECFB5`
-- Serial: `5U851AEH3R0`
-- SCSI inquiry: **works** (58 VPD subpages, 14,296 bytes XML)
-- USB inquiry: **works** (14,297 bytes XML — identical content, differs only in volume format field and a per-read cryptographic blob)
-- Checksum type: hash58
+m-18 sweep (2026-05-09 onward) — expanded to seven physical devices plus one mass-storage DAP:
+
+- **nano 3G (8GB Black)** — *new USB-inquiry boundary*. USB inquiry works; payload is byte-stable across reads (no per-read crypto blob, unlike nano 4G / nano 7G).
+- **nano 7G (16GB) #1 Space Gray** — USB inquiry returns ~47,100 bytes (14× SCSI's 3,330 bytes); SCSI returns identity-only.
+- **nano 7G (16GB) #2 Blue** — confirmed nano 7G consistency across units; HFS+ volume (vs #1's FAT32) does not affect firmware inquiry.
+- **mini 2G (4GB Pink)** — pre-2006 SysInfo confirmation (fully populated by firmware); SCSI works, USB fails.
+- **TERAPOD (iPod 5.5G Video + iFlash 1TB)** — *USB-inquiry boundary lower bound*. SCSI works; USB fails. Identity discrepancy across sources (USB PID → classic_6g; serial → video_5_5g; SysInfo → MA147 video_5g) drove the new `sysinfo-modelnum-mismatch` doctor check.
+- **Echo Mini (mass-storage DAP)** — no SysInfo / SysInfoExtended; identity from the preset framework.
+- **iPod touch 5G (iOS)** — USB enumeration works; no mass-storage mount; resolved by the cascade as unsupported (iOS uses Apple's proprietary sync protocol).
 
 ### macOS system APIs
 
@@ -347,7 +346,7 @@ The following questions were investigated during the research phase (2026-05-02)
 
 **SCSI inquiry device boundary — RESOLVED.** Hardware-tested data from dstaley/ipod-sysinfo confirms: works on iPod 4G+, all minis, all nanos, all shuffles. Does NOT work on iPod 1G-3G. See SCSI Inquiry section for full table.
 
-**USB inquiry device boundary — RESOLVED.** Hardware-tested data confirms: works on nano 3G+, Classic 6G, shuffle 3G-4G. Does NOT work on iPod 3G-5G, mini, nano 1G-2G, shuffle 1G-2G. For nano 5G-7G, USB returns extra fields not in SCSI. See USB Inquiry section for full table.
+**USB inquiry device boundary — RESOLVED.** Hardware-tested data confirms: works on nano 3G+, Classic 6G, shuffle 3G-4G. Does NOT work on iPod 3G-5G/5.5G, mini, nano 1G-2G, shuffle 1G-2G. For nano 5G-7G, USB returns extra fields not in SCSI. M-18 sweep re-verified the boundary on real hardware: TERAPOD (iPod 5.5G) — USB fails; nano 3G — USB works (byte-stable, no per-read crypto blob). See USB Inquiry section for full table.
 
 **Inquiry method selection — RESOLVED.** USB first, SCSI fallback. This matches libgpod's order and provides more complete data for newer devices. See Inquiry Method Selection section.
 
@@ -420,7 +419,7 @@ The macOS IOKit approach is prototyped and verified. Linux SG_IO is understood. 
 Report which inquiry methods are available on the current system. Check for iPodDriver.kext on macOS. Verify libusb availability. Warn if no active inquiry method is available for the connected device.
 
 **Systematic testing with real iPod collection.**
-Document the available test devices with generation, model, serial, and which codepaths they exercise. Identify gaps in generation coverage. Build a test matrix of device x inquiry method x platform. Consider capturing SysInfoExtended XML from each device as test fixtures.
+Hardware inventory + per-device inquiry log: [`documents/test-devices.md`](./test-devices.md). XML captures live in `documents/sysinfo-captures/`. Generation coverage gaps noted in the "Generation Coverage Analysis" section of `test-devices.md` (no nano 5G hash72; no Classic 6G; no nano 1G; no nano 6G).
 
 **Device capability architecture.**
 Design the interface between hardcoded generation knowledge (checksum type, display names) and firmware-reported capabilities (artwork formats, codecs). This should be clean, composable code — not generation tables with firmware data bolted on. Consider a layered model: generation tables provide the base, firmware data overrides where available.
@@ -432,7 +431,7 @@ Determine what needs to be cached for offline operations like pre-transcoding. O
 The virtual iPod system (Lima VM + USB gadget) could be extended to test device identification codepaths. A mocked USB gadget could respond to SCSI inquiry and USB vendor transfers with known SysInfoExtended XML, enabling automated testing without real hardware.
 
 **UX for device identification failures.**
-When podkit cannot fully identify a device, the user experience should be clear: what was detected, what's missing, what the impact is, and how to resolve it. The current "Could not read device identity from USB" error (now improved with specific error messages) is one example. The broader UX for degraded identification needs design.
+When podkit cannot fully identify a device, the user experience should be clear: what was detected, what's missing, what the impact is, and how to resolve it. The m-18 sweep landed centralised unsupported-device wording (`@podkit/devices-ipod`) consumed by `sync`, `device add`, `device scan`, `device info`, and `doctor` — no more libgpod jargon leaking into user copy. Remaining work: improve the iOS / mass-storage detection path so `device add` surfaces the canonical message (today only `device scan` reaches it).
 
 **Update documentation site with real device testing data.**
 Once systematic testing is complete, the public docs should include verified device compatibility information — which iPod models work with podkit, what identification methods were tested, and any known limitations.
