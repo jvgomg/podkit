@@ -74,7 +74,11 @@ export {
 
 // ── Capabilities ──────────────────────────────────────────────────────────────
 
-export { getCapabilities, type GetCapabilitiesOptions } from './capabilities.js';
+export {
+  getCapabilities,
+  getCapabilitiesResolved,
+  type GetCapabilitiesOptions,
+} from './capabilities.js';
 
 export {
   IPOD_CAPABILITY_KEYS,

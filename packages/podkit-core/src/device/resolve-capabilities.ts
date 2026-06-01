@@ -26,10 +26,13 @@ import type {
   DeviceCapabilities,
   FirmwareCapabilities,
   ResolvedDeviceCapabilities,
-  CapabilitySource,
 } from '@podkit/device-types';
 
-import { getCapabilities as getIpodCapabilities, resolveIpodModel } from '@podkit/devices-ipod';
+import {
+  getCapabilities as getIpodCapabilities,
+  getCapabilitiesResolved as getIpodCapabilitiesResolved,
+  resolveIpodModel,
+} from '@podkit/devices-ipod';
 import type { IpodModel } from '@podkit/devices-ipod';
 
 import {
@@ -222,27 +225,11 @@ export function resolveCapabilitiesResolved(
           `Could not resolve iPod model from identity: serialNumber=${identity.serialNumber ?? 'none'}, familyId=${identity.familyId}`
         );
       }
-      const bare = getIpodCapabilities(model, { firmware: opts?.firmware });
-      // Per-field provenance for the iPod path is the same `'generation'`
-      // (or `'firmware'` when firmware overlay was supplied) across every
-      // field today — the synthesiser doesn't expose layer boundaries.
-      // Refine when `@podkit/devices-ipod` grows a resolved variant.
-      const ipodSource: CapabilitySource = opts?.firmware ? 'firmware' : 'generation';
-      const out: ResolvedDeviceCapabilities = {
-        artworkSources: { value: bare.artworkSources, source: ipodSource },
-        artworkMaxResolution: { value: bare.artworkMaxResolution, source: ipodSource },
-        supportedAudioCodecs: { value: bare.supportedAudioCodecs, source: ipodSource },
-        supportsVideo: { value: bare.supportsVideo, source: ipodSource },
-        audioNormalization: { value: bare.audioNormalization, source: ipodSource },
-        supportsAlbumArtistBrowsing: {
-          value: bare.supportsAlbumArtistBrowsing,
-          source: ipodSource,
-        },
-      };
-      if (bare.containerConstraints !== undefined) {
-        out.containerConstraints = { value: bare.containerConstraints, source: ipodSource };
-      }
-      return out;
+      // Delegate to the iPod synthesiser's resolved variant — it knows
+      // which fields the firmware overlay can touch (codecs) and which
+      // are purely table-derived, so per-field provenance is attributed
+      // correctly without this layer second-guessing.
+      return getIpodCapabilitiesResolved(model, { firmware: opts?.firmware });
     }
 
     case 'mass-storage': {

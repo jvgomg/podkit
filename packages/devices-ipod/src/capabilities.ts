@@ -33,9 +33,11 @@
 
 import type {
   AudioCodec,
+  CapabilitySource,
   DeviceArtworkSource,
   DeviceCapabilities,
   FirmwareCapabilities,
+  ResolvedDeviceCapabilities,
 } from '@podkit/device-types';
 
 import { GENERATIONS } from './tables/generations.js';
@@ -75,18 +77,78 @@ export function getCapabilities(
   identity: IpodModel,
   opts?: GetCapabilitiesOptions
 ): DeviceCapabilities {
+  // Backward-compat: project the resolved variant down to bare values.
+  // Sharing the merge logic with `getCapabilitiesResolved` keeps the two
+  // entry points byte-for-byte equivalent.
+  const resolved = getCapabilitiesResolved(identity, opts);
+  return {
+    artworkSources: resolved.artworkSources.value,
+    artworkMaxResolution: resolved.artworkMaxResolution.value,
+    supportedAudioCodecs: resolved.supportedAudioCodecs.value,
+    supportsVideo: resolved.supportsVideo.value,
+    audioNormalization: resolved.audioNormalization.value,
+    supportsAlbumArtistBrowsing: resolved.supportsAlbumArtistBrowsing.value,
+  };
+}
+
+/**
+ * Provenance-aware variant of {@link getCapabilities}. Each field carries
+ * the layer that contributed it — `'generation'` for table-derived
+ * defaults, `'firmware'` only on the codec list when a firmware overlay
+ * actually unioned a new codec into the result.
+ *
+ * The firmware overlay can only influence `supportedAudioCodecs` today
+ * (per the doc-034 spec — bucket (C)); every other field is bucket (A)
+ * and tagged `'generation'` regardless of whether `opts.firmware` was
+ * supplied. So passing a firmware overlay that doesn't advertise any
+ * new codecs leaves every field tagged `'generation'`.
+ *
+ * @param identity - Result of `identify()`.
+ * @param opts - Optional firmware overlay (`opts.firmware`).
+ * @returns `ResolvedDeviceCapabilities` suitable for `device info` and
+ *   other provenance consumers.
+ *
+ * @example
+ * ```ts
+ * const r = getCapabilitiesResolved(model);
+ * // → r.supportedAudioCodecs = { value: ['aac','mp3','alac','wav','aiff'], source: 'generation' }
+ *
+ * const r2 = getCapabilitiesResolved(model, { firmware: { audioCodecs: [{ codec: 'FLAC' }] } });
+ * // → r2.supportedAudioCodecs.source = 'firmware'  (firmware unioned 'flac' onto the base)
+ * // → r2.artworkSources.source        = 'generation'  (firmware doesn't touch artwork)
+ * ```
+ */
+export function getCapabilitiesResolved(
+  identity: IpodModel,
+  opts?: GetCapabilitiesOptions
+): ResolvedDeviceCapabilities {
   const gen = GENERATIONS[identity.generationId];
 
   // ── Audio codecs (table → firmware overlay) ─────────────────────────────
-  const codecs: AudioCodec[] = ['aac', 'mp3'];
-  if (gen.supportsAlac) {
-    codecs.push('alac', 'wav', 'aiff');
-  }
+  const baseCodecs: AudioCodec[] = ['aac', 'mp3'];
+  if (gen.supportsAlac) baseCodecs.push('alac', 'wav', 'aiff');
+
+  let codecs = baseCodecs;
+  let codecsSource: CapabilitySource = 'generation';
   if (opts?.firmware?.audioCodecs) {
+    const merged = [...baseCodecs];
+    let firmwareContributed = false;
     for (const adv of opts.firmware.audioCodecs) {
       const norm = normaliseCodec(adv.codec);
-      if (norm && !codecs.includes(norm)) codecs.push(norm);
+      if (norm && !merged.includes(norm)) {
+        merged.push(norm);
+        firmwareContributed = true;
+      }
     }
+    if (firmwareContributed) {
+      codecs = merged;
+      codecsSource = 'firmware';
+    }
+    // If the firmware overlay was supplied but it advertised only codecs
+    // already in the generation defaults, the resulting list is identical
+    // to the generation-derived list and `source: 'generation'` is the
+    // truthful attribution. Don't promote to 'firmware' just because the
+    // overlay was *supplied* — only when it actually contributed.
   }
 
   // ── Artwork (purely table-driven) ───────────────────────────────────────
@@ -95,12 +157,12 @@ export function getCapabilities(
     artworkMaxResolution !== null && artworkMaxResolution > 0 ? ['database'] : [];
 
   return {
-    artworkSources,
-    artworkMaxResolution,
-    supportedAudioCodecs: codecs,
-    supportsVideo: gen.supportsVideo,
-    audioNormalization: 'soundcheck',
-    supportsAlbumArtistBrowsing: false,
+    artworkSources: { value: artworkSources, source: 'generation' },
+    artworkMaxResolution: { value: artworkMaxResolution, source: 'generation' },
+    supportedAudioCodecs: { value: codecs, source: codecsSource },
+    supportsVideo: { value: gen.supportsVideo, source: 'generation' },
+    audioNormalization: { value: 'soundcheck', source: 'generation' },
+    supportsAlbumArtistBrowsing: { value: false, source: 'generation' },
   };
 }
 
