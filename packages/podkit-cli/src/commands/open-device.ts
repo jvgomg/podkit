@@ -10,6 +10,7 @@
  * @module
  */
 
+import type { AudioCodec, AudioNormalizationMode, DeviceArtworkSource } from '@podkit/device-types';
 import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
 import { resolveIpodModel } from '@podkit/devices-ipod';
 import {
@@ -59,22 +60,25 @@ export function isMassStorageDevice(type: string | undefined): boolean {
 }
 
 /**
- * Optional per-device display overrides — supplied from
- * `deviceConfig.{manufacturer, productName}` so users can rename a
- * preset for their own device (e.g. labelling a `generic` device
- * `manufacturer = "AliExpress"`, `productName = "USB MP3 player"` for
- * `device info` output).
+ * Structural subset of a `DeviceConfig` the display helpers read.
+ *
+ * Pinned as a structural type so callers can pass either a full
+ * `DeviceConfig` (the CLI's TOML shape) or any other source that
+ * carries the same fields, without coupling the helper signatures to
+ * the config-types module. The fields are the inheritance layers
+ * `device info` / `device add` consume to label a device.
  */
-export interface DeviceDisplayOverrides {
+export interface DeviceDisplayInput {
+  type?: string;
   manufacturer?: string;
   productName?: string;
 }
 
 /**
- * Get a human-readable short display name for a device type.
+ * Get a human-readable short display name for a device.
  *
  * Resolution order per field:
- *   `overrides.productName` (per-device TOML) → preset.productName
+ *   `device.productName` (per-device TOML) → preset.productName
  *
  * Mass-storage types compose `formatPresetShortDisplay` against the
  * preset registry, so presets own their labels (the previous hard-coded
@@ -82,14 +86,12 @@ export interface DeviceDisplayOverrides {
  * display layer). iPods and unknown types still fall back to `'iPod'`
  * for the same historical reason as the old switch.
  */
-export function getDeviceTypeDisplayName(
-  type: string | undefined,
-  overrides?: DeviceDisplayOverrides
-): string {
+export function getDeviceTypeDisplayName(device: DeviceDisplayInput | undefined): string {
+  const type = device?.type;
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
   if (preset) {
-    return overrides?.productName ?? formatPresetShortDisplay(preset);
+    return device?.productName ?? formatPresetShortDisplay(preset);
   }
   // Unknown type — backward compat: undefined / unrecognised → iPod. User
   // presets the CLI doesn't know about land here; once the user-preset
@@ -98,89 +100,92 @@ export function getDeviceTypeDisplayName(
 }
 
 /**
- * Rich display name for a device type — `'FiiO Snowsky Echo Mini (echo-mini)'`
+ * Rich display name for a device — `'FiiO Snowsky Echo Mini (echo-mini)'`
  * style. Returns the same `'iPod'` fallback as the short form for iPods and
  * unknown types so callers that want one consistent label can switch in
  * place.
  *
  * Resolution order per field:
- *   `overrides.manufacturer` (per-device TOML) → preset.manufacturer
- *   `overrides.productName`  (per-device TOML) → preset.productName
+ *   `device.manufacturer` (per-device TOML) → preset.manufacturer
+ *   `device.productName`  (per-device TOML) → preset.productName
  *
  * The `id` portion (`(generic)`) stays the preset id so the CLI hint
  * still names the exact `--type` token the user passed.
  */
-export function getDeviceTypeRichDisplayName(
-  type: string | undefined,
-  overrides?: DeviceDisplayOverrides
-): string {
+export function getDeviceTypeRichDisplayName(device: DeviceDisplayInput | undefined): string {
+  const type = device?.type;
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
   if (preset) {
-    const manufacturer = overrides?.manufacturer ?? preset.manufacturer;
-    const productName = overrides?.productName ?? preset.productName;
+    const manufacturer = device?.manufacturer ?? preset.manufacturer;
+    const productName = device?.productName ?? preset.productName;
     return `${manufacturer} ${productName} (${type})`;
   }
   return 'iPod';
 }
 
 /**
- * Get a device label for user-facing messages based on device config type.
+ * Get a device label for user-facing messages — short form ("Echo Mini",
+ * "iPod", …), with the user's productName override winning over the
+ * preset default. Passing a full `DeviceConfig` ensures the override is
+ * picked up automatically.
  */
-export function getDeviceLabel(type: string | undefined): string {
-  return isMassStorageDevice(type) ? getDeviceTypeDisplayName(type) : 'iPod';
+export function getDeviceLabel(device: DeviceDisplayInput | undefined): string {
+  return isMassStorageDevice(device?.type) ? getDeviceTypeDisplayName(device) : 'iPod';
 }
 
 /**
- * Build capability overrides from device config fields.
+ * Pick the capability-relevant subset of a TOML config layer
+ * (per-device or device-defaults) as a `Partial<DeviceCapabilities>`.
  *
- * Per-device config takes priority over global deviceDefaults (from env vars).
+ * The CLI is responsible for I/O — reading TOML + env vars and shaping
+ * them into the typed slices core expects. The merging across layers
+ * happens inside `resolveCapabilitiesResolved`, so this helper never
+ * collapses two layers' provenance into one blob.
+ *
+ * Returns `undefined` when the layer contributes no capability fields,
+ * letting the resolver skip an empty layer entirely.
  */
-function buildCapabilityOverrides(
-  deviceConfig: DeviceConfig,
-  deviceDefaults?: PodkitConfig['deviceDefaults']
+function pickCapabilityFields(
+  source:
+    | {
+        artworkMaxResolution?: number;
+        artworkSources?: DeviceArtworkSource[];
+        supportedAudioCodecs?: AudioCodec[];
+        supportsVideo?: boolean;
+        audioNormalization?: AudioNormalizationMode;
+        supportsAlbumArtistBrowsing?: boolean;
+      }
+    | undefined
 ): Partial<import('@podkit/core').DeviceCapabilities> | undefined {
-  const overrides: Partial<import('@podkit/core').DeviceCapabilities> = {};
-  let hasOverrides = false;
-
-  const artworkMaxRes = deviceConfig.artworkMaxResolution ?? deviceDefaults?.artworkMaxResolution;
-  if (artworkMaxRes !== undefined) {
-    overrides.artworkMaxResolution = artworkMaxRes;
-    hasOverrides = true;
+  if (!source) return undefined;
+  const out: Partial<import('@podkit/core').DeviceCapabilities> = {};
+  let hasFields = false;
+  if (source.artworkMaxResolution !== undefined) {
+    out.artworkMaxResolution = source.artworkMaxResolution;
+    hasFields = true;
   }
-
-  const artworkSources = deviceConfig.artworkSources ?? deviceDefaults?.artworkSources;
-  if (artworkSources !== undefined) {
-    overrides.artworkSources = artworkSources;
-    hasOverrides = true;
+  if (source.artworkSources !== undefined) {
+    out.artworkSources = source.artworkSources;
+    hasFields = true;
   }
-
-  const supportedCodecs = deviceConfig.supportedAudioCodecs ?? deviceDefaults?.supportedAudioCodecs;
-  if (supportedCodecs !== undefined) {
-    overrides.supportedAudioCodecs = supportedCodecs;
-    hasOverrides = true;
+  if (source.supportedAudioCodecs !== undefined) {
+    out.supportedAudioCodecs = source.supportedAudioCodecs;
+    hasFields = true;
   }
-
-  const supportsVideo = deviceConfig.supportsVideo ?? deviceDefaults?.supportsVideo;
-  if (supportsVideo !== undefined) {
-    overrides.supportsVideo = supportsVideo;
-    hasOverrides = true;
+  if (source.supportsVideo !== undefined) {
+    out.supportsVideo = source.supportsVideo;
+    hasFields = true;
   }
-
-  const audioNormalization = deviceConfig.audioNormalization ?? deviceDefaults?.audioNormalization;
-  if (audioNormalization !== undefined) {
-    overrides.audioNormalization = audioNormalization;
-    hasOverrides = true;
+  if (source.audioNormalization !== undefined) {
+    out.audioNormalization = source.audioNormalization;
+    hasFields = true;
   }
-
-  const supportsAlbumArtistBrowsing =
-    deviceConfig.supportsAlbumArtistBrowsing ?? deviceDefaults?.supportsAlbumArtistBrowsing;
-  if (supportsAlbumArtistBrowsing !== undefined) {
-    overrides.supportsAlbumArtistBrowsing = supportsAlbumArtistBrowsing;
-    hasOverrides = true;
+  if (source.supportsAlbumArtistBrowsing !== undefined) {
+    out.supportsAlbumArtistBrowsing = source.supportsAlbumArtistBrowsing;
+    hasFields = true;
   }
-
-  return hasOverrides ? overrides : undefined;
+  return hasFields ? out : undefined;
 }
 
 // =============================================================================
@@ -275,23 +280,40 @@ export async function openDevice(
     };
   }
 
-  // Mass-storage device: resolve preset + config overrides + env defaults
-  const overrides = deviceConfig
-    ? buildCapabilityOverrides(deviceConfig, deviceDefaults)
-    : deviceDefaults
-      ? buildCapabilityOverrides({}, deviceDefaults)
-      : undefined;
+  // Mass-storage device: each TOML layer is shaped into its own
+  // `Partial<DeviceCapabilities>` slice so the core resolver can attribute
+  // each field to the actual layer it came from
+  // (per-device → device-defaults → preset). The CLI's job stops at
+  // picking the relevant fields; the merge happens in
+  // `resolveCapabilitiesResolved`.
+  const deviceConfigOverrides = pickCapabilityFields(deviceConfig);
+  const deviceDefaultsOverrides = pickCapabilityFields(deviceDefaults);
 
-  // Build a synthetic MassStorageIdentity and dispatch via resolveCapabilities
   const massStorageIdentity: import('@podkit/core').MassStorageIdentity = {
     kind: 'mass-storage',
     presetId: deviceType!,
   };
   let resolvedCaps: import('@podkit/core').DeviceCapabilities;
   try {
-    resolvedCaps = core.resolveCapabilities(massStorageIdentity, {
-      overrides: overrides ?? undefined,
+    // Use the provenance-aware resolver and project to bare values for
+    // the adapter (which doesn't consume provenance today). Future
+    // `device info` rendering can call `resolveCapabilitiesResolved`
+    // directly when it needs inheritance markers.
+    const resolved = core.resolveCapabilitiesResolved(massStorageIdentity, {
+      deviceConfigOverrides,
+      deviceDefaultsOverrides,
     });
+    resolvedCaps = {
+      artworkSources: [...resolved.artworkSources.value],
+      artworkMaxResolution: resolved.artworkMaxResolution.value,
+      supportedAudioCodecs: [...resolved.supportedAudioCodecs.value],
+      supportsVideo: resolved.supportsVideo.value,
+      audioNormalization: resolved.audioNormalization.value,
+      supportsAlbumArtistBrowsing: resolved.supportsAlbumArtistBrowsing.value,
+      ...(resolved.containerConstraints !== undefined
+        ? { containerConstraints: resolved.containerConstraints.value }
+        : {}),
+    };
   } catch {
     throw new Error(`Unknown device type: ${deviceType}`);
   }

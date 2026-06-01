@@ -83,7 +83,7 @@ export async function runDeviceMount(
       const device = await manager.findByVolumeUuid(volumeUuid);
 
       if (!device) {
-        const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+        const devLabel = getDeviceLabel(resolvedDevice?.config);
         throw new CliError({
           message: `${devLabel} not found with UUID: ${volumeUuid}`,
           code: DeviceErrorCodes.DEVICE_NOT_FOUND,
@@ -128,7 +128,7 @@ export async function runDeviceMount(
 
   if (!dryRun) {
     const displayName = volumeName || deviceId;
-    const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+    const devLabel = getDeviceLabel(resolvedDevice?.config);
     out.print(`Mounting ${devLabel}: ${displayName}...`);
   }
 
@@ -201,7 +201,7 @@ export async function runDeviceMount(
     out.result<DeviceMountOutput>(
       { success: true, device: deviceId, mountPoint: result.mountPoint },
       () => {
-        const devLabel = getDeviceLabel(resolvedDevice?.config?.type);
+        const devLabel = getDeviceLabel(resolvedDevice?.config);
         out.print(`${devLabel} mounted at: ${result.mountPoint}`);
         out.newline();
         out.print('You can now use:');
@@ -215,7 +215,7 @@ export async function runDeviceMount(
       code: DeviceErrorCodes.MOUNT_FAILED,
       details: { device: deviceId },
       printText: (o) => {
-        o.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config?.type).toLowerCase()}.`);
+        o.error(`Failed to mount ${getDeviceLabel(resolvedDevice?.config).toLowerCase()}.`);
         o.newline();
         if (result.error) {
           o.error(result.error);

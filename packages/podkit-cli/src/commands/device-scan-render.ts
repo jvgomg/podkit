@@ -182,7 +182,7 @@ export function renderDeviceScan(input: DeviceScanInput): string[] {
     lines.push('Not detected:');
     for (const cd of configuredDevices) {
       const pathInfo = cd.path ? ` — ${cd.path}` : '';
-      lines.push(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd.type)})${pathInfo}`);
+      lines.push(`  ${bold(cd.name)} (${getDeviceTypeDisplayName(cd)})${pathInfo}`);
     }
     lines.push('');
   }
@@ -287,7 +287,9 @@ function pushUnsupportedRow(
 }
 
 function pushMassStorageRow(lines: string[], recognised: MassStorageRecognized): void {
-  const presetDisplayName = getDeviceTypeDisplayName(recognised.presetId);
+  // Pre-add scan — no user-supplied display overrides yet, only the
+  // preset's defaults shown to confirm what `device add` will store.
+  const presetDisplayName = getDeviceTypeDisplayName({ type: recognised.presetId });
   if (recognised.device.diskIdentifier) {
     lines.push(
       `  ${bold(presetDisplayName)} (${recognised.presetId}) — disk: ${recognised.device.diskIdentifier}`

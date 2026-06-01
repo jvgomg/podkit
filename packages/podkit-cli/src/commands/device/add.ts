@@ -297,7 +297,7 @@ export async function runDeviceAdd(
     // Mass-storage devices require --path
     if (!explicitPath) {
       throw new CliError({
-        message: `--path is required for ${getDeviceTypeDisplayName(deviceType)} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
+        message: `--path is required for ${getDeviceTypeDisplayName({ type: deviceType })} devices. Usage: podkit device add -d <name> --type ${deviceType} --path <mount-point>`,
         code: DeviceErrorCodes.PATH_REQUIRED,
       });
     }
@@ -388,14 +388,14 @@ export async function runDeviceAdd(
     // Interactive confirmation (skip if auto-confirm or JSON mode)
     if (!autoConfirm && out.isText) {
       out.newline();
-      out.print(`Adding ${getDeviceTypeDisplayName(deviceType)} device:`);
+      out.print(`Adding ${getDeviceTypeDisplayName({ type: deviceType })} device:`);
       out.print(`  Name:   ${name}`);
       // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
       // sees the exact `--type` token alongside vendor + product name.
       // No per-device overrides yet at `add` time — those land in config
       // after this confirmation, so subsequent `device info` calls will
       // see them.
-      out.print(`  Type:   ${getDeviceTypeRichDisplayName(deviceType)}`);
+      out.print(`  Type:   ${getDeviceTypeRichDisplayName({ type: deviceType })}`);
       out.print(`  Path:   ${explicitPath}`);
       out.newline();
 
@@ -437,7 +437,9 @@ export async function runDeviceAdd(
             : `Updated config file: ${result.configPath}`
         );
         out.newline();
-        out.print(`Device "${name}" added to config (${getDeviceTypeDisplayName(deviceType)}).`);
+        out.print(
+          `Device "${name}" added to config (${getDeviceTypeDisplayName({ type: deviceType })}).`
+        );
         if (isFirstDevice) {
           out.print(`Set as default device.`);
         }
@@ -860,7 +862,7 @@ export async function runDeviceAdd(
       });
     }
 
-    const displayName = getDeviceTypeDisplayName(suggestedIntent.kind);
+    const displayName = getDeviceTypeDisplayName({ type: suggestedIntent.kind });
     out.print(`Detected ${displayName} via USB.`);
     // Only render the "To add it, run:" block when the intent supplied
     // a concrete command. Empty addArgs means "no command differs from

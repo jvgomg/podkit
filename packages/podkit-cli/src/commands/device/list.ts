@@ -212,7 +212,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
     const headers = ['NAME', 'TYPE', 'QUALITY', 'AUDIO', 'VIDEO', 'ARTWORK'];
     const widths = [
       Math.max(6, ...resolvedDevices.map((d) => d.name.length + 2)),
-      Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d.type).length)),
+      Math.max(6, ...resolvedDevices.map((d) => getDeviceTypeDisplayName(d).length)),
       9,
       9,
       9,
@@ -227,7 +227,7 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       const row = formatRow(
         [
           d.name,
-          getDeviceTypeDisplayName(d.type),
+          getDeviceTypeDisplayName(d),
           formatResolved(d.quality),
           formatResolved(d.audio),
           formatResolved(d.video),

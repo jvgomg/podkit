@@ -60,6 +60,15 @@ export interface ResolvedGlobalConfig {
 export interface ResolvedDeviceSettings {
   name: string;
   type: string;
+  /**
+   * Per-device display overrides — raw config values, unresolved
+   * against the preset. The display helpers
+   * (`getDeviceTypeDisplayName`, `getDeviceTypeRichDisplayName`) thread
+   * these through the preset's defaults to produce the final label.
+   * Undefined when the user hasn't overridden.
+   */
+  manufacturer?: string;
+  productName?: string;
   isDefault: boolean;
   connected: boolean;
   quality: ResolvedValue<QualityPreset>;
@@ -160,14 +169,16 @@ export function resolveDeviceSettings(
   return {
     name: deviceName,
     type,
+    manufacturer: deviceConfig.manufacturer,
+    productName: deviceConfig.productName,
     isDefault,
     connected,
     quality,
     audio: resolveDeviceAudio(config, deviceConfig, quality),
     video: resolveDeviceVideo(config, deviceConfig, quality, capabilities),
     artwork: resolveDeviceArtwork(config, deviceConfig, capabilities),
-    checkArtwork: resolveSimpleBoolean(config.checkArtwork, deviceConfig.checkArtwork, false),
-    skipUpgrades: resolveSimpleBoolean(config.skipUpgrades, deviceConfig.skipUpgrades, false),
+    checkArtwork: resolveSimple<boolean>(config.checkArtwork, deviceConfig.checkArtwork, false),
+    skipUpgrades: resolveSimple<boolean>(config.skipUpgrades, deviceConfig.skipUpgrades, false),
     encoding: resolveSimple(config.encoding, deviceConfig.encoding, undefined),
     transferMode: resolveSimple(
       config.transferMode,
@@ -304,20 +315,6 @@ function resolveSimple<T>(
     defaultValue,
     'default'
   );
-}
-
-/**
- * @deprecated Use {@link resolveSimple} directly — it now handles boolean
- * settings without needing a typed-narrowed variant. Kept as a thin
- * delegate to avoid a churning rename across the resolver internals; will
- * be removed once the surrounding device-resolution code is touched again.
- */
-function resolveSimpleBoolean(
-  globalValue: boolean | undefined,
-  deviceValue: boolean | undefined,
-  defaultValue: boolean
-): ResolvedValue<boolean> {
-  return resolveSimple<boolean>(globalValue, deviceValue, defaultValue);
 }
 
 // =============================================================================

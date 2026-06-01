@@ -141,7 +141,7 @@ export async function runEject(
   }
 
   const devicePath = resolveResult.path;
-  const deviceLabel = getDeviceLabel(resolvedDevice?.config?.type);
+  const deviceLabel = getDeviceLabel(resolvedDevice?.config);
 
   if (!existsSync(devicePath)) {
     throw new CliError({

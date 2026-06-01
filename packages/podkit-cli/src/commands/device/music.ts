@@ -224,9 +224,7 @@ export async function runDeviceMusic(
       const musicTracks = allTracks.filter((t) => core.isMusicMediaType(t.mediaType));
       const deviceName =
         resolvedDevice?.name?.toUpperCase() ||
-        (deviceResult.isIpodDevice
-          ? 'iPod'
-          : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
+        (deviceResult.isIpodDevice ? 'iPod' : getDeviceTypeDisplayName(resolvedDevice?.config));
       const heading = `Music on ${deviceName}:`;
       const displayTracks = musicTracks.map(deviceTrackToDisplayTrack);
 

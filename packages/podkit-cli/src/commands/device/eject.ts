@@ -96,7 +96,7 @@ export async function runDeviceEject(
   const devicePath = resolveResult.path;
 
   const deviceLabel = isMassStorageDevice(resolvedDevice?.config?.type)
-    ? getDeviceTypeDisplayName(resolvedDevice?.config?.type)
+    ? getDeviceTypeDisplayName(resolvedDevice?.config)
     : 'iPod';
 
   if (!existsSync(devicePath)) {

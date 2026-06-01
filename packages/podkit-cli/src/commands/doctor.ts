@@ -495,7 +495,7 @@ export async function runDoctorDiagnostics(
 
   // Mass-storage devices: resolve content paths and run applicable checks
   if (isMassStorage) {
-    const label = getDeviceTypeDisplayName(deviceConfig?.type);
+    const label = getDeviceTypeDisplayName(deviceConfig);
 
     const contentPaths = resolveMassStorageContentPaths(deviceConfig!, config.deviceDefaults, core);
 

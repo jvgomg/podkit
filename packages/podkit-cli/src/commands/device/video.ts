@@ -219,9 +219,7 @@ export async function runDeviceVideo(
       const videoTracks = allTracks.filter((t) => core.isVideoMediaType(t.mediaType));
       const deviceName =
         resolvedDevice?.name?.toUpperCase() ||
-        (deviceResult.isIpodDevice
-          ? 'iPod'
-          : getDeviceTypeDisplayName(resolvedDevice?.config?.type));
+        (deviceResult.isIpodDevice ? 'iPod' : getDeviceTypeDisplayName(resolvedDevice?.config));
       const heading = `Video on ${deviceName}:`;
       const displayTracks = videoTracks.map(deviceTrackToDisplayTrack);
 

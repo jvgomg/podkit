@@ -667,8 +667,15 @@ export type {
 } from './device/index.js';
 
 // Unified capability resolver
-export { resolveCapabilities, identifyCapabilities } from './device/index.js';
-export type { ResolveCapabilitiesOptions } from './device/index.js';
+export {
+  resolveCapabilities,
+  resolveCapabilitiesResolved,
+  identifyCapabilities,
+} from './device/index.js';
+export type {
+  ResolveCapabilitiesOptions,
+  ResolveCapabilitiesResolvedOptions,
+} from './device/index.js';
 
 // OS error code interpreter
 export type { InterpretedError } from './device/index.js';
