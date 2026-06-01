@@ -1980,7 +1980,7 @@ describe('MassStorageAdapter', () => {
       const track = adapter.getTracks()[0]!;
       adapter.updateTrack(track, {
         writeReplayGainTags: true,
-        normalization: { source: 'replaygain', trackGain: -7.42, trackPeak: 0.987 },
+        normalization: { source: 'replaygain-track', trackGain: -7.42, trackPeak: 0.987 },
       });
       await adapter.save();
 
@@ -2003,7 +2003,7 @@ describe('MassStorageAdapter', () => {
       adapter.updateTrack(track, {
         title: 'New Title',
         writeReplayGainTags: true,
-        normalization: { source: 'replaygain', trackGain: -5.0 },
+        normalization: { source: 'replaygain-track', trackGain: -5.0 },
       });
       await adapter.save();
 
@@ -2027,7 +2027,7 @@ describe('MassStorageAdapter', () => {
       const track = adapter.getTracks()[0]!;
       adapter.updateTrack(track, {
         writeReplayGainTags: true,
-        normalization: { source: 'replaygain', trackGain: -7.0 },
+        normalization: { source: 'replaygain-track', trackGain: -7.0 },
       });
       await adapter.save();
 

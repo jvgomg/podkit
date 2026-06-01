@@ -128,8 +128,15 @@ export type {
 export { resolveIpodModel, type ResolveModelInput } from '@podkit/devices-ipod';
 
 // Unified capability resolver
-export { resolveCapabilities, identifyCapabilities } from './resolve-capabilities.js';
-export type { ResolveCapabilitiesOptions } from './resolve-capabilities.js';
+export {
+  resolveCapabilities,
+  resolveCapabilitiesResolved,
+  identifyCapabilities,
+} from './resolve-capabilities.js';
+export type {
+  ResolveCapabilitiesOptions,
+  ResolveCapabilitiesResolvedOptions,
+} from './resolve-capabilities.js';
 
 // Readiness pipeline
 export type {

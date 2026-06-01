@@ -14,7 +14,13 @@
  * @module
  */
 
-import type { DeviceCapabilities, MassStorageIdentity } from '@podkit/device-types';
+import type {
+  DeviceCapabilities,
+  MassStorageIdentity,
+  ResolvedDeviceCapabilities,
+  CapabilitySource,
+} from '@podkit/device-types';
+import { resolveChain } from '@podkit/device-types';
 import type { MassStoragePreset } from './presets/types.js';
 import { BUILT_IN_PRESETS } from './presets/built-in.js';
 
@@ -34,8 +40,33 @@ export interface GetCapabilitiesOptions {
    *
    * Useful for "two Echo Minis configured differently" — pass different
    * override maps for each device without touching the shared preset registry.
+   *
+   * Provenance-collapsed: callers that distinguish per-device TOML from
+   * env-driven device defaults should use {@link getCapabilitiesResolved}
+   * with `deviceConfigOverrides` / `deviceDefaultsOverrides` instead.
    */
   overrides?: Partial<DeviceCapabilities>;
+}
+
+/**
+ * Options for {@link getCapabilitiesResolved} — the provenance-aware
+ * variant. Splits the formerly-opaque `overrides` blob into the two
+ * layers that actually feed it (per-device TOML and env-var-driven
+ * device defaults), so the resolver can attribute each field correctly.
+ */
+export interface GetCapabilitiesResolvedOptions {
+  presets: Record<string, MassStoragePreset>;
+  /**
+   * Per-device TOML overrides. Highest priority — wins over device
+   * defaults and the preset baseline.
+   */
+  deviceConfigOverrides?: Partial<DeviceCapabilities>;
+  /**
+   * Global device defaults from env vars
+   * (`PODKIT_ARTWORK_MAX_RESOLUTION`, etc.). Sits between per-device
+   * config and the preset.
+   */
+  deviceDefaultsOverrides?: Partial<DeviceCapabilities>;
 }
 
 // =============================================================================
@@ -71,9 +102,59 @@ export function getCapabilities(
   identity: MassStorageIdentity,
   opts: GetCapabilitiesOptions
 ): DeviceCapabilities {
+  // Backward-compat wrapper: route through the provenance-aware
+  // resolver with the legacy "single overrides blob" attributed to
+  // `device-config` (the existing CLI plumbing layers per-device on top
+  // of deviceDefaults before passing the merged blob in here), then
+  // strip provenance for the bare-values return type. `containerConstraints`
+  // is sparse (optional), so it's projected separately.
+  const resolved = getCapabilitiesResolved(identity, {
+    presets: opts.presets,
+    deviceConfigOverrides: opts.overrides,
+  });
+  const bare: DeviceCapabilities = {
+    artworkSources: [...resolved.artworkSources.value],
+    artworkMaxResolution: resolved.artworkMaxResolution.value,
+    supportedAudioCodecs: [...resolved.supportedAudioCodecs.value],
+    supportsVideo: resolved.supportsVideo.value,
+    audioNormalization: resolved.audioNormalization.value,
+    supportsAlbumArtistBrowsing: resolved.supportsAlbumArtistBrowsing.value,
+  };
+  if (resolved.containerConstraints !== undefined) {
+    bare.containerConstraints = resolved.containerConstraints.value;
+  }
+  return bare;
+}
+
+/**
+ * Provenance-aware variant of {@link getCapabilities}. Splits the
+ * formerly-collapsed `overrides` into per-device and device-defaults
+ * layers so each field's resolved value carries the inheritance source
+ * it came from.
+ *
+ * Resolution order per field (highest priority first):
+ *   device-config → device-defaults → preset
+ *
+ * Each layer walked through the shared `resolveChain` primitive in
+ * `@podkit/device-types`. Same merge semantics as {@link getCapabilities};
+ * the only addition is the `{ value, source }` shape.
+ *
+ * @example
+ * ```ts
+ * const resolved = getCapabilitiesResolved(identity, {
+ *   presets: BUILT_IN_PRESETS,
+ *   deviceConfigOverrides: { artworkMaxResolution: 96 },
+ * });
+ * // → resolved.artworkMaxResolution = { value: 96, source: 'device-config' }
+ * // → resolved.artworkSources       = { value: ['embedded'], source: 'preset' }
+ * ```
+ */
+export function getCapabilitiesResolved(
+  identity: MassStorageIdentity,
+  opts: GetCapabilitiesResolvedOptions
+): ResolvedDeviceCapabilities {
   const presetId = identity.presetId ?? 'generic';
 
-  // Resolve preset — check opts.presets first, then built-ins
   const preset: MassStoragePreset | undefined =
     opts.presets[presetId] ?? BUILT_IN_PRESETS[presetId as keyof typeof BUILT_IN_PRESETS];
 
@@ -84,28 +165,96 @@ export function getCapabilities(
     );
   }
 
-  // Extract DeviceCapabilities fields from the preset (excluding contentPaths)
-  const base: DeviceCapabilities = {
-    artworkSources: preset.artworkSources,
-    artworkMaxResolution: preset.artworkMaxResolution,
-    supportedAudioCodecs: preset.supportedAudioCodecs,
-    supportsVideo: preset.supportsVideo,
-    audioNormalization: preset.audioNormalization,
-    supportsAlbumArtistBrowsing: preset.supportsAlbumArtistBrowsing,
-  };
+  const cfg = opts.deviceConfigOverrides;
+  const defaults = opts.deviceDefaultsOverrides;
 
-  if (!opts.overrides) {
-    return base;
-  }
-
-  // Arrays replace entirely (not concatenated) — mirrors resolveDeviceCapabilities semantics
+  // Field-by-field walk. Layers in priority order — the chain helper
+  // returns the first defined hit. `'preset'` is always the bottom
+  // because every preset is required to populate every field (the
+  // extends chain in `definePreset` guarantees this).
   return {
-    artworkSources: opts.overrides.artworkSources ?? base.artworkSources,
-    artworkMaxResolution: opts.overrides.artworkMaxResolution ?? base.artworkMaxResolution,
-    supportedAudioCodecs: opts.overrides.supportedAudioCodecs ?? base.supportedAudioCodecs,
-    supportsVideo: opts.overrides.supportsVideo ?? base.supportsVideo,
-    audioNormalization: opts.overrides.audioNormalization ?? base.audioNormalization,
-    supportsAlbumArtistBrowsing:
-      opts.overrides.supportsAlbumArtistBrowsing ?? base.supportsAlbumArtistBrowsing,
+    artworkSources: resolveChain<
+      import('@podkit/device-types').DeviceArtworkSource[],
+      CapabilitySource
+    >(
+      [
+        { value: cfg?.artworkSources, source: 'device-config' },
+        { value: defaults?.artworkSources, source: 'device-defaults' },
+      ],
+      preset.artworkSources,
+      'preset'
+    ),
+    artworkMaxResolution: resolveChain<number | null, CapabilitySource>(
+      [
+        { value: cfg?.artworkMaxResolution, source: 'device-config' },
+        { value: defaults?.artworkMaxResolution, source: 'device-defaults' },
+      ],
+      preset.artworkMaxResolution,
+      'preset'
+    ),
+    supportedAudioCodecs: resolveChain<
+      import('@podkit/device-types').AudioCodec[],
+      CapabilitySource
+    >(
+      [
+        { value: cfg?.supportedAudioCodecs, source: 'device-config' },
+        { value: defaults?.supportedAudioCodecs, source: 'device-defaults' },
+      ],
+      preset.supportedAudioCodecs,
+      'preset'
+    ),
+    supportsVideo: resolveChain<boolean, CapabilitySource>(
+      [
+        { value: cfg?.supportsVideo, source: 'device-config' },
+        { value: defaults?.supportsVideo, source: 'device-defaults' },
+      ],
+      preset.supportsVideo,
+      'preset'
+    ),
+    audioNormalization: resolveChain<
+      import('@podkit/device-types').AudioNormalizationMode,
+      CapabilitySource
+    >(
+      [
+        { value: cfg?.audioNormalization, source: 'device-config' },
+        { value: defaults?.audioNormalization, source: 'device-defaults' },
+      ],
+      preset.audioNormalization,
+      'preset'
+    ),
+    supportsAlbumArtistBrowsing: resolveChain<boolean, CapabilitySource>(
+      [
+        { value: cfg?.supportsAlbumArtistBrowsing, source: 'device-config' },
+        { value: defaults?.supportsAlbumArtistBrowsing, source: 'device-defaults' },
+      ],
+      preset.supportsAlbumArtistBrowsing,
+      'preset'
+    ),
+    // Container constraints are sparse — only emit a resolved entry when
+    // at least one layer supplied them. Skipping the chain when nothing
+    // contributes keeps the output shape consistent with
+    // `DeviceCapabilities.containerConstraints?` (also optional).
+    containerConstraints:
+      cfg?.containerConstraints !== undefined ||
+      defaults?.containerConstraints !== undefined ||
+      preset.containerConstraints !== undefined
+        ? resolveChain<
+            Partial<
+              Record<
+                import('@podkit/device-types').AudioCodec,
+                import('@podkit/device-types').AudioContainer[]
+              >
+            >,
+            CapabilitySource
+          >(
+            [
+              { value: cfg?.containerConstraints, source: 'device-config' },
+              { value: defaults?.containerConstraints, source: 'device-defaults' },
+              { value: preset.containerConstraints, source: 'preset' },
+            ],
+            {},
+            'preset'
+          )
+        : undefined,
   };
 }

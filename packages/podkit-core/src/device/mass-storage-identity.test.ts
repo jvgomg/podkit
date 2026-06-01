@@ -48,6 +48,8 @@ describe('assessMassStorageDevice', () => {
 
   it('honours a user-supplied preset registry that shadows built-ins', () => {
     const customEchoMini: MassStoragePreset = {
+      manufacturer: 'Test',
+      productName: 'Custom Echo Mini',
       artworkSources: ['embedded'],
       artworkMaxResolution: 1024,
       supportedAudioCodecs: ['flac'],

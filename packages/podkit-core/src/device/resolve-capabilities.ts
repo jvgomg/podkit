@@ -25,6 +25,8 @@ import type {
   DeviceIdentity,
   DeviceCapabilities,
   FirmwareCapabilities,
+  ResolvedDeviceCapabilities,
+  CapabilitySource,
 } from '@podkit/device-types';
 
 import { getCapabilities as getIpodCapabilities, resolveIpodModel } from '@podkit/devices-ipod';
@@ -32,6 +34,7 @@ import type { IpodModel } from '@podkit/devices-ipod';
 
 import {
   getCapabilities as getMassStorageCapabilities,
+  getCapabilitiesResolved as getMassStorageCapabilitiesResolved,
   BUILT_IN_PRESETS,
 } from '@podkit/devices-mass-storage';
 import type { MassStoragePreset } from '@podkit/devices-mass-storage';
@@ -58,8 +61,26 @@ export interface ResolveCapabilitiesOptions {
    *
    * Useful for per-device config overrides in TOML — e.g. an Echo Mini with
    * a smaller artwork limit than the preset default.
+   *
+   * Provenance-collapsed: callers that distinguish per-device TOML from
+   * env-driven device defaults should use {@link resolveCapabilitiesResolved}
+   * with `deviceConfigOverrides` / `deviceDefaultsOverrides` instead.
    */
   overrides?: Partial<DeviceCapabilities>;
+}
+
+/**
+ * Options for {@link resolveCapabilitiesResolved} — the provenance-aware
+ * variant. Splits `overrides` into the two layers that feed it so the
+ * resolver can attribute each field to the actual layer it came from.
+ */
+export interface ResolveCapabilitiesResolvedOptions {
+  firmware?: FirmwareCapabilities;
+  presets?: Record<string, MassStoragePreset>;
+  /** Per-device TOML overrides (highest priority). */
+  deviceConfigOverrides?: Partial<DeviceCapabilities>;
+  /** Global device defaults from env vars. */
+  deviceDefaultsOverrides?: Partial<DeviceCapabilities>;
 }
 
 // =============================================================================
@@ -160,4 +181,84 @@ export function identifyCapabilities(
   opts?: Pick<ResolveCapabilitiesOptions, 'firmware'>
 ): DeviceCapabilities {
   return getIpodCapabilities(model, { firmware: opts?.firmware });
+}
+
+/**
+ * Provenance-aware variant of {@link resolveCapabilities}. Returns each
+ * capability field wrapped in `{ value, source }` so consumers (`device
+ * info`, the doctor, future JSON outputs) can show inheritance markers.
+ *
+ * Layer order per field (highest priority first):
+ *   device-config → device-defaults → firmware (iPod) → preset/generation
+ *
+ * Mass-storage delegates to `getCapabilitiesResolved` from
+ * `@podkit/devices-mass-storage`. The iPod path currently wraps the
+ * bare-values `getIpodCapabilities` result with a uniform `'generation'`
+ * source for every field — the per-field provenance for table-derived +
+ * firmware-overlaid iPod capabilities is future work (it requires the
+ * iPod capability synthesiser to expose layer boundaries too).
+ *
+ * @example
+ * ```ts
+ * const r = resolveCapabilitiesResolved(identity, {
+ *   deviceConfigOverrides: { artworkMaxResolution: 96 },
+ * });
+ * // → r.artworkMaxResolution = { value: 96, source: 'device-config' }
+ * // → r.audioNormalization   = { value: 'none', source: 'preset' }
+ * ```
+ */
+export function resolveCapabilitiesResolved(
+  identity: DeviceIdentity,
+  opts?: ResolveCapabilitiesResolvedOptions
+): ResolvedDeviceCapabilities {
+  switch (identity.kind) {
+    case 'ipod': {
+      const model = resolveIpodModel({
+        serialNumber: identity.serialNumber,
+        familyId: identity.familyId,
+      });
+      if (!model) {
+        throw new Error(
+          `Could not resolve iPod model from identity: serialNumber=${identity.serialNumber ?? 'none'}, familyId=${identity.familyId}`
+        );
+      }
+      const bare = getIpodCapabilities(model, { firmware: opts?.firmware });
+      // Per-field provenance for the iPod path is the same `'generation'`
+      // (or `'firmware'` when firmware overlay was supplied) across every
+      // field today — the synthesiser doesn't expose layer boundaries.
+      // Refine when `@podkit/devices-ipod` grows a resolved variant.
+      const ipodSource: CapabilitySource = opts?.firmware ? 'firmware' : 'generation';
+      const out: ResolvedDeviceCapabilities = {
+        artworkSources: { value: bare.artworkSources, source: ipodSource },
+        artworkMaxResolution: { value: bare.artworkMaxResolution, source: ipodSource },
+        supportedAudioCodecs: { value: bare.supportedAudioCodecs, source: ipodSource },
+        supportsVideo: { value: bare.supportsVideo, source: ipodSource },
+        audioNormalization: { value: bare.audioNormalization, source: ipodSource },
+        supportsAlbumArtistBrowsing: {
+          value: bare.supportsAlbumArtistBrowsing,
+          source: ipodSource,
+        },
+      };
+      if (bare.containerConstraints !== undefined) {
+        out.containerConstraints = { value: bare.containerConstraints, source: ipodSource };
+      }
+      return out;
+    }
+
+    case 'mass-storage': {
+      const presets = opts?.presets ?? BUILT_IN_PRESETS;
+      return getMassStorageCapabilitiesResolved(identity, {
+        presets,
+        deviceConfigOverrides: opts?.deviceConfigOverrides,
+        deviceDefaultsOverrides: opts?.deviceDefaultsOverrides,
+      });
+    }
+
+    default: {
+      const exhaustive: never = identity;
+      throw new Error(
+        `resolveCapabilitiesResolved: unknown identity kind "${(exhaustive as DeviceIdentity).kind}"`
+      );
+    }
+  }
 }

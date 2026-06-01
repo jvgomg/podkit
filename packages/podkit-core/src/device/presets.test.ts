@@ -41,7 +41,15 @@ describe('BUILT_IN_PRESETS', () => {
 describe('resolveCapabilities (mass-storage path)', () => {
   it('returns preset capabilities as-is when no overrides', () => {
     const caps = resolveCapabilities({ kind: 'mass-storage', presetId: 'rockbox' });
-    const { contentPaths: _omit, ...expected } = BUILT_IN_PRESETS.rockbox;
+    // Strip preset-only fields the capability shape doesn't include:
+    // `contentPaths` (file-layout metadata) and the display fields
+    // (`manufacturer`, `productName`) used only by `formatPresetDisplay`.
+    const {
+      contentPaths: _omitPaths,
+      manufacturer: _omitMfr,
+      productName: _omitProduct,
+      ...expected
+    } = BUILT_IN_PRESETS.rockbox;
     expect(caps).toEqual(expected);
   });
 

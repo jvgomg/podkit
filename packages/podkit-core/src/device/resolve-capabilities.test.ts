@@ -185,6 +185,8 @@ describe('resolveCapabilities — mass-storage identity', () => {
   it('accepts a custom preset registry', () => {
     const identity = makeMassStorageIdentity('my-custom-dap');
     const customPreset = {
+      manufacturer: 'Test',
+      productName: 'Custom DAP',
       artworkSources: [] as import('@podkit/device-types').DeviceArtworkSource[],
       artworkMaxResolution: null,
       supportedAudioCodecs: ['flac', 'wav'] as import('@podkit/device-types').AudioCodec[],

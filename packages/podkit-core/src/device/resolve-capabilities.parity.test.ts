@@ -103,7 +103,15 @@ const PRESET_IDS = ['echo-mini', 'rockbox', 'generic'] as const;
 function stripContentPaths(
   preset: (typeof BUILT_IN_PRESETS)[keyof typeof BUILT_IN_PRESETS]
 ): import('@podkit/device-types').DeviceCapabilities {
-  const { contentPaths: _omitted, ...caps } = preset;
+  // Strip every preset-only field that isn't part of `DeviceCapabilities`:
+  // file-layout (`contentPaths`) and the display fields (`manufacturer`,
+  // `productName`) used by `formatPresetDisplay`.
+  const {
+    contentPaths: _omitPaths,
+    manufacturer: _omitMfr,
+    productName: _omitProduct,
+    ...caps
+  } = preset;
   return caps;
 }
 

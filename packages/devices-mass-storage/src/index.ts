@@ -28,8 +28,8 @@ export { formatPresetDisplay, formatPresetShortDisplay } from './display.js';
 
 export { identify } from './identity.js';
 
-export { getCapabilities } from './capabilities.js';
-export type { GetCapabilitiesOptions } from './capabilities.js';
+export { getCapabilities, getCapabilitiesResolved } from './capabilities.js';
+export type { GetCapabilitiesOptions, GetCapabilitiesResolvedOptions } from './capabilities.js';
 
 export { USB_PRESET_HINTS } from './usb-hints.js';
 export type { UsbPresetHint } from './usb-hints.js';

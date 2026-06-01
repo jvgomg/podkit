@@ -50,3 +50,8 @@ export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from '.
 // resolver, and any other walk that needs `{ value, source }` provenance.
 export type { Resolved, ResolutionLayer } from './resolved.js';
 export { resolveChain, resolveChainOptional, projectResolved } from './resolved.js';
+
+// Provenance-tracked capabilities (shape used by `getCapabilities` and
+// `resolveCapabilities` when a consumer needs to know which inheritance
+// layer contributed each field).
+export type { CapabilitySource, ResolvedDeviceCapabilities } from './resolved-capabilities.js';
