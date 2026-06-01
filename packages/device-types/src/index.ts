@@ -45,3 +45,8 @@ export { IPOD_GENERATION_IDS } from './ipod-model.js';
 export type { ReadinessUnsupportedReason } from './unsupported-reason.js';
 
 export type { SubprocessRunner, SubprocessRunOpts, SubprocessRunResult } from './subprocess.js';
+
+// Inheritance-resolution primitive — used by config resolver, capability
+// resolver, and any other walk that needs `{ value, source }` provenance.
+export type { Resolved, ResolutionLayer } from './resolved.js';
+export { resolveChain, resolveChainOptional, projectResolved } from './resolved.js';
