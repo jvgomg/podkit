@@ -18,7 +18,7 @@
  * the resulting `json.decisions.<setting>.{value, source}` pair. A regression
  * that swallows one inheritance hop, mis-attributes a source, or silently
  * drops a CLI overlay flips at least one cell. Codec settings exercise the
- * `codecPreferenceFromConfig` branch in `buildSyncDecisions` — the same path
+ * `codecPreferenceSource` branch in `buildSyncDecisions` — the same path
  * sonnet caught mis-using "presence" vs "length" during TASK-357.
  *
  * @module
@@ -33,7 +33,7 @@ import type { SyncOutput } from 'podkit/types';
 
 import { createMassStorageTarget, type SyncTarget } from '../targets';
 
-import { skipBug, skipImpossible, type CellExpectation, type SkipDecision } from './harness.js';
+import { skipImpossible, type CellExpectation, type SkipDecision } from './harness.js';
 
 // ---------------------------------------------------------------------------
 // Axes
@@ -140,10 +140,9 @@ function hasCliOverlay(setting: ConfigSetting): boolean {
 
 /**
  * Codec preferences are sourced under `[codec]` (global) or
- * `[devices.<n>.codec]` (device). sync.ts attributes both to `'global'`
- * because `buildSyncDecisions` is told only a boolean — see TASK-367.
- * Until that's fixed, the device cells are fenced as known-broken so the
- * suite reports them as deferred work without going red.
+ * `[devices.<n>.codec]` (device). Both levels are observable in the decisions
+ * block; sync.ts computes a `codecPreferenceSource` enum and forwards it to
+ * `buildSyncDecisions`.
  */
 function isCodec(setting: ConfigSetting): boolean {
   return (
@@ -175,15 +174,6 @@ export function skipConfigCell(cell: ConfigCell): SkipDecision | null {
   if (cell.setting === 'quality' && cell.level === 'default') {
     return skipImpossible(
       'loader unconditionally sets quality=high in DEFAULT_CONFIG; resolveGlobalQuality always emits source=global'
-    );
-  }
-  // Device-level codec attribution is broken — buildSyncDecisions emits
-  // `'global'` for any codecPreferenceFromConfig=true, regardless of which
-  // level the preference came from.
-  if (isCodec(cell.setting) && cell.level === 'device') {
-    return skipBug(
-      'sync.ts forwards codecPreferenceFromConfig as a boolean; device-level codec is attributed to source=global',
-      'TASK-367'
     );
   }
   return null;
@@ -355,17 +345,24 @@ function predictCodecScalar(
     return {
       value: opts.defaultValue,
       source: 'default',
-      reason: 'no [codec] block → codecPreferenceFromConfig=false → source=default',
+      reason: 'no [codec] block → codecPreferenceSource=default → source=default',
     };
   }
   if (cell.level === 'global') {
     return {
       value: opts.nonDefaultValue,
       source: 'global',
-      reason: '[codec] block at top level → codecPreferenceFromConfig=true → source=global',
+      reason: '[codec] block at top level → codecPreferenceSource=global → source=global',
     };
   }
-  // device and bug-fenced; cli/quality-fold pruned as impossible.
+  if (cell.level === 'device') {
+    return {
+      value: opts.nonDefaultValue,
+      source: 'device',
+      reason: '[devices.<name>.codec] block → codecPreferenceSource=device → source=device',
+    };
+  }
+  // cli / quality-fold pruned as impossible.
   throw new Error(`unexpected codec cell level: ${cell.level}`);
 }
 
@@ -385,6 +382,13 @@ function predictCodecPreference(
       value: opts.nonDefaultValue,
       source: 'global',
       reason: '[codec] preference array at top level → source=global',
+    };
+  }
+  if (cell.level === 'device') {
+    return {
+      value: opts.nonDefaultValue,
+      source: 'device',
+      reason: '[devices.<name>.codec] preference array → source=device',
     };
   }
   throw new Error(`unexpected codec-preference cell level: ${cell.level}`);
@@ -468,6 +472,22 @@ function cellToml(cell: ConfigCell, ctx: ConfigContext): string {
       lines.push(`audioQuality = "${TEST_VALUES.quality}"`);
     } else if (cell.level === 'device-quality') {
       lines.push(`quality = "${TEST_VALUES.quality}"`);
+    }
+  }
+  // Device-level codec block — same shape as the global [codec] block but
+  // nested under [devices.<n>.codec]. Pinned here so the device cell wins
+  // over any (absent) global block via the codecPreferenceSource enum in
+  // sync.ts.
+  if (isCodec(cell.setting) && cell.level === 'device') {
+    lines.push('');
+    lines.push(`[devices.${ctx.deviceName}.codec]`);
+    if (cell.setting === 'lossyCodec' || cell.setting === 'lossyPreference') {
+      const arr = TEST_VALUES.lossyCodecPreference.map((c) => `"${c}"`).join(', ');
+      lines.push(`lossy = [${arr}]`);
+    }
+    if (cell.setting === 'losslessCodec' || cell.setting === 'losslessPreference') {
+      const arr = TEST_VALUES.losslessCodecPreference.map((c) => `"${c}"`).join(', ');
+      lines.push(`lossless = [${arr}]`);
     }
   }
   lines.push('');

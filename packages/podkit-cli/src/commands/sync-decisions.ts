@@ -96,10 +96,23 @@ export function buildSyncDecisions(input: {
   resolvedLosslessCodec: string | null | undefined;
   lossyPreference: readonly string[];
   losslessPreference: readonly string[];
-  /** Whether the codec preference came from a config file (vs hardcoded defaults). */
-  codecPreferenceFromConfig: boolean;
+  /**
+   * Where the codec preference came from: `'device'` (a `[devices.<n>.codec]`
+   * block), `'global'` (a top-level `[codec]` block), or `'default'` (no
+   * codec block — hardcoded defaults). The caller computes this from config
+   * presence (see `sync.ts`); the builder forwards it unchanged so the JSON
+   * decisions block attributes codec choice to the level that produced it.
+   *
+   * Single-valued: the four codec keys share one source. If a user splits
+   * the lossy stack across `[codec]` and the lossless stack across
+   * `[devices.<n>.codec]` (or vice-versa), the source enum picks the most
+   * specific level that appeared in *either* key and stamps both keys with
+   * it. Resolving the two stacks independently would need per-key
+   * provenance; tracked separately.
+   */
+  codecPreferenceSource: 'device' | 'global' | 'default';
 }): SyncDecisions {
-  const codecSource: ConfigSource = input.codecPreferenceFromConfig ? 'global' : 'default';
+  const codecSource: ConfigSource = input.codecPreferenceSource;
 
   return {
     transferMode:

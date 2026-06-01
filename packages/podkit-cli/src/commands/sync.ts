@@ -1085,12 +1085,15 @@ export async function runSync(
           losslessPreference: losslessStack,
           // Treat key presence as "user configured codec preference", not
           // array length — a user who explicitly writes `[codec]` with empty
-          // arrays to suppress defaults still configured it.
-          codecPreferenceFromConfig:
-            config.codec?.lossy !== undefined ||
-            config.codec?.lossless !== undefined ||
-            deviceConfig?.codec?.lossy !== undefined ||
-            deviceConfig?.codec?.lossless !== undefined,
+          // arrays to suppress defaults still configured it. Device-level
+          // wins over global so a `[devices.<n>.codec]` override is attributed
+          // to `'device'` even when a top-level `[codec]` block also exists.
+          codecPreferenceSource:
+            deviceConfig?.codec?.lossy !== undefined || deviceConfig?.codec?.lossless !== undefined
+              ? 'device'
+              : config.codec?.lossy !== undefined || config.codec?.lossless !== undefined
+                ? 'global'
+                : 'default',
         });
         // Capture for the aggregate non-dry-run JSON emitted after all
         // collections complete (sync.ts further down). Decisions are
