@@ -95,6 +95,39 @@ moviesDir = "Video/Movies"
 tvShowsDir = "Video/Shows"
 ```
 
+#### Giving your device a nicer name
+
+The built-in `generic` and `rockbox` profiles use placeholder display labels (`Mass-storage device`, `Rockbox device`). You can override them per-device with `manufacturer` and `productName` — useful when you have a no-name DAP and want `podkit device info` / `podkit device list` to show something more specific than "Mass-storage device":
+
+```toml
+[devices.mp3player]
+type         = "generic"
+volumeUuid   = "USB1-2345"
+manufacturer = "AliExpress"
+productName  = "USB MP3 player"
+```
+
+After this, `podkit device info -d mp3player` reads:
+
+```
+Device: mp3player
+  Type:          USB MP3 player
+  ...
+```
+
+and `podkit device add` (when run against the same device) shows the rich label:
+
+```
+Adding Mass-storage device device:
+  Name:   mp3player
+  Type:   AliExpress USB MP3 player (generic)
+  ...
+```
+
+The preset id (`generic` here) stays in parentheses so you can still tell which `--type` token was used. Both fields are optional and independently inherited from the preset — set only `productName` to keep the preset's manufacturer, or only `manufacturer` to keep the preset's product name.
+
+This is display-only: capability resolution (supported codecs, artwork resolution, etc.) still comes from the preset.
+
 ### Finding the Volume UUID
 
 The easiest way to find your device's volume UUID is with the `scan` command:
@@ -126,6 +159,8 @@ sudo blkid /dev/sdX1
 | `volumeName` | Volume label shown in Finder/file manager | No |
 | `quality` | Transcoding quality preset for this device | No |
 | `artwork` | Whether to sync album artwork | No |
+| `manufacturer` | Vendor label shown by `device info` / `device add` (mass-storage only) | No |
+| `productName` | Product label shown by `device info` / `device list` / `device add` (mass-storage only) | No |
 
 The `volumeUuid` uniquely identifies the device regardless of which port or mount point it uses.
 

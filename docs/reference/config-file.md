@@ -301,8 +301,31 @@ Mass-storage devices use predefined capability profiles based on their `type`. Y
 | `moviesDir` | string | `"Video/Movies"` | Movies directory path on the device. Use `/`, `.`, or `""` for device root. |
 | `tvShowsDir` | string | `"Video/Shows"` | TV shows directory path on the device. Use `/`, `.`, or `""` for device root. |
 | `pathTemplate` | string | `"{albumArtist}/{album}/{trackNumber} - {title}{ext}"` | Override the music file path layout under `musicDir`. Variables: `{albumArtist}`, `{artist}`, `{album}`, `{title}`, `{trackNumber}`, `{discNumber}`, `{totalDiscs}`, `{genre}`, `{year}`, `{ext}`. Must contain `{title}` and `{ext}`. Changing this between syncs triggers a self-healing relocate — existing files are moved via `fs.rename()` to match the new layout, without re-transcoding. Also settable via `PODKIT_PATH_TEMPLATE`. |
+| `manufacturer` | string | from profile | Vendor / brand shown in `device add` / `device info` output. Useful with the `generic` and `rockbox` profiles to label a no-name DAP with your own brand. |
+| `productName` | string | from profile | Product label shown in `device list` (TYPE column), `device info` (Type line), and `device add` (rich form). Useful for the same reason as `manufacturer`. |
 
-These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation; `pathTemplate` is rejected on iPod since libgpod manages the F00/F01 file layout.
+These fields are only relevant for mass-storage devices (`echo-mini`, `rockbox`, `generic`). iPod capabilities are determined automatically from the device generation; `pathTemplate` is rejected on iPod since libgpod manages the F00/F01 file layout, and `manufacturer`/`productName` are similarly rejected since iPod display labels come from the libgpod model name.
+
+#### Example: labelling a no-name DAP
+
+The `generic` and `rockbox` profiles ship with placeholder labels (`Mass-storage device`, `Rockbox device`). Override per-device for a friendlier name:
+
+```toml
+[devices.mp3player]
+type         = "generic"
+volumeUuid   = "USB1-2345"
+manufacturer = "AliExpress"
+productName  = "USB MP3 player"
+```
+
+`podkit device info -d mp3player` now reads:
+
+```
+Device: mp3player
+  Type:          USB MP3 player
+```
+
+`podkit device add` (rich form) shows `AliExpress USB MP3 player (generic)` — the preset id stays in parentheses so you can still tell which `--type` token the device uses.
 
 ### Per-Device Clean Artists
 
