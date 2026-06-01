@@ -27,7 +27,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: ['aac', 'mp3'],
       losslessPreference: ['source'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(d.transferMode).toEqual({ value: 'fast', source: 'cli' });
   });
@@ -42,7 +43,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: ['aac', 'mp3'],
       losslessPreference: ['source'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(d.transferMode).toEqual({ value: 'optimized', source: 'device' });
   });
@@ -55,7 +57,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: ['aac'],
       losslessPreference: ['source'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(d.quality).toEqual({ value: 'max', source: 'cli' });
   });
@@ -71,7 +74,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: [],
       losslessPreference: [],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(withFlag.checkArtwork).toEqual({ value: false, source: 'cli' });
 
@@ -82,15 +86,16 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: [],
       losslessPreference: [],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(withoutFlag.checkArtwork).toEqual({ value: true, source: 'global' });
   });
 
-  test('codec preference source carries through unchanged', () => {
-    // The builder forwards codecPreferenceSource onto all four codec keys
-    // (lossyCodec, losslessCodec, lossyPreference, losslessPreference). The
-    // resolver computes the source upstream; the builder is a pass-through.
+  test('codec source carries through per-key onto both codec scalar and preference', () => {
+    // lossyCodecSource stamps lossyCodec + lossyPreference; losslessCodecSource
+    // stamps losslessCodec + losslessPreference. Both sources are computed
+    // upstream from the resolution chain; the builder is a pass-through.
     const fromGlobal = buildSyncDecisions({
       resolved: makeResolved(),
       overrides: {},
@@ -98,7 +103,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: 'flac',
       lossyPreference: ['aac'],
       losslessPreference: ['flac'],
-      codecPreferenceSource: 'global',
+      lossyCodecSource: 'global',
+      losslessCodecSource: 'global',
     });
     expect(fromGlobal.lossyCodec.source).toBe('global');
     expect(fromGlobal.losslessCodec.source).toBe('global');
@@ -112,17 +118,17 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: ['opus', 'aac', 'mp3'],
       losslessPreference: ['source'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(fromDefault.lossyCodec.source).toBe('default');
+    expect(fromDefault.losslessCodec.source).toBe('default');
   });
 
-  test('device-level codec preference attributes all four codec keys to source=device', () => {
-    // Regression for the device-level codec mis-attribution bug: when a user
-    // pins `[devices.<n>.codec]`, the decisions block must report
-    // `source: 'device'` on all four codec keys, not `'global'`. The matrix
-    // (e2e config-rules) covers the end-to-end flow; this unit pin keeps the
-    // builder contract from drifting.
+  test('device-level codec preference attributes both stacks to source=device', () => {
+    // The device-level mis-attribution bug: when a user pins
+    // `[devices.<n>.codec]` with both stacks, the decisions block must
+    // report `source: 'device'` on all four codec keys, not `'global'`.
     const fromDevice = buildSyncDecisions({
       resolved: makeResolved(),
       overrides: {},
@@ -130,12 +136,33 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: 'flac',
       lossyPreference: ['aac'],
       losslessPreference: ['flac'],
-      codecPreferenceSource: 'device',
+      lossyCodecSource: 'device',
+      losslessCodecSource: 'device',
     });
     expect(fromDevice.lossyCodec.source).toBe('device');
     expect(fromDevice.losslessCodec.source).toBe('device');
     expect(fromDevice.lossyPreference.source).toBe('device');
     expect(fromDevice.losslessPreference.source).toBe('device');
+  });
+
+  test('split stacks: lossy from global + lossless from device → independent provenance', () => {
+    // The mixed-key case: a user pins `[codec] lossy = [...]` globally and
+    // `[devices.<n>.codec] lossless = [...]` per-device. Each stack must
+    // carry the source of *its* level — not the union.
+    const split = buildSyncDecisions({
+      resolved: makeResolved(),
+      overrides: {},
+      resolvedLossyCodec: 'aac',
+      resolvedLosslessCodec: 'flac',
+      lossyPreference: ['aac'],
+      losslessPreference: ['flac'],
+      lossyCodecSource: 'global',
+      losslessCodecSource: 'device',
+    });
+    expect(split.lossyCodec.source).toBe('global');
+    expect(split.lossyPreference.source).toBe('global');
+    expect(split.losslessCodec.source).toBe('device');
+    expect(split.losslessPreference.source).toBe('device');
   });
 
   test('losslessCodec defaults to null when undefined input', () => {
@@ -146,7 +173,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: undefined,
       lossyPreference: ['aac'],
       losslessPreference: ['source'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(d.losslessCodec.value).toBe(null);
   });
@@ -162,7 +190,8 @@ describe('buildSyncDecisions — provenance attribution', () => {
       resolvedLosslessCodec: null,
       lossyPreference: ['aac'],
       losslessPreference: ['source', 'flac', 'alac'],
-      codecPreferenceSource: 'default',
+      lossyCodecSource: 'default',
+      losslessCodecSource: 'default',
     });
     expect(d.losslessCodec.value).toBe(null);
     // The preference array keeps 'source' so consumers can assert ordering.

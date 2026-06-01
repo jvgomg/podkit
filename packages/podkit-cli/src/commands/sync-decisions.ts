@@ -97,22 +97,21 @@ export function buildSyncDecisions(input: {
   lossyPreference: readonly string[];
   losslessPreference: readonly string[];
   /**
-   * Where the codec preference came from: `'device'` (a `[devices.<n>.codec]`
-   * block), `'global'` (a top-level `[codec]` block), or `'default'` (no
-   * codec block — hardcoded defaults). The caller computes this from config
-   * presence (see `sync.ts`); the builder forwards it unchanged so the JSON
-   * decisions block attributes codec choice to the level that produced it.
-   *
-   * Single-valued: the four codec keys share one source. If a user splits
-   * the lossy stack across `[codec]` and the lossless stack across
-   * `[devices.<n>.codec]` (or vice-versa), the source enum picks the most
-   * specific level that appeared in *either* key and stamps both keys with
-   * it. Resolving the two stacks independently would need per-key
-   * provenance; tracked separately.
+   * Where the lossy codec preference came from: `'device'`
+   * (`[devices.<n>.codec] lossy`), `'global'` (top-level `[codec] lossy`),
+   * or `'default'` (no lossy key set — hardcoded `DEFAULT_LOSSY_STACK`).
+   * Stamps both `lossyCodec` and `lossyPreference` in the output.
    */
-  codecPreferenceSource: 'device' | 'global' | 'default';
+  lossyCodecSource: 'device' | 'global' | 'default';
+  /**
+   * Same as {@link lossyCodecSource} for the lossless stack — resolved
+   * independently so a user can pin one stack at the device level and let
+   * the other fall back to global / defaults.
+   */
+  losslessCodecSource: 'device' | 'global' | 'default';
 }): SyncDecisions {
-  const codecSource: ConfigSource = input.codecPreferenceSource;
+  const lossySource: ConfigSource = input.lossyCodecSource;
+  const losslessSource: ConfigSource = input.losslessCodecSource;
 
   return {
     transferMode:
@@ -128,19 +127,19 @@ export function buildSyncDecisions(input: {
     lossyCodec:
       input.overrides.lossyCodec !== undefined
         ? { value: input.overrides.lossyCodec, source: 'cli' }
-        : { value: input.resolvedLossyCodec, source: codecSource },
+        : { value: input.resolvedLossyCodec, source: lossySource },
     losslessCodec:
       input.overrides.losslessCodec !== undefined
         ? { value: input.overrides.losslessCodec, source: 'cli' }
-        : { value: input.resolvedLosslessCodec ?? null, source: codecSource },
+        : { value: input.resolvedLosslessCodec ?? null, source: losslessSource },
     lossyPreference:
       input.overrides.lossyPreference !== undefined
         ? { value: input.overrides.lossyPreference, source: 'cli' }
-        : { value: input.lossyPreference, source: codecSource },
+        : { value: input.lossyPreference, source: lossySource },
     losslessPreference:
       input.overrides.losslessPreference !== undefined
         ? { value: input.overrides.losslessPreference, source: 'cli' }
-        : { value: input.losslessPreference, source: codecSource },
+        : { value: input.losslessPreference, source: losslessSource },
     checkArtwork:
       input.overrides.checkArtwork !== undefined
         ? { value: input.overrides.checkArtwork, source: 'cli' }

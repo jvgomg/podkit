@@ -58,8 +58,8 @@ export interface MusicContentConfig {
   checkArtwork: boolean;
   transcoder: ReturnType<typeof import('@podkit/core').createFFmpegTranscoder>;
   capabilities?: import('@podkit/core').DeviceCapabilities;
-  /** Effective codec preference config (merged device + global + defaults) */
-  effectiveCodecPreference?: { lossy?: string[]; lossless?: string[] };
+  /** Effective codec preference config (per-key device → global → defaults). Always defined; sync.ts fills both stacks. */
+  effectiveCodecPreference: { lossy: string[]; lossless: string[] };
   /** Resolved lossy codec name (first compatible from preference stack) */
   resolvedLossyCodec?: string;
   /** Full lossy preference stack for display */

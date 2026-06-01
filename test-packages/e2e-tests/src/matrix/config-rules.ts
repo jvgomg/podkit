@@ -18,7 +18,7 @@
  * the resulting `json.decisions.<setting>.{value, source}` pair. A regression
  * that swallows one inheritance hop, mis-attributes a source, or silently
  * drops a CLI overlay flips at least one cell. Codec settings exercise the
- * `codecPreferenceSource` branch in `buildSyncDecisions` — the same path
+ * `lossyCodecSource` / `losslessCodecSource` branches in `buildSyncDecisions` — the same path
  * sonnet caught mis-using "presence" vs "length" during TASK-357.
  *
  * @module
@@ -141,8 +141,8 @@ function hasCliOverlay(setting: ConfigSetting): boolean {
 /**
  * Codec preferences are sourced under `[codec]` (global) or
  * `[devices.<n>.codec]` (device). Both levels are observable in the decisions
- * block; sync.ts computes a `codecPreferenceSource` enum and forwards it to
- * `buildSyncDecisions`.
+ * block; sync.ts computes `lossyCodecSource` and `losslessCodecSource` enums
+ * (per-key, independent fallback) and forwards both to `buildSyncDecisions`.
  */
 function isCodec(setting: ConfigSetting): boolean {
   return (
@@ -345,21 +345,21 @@ function predictCodecScalar(
     return {
       value: opts.defaultValue,
       source: 'default',
-      reason: 'no [codec] block → codecPreferenceSource=default → source=default',
+      reason: 'no [codec] block → codec-source=default → source=default',
     };
   }
   if (cell.level === 'global') {
     return {
       value: opts.nonDefaultValue,
       source: 'global',
-      reason: '[codec] block at top level → codecPreferenceSource=global → source=global',
+      reason: '[codec] block at top level → codec-source=global → source=global',
     };
   }
   if (cell.level === 'device') {
     return {
       value: opts.nonDefaultValue,
       source: 'device',
-      reason: '[devices.<name>.codec] block → codecPreferenceSource=device → source=device',
+      reason: '[devices.<name>.codec] block → codec-source=device → source=device',
     };
   }
   // cli / quality-fold pruned as impossible.
@@ -476,7 +476,7 @@ function cellToml(cell: ConfigCell, ctx: ConfigContext): string {
   }
   // Device-level codec block — same shape as the global [codec] block but
   // nested under [devices.<n>.codec]. Pinned here so the device cell wins
-  // over any (absent) global block via the codecPreferenceSource enum in
+  // over any (absent) global block via the per-key codec source enums in
   // sync.ts.
   if (isCodec(cell.setting) && cell.level === 'device') {
     lines.push('');

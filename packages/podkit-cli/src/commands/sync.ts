@@ -1014,9 +1014,30 @@ export async function runSync(
     }
 
     // ----- Resolve codec preferences -----
-    const effectiveCodecPreference = deviceConfig?.codec ?? config.codec ?? undefined;
-    const lossyStack = effectiveCodecPreference?.lossy ?? core.DEFAULT_LOSSY_STACK;
-    const losslessStack = effectiveCodecPreference?.lossless ?? core.DEFAULT_LOSSLESS_STACK;
+    // Per-key fallback (device → global → default). Object-level coalesce
+    // would let `[devices.<n>.codec] lossless = [...]` silently shadow a
+    // global `[codec] lossy = [...]`; per-key keeps each stack pinned to
+    // the most-specific level that defined it.
+    const lossyStack =
+      deviceConfig?.codec?.lossy ?? config.codec?.lossy ?? core.DEFAULT_LOSSY_STACK;
+    const losslessStack =
+      deviceConfig?.codec?.lossless ?? config.codec?.lossless ?? core.DEFAULT_LOSSLESS_STACK;
+    // Synthetic effective object — downstream consumers (music-presenter,
+    // MusicContentConfig) read the resolved per-key stacks via this shape.
+    const effectiveCodecPreference = { lossy: [...lossyStack], lossless: [...losslessStack] };
+    // Source attribution mirrors the resolution chain — independently per key.
+    const lossyCodecSource: 'device' | 'global' | 'default' =
+      deviceConfig?.codec?.lossy !== undefined
+        ? 'device'
+        : config.codec?.lossy !== undefined
+          ? 'global'
+          : 'default';
+    const losslessCodecSource: 'device' | 'global' | 'default' =
+      deviceConfig?.codec?.lossless !== undefined
+        ? 'device'
+        : config.codec?.lossless !== undefined
+          ? 'global'
+          : 'default';
     let resolvedLossyCodec: string | undefined;
 
     if (hasMusicToSync && deviceCapabilities) {
@@ -1083,17 +1104,12 @@ export async function runSync(
           resolvedLosslessCodec: resolvedLossless,
           lossyPreference: lossyStack,
           losslessPreference: losslessStack,
-          // Treat key presence as "user configured codec preference", not
-          // array length — a user who explicitly writes `[codec]` with empty
-          // arrays to suppress defaults still configured it. Device-level
-          // wins over global so a `[devices.<n>.codec]` override is attributed
-          // to `'device'` even when a top-level `[codec]` block also exists.
-          codecPreferenceSource:
-            deviceConfig?.codec?.lossy !== undefined || deviceConfig?.codec?.lossless !== undefined
-              ? 'device'
-              : config.codec?.lossy !== undefined || config.codec?.lossless !== undefined
-                ? 'global'
-                : 'default',
+          // Per-key codec source attribution — see `lossyCodecSource` /
+          // `losslessCodecSource` above. Treats key presence as "user
+          // configured" (presence, not length) so `[codec] lossy = []` still
+          // attributes to global.
+          lossyCodecSource,
+          losslessCodecSource,
         });
         // Capture for the aggregate non-dry-run JSON emitted after all
         // collections complete (sync.ts further down). Decisions are
