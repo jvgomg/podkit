@@ -15,6 +15,7 @@ import type {
   EncodingMode,
   TransferMode,
 } from '@podkit/core';
+import { resolveChain, type Resolved } from '@podkit/device-types';
 import type { DeviceConfig, PodkitConfig } from './types.js';
 
 // =============================================================================
@@ -36,11 +37,16 @@ export type ConfigSource =
   | 'unsupported' // device doesn't support this capability
   | 'unknown'; // can't determine without device connection
 
-/** A resolved value with its provenance */
-export interface ResolvedValue<T> {
-  value: T;
-  source: ConfigSource;
-}
+/**
+ * A resolved config value with its provenance.
+ *
+ * Thin alias over the shared `Resolved<T, Source>` primitive from
+ * `@podkit/device-types`; the runtime shape is identical. Existing
+ * consumers continue to import `ResolvedValue<T>` from here — there's
+ * no need to plumb the lower-level type through the CLI surface unless
+ * a call site wants to construct one explicitly.
+ */
+export type ResolvedValue<T> = Resolved<T, ConfigSource>;
 
 /** Resolved global config settings */
 export interface ResolvedGlobalConfig {
@@ -277,31 +283,41 @@ function resolveDeviceArtwork(
 // -- Simple settings (device → global → default) -----------------------------
 
 /**
- * Generic resolution for simple scalar settings.
- *   device value → global value → default
+ * Generic resolution for simple scalar settings via the shared
+ * `resolveChain` primitive. The layer order is (highest priority first):
+ * device → global → default. Used for both scalar and boolean settings;
+ * a separate `*Boolean` helper is no longer needed because the primitive
+ * is generic and `false` is a defined value (the `??` chain happily
+ * picked it up before, but only because nullish coalescing distinguishes
+ * `undefined` from `false` — same semantic, expressed once).
  */
 function resolveSimple<T>(
   globalValue: T | undefined,
   deviceValue: T | undefined,
   defaultValue: T
 ): ResolvedValue<T> {
-  if (deviceValue !== undefined) return { value: deviceValue, source: 'device' };
-  if (globalValue !== undefined) return { value: globalValue, source: 'global' };
-  return { value: defaultValue, source: 'default' };
+  return resolveChain<T, ConfigSource>(
+    [
+      { value: deviceValue, source: 'device' },
+      { value: globalValue, source: 'global' },
+    ],
+    defaultValue,
+    'default'
+  );
 }
 
 /**
- * Boolean resolution with explicit default.
- *   device value → global value → default
+ * @deprecated Use {@link resolveSimple} directly — it now handles boolean
+ * settings without needing a typed-narrowed variant. Kept as a thin
+ * delegate to avoid a churning rename across the resolver internals; will
+ * be removed once the surrounding device-resolution code is touched again.
  */
 function resolveSimpleBoolean(
   globalValue: boolean | undefined,
   deviceValue: boolean | undefined,
   defaultValue: boolean
 ): ResolvedValue<boolean> {
-  if (deviceValue !== undefined) return { value: deviceValue, source: 'device' };
-  if (globalValue !== undefined) return { value: globalValue, source: 'global' };
-  return { value: defaultValue, source: 'default' };
+  return resolveSimple<boolean>(globalValue, deviceValue, defaultValue);
 }
 
 // =============================================================================
