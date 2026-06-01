@@ -312,7 +312,15 @@ export async function runDeviceInfo(out: OutputContext, deps: DeviceInfoDeps = {
       if (device) {
         out.print(`Device: ${deviceName}${isDefault ? ' (default)' : ''}`);
         if (isMassStorage) {
-          out.print(`  Type:          ${getDeviceTypeDisplayName(device.type)}`);
+          // Pass per-device manufacturer/productName overrides so a
+          // `generic` device the user labelled "AliExpress USB MP3
+          // player" displays that label instead of the preset default.
+          out.print(
+            `  Type:          ${getDeviceTypeDisplayName(device.type, {
+              manufacturer: device.manufacturer,
+              productName: device.productName,
+            })}`
+          );
         }
         if (device.volumeUuid) {
           out.print(`  Volume UUID:   ${device.volumeUuid}`);

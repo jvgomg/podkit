@@ -14,7 +14,6 @@ import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/co
 import { resolveIpodModel } from '@podkit/devices-ipod';
 import {
   BUILT_IN_PRESETS,
-  formatPresetDisplay,
   formatPresetShortDisplay,
   type BuiltInPresetId,
 } from '@podkit/devices-mass-storage';
@@ -60,7 +59,22 @@ export function isMassStorageDevice(type: string | undefined): boolean {
 }
 
 /**
+ * Optional per-device display overrides — supplied from
+ * `deviceConfig.{manufacturer, productName}` so users can rename a
+ * preset for their own device (e.g. labelling a `generic` device
+ * `manufacturer = "AliExpress"`, `productName = "USB MP3 player"` for
+ * `device info` output).
+ */
+export interface DeviceDisplayOverrides {
+  manufacturer?: string;
+  productName?: string;
+}
+
+/**
  * Get a human-readable short display name for a device type.
+ *
+ * Resolution order per field:
+ *   `overrides.productName` (per-device TOML) → preset.productName
  *
  * Mass-storage types compose `formatPresetShortDisplay` against the
  * preset registry, so presets own their labels (the previous hard-coded
@@ -68,10 +82,15 @@ export function isMassStorageDevice(type: string | undefined): boolean {
  * display layer). iPods and unknown types still fall back to `'iPod'`
  * for the same historical reason as the old switch.
  */
-export function getDeviceTypeDisplayName(type: string | undefined): string {
+export function getDeviceTypeDisplayName(
+  type: string | undefined,
+  overrides?: DeviceDisplayOverrides
+): string {
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
-  if (preset) return formatPresetShortDisplay(preset);
+  if (preset) {
+    return overrides?.productName ?? formatPresetShortDisplay(preset);
+  }
   // Unknown type — backward compat: undefined / unrecognised → iPod. User
   // presets the CLI doesn't know about land here; once the user-preset
   // registry is plumbed through this code path, look it up there too.
@@ -83,11 +102,25 @@ export function getDeviceTypeDisplayName(type: string | undefined): string {
  * style. Returns the same `'iPod'` fallback as the short form for iPods and
  * unknown types so callers that want one consistent label can switch in
  * place.
+ *
+ * Resolution order per field:
+ *   `overrides.manufacturer` (per-device TOML) → preset.manufacturer
+ *   `overrides.productName`  (per-device TOML) → preset.productName
+ *
+ * The `id` portion (`(generic)`) stays the preset id so the CLI hint
+ * still names the exact `--type` token the user passed.
  */
-export function getDeviceTypeRichDisplayName(type: string | undefined): string {
+export function getDeviceTypeRichDisplayName(
+  type: string | undefined,
+  overrides?: DeviceDisplayOverrides
+): string {
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
-  if (preset) return formatPresetDisplay(type, preset);
+  if (preset) {
+    const manufacturer = overrides?.manufacturer ?? preset.manufacturer;
+    const productName = overrides?.productName ?? preset.productName;
+    return `${manufacturer} ${productName} (${type})`;
+  }
   return 'iPod';
 }
 

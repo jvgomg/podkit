@@ -1099,6 +1099,22 @@ function parseDevices(
       device.pathTemplate = rawDevice.pathTemplate;
     }
 
+    // Parse optional manufacturer + productName (display label overrides
+    // — most useful with the `generic` and `rockbox` presets so a no-name
+    // device can carry a friendly label like "AliExpress USB MP3 player").
+    if (rawDevice.manufacturer !== undefined) {
+      if (typeof rawDevice.manufacturer !== 'string') {
+        throw new Error(`Invalid manufacturer value in [devices.${name}]. ` + `Must be a string.`);
+      }
+      device.manufacturer = rawDevice.manufacturer;
+    }
+    if (rawDevice.productName !== undefined) {
+      if (typeof rawDevice.productName !== 'string') {
+        throw new Error(`Invalid productName value in [devices.${name}]. ` + `Must be a string.`);
+      }
+      device.productName = rawDevice.productName;
+    }
+
     // Validate: capability overrides and musicDir are only valid for mass-storage devices
     const isIpodDevice = !device.type || device.type === 'ipod';
     if (isIpodDevice) {
@@ -1113,6 +1129,8 @@ function parseDevices(
         'moviesDir',
         'tvShowsDir',
         'pathTemplate',
+        'manufacturer',
+        'productName',
       ] as const;
       const presentFields = massStorageFields.filter((f) => device[f] !== undefined);
       if (presentFields.length > 0) {

@@ -392,6 +392,9 @@ export async function runDeviceAdd(
       out.print(`  Name:   ${name}`);
       // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
       // sees the exact `--type` token alongside vendor + product name.
+      // No per-device overrides yet at `add` time — those land in config
+      // after this confirmation, so subsequent `device info` calls will
+      // see them.
       out.print(`  Type:   ${getDeviceTypeRichDisplayName(deviceType)}`);
       out.print(`  Path:   ${explicitPath}`);
       out.newline();

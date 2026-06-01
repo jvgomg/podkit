@@ -243,6 +243,21 @@ export interface DeviceConfig {
    * Must contain {title} and {ext}.
    */
   pathTemplate?: string;
+
+  // ===========================================================================
+  // Display metadata overrides (mass-storage only)
+  // ===========================================================================
+
+  /**
+   * Override the preset's `manufacturer` for `device info` / `device add`
+   * display. Most useful with the `generic` or `rockbox` presets — a user
+   * with a no-name DAP can label it
+   * `manufacturer = "AliExpress"`, `productName = "USB MP3 player"` so
+   * `device add` shows `Type: AliExpress USB MP3 player (generic)`.
+   */
+  manufacturer?: string;
+  /** Override the preset's `productName` — see {@link DeviceConfig.manufacturer}. */
+  productName?: string;
 }
 
 /**
@@ -489,6 +504,8 @@ export interface ConfigFileDevice {
   moviesDir?: string;
   tvShowsDir?: string;
   pathTemplate?: string;
+  manufacturer?: string;
+  productName?: string;
 }
 
 /**
