@@ -68,7 +68,10 @@ export type PresetId = BuiltInPresetId | (string & {});
  * A fully-resolved mass-storage device preset.
  *
  * Combines a `DeviceCapabilities` snapshot (what the device can do) with
- * the default content directory paths used when writing files to the device.
+ * the default content directory paths used when writing files to the device
+ * and a small chunk of display metadata. The display fields let presets
+ * own their human-facing labels instead of leaking that detail into the
+ * CLI's display layer (which previously hard-coded the per-id switch).
  *
  * The optional `extends` field names another preset ID whose values are used
  * as the baseline before this preset's own fields are applied. Resolution
@@ -76,6 +79,17 @@ export type PresetId = BuiltInPresetId | (string & {});
  * always fully resolved; no chained lookups at runtime.
  */
 export interface MassStoragePreset extends DeviceCapabilities {
+  /**
+   * Vendor / brand the device is sold under, e.g. `'FiiO Snowsky'` for the
+   * Echo Mini. Used by `formatPresetDisplay` to build the rich label shown
+   * in `device add` output. User-defined presets must supply this.
+   */
+  manufacturer: string;
+  /**
+   * Short product name, e.g. `'Echo Mini'`. Used as the table-cell label
+   * in `device list` and as the second word in the `device add` rich form.
+   */
+  productName: string;
   /** Default content directory paths on this device */
   contentPaths: ContentPaths;
   /**

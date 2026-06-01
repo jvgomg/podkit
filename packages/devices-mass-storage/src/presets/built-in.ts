@@ -43,6 +43,8 @@ export const MASS_STORAGE_UNSUPPORTED_OUTPUT_CODECS: readonly string[] = ['wav',
  */
 export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
   'echo-mini': {
+    manufacturer: 'FiiO Snowsky',
+    productName: 'Echo Mini',
     artworkSources: ['embedded'],
     artworkMaxResolution: 127,
     // Vorbis (not Opus) — Echo Mini firmware hides `.opus` files from both
@@ -58,6 +60,8 @@ export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
     },
   },
   rockbox: {
+    manufacturer: 'Rockbox',
+    productName: 'Rockbox device',
     artworkSources: ['sidecar', 'embedded'],
     artworkMaxResolution: 320,
     supportedAudioCodecs: ['aac', 'alac', 'mp3', 'flac', 'vorbis', 'opus', 'wav', 'aiff'],
@@ -67,6 +71,12 @@ export const BUILT_IN_PRESETS: Record<BuiltInPresetId, MassStoragePreset> = {
     contentPaths: DEFAULT_CONTENT_PATHS,
   },
   generic: {
+    // 'Generic mass-storage device' was the long form podkit shipped before
+    // the type carried display metadata. Keep it as the rich label so
+    // existing `device add` users see a stable description; the short form
+    // is just the product half.
+    manufacturer: 'Generic',
+    productName: 'Mass-storage device',
     artworkSources: ['embedded'],
     artworkMaxResolution: 500,
     supportedAudioCodecs: ['aac', 'mp3', 'flac'],

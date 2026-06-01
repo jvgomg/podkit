@@ -32,6 +32,18 @@ export interface PresetDefinition {
   /** Unique identifier for this preset (non-empty string) */
   id: string;
   /**
+   * Display: vendor / brand the device is sold under. Required on
+   * user-defined presets so the CLI's display helpers can render a
+   * consistent `<manufacturer> <productName> (<id>)` label. Inherited
+   * from `extends` when omitted.
+   */
+  manufacturer?: string;
+  /**
+   * Display: short product name (e.g. `'Echo Mini'`). Required on
+   * user-defined presets, inherited from `extends` when omitted.
+   */
+  productName?: string;
+  /**
    * Optional preset id to inherit from.
    * The extended preset is resolved at construction time; the stored preset
    * is always fully resolved.
@@ -130,7 +142,17 @@ export function definePreset(
     tvShowsDir: cp.tvShowsDir ?? base.contentPaths.tvShowsDir,
   };
 
+  // Display metadata: inherit from `extends` baseline when omitted. A
+  // user-defined preset that neither sets these fields nor extends a
+  // preset that does will fall through to the generic-baseline strings —
+  // imperfect, but the alternative (throwing here) would break existing
+  // consumers that built presets pre-TASK-317.07.
+  const manufacturer = input.manufacturer ?? base.manufacturer;
+  const productName = input.productName ?? base.productName;
+
   return {
+    manufacturer,
+    productName,
     ...mergedCapabilities,
     contentPaths: mergedContentPaths,
   };

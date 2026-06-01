@@ -12,6 +12,12 @@
 
 import type { DeviceAdapter, DeviceCapabilities, IpodDatabase } from '@podkit/core';
 import { resolveIpodModel } from '@podkit/devices-ipod';
+import {
+  BUILT_IN_PRESETS,
+  formatPresetDisplay,
+  formatPresetShortDisplay,
+  type BuiltInPresetId,
+} from '@podkit/devices-mass-storage';
 import type { DeviceConfig, PodkitConfig } from '../config/types.js';
 
 // =============================================================================
@@ -54,21 +60,35 @@ export function isMassStorageDevice(type: string | undefined): boolean {
 }
 
 /**
- * Get a human-readable display name for a device type.
+ * Get a human-readable short display name for a device type.
+ *
+ * Mass-storage types compose `formatPresetShortDisplay` against the
+ * preset registry, so presets own their labels (the previous hard-coded
+ * switch leaked Echo Mini / Rockbox / Generic strings into the CLI's
+ * display layer). iPods and unknown types still fall back to `'iPod'`
+ * for the same historical reason as the old switch.
  */
 export function getDeviceTypeDisplayName(type: string | undefined): string {
-  switch (type) {
-    case 'echo-mini':
-      return 'Echo Mini';
-    case 'rockbox':
-      return 'Rockbox';
-    case 'generic':
-      return 'Generic mass-storage';
-    case 'ipod':
-      return 'iPod';
-    default:
-      return 'iPod'; // backward compat: undefined = iPod
-  }
+  if (type === undefined || type === 'ipod') return 'iPod';
+  const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
+  if (preset) return formatPresetShortDisplay(preset);
+  // Unknown type — backward compat: undefined / unrecognised → iPod. User
+  // presets the CLI doesn't know about land here; once the user-preset
+  // registry is plumbed through this code path, look it up there too.
+  return 'iPod';
+}
+
+/**
+ * Rich display name for a device type — `'FiiO Snowsky Echo Mini (echo-mini)'`
+ * style. Returns the same `'iPod'` fallback as the short form for iPods and
+ * unknown types so callers that want one consistent label can switch in
+ * place.
+ */
+export function getDeviceTypeRichDisplayName(type: string | undefined): string {
+  if (type === undefined || type === 'ipod') return 'iPod';
+  const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
+  if (preset) return formatPresetDisplay(type, preset);
+  return 'iPod';
 }
 
 /**

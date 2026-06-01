@@ -27,7 +27,11 @@ import {
   DOCS_URLS,
 } from '@podkit/core';
 import type { IpodIdentityAssessment } from '@podkit/core';
-import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
+import {
+  isMassStorageDevice,
+  getDeviceTypeDisplayName,
+  getDeviceTypeRichDisplayName,
+} from '../open-device.js';
 import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
@@ -386,7 +390,9 @@ export async function runDeviceAdd(
       out.newline();
       out.print(`Adding ${getDeviceTypeDisplayName(deviceType)} device:`);
       out.print(`  Name:   ${name}`);
-      out.print(`  Type:   ${getDeviceTypeDisplayName(deviceType)}`);
+      // Rich form here (`FiiO Snowsky Echo Mini (echo-mini)`) so the user
+      // sees the exact `--type` token alongside vendor + product name.
+      out.print(`  Type:   ${getDeviceTypeRichDisplayName(deviceType)}`);
       out.print(`  Path:   ${explicitPath}`);
       out.newline();
 

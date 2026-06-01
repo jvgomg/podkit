@@ -23,6 +23,9 @@ export { BUILT_IN_PRESET_IDS, DEFAULT_CONTENT_PATHS } from './presets/types.js';
 export { definePreset } from './preset.js';
 export type { PresetDefinition, DefinePresetOptions } from './preset.js';
 
+// Display string helpers
+export { formatPresetDisplay, formatPresetShortDisplay } from './display.js';
+
 export { identify } from './identity.js';
 
 export { getCapabilities } from './capabilities.js';

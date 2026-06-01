@@ -883,13 +883,13 @@ describe('deviceModel field rendering', () => {
       );
 
       const payload = stdout.json<{ deviceModel: string }>();
-      expect(payload.deviceModel).toBe('Rockbox');
+      expect(payload.deviceModel).toBe('Rockbox device');
     } finally {
       rmSync(tmpDevice, { recursive: true, force: true });
     }
   });
 
-  it('mass-storage: generic preset deviceModel resolves to "Generic mass-storage"', async () => {
+  it('mass-storage: generic preset deviceModel resolves to "Mass-storage device"', async () => {
     const tmpDevice = mkdtempSync(join(tmpdir(), 'podkit-doctor-ac10-gen-'));
     try {
       const deviceConfig: DeviceConfig = { type: 'generic', path: tmpDevice };
@@ -913,7 +913,7 @@ describe('deviceModel field rendering', () => {
       );
 
       const payload = stdout.json<{ deviceModel: string }>();
-      expect(payload.deviceModel).toBe('Generic mass-storage');
+      expect(payload.deviceModel).toBe('Mass-storage device');
     } finally {
       rmSync(tmpDevice, { recursive: true, force: true });
     }
