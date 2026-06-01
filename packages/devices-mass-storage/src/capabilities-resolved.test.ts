@@ -102,6 +102,59 @@ describe('getCapabilitiesResolved — resolution order', () => {
   });
 });
 
+describe('getCapabilities (bare wrapper) parity vs getCapabilitiesResolved', () => {
+  // The bare `getCapabilities` is now a projection over
+  // `getCapabilitiesResolved`. Lock in that the projected values are
+  // bit-for-bit equal across the cases the legacy API supports — a
+  // future refactor of the resolved variant must not silently change
+  // the bare-wrapper output.
+  const { getCapabilities } = require('./capabilities.js');
+
+  const cases: Array<{ label: string; overrides?: Partial<unknown> }> = [
+    { label: 'no overrides', overrides: undefined },
+    { label: 'artworkMaxResolution override', overrides: { artworkMaxResolution: 64 } },
+    {
+      label: 'supportedAudioCodecs override',
+      overrides: { supportedAudioCodecs: ['aac', 'mp3'] as const },
+    },
+    { label: 'multiple overrides', overrides: { artworkMaxResolution: 64, supportsVideo: true } },
+  ];
+
+  for (const c of cases) {
+    it(`${c.label} — bare values equal resolved.values`, () => {
+      const bare = getCapabilities(ECHO_IDENTITY, {
+        presets: BUILT_IN_PRESETS,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        overrides: c.overrides as any,
+      });
+      const resolved = getCapabilitiesResolved(ECHO_IDENTITY, {
+        presets: BUILT_IN_PRESETS,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        deviceConfigOverrides: c.overrides as any,
+      });
+      expect(bare.artworkSources).toEqual([...resolved.artworkSources.value]);
+      expect(bare.artworkMaxResolution).toBe(resolved.artworkMaxResolution.value);
+      expect(bare.supportedAudioCodecs).toEqual([...resolved.supportedAudioCodecs.value]);
+      expect(bare.supportsVideo).toBe(resolved.supportsVideo.value);
+      expect(bare.audioNormalization).toBe(resolved.audioNormalization.value);
+      expect(bare.supportsAlbumArtistBrowsing).toBe(resolved.supportsAlbumArtistBrowsing.value);
+    });
+  }
+
+  it('containerConstraints projection — bare wrapper omits when no layer supplies it', () => {
+    const bare = getCapabilities(ECHO_IDENTITY, { presets: BUILT_IN_PRESETS });
+    expect(bare.containerConstraints).toBeUndefined();
+  });
+
+  it('containerConstraints projection — bare wrapper includes when override supplies it', () => {
+    const bare = getCapabilities(ECHO_IDENTITY, {
+      presets: BUILT_IN_PRESETS,
+      overrides: { containerConstraints: { aac: ['m4a'] } },
+    });
+    expect(bare.containerConstraints).toEqual({ aac: ['m4a'] });
+  });
+});
+
 describe('getCapabilitiesResolved — containerConstraints (sparse)', () => {
   it('omits the field entirely when no layer supplies constraints', () => {
     const r = getCapabilitiesResolved(ECHO_IDENTITY, { presets: BUILT_IN_PRESETS });

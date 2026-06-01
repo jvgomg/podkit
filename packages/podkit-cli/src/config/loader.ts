@@ -1137,7 +1137,7 @@ function parseDevices(
         throw new Error(
           `Mass-storage settings (${presentFields.join(', ')}) in [devices.${name}] ` +
             `are only valid for mass-storage devices (type must be set to a non-iPod device type). ` +
-            `iPod capabilities are determined automatically from the device generation.`
+            `iPod capabilities and display labels are determined automatically from the device's generation and libgpod model name.`
         );
       }
     }

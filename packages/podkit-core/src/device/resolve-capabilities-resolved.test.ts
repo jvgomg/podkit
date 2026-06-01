@@ -41,16 +41,23 @@ describe('resolveCapabilitiesResolved — iPod dispatch', () => {
     expect(r.audioNormalization.source).toBe('generation');
   });
 
-  it('reports source=firmware when a firmware overlay is supplied', () => {
+  it('tags supportedAudioCodecs as source=firmware when a firmware overlay supplies them', () => {
     const r = resolveCapabilitiesResolved(IPOD_5G, {
       firmware: { supportedAudioCodecs: ['aac', 'alac', 'mp3'] },
     });
+    // Firmware can override the codec list — that field's source is
+    // correctly 'firmware'.
     expect(r.supportedAudioCodecs.source).toBe('firmware');
-    // The whole iPod result uniformly tagged today — refinement to
-    // per-field provenance is captured in the function's doc comment as
-    // a follow-up.
-    expect(r.audioNormalization.source).toBe('firmware');
   });
+
+  // KNOWN LIMITATION: the iPod path uniformly tags every field as
+  // 'firmware' when any firmware overlay is supplied, even fields the
+  // firmware doesn't actually touch (artworkSources, audioNormalization,
+  // …). The fix requires `@podkit/devices-ipod` to expose per-field
+  // layer boundaries the way `@podkit/devices-mass-storage` does. Until
+  // then the function's doc comment calls out the over-attribution as a
+  // follow-up. NOT asserting `audioNormalization.source === 'firmware'`
+  // here — locking that in would protect the bug, not the intent.
 
   it('throws on an iPod identity that resolves to no model', () => {
     expect(() =>

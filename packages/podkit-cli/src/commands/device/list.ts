@@ -162,9 +162,31 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       };
       if (resolveCapabilities) {
         try {
-          capabilities = resolveCapabilities(massStorageIdentity, {
-            overrides: deviceConfig as Partial<import('@podkit/core').DeviceCapabilities>,
-          });
+          // Extract only the capability-relevant subset; casting the
+          // whole DeviceConfig used to silently include non-capability
+          // fields (and now also the new display fields
+          // manufacturer/productName which the resolver ignores) in
+          // the override blob.
+          const overrides: Partial<import('@podkit/core').DeviceCapabilities> = {};
+          if (deviceConfig.artworkMaxResolution !== undefined) {
+            overrides.artworkMaxResolution = deviceConfig.artworkMaxResolution;
+          }
+          if (deviceConfig.artworkSources !== undefined) {
+            overrides.artworkSources = deviceConfig.artworkSources;
+          }
+          if (deviceConfig.supportedAudioCodecs !== undefined) {
+            overrides.supportedAudioCodecs = deviceConfig.supportedAudioCodecs;
+          }
+          if (deviceConfig.supportsVideo !== undefined) {
+            overrides.supportsVideo = deviceConfig.supportsVideo;
+          }
+          if (deviceConfig.audioNormalization !== undefined) {
+            overrides.audioNormalization = deviceConfig.audioNormalization;
+          }
+          if (deviceConfig.supportsAlbumArtistBrowsing !== undefined) {
+            overrides.supportsAlbumArtistBrowsing = deviceConfig.supportsAlbumArtistBrowsing;
+          }
+          capabilities = resolveCapabilities(massStorageIdentity, { overrides });
         } catch {
           capabilities = null;
         }
