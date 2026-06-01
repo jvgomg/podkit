@@ -298,3 +298,72 @@ describe('malformed input rejection', () => {
     ).toThrow(/plist:.*entity/);
   });
 });
+
+// =============================================================================
+// stderr capture: pin that parser failures don't leak parser-error text to
+// process.stderr behind the OutputContext's back.
+//
+// History: an earlier SIE read path went through libgpod's native binding,
+// which used libxml2 via koffi. When the SIE was corrupt, libxml2 wrote
+// `parser error : Premature end of data in tag key line N` directly to FD 2,
+// bypassing podkit's output sinks. The migration to this pure-TS parser
+// removed the native binding from the SIE read path. These tests pin the
+// silence so a future port back to a native XML library can't reintroduce
+// the leak.
+// =============================================================================
+
+/** Capture `process.stderr.write` for the duration of `body`. Returns captured bytes. */
+function captureStderr(body: () => void): string {
+  const captured: string[] = [];
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: unknown) => {
+    captured.push(
+      typeof chunk === 'string' ? chunk : Buffer.from(chunk as Uint8Array).toString('utf8')
+    );
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    body();
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+  return captured.join('');
+}
+
+describe('stderr silence on failure', () => {
+  test('parsePlist on truncated XML throws but writes nothing to process.stderr', () => {
+    const truncated = '<?xml version="1.0"?><plist version="1.0"><dict><key>Max';
+    let threw = false;
+    const stderr = captureStderr(() => {
+      try {
+        parsePlist(truncated);
+      } catch {
+        threw = true;
+      }
+    });
+    expect(threw).toBe(true);
+    expect(stderr).toBe('');
+  });
+
+  test('parsePlist on the malformed-sysinfo fixture (500-byte truncation) writes nothing to process.stderr', () => {
+    // Uses the same 500-byte SIE truncation the malformed-sysinfo persona ships.
+    // Pinned via the persona's raw fixture so this test stays in sync with the
+    // synthesised device fixture.
+    const xml = readFileSync(
+      repoPath(
+        'test-packages/device-testing/src/personas/malformed-sysinfo/raw/sysinfo-extended.xml'
+      ),
+      'utf-8'
+    );
+    let threw = false;
+    const stderr = captureStderr(() => {
+      try {
+        parsePlist(xml);
+      } catch {
+        threw = true;
+      }
+    });
+    expect(threw).toBe(true);
+    expect(stderr).toBe('');
+  });
+});
