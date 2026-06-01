@@ -15,7 +15,7 @@ import type {
   EncodingMode,
   TransferMode,
 } from '@podkit/core';
-import { resolveChain, type Resolved } from '@podkit/device-types';
+import { resolveChain, type Resolved, type CapabilitySource } from '@podkit/device-types';
 import type { DeviceConfig, PodkitConfig } from './types.js';
 
 // =============================================================================
@@ -61,14 +61,18 @@ export interface ResolvedDeviceSettings {
   name: string;
   type: string;
   /**
-   * Per-device display overrides — raw config values, unresolved
-   * against the preset. The display helpers
-   * (`getDeviceTypeDisplayName`, `getDeviceTypeRichDisplayName`) thread
-   * these through the preset's defaults to produce the final label.
-   * Undefined when the user hasn't overridden.
+   * Resolved display label fields — preset default → per-device config
+   * override. Same shape as resolved capabilities, using the
+   * `CapabilitySource` union ('preset' | 'device-config'), so
+   * `device info` / future provenance consumers can render inheritance
+   * markers consistently across capability fields and display labels.
+   *
+   * Only populated for mass-storage devices that have a known preset;
+   * `undefined` for iPods (whose display label comes from libgpod's
+   * runtime model name, not a preset).
    */
-  manufacturer?: string;
-  productName?: string;
+  manufacturer?: Resolved<string, CapabilitySource>;
+  productName?: Resolved<string, CapabilitySource>;
   isDefault: boolean;
   connected: boolean;
   quality: ResolvedValue<QualityPreset>;
@@ -154,6 +158,10 @@ function resolveGlobalArtwork(config: PodkitConfig): ResolvedValue<boolean> {
  * @param capabilities - Device capabilities, or null if unknown (disconnected iPod)
  * @param connected - Whether the device is currently connected
  * @param isDefault - Whether this is the default device
+ * @param presetDisplay - Preset's default display labels (for mass-storage devices
+ *   only). When supplied, manufacturer/productName resolve as
+ *   `preset → device-config` with provenance; when omitted (e.g. iPod), the
+ *   fields are left undefined on the resolved settings.
  */
 export function resolveDeviceSettings(
   config: PodkitConfig,
@@ -161,16 +169,36 @@ export function resolveDeviceSettings(
   deviceConfig: DeviceConfig,
   capabilities: DeviceCapabilities | null,
   connected: boolean,
-  isDefault: boolean
+  isDefault: boolean,
+  presetDisplay?: { manufacturer: string; productName: string }
 ): ResolvedDeviceSettings {
   const type = deviceConfig.type ?? 'ipod';
   const quality = resolveDeviceQuality(config, deviceConfig);
 
+  // Display labels: preset baseline + per-device override. Uses the
+  // shared resolveChain with the same `CapabilitySource` union the
+  // capability resolver emits, so consumers see one consistent
+  // provenance vocabulary across capability + display fields.
+  const manufacturer = presetDisplay
+    ? resolveChain<string, CapabilitySource>(
+        [{ value: deviceConfig.manufacturer, source: 'device-config' }],
+        presetDisplay.manufacturer,
+        'preset'
+      )
+    : undefined;
+  const productName = presetDisplay
+    ? resolveChain<string, CapabilitySource>(
+        [{ value: deviceConfig.productName, source: 'device-config' }],
+        presetDisplay.productName,
+        'preset'
+      )
+    : undefined;
+
   return {
     name: deviceName,
     type,
-    manufacturer: deviceConfig.manufacturer,
-    productName: deviceConfig.productName,
+    manufacturer,
+    productName,
     isDefault,
     connected,
     quality,

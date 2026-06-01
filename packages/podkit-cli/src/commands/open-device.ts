@@ -60,18 +60,27 @@ export function isMassStorageDevice(type: string | undefined): boolean {
 }
 
 /**
- * Structural subset of a `DeviceConfig` the display helpers read.
+ * Structural subset of a `DeviceConfig` (or `ResolvedDeviceSettings`)
+ * the display helpers read.
  *
  * Pinned as a structural type so callers can pass either a full
- * `DeviceConfig` (the CLI's TOML shape) or any other source that
- * carries the same fields, without coupling the helper signatures to
- * the config-types module. The fields are the inheritance layers
- * `device info` / `device add` consume to label a device.
+ * `DeviceConfig` (TOML raw shape — `manufacturer: string`) or a
+ * `ResolvedDeviceSettings` (resolved-with-provenance shape —
+ * `manufacturer: Resolved<string, _>`), without coupling the helper
+ * signatures to either module. The `{ value: string }` arm of each
+ * union covers the resolved form; `unwrapDisplay` projects both into
+ * a plain string for the formatting code below.
  */
 export interface DeviceDisplayInput {
   type?: string;
-  manufacturer?: string;
-  productName?: string;
+  manufacturer?: string | { value: string };
+  productName?: string | { value: string };
+}
+
+/** Project a raw-or-Resolved display field to its plain string value. */
+function unwrapDisplay(v: string | { value: string } | undefined): string | undefined {
+  if (v === undefined) return undefined;
+  return typeof v === 'string' ? v : v.value;
 }
 
 /**
@@ -91,7 +100,7 @@ export function getDeviceTypeDisplayName(device: DeviceDisplayInput | undefined)
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
   if (preset) {
-    return device?.productName ?? formatPresetShortDisplay(preset);
+    return unwrapDisplay(device?.productName) ?? formatPresetShortDisplay(preset);
   }
   // Unknown type — backward compat: undefined / unrecognised → iPod. User
   // presets the CLI doesn't know about land here; once the user-preset
@@ -117,8 +126,8 @@ export function getDeviceTypeRichDisplayName(device: DeviceDisplayInput | undefi
   if (type === undefined || type === 'ipod') return 'iPod';
   const preset = BUILT_IN_PRESETS[type as BuiltInPresetId];
   if (preset) {
-    const manufacturer = device?.manufacturer ?? preset.manufacturer;
-    const productName = device?.productName ?? preset.productName;
+    const manufacturer = unwrapDisplay(device?.manufacturer) ?? preset.manufacturer;
+    const productName = unwrapDisplay(device?.productName) ?? preset.productName;
     return `${manufacturer} ${productName} (${type})`;
   }
   return 'iPod';

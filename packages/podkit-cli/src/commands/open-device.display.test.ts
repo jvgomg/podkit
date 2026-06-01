@@ -109,4 +109,30 @@ describe('per-device overrides — the AliExpress example', () => {
       })
     ).toBe('iPod');
   });
+
+  // The display helpers accept either raw-string overrides (the
+  // `DeviceConfig` shape) or `{ value: string }` wrappers from
+  // `ResolvedDeviceSettings`. Both forms must produce the same label so
+  // call sites can pass whichever they have without projecting.
+  it('accepts Resolved-shaped fields from ResolvedDeviceSettings', () => {
+    expect(
+      getDeviceTypeRichDisplayName({
+        type: 'generic',
+        manufacturer: { value: 'AliExpress' },
+        productName: { value: 'USB MP3 player' },
+      })
+    ).toBe('AliExpress USB MP3 player (generic)');
+  });
+
+  it('accepts mixed raw + Resolved fields', () => {
+    // A future caller might compose from two sources; the helper
+    // doesn't care which arm of the union each field uses.
+    expect(
+      getDeviceTypeRichDisplayName({
+        type: 'rockbox',
+        manufacturer: { value: "Joe's" },
+        productName: 'Custom Build',
+      })
+    ).toBe("Joe's Custom Build (rockbox)");
+  });
 });

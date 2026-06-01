@@ -5,6 +5,7 @@ import { Command } from 'commander';
 import { existsSync } from '../../utils/fs.js';
 import { getContext } from '../../context.js';
 import type { CoreLoaderDeps } from '../../handler-deps.js';
+import { BUILT_IN_PRESETS } from '@podkit/devices-mass-storage';
 import { isMassStorageDevice, getDeviceTypeDisplayName } from '../open-device.js';
 import { OutputContext } from '../../output/index.js';
 import { sortDevicesForDisplay, getDevicePrefix } from './shared.js';
@@ -193,8 +194,27 @@ export async function runDeviceList(out: OutputContext, deps: DeviceListDeps = {
       }
     }
 
+    // Mass-storage devices have a preset baseline for their display
+    // labels; iPods don't. Pass the preset's manufacturer/productName
+    // when available so the resolver can attribute them with provenance.
+    const presetDisplay = (() => {
+      if (type === 'ipod') return undefined;
+      const preset = BUILT_IN_PRESETS[type as keyof typeof BUILT_IN_PRESETS];
+      return preset
+        ? { manufacturer: preset.manufacturer, productName: preset.productName }
+        : undefined;
+    })();
+
     resolvedDevices.push(
-      resolveDeviceSettings(config, name, deviceConfig, capabilities, connected, isDefault)
+      resolveDeviceSettings(
+        config,
+        name,
+        deviceConfig,
+        capabilities,
+        connected,
+        isDefault,
+        presetDisplay
+      )
     );
   }
 
