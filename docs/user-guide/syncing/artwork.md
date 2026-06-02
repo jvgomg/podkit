@@ -16,12 +16,12 @@ During a normal sync, podkit extracts embedded artwork from your audio files (FL
 
 In both cases, artwork appears in the Now Playing screen and album browser.
 
-For **directory sources**, artwork is read from the image data embedded in each audio file's metadata tags (e.g., the `PICTURE` block in FLAC, `APIC` frame in MP3, `covr` atom in M4A).
+For **directory sources**, artwork is read from the image data embedded in each audio file's metadata tags (e.g., the `PICTURE` block in FLAC, `APIC` frame in MP3, `covr` atom in M4A). When a file has no embedded artwork, podkit falls back to a peer image file in the same directory — `cover.jpg`, `folder.jpg`, `front.jpg`, or `album.jpg` (also `.jpeg` / `.png`), case-insensitive. Embed always wins when both are present; the sidecar is a fallback, not an override.
 
-For **Subsonic sources**, artwork is fetched from the server's `getCoverArt` API endpoint. This happens per unique album, so tracks sharing the same album artwork only require one request.
+For **Subsonic sources**, artwork is fetched from the server's `getCoverArt` API endpoint. This happens per unique album, so tracks sharing the same album artwork only require one request. Navidrome (and other Subsonic servers) index sidecar `cover.jpg` files into the same endpoint, so library albums whose audio files lack embedded pictures still get art on your device — the server serves the sidecar bytes and podkit's executor transfers them.
 
 :::note
-Artwork sync uses the embedded artwork in each file, not separate image files like `cover.jpg` or `folder.png` in the album directory. If your files don't have embedded artwork, tools like [MusicBrainz Picard](https://picard.musicbrainz.org/), [beets](https://beets.io/), or [kid3](https://kid3.kde.org/) can embed images into your audio files.
+Sidecar lookup is limited to the audio file's immediate parent directory and the four common filename stems above. If your covers live in a `covers/` subdirectory or use an uncommon name, embed the image into the audio file instead — tools like [MusicBrainz Picard](https://picard.musicbrainz.org/), [beets](https://beets.io/), or [kid3](https://kid3.kde.org/) automate this.
 :::
 
 ## Disabling Artwork
@@ -117,6 +117,8 @@ Artwork-added and artwork-removed are detected during every sync, even without `
 ### Directory sources
 
 For local files, artwork detection reads the embedded image data directly. This adds minimal overhead since the files are already being accessed during scanning. All three artwork operations (added, updated, removed) work reliably.
+
+When a file has no embedded image, podkit detects a peer `cover.jpg` / `folder.jpg` / `front.jpg` / `album.jpg` (or `.jpeg` / `.png`) in the same directory and uses it. Under `--check-artwork`, the sidecar bytes are hashed and pinned in the sync tag, so swapping a sidecar `cover.jpg` for a new image is detected on the next sync.
 
 ### Subsonic sources
 

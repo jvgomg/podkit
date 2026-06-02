@@ -379,9 +379,11 @@ async function getTrackFilePath(
  * Check if a file path has an OGG container extension (.opus, .ogg).
  *
  * Used to detect files that need post-processed artwork embedding,
- * since FFmpeg's OGG muxer cannot write image streams.
+ * since FFmpeg's OGG muxer cannot write image streams. Exported so e2e
+ * matrix prediction rules can mirror the executor's "OGG copy uses taglib"
+ * carve-out without redefining the predicate.
  */
-function isOggExtension(filePath: string): boolean {
+export function isOggExtension(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
   return ext === '.opus' || ext === '.ogg';
 }
@@ -711,6 +713,15 @@ export class MusicPipeline implements SyncExecutor {
   private albumCandidates = new Map<string, readonly string[]>();
   /** Album-level cache for resized artwork — avoids redundant FFmpeg spawns for tracks on the same album */
   private resizedArtworkCache = new Map<string, Buffer>();
+  /**
+   * Source adapter for the current execution (set during `execute()`).
+   *
+   * Held so {@link transferArtwork} can ask the adapter for non-embedded
+   * artwork bytes (directory sidecars, Subsonic getCoverArt) when extraction
+   * from the audio body returns null. Cleared via the per-execution flow,
+   * since the same pipeline instance may serve multiple plans.
+   */
+  private adapter?: CollectionAdapter;
 
   constructor(deps: ExecutorDependencies) {
     this.device = deps.device;
@@ -812,6 +823,7 @@ export class MusicPipeline implements SyncExecutor {
     this.transferMode = transferMode;
     this.artworkResize = artworkResize;
     this.audioNormalization = audioNormalization;
+    this.adapter = adapter;
 
     // Clear state from previous execution
     this.clearWarnings();
@@ -1454,15 +1466,17 @@ export class MusicPipeline implements SyncExecutor {
    */
   private async transferArtwork(
     track: DeviceTrack,
-    sourceFilePath: string
+    sourceFilePath: string,
+    sourceTrack: CollectionTrack
   ): Promise<string | undefined> {
     try {
       const albumKey = getAlbumKey({ artist: track.artist ?? '', album: track.album ?? '' });
       const candidates = this.albumCandidates.get(albumKey);
+      const adapterFallback = this.buildAdapterFallback(sourceTrack);
       const cached = await this.artworkCache.get(
         { artist: track.artist ?? '', album: track.album ?? '' },
         sourceFilePath,
-        candidates ? { candidates } : undefined
+        { candidates, adapterFallback }
       );
       if (cached) {
         track.setArtworkFromData(cached.data);
@@ -1495,6 +1509,25 @@ export class MusicPipeline implements SyncExecutor {
       });
       return undefined;
     }
+  }
+
+  /**
+   * Build an adapter-side artwork fallback closure for the album cache.
+   *
+   * Returned when the current execution's adapter exposes `getArtwork()` AND
+   * the caller can supply a source track to identify the album. Lets the
+   * directory adapter contribute sidecar bytes and the Subsonic adapter
+   * contribute getCoverArt bytes when the audio body has no embedded picture.
+   *
+   * Returns `undefined` when no fallback is available — the cache then keeps
+   * its embed-only behaviour.
+   */
+  private buildAdapterFallback(
+    sourceTrack: CollectionTrack
+  ): (() => Promise<Buffer | null>) | undefined {
+    const adapter = this.adapter;
+    if (!adapter?.getArtwork) return undefined;
+    return () => adapter.getArtwork!(sourceTrack);
   }
 
   /**
@@ -1583,7 +1616,7 @@ export class MusicPipeline implements SyncExecutor {
     // Extract and transfer artwork if enabled.
     // Skip when the source explicitly has no artwork — see transferToIpod for full explanation.
     if (artworkEnabled && source.hasArtwork !== false) {
-      await this.transferArtwork(track, source.filePath);
+      await this.transferArtwork(track, source.filePath, source);
     }
 
     return { bytesTransferred: result.size, track };
@@ -1613,7 +1646,7 @@ export class MusicPipeline implements SyncExecutor {
     // Extract and transfer artwork if enabled.
     // Skip when the source explicitly has no artwork — see transferToIpod for full explanation.
     if (artworkEnabled && source.hasArtwork !== false) {
-      await this.transferArtwork(track, source.filePath);
+      await this.transferArtwork(track, source.filePath, source);
     }
 
     // Estimate bytes transferred (we don't have actual file size)
@@ -2177,7 +2210,7 @@ export class MusicPipeline implements SyncExecutor {
     // artwork cache could otherwise serve a sibling track's artwork for this no-artwork track,
     // falsely setting hasArtwork=true on the iPod and triggering artwork-removed on the next sync.
     if (artworkEnabled && source.hasArtwork !== false) {
-      const extractedHash = await this.transferArtwork(track, artworkSourcePath);
+      const extractedHash = await this.transferArtwork(track, artworkSourcePath, source);
       // Prefer the adapter's artwork hash (source.artworkHash) over the extracted hash.
       // For Subsonic sources, getCoverArt returns processed bytes that differ from the
       // raw embedded bytes in the audio file. Using the adapter's hash ensures the sync
@@ -2259,7 +2292,7 @@ export class MusicPipeline implements SyncExecutor {
         // artwork-updated with artwork disabled is a no-op — skip silently
         return { bytesTransferred: 0, track: foundTrack };
       }
-      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath);
+      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
       // Prefer the adapter's artwork hash for sync tag consistency (see transferToIpod comment)
       const artHash = source.artworkHash ?? extractedHash;
       if (artHash && this.syncTagConfig) {
@@ -2333,7 +2366,7 @@ export class MusicPipeline implements SyncExecutor {
     // Skip when the source explicitly has no artwork (hasArtwork === false) — see transferToIpod
     // for a full explanation of why this guard is necessary.
     if (artworkEnabled && source.hasArtwork !== false) {
-      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath);
+      const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
       // Prefer the adapter's artwork hash for sync tag consistency (see transferToIpod comment)
       const artHash = source.artworkHash ?? extractedHash;
       if (artHash && this.syncTagConfig) {

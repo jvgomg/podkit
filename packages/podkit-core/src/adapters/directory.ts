@@ -7,12 +7,21 @@
 
 import { glob as realGlob } from 'glob';
 import * as mm from 'music-metadata';
-import { extname, basename, resolve } from 'node:path';
+import { readdir, readFile } from 'node:fs/promises';
+import { extname, basename, dirname, join, resolve } from 'node:path';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from './interface.js';
 import type { AudioFileType, TrackFilter } from '../types.js';
 import { extractNormalization } from '../metadata/normalization.js';
 import { selectBestPicture } from '../artwork/extractor.js';
 import { hashArtwork } from '../artwork/hash.js';
+
+/**
+ * Sidecar artwork filename stems (extension matched separately, case-insensitive
+ * on every platform). Order = preference: cover before folder, both before
+ * front/album. Each stem is paired with every supported image extension.
+ */
+const SIDECAR_STEMS = ['cover', 'folder', 'front', 'album'] as const;
+const SIDECAR_EXTENSIONS = ['.jpg', '.jpeg', '.png'] as const;
 
 /**
  * Dependency-injection seam for {@link DirectoryAdapter}. Tests pass fakes
@@ -25,6 +34,8 @@ import { hashArtwork } from '../artwork/hash.js';
 export interface DirectoryAdapterDeps {
   glob?: typeof realGlob;
   parseFile?: typeof mm.parseFile;
+  readDir?: typeof readdir;
+  readFile?: typeof readFile;
 }
 
 /**
@@ -144,6 +155,19 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
   private connected = false;
   private globFn: typeof realGlob;
   private parseAudioFile: typeof mm.parseFile;
+  private readDir: typeof readdir;
+  private readFileFn: typeof readFile;
+  /** filePath → sidecar artwork path (when no embedded image was present) */
+  private sidecarByTrack = new Map<string, string>();
+  /**
+   * Album-directory → resolved sidecar path (or `undefined` when none).
+   *
+   * Memoises {@link findSidecar} so a multi-track album costs ONE `readdir`
+   * regardless of track count — without this, the per-track sidecar lookup
+   * would issue N redundant syscalls + N `Map<string,string>` allocations on
+   * a flat `Artist/Album/*.flac` layout (sonnet review P1).
+   */
+  private sidecarDirCache = new Map<string, string | undefined>();
 
   constructor(config: DirectoryAdapterConfig, deps: DirectoryAdapterDeps = {}) {
     this.rootPath = resolve(config.path);
@@ -153,6 +177,8 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
     this.checkArtwork = config.checkArtwork ?? false;
     this.globFn = deps.glob ?? realGlob;
     this.parseAudioFile = deps.parseFile ?? mm.parseFile;
+    this.readDir = deps.readDir ?? readdir;
+    this.readFileFn = deps.readFile ?? readFile;
   }
 
   /**
@@ -197,6 +223,8 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
 
     // Parse each file
     this.cache = [];
+    this.sidecarByTrack.clear();
+    this.sidecarDirCache.clear();
     const total = files.length;
 
     for (let i = 0; i < files.length; i++) {
@@ -265,13 +293,40 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
     // common.picture is populated by music-metadata when skipCovers: false.
     // We only need to know whether artwork exists (boolean), not the actual bytes.
     const pictures = common.picture;
-    const hasArtwork = (pictures?.length ?? 0) > 0;
+    const hasEmbedded = (pictures?.length ?? 0) > 0;
+
+    // Sidecar detection: when no embedded picture, look for cover.jpg /
+    // folder.jpg / front.jpg / album.jpg (also .jpeg/.png) alongside the audio
+    // file. A sidecar carries the album cover for tracks whose container can't
+    // hold embedded art (raw WAV, OGG without METADATA_BLOCK_PICTURE) and for
+    // libraries that simply don't embed. Hits land in `sidecarByTrack` so
+    // `getArtwork()` can re-read the bytes without rescanning.
+    let sidecarPath: string | undefined;
+    if (!hasEmbedded) {
+      sidecarPath = await this.findSidecar(filePath);
+      if (sidecarPath) {
+        this.sidecarByTrack.set(filePath, sidecarPath);
+      }
+    }
+
+    const hasArtwork = hasEmbedded || sidecarPath !== undefined;
 
     // Compute artwork hash for change detection (when --check-artwork is enabled)
     let artworkHash: string | undefined;
-    if (this.checkArtwork && pictures && pictures.length > 0) {
-      const bestPicture = selectBestPicture(pictures);
-      artworkHash = hashArtwork(bestPicture.data);
+    if (this.checkArtwork) {
+      if (hasEmbedded && pictures && pictures.length > 0) {
+        const bestPicture = selectBestPicture(pictures);
+        artworkHash = hashArtwork(bestPicture.data);
+      } else if (sidecarPath) {
+        try {
+          const sidecarBytes = await this.readFileFn(sidecarPath);
+          artworkHash = hashArtwork(sidecarBytes);
+        } catch {
+          // Best-effort: if the sidecar suddenly disappears between detection
+          // and hash, leave artworkHash undefined — hasArtwork stays true so
+          // the sync will still try to transfer (and recover from a fresh read).
+        }
+      }
     }
 
     // Build track object
@@ -430,11 +485,77 @@ export class DirectoryAdapter implements CollectionAdapter<CollectionTrack, Trac
   }
 
   /**
+   * Find a sidecar cover image alongside the audio file.
+   *
+   * Scans the track's parent directory for the first match of
+   * `{cover,folder,front,album}.{jpg,jpeg,png}`, case-insensitive on every
+   * platform. Returns the absolute path or `undefined` when nothing matches.
+   *
+   * Memoised in {@link sidecarDirCache} so a single `readdir` covers every
+   * track in an album. Within a stem, `.jpg` beats `.jpeg` beats `.png`;
+   * across stems, `cover` beats `folder` beats `front` beats `album`.
+   */
+  private async findSidecar(audioFilePath: string): Promise<string | undefined> {
+    const dir = dirname(audioFilePath);
+    if (this.sidecarDirCache.has(dir)) {
+      return this.sidecarDirCache.get(dir);
+    }
+
+    let entries: string[];
+    try {
+      entries = await this.readDir(dir);
+    } catch {
+      this.sidecarDirCache.set(dir, undefined);
+      return undefined;
+    }
+
+    const byLower = new Map<string, string>();
+    for (const entry of entries) {
+      byLower.set(entry.toLowerCase(), entry);
+    }
+
+    for (const stem of SIDECAR_STEMS) {
+      for (const ext of SIDECAR_EXTENSIONS) {
+        const match = byLower.get(`${stem}${ext}`);
+        if (match) {
+          const resolved = join(dir, match);
+          this.sidecarDirCache.set(dir, resolved);
+          return resolved;
+        }
+      }
+    }
+
+    this.sidecarDirCache.set(dir, undefined);
+    return undefined;
+  }
+
+  /**
+   * Return non-embedded artwork bytes for a track (sidecar fallback).
+   *
+   * The executor calls this when extracting embedded artwork from the audio
+   * body returns null. Returns the sidecar bytes when one was detected during
+   * the directory scan; null otherwise.
+   */
+  async getArtwork(track: CollectionTrack): Promise<Buffer | null> {
+    const sidecar = this.sidecarByTrack.get(track.filePath);
+    if (!sidecar) return null;
+
+    try {
+      // node:fs/promises.readFile() returns Buffer in Node.js; no wrap needed.
+      return (await this.readFileFn(sidecar)) as Buffer;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Disconnect and cleanup resources
    */
   async disconnect(): Promise<void> {
     this.cache = [];
     this.connected = false;
+    this.sidecarByTrack.clear();
+    this.sidecarDirCache.clear();
   }
 
   /**

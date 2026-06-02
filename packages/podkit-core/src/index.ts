@@ -153,6 +153,7 @@ export {
   categorizeError,
   createCategorizedError,
   getRetriesForCategory,
+  isOggExtension,
   MUSIC_RETRY_CONFIG,
 } from './sync/music/pipeline.js';
 

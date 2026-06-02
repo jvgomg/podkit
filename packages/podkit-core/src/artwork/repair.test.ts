@@ -560,6 +560,87 @@ describe('rebuildArtworkDatabase', () => {
       expect(cleanupMock).toHaveBeenCalledTimes(1);
     });
   });
+
+  describe('adapter artwork fallback (TASK-142)', () => {
+    it('uses adapter.getArtwork() when extractArtwork returns null (e.g. directory sidecar)', async () => {
+      const ipodTracks = [makeIpodTrack({ artist: 'Artist', title: 'Song', album: 'Album' })];
+      const sourceTracks = [
+        makeCollectionTrack({ artist: 'Artist', title: 'Song', album: 'Album' }),
+      ];
+
+      const sidecarBytes = Buffer.from('sidecar-cover-bytes');
+      const adapter: CollectionAdapter = {
+        name: 'fake-with-sidecar',
+        adapterType: 'directory',
+        connect: mock(async () => {}),
+        getItems: mock(async () => sourceTracks),
+        getFilteredItems: mock(async () => sourceTracks),
+        getFileAccess: mock(
+          (track: CollectionTrack): FileAccess => ({ type: 'path' as const, path: track.filePath })
+        ),
+        disconnect: mock(async () => {}),
+        getArtwork: mock(async () => sidecarBytes),
+      };
+
+      const db = makeMockDb(ipodTracks);
+      // extractArtwork returns null for every file (no embed) — repair must
+      // fall back to the adapter to find the sidecar bytes.
+      const result = await rebuildArtworkDatabase(makeDeps(db, [adapter], async () => null));
+
+      expect(result.matched).toBe(1);
+      expect(result.noArtwork).toBe(0);
+      expect(adapter.getArtwork).toHaveBeenCalledTimes(1);
+      expect(db.setTrackArtworkFromData).toHaveBeenCalledTimes(1);
+      // Verify the bytes that landed on the track are the adapter bytes.
+      const [, dataArg] = db.setTrackArtworkFromData.mock.calls[0]!;
+      expect((dataArg as Buffer).equals(sidecarBytes)).toBe(true);
+    });
+
+    it('clears artwork when neither extractArtwork nor adapter.getArtwork returns bytes', async () => {
+      // Track starts with a stale `art=` in its syncTag — the no-art repair
+      // path must clear it (calls db.updateTrack with a syncTag whose art= is
+      // gone) so the next sync re-adds artwork rather than treating the track
+      // as already-synced.
+      const ipodTracks = [
+        makeIpodTrack({
+          artist: 'Artist',
+          title: 'Song',
+          album: 'Album',
+          comment: '[podkit:v1 quality=high art=cafebabe]',
+        }),
+      ];
+      const sourceTracks = [
+        makeCollectionTrack({ artist: 'Artist', title: 'Song', album: 'Album' }),
+      ];
+
+      const adapter: CollectionAdapter = {
+        name: 'fake-no-art',
+        adapterType: 'directory',
+        connect: mock(async () => {}),
+        getItems: mock(async () => sourceTracks),
+        getFilteredItems: mock(async () => sourceTracks),
+        getFileAccess: mock(
+          (track: CollectionTrack): FileAccess => ({ type: 'path' as const, path: track.filePath })
+        ),
+        disconnect: mock(async () => {}),
+        getArtwork: mock(async () => null),
+      };
+
+      const db = makeMockDb(ipodTracks);
+      const result = await rebuildArtworkDatabase(makeDeps(db, [adapter], async () => null));
+
+      expect(result.matched).toBe(0);
+      expect(result.noArtwork).toBe(1);
+      expect(db.setTrackArtworkFromData).not.toHaveBeenCalled();
+      // syncTag art= cleared via updateTrack (clearArtworkSyncTag)
+      expect(db.updateTrack).toHaveBeenCalled();
+      const lastUpdate = db.updateTrack.mock.calls.at(-1);
+      expect(lastUpdate).toBeDefined();
+      const [, fields] = lastUpdate as [unknown, { comment: string }];
+      expect(fields.comment).toContain('[podkit:v1');
+      expect(fields.comment).not.toMatch(/art=/);
+    });
+  });
 });
 
 // ── resetArtworkDatabase tests ──────────────────────────────────────────────

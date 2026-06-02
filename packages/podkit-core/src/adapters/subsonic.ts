@@ -35,6 +35,20 @@ export interface SubsonicAdapterConfig {
 const MIN_ARTWORK_BYTES = 100;
 
 /**
+ * Soft cap on the in-memory artwork-bytes cache. At ~200 KB per typical album
+ * cover, 100 entries ≈ 20 MB held — bounded so a long-running daemon syncing a
+ * large library doesn't accumulate the full library's covers indefinitely.
+ * Eviction is FIFO by insertion order (sufficient — an album cover is fetched
+ * once per sync and rarely revisited within a single session).
+ *
+ * In daemon mode, libraries with more than 100 distinct albums per cycle will
+ * see evicted entries re-fetched on the next sync. Raise the cap if that cost
+ * matters; the hash cache (`artworkCache`, unbounded) still short-circuits
+ * the placeholder-filter pass.
+ */
+const ARTWORK_BYTES_CACHE_MAX = 100;
+
+/**
  * Maximum number of retry attempts for connection-level failures
  * (DNS resolution, connection refused, timeout).
  */
@@ -282,6 +296,12 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
   /** Artwork cache: coverArtId → hash (artwork exists) or null (no artwork / placeholder) */
   private artworkCache = new Map<string, string | null>();
 
+  /** track id → coverArt id; populated during mapping so getArtwork() can resolve a track without re-fetching the album. */
+  private coverArtByTrack = new Map<string, string>();
+
+  /** coverArtId → real (non-placeholder) image bytes. Populated lazily on the first getArtwork() hit per album. */
+  private artworkBytes = new Map<string, Buffer>();
+
   /**
    * Hash of the server's placeholder artwork image, detected during connect().
    * Used to filter placeholder responses from servers like Navidrome that return
@@ -322,12 +342,17 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       throw new Error(`Failed to connect to Subsonic server at ${this.config.url}: ${message}`);
     }
 
-    // Probe for placeholder artwork when --check-artwork is enabled.
-    // Navidrome returns a static placeholder image for getCoverArt with an empty id;
-    // Gonic and others return an error. The hash is stored for filtering during scans.
-    if (this.checkArtwork) {
-      this.placeholderHash = await this.detectPlaceholderArtwork();
-    }
+    // Probe for placeholder artwork at connect time. Navidrome returns a static
+    // placeholder image for getCoverArt with an empty id; Gonic and others return
+    // an error. The hash filters placeholder responses from:
+    //   - `--check-artwork` presence detection (`fetchArtworkInfo`).
+    //   - The executor adapter-fallback path (`getArtwork`), which can fire even
+    //     without `--check-artwork` (it's source-hasArtwork-gated, not flag-gated).
+    // The probe is one extra request per Subsonic session; running it
+    // unconditionally avoids leaking the placeholder onto the device when a
+    // user sync runs in fast mode against a Navidrome library that includes
+    // sidecar-less albums.
+    this.placeholderHash = await this.detectPlaceholderArtwork();
   }
 
   /**
@@ -455,7 +480,84 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
     this.tracks = null;
     this.connected = false;
     this.artworkCache.clear();
+    this.coverArtByTrack.clear();
+    this.artworkBytes.clear();
     this.placeholderHash = null;
+  }
+
+  /**
+   * Fetch artwork bytes for a track from Navidrome's getCoverArt endpoint.
+   *
+   * Adapter-side fallback for the executor: when the downloaded audio body has
+   * no embedded picture (raw WAV, server-stripped tags, etc.) Subsonic still
+   * exposes the album cover out-of-band via `getCoverArt`. We return those
+   * bytes so the executor can embed/transfer them.
+   *
+   * Placeholder filtering reuses the per-album hash cache from artwork
+   * presence detection — if a coverArtId was previously identified as a
+   * placeholder (or missing), we short-circuit to null.
+   */
+  async getArtwork(track: CollectionTrack): Promise<Buffer | null> {
+    const coverArtId = this.coverArtByTrack.get(track.id);
+    if (!coverArtId) return null;
+
+    const cachedBytes = this.artworkBytes.get(coverArtId);
+    if (cachedBytes) return cachedBytes;
+
+    // If we previously classified this coverArt as missing/placeholder, skip.
+    if (this.artworkCache.get(coverArtId) === null) return null;
+
+    try {
+      const response = await this.api.getCoverArt({ id: coverArtId });
+      if (!response.ok) {
+        this.artworkCache.set(coverArtId, null);
+        return null;
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.startsWith('image/')) {
+        this.artworkCache.set(coverArtId, null);
+        return null;
+      }
+
+      const buffer = Buffer.from(await response.arrayBuffer());
+
+      if (buffer.length < MIN_ARTWORK_BYTES) {
+        this.artworkCache.set(coverArtId, null);
+        return null;
+      }
+
+      const hash = hashArtwork(buffer);
+      if (this.placeholderHash !== null && hash === this.placeholderHash) {
+        this.artworkCache.set(coverArtId, null);
+        return null;
+      }
+
+      this.artworkCache.set(coverArtId, hash);
+      this.cacheArtworkBytes(coverArtId, buffer);
+      return buffer;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Insert into the bytes cache with FIFO eviction at {@link ARTWORK_BYTES_CACHE_MAX}.
+   *
+   * Map iteration order is insertion order, so `keys().next().value` gives the
+   * oldest entry. Both callers (`fetchArtworkInfo`, `getArtwork`) only invoke
+   * this on a fresh `coverArtId` — the cache hit short-circuits earlier — so
+   * we don't bother re-shuffling an existing key (a concurrent double-fetch
+   * would write identical bytes; the age-tracking distinction is invisible).
+   */
+  private cacheArtworkBytes(coverArtId: string, buffer: Buffer): void {
+    if (!this.artworkBytes.has(coverArtId) && this.artworkBytes.size >= ARTWORK_BYTES_CACHE_MAX) {
+      const oldest = this.artworkBytes.keys().next().value;
+      if (oldest !== undefined) {
+        this.artworkBytes.delete(oldest);
+      }
+    }
+    this.artworkBytes.set(coverArtId, buffer);
   }
 
   /**
@@ -543,6 +645,10 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       }
 
       this.artworkCache.set(coverArtId, hash);
+      // Persist the bytes too — getArtwork() called later on the same cover
+      // would otherwise re-download the same image. Bounded by
+      // ARTWORK_BYTES_CACHE_MAX via cacheArtworkBytes (FIFO eviction).
+      this.cacheArtworkBytes(coverArtId, buffer);
       return { hasArtwork: true, hash };
     } catch {
       // Fetch error (network, server error) — conservatively treat as no artwork
@@ -587,6 +693,13 @@ export class SubsonicAdapter implements CollectionAdapter<CollectionTrack, Track
       hasArtwork = false;
     }
     // else: coverArt present but checkArtwork off → leave hasArtwork undefined.
+
+    // Remember the coverArt id so getArtwork() can resolve track → cover without
+    // a second album fetch. The id is the Subsonic-side handle (not the track
+    // id) used by getCoverArt.
+    if (song.coverArt) {
+      this.coverArtByTrack.set(song.id, song.coverArt);
+    }
 
     return {
       // Use Subsonic ID as track ID

@@ -232,6 +232,32 @@ it a differing-artist sibling's cover. The all-anchor-embed fixture makes this
 visible (bare WAV/OGG/Opus cells); whether compilations *should* share art
 across artists is a product decision, not pinned as a bug.
 
+## Implementation status (TASK-142 landed: adapter artwork fallback)
+
+TASK-142 closed the **source-side** sidecar gap that the existing matrices documented but couldn't yet exercise:
+
+- **`CollectionAdapter.getArtwork(item): Promise<Buffer | null>`** — new optional seam on the adapter interface. The executor's `pipeline.transferArtwork` consults it after the album-level embedded extraction returns null. Positive results are promoted to the same `AlbumArtworkCache` entry so siblings on the same album share a single fetch.
+- **DirectoryAdapter** detects peer `{cover,folder,front,album}.{jpg,jpeg,png}` (case-insensitive, memoised per album dir). `parseFile` flips `hasArtwork=true` when a sidecar is found with no embed; `getArtwork(track)` returns the sidecar bytes. Under `--check-artwork` the sidecar bytes are hashed too.
+- **SubsonicAdapter** stores a per-track `coverArtId` map during `mapSongToTrack`; `getArtwork(track)` calls `getCoverArt`, filters the Navidrome placeholder, and caches bytes per cover. The placeholder probe moved out of the `--check-artwork` gate and into every `connect()` so fast-mode syncs cannot leak the placeholder via the new fallback path.
+
+**Reference-model branches (`reference-model.ts`):**
+
+- `artworkPrimary(capabilities)` returns `'embedded' | 'sidecar' | 'database'` from `artworkSources[0]`.
+- `fileArtworkSurvives` gained an explicit **sidecar-primary branch** returning `false` (per doc-012: the cover should land in a peer `cover.jpg`, not the audio body).
+- `expectedSidecarSize(sourceSize, capabilities)` documents the spec for the sidecar-write task — present in the model for callers to consume once TASK-370 ships.
+
+**Matrix prediction updates:**
+
+- `predictDirectory` rewritten: iPod gets art on every non-A scenario (adapter fallback → `setArtworkFromData` → iTunesDB). Mass-storage gets art only when the source **file body** carries embed, **except** for the OGG/Opus copy path (`isOggExtension(track.filePath)` + `artworkResize` set), which calls `updateTrack({ embeddedPictureData })` via the taglib-sharp writer and therefore picks up adapter-fallback bytes. The carve-out is keyed off the executor's output extension, not the source format.
+- `predictSubsonic` rewritten in the same shape — non-A scenarios land art on the device via embed extract OR API fallback. `predictSubsonicChange` is unchanged (the change matrix already exercises the hash side).
+- `skipArtworkCell` now `skipBug(TASK-370)`-fences mass-storage non-OGG-copy `C-sidecar` cells (~60 cells across the device sweep). The bytes reach the executor but `MassStorageTrack.setArtworkFromData` is a no-op for non-OGG containers, so the device file stays art-less and `detectUpgrades` fires `artwork-added` on every sync (no `source.artworkHash` to converge with `--check-artwork` off). The fence makes the deferred work visible — TASK-370 (executor sidecar device-write + rockbox matrix sweep) lifts the fence.
+
+**TASK-370 (deferred work, blocked by production):**
+
+- Extend the executor with a sidecar-write path for `artworkPrimary === 'sidecar'`: strip embedded art on transcode/copy, write a device-resolution peer `cover.jpg`.
+- Add `ms-rockbox` to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` (the reference-model branches are already in place; the matrix sweep blocks on production).
+- Audit whether the mass-storage non-OGG `setArtworkFromData` no-op deserves the same treatment (post-process tag write per container) so the TASK-370 fence narrows to truly-sidecar-only devices.
+
 ## Tradeoffs & risks
 
 - This refactors working, green tests. Payoff: adding an axis becomes declarative instead of a new bespoke file. Risk: churn on passing tests + an abstraction that over-fits if axes are guessed wrong. **Mitigation: build the harness against the existing artwork matrix first (phase 2) and prove cell-for-cell parity before adding anything.**

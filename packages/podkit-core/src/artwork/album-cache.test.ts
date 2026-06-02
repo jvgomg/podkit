@@ -175,4 +175,137 @@ describe('AlbumArtworkCache', () => {
     expect(extractCount).toBe(2);
     expect(cache.size).toBe(1);
   });
+
+  describe('adapter fallback (TASK-142)', () => {
+    const adapterBytes = Buffer.from('adapter-supplied-cover');
+
+    it('promotes adapter bytes to the album-level cache when embed extraction returns null (single-source)', async () => {
+      let extractCount = 0;
+      let fallbackCount = 0;
+      const cache = new AlbumArtworkCache({
+        extractArtwork: async () => {
+          extractCount++;
+          return null;
+        },
+      });
+
+      const track = { artist: 'Artist', album: 'Album' };
+      const entry = await cache.get(track, '/fake/track.wav', {
+        adapterFallback: async () => {
+          fallbackCount++;
+          return adapterBytes;
+        },
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.data.equals(adapterBytes)).toBe(true);
+      expect(entry!.hash).toBe(hashArtwork(adapterBytes));
+      expect(extractCount).toBe(1);
+      expect(fallbackCount).toBe(1);
+
+      // Second sibling on the same album reads the cached entry — no re-fetch.
+      await cache.get(track, '/fake/sibling.wav', {
+        adapterFallback: async () => {
+          fallbackCount++;
+          return adapterBytes;
+        },
+      });
+      expect(fallbackCount).toBe(1);
+    });
+
+    it('candidates mode: adapter fallback runs only after EVERY candidate misses', async () => {
+      const cache = new AlbumArtworkCache({
+        // Every file in this album lacks embedded art.
+        extractArtwork: async () => null,
+      });
+
+      let fallbackCount = 0;
+      const entry = await cache.get({ artist: 'Artist', album: 'Album' }, '/fake/track.wav', {
+        candidates: ['/fake/a.flac', '/fake/b.mp3', '/fake/c.wav'],
+        adapterFallback: async () => {
+          fallbackCount++;
+          return adapterBytes;
+        },
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.data.equals(adapterBytes)).toBe(true);
+      expect(fallbackCount).toBe(1);
+    });
+
+    it('embed wins over adapter fallback (fallback is consulted only on miss)', async () => {
+      let fallbackCount = 0;
+      const cache = new AlbumArtworkCache({
+        extractArtwork: async () => fakeArtwork,
+      });
+
+      const entry = await cache.get({ artist: 'Artist', album: 'Album' }, '/fake/track.flac', {
+        adapterFallback: async () => {
+          fallbackCount++;
+          return adapterBytes;
+        },
+      });
+
+      expect(entry).not.toBeNull();
+      expect(entry!.data.equals(fakeArtwork.data)).toBe(true);
+      expect(fallbackCount).toBe(0);
+    });
+
+    it('caches a negative result in candidates mode when both embed AND adapter return null', async () => {
+      let extractCount = 0;
+      let fallbackCount = 0;
+      const cache = new AlbumArtworkCache({
+        extractArtwork: async () => {
+          extractCount++;
+          return null;
+        },
+      });
+
+      const track = { artist: 'Artist', album: 'Album' };
+      const opts = {
+        candidates: ['/fake/a.flac'],
+        adapterFallback: async () => {
+          fallbackCount++;
+          return null;
+        },
+      } as const;
+
+      const first = await cache.get(track, '/fake/track.wav', opts);
+      expect(first).toBeNull();
+
+      // Siblings should now hit the cached null — no re-extract, no re-fallback.
+      await cache.get(track, '/fake/sibling.wav', opts);
+      expect(extractCount).toBe(1);
+      expect(fallbackCount).toBe(1);
+    });
+
+    it('single-source mode: an adapter-null result is NOT cached (sibling-with-art still discoverable)', async () => {
+      let extractCount = 0;
+      let fallbackCount = 0;
+      const cache = new AlbumArtworkCache({
+        extractArtwork: async () => {
+          extractCount++;
+          return null;
+        },
+      });
+
+      const track = { artist: 'Artist', album: 'Album' };
+      await cache.get(track, '/fake/a.wav', {
+        adapterFallback: async () => {
+          fallbackCount++;
+          return null;
+        },
+      });
+      await cache.get(track, '/fake/b.wav', {
+        adapterFallback: async () => {
+          fallbackCount++;
+          return null;
+        },
+      });
+
+      // Both calls re-tried both layers — no null caching in single-source mode.
+      expect(extractCount).toBe(2);
+      expect(fallbackCount).toBe(2);
+    });
+  });
 });

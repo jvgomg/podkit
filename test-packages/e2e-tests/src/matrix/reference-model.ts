@@ -266,6 +266,23 @@ export function artworkReaches(sourceHadArt: boolean, capabilities: DeviceCapabi
   return sourceHadArt && capabilities.artworkSources.length > 0;
 }
 
+/** The primary on-device home for artwork — derived from `artworkSources[0]`. */
+export type ArtworkPrimary = 'embedded' | 'sidecar' | 'database';
+
+/**
+ * Classify a device's primary artwork source. `artworkSources` is ordered by
+ * preference: the first entry is where the device *expects* to read art from.
+ * `database` covers the iPod (and any future device that lives in `iTunesDB`
+ * or a peer-level index). An empty list means the device has no artwork
+ * support at all — callers must guard with `artworkReaches` before asking.
+ */
+export function artworkPrimary(capabilities: DeviceCapabilities): ArtworkPrimary {
+  const head = capabilities.artworkSources[0];
+  if (head === 'embedded') return 'embedded';
+  if (head === 'sidecar') return 'sidecar';
+  return 'database';
+}
+
 /**
  * Does the embedded cover survive **in the file written to the device**, given
  * the action and transfer mode? This is distinct from {@link artworkReaches}:
@@ -277,6 +294,15 @@ export function artworkReaches(sourceHadArt: boolean, capabilities: DeviceCapabi
  * - **Embedded-artwork device** (`artworkSources[0] === 'embedded'`): the file
  *   *is* the art source, so the executor always keeps the cover in the file
  *   (resizing it to `artworkMaxResolution`), regardless of transfer mode.
+ * - **Sidecar-primary device** (`artworkSources[0] === 'sidecar'`, e.g.
+ *   rockbox): art lives in a device-side sidecar image (`cover.jpg` peer of
+ *   the audio file), so the file's embedded cover is redundant. Per doc-012
+ *   §"Sidecar Artwork Devices (Future)" the executor strips embedded art on
+ *   every action (transcode AND copy) and writes a device-resolution sidecar.
+ *   **podkit production does not yet implement the sidecar-write half — the
+ *   matrices that sweep rockbox will diverge from this model until that
+ *   lands**; surface those with `skipBug(...)` rather than encoding reality
+ *   here. The model documents the spec, not the bug.
  * - **Database-artwork device** (iPod): the file's embedded cover is redundant
  *   (art lives in the iTunesDB), so transfer mode decides its fate —
  *   `portable` preserves it; `optimized` strips it on every path; `fast`
@@ -290,7 +316,10 @@ export function fileArtworkSurvives(
   capabilities: DeviceCapabilities
 ): boolean {
   if (!sourceHadArt) return false;
-  if (capabilities.artworkSources[0] === 'embedded') return true;
+  const primary = artworkPrimary(capabilities);
+  if (primary === 'embedded') return true;
+  if (primary === 'sidecar') return false;
+  // database: per transfer-mode rules
   if (transferMode === 'portable') return true;
   if (transferMode === 'optimized') return false;
   return action === 'copy';
@@ -304,6 +333,10 @@ export function fileArtworkSurvives(
  * - **Embedded-artwork device**: the file is the art source, so the executor
  *   shrinks the cover to `artworkMaxResolution` (the FFmpeg `artworkResize`
  *   path) → `min(source, max)`.
+ * - **Sidecar-primary device** (rockbox): the file body should not carry art at
+ *   all (see {@link fileArtworkSurvives}); callers must guard before asking.
+ *   This function returns `0` to make a mistaken use-site obvious — the cover
+ *   was meant to land in a peer `cover.jpg`, not in the file.
  * - **Database-artwork device** (iPod): the file's cover is left at source
  *   size — the iPod resizes only its iTunesDB thumbnail (to
  *   `artworkMaxResolution`), not the file — so the file stays at `source`.
@@ -316,8 +349,36 @@ export function expectedFileArtworkSize(
   capabilities: DeviceCapabilities
 ): number {
   const max = capabilities.artworkMaxResolution;
-  if (capabilities.artworkSources[0] === 'embedded' && max !== null) {
+  const primary = artworkPrimary(capabilities);
+  if (primary === 'embedded' && max !== null) {
     return predictArtworkScaleSize(sourceSize, max);
   }
+  if (primary === 'sidecar') {
+    // File body should be art-free on sidecar-primary devices. Callers should
+    // gate on `fileArtworkSurvives` first; returning 0 here makes a misuse
+    // visible rather than silently lying with the source size.
+    return 0;
+  }
   return sourceSize;
+}
+
+/**
+ * Expected square edge length of the cover **in the device-side sidecar
+ * image**. Sidecar-primary devices write a peer `cover.jpg` at
+ * `artworkMaxResolution`. Database/embedded devices return `null` — they do
+ * not produce a sidecar at all.
+ *
+ * Documents the doc-012 sidecar spec for the matrix reference model. Production
+ * does not yet write sidecars (TASK-142 only landed the read side); cells that
+ * assert against this must `skipBug(...)` the missing-sidecar-write gap until a
+ * follow-up task implements the writer.
+ */
+export function expectedSidecarSize(
+  sourceSize: number,
+  capabilities: DeviceCapabilities
+): number | null {
+  if (artworkPrimary(capabilities) !== 'sidecar') return null;
+  const max = capabilities.artworkMaxResolution;
+  if (max === null) return sourceSize;
+  return predictArtworkScaleSize(sourceSize, max);
 }

@@ -103,16 +103,54 @@ For devices that read artwork from embedded file data. The key difference: strip
 
 **Not implemented in v1.** The `DeviceCapabilities` interface is designed to support this, but the resize/embed logic ships with Echo Mini device support.
 
-## Behavior Matrix: Sidecar Artwork Devices (Future)
+## Sidecar Artwork: Source-Side (TASK-142, landed)
 
-For devices that read artwork from sidecar files (e.g., `folder.jpg`) in preference to embedded data.
+Source adapters now consult sidecar artwork when the audio file body carries no embedded picture:
+
+- **Directory adapter**: scans the audio file's parent directory for peer
+  `{cover, folder, front, album}.{jpg, jpeg, png}` (case-insensitive). On a hit
+  with no embed, `hasArtwork` flips true and the sidecar bytes are returned via
+  the new `adapter.getArtwork(track)` seam. Embed wins when both are present —
+  the sidecar is a fallback, not an override.
+- **Subsonic adapter**: `getArtwork(track)` calls Navidrome's `getCoverArt`.
+  Navidrome's scanner indexes sidecar files into the same endpoint that serves
+  embedded covers, so podkit's executor sees adapter-side art for any source
+  the server reports a cover for. The placeholder image is filtered via a
+  one-time probe in `connect()`, so albums Navidrome has no real cover for
+  return null and don't leak the placeholder onto the device.
+
+The executor's `MusicPipeline.transferArtwork` consults `adapter.getArtwork`
+after `AlbumArtworkCache.extractArtwork` returns null (per `MusicPipeline.buildAdapterFallback`).
+Positive results promote to the album-level positive cache so siblings on the
+same album share one fetch.
+
+**Embed-vs-sidecar principle.** Identical on both adapters by virtue of routing
+through the same album cache: `extractArtwork(audioFile)` runs first; sidecar /
+API bytes flow only on a miss.
+
+**Caveat (rare):** A Subsonic server configured to transcode-on-stream may
+strip the embedded picture during download. In that case `extractArtwork` on
+the downloaded file returns null even though the original had embed —
+`getArtwork` then serves the server's API cover. Art still lands on the device;
+the bytes may differ in compression/format from the original embed.
+
+## Behavior Matrix: Sidecar Artwork Devices (Future, TASK-370)
+
+For devices that read artwork from sidecar files (e.g., `folder.jpg`) in preference to embedded data on the device-side. **Independent of the source-side sidecar reading above** — TASK-370 is about WRITING sidecars onto the target.
 
 | Source → Target | `fast` | `optimized` | `portable` |
 |----------------|--------|-------------|------------|
 | Any transcode | Transcode, strip embedded; create device-res sidecar | Transcode, strip embedded; create device-res sidecar | Transcode, preserve embedded; create device-res sidecar |
 | Any copy | Direct copy; create device-res sidecar | Optimized copy, strip embedded; create device-res sidecar | Direct copy; create device-res sidecar |
 
-**Not implemented in v1.** Sidecar creation ships with Echo Mini device support.
+**Not implemented in v1.** The matrix reference model carries the spec
+(`artworkPrimary`, `expectedSidecarSize` in `test-packages/e2e-tests/src/matrix/reference-model.ts`)
+so callers consume the predicate before production writes sidecars. Production
+embeds bytes into the file via `track.setArtworkFromData` regardless of
+`artworkSources[0]`; for `MassStorageTrack` this is a no-op on non-OGG
+containers, fenced by `skipBug TASK-370` in the artwork matrix. TASK-371
+(non-OGG taglib embed) and TASK-372 (`DeviceTrack.artworkSink` primitive) are
+the related write-side follow-ups.
 
 ## Edge Cases
 

@@ -18,6 +18,8 @@ import type { ScanProgress, ScanWarning } from './directory.js';
 // Fake implementations refreshed per test so call counts don't bleed.
 let mockGlob: ReturnType<typeof mock>;
 let mockParseFile: ReturnType<typeof mock>;
+let mockReadDir: ReturnType<typeof mock>;
+let mockReadFile: ReturnType<typeof mock>;
 let deps: DirectoryAdapterDeps;
 
 function newAdapter(config: ConstructorParameters<typeof DirectoryAdapter>[0]): DirectoryAdapter {
@@ -31,9 +33,13 @@ describe('DirectoryAdapter', () => {
       common: {},
       format: {},
     }));
+    mockReadDir = mock(async (_path: string) => [] as string[]);
+    mockReadFile = mock(async (_path: string) => Buffer.alloc(0));
     deps = {
       glob: mockGlob as never,
       parseFile: mockParseFile as never,
+      readDir: mockReadDir as never,
+      readFile: mockReadFile as never,
     };
   });
 
@@ -773,6 +779,188 @@ describe('DirectoryAdapter', () => {
       const tracks = await adapter.getItems();
 
       expect(tracks[0]!.trackNumber).toBeUndefined();
+    });
+  });
+
+  describe('sidecar artwork detection (TASK-142)', () => {
+    it('sets hasArtwork=true when cover.jpg sits beside an audio file with no embedded picture', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({
+        common: {},
+        format: {},
+      }));
+      mockReadDir.mockImplementation(async (path: string) => {
+        return path === '/music/album' ? ['track.flac', 'cover.jpg'] : [];
+      });
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+
+      expect(tracks[0]!.hasArtwork).toBe(true);
+    });
+
+    it('matches folder.jpg / front.png / album.jpeg (case-insensitive)', async () => {
+      mockGlob.mockImplementation(async () => [
+        '/music/a/track.flac',
+        '/music/b/track.flac',
+        '/music/c/track.flac',
+        '/music/d/track.flac',
+      ]);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      const stems = new Map<string, string>([
+        ['/music/a', 'Folder.JPG'],
+        ['/music/b', 'front.png'],
+        ['/music/c', 'album.jpeg'],
+        ['/music/d', 'no-art.txt'],
+      ]);
+      mockReadDir.mockImplementation(async (path: string) => {
+        const stem = stems.get(path);
+        return stem ? ['track.flac', stem] : [];
+      });
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+
+      expect(tracks.map((t) => `${t.filePath}=${t.hasArtwork}`)).toEqual([
+        '/music/a/track.flac=true',
+        '/music/b/track.flac=true',
+        '/music/c/track.flac=true',
+        '/music/d/track.flac=false',
+      ]);
+    });
+
+    it('prefers embedded artwork over sidecar (sidecar is the fallback, not an override)', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      const embedded = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+      mockParseFile.mockImplementation(async () => ({
+        common: { picture: [{ format: 'image/jpeg', data: embedded }] },
+        format: {},
+      }));
+      mockReadDir.mockImplementation(async () => ['track.flac', 'cover.jpg']);
+
+      const adapter = newAdapter({ path: '/music', checkArtwork: true });
+      const tracks = await adapter.getItems();
+
+      expect(tracks[0]!.hasArtwork).toBe(true);
+      // Sidecar should NOT have been opened — embedded wins
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it('D-both: getArtwork() returns null when embed present + sidecar present (embed wins; fallback skipped)', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      const embedded = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+      mockParseFile.mockImplementation(async () => ({
+        common: { picture: [{ format: 'image/jpeg', data: embedded }] },
+        format: {},
+      }));
+      mockReadDir.mockImplementation(async () => ['track.flac', 'cover.jpg']);
+      mockReadFile.mockImplementation(async () => Buffer.from('sidecar-bytes'));
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+
+      // Embed is present → sidecar was never tracked → getArtwork has nothing
+      // to fall back to. Album-cache's embed extraction is what feeds the
+      // executor in this case; the adapter fallback is intentionally inert.
+      const fetched = await adapter.getArtwork(tracks[0]!);
+      expect(fetched).toBeNull();
+      expect(mockReadFile).not.toHaveBeenCalled();
+    });
+
+    it('hashes the sidecar bytes under --check-artwork when no embed is present', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      mockReadDir.mockImplementation(async () => ['track.flac', 'cover.jpg']);
+      const bytes = Buffer.from('sidecar-bytes-for-hashing');
+      mockReadFile.mockImplementation(async () => bytes);
+
+      const adapter = newAdapter({ path: '/music', checkArtwork: true });
+      const tracks = await adapter.getItems();
+
+      expect(tracks[0]!.hasArtwork).toBe(true);
+      expect(tracks[0]!.artworkHash).toBeDefined();
+      expect(tracks[0]!.artworkHash).toHaveLength(8);
+    });
+
+    it('returns sidecar bytes from getArtwork() for tracks with a detected sidecar', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      mockReadDir.mockImplementation(async () => ['track.flac', 'cover.jpg']);
+      const bytes = Buffer.from('cover-jpg-bytes');
+      mockReadFile.mockImplementation(async () => bytes);
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+      const fetched = await adapter.getArtwork(tracks[0]!);
+
+      expect(fetched?.equals(bytes)).toBe(true);
+    });
+
+    it('returns null from getArtwork() when no sidecar was detected', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      mockReadDir.mockImplementation(async () => ['track.flac']);
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+      const fetched = await adapter.getArtwork(tracks[0]!);
+
+      expect(fetched).toBeNull();
+    });
+
+    it('falls back to hasArtwork=false when readdir fails (e.g. permission error)', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      mockReadDir.mockImplementation(async () => {
+        throw new Error('EACCES');
+      });
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+
+      expect(tracks[0]!.hasArtwork).toBe(false);
+    });
+
+    it('memoises sidecar lookups per album dir (one readdir for N tracks)', async () => {
+      mockGlob.mockImplementation(async () => [
+        '/music/album/01.flac',
+        '/music/album/02.flac',
+        '/music/album/03.flac',
+        '/music/album/04.flac',
+      ]);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      let readDirCount = 0;
+      mockReadDir.mockImplementation(async (path: string) => {
+        readDirCount++;
+        return path === '/music/album' ? ['01.flac', '02.flac', 'cover.jpg'] : [];
+      });
+
+      const adapter = newAdapter({ path: '/music' });
+      const tracks = await adapter.getItems();
+
+      expect(tracks).toHaveLength(4);
+      expect(tracks.every((t) => t.hasArtwork)).toBe(true);
+      expect(readDirCount).toBe(1);
+    });
+
+    it('clears sidecar state on disconnect/reconnect', async () => {
+      mockGlob.mockImplementation(async () => ['/music/album/track.flac']);
+      mockParseFile.mockImplementation(async () => ({ common: {}, format: {} }));
+      mockReadDir.mockImplementation(async () => ['track.flac', 'cover.jpg']);
+      const bytes = Buffer.from('xyz');
+      mockReadFile.mockImplementation(async () => bytes);
+
+      const adapter = newAdapter({ path: '/music' });
+      let tracks = await adapter.getItems();
+      expect(await adapter.getArtwork(tracks[0]!)).not.toBeNull();
+
+      await adapter.disconnect();
+      // After disconnect the sidecar map is empty; getArtwork on a stale track ref returns null.
+      expect(await adapter.getArtwork(tracks[0]!)).toBeNull();
+
+      // Reconnect rebuilds the map.
+      tracks = await adapter.getItems();
+      expect(await adapter.getArtwork(tracks[0]!)).not.toBeNull();
     });
   });
 });

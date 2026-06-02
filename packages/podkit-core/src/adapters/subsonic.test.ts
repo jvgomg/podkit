@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach } from 'bun:test';
 import { SubsonicAdapter, SubsonicConnectionError } from './subsonic.js';
 import type { SubsonicAdapterConfig } from './subsonic.js';
+import type { CollectionTrack } from './interface.js';
 import type { Child, AlbumWithSongsID3 } from 'subsonic-api';
 import { replayGainToSoundcheck } from '../metadata/normalization.js';
 import { hashArtwork } from '../artwork/hash.js';
@@ -797,9 +798,11 @@ describe('SubsonicAdapter connection retries', () => {
       );
     });
 
-    // Should not throw — succeeds on 3rd attempt
+    // Should not throw — succeeds on 3rd attempt. A 4th fetch follows for the
+    // unconditional placeholder probe (`detectPlaceholderArtwork`); it sees
+    // the JSON response, finds no image content-type, and stores null.
     await adapter.connect();
-    expect(fetchCount).toBe(3);
+    expect(fetchCount).toBe(4);
   });
 
   it('does not retry on non-connection errors', async () => {
@@ -852,5 +855,213 @@ describe('SubsonicAdapter connection retries', () => {
 
     await expect(adapter.connect()).rejects.toThrow(/Failed to connect/);
     expect(fetchCount).toBe(1);
+  });
+});
+
+// =============================================================================
+// getArtwork — adapter-side artwork fallback (TASK-142)
+// =============================================================================
+
+describe('SubsonicAdapter getArtwork', () => {
+  const realArtwork = Buffer.alloc(200, 0x42);
+  const placeholderImage = Buffer.alloc(200, 0xaa);
+
+  function song(overrides?: Partial<Child>): Child {
+    return {
+      id: 'song-1',
+      isDir: false,
+      title: 'Test Song',
+      artist: 'Test Artist',
+      album: 'Test Album',
+      ...overrides,
+    };
+  }
+
+  function album(overrides?: Partial<AlbumWithSongsID3>): AlbumWithSongsID3 {
+    return {
+      id: 'album-1',
+      name: 'Test Album',
+      artist: 'Test Artist',
+      songCount: 1,
+      duration: 300,
+      created: new Date('2024-01-01T00:00:00Z'),
+      ...overrides,
+    };
+  }
+
+  /**
+   * Mount a mock getCoverArt onto a fresh adapter and expose mapSong so tests can
+   * populate the per-track coverArt map before calling getArtwork.
+   */
+  function createMockedAdapter(options: {
+    getCoverArt: (args: { id: string }) => Promise<Response>;
+    placeholderHash?: string | null;
+    checkArtwork?: boolean;
+  }) {
+    const adapter = new SubsonicAdapter({
+      url: 'https://test.example.com',
+      username: 'testuser',
+      password: 'testpass',
+      checkArtwork: options.checkArtwork ?? false,
+    });
+    (adapter as any).api = {
+      ...(adapter as any).api,
+      getCoverArt: options.getCoverArt,
+    };
+    if (options.placeholderHash !== undefined) {
+      (adapter as any).placeholderHash = options.placeholderHash;
+    }
+
+    const mapSong = async (s: Partial<Child>, a?: Partial<AlbumWithSongsID3>) =>
+      (adapter as any)['mapSongToTrack'](song(s), album(a));
+
+    return { adapter, mapSong };
+  }
+
+  const mockRealArtwork = async () =>
+    new Response(realArtwork, { status: 200, headers: { 'content-type': 'image/jpeg' } });
+
+  const mockPlaceholder = async () =>
+    new Response(placeholderImage, { status: 200, headers: { 'content-type': 'image/webp' } });
+
+  const mock404 = async () =>
+    new Response('Not Found', { status: 404, headers: { 'content-type': 'text/plain' } });
+
+  it('returns null for a track with no coverArt id', async () => {
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: async () => {
+        throw new Error('should not be called');
+      },
+    });
+    const track = await mapSong({ id: 'song-x', coverArt: undefined });
+    expect(await adapter.getArtwork(track)).toBeNull();
+  });
+
+  it('returns bytes from getCoverArt when the cover resolves to a real image', async () => {
+    const { adapter, mapSong } = createMockedAdapter({ getCoverArt: mockRealArtwork });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-123' });
+
+    const bytes = await adapter.getArtwork(track);
+    expect(bytes).not.toBeNull();
+    expect(bytes!.equals(realArtwork)).toBe(true);
+  });
+
+  it('returns null when the server responds with a placeholder image', async () => {
+    const placeholderHash = hashArtwork(placeholderImage);
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: mockPlaceholder,
+      placeholderHash,
+    });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-123' });
+
+    expect(await adapter.getArtwork(track)).toBeNull();
+  });
+
+  it('returns null on HTTP error (e.g. Gonic 404 for missing artwork)', async () => {
+    const { adapter, mapSong } = createMockedAdapter({ getCoverArt: mock404 });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-456' });
+
+    expect(await adapter.getArtwork(track)).toBeNull();
+  });
+
+  it('returns null when getCoverArt throws', async () => {
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: async () => {
+        throw new Error('network down');
+      },
+    });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-789' });
+
+    expect(await adapter.getArtwork(track)).toBeNull();
+  });
+
+  it('reuses cached bytes for a second track on the same album (one fetch)', async () => {
+    let fetchCount = 0;
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: async () => {
+        fetchCount++;
+        return mockRealArtwork();
+      },
+    });
+    const t1 = await mapSong({ id: 'song-1', coverArt: 'al-shared' });
+    const t2 = await mapSong({ id: 'song-2', coverArt: 'al-shared' });
+
+    expect(await adapter.getArtwork(t1)).not.toBeNull();
+    expect(await adapter.getArtwork(t2)).not.toBeNull();
+    expect(fetchCount).toBe(1);
+  });
+
+  it('short-circuits to null when an earlier check-artwork pass marked the cover as missing', async () => {
+    const { adapter, mapSong } = createMockedAdapter({
+      getCoverArt: mock404,
+      checkArtwork: true,
+    });
+    // With checkArtwork on, mapSongToTrack pre-classifies the coverArt as null
+    // (404). getArtwork must respect that without re-fetching.
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-missing' });
+
+    let postMapFetchCount = 0;
+    (adapter as any).api.getCoverArt = async () => {
+      postMapFetchCount++;
+      return mockRealArtwork();
+    };
+    expect(await adapter.getArtwork(track)).toBeNull();
+    expect(postMapFetchCount).toBe(0);
+  });
+
+  it('disconnect clears the per-track coverArt map and the byte cache', async () => {
+    const { adapter, mapSong } = createMockedAdapter({ getCoverArt: mockRealArtwork });
+    const track = await mapSong({ id: 'song-x', coverArt: 'al-clear' });
+    expect(await adapter.getArtwork(track)).not.toBeNull();
+
+    await adapter.disconnect();
+    // The stale track reference no longer resolves a coverArtId — null fallback.
+    expect(await adapter.getArtwork(track)).toBeNull();
+  });
+
+  it('bytes cache is bounded — oldest entry evicts past the cap (FIFO)', async () => {
+    // The cap (100) is large; we drive past it with synthetic ids and assert
+    // the first one inserted is no longer cached when getArtwork is asked
+    // again later. Re-asking would trigger a refetch — we count fetch calls.
+    let fetchCount = 0;
+    const { adapter } = createMockedAdapter({
+      getCoverArt: async () => {
+        fetchCount++;
+        return new Response(realArtwork, {
+          status: 200,
+          headers: { 'content-type': 'image/jpeg' },
+        });
+      },
+    });
+
+    // Manually populate the per-track map to avoid the per-mapSong fetch.
+    const bytes = adapter as unknown as {
+      coverArtByTrack: Map<string, string>;
+      artworkBytes: Map<string, Buffer>;
+    };
+    for (let i = 0; i < 101; i++) {
+      bytes.coverArtByTrack.set(`t-${i}`, `cover-${i}`);
+    }
+
+    // First eviction: fetch cover-0 then cover-1..100 (101 albums); cap is 100
+    // so cover-0 falls off after cover-100 lands.
+    for (let i = 0; i < 101; i++) {
+      const track = { id: `t-${i}` } as unknown as CollectionTrack;
+      const result = await adapter.getArtwork(track);
+      expect(result).not.toBeNull();
+    }
+    expect(fetchCount).toBe(101);
+
+    // cover-0 evicted → second call triggers a re-fetch.
+    fetchCount = 0;
+    const stale = { id: 't-0' } as unknown as CollectionTrack;
+    await adapter.getArtwork(stale);
+    expect(fetchCount).toBe(1);
+
+    // cover-100 (most recently inserted) is still cached → no re-fetch.
+    fetchCount = 0;
+    const fresh = { id: 't-100' } as unknown as CollectionTrack;
+    await adapter.getArtwork(fresh);
+    expect(fetchCount).toBe(0);
   });
 });

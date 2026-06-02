@@ -1,10 +1,10 @@
 ---
 id: TASK-142
 title: Sidecar artwork support and executor adapter fallback
-status: To Do
+status: In Progress
 assignee: []
 created_date: '2026-03-17 14:58'
-updated_date: '2026-05-30 08:19'
+updated_date: '2026-06-02 14:44'
 labels:
   - enhancement
   - artwork
@@ -55,12 +55,12 @@ When a directory has `cover.jpg`/`folder.jpg` alongside audio files but no embed
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 Executor falls back to adapter getArtwork() when extractArtwork() returns null
-- [ ] #2 Directory adapter detects sidecar artwork files (cover.jpg, folder.jpg, cover.png, folder.png)
-- [ ] #3 Directory adapter sets hasArtwork=true when sidecar exists even if no embedded artwork
-- [ ] #4 Integration tests for executor adapter fallback
-- [ ] #5 Integration tests for directory sidecar detection
-- [ ] #6 test/fixtures/audio/multi-format/generate.sh cover.jpg creation uncommented
+- [x] #1 Executor falls back to adapter getArtwork() when extractArtwork() returns null
+- [x] #2 Directory adapter detects sidecar artwork files (cover.jpg, folder.jpg, cover.png, folder.png)
+- [x] #3 Directory adapter sets hasArtwork=true when sidecar exists even if no embedded artwork
+- [x] #4 Integration tests for executor adapter fallback
+- [x] #5 Integration tests for directory sidecar detection
+- [x] #6 test/fixtures/audio/multi-format/generate.sh cover.jpg creation uncommented
 - [ ] #7 E2E matrix reference model gains a sidecar-primary branch when this lands: `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives` and `expectedFileArtworkSize` currently only branch on embedded vs database (sidecar-primary falls through to database, untested); rockbox is added to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` to assert the executor's sidecar transfer-mode behaviour cell-for-cell.
 <!-- AC:END -->
 
@@ -78,4 +78,18 @@ These are documentation/test artifacts of the gap, not a separate fix; this task
 - `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives(action, transferMode, sourceHadArt, capabilities)` and `expectedFileArtworkSize(sourceSize, capabilities)` branch only on `artworkSources[0] === 'embedded'` (embedded device → keep+resize) vs. anything else (treated as database → portable preserves / optimized strips / fast keeps copies). A sidecar-primary device (`rockbox`: `artworkSources = ['sidecar','embedded']`, max 320) currently falls through the database branch by default — fine while rockbox isn't swept by these matrices, but the moment it is the predictions will be wrong. doc-012 §"Sidecar Artwork Devices (Future)" sketches the expected matrix (transcode: strip embedded + create device-res sidecar; copy: direct/optimized + create device-res sidecar) — pin against it.
 - `test-packages/e2e-tests/src/features/art-matrix-transfer.test.ts` sweeps iPod only today; `art-matrix-resize.test.ts` sweeps `RESIZE_DEVICE_IDS = ['ms-generic','ipod-MA147']`. Both should add rockbox once the sidecar transfer-mode model exists. AC added above covers this.
 - This is paired with TASK-356.06 on the source side (Subsonic/Navidrome serves sidecar art via API): these two tasks close the sidecar surface from both ends.
+
+## Implementation (2026-06-02)
+
+**Source-side:** `CollectionAdapter.getArtwork?(item): Promise<Buffer | null>` added to the adapter interface. `DirectoryAdapter` detects peer `{cover,folder,front,album}.{jpg,jpeg,png}` (case-insensitive, memoised per album dir). `parseFile` flips `hasArtwork=true` on sidecar hit when no embed present; under `--check-artwork` the sidecar bytes are hashed. `SubsonicAdapter.getArtwork(track)` calls `getCoverArt`, filters the Navidrome placeholder, caches bytes in a bounded FIFO map (`ARTWORK_BYTES_CACHE_MAX=100`). The placeholder probe moved out of the `--check-artwork` gate — fast-mode syncs cannot leak the placeholder onto the device via the new fallback.
+
+**Cache + executor:** `AlbumArtworkCache.get` gained `options.adapterFallback?: () => Promise<Buffer | null>`. Consulted after embedded extraction returns null; positive results promote to the album-level positive cache so siblings share one fetch. `MusicPipeline.transferArtwork(track, sourceFilePath, sourceTrack)` — `sourceTrack` required (defensive). `MusicPipeline.adapter` stored per execute() so `buildAdapterFallback` can close over it.
+
+**E2E matrix:** `reference-model.ts` gained `artworkPrimary(capabilities)` + sidecar-primary branches in `fileArtworkSurvives` and `expectedFileArtworkSize`; `expectedSidecarSize` documents the spec. `predictDirectory`/`predictSubsonic` rewritten: iPod gets art on every non-A scenario via the new fallback; mass-storage gets art only when the source body embeds OR the OGG/Opus copy path applies (`updateTrack({embeddedPictureData})` taglib write). `skipArtworkCell` fences ~60 mass-storage non-OGG-copy C-sidecar cells via `skipBug TASK-370`. `isOggExtension` exported from `@podkit/core` so the matrix re-uses the executor's predicate (no drift).
+
+**Tests (AC #4 + #5):** 29 new unit tests — directory adapter (11: sidecar detection, hash, getArtwork, EACCES, disconnect, D-both embed-wins, per-album memoisation), subsonic adapter (9: getArtwork e2e, placeholder/404/throw, byte-cache reuse, FIFO cap eviction), album-cache (5: adapter fallback interaction), pipeline (4: fallback wiring + dry-run no-I/O contract).
+
+**Verification:** typecheck clean; 2868 unit pass / 5 skip / 0 fail; host artwork matrices 441 pass / 60 skip (`skipBug TASK-370`) / 0 fail; docker subsonic + change matrices 96 pass / 0 fail; full `bun run test:e2e` 33/33 green.
+
+**Sonnet reviews (2):** first pass caught per-album memoisation, unconditional placeholder probe, byte-cache reuse, stale Future-comment, Buffer.from redundancy, getOptions simplification — all applied. Second pass on cleanup caught dead overwrite branch in `cacheArtworkBytes`, duplicated OGG predicate, re-fetch documentation, extname dotfile comment — all applied.
 <!-- SECTION:NOTES:END -->

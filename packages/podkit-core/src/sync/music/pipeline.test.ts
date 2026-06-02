@@ -3600,3 +3600,173 @@ describe('optimized copy operations', () => {
     expect(transcoder.getFFmpegPath).toHaveBeenCalled();
   });
 });
+
+// =============================================================================
+// Adapter artwork fallback (TASK-142)
+// =============================================================================
+
+describe('adapter artwork fallback', () => {
+  let db: MockDeviceAdapter;
+  let transcoder: MockTranscoder;
+
+  beforeEach(() => {
+    db = createMockDeviceAdapter();
+    transcoder = createMockTranscoder();
+  });
+
+  /**
+   * Build a minimal music adapter stub with a programmable getArtwork()
+   * implementation. CollectionAdapter accepts CollectionTrack as the default
+   * TItem so the cast is safe at the use-site.
+   */
+  function makeAdapterWithArtwork(
+    impl: (track: CollectionTrack) => Promise<Buffer | null>
+  ): CollectionAdapter<CollectionTrack, TrackFilter> {
+    return {
+      name: 'fake',
+      adapterType: 'directory',
+      connect: async () => undefined,
+      disconnect: async () => undefined,
+      getItems: async () => [],
+      getFilteredItems: async () => [],
+      getFileAccess: (track) => ({ type: 'path', path: track.filePath }) as FileAccess,
+      getArtwork: impl,
+    };
+  }
+
+  it('falls back to adapter.getArtwork() when embedded extraction returns null', async () => {
+    let artworkBytes: Buffer | null = null;
+    const adapterBytes = Buffer.from('adapter-cover-bytes-for-pipeline-test');
+
+    db.addTrack = mock((input: Record<string, unknown>) => {
+      const filePath = `Music/MOCK.m4a`;
+      return createMockDeviceTrack(
+        String(input.artist ?? ''),
+        String(input.title ?? ''),
+        String(input.album ?? ''),
+        filePath,
+        {
+          setArtworkFromData: (data: Buffer) => {
+            artworkBytes = data;
+            return createMockDeviceTrack(
+              String(input.artist ?? ''),
+              String(input.title ?? ''),
+              String(input.album ?? ''),
+              filePath
+            );
+          },
+        }
+      );
+    });
+
+    let getArtworkCalls = 0;
+    const adapter = makeAdapterWithArtwork(async () => {
+      getArtworkCalls++;
+      return adapterBytes;
+    });
+
+    const source = createCollectionTrack('Artist', 'Song', 'Album', 'wav');
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source } satisfies SyncOperation],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, { artwork: true, adapter })) {
+      // consume
+    }
+
+    expect(getArtworkCalls).toBe(1);
+    expect(artworkBytes).not.toBeNull();
+    expect((artworkBytes as unknown as Buffer).equals(adapterBytes)).toBe(true);
+    expect(executor.getWarnings()).toHaveLength(0);
+  });
+
+  it('does not call adapter.getArtwork() when source.hasArtwork === false (no transfer)', async () => {
+    let getArtworkCalls = 0;
+    const adapter = makeAdapterWithArtwork(async () => {
+      getArtworkCalls++;
+      return Buffer.from('should-not-fire');
+    });
+
+    const source = createCollectionTrack('Artist', 'Song', 'Album', 'wav', { hasArtwork: false });
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source } satisfies SyncOperation],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, { artwork: true, adapter })) {
+      // consume
+    }
+
+    expect(getArtworkCalls).toBe(0);
+  });
+
+  it('dry-run never calls adapter.getArtwork() (no I/O contract)', async () => {
+    let getArtworkCalls = 0;
+    const adapter = makeAdapterWithArtwork(async () => {
+      getArtworkCalls++;
+      return Buffer.from('should-not-be-called-in-dry-run');
+    });
+
+    const source = createCollectionTrack('Artist', 'Song', 'Album', 'wav');
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [{ type: 'add-direct-copy', source } satisfies SyncOperation],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, { artwork: true, adapter, dryRun: true })) {
+      // consume
+    }
+
+    expect(getArtworkCalls).toBe(0);
+    expect(db.addTrack).not.toHaveBeenCalled();
+  });
+
+  it('shares one adapter fetch across siblings on the same album', async () => {
+    db.addTrack = mock((input: Record<string, unknown>) => {
+      return createMockDeviceTrack(
+        String(input.artist ?? ''),
+        String(input.title ?? ''),
+        String(input.album ?? ''),
+        `Music/${input.title}.m4a`,
+        {
+          setArtworkFromData: (_data: Buffer) => {
+            return createMockDeviceTrack(
+              String(input.artist ?? ''),
+              String(input.title ?? ''),
+              String(input.album ?? ''),
+              `Music/${input.title}.m4a`
+            );
+          },
+        }
+      );
+    });
+
+    let getArtworkCalls = 0;
+    const adapter = makeAdapterWithArtwork(async () => {
+      getArtworkCalls++;
+      return Buffer.from('shared-album-cover');
+    });
+
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('Artist', 'T1', 'Album', 'wav') },
+        { type: 'add-direct-copy', source: createCollectionTrack('Artist', 'T2', 'Album', 'wav') },
+        { type: 'add-direct-copy', source: createCollectionTrack('Artist', 'T3', 'Album', 'wav') },
+      ] as SyncOperation[],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(plan, { artwork: true, adapter })) {
+      // consume
+    }
+
+    // First track misses embed → triggers fallback → caches the bytes.
+    // Subsequent tracks hit the album cache and DO NOT re-call getArtwork.
+    expect(getArtworkCalls).toBe(1);
+  });
+});

@@ -9,22 +9,9 @@
  *
  * Used by both the sync executor and the artwork repair routine.
  *
- * ## Future: adapter-level artwork
- *
- * The ideal long-term home for album-level artwork caching is the collection
- * adapter pattern itself. Adapters already cache artwork *hashes* (e.g., the
- * Subsonic adapter's `artworkCache` map), but they don't expose artwork *data*.
- * If adapters gained a `getArtwork(track): Promise<{ data, hash } | null>`
- * method with built-in album-level caching, both the executor and repair code
- * could call it directly instead of extracting from source files. This would:
- *
- * - Eliminate the "download source file just to extract artwork" pattern for
- *   remote sources (Subsonic could use getCoverArt directly)
- * - Unify the hash and data caching that currently live in separate layers
- * - Let each adapter own its artwork strategy (embedded vs. API vs. sidecar)
- *
- * For now, this standalone cache is a pragmatic shared abstraction that avoids
- * duplicating the album-keyed extraction logic between executor and repair.
+ * Pair the embedded extraction with the optional `adapterFallback` hook to
+ * route adapter-side artwork (directory sidecar, Subsonic `getCoverArt`)
+ * through the same album-level memoisation — see `AlbumArtworkGetOptions`.
  *
  * @module
  */
@@ -74,6 +61,18 @@ export interface AlbumArtworkGetOptions {
    * might have art).
    */
   candidates?: readonly string[];
+
+  /**
+   * Adapter-side artwork fallback. Consulted ONLY when extraction from the
+   * source audio body returns null for every candidate (single-source: when
+   * `sourceFilePath` extracts null). Returning a Buffer promotes those bytes
+   * to the album-level positive cache so every sibling shares them.
+   *
+   * Lets the directory adapter contribute sidecar bytes (cover.jpg/folder.jpg)
+   * and the Subsonic adapter contribute getCoverArt bytes when the served
+   * audio file has no embedded picture.
+   */
+  adapterFallback?: () => Promise<Buffer | null>;
 }
 
 /**
@@ -169,9 +168,13 @@ export class AlbumArtworkCache {
           return entry;
         }
       }
-      // Every candidate yielded null — album genuinely has no embedded art.
-      this.cache.set(key, null);
-      return null;
+      // Every candidate's embedded extraction yielded null. Before pinning a
+      // negative cache entry, give the adapter a chance to supply out-of-band
+      // bytes (sidecar / API). A positive adapter result is cached so siblings
+      // share the bytes; a null adapter result locks in the negative.
+      const adapterEntry = await this.tryAdapterFallback(options?.adapterFallback);
+      this.cache.set(key, adapterEntry);
+      return adapterEntry;
     }
 
     // Single-source fallback: only extract the requested path. Never cache a
@@ -182,7 +185,23 @@ export class AlbumArtworkCache {
       this.cache.set(key, entry);
       return entry;
     }
-    return null;
+
+    // Embed missed; consult adapter fallback (sidecar / API). Cache only on
+    // positive — keep single-source caller semantics (no null poisoning).
+    const adapterEntry = await this.tryAdapterFallback(options?.adapterFallback);
+    if (adapterEntry) {
+      this.cache.set(key, adapterEntry);
+    }
+    return adapterEntry;
+  }
+
+  private async tryAdapterFallback(
+    fallback: AlbumArtworkGetOptions['adapterFallback']
+  ): Promise<AlbumArtworkEntry> {
+    if (!fallback) return null;
+    const bytes = await fallback();
+    if (!bytes) return null;
+    return { data: bytes, hash: hashArtwork(bytes) };
   }
 
   /** Number of cached albums */

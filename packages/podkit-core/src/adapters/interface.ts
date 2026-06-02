@@ -165,6 +165,23 @@ export interface CollectionAdapter<TItem = CollectionTrack, TFilter = TrackFilte
    * `hasArtwork` and any artwork-added/-removed change is silently missed.
    */
   getPlanWarnings?(): import('../sync/engine/types.js').SyncWarning[];
+
+  /**
+   * Fetch artwork bytes for an item from a non-embedded source.
+   *
+   * The executor calls this as a fallback when extracting embedded artwork
+   * from the audio file body returns null — for adapters that carry artwork
+   * out-of-band (sidecar files alongside audio, server-side cover endpoints).
+   *
+   * Implementations:
+   * - DirectoryAdapter: read sidecar cover image (cover.jpg, folder.jpg, etc.)
+   * - SubsonicAdapter: download via getCoverArt API
+   * - Adapters without an out-of-band artwork source: omit the method
+   *
+   * Implementations should return null (not throw) when artwork is genuinely
+   * unavailable. Throwing is reserved for transport/permission failures.
+   */
+  getArtwork?(item: TItem): Promise<Buffer | null>;
 }
 
 /**
