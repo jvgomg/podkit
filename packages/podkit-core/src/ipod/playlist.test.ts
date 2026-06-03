@@ -64,6 +64,7 @@ function createMockTrack(): IpodTrack {
     hasArtwork: false,
     hasFile: true,
     compilation: false,
+    artworkSink: 'database',
     update: mock(),
     remove: mock(),
     copyFile: mock(),

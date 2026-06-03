@@ -272,15 +272,28 @@ export type ArtworkPrimary = 'embedded' | 'sidecar' | 'database';
 /**
  * Classify a device's primary artwork source. `artworkSources` is ordered by
  * preference: the first entry is where the device *expects* to read art from.
- * `database` covers the iPod (and any future device that lives in `iTunesDB`
- * or a peer-level index). An empty list means the device has no artwork
- * support at all — callers must guard with `artworkReaches` before asking.
+ *
+ * - `'embedded'`: art lives in the file body (tags). Examples: echo-mini, generic.
+ * - `'sidecar'`: art lives in a peer file like `cover.jpg`. Example: rockbox.
+ * - `'database'`: art lives in a device-side index outside the audio files.
+ *   Example: iPod (iTunesDB ArtworkDB).
+ *
+ * An empty `artworkSources` list means the device has no artwork support;
+ * callers must guard with `artworkReaches` before asking. We also defensively
+ * throw on unrecognised `artworkSources[0]` values — better to fail loud than
+ * silently default to one branch.
  */
 export function artworkPrimary(capabilities: DeviceCapabilities): ArtworkPrimary {
   const head = capabilities.artworkSources[0];
   if (head === 'embedded') return 'embedded';
   if (head === 'sidecar') return 'sidecar';
-  return 'database';
+  if (head === 'database') return 'database';
+  if (head === undefined) {
+    throw new Error(
+      'artworkPrimary called on a device with no artworkSources; guard with artworkReaches first'
+    );
+  }
+  throw new Error(`artworkPrimary: unrecognised artworkSources[0] value: ${head}`);
 }
 
 /**

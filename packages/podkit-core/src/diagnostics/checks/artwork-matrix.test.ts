@@ -166,6 +166,7 @@ function makeTrack(overrides: {
     hasArtwork: overrides.hasArtwork ?? true,
     hasFile: true,
     compilation: false,
+    artworkSink: 'database',
     update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
     copyFile: mock(() => ({}) as IpodTrack),

@@ -61,6 +61,7 @@ export function makeFakeIpodTrack(overrides: Partial<IpodTrack> = {}): IpodTrack
     hasFile: true,
     normalization: undefined,
     syncTag: null,
+    artworkSink: 'database',
     ...overrides,
   } as IpodTrack;
 }

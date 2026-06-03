@@ -378,10 +378,13 @@ async function getTrackFilePath(
 /**
  * Check if a file path has an OGG container extension (.opus, .ogg).
  *
- * Used to detect files that need post-processed artwork embedding,
- * since FFmpeg's OGG muxer cannot write image streams. Exported so e2e
- * matrix prediction rules can mirror the executor's "OGG copy uses taglib"
- * carve-out without redefining the predicate.
+ * Originally introduced because FFmpeg's OGG muxer cannot write image
+ * streams (upstream tickets #4448, #9044), so the pipeline routed OGG/Opus
+ * artwork through node-taglib-sharp. TASK-372 generalised that path —
+ * every embedded-sink container now goes through the tag writer — so the
+ * predicate is no longer used inside `transferArtwork`. Kept exported for
+ * the e2e matrix's `artworkContainerRank` and for any caller that needs
+ * to identify the OGG family by extension.
  */
 export function isOggExtension(filePath: string): boolean {
   const ext = extname(filePath).toLowerCase();
@@ -1447,47 +1450,6 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Execute a single sync operation
-   */
-  private async executeOperation(
-    operation: SyncOperation,
-    transcodeDir: string,
-    signal?: AbortSignal,
-    artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track?: DeviceTrack }> {
-    switch (operation.type) {
-      case 'add-transcode':
-        return this.executeTranscode(operation, transcodeDir, signal, artworkEnabled);
-      case 'add-direct-copy':
-      case 'add-optimized-copy':
-        return this.executeCopy(operation, artworkEnabled);
-      case 'remove':
-        return this.executeRemove(operation);
-      case 'update-metadata':
-        return this.executeUpdateMetadata(operation);
-      case 'update-sync-tag':
-        return this.executeUpdateSyncTag(operation);
-      case 'relocate':
-        return this.executeRelocate(operation);
-      case 'upgrade-transcode':
-      case 'upgrade-direct-copy':
-      case 'upgrade-optimized-copy':
-      case 'upgrade-artwork':
-        // Upgrade operations are handled via the pipeline (prepare + transfer)
-        throw new Error('Upgrade operations should be handled via the pipeline');
-      case 'video-transcode':
-      case 'video-copy':
-      case 'video-remove':
-      case 'video-update-metadata':
-      case 'video-upgrade':
-        // Video operations are handled by VideoSyncExecutor, not this executor
-        throw new Error(
-          `Video operations (${operation.type}) should be handled by VideoSyncExecutor`
-        );
-    }
-  }
-
-  /**
    * Build per-album sibling candidate lists from the sync plan.
    *
    * Only meaningful for adapters where `source.filePath` resolves to a real
@@ -1525,11 +1487,30 @@ export class MusicPipeline implements SyncExecutor {
   /**
    * Extract and transfer artwork for a track.
    *
-   * Handles artwork extraction from source file and transfers it to iPod.
-   * Returns the artwork hash (for sync tag writing) if artwork was transferred.
-   * Errors are caught and collected as warnings, but don't fail the sync operation.
+   * Dispatches on `track.artworkSink` to pick the correct write path:
+   *   - `'database'` → iPod ArtworkDB via `setArtworkFromData`.
+   *   - `'embedded'` → mass-storage taglib write via
+   *     `updateTrack({ embeddedPictureData })`. This path handles ALL
+   *     containers (mp3, flac, ogg, opus, m4a, …) because the underlying
+   *     {@link MassStorageTagWriter.writePicture} routes through
+   *     node-taglib-sharp which is container-agnostic — TASK-372 closes
+   *     the pre-existing OGG-only carve-out.
+   *   - `'sidecar'`  → peer cover.jpg device-write. The writer is not yet
+   *     implemented (deferred to TASK-370); today we return `undefined`
+   *     so the syncTag.artworkHash claim is suppressed (callers gate on
+   *     the return value). Once TASK-370 lands `adapter.writeSidecar()`
+   *     this branch wires through and the fence in
+   *     `e2e-tests/.../artwork-rules.ts skipArtworkCell` lifts.
+   *   - `'noop'`     → device has no artwork support; skip the write AND
+   *     suppress the syncTag.artworkHash claim. This is what breaks the
+   *     churn loop documented in doc-041 §3.6 — claiming success when no
+   *     bytes landed makes the next sync re-fire `artwork-added` forever.
    *
-   * @returns Artwork hash (8-char hex) if artwork was transferred, undefined otherwise
+   * Errors are caught and collected as warnings, but don't fail the sync.
+   *
+   * @returns Artwork hash (8-char hex) if bytes landed on the device,
+   *          `undefined` otherwise — caller MUST treat `undefined` as
+   *          "no claim of success" and skip writing `syncTag.artworkHash`.
    */
   private async transferArtwork(
     track: DeviceTrack,
@@ -1545,22 +1526,40 @@ export class MusicPipeline implements SyncExecutor {
         sourceFilePath,
         { candidates, adapterFallback }
       );
-      if (cached) {
-        track.setArtworkFromData(cached.data);
+      if (!cached) {
+        return undefined;
+      }
 
-        // Queue embedded artwork write for OGG files — FFmpeg can't embed
-        // in OGG containers (upstream tickets #4448, #9044, open since 2015).
-        // Post-process via node-taglib-sharp METADATA_BLOCK_PICTURE instead.
-        // artworkResize is only set for embedded-artwork devices, so this
-        // naturally skips database-artwork devices (iPod).
-        if (this.artworkResize !== undefined && isOggExtension(track.filePath)) {
+      switch (track.artworkSink) {
+        case 'database':
+          // iPod: setArtworkFromData writes the ArtworkDB. The bytes always
+          // land — claim success via the returned hash.
+          track.setArtworkFromData(cached.data);
+          return cached.hash;
+        case 'embedded': {
+          // Mass-storage with embedded-art primary: route through the tag
+          // writer. The pipeline used to gate this on isOggExtension because
+          // FFmpeg couldn't embed in OGG; node-taglib-sharp handles every
+          // container, so the gate is gone. Resize the cover to the device's
+          // artworkMaxResolution before embedding (taglib doesn't resize).
           const imageData = await this.getResizedArtwork(track, cached.data);
           this.device.updateTrack(track, { embeddedPictureData: imageData });
+          return cached.hash;
         }
-
-        return cached.hash;
+        case 'sidecar':
+          // TASK-370 will land an explicit `adapter.writeSidecar()` write
+          // path. Until then we have no way to put bytes on the device, so
+          // returning undefined suppresses the syncTag.artworkHash claim
+          // (same shape as 'noop'). This is what keeps sidecar-primary
+          // devices like rockbox out of the churn loop.
+          return undefined;
+        case 'noop':
+          // Device has no artwork support (empty `artworkSources`). Caller
+          // sees `undefined` and skips the syncTag.artworkHash write — no
+          // hash on the next sync means no source/device mismatch to
+          // trigger artwork-added (doc-041 §3.6).
+          return undefined;
       }
-      return undefined;
     } catch (error) {
       // Collect warning but don't fail the sync - artwork is optional
       this.addWarning({
@@ -1622,108 +1621,6 @@ export class MusicPipeline implements SyncExecutor {
   /**
    * Execute a transcode operation
    */
-  private async executeTranscode(
-    operation: Extract<SyncOperation, { type: 'add-transcode' }>,
-    transcodeDir: string,
-    signal?: AbortSignal,
-    artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
-    const { source, preset: presetRef } = operation;
-
-    // Generate output path in temp directory — derive extension from target codec.
-    // FFmpeg writes to <outputPath>.podkit-tmp first; we rename on success.
-    const baseName = basename(source.filePath, extname(source.filePath));
-    const outputExt = getTranscodeOutputExtension(presetRef);
-    const outputPath = join(transcodeDir, `${baseName}-${randomUUID()}${outputExt}`);
-    const tmpOutputPath = outputPath + PODKIT_TEMP_SUFFIX;
-
-    // Transcode the file — use EncoderConfig when targetCodec is set
-    const transcodePreset = buildTranscodePreset(
-      presetRef,
-      this.syncTagConfig?.encodingMode as
-        | import('../../transcode/types.js').EncodingMode
-        | undefined
-    );
-    const result = await this.transcoder.transcode(
-      source.filePath,
-      tmpOutputPath,
-      transcodePreset,
-      {
-        signal,
-        transferMode: this.transferMode as
-          | import('../../transcode/types.js').TransferMode
-          | undefined,
-        artworkResize: this.artworkResize,
-        replayGain: this.buildReplayGainOption(source),
-      }
-    );
-    await rename(tmpOutputPath, outputPath);
-
-    // Add track to device database
-    const trackInput: DeviceTrackInput = {
-      ...toDeviceTrackInput(source),
-      bitrate: result.bitrate,
-      filetype: getTranscodeFiletypeLabel(presetRef),
-      transferMode: this.transferMode,
-    };
-
-    const track = this.device.addTrack(trackInput);
-
-    // Copy transcoded file to device
-    this.device.copyTrackFile(track, outputPath);
-
-    // Request ReplayGain tag writes for transcoded files (M4A needs tag writer)
-    if (this.audioNormalization === 'replaygain' && source.normalization !== undefined) {
-      this.device.updateTrack(track, {
-        writeReplayGainTags: true,
-        normalization: source.normalization,
-      });
-    }
-
-    // Extract and transfer artwork if enabled.
-    // Skip when the source explicitly has no artwork — see transferToIpod for full explanation.
-    if (artworkEnabled && source.hasArtwork !== false) {
-      await this.transferArtwork(track, source.filePath, source);
-    }
-
-    return { bytesTransferred: result.size, track };
-  }
-
-  /**
-   * Execute a copy operation
-   */
-  private async executeCopy(
-    operation: Extract<SyncOperation, { type: 'add-direct-copy' | 'add-optimized-copy' }>,
-    artworkEnabled?: boolean
-  ): Promise<{ bytesTransferred: number; track: DeviceTrack }> {
-    const { source } = operation;
-
-    // Add track to device database
-    const trackInput: DeviceTrackInput = {
-      ...toDeviceTrackInput(source),
-      filetype: getFileTypeLabel(source.filePath),
-      transferMode: this.transferMode,
-    };
-
-    const track = this.device.addTrack(trackInput);
-
-    // Copy source file to device
-    this.device.copyTrackFile(track, source.filePath);
-
-    // Extract and transfer artwork if enabled.
-    // Skip when the source explicitly has no artwork — see transferToIpod for full explanation.
-    if (artworkEnabled && source.hasArtwork !== false) {
-      await this.transferArtwork(track, source.filePath, source);
-    }
-
-    // Estimate bytes transferred (we don't have actual file size)
-    const bytesTransferred = source.duration
-      ? Math.round((source.duration / 1000) * 32000) // ~256 kbps estimate
-      : 5000000; // default 5MB
-
-    return { bytesTransferred, track };
-  }
-
   /**
    * Execute a remove operation
    */
@@ -2278,11 +2175,21 @@ export class MusicPipeline implements SyncExecutor {
     // falsely setting hasArtwork=true on the iPod and triggering artwork-removed on the next sync.
     if (artworkEnabled && source.hasArtwork !== false) {
       const extractedHash = await this.transferArtwork(track, artworkSourcePath, source);
-      // Prefer the adapter's artwork hash (source.artworkHash) over the extracted hash.
-      // For Subsonic sources, getCoverArt returns processed bytes that differ from the
-      // raw embedded bytes in the audio file. Using the adapter's hash ensures the sync
-      // tag matches what the adapter will compute on the next scan (consistency).
-      const artHash = source.artworkHash ?? extractedHash;
+      // Resolve the hash for the syncTag claim. Two-stage:
+      //   1. transferArtwork returns undefined when no bytes landed on the
+      //      device — sink === 'noop' or 'sidecar' (until TASK-370 wires
+      //      the writer). In that case we MUST NOT write syncTag.artworkHash
+      //      regardless of source.artworkHash: a hash on the syncTag implies
+      //      the device has art, but no bytes landed, so the next sync's
+      //      detectUpgrades would fire artwork-added forever (doc-041 §3.6
+      //      churn loop).
+      //   2. When bytes DID land, prefer source.artworkHash over extractedHash.
+      //      For Subsonic, getCoverArt returns processed bytes that differ
+      //      from the raw embedded bytes in the audio file; using the
+      //      adapter's hash ensures the sync tag matches what the adapter
+      //      will compute on the next scan (consistency).
+      const artHash =
+        extractedHash !== undefined ? (source.artworkHash ?? extractedHash) : undefined;
       // Progressive hash write: when artwork is transferred, include the hash in the sync tag.
       // For transcode operations, the sync tag already exists — append the artwork hash.
       // For copy operations, no sync tag was written above, so create a minimal one
@@ -2298,7 +2205,9 @@ export class MusicPipeline implements SyncExecutor {
           this.device.writeSyncTag(track, { quality: 'copy', artworkHash: artHash });
         }
       } else if (!artHash && track.hasArtwork) {
-        // Defensive: artwork extraction returned null but track somehow has artwork — clean up
+        // Defensive: artwork extraction returned null but track somehow has artwork — clean up.
+        // Note we hit this branch for sink === 'noop'/'sidecar' too — but on those sinks
+        // track.hasArtwork is false (no bytes ever landed), so the guard is inert.
         this.device.removeTrackArtwork(track);
       }
     }
@@ -2360,8 +2269,12 @@ export class MusicPipeline implements SyncExecutor {
         return { bytesTransferred: 0, track: foundTrack };
       }
       const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
-      // Prefer the adapter's artwork hash for sync tag consistency (see transferToIpod comment)
-      const artHash = source.artworkHash ?? extractedHash;
+      // Suppress the syncTag.artworkHash claim when transferArtwork returned
+      // undefined — no bytes landed on the device (sink === 'noop' / 'sidecar').
+      // Writing a hash anyway would recreate the churn loop documented in
+      // doc-041 §3.6. See transferToIpod for the full rationale.
+      const artHash =
+        extractedHash !== undefined ? (source.artworkHash ?? extractedHash) : undefined;
       if (artHash && this.syncTagConfig) {
         if (foundTrack.syncTag) {
           foundTrack = this.device.writeSyncTag(foundTrack, { artworkHash: artHash });
@@ -2434,8 +2347,11 @@ export class MusicPipeline implements SyncExecutor {
     // for a full explanation of why this guard is necessary.
     if (artworkEnabled && source.hasArtwork !== false) {
       const extractedHash = await this.transferArtwork(foundTrack, artworkSourcePath, source);
-      // Prefer the adapter's artwork hash for sync tag consistency (see transferToIpod comment)
-      const artHash = source.artworkHash ?? extractedHash;
+      // Suppress the syncTag.artworkHash claim when transferArtwork returned
+      // undefined — see transferToIpod for the full rationale (doc-041 §3.6
+      // churn loop).
+      const artHash =
+        extractedHash !== undefined ? (source.artworkHash ?? extractedHash) : undefined;
       if (artHash && this.syncTagConfig) {
         // Progressive hash write: include artwork hash in sync tag for future change detection
         if (foundTrack.syncTag) {
@@ -2448,7 +2364,8 @@ export class MusicPipeline implements SyncExecutor {
           });
         }
       } else if (!artHash && foundTrack.hasArtwork) {
-        // Artwork extraction returned null but iPod track has artwork — clean up stale artwork
+        // Artwork extraction returned null but iPod track has artwork — clean up stale artwork.
+        // On 'noop'/'sidecar' sinks foundTrack.hasArtwork is false so this guard is inert.
         foundTrack = this.device.removeTrackArtwork(foundTrack);
         // Clear artworkHash from sync tag if present
         if (this.syncTagConfig && foundTrack.syncTag?.artworkHash) {

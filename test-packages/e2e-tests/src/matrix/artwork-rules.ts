@@ -33,7 +33,6 @@ import {
   HIRES_ARTIST,
   HIRES_COVER_SIZE,
 } from '@podkit/test-fixtures';
-import { isOggExtension } from '@podkit/core';
 import type { SyncOutput } from 'podkit/types';
 
 import { type IpodTarget, type SyncTarget } from '../targets';
@@ -50,7 +49,7 @@ import {
 } from './axes.js';
 import {
   FIXTURE_EMBEDS_ART,
-  SOURCE_EXTENSION,
+  artworkPrimary,
   artworkReaches,
   deviceAction,
   expectedFileArtworkSize,
@@ -80,8 +79,10 @@ import {
 
 /**
  * Devices the host artwork matrix sweeps. iPod (database artwork) and two
- * embedded-art mass-storage presets. Every cell asserts real behaviour — no
- * skipBug fences left in this matrix.
+ * embedded-art mass-storage presets. Every cell asserts real behaviour — the
+ * one remaining `skipBug` fence covers sidecar-primary devices (TASK-370), and
+ * `ms-generic` / `ms-echo-mini` are both embedded-primary so they exercise the
+ * full TASK-372 dispatch without skipping.
  */
 export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
@@ -260,48 +261,43 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
 }
 
 /**
- * The artwork matrix swept every mass-storage cell once the OGG/Opus → AAC
- * re-add loop was closed (the chained `-map_metadata` mapping in the
- * transcoder lifts Vorbis stream tags into the M4A output's global tags, so
- * incompatible-lossy sources now match their AAC outputs on re-scan).
+ * Post-TASK-372 fence shape.
  *
- * `prefer-copy` on mass-storage stays unskipped: its `preset-upgrade` loop is
- * a quality/preset-convergence defect this *artwork* matrix doesn't assert,
- * so artwork cells pass through it.
+ * The DeviceTrack.artworkSink primitive collapsed the old "embed via FFmpeg
+ * vs. taglib OGG carve-out vs. setArtworkFromData no-op" matrix into a single
+ * dispatch on `track.artworkSink`. The pipeline now picks the write path:
  *
- * **TASK-142 / TASK-370 mass-storage non-OGG fence.** The directory adapter
- * now detects peer cover.jpg and the executor adapter-fallback supplies bytes,
- * but `MassStorageTrack.setArtworkFromData` is a no-op for non-OGG outputs
- * (mass-storage-adapter.ts:436). The bytes are dropped; the device file stays
- * art-less. With `--check-artwork` off the directory adapter cannot pre-hash
- * the sidecar either, so `detectUpgrades` fires `artwork-added` on every
- * sync (no `source.artworkHash` to converge against `syncTag.artworkHash`).
- * Result: a permanent churn loop for `C-sidecar` / no-embed-format sources on
- * mass-storage non-OGG. Fenced as `skipBug` against TASK-370 (executor
- * sidecar device-write) — the matrix continues to assert iPod + OGG/Opus
- * carve-out cells where adapter fallback DOES converge.
+ *   - iPod (sink = 'database')       → `setArtworkFromData` always lands.
+ *   - mass-storage embedded primary  → `updateTrack({ embeddedPictureData })`
+ *     routes through node-taglib-sharp, which handles every container —
+ *     including non-OGG outputs that used to drop bytes. So
+ *     `ms-echo-mini` and `ms-generic` now pass adapter-fallback bytes
+ *     through to the device file regardless of format/scenario.
+ *   - mass-storage sidecar primary   → there is no `adapter.writeSidecar()`
+ *     yet; the dispatch returns `undefined` and the caller skips the
+ *     syncTag.artworkHash claim (no churn loop). Rockbox is the only
+ *     sidecar-primary device today and isn't in this matrix sweep, but if
+ *     it were added it would land here.
+ *
+ * Net effect: the old TASK-370 fence on `C-sidecar` × every mass-storage
+ * non-OGG cell (≈40 cells) lifts entirely. The only fence still needed is
+ * the sidecar-primary one — kept as a forward-defensive guard for when a
+ * future sweep adds rockbox. Today this returns null for every cell in
+ * ARTWORK_DEVICE_IDS (all embedded-primary).
  */
 export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
   const spec = DEVICE_SPEC_BY_ID[cell.device];
   if (spec.kind !== 'mass-storage') return null;
-  // Carve-out keyed on the OUTPUT extension: the OGG taglib embed path
-  // (pipeline.ts transferArtwork → updateTrack({embeddedPictureData})) fires
-  // only when `track.filePath` matches `isOggExtension` — i.e. the executor
-  // took the COPY action on an OGG/Opus source. Transcoded outputs (.m4a)
-  // never reach the taglib branch. Re-using podkit's own predicate keeps the
-  // fence aligned if it grows.
-  const action = deviceAction(cell.format, spec.capabilities, cell.pipeline, spec.kind);
-  // 'x' prefix avoids extname's dotfile edge case (`.ogg` would be read as a
-  // filename with no extension, not as `ext === '.ogg'`).
-  const oggCopyOutput = action === 'copy' && isOggExtension(`x${SOURCE_EXTENSION[cell.format]}`);
-  if (oggCopyOutput) return null;
-  // Adapter fallback only matters when the source body lacks embed — that's
-  // the C-sidecar scenario and no-embed-format cases. With every fixture
-  // format embed-capable today (FIXTURE_EMBEDS_ART all-true), the gap reduces
-  // to scenario === 'C-sidecar'.
+  // Embedded-primary mass-storage cells all pass post-TASK-372: taglib
+  // handles every container, so adapter-fallback bytes always land.
+  if (artworkPrimary(spec.capabilities) !== 'sidecar') return null;
+  // Sidecar-primary devices still have no device-write path. The dispatch
+  // returns undefined so syncTag.artworkHash is suppressed — but the cell
+  // still observes `deviceHasArtwork = false` where the reference model
+  // would predict true. Fence those until TASK-370 lands the writer.
   if (cell.scenario !== 'C-sidecar') return null;
   return skipBug(
-    'mass-storage non-OGG-copy output: setArtworkFromData no-op drops adapter-fallback bytes → device file art-less → artwork-added churn',
+    'sidecar-primary device-write deferred until adapter.writeSidecar() lands',
     'TASK-370'
   );
 }
@@ -313,12 +309,21 @@ export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
 /**
  * Directory adapter, swept across the device axis. The pinned codec pipeline
  * controls copy-vs-transcode (P2); the device's capabilities decide both that
- * action and whether art reaches the device. Only embedded art is visible (no
- * sidecar reads), and both the copy and transcode paths preserve/re-embed it,
- * so `deviceHasArtwork` mirrors the source's embed state on any device whose
- * `artworkSources` is non-empty. Predictions key off `target.capabilities`,
- * never the device name. The non-converging mass-storage cells are pruned by
- * `skipArtworkCell`, so every asserted cell is idempotent.
+ * action and whether art reaches the device. Predictions key off
+ * `target.capabilities`, never the device name.
+ *
+ * Post-TASK-372 the device-side dispatch is uniform across every embedded /
+ * database sink: every non-A scenario lands art on the device because the
+ * directory adapter's getArtwork fallback supplies sidecar / album-cover
+ * bytes whenever the audio body lacks embed, and `track.artworkSink` picks
+ * the write path that delivers those bytes (setArtworkFromData for iPod,
+ * updateTrack({ embeddedPictureData }) for embedded-primary mass-storage —
+ * which handles ALL containers via node-taglib-sharp, not just OGG). The
+ * iPod-vs-mass-storage split this predictor used to carry is gone.
+ *
+ * Sidecar-primary devices still fall out of the matrix via `skipArtworkCell`
+ * (TASK-370 will land `adapter.writeSidecar()`); the predictor doesn't need
+ * a branch for them.
  */
 export function predictDirectory(
   cell: PipelineDeviceCell,
@@ -329,59 +334,22 @@ export function predictDirectory(
   const action = deviceAction(format, spec.capabilities, pipeline, spec.kind);
   const store = spec.kind === 'ipod' ? 'database-artwork' : 'embedded-artwork';
 
-  // After TASK-142 the directory adapter detects peer cover.jpg/folder.jpg
-  // and feeds those bytes through `adapter.getArtwork` to the executor. How
-  // far the bytes reach the device depends on which write path the executor
-  // picks for the output file:
-  //
-  // - **iPod** (database-artwork): `track.setArtworkFromData` writes the
-  //   bytes into the iTunesDB on every cell where `cached.data` exists.
-  //   Adapter fallback closes the C-sidecar / no-embed-format gap → every
-  //   non-A album lands art on the device.
-  // - **Mass-storage**, OGG/Opus output (`action === 'copy'` on a device
-  //   that natively supports vorbis/opus): pipeline.ts:1491 takes a special
-  //   `updateTrack({ embeddedPictureData })` branch that goes through the
-  //   taglib-sharp METADATA_BLOCK_PICTURE writer, which DOES land bytes.
-  //   So OGG/Opus copies pick up adapter-fallback bytes.
-  // - **Mass-storage**, every other output: `MassStorageTrack.setArtworkFromData`
-  //   is a no-op (mass-storage-adapter.ts:436). The on-device file's
-  //   embedded picture comes only from FFmpeg passing the source picture
-  //   through transcode/copy, so the device has art only when the source
-  //   FILE BODY carried it (`sourceEmbedsArt`). Adapter-fallback bytes are
-  //   dropped. TASK-370 (sidecar device-write) closes this gap.
-  const sourceFileEmbeds = sourceEmbedsArt(scenario, format);
+  // The directory adapter's getArtwork fallback (TASK-142) closes the gap
+  // between "source file embed" and "album has art" — the executor picks up
+  // peer cover.jpg / folder.jpg bytes whenever the audio body lacks embed.
+  // TASK-372 then routes those bytes through the right write path for the
+  // device's artworkSink, so every non-A album lands art on any device with
+  // a non-empty artworkSources list.
   const albumHasArt = scenario !== 'A-none';
-  // 'x' prefix avoids extname's dotfile edge case (`.ogg` would be read as a
-  // filename with no extension, not as `ext === '.ogg'`).
-  const oggCopyPath = action === 'copy' && isOggExtension(`x${SOURCE_EXTENSION[format]}`);
-  let deviceHasArt: boolean;
-  if (spec.kind === 'ipod') {
-    deviceHasArt = artworkReaches(albumHasArt, spec.capabilities);
-  } else if (oggCopyPath) {
-    deviceHasArt = artworkReaches(albumHasArt, spec.capabilities);
-  } else {
-    deviceHasArt = artworkReaches(sourceFileEmbeds, spec.capabilities);
-  }
+  const deviceHasArt = artworkReaches(albumHasArt, spec.capabilities);
 
   let reason: string;
   if (scenario === 'A-none') {
     reason = `no art anywhere → device gets none (${action} path)`;
   } else if (scenario === 'C-sidecar') {
-    if (spec.kind === 'ipod') {
-      reason = `sidecar detected by adapter → fallback writes cover.jpg bytes into the iTunesDB (${action} path)`;
-    } else if (oggCopyPath) {
-      reason = `sidecar bytes from adapter → ${format} copy path embeds via taglib METADATA_BLOCK_PICTURE (${action})`;
-    } else {
-      reason = `sidecar detected but mass-storage setArtworkFromData is a no-op for ${format} ${action} → device file stays art-less; TASK-370 closes the gap`;
-    }
+    reason = `sidecar detected by adapter → fallback bytes routed via track.artworkSink to the device (${store}, ${action} path)`;
   } else if (!FIXTURE_EMBEDS_ART[format]) {
-    if (spec.kind === 'ipod') {
-      reason = `${format} carries no embedded art in fixture → adapter fallback supplies the album cover (${action} path)`;
-    } else if (oggCopyPath) {
-      reason = `${format} ${action} → adapter fallback feeds the taglib embed path (${action})`;
-    } else {
-      reason = `${format} carries no embedded art in fixture → mass-storage adapter fallback is a no-op (${action} path) → device stays art-less`;
-    }
+    reason = `${format} carries no embedded art in fixture → adapter fallback supplies the album cover (${store}, ${action} path)`;
   } else {
     reason = `embedded art preserved through the ${action} path on a ${store} device`;
   }
@@ -419,16 +387,16 @@ export function predictDirectory(
  * device even though the file body carries none. A-none stays art-less
  * because the placeholder hash matches and getArtwork returns null.
  *
- * **iPod-only assumption.** `ScenarioFormatCell` has no device axis — the
- * docker matrix runs through `withTarget` which creates an `IpodTarget`. The
- * prediction below claims `deviceHasArtwork = albumHasArt` (every non-A
- * scenario lands art) because `setArtworkFromData` reliably writes the
- * iTunesDB on iPod. If a future docker matrix sweeps mass-storage Subsonic
- * targets, this predictor needs the same kind+OGG-carve-out branching that
- * `predictDirectory` carries — mass-storage non-OGG-copy outputs drop adapter
- * bytes (see `MassStorageTrack.setArtworkFromData`, TASK-371). Until then,
- * the device-kind branching is omitted as YAGNI but flagged here so the
- * limitation is not silent.
+ * **Device-axis coverage.** `ScenarioFormatCell` has no device axis — the
+ * docker matrix runs through `withTarget` which creates an `IpodTarget` —
+ * but the prediction's `deviceHasArtwork = albumHasArt` claim is now valid
+ * for any device whose `artworkSink` writes (database / embedded). TASK-372
+ * collapsed the per-container split: setArtworkFromData lands on iPod,
+ * updateTrack({ embeddedPictureData }) lands on every mass-storage embedded
+ * container via node-taglib-sharp. A future mass-storage Subsonic sweep
+ * still needs to filter sidecar-primary devices (the writer is deferred to
+ * TASK-370), but the iPod-only branching this predictor used to need is
+ * gone.
  */
 export function predictSubsonic(
   cell: ScenarioFormatCell,

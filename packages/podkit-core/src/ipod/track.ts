@@ -152,6 +152,14 @@ export class IpodTrackImpl implements IpodTrack {
   // Sync tag (parsed from comment)
   readonly syncTag: SyncTagData | null;
 
+  /**
+   * iPod always stores artwork in the iTunesDB ArtworkDB — `setArtworkFromData`
+   * is the canonical write path. Hardcoded here because the iPod adapter has
+   * no notion of artwork capability variation (every supported model writes
+   * the same database).
+   */
+  readonly artworkSink = 'database' as const;
+
   // Video-specific fields
   readonly tvShow?: string;
   readonly tvEpisode?: string;

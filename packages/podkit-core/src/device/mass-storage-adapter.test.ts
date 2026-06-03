@@ -480,6 +480,7 @@ describe('MassStorageTrack', () => {
       hasFile: true,
       compilation: false,
       managed: true,
+      artworkSink: 'embedded',
       ...overrides,
     });
   }

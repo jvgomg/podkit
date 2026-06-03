@@ -66,6 +66,7 @@ function createDeviceTrack(artist: string, title: string, album: string): Device
     hasFile: true,
     compilation: false,
     syncTag: null,
+    artworkSink: 'database',
     update: () => track,
     remove: () => {},
     copyFile: () => track,

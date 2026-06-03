@@ -185,6 +185,17 @@ export class MassStorageTrack implements DeviceTrack {
   // Sync tag (parsed from comment)
   readonly syncTag: SyncTagData | null;
 
+  /**
+   * Where this device stores artwork. Derived from `capabilities.artworkSources[0]`
+   * by {@link deriveArtworkSink} at adapter-construction time and threaded
+   * through every track instance — see DeviceTrack.artworkSink for the contract.
+   *
+   * Per-device, not per-track: the value is the same for every track on a
+   * given adapter instance. We carry it on the track so the pipeline can pick
+   * the write path without knowing which adapter created the track.
+   */
+  readonly artworkSink: 'embedded' | 'sidecar' | 'noop';
+
   // Video-specific (not used for audio-only devices, but required by interface)
   readonly tvShow?: string;
   readonly tvEpisode?: string;
@@ -228,6 +239,7 @@ export class MassStorageTrack implements DeviceTrack {
     compilation: boolean;
     mediaType?: number;
     managed: boolean;
+    artworkSink: 'embedded' | 'sidecar' | 'noop';
   }) {
     this.mountPoint = opts.mountPoint;
     this.contentRoots = opts.contentRoots ?? [DEFAULT_CONTENT_PATHS.musicDir];
@@ -254,6 +266,7 @@ export class MassStorageTrack implements DeviceTrack {
     this.compilation = opts.compilation ?? false;
     this.mediaType = opts.mediaType ?? 1; // 1 = audio
     this.managed = opts.managed;
+    this.artworkSink = opts.artworkSink;
     this.syncTag = parseSyncTag(this.comment);
   }
 
@@ -291,6 +304,7 @@ export class MassStorageTrack implements DeviceTrack {
       compilation: fields.compilation ?? this.compilation,
       mediaType: fields.mediaType ?? this.mediaType,
       managed: this.managed,
+      artworkSink: this.artworkSink,
     });
   }
 
@@ -325,6 +339,7 @@ export class MassStorageTrack implements DeviceTrack {
       compilation: this.compilation,
       mediaType: this.mediaType,
       managed: this.managed,
+      artworkSink: this.artworkSink,
     });
   }
 
@@ -412,6 +427,7 @@ export class MassStorageTrack implements DeviceTrack {
       compilation: this.compilation,
       mediaType: this.mediaType,
       managed: this.managed,
+      artworkSink: this.artworkSink,
     });
   }
 
@@ -461,6 +477,28 @@ export class MassStorageTrack implements DeviceTrack {
  * the async filesystem scan and caches the track list so that `getTracks()`
  * can be synchronous (matching the DeviceAdapter interface contract).
  */
+/**
+ * Map a device's primary artwork source (`capabilities.artworkSources[0]`) to
+ * the `artworkSink` carried by each track. The adapter computes this once at
+ * construction and threads the value through every `MassStorageTrack`.
+ *
+ * - `'embedded'`  → the device reads the file body (taglib write path).
+ * - `'sidecar'`   → the device reads a peer image (writer not yet implemented;
+ *                  pipeline treats as noop until a follow-up adds it).
+ * - empty list    → device has no artwork support → `'noop'` (suppresses both
+ *                  the write attempt and the `syncTag.artworkHash` claim).
+ *
+ * Per-device, not per-track: every track on an adapter instance shares the
+ * sink. We compute it once and snapshot it onto the track so the pipeline can
+ * dispatch on `track.artworkSink` without re-deriving from capabilities.
+ */
+function deriveArtworkSink(capabilities: DeviceCapabilities): 'embedded' | 'sidecar' | 'noop' {
+  const primary = capabilities.artworkSources[0];
+  if (primary === 'embedded') return 'embedded';
+  if (primary === 'sidecar') return 'sidecar';
+  return 'noop';
+}
+
 export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   readonly capabilities: DeviceCapabilities;
   readonly mountPoint: string;
@@ -473,6 +511,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
   private readonly pathTemplate: string;
   private readonly metadataReader: MetadataReader;
   private readonly tagWriter: TagWriter;
+  private readonly artworkSink: 'embedded' | 'sidecar' | 'noop';
 
   /**
    * Pending textual-tag writes, keyed by relative file path.
@@ -529,6 +568,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     this.manifest = createEmptyManifest();
     this.managedFiles = new Set();
     this.allocatedPaths = new Set();
+    this.artworkSink = deriveArtworkSink(this.capabilities);
   }
 
   private getContentRoots(): string[] {
@@ -697,6 +737,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       compilation: input.compilation ?? false,
       mediaType: input.mediaType ?? 1,
       managed: true,
+      artworkSink: this.artworkSink,
     });
 
     this.tracks.push(track);
@@ -1041,6 +1082,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       compilation: track.compilation,
       mediaType: track.mediaType,
       managed: track.managed,
+      artworkSink: this.artworkSink,
     });
 
     // Replace in our track list (use old filePath to find the entry)
@@ -1385,6 +1427,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       hasFile: true,
       compilation: common.compilation ?? false,
       managed,
+      artworkSink: this.artworkSink,
     });
   }
 
@@ -1429,6 +1472,7 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       compilation: false,
       managed,
       mediaType,
+      artworkSink: this.artworkSink,
     });
   }
 }

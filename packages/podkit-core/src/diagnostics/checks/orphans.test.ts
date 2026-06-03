@@ -39,6 +39,7 @@ function makeTrack(filePath: string): IpodTrack {
     hasArtwork: false,
     hasFile: true,
     compilation: false,
+    artworkSink: 'database',
     update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
     copyFile: mock(() => ({}) as IpodTrack),

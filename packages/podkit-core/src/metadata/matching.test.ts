@@ -83,6 +83,7 @@ function createDeviceTrack(
     hasArtwork: false,
     hasFile: true,
     compilation: false,
+    artworkSink: 'database',
     // Methods (stubs for testing)
     update: () => track,
     remove: () => {},

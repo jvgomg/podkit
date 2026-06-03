@@ -173,6 +173,31 @@ export interface DeviceTrack {
   // Sync tag (parsed from device-specific storage, e.g. comment field)
   readonly syncTag: SyncTagData | null;
 
+  /**
+   * Where this device stores artwork for this track. The pipeline uses this
+   * to pick the correct write path AND to decide whether claiming success
+   * via `syncTag.artworkHash` is honest:
+   *
+   *   - `'database'` → `setArtworkFromData` writes the bytes into a device-
+   *     side database (e.g. iPod iTunesDB / ArtworkDB).
+   *   - `'embedded'` → `updateTrack({ embeddedPictureData })` routes through
+   *     the mass-storage tag writer (node-taglib-sharp) and embeds the
+   *     picture in the file body.
+   *   - `'sidecar'`  → a peer image (e.g. `cover.jpg`) is the device's
+   *     artwork. The write path is not yet implemented; the pipeline treats
+   *     this as a noop until a follow-up adds `writeSidecar()`.
+   *   - `'noop'`     → device has no artwork support (empty
+   *     `artworkSources`). The pipeline must skip BOTH the write AND the
+   *     `syncTag.artworkHash` write — claiming success when no bytes landed
+   *     causes the next sync to re-fire `artwork-added` on every track (the
+   *     churn loop documented in doc-041 §3.6).
+   *
+   * Derived from device capabilities at track-construction time. Per-device,
+   * not per-track: every track from the same adapter instance carries the
+   * same value (mass-storage's `artworkSources[0]` is device-level).
+   */
+  readonly artworkSink: 'database' | 'embedded' | 'sidecar' | 'noop';
+
   // Video-specific
   readonly tvShow?: string;
   readonly tvEpisode?: string;
