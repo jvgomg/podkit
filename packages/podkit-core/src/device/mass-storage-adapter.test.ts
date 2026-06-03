@@ -2130,6 +2130,95 @@ describe('MassStorageAdapter', () => {
 
       fs.rmSync(sourceDir, { recursive: true, force: true });
     });
+
+    // ---------------------------------------------------------------------
+    // Save-failure behaviour pinning (doc-041 §4.2)
+    //
+    // These tests lock the CURRENT picture-write failure semantics so any
+    // future refactor (TASK-371, the picture-write normalization work) has
+    // to intentionally change them rather than slip the semantics silently.
+    //
+    // Current behaviour (doc-041 §2.1 Stage 3 / §3.1 / §3.5):
+    //   - Promise.all over all pending writes (fail-fast on first rejection)
+    //   - pendingPictureWrites map NOT cleared on throw
+    //   - All writes have started by the time the throw surfaces (the
+    //     promises are constructed synchronously in `.map()`)
+    //   - Next save() re-issues every entry — byte-idempotent on the
+    //     writer side so the succeeded ones are harmless re-writes
+    // ---------------------------------------------------------------------
+
+    test('save() rejects when a picture write fails (fail-fast on first error)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.opus');
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/02.opus');
+
+      const failingTagWriter: TagWriter = {
+        async writeTags() {},
+        async writePicture(filePath: string) {
+          if (filePath.endsWith('01.opus')) {
+            throw new Error('simulated picture-write failure for 01.opus');
+          }
+        },
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.opus': { title: 'One', artist: 'Artist', album: 'Album' },
+          '02.opus': { title: 'Two', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter: failingTagWriter,
+      });
+
+      const [t1, t2] = adapter.getTracks();
+      adapter.updateTrack(t1!, { embeddedPictureData: Buffer.from('one-bytes') });
+      adapter.updateTrack(t2!, { embeddedPictureData: Buffer.from('two-bytes') });
+
+      // Pin: save() rejects with the underlying error (no typed wrapper yet,
+      // doc-041 §3.3). The error categorizer relies on the path-in-message
+      // heuristic to classify as `copy`.
+      await expect(adapter.save()).rejects.toThrow(/simulated picture-write failure/);
+    });
+
+    test('save() leaves pendingPictureWrites populated on failure (next save retries)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.opus');
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/02.opus');
+
+      let firstCallSeen = false;
+      const tagWriter: TagWriter & { pictureCalls: string[] } = {
+        pictureCalls: [],
+        async writeTags() {},
+        async writePicture(filePath: string) {
+          this.pictureCalls.push(filePath);
+          if (!firstCallSeen) {
+            firstCallSeen = true;
+            // Only the first save() throws — second save() succeeds, so we
+            // can observe the retry.
+            throw new Error(`first attempt fails: ${filePath}`);
+          }
+        },
+      };
+
+      const adapter = await MassStorageAdapter.open(mountPoint, TEST_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.opus': { title: 'One', artist: 'Artist', album: 'Album' },
+          '02.opus': { title: 'Two', artist: 'Artist', album: 'Album' },
+        }),
+        tagWriter,
+      });
+
+      const [t1, t2] = adapter.getTracks();
+      adapter.updateTrack(t1!, { embeddedPictureData: Buffer.from('one-bytes') });
+      adapter.updateTrack(t2!, { embeddedPictureData: Buffer.from('two-bytes') });
+
+      // First save() throws — but ALL writes were issued (Promise.all races).
+      await expect(adapter.save()).rejects.toThrow(/first attempt fails/);
+      const callsAfterFirst = tagWriter.pictureCalls.length;
+      expect(callsAfterFirst).toBeGreaterThanOrEqual(1);
+
+      // Pin: map NOT cleared on throw → second save() re-issues every entry.
+      // (Today's behaviour: BOTH entries re-fire because the map survived.)
+      await adapter.save();
+      expect(tagWriter.pictureCalls.length).toBeGreaterThan(callsAfterFirst);
+    });
   });
 
   describe('v1 manifest', () => {

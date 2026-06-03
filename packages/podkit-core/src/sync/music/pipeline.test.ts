@@ -16,6 +16,7 @@
 import { describe, expect, it, mock, beforeEach } from 'bun:test';
 import {
   MusicPipeline,
+  PipelineBusyError,
   createMusicPipeline,
   executeMusicPlan,
   getFileTypeLabel,
@@ -3768,5 +3769,115 @@ describe('adapter artwork fallback', () => {
     // First track misses embed → triggers fallback → caches the bytes.
     // Subsequent tracks hit the album cache and DO NOT re-call getArtwork.
     expect(getArtworkCalls).toBe(1);
+  });
+});
+
+// =============================================================================
+// PipelineBusyError: defensive concurrent-execute guard for library consumers
+// =============================================================================
+
+describe('PipelineBusyError concurrent-execute guard', () => {
+  let db: MockDeviceAdapter;
+  let transcoder: MockTranscoder;
+
+  beforeEach(() => {
+    db = createMockDeviceAdapter();
+    transcoder = createMockTranscoder();
+  });
+
+  it('rejects a second execute() while the first iterator is in flight', async () => {
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'T1', 'Album', 'mp3') },
+      ] as SyncOperation[],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+
+    // Start the first execute() and DO NOT consume the iterator yet — that
+    // keeps `executing = true` on the instance.
+    const iter = executor.execute(plan, { dryRun: true });
+    const firstStep = (iter as AsyncGenerator<ExecutorProgress>).next();
+
+    // Second concurrent execute() must throw the typed error synchronously
+    // (well, on the first .next() — async generators wrap the throw).
+    let thrown: unknown;
+    try {
+      const second = executor.execute(plan, { dryRun: true });
+      await (second as AsyncGenerator<ExecutorProgress>).next();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(PipelineBusyError);
+    expect((thrown as Error).message).toContain('one MusicPipeline per sync');
+
+    // Drain the first iterator so executing flips back to false.
+    await firstStep;
+    for await (const _p of iter as AsyncGenerator<ExecutorProgress>) {
+      // consume
+    }
+  });
+
+  it('allows sequential execute() reuse on the same instance', async () => {
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        { type: 'add-direct-copy', source: createCollectionTrack('A', 'T1', 'Album', 'mp3') },
+      ] as SyncOperation[],
+    };
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+
+    for await (const _p of executor.execute(plan, { dryRun: true })) {
+      // consume first
+    }
+    // After the first iterator finishes, executing must be false so a second
+    // call succeeds on the same instance.
+    for await (const _p of executor.execute(plan, { dryRun: true })) {
+      // consume second
+    }
+    // Made it here without throwing — sequential reuse works.
+    expect(true).toBe(true);
+  });
+
+  it('releases the busy flag when the first execute() throws (instance not stranded)', async () => {
+    // Force a throw during the iterator's first step by passing a transcoder
+    // that rejects. We use a real plan (not dry-run) so executePipeline runs.
+    const plan: SyncPlan = {
+      ...createEmptyPlan(),
+      operations: [
+        {
+          type: 'add-transcode',
+          source: createCollectionTrack('A', 'T1', 'Album', 'flac'),
+          preset: { name: 'high' },
+        },
+      ] as SyncOperation[],
+    };
+
+    transcoder.transcode = mock(async () => {
+      throw new Error('forced transcode failure for guard test');
+    });
+
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+
+    // Drain the iterator — the inner error is caught and surfaced as a
+    // 'failed' progress event (continueOnError defaults false but the
+    // pipeline catches transcode errors per-op). Doesn't matter for this
+    // test; what matters is that executing flips back to false in finally.
+    try {
+      for await (const _p of executor.execute(plan)) {
+        // consume
+      }
+    } catch {
+      // either path is fine; we just want to verify the flag is reset
+    }
+
+    // A subsequent execute() must NOT throw PipelineBusyError. If the flag
+    // had been left set, this would throw.
+    for await (const _p of executor.execute(plan, { dryRun: true })) {
+      // consume
+    }
+    expect(true).toBe(true);
   });
 });

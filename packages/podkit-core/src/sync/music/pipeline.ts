@@ -680,10 +680,52 @@ function sleep(ms: number): Promise<void> {
 // =============================================================================
 
 /**
+ * Thrown when {@link MusicPipeline.execute} is invoked while another
+ * `execute()` is in-flight on the same instance.
+ *
+ * `MusicPipeline` stores per-execute state on `this` (`adapter`,
+ * `transferMode`, etc.). Two overlapping calls would silently clobber each
+ * other's state — this error catches the misuse loudly. Allocate one
+ * pipeline per sync (the internal pattern in `sync/music/handler.ts`).
+ */
+export class PipelineBusyError extends Error {
+  constructor() {
+    super(
+      'MusicPipeline.execute() invoked while another execute() is in-flight on the same instance. ' +
+        'MusicPipeline is not safe for concurrent execute() calls because per-call state ' +
+        '(adapter, transferMode, artworkResize, audioNormalization, syncTagConfig) is stored on ' +
+        '`this`. Allocate one MusicPipeline per sync (see packages/podkit-core/src/sync/music/handler.ts ' +
+        'for the internal pattern). Sequential reuse (`await pipeline.execute(...); pipeline.execute(...);`) ' +
+        'is fine — only overlapping calls trigger this error.'
+    );
+    this.name = 'PipelineBusyError';
+  }
+}
+
+/**
  * Three-stage music sync pipeline (ADR-011)
  *
  * Handles execution of sync operations including transcoding, copying,
  * removing, updating metadata, and upgrading tracks on the device.
+ *
+ * ## Concurrency contract — IMPORTANT FOR LIBRARY CONSUMERS
+ *
+ * A `MusicPipeline` instance stores per-execute state on `this` (`adapter`,
+ * `transferMode`, `artworkResize`, ...). It is **NOT safe** for two
+ * `execute()` calls to overlap on the same instance — the second call's
+ * options would clobber the first's, silently corrupting both syncs.
+ *
+ * The internal CLI/handler pattern (`sync/music/handler.ts`) sidesteps this
+ * by allocating a fresh `MusicPipeline` for every `executeOperations()` call.
+ * Library consumers should do the same — one instance per sync, sequential
+ * execution.
+ *
+ * For defensive use the class throws {@link PipelineBusyError} when an
+ * `execute()` is invoked while another is in-flight on the same instance.
+ * Sequential reuse (`await execute(); execute();`) is fine — the in-flight
+ * flag clears when the previous async iterator finishes.
+ *
+ * @see doc-041 §3.6 + §5.7 for the rough-edge documentation.
  */
 export class MusicPipeline implements SyncExecutor {
   private device: DeviceAdapter;
@@ -698,6 +740,12 @@ export class MusicPipeline implements SyncExecutor {
   private artworkResize?: number;
   /** Audio normalization mode for the target device (set during execute()) */
   private audioNormalization?: string;
+  /**
+   * True while an `execute()` iterator is in-flight. Used by the defensive
+   * guard in `execute()` to throw a {@link PipelineBusyError} on overlap,
+   * since per-execute state on `this` is not safe for concurrent calls.
+   */
+  private executing = false;
   /** Album-level artwork cache — deduplicates extraction across tracks on the same album */
   private artworkCache = new AlbumArtworkCache();
   /**
@@ -803,6 +851,16 @@ export class MusicPipeline implements SyncExecutor {
     plan: SyncPlan,
     options: ExtendedExecuteOptions = {}
   ): AsyncIterable<ExecutorProgress> {
+    // Defensive guard: per-execute state lives on `this`, so a second
+    // concurrent execute() would silently clobber the first. Throw early
+    // with an actionable message instead of corrupting both syncs. The
+    // flag is flipped to true only AFTER any code that could throw —
+    // it's the first thing inside the try/finally below — so a setup
+    // failure can't strand the instance in a permanently-busy state.
+    if (this.executing) {
+      throw new PipelineBusyError();
+    }
+
     const {
       dryRun = false,
       continueOnError = false,
@@ -854,11 +912,15 @@ export class MusicPipeline implements SyncExecutor {
         op.type === 'add-optimized-copy' ||
         op.type === 'upgrade-optimized-copy'
     );
-    if (needsTempDir && !dryRun) {
-      await mkdir(transcodeDir, { recursive: true });
-    }
-
     try {
+      // Flip the busy flag now — paired with `this.executing = false` in the
+      // finally below. Setting it INSIDE try guarantees the finally runs.
+      this.executing = true;
+
+      if (needsTempDir && !dryRun) {
+        await mkdir(transcodeDir, { recursive: true });
+      }
+
       // In dry-run mode, use sequential execution (no actual work to pipeline)
       if (dryRun) {
         yield* this.executeDryRun(plan, totalBytes);
@@ -886,6 +948,11 @@ export class MusicPipeline implements SyncExecutor {
           // Ignore cleanup errors
         }
       }
+      // Release the concurrent-execute guard. Reset in finally so an
+      // exception (including PipelineBusyError itself, though it short-
+      // circuits before the flag flips) or early `break` from the iterator
+      // consumer cannot leave the instance permanently busy.
+      this.executing = false;
     }
   }
 

@@ -147,6 +147,7 @@ export type {
 } from './sync/music/pipeline.js';
 export {
   MusicPipeline,
+  PipelineBusyError,
   createMusicPipeline,
   executeMusicPlan,
   getMusicOperationDisplayName,
