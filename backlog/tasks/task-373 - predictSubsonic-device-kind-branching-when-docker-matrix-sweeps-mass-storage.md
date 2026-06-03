@@ -1,9 +1,10 @@
 ---
 id: TASK-373
 title: 'predictSubsonic: device-kind branching when docker matrix sweeps mass-storage'
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-02 16:01'
+updated_date: '2026-06-03 21:36'
 labels:
   - testing
   - e2e
@@ -55,3 +56,13 @@ Building the device-kind branching defensively now produces untested code (no do
 
 TASK-371 (mass-storage non-OGG taglib embed) and TASK-372 (artworkSink primitive) may close the underlying gap before this task even becomes relevant — in which case this task can be deleted as obsolete.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Obsolete on arrival. The underlying gap this task was hedging against (mass-storage `MassStorageTrack.setArtworkFromData` no-op causing predictSubsonic to predict wrong for hypothetical mass-storage Subsonic sweeps) was closed by TASK-372: the artworkSink dispatch lifts the no-op and embed writes work on all containers via taglib.
+
+`predictSubsonic`'s JSDoc still notes the iPod-only assumption — the cell type `ScenarioFormatCell` has no device axis. If a future docker matrix sweeps mass-storage Subsonic, `predictSubsonic` should mirror `predictDirectory`'s new single-branch logic (`deviceHasArt = artworkReaches(albumHasArt, caps)`), not the old per-kind/OGG-carve-out tree.
+
+No code changes needed today. Closing as obsolete rather than deleting the task file so the cross-reference from doc-041 + TASK-142 backlog notes resolves.
+<!-- SECTION:FINAL_SUMMARY:END -->

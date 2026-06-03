@@ -1,10 +1,10 @@
 ---
 id: TASK-356
 title: E2E sync matrix testing strategy
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-05-28 07:59'
-updated_date: '2026-05-28 11:46'
+updated_date: '2026-06-03 21:38'
 labels:
   - testing
   - e2e
@@ -44,9 +44,9 @@ TASK-355 (artwork bugs) is the artwork-specific predecessor that proved the patt
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 All phase subtasks (P1–P5) reach Done
-- [ ] #2 doc-039 kept in sync as axes/reference-model evolve during implementation
-- [ ] #3 Decision-assertion PRD task filed and linked
+- [x] #1 All phase subtasks (P1–P5) reach Done
+- [x] #2 doc-039 kept in sync as axes/reference-model evolve during implementation
+- [x] #3 Decision-assertion PRD task filed and linked
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -65,3 +65,17 @@ TASK-355 (artwork bugs) is the artwork-specific predecessor that proved the patt
 
 **Workflow that worked:** typecheck (`bun run typecheck --filter @podkit/e2e-tests`) + oxlint, then run host matrices (`bun run test:e2e -- art-matrix`), then docker (`bun run test:docker -- art-matrix.docker`), commit per phase. doc-039 is the source of truth — keep it in sync as axes are added.
 <!-- SECTION:NOTES:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+All three umbrella ACs satisfied.
+
+**AC #1** All phase subtasks (P1–P5) reach Done: ✔ closed prior (TASK-356.01–.05). P6–P8 (TASK-356.07–.09) and TASK-356.06 (Subsonic sidecar) also closed.
+
+**AC #2** doc-039 kept in sync: ✔ updated through every phase. Most recently TASK-372 / TASK-371 / TASK-370 added the "device-side write dispatch" section + updated the matrix-prediction summary to reflect that `predictDirectory` collapsed to a single branch and `skipArtworkCell` retired all TASK-370 fences.
+
+**AC #3** Decision-assertion PRD filed and linked: ✔ TASK-357 (doc-040) landed; matrix consumes `json.decisions.*` and per-op `inputCodec`/`outputCodec`.
+
+The matrix harness has now grown to host: artwork (host + docker), codec decision matrix, transfer-mode × artwork, artwork-removed change, artwork resize, compilation/album-cache, config inheritance (TASK-356.08), CLI overrides (TASK-356.09). Each cell consumes the typed `SkipDecision` so structural vs `[BUG]` skips are visible. Six rough-edge follow-ups (TASK-374–381) anchored to doc-041 carry the remaining hardening work without polluting the matrix umbrella.
+<!-- SECTION:FINAL_SUMMARY:END -->

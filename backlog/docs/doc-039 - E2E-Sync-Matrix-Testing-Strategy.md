@@ -242,21 +242,27 @@ TASK-142 closed the **source-side** sidecar gap that the existing matrices docum
 
 **Reference-model branches (`reference-model.ts`):**
 
-- `artworkPrimary(capabilities)` returns `'embedded' | 'sidecar' | 'database'` from `artworkSources[0]`.
-- `fileArtworkSurvives` gained an explicit **sidecar-primary branch** returning `false` (per doc-012: the cover should land in a peer `cover.jpg`, not the audio body).
-- `expectedSidecarSize(sourceSize, capabilities)` documents the spec for the sidecar-write task — present in the model for callers to consume once TASK-370 ships.
+- `artworkPrimary(capabilities)` returns `'embedded' | 'sidecar' | 'database'` from `artworkSources[0]`. Throws on unrecognised values rather than silently defaulting.
+- `fileArtworkSurvives` now has explicit branches for embedded, sidecar (mirrors database — observational per the JSDoc caveat), and database.
+- `expectedSidecarSize(sourceSize, capabilities)` consumed by the resize-matrix's sidecar predictions (TASK-370 landed).
 
-**Matrix prediction updates:**
+## Implementation status (TASK-372/371/370 landed: device-side write dispatch)
 
-- `predictDirectory` rewritten: iPod gets art on every non-A scenario (adapter fallback → `setArtworkFromData` → iTunesDB). Mass-storage gets art only when the source **file body** carries embed, **except** for the OGG/Opus copy path (`isOggExtension(track.filePath)` + `artworkResize` set), which calls `updateTrack({ embeddedPictureData })` via the taglib-sharp writer and therefore picks up adapter-fallback bytes. The carve-out is keyed off the executor's output extension, not the source format.
-- `predictSubsonic` rewritten in the same shape — non-A scenarios land art on the device via embed extract OR API fallback. `predictSubsonicChange` is unchanged (the change matrix already exercises the hash side).
-- `skipArtworkCell` now `skipBug(TASK-370)`-fences mass-storage non-OGG-copy `C-sidecar` cells (~60 cells across the device sweep). The bytes reach the executor but `MassStorageTrack.setArtworkFromData` is a no-op for non-OGG containers, so the device file stays art-less and `detectUpgrades` fires `artwork-added` on every sync (no `source.artworkHash` to converge with `--check-artwork` off). The fence makes the deferred work visible — TASK-370 (executor sidecar device-write + rockbox matrix sweep) lifts the fence.
+The TASK-142 source-side adapter fallback exposed three device-side gaps that landed sequentially in three commits:
 
-**TASK-370 (deferred work, blocked by production):**
+**TASK-372 (commit 50a6247f) — `DeviceTrack.artworkSink` primitive.** `DeviceTrack` gains `readonly artworkSink: 'database' | 'embedded' | 'sidecar' | 'noop'`. IpodTrack hardcodes `'database'`; MassStorageTrack derives from `capabilities.artworkSources[0]`. `MusicPipeline.transferArtwork` switches on the sink — no extension-based branching, `isOggExtension` guard removed from the executor (still exported for matrix predicate reuse). The 'noop' branch returns undefined; callers suppress `syncTag.artworkHash` so the documented churn loop (doc-041 §3.6) breaks at its root. Sonnet review caught + deleted three dead methods (`executeOperation`/`executeTranscode`/`executeCopy`) that would have silently re-introduced the churn loop if re-wired.
 
-- Extend the executor with a sidecar-write path for `artworkPrimary === 'sidecar'`: strip embedded art on transcode/copy, write a device-resolution peer `cover.jpg`.
-- Add `ms-rockbox` to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` (the reference-model branches are already in place; the matrix sweep blocks on production).
-- Audit whether the mass-storage non-OGG `setArtworkFromData` no-op deserves the same treatment (post-process tag write per container) so the TASK-370 fence narrows to truly-sidecar-only devices.
+**TASK-371 (commit fa8f33f2) — embed write unified via the 'embedded' sink.** Closed as side-effect of TASK-372. The taglib-sharp `writePicture` path handles every container (FLAC/MP3/M4A/AIFF/WAV/OGG/Opus); the OGG-only carve-out in `pipeline.transferArtwork` is gone. `MassStorageTrack.setArtworkFromData` remains a no-op on the interface but is unreachable from the live pipeline.
+
+**TASK-370 (commit 9465faf9) — 'sidecar' sink wired through MassStorageAdapter.** `writeSidecar(track, imageData)` queues per-album-dir into `pendingSidecarWrites`; `save()` Stage 4 flushes via `Promise.allSettled` + typed `SidecarWriteError` (collect-and-aggregate — per-album failures don't black-hole the rest of the library). Atomic writes via tmp + fsync + rename (doc-041 §7.2). `ms-rockbox` added to `art-matrix-transfer` (24 → 48 cells) and `art-matrix-resize` (45 → 60 cells); both assert new `sidecarPresent` + `sidecarSize` signals probed via new `probeSidecarArtwork(musicRoot, albumDir)` helper.
+
+**Matrix predictions after this sequence:**
+
+- `predictDirectory` collapsed to a single branch: `deviceHasArt = artworkReaches(albumHasArt, caps)`. The old iPod-vs-mass-storage / OGG-carve-out tree is gone; the artworkSink dispatch makes every embed-capable / database / sidecar device a peer.
+- `predictSubsonic`'s JSDoc still notes the iPod-only assumption — `ScenarioFormatCell` has no device axis. TASK-373 closed obsolete on arrival; the predictor would need the same single-branch logic if a future docker matrix sweeps mass-storage Subsonic.
+- `skipArtworkCell` returns null for every currently-swept cell. The TASK-370 fence has been fully retired (was 28 → 0). Function signature retained for future regressions.
+
+**Follow-ups anchored to doc-041:** TASK-374 (device-profile sidecar filename preset), TASK-375 (podkit doctor orphan sidecar cleanup), TASK-376 (atomic on-file writes for picture writes — sidecars got the treatment, picture writes still need it), TASK-377 (normalise picture-write flush to match the sidecar collect-and-aggregate shape), TASK-378–381 (free-space probe / device lock / save-failure matrix / IpodAdapter typed result).
 
 ## Tradeoffs & risks
 

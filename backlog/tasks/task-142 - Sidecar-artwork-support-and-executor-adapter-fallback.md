@@ -4,7 +4,7 @@ title: Sidecar artwork support and executor adapter fallback
 status: In Progress
 assignee: []
 created_date: '2026-03-17 14:58'
-updated_date: '2026-06-02 14:44'
+updated_date: '2026-06-03 21:36'
 labels:
   - enhancement
   - artwork
@@ -61,7 +61,7 @@ When a directory has `cover.jpg`/`folder.jpg` alongside audio files but no embed
 - [x] #4 Integration tests for executor adapter fallback
 - [x] #5 Integration tests for directory sidecar detection
 - [x] #6 test/fixtures/audio/multi-format/generate.sh cover.jpg creation uncommented
-- [ ] #7 E2E matrix reference model gains a sidecar-primary branch when this lands: `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives` and `expectedFileArtworkSize` currently only branch on embedded vs database (sidecar-primary falls through to database, untested); rockbox is added to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` to assert the executor's sidecar transfer-mode behaviour cell-for-cell.
+- [x] #7 E2E matrix reference model gains a sidecar-primary branch when this lands: `test-packages/e2e-tests/src/matrix/reference-model.ts` `fileArtworkSurvives` and `expectedFileArtworkSize` currently only branch on embedded vs database (sidecar-primary falls through to database, untested); rockbox is added to `art-matrix-transfer.test.ts` and `art-matrix-resize.test.ts` to assert the executor's sidecar transfer-mode behaviour cell-for-cell.
 <!-- AC:END -->
 
 ## Implementation Notes
@@ -92,4 +92,8 @@ These are documentation/test artifacts of the gap, not a separate fix; this task
 **Verification:** typecheck clean; 2868 unit pass / 5 skip / 0 fail; host artwork matrices 441 pass / 60 skip (`skipBug TASK-370`) / 0 fail; docker subsonic + change matrices 96 pass / 0 fail; full `bun run test:e2e` 33/33 green.
 
 **Sonnet reviews (2):** first pass caught per-album memoisation, unconditional placeholder probe, byte-cache reuse, stale Future-comment, Buffer.from redundancy, getOptions simplification — all applied. Second pass on cleanup caught dead overwrite branch in `cacheArtworkBytes`, duplicated OGG predicate, re-fetch documentation, extname dotfile comment — all applied.
+
+## TASK-142 AC #7 closure (2026-06-03)
+
+The reference-model sidecar-primary branch + rockbox sweep landed across TASK-372 (commit 50a6247f) and TASK-370 (commit 9465faf9). `artworkPrimary`, `fileArtworkSurvives` sidecar branch, `expectedSidecarSize` are in place. `ms-rockbox` is in `RESIZE_DEVICE_IDS` (60 resize cells) and `TRANSFER_ART_DEVICE_IDS` (48 transfer cells). All cells assert `fileHasArt` per transfer-mode rules AND new `sidecarPresent`/`sidecarSize` signals via the new `probeSidecarArtwork` helper. All AC criteria for TASK-142 are now complete.
 <!-- SECTION:NOTES:END -->

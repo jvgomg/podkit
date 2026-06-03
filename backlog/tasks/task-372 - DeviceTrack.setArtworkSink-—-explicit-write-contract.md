@@ -1,9 +1,10 @@
 ---
 id: TASK-372
 title: DeviceTrack.setArtworkSink() — explicit write contract
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-02 08:14'
+updated_date: '2026-06-03 21:36'
 labels:
   - enhancement
   - architecture
@@ -93,3 +94,21 @@ switch (track.artworkSink) {
 
 TASK-142 scope was "source-side adapter fallback". This is a device-side refactor that the source-side fix made visible — but it's an interface change touching every device adapter, ADR-worthy in its own right.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed in commit 50a6247f — `feat(core): DeviceTrack.artworkSink + pipeline dispatch (TASK-372)`.
+
+All four acceptance bullets met:
+- `DeviceTrack.artworkSink` populated on every concrete track impl (IpodTrack = always 'database'; MassStorageTrack derives from `capabilities.artworkSources[0]`).
+- `MusicPipeline.transferArtwork` switches on `artworkSink`; no extension-based branching. `isOggExtension` guard removed from the executor (still exported for matrix consumers).
+- `noop` writes no `syncTag.artworkHash` — dedicated regression test in pipeline.test.ts pins the doc-041 §3.6 churn loop is broken.
+- E2E artwork matrix green (501 host cells); skipBug TASK-370 fence narrowed to sidecar-primary devices (zero currently swept → zero fenced).
+
+Sonnet review caught and fixed:
+- P1: dead `executeOperation`/`executeTranscode`/`executeCopy` methods that discarded `transferArtwork`'s return value (would silently re-introduce the churn loop if re-wired). Deleted.
+- P2: `artworkPrimary` implicit fallback to 'database' — made explicit with throw on unrecognised values.
+
+Closed TASK-371 as a side effect (the 'embedded' sink now routes through taglib for all containers). TASK-370's 'sidecar' sink wiring landed in commit 9465faf9.
+<!-- SECTION:FINAL_SUMMARY:END -->

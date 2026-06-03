@@ -1,9 +1,10 @@
 ---
 id: TASK-370
 title: Executor sidecar device-write + rockbox matrix sweep (TASK-142 follow-up)
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-01 22:10'
+updated_date: '2026-06-03 21:36'
 labels:
   - enhancement
   - artwork
@@ -54,9 +55,38 @@ TASK-142 scope was "executor adapter fallback + directory sidecar detection". Ad
 
 ## Acceptance Criteria
 <!-- AC:BEGIN -->
-- [ ] #1 #1 Executor writes a peer cover.jpg at artworkMaxResolution when capabilities.artworkSources[0] === 'sidecar', strips embedded art on both transcode and copy paths
-- [ ] #2 #2 ms-rockbox added to art-matrix-transfer.test.ts; cells assert fileHasArt=false AND sidecarPresent=true cell-for-cell
-- [ ] #3 #3 ms-rockbox added to art-matrix-resize.test.ts; cells assert sidecar size = min(source, artworkMaxResolution) under every transfer mode
-- [ ] #4 #4 doc-012 §'Sidecar Artwork Devices' updated from Future to Implemented
-- [ ] #5 #5 Full e2e suite green on host
+- [x] #1 #1 Executor writes a peer cover.jpg at artworkMaxResolution when capabilities.artworkSources[0] === 'sidecar', strips embedded art on both transcode and copy paths
+- [x] #2 #2 ms-rockbox added to art-matrix-transfer.test.ts; cells assert fileHasArt=false AND sidecarPresent=true cell-for-cell
+- [x] #3 #3 ms-rockbox added to art-matrix-resize.test.ts; cells assert sidecar size = min(source, artworkMaxResolution) under every transfer mode
+- [x] #4 #4 doc-012 §'Sidecar Artwork Devices' updated from Future to Implemented
+- [x] #5 #5 Full e2e suite green on host
 <!-- AC:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+Landed in commit 9465faf9 — `feat(core): sidecar device-write for sidecar-primary devices (TASK-370)`.
+
+**AC #1** Executor writes peer cover.jpg at artworkMaxResolution: ✔ via `MassStorageAdapter.writeSidecar` → `writeSidecarAtomically` (tmp + fsync + rename). MusicPipeline's 'sidecar' sink branch dispatches it.
+
+**AC #2** ms-rockbox added to art-matrix-transfer: ✔ 24 → 48 cells; assert `sidecarPresent` + `sidecarSize` cell-for-cell.
+
+**AC #3** ms-rockbox added to art-matrix-resize: ✔ 45 → 60 cells; assert `sidecar size = min(source, artworkMaxResolution)` under every transfer mode.
+
+**AC #4** doc-012 § Sidecar Artwork Devices updated to "landed": ✔ promoted from "Future" + structured to mirror the embedded-section.
+
+**AC #5** Full host e2e suite green: ✔ 540 host artwork cells (5 files), 0 fail.
+
+Sonnet review found three P2s, all applied before commit:
+- fsync added before rename in writeSidecarAtomically (atomicity claim was overstated)
+- Stage 4 comment corrected (collect-and-aggregate, not fail-fast)
+- fileArtworkSurvives sidecar branch JSDoc flagged as observational, not spec
+
+Pre-existing test failures the worker noted (codec-preference × 2, echo-mini yuvj) verified unrelated via git stash by both worker and reviewer.
+
+Follow-ups (out of scope for this task):
+- TASK-374 — Device-profile sidecar filename preset (cover.jpg hardcoded today)
+- TASK-375 — podkit doctor orphan sidecar image cleanup
+- TASK-376 — Atomic on-file writes (apply same tmp+fsync+rename to picture writes)
+- TASK-377 — Normalise picture-write flush to match the sidecar collect-and-aggregate shape
+<!-- SECTION:FINAL_SUMMARY:END -->
