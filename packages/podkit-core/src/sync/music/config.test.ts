@@ -166,6 +166,30 @@ describe('resolveMusicConfig', () => {
     it('artworkResize is undefined when no capabilities', () => {
       const resolved = resolveMusicConfig(makeConfig());
       expect(resolved.artworkResize).toBeUndefined();
+      expect(resolved.sidecarResize).toBeUndefined();
+    });
+
+    it('sidecarResize is set (and artworkResize stays undefined) when primary source is "sidecar"', () => {
+      // Sidecar-primary devices (rockbox) write a peer cover.jpg. The two
+      // resize fields are intentionally distinct: setting `artworkResize` for
+      // a sidecar device would also fire the FFmpeg embed path, embedding the
+      // resized cover into the audio file body — but the file body should be
+      // art-free on sidecar-primary devices. `sidecarResize` is consumed by
+      // the pipeline's album-level resize cache before `adapter.writeSidecar`,
+      // not by FFmpeg.
+      const capabilities: DeviceCapabilities = {
+        artworkSources: ['sidecar', 'embedded'],
+        artworkMaxResolution: 320,
+        supportedAudioCodecs: ['aac', 'mp3', 'flac'],
+        supportsVideo: false,
+        audioNormalization: 'replaygain',
+        supportsAlbumArtistBrowsing: true,
+      };
+      const resolved = resolveMusicConfig(makeConfig({ capabilities }));
+
+      expect(resolved.sidecarResize).toBe(320);
+      expect(resolved.artworkResize).toBeUndefined();
+      expect(resolved.primaryArtworkSource).toBe('sidecar');
     });
   });
 

@@ -281,7 +281,7 @@ async function generateMultiFormatWithArt(
   }
   await ensureDir(outputDir);
 
-  const coverSize = opts.coverSize ?? 500;
+  const coverSize = opts.coverSize ?? MULTI_FORMAT_DEFAULT_COVER_SIZE;
   const coverPath = join(outputDir, 'cover.jpg');
   if (opts.embedded || opts.sidecar) {
     await generateCoverJpeg(coverPath, opts.coverColor, coverSize);
@@ -487,6 +487,15 @@ export async function generateMultiFormatEmbeddedStripped(outputDir: string): Pr
 
 /** Exposed so the matrix tests can build the expected `Artist - Title` strings. */
 export { SCENARIO_ARTISTS };
+
+/**
+ * Source cover edge length (px) for the default multi-format embedded /
+ * sidecar / both variants (anything not labelled "hires"). Matches the
+ * `coverSize` default inside `generateMultiFormatWithArt` — exposed so the
+ * matrix predictors can compute `expectedSidecarSize(source, caps)` without
+ * hardcoding the number twice.
+ */
+export const MULTI_FORMAT_DEFAULT_COVER_SIZE = 500;
 
 /** Artist tag for the high-resolution-cover variant. */
 export const HIRES_ARTIST = 'Multi-Format Hires';

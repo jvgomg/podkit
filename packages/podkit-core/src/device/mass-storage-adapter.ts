@@ -51,6 +51,7 @@ import { isVideoMediaType } from '../ipod/video.js';
 import { CODEC_METADATA } from '../transcode/codecs.js';
 import {
   DEFAULT_TAG_WRITE_CONCURRENCY,
+  SidecarWriteError,
   TagLibTagWriter,
   TagWriteError,
   diffTagFields,
@@ -466,6 +467,69 @@ export class MassStorageTrack implements DeviceTrack {
   }
 }
 
+/**
+ * Filename podkit writes for the peer cover image on sidecar-primary devices
+ * (rockbox today). Hardcoded for v1 — a future task will let presets pick
+ * `folder.jpg` / `front.png` / etc. Keep the name in one place so the writer
+ * and the doctor's orphan walk agree.
+ */
+export const SIDECAR_FILENAME = 'cover.jpg';
+
+/**
+ * Suffix used while a sidecar cover is being written. A SIGKILL between the
+ * tmp write and the rename leaves this file behind for a future doctor walk
+ * to reap; the destination cover is either the previous version or absent,
+ * never a torn write that the device would render as garbage.
+ */
+const SIDECAR_TMP_SUFFIX = '.podkit-tmp';
+
+/**
+ * Write a sidecar cover image atomically: ensure the album dir exists, write
+ * bytes to `<albumDir>/cover.jpg.podkit-tmp`, fsync, then `rename` over the
+ * final `cover.jpg`. The rename is atomic on POSIX same-filesystem paths AND
+ * the fsync ensures the renamed target points at durable, non-truncated
+ * blocks if the OS power-cuts immediately after `rename` returns.
+ *
+ * Concurrent writes to the same album dir would collide on the fixed
+ * `.podkit-tmp` suffix (last writer wins for the tmp file). Not a real risk
+ * today — the pipeline serialises queued writes per save() — but worth
+ * knowing if the flush ever goes concurrent within an album. Cross-album
+ * concurrency is safe (distinct dirs → distinct tmp paths).
+ *
+ * Internal helper, kept at module scope so unit tests can mock `fs.rename` to
+ * simulate the SIGKILL-mid-rename case.
+ */
+async function writeSidecarAtomically(absoluteAlbumDir: string, imageData: Buffer): Promise<void> {
+  await fs.promises.mkdir(absoluteAlbumDir, { recursive: true });
+  const finalPath = path.join(absoluteAlbumDir, SIDECAR_FILENAME);
+  const tmpPath = finalPath + SIDECAR_TMP_SUFFIX;
+  // Open + write + fsync via a single FD so a power-cut after `rename` cannot
+  // leave the renamed target pointing at unsynced blocks. (writeFile alone
+  // returns once the data is in the page cache, not when it's on disk.)
+  const handle = await fs.promises.open(tmpPath, 'w');
+  try {
+    await handle.writeFile(imageData);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+  try {
+    await fs.promises.rename(tmpPath, finalPath);
+  } catch (err) {
+    // Best-effort cleanup of the tmp file when rename fails — leaving stale
+    // .podkit-tmp files around triggers spurious doctor warnings later. If
+    // cleanup itself fails (e.g. ENOENT because the tmp file was already
+    // removed concurrently), swallow it and re-throw the original rename
+    // error.
+    try {
+      await fs.promises.unlink(tmpPath);
+    } catch {
+      /* ignore cleanup failure */
+    }
+    throw err;
+  }
+}
+
 // =============================================================================
 // MassStorageAdapter
 // =============================================================================
@@ -527,6 +591,22 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
    * Flushed by save() via tagWriter.writePicture().
    */
   private pendingPictureWrites = new Map<string, Buffer>();
+
+  /**
+   * Pending sidecar (peer cover image) writes, keyed by **album directory**
+   * (the audio file's parent dir, relative to the mount point).
+   *
+   * Per-album, not per-track: every track on the same album dir is expected
+   * to contribute the same bytes (the pipeline's album-level resize cache
+   * makes this true). Last write wins for the album, so concurrent track
+   * writes don't fight — duplicate enqueues from sibling tracks collapse
+   * into a single rename. Accumulated by {@link writeSidecar} and flushed by
+   * {@link save} via an atomic tmp+rename per album dir. Sidecar-primary
+   * devices (rockbox) read art from this file and have no embedded fallback,
+   * so failures bubble up as {@link SidecarWriteError} rather than getting
+   * swallowed as warnings.
+   */
+  private pendingSidecarWrites = new Map<string, Buffer>();
 
   /**
    * Pending file moves, keyed by current relative path → new relative path.
@@ -924,6 +1004,26 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       this.pendingPictureWrites.set(finalPath, val);
     }
 
+    // Re-key pending sidecar writes if the album dir changed. The album dir
+    // is `path.dirname(filePath)` — a relocate that only renames the file but
+    // keeps the parent dir invariant is the common case (and a no-op here);
+    // a relocate across album dirs is the rare case worth re-keying for. We
+    // also update `managedFiles` so the manifest accurately tracks the new
+    // sidecar location.
+    const oldAlbumDir = path.dirname(oldPath);
+    const newAlbumDir = path.dirname(finalPath);
+    if (oldAlbumDir !== newAlbumDir && this.pendingSidecarWrites.has(oldAlbumDir)) {
+      const val = this.pendingSidecarWrites.get(oldAlbumDir)!;
+      this.pendingSidecarWrites.delete(oldAlbumDir);
+      this.pendingSidecarWrites.set(newAlbumDir, val);
+      const oldSidecar = path.join(oldAlbumDir, SIDECAR_FILENAME);
+      const newSidecar = path.join(newAlbumDir, SIDECAR_FILENAME);
+      if (this.managedFiles.has(oldSidecar)) {
+        this.managedFiles.delete(oldSidecar);
+        this.managedFiles.add(newSidecar);
+      }
+    }
+
     // Queue the filesystem move
     this.pendingMoves.set(oldPath, finalPath);
 
@@ -983,6 +1083,32 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
     // No-op — mass-storage devices with embedded artwork need it kept.
     // Delegates to the track's removeArtwork() which is also a no-op.
     return track.removeArtwork();
+  }
+
+  /**
+   * Queue a peer cover image (`{albumDir}/cover.jpg`) for write at save() time.
+   *
+   * Sidecar-primary devices (rockbox) read art from this file in preference to
+   * any embedded picture; the pipeline calls this only when
+   * `track.artworkSink === 'sidecar'` (see `MusicPipeline.transferArtwork`).
+   *
+   * Keyed by album directory, not file path: every track on the same album
+   * dir hashes to the same map entry, so N sibling tracks queue exactly one
+   * write. The bytes arrive pre-resized to `artworkMaxResolution` from the
+   * pipeline's album-level resize cache (`getResizedArtwork`), so duplicate
+   * enqueues from siblings agree on content — last write wins is a no-op
+   * relative to the bytes.
+   *
+   * The cover file is added to {@link managedFiles} so the doctor's orphan
+   * walk recognises it as podkit-managed (and so the manifest persists the
+   * fact across sessions). The actual filesystem write is deferred to
+   * {@link save}; this method is a pure queueing operation.
+   */
+  writeSidecar(track: MassStorageTrack, imageData: Buffer): void {
+    const albumDir = path.dirname(track.filePath);
+    this.pendingSidecarWrites.set(albumDir, imageData);
+    const sidecarPath = path.join(albumDir, SIDECAR_FILENAME);
+    this.managedFiles.add(sidecarPath);
   }
 
   replaceTrackFile(track: MassStorageTrack, newFilePath: string): MassStorageTrack {
@@ -1049,6 +1175,23 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
         const pic = this.pendingPictureWrites.get(track.filePath)!;
         this.pendingPictureWrites.delete(track.filePath);
         this.pendingPictureWrites.set(targetRelativePath, pic);
+      }
+
+      // Re-key sidecar write if the album dir changed (codec swap can move
+      // the file across content roots in pathological cases). Same rationale
+      // as relocateTrack: only act when the album dir actually changed.
+      const oldAlbumDir = path.dirname(track.filePath);
+      const newAlbumDir = path.dirname(targetRelativePath);
+      if (oldAlbumDir !== newAlbumDir && this.pendingSidecarWrites.has(oldAlbumDir)) {
+        const sidecar = this.pendingSidecarWrites.get(oldAlbumDir)!;
+        this.pendingSidecarWrites.delete(oldAlbumDir);
+        this.pendingSidecarWrites.set(newAlbumDir, sidecar);
+        const oldSidecarPath = path.join(oldAlbumDir, SIDECAR_FILENAME);
+        const newSidecarPath = path.join(newAlbumDir, SIDECAR_FILENAME);
+        if (this.managedFiles.has(oldSidecarPath)) {
+          this.managedFiles.delete(oldSidecarPath);
+          this.managedFiles.add(newSidecarPath);
+        }
       }
     }
 
@@ -1218,6 +1361,49 @@ export class MassStorageAdapter implements DeviceAdapter<MassStorageTrack> {
       );
       await Promise.all(writes);
       this.pendingPictureWrites.clear();
+    }
+
+    // Flush pending sidecar writes (peer cover.jpg for sidecar-primary devices).
+    //
+    // One write per album dir — sibling tracks collapse into a single entry at
+    // queue-time. Each write is atomic (tmp + fsync + rename) so a SIGKILL
+    // mid-write leaves either the old cover, no cover, or a `.podkit-tmp` for
+    // a future doctor to clean — never a torn cover.jpg the device would
+    // render as garbage. This is the only save() stage with atomic-write
+    // semantics today; picture writes get the same treatment under TASK-376.
+    //
+    // **Collect-and-aggregate** (`Promise.allSettled` + `SidecarWriteError`).
+    // Deliberately different from the picture-write stage above, which is
+    // `Promise.all` fail-fast: sidecars are per-album (one failed album
+    // shouldn't black-hole the rest of the library), while picture writes
+    // today predate the typed-error pattern. TASK-377 normalises both stages
+    // to this shape.
+    if (this.pendingSidecarWrites.size > 0) {
+      const entries = [...this.pendingSidecarWrites.entries()];
+      const settled = await Promise.allSettled(
+        entries.map(([albumDir, imageData]) =>
+          writeSidecarAtomically(path.join(this.mountPoint, albumDir), imageData)
+        )
+      );
+      this.pendingSidecarWrites.clear();
+      const failures: string[] = [];
+      for (let i = 0; i < settled.length; i++) {
+        const outcome = settled[i]!;
+        if (outcome.status === 'rejected') {
+          const [albumDir] = entries[i]!;
+          failures.push(
+            `${albumDir}: ${(outcome.reason as Error).message ?? String(outcome.reason)}`
+          );
+        }
+      }
+      if (failures.length > 0) {
+        // Sidecar art is the device's PRIMARY artwork source on rockbox — a
+        // failure means the device shows no cover. Throw a typed error so the
+        // executor can surface it (rather than swallowing it as a warning,
+        // which is what the per-track artwork branch in transferArtwork does
+        // for transient errors). Per-album context is preserved on `causes`.
+        throw new SidecarWriteError(failures);
+      }
     }
 
     // Write manifest

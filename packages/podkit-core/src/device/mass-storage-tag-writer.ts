@@ -31,6 +31,26 @@ export class TagWriteError extends Error {
 }
 
 /**
+ * Aggregated sidecar-write failure, thrown by `MassStorageAdapter.save()`
+ * when one or more queued peer-image (`cover.jpg`) writes fail. Sidecar art
+ * is the device's *primary* artwork source on sidecar-primary devices
+ * (rockbox), so a failure is surfaced rather than swallowed — the audio file
+ * landed, but the device has no cover to render. Mirrors `TagWriteError`'s
+ * shape so the executor's error categorizer can classify it the same way
+ * (file-I/O `copy` failure) and so per-album context is preserved in
+ * `causes` for diagnostics.
+ */
+export class SidecarWriteError extends Error {
+  readonly causes: readonly string[];
+
+  constructor(causes: readonly string[]) {
+    super(`sidecar write failed for ${causes.length} album(s): ${causes.join('; ')}`);
+    this.name = 'SidecarWriteError';
+    this.causes = causes;
+  }
+}
+
+/**
  * Default concurrency cap for tag-write flushes during `save()`.
  *
  * Each call opens a file via node-taglib-sharp. Without a cap, syncing a

@@ -24,7 +24,7 @@
  */
 
 import type { ErrorCategory, CategorizedError } from './types.js';
-import { TagWriteError } from '../../device/mass-storage-tag-writer.js';
+import { SidecarWriteError, TagWriteError } from '../../device/mass-storage-tag-writer.js';
 
 // =============================================================================
 // Retry Configuration
@@ -90,8 +90,9 @@ export function categorizeError(error: Error, operationType: string): ErrorCateg
   // Aggregated tag-write failures are typed — check before string heuristics.
   // The per-file message body may embed paths containing keywords ("iPod",
   // "iTunes", "ffmpeg"), so a substring match below would risk
-  // mis-classification.
-  if (error instanceof TagWriteError) {
+  // mis-classification. SidecarWriteError gets the same treatment: it's
+  // file-I/O on a peer cover.jpg, so 'copy' is the right category.
+  if (error instanceof TagWriteError || error instanceof SidecarWriteError) {
     return 'copy';
   }
 

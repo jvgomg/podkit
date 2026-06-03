@@ -258,6 +258,25 @@ export interface DeviceAdapter<T extends DeviceTrack = DeviceTrack> {
   /** Remove artwork from a track */
   removeTrackArtwork(track: T): T;
 
+  /**
+   * Queue a peer image (e.g. `cover.jpg`) to be written next to the track's
+   * audio file at save() time. Only meaningful for adapters whose tracks
+   * report `artworkSink === 'sidecar'` (rockbox today); other adapters either
+   * omit this method or no-op it.
+   *
+   * Per-album, not per-track: every track on the same album dir contributes
+   * the same bytes (the album cache makes this true), so the adapter
+   * deduplicates by album dir before save.
+   *
+   * Resize is the pipeline's responsibility — bytes arrive already scaled to
+   * `artworkMaxResolution`. The adapter just persists them atomically.
+   *
+   * Throws (via `save()`) with a typed `SidecarWriteError` when one or more
+   * album sidecars fail to land; failure is meaningful because the device
+   * reads art from this file and there's no embedded fallback to fall back to.
+   */
+  writeSidecar?(track: T, imageData: Buffer): void;
+
   // Sync tags
 
   /** Write or update sync tag on a track (merge semantics) */

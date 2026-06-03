@@ -145,6 +145,16 @@ export interface ResolvedMusicConfig {
   readonly artworkResize: number | undefined;
 
   /**
+   * Maximum sidecar artwork dimension (pixels, square) for devices where
+   * peer `cover.jpg` is the primary source (rockbox today). `undefined` for
+   * every other device kind. Read by `MusicPipeline.getResizedArtwork` to
+   * scale bytes before `adapter.writeSidecar()`; kept distinct from
+   * `artworkResize` so the FFmpeg embed path doesn't accidentally fire on
+   * sidecar-primary devices (which want the file body art-free).
+   */
+  readonly sidecarResize: number | undefined;
+
+  /**
    * The device's preferred artwork source (first entry in
    * `capabilities.artworkSources`), or `undefined` when no
    * capabilities are provided.
@@ -187,11 +197,25 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
   const transferMode: TransferMode = config.transferMode ?? 'fast';
 
   // Artwork resize is only relevant when the device's primary artwork source
-  // is 'embedded' — those devices read artwork from the audio file itself.
+  // is 'embedded' — those devices read artwork from the audio file itself,
+  // so the FFmpeg embed (`-c:v mjpeg -filter:v scale=...`) targets the file
+  // body. Sidecar-primary devices get their own resize path inside the
+  // pipeline (`getResizedArtwork` runs before `adapter.writeSidecar`) — see
+  // {@link ResolvedMusicConfig.sidecarResize}. Database-artwork devices
+  // (iPod) resize within the iTunesDB, also outside this field.
   const artworkSources = config.capabilities?.artworkSources;
   const primaryArtworkSource = artworkSources?.[0];
   const artworkResize =
     primaryArtworkSource === 'embedded'
+      ? (config.capabilities?.artworkMaxResolution ?? undefined)
+      : undefined;
+  // Sidecar resize: bytes are written to a peer `cover.jpg` rather than into
+  // the file body, so the FFmpeg embed-resize path doesn't fire (that would
+  // also embed into the file — wrong for sidecar-primary devices, which want
+  // the file body art-free). The pipeline resizes once via the album-level
+  // resize cache and hands the bytes to `adapter.writeSidecar()`.
+  const sidecarResize =
+    primaryArtworkSource === 'sidecar'
       ? (config.capabilities?.artworkMaxResolution ?? undefined)
       : undefined;
 
@@ -275,6 +299,7 @@ export function resolveMusicConfig(config: MusicSyncConfig): ResolvedMusicConfig
     deviceSupportsAlac,
     transferMode,
     artworkResize,
+    sidecarResize,
     primaryArtworkSource,
     supportedAudioCodecs,
     transformsEnabled,

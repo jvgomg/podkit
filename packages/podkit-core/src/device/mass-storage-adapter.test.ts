@@ -2222,6 +2222,178 @@ describe('MassStorageAdapter', () => {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // Sidecar (peer cover.jpg) writes — sidecar-primary devices (rockbox)
+  // ---------------------------------------------------------------------------
+  //
+  // The contract:
+  //   - writeSidecar(track, bytes) queues by album dir (parent of filePath).
+  //   - N siblings on one album collapse to a single queue entry.
+  //   - save() Stage 4 writes <albumDir>/cover.jpg atomically (tmp + rename).
+  //   - On rename failure, the typed SidecarWriteError aggregates per-album
+  //     failures so the executor's error categorizer (instanceof check) can
+  //     classify the failure as `copy` regardless of path-keyword heuristics.
+  //   - The cover.jpg is registered in `managedFiles` so the manifest tracks
+  //     it across sessions and a future doctor walk can recognise it as
+  //     podkit-owned (rather than treating it as an unmanaged orphan).
+  describe('sidecar artwork writes (TASK-370)', () => {
+    const SIDECAR_CAPABILITIES: DeviceCapabilities = {
+      artworkSources: ['sidecar', 'embedded'],
+      artworkMaxResolution: 320,
+      supportedAudioCodecs: ['flac', 'mp3', 'aac', 'vorbis'],
+      supportsVideo: false,
+      audioNormalization: 'replaygain',
+      supportsAlbumArtistBrowsing: true,
+    };
+
+    test('writeSidecar queues by album dir and flushes a single cover.jpg per album', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01 - One.flac');
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/02 - Two.flac');
+
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01 - One.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+          '02 - Two.flac': { title: 'Two', artist: 'Artist', album: 'Album' },
+        }),
+      });
+
+      const [t1, t2] = adapter.getTracks();
+      const bytes = Buffer.from('jpeg-data');
+      adapter.writeSidecar(t1!, bytes);
+      // Sibling on the same album dir — should NOT produce a second write
+      // (last write wins on the album-keyed map; same bytes by contract).
+      adapter.writeSidecar(t2!, bytes);
+
+      const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+      // No write until save()
+      expect(fs.existsSync(coverPath)).toBe(false);
+
+      await adapter.save();
+
+      expect(fs.existsSync(coverPath)).toBe(true);
+      const written = fs.readFileSync(coverPath);
+      expect(written.equals(bytes)).toBe(true);
+      // The tmp file is renamed-away → no orphan tmp survives a clean save.
+      expect(fs.existsSync(coverPath + '.podkit-tmp')).toBe(false);
+    });
+
+    test('writeSidecar adds cover.jpg to the manifest so doctor recognises it as podkit-managed', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.flac');
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        }),
+      });
+
+      adapter.writeSidecar(adapter.getTracks()[0]!, Buffer.from('jpeg'));
+      await adapter.save();
+
+      // Manifest must include the sidecar so a future scan does not flag it
+      // as orphan and so cleanup can later remove it as a podkit artefact.
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(mountPoint, PODKIT_DIR, MANIFEST_FILE), 'utf-8')
+      ) as { managedFiles: string[] };
+      expect(manifest.managedFiles).toContain('Music/Artist/Album/cover.jpg');
+    });
+
+    test('save() throws typed SidecarWriteError on rename failure (other albums still wrote)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/AlbumA/01.flac');
+      createFakeAudioFile(mountPoint, 'Music/Artist/AlbumB/01.flac');
+
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          // findByBasename: both files match '01.flac' (last wins) — replace
+          // with per-path metadata via the full key.
+          [path.join(mountPoint, 'Music/Artist/AlbumA/01.flac')]: {
+            title: 'A1',
+            artist: 'Artist',
+            album: 'AlbumA',
+          },
+          [path.join(mountPoint, 'Music/Artist/AlbumB/01.flac')]: {
+            title: 'B1',
+            artist: 'Artist',
+            album: 'AlbumB',
+          },
+        }),
+      });
+
+      const tracks = adapter.getTracks();
+      const trackA = tracks.find((t) => t.album === 'AlbumA')!;
+      const trackB = tracks.find((t) => t.album === 'AlbumB')!;
+      adapter.writeSidecar(trackA, Buffer.from('A-bytes'));
+      adapter.writeSidecar(trackB, Buffer.from('B-bytes'));
+
+      // Mock fs.promises.rename to fail for AlbumA only. AlbumB's rename
+      // succeeds, so we can assert the partial-success shape.
+      const realRename = fs.promises.rename;
+      const renameSpy = (oldPath: fs.PathLike, newPath: fs.PathLike): Promise<void> => {
+        if (String(newPath).includes('AlbumA')) {
+          return Promise.reject(new Error('simulated rename failure for AlbumA'));
+        }
+        return realRename(oldPath, newPath);
+      };
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = renameSpy;
+
+      try {
+        const { SidecarWriteError } = await import('./mass-storage-tag-writer.js');
+        let caught: unknown;
+        try {
+          await adapter.save();
+        } catch (err) {
+          caught = err;
+        }
+        expect(caught).toBeInstanceOf(SidecarWriteError);
+        const sidecarErr = caught as InstanceType<typeof SidecarWriteError>;
+        expect(sidecarErr.causes).toHaveLength(1);
+        // Per-album context is preserved on `causes` for diagnostics.
+        expect(sidecarErr.causes[0]).toContain('AlbumA');
+        // AlbumB still landed despite AlbumA's failure (Promise.allSettled,
+        // not Promise.all). This is the key contract for sidecar — a single
+        // album's failure shouldn't black-hole the rest of the library.
+        expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/AlbumB/cover.jpg'))).toBe(true);
+        expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/AlbumA/cover.jpg'))).toBe(false);
+      } finally {
+        (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+      }
+    });
+
+    test('atomic write: rename failure cleans up its own .podkit-tmp (no orphan)', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.flac');
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        }),
+      });
+      adapter.writeSidecar(adapter.getTracks()[0]!, Buffer.from('jpeg'));
+
+      const realRename = fs.promises.rename;
+      (fs.promises as { rename: typeof fs.promises.rename }).rename = () =>
+        Promise.reject(new Error('rename failure'));
+      try {
+        await expect(adapter.save()).rejects.toThrow();
+        // The destination is untouched — never a torn write.
+        const coverPath = path.join(mountPoint, 'Music/Artist/Album/cover.jpg');
+        expect(fs.existsSync(coverPath)).toBe(false);
+        // The tmp is cleaned up on failure so the next sync doesn't see an
+        // orphan .podkit-tmp file (which would later become doctor noise).
+        expect(fs.existsSync(coverPath + '.podkit-tmp')).toBe(false);
+      } finally {
+        (fs.promises as { rename: typeof fs.promises.rename }).rename = realRename;
+      }
+    });
+
+    test('save() with no pending sidecar writes does not write a cover.jpg', async () => {
+      createFakeAudioFile(mountPoint, 'Music/Artist/Album/01.flac');
+      const adapter = await MassStorageAdapter.open(mountPoint, SIDECAR_CAPABILITIES, {
+        metadataReader: createMockMetadataReader({
+          '01.flac': { title: 'One', artist: 'Artist', album: 'Album' },
+        }),
+      });
+      await adapter.save();
+      expect(fs.existsSync(path.join(mountPoint, 'Music/Artist/Album/cover.jpg'))).toBe(false);
+    });
+  });
+
   describe('v1 manifest', () => {
     test('v1 manifest recognizes managed files', async () => {
       // Write a v1 manifest with managed files

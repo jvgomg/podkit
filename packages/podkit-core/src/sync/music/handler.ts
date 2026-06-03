@@ -967,6 +967,7 @@ export class MusicHandler implements ContentTypeHandler<
       retryConfig: this.config.raw.retryConfig,
       transferMode: this.config.transferMode,
       artworkResize: this.config.artworkResize,
+      sidecarResize: this.config.sidecarResize,
       audioNormalization: this.config.audioNormalization,
     })) {
       // Filter out batch-level events that don't map to per-operation progress

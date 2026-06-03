@@ -48,6 +48,8 @@ interface MockDeviceAdapter {
   replaceTrackFile: ReturnType<typeof mock>;
   removeTrackArtwork: ReturnType<typeof mock>;
   writeSyncTag: ReturnType<typeof mock>;
+  /** Optional — set on the mock for sidecar-primary adapters (rockbox). */
+  writeSidecar?: ReturnType<typeof mock>;
 }
 
 interface MockTranscoder {
@@ -4069,7 +4071,12 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
     expect(syncTagWithHash).toBeDefined();
   });
 
-  it("sink='sidecar' → no write path lands today, syncTag.artworkHash IS suppressed (TASK-370 placeholder)", async () => {
+  it("sink='sidecar' → writeSidecar lands the bytes and writeSyncTag records artworkHash (TASK-370)", async () => {
+    // TASK-370 wired the sidecar write path. Pre-370 this branch returned
+    // undefined (no writer); now `adapter.writeSidecar` runs and the
+    // syncTag.artworkHash claim IS honest — bytes landed at
+    // `<albumDir>/cover.jpg`. The next sync's detectUpgrades sees the
+    // matching hash and stays quiet.
     const bytes = Buffer.from('sidecar-cover-bytes');
     const db = makeDbForSink('sidecar');
 
@@ -4100,6 +4107,12 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       if (fields.embeddedPictureData !== undefined) embedCalled = true;
       return track;
     });
+    // Wire the sidecar writer so the pipeline's `typeof === 'function'`
+    // guard sees it and the dispatch lands.
+    const sidecarCalls: Array<{ track: DeviceTrack; imageData: Buffer }> = [];
+    db.writeSidecar = mock((track: DeviceTrack, imageData: Buffer) => {
+      sidecarCalls.push({ track, imageData });
+    });
 
     const adapter = makeAdapterWithBytes(bytes);
     const executor = new MusicPipeline(createDependencies(db, transcoder));
@@ -4112,12 +4125,54 @@ describe('DeviceTrack.artworkSink dispatch (TASK-372)', () => {
       // consume
     }
 
+    // Sink-correct dispatch: setArtworkFromData (database sink) and
+    // updateTrack({embeddedPictureData}) (embedded sink) must NOT fire.
     expect(setArtworkCalled).toBe(false);
     expect(embedCalled).toBe(false);
-    // CRITICAL: writeSyncTag is NEVER called with an artworkHash for a
-    // sidecar sink. The dispatch returns undefined → transferToIpod's
-    // suppression guard skips the claim. Otherwise the next sync's
-    // detectUpgrades would fire artwork-added forever.
+    // writeSidecar fired exactly once with the adapter-fallback bytes.
+    // Resize is a no-op here (no sidecarResize set in execute() options),
+    // so the writer receives the original bytes — matches what
+    // getResizedArtwork returns when the resize dim is undefined.
+    expect(sidecarCalls).toHaveLength(1);
+    expect(sidecarCalls[0]!.imageData.equals(bytes)).toBe(true);
+
+    // syncTag.artworkHash IS recorded now that bytes really landed.
+    // Suppressing the claim like the pre-TASK-370 placeholder did would
+    // pin a stale "no art" view that the next --check-artwork sync would
+    // try to repair (artwork-added every time) — exactly the churn that
+    // both 372 and this task close.
+    const syncTagWithHash = db.writeSyncTag.mock.calls.find(
+      ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
+    );
+    expect(syncTagWithHash).toBeDefined();
+  });
+
+  it("sink='sidecar' but adapter omits writeSidecar → defensive fallback suppresses syncTag.artworkHash", async () => {
+    // The DeviceAdapter interface marks writeSidecar as optional so the iPod
+    // adapter doesn't need a stub. Theoretically a track could report
+    // `artworkSink === 'sidecar'` against an adapter that omits the method;
+    // the pipeline must NOT silently lie about success in that case. The
+    // suppression guard keeps the churn loop closed even on a misconfigured
+    // adapter — same shape as the noop sink.
+    const bytes = Buffer.from('orphan-bytes');
+    const db = makeDbForSink('sidecar');
+    // Explicitly null out writeSidecar — the makeDbForSink default doesn't
+    // wire it, so this is mostly belt-and-braces.
+    db.writeSidecar = undefined;
+
+    const adapter = makeAdapterWithBytes(bytes);
+    const executor = new MusicPipeline(createDependencies(db, transcoder));
+    for await (const _p of executor.execute(makeCopyPlan(), {
+      artwork: true,
+      adapter,
+      syncTagConfig: {},
+      transferMode: 'fast',
+    })) {
+      // consume
+    }
+
+    // No path on the adapter to land bytes → MUST NOT claim success on the
+    // sync tag. This is the doc-041 §3.6 churn-loop pin for sidecar.
     const syncTagWithHash = db.writeSyncTag.mock.calls.find(
       ([, update]) => (update as Record<string, unknown>).artworkHash !== undefined
     );

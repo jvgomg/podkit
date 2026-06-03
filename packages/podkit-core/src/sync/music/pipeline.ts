@@ -200,6 +200,17 @@ export interface ExtendedExecuteOptions extends ExecuteOptions {
    */
   artworkResize?: number;
   /**
+   * Resize sidecar artwork (peer `cover.jpg`) to this maximum dimension
+   * (pixels, square).
+   *
+   * When set, bytes destined for `adapter.writeSidecar()` are downscaled to
+   * this dimension via the album-level resize cache so siblings on one album
+   * share a single FFmpeg/sharp spawn. Used for sidecar-primary devices
+   * (rockbox). Distinct from `artworkResize` to keep the FFmpeg embed path
+   * inert — on sidecar-primary devices the file body should stay art-free.
+   */
+  sidecarResize?: number;
+  /**
    * Audio normalization mode for the target device.
    *
    * When `'replaygain'`, ReplayGain metadata tags are injected into transcoded
@@ -741,6 +752,8 @@ export class MusicPipeline implements SyncExecutor {
   private transferMode?: TransferMode;
   /** Artwork resize dimension for embedded artwork devices (set during execute()) */
   private artworkResize?: number;
+  /** Sidecar resize dimension for sidecar-primary devices (set during execute()) */
+  private sidecarResize?: number;
   /** Audio normalization mode for the target device (set during execute()) */
   private audioNormalization?: string;
   /**
@@ -875,6 +888,7 @@ export class MusicPipeline implements SyncExecutor {
       syncTagConfig,
       transferMode,
       artworkResize,
+      sidecarResize,
       audioNormalization,
       saveInterval = 50,
     } = options;
@@ -883,6 +897,7 @@ export class MusicPipeline implements SyncExecutor {
     this.syncTagConfig = syncTagConfig;
     this.transferMode = transferMode;
     this.artworkResize = artworkResize;
+    this.sidecarResize = sidecarResize;
     this.audioNormalization = audioNormalization;
     this.adapter = adapter;
 
@@ -1495,12 +1510,14 @@ export class MusicPipeline implements SyncExecutor {
    *     {@link MassStorageTagWriter.writePicture} routes through
    *     node-taglib-sharp which is container-agnostic — TASK-372 closes
    *     the pre-existing OGG-only carve-out.
-   *   - `'sidecar'`  → peer cover.jpg device-write. The writer is not yet
-   *     implemented (deferred to TASK-370); today we return `undefined`
-   *     so the syncTag.artworkHash claim is suppressed (callers gate on
-   *     the return value). Once TASK-370 lands `adapter.writeSidecar()`
-   *     this branch wires through and the fence in
-   *     `e2e-tests/.../artwork-rules.ts skipArtworkCell` lifts.
+   *   - `'sidecar'`  → peer `cover.jpg` written next to the audio file by
+   *     `adapter.writeSidecar()` (TASK-370). The bytes are resized to
+   *     `artworkMaxResolution` first via the album-level resize cache, so
+   *     siblings on one album share a single resize spawn and one
+   *     deduplicated cover write. Defensive guard: if the adapter doesn't
+   *     expose `writeSidecar` (theoretical — every sidecar-sink adapter
+   *     should), fall through to undefined so the syncTag.artworkHash
+   *     claim is suppressed rather than silently lying.
    *   - `'noop'`     → device has no artwork support; skip the write AND
    *     suppress the syncTag.artworkHash claim. This is what breaks the
    *     churn loop documented in doc-041 §3.6 — claiming success when no
@@ -1546,13 +1563,26 @@ export class MusicPipeline implements SyncExecutor {
           this.device.updateTrack(track, { embeddedPictureData: imageData });
           return cached.hash;
         }
-        case 'sidecar':
-          // TASK-370 will land an explicit `adapter.writeSidecar()` write
-          // path. Until then we have no way to put bytes on the device, so
-          // returning undefined suppresses the syncTag.artworkHash claim
-          // (same shape as 'noop'). This is what keeps sidecar-primary
-          // devices like rockbox out of the churn loop.
-          return undefined;
+        case 'sidecar': {
+          // Sidecar-primary devices (rockbox) read art from a peer image
+          // next to the audio file. Resize first via the album-level cache
+          // so two tracks on one album share a single FFmpeg spawn AND queue
+          // the same bytes for the same album dir. The adapter dedupes by
+          // album dir, so N siblings collapse to one cover write.
+          //
+          // Defensive: writeSidecar is optional on DeviceAdapter (every
+          // adapter whose tracks emit `artworkSink === 'sidecar'` should
+          // implement it). If the method is absent we fall through to
+          // undefined so the syncTag.artworkHash claim is suppressed — the
+          // alternative (claiming success when no bytes landed) recreates
+          // the churn loop documented in doc-041 §3.6.
+          if (typeof this.device.writeSidecar !== 'function') {
+            return undefined;
+          }
+          const imageData = await this.getResizedArtwork(track, cached.data);
+          this.device.writeSidecar(track, imageData);
+          return cached.hash;
+        }
         case 'noop':
           // Device has no artwork support (empty `artworkSources`). Caller
           // sees `undefined` and skips the syncTag.artworkHash write — no
@@ -1597,13 +1627,23 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Get resized artwork for OGG embedding, using album-level cache.
+   * Get resized artwork for embed / sidecar writes, using an album-level cache.
    *
-   * Avoids redundant FFmpeg resize spawns for tracks on the same album.
-   * Falls back to original data when artworkResize is 0 or unset.
+   * Picks the right resize dimension based on the track's sink:
+   *   - `'embedded'` → `this.artworkResize`
+   *   - `'sidecar'`  → `this.sidecarResize`
+   *   - any other    → no resize (caller doesn't reach this path today)
+   *
+   * Both dimensions key off `capabilities.artworkMaxResolution`; they stay
+   * separate config fields so the FFmpeg embed path only fires on embedded-
+   * primary devices (sidecar-primary wants the file body art-free).
+   *
+   * Avoids redundant resize spawns for tracks on the same album. Falls back
+   * to original data when the relevant resize value is 0 or unset.
    */
   private async getResizedArtwork(track: DeviceTrack, originalData: Buffer): Promise<Buffer> {
-    if (!this.artworkResize || this.artworkResize <= 0) {
+    const resize = track.artworkSink === 'sidecar' ? this.sidecarResize : this.artworkResize;
+    if (!resize || resize <= 0) {
       return originalData;
     }
 
@@ -1613,7 +1653,7 @@ export class MusicPipeline implements SyncExecutor {
       return cached;
     }
 
-    const resized = await resizeArtwork(originalData, this.artworkResize);
+    const resized = await resizeArtwork(originalData, resize);
     this.resizedArtworkCache.set(key, resized);
     return resized;
   }

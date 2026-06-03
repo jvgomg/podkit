@@ -151,23 +151,37 @@ the downloaded file returns null even though the original had embed —
 `getArtwork` then serves the server's API cover. Art still lands on the device;
 the bytes may differ in compression/format from the original embed.
 
-## Behavior Matrix: Sidecar Artwork Devices (Future, TASK-370)
+## Behavior Matrix: Sidecar Artwork Devices (TASK-370, landed)
 
-For devices that read artwork from sidecar files (e.g., `folder.jpg`) in preference to embedded data on the device-side. **Independent of the source-side sidecar reading above** — TASK-370 is about WRITING sidecars onto the target.
+For devices whose primary artwork source is a peer image (e.g. `cover.jpg`) sitting next to the audio file (rockbox today). **Independent of the source-side sidecar reading above** — TASK-370 is about WRITING peer covers onto the target.
 
 | Source → Target | `fast` | `optimized` | `portable` |
 |----------------|--------|-------------|------------|
 | Any transcode | Transcode, strip embedded; create device-res sidecar | Transcode, strip embedded; create device-res sidecar | Transcode, preserve embedded; create device-res sidecar |
 | Any copy | Direct copy; create device-res sidecar | Optimized copy, strip embedded; create device-res sidecar | Direct copy; create device-res sidecar |
 
-**Not implemented in v1.** The matrix reference model carries the spec
-(`artworkPrimary`, `expectedSidecarSize` in `test-packages/e2e-tests/src/matrix/reference-model.ts`)
-so callers consume the predicate before production writes sidecars. Production
-embeds bytes into the file via `track.setArtworkFromData` regardless of
-`artworkSources[0]`; for `MassStorageTrack` this is a no-op on non-OGG
-containers, fenced by `skipBug TASK-370` in the artwork matrix. TASK-371
-(non-OGG taglib embed) and TASK-372 (`DeviceTrack.artworkSink` primitive) are
-the related write-side follow-ups.
+### How sidecar writes are dispatched
+
+The unified `track.artworkSink` (TASK-372) carries `'sidecar'` for every track from a `MassStorageAdapter` whose `capabilities.artworkSources[0] === 'sidecar'`. `MusicPipeline.transferArtwork` routes the bytes through the album-level resize cache (`getResizedArtwork` honours `sidecarResize`, distinct from `artworkResize` so the FFmpeg embed path doesn't fire — see ResolvedMusicConfig.sidecarResize) and into `adapter.writeSidecar(track, bytes)`. The adapter:
+
+1. **Keys by album directory**, not file path: every sibling track on the same album hashes to the same map entry, so N tracks queue exactly one cover write.
+2. **Atomic write at save() time**: bytes go to `<albumDir>/cover.jpg.podkit-tmp` and then `fs.rename` over the final `cover.jpg`. A SIGKILL mid-write leaves either the previous cover, no cover, or a `.podkit-tmp` for a future doctor to reap — never a torn `cover.jpg` the device would render as garbage.
+3. **Manifest-tracked**: `cover.jpg` joins `managedFiles` so the doctor's orphan walk recognises it as podkit-owned.
+4. **Typed failure**: per-album rename failures are aggregated into `SidecarWriteError` (mirrors `TagWriteError` shape) and routed by the executor's error categorizer to the `copy` bucket — sidecar art is the device's primary artwork source, so failures surface rather than being swallowed.
+
+### Embedded-vs-sidecar split on sidecar-primary devices
+
+The file body's embedded cover follows the standard transcode/copy + transfer-mode rules (`-vn` strips, `-c:v copy` preserves) — there's no embedded-art-only short-circuit on sidecar-primary devices. The peer cover provides the device-facing artwork; the embedded copy is incidental and follows whatever the transfer mode says. The reference model's `fileArtworkSurvives` returns `false` for sidecar-primary devices to keep the spec strict; the actual on-device file may carry embedded art under `fast` direct-copy, but the device ignores it.
+
+### Resize
+
+`capabilities.artworkMaxResolution` is the only knob — bytes pass through `getResizedArtwork` (album-cached, one resize spawn per album) before reaching `writeSidecar`. For rockbox today that's 320px; the peer `cover.jpg` lands at exactly that dimension regardless of source size or transfer mode.
+
+### What's NOT here yet
+
+- **Configurable sidecar filename** (TASK-374). The writer hardcodes `cover.jpg`; presets cannot yet declare `folder.jpg` / `front.png` / `album.jpeg` as their preferred name.
+- **Picture-write atomic-fs** (TASK-376). Embedded picture writes still open the file in place; TASK-370 brings atomic tmp+rename only to sidecar covers. The two stages will share a helper later.
+- **Normalised save-failure shape** (TASK-377). The embed stage uses fail-fast `Promise.all` and a string heuristic in the error categorizer; the sidecar stage uses collect-and-aggregate `Promise.allSettled` with a typed error. Both stages will adopt the typed-error shape together later.
 
 ## Edge Cases
 

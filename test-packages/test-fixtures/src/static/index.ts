@@ -24,6 +24,7 @@ export {
   COMPILATION_ALBUM_ARTIST,
   HIRES_ARTIST,
   HIRES_COVER_SIZE,
+  MULTI_FORMAT_DEFAULT_COVER_SIZE,
   SCENARIO_ARTISTS,
 } from './audio-multi-format.js';
 export { generateGoldberg } from './audio-goldberg.js';

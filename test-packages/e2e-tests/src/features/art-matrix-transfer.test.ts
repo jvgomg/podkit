@@ -1,22 +1,21 @@
 /**
- * Transfer-mode × artwork matrix — directory adapter, iPod.
+ * Transfer-mode × artwork matrix — directory adapter, device axis.
  *
- * Walks (transfer-mode × format) over the embedded-art fixture on a database-
- * artwork device, asserting the gap between the two artwork signals:
+ * Walks (device × transfer-mode × format) over the embedded-art fixture and
+ * asserts the three artwork signals on each cell:
  *
- *   - `dbHasArtwork` — the cover in the iTunesDB. Always present (the source
- *     has art), regardless of transfer mode.
+ *   - `dbHasArtwork` — iTunesDB cover (iPod only, `null` elsewhere).
  *   - `fileHasArt` — the cover still embedded in the *file* copied to the
  *     device. Stripped or kept per the transfer mode + action (doc-012):
  *     `portable` keeps it; `optimized` strips it everywhere; `fast` keeps it
  *     on a direct copy (mp3/aac) but strips it on a transcode.
+ *   - `sidecarPresent` / `sidecarSize` — peer `cover.jpg` for sidecar-primary
+ *     devices (rockbox). Lands at `artworkMaxResolution` in every mode.
  *
- * The strip is invisible to both the dry-run plan and `TrackInfo.hasArtwork`,
- * so this is the only matrix that reads the device file bytes (via
- * `probeFileArtwork`). iPod-only: the strip-vs-keep choice is specific to a
- * database-artwork device, where the file copy is redundant. The predictor
- * (`predictTransferArtwork`) and per-mode sync (`observeTransferArtwork`) live
- * in `../matrix/artwork-rules.ts`.
+ * Database (iPod) and sidecar-primary (rockbox) cells are exercised together;
+ * embedded-primary devices live in the resize matrix instead. Predictor
+ * (`predictTransferArtwork`) and per-cell sync (`observeTransferArtwork`)
+ * live in `../matrix/artwork-rules.ts`.
  *
  * @module
  */
@@ -24,10 +23,11 @@
 import { cleanupTempConfig, ensureFixturesExist } from '@podkit/e2e-shared';
 import { getMultiFormatEmbeddedFixturesDir } from '@podkit/test-fixtures';
 
-import { withTarget } from '../targets';
+import { DEVICE_SPEC_BY_ID, deviceAddressing } from '../matrix/devices';
 import { defineMatrix } from '../matrix/harness';
 import { TRANSFER_MODES } from '../matrix/reference-model';
 import {
+  TRANSFER_ART_DEVICE_IDS,
   createPipelineConfig,
   observeTransferArtwork,
   predictTransferArtwork,
@@ -41,26 +41,38 @@ ensureFixturesExist('multi-format-embedded');
 
 async function runPass(checkArtwork: boolean): Promise<Map<string, TransferArtObserved>> {
   const merged = new Map<string, TransferArtObserved>();
-  // Each transfer mode is a sync-wide setting → its own fresh iPod.
-  for (const transferMode of TRANSFER_MODES) {
-    const partial = await withTarget(async (target) => {
+  for (const deviceId of TRANSFER_ART_DEVICE_IDS) {
+    const spec = DEVICE_SPEC_BY_ID[deviceId];
+    // Each transfer mode is a sync-wide setting → its own fresh target.
+    for (const transferMode of TRANSFER_MODES) {
+      const target = await spec.create();
+      const { configFragment, deviceArg } = deviceAddressing(target);
+      const device = configFragment ? { fragment: configFragment, name: deviceArg } : undefined;
       const configPath = await createPipelineConfig(
         getMultiFormatEmbeddedFixturesDir(),
-        'transcode-aac'
+        'transcode-aac',
+        device
       );
       try {
-        return await observeTransferArtwork({ target, configPath, transferMode, checkArtwork });
+        const partial = await observeTransferArtwork({
+          target,
+          configPath,
+          device: deviceId,
+          transferMode,
+          checkArtwork,
+        });
+        for (const [key, observed] of partial) merged.set(key, observed);
       } finally {
         await cleanupTempConfig(configPath);
+        await target.cleanup();
       }
-    });
-    for (const [key, observed] of partial) merged.set(key, observed);
+    }
   }
   return merged;
 }
 
 defineMatrix({
-  title: 'artwork matrix — transfer-mode × artwork (file strip), iPod',
+  title: 'artwork matrix — transfer-mode × artwork (file strip + sidecar write), device axis',
   cells: transferArtCells(),
   cellKey: transferArtCellKey,
   cellLabel: transferArtCellLabel,

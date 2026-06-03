@@ -309,13 +309,24 @@ export function artworkPrimary(capabilities: DeviceCapabilities): ArtworkPrimary
  *   (resizing it to `artworkMaxResolution`), regardless of transfer mode.
  * - **Sidecar-primary device** (`artworkSources[0] === 'sidecar'`, e.g.
  *   rockbox): art lives in a device-side sidecar image (`cover.jpg` peer of
- *   the audio file), so the file's embedded cover is redundant. Per doc-012
- *   §"Sidecar Artwork Devices (Future)" the executor strips embedded art on
- *   every action (transcode AND copy) and writes a device-resolution sidecar.
- *   **podkit production does not yet implement the sidecar-write half — the
- *   matrices that sweep rockbox will diverge from this model until that
- *   lands**; surface those with `skipBug(...)` rather than encoding reality
- *   here. The model documents the spec, not the bug.
+ *   the audio file). Per doc-012 §"Sidecar Artwork Devices (TASK-370,
+ *   landed)" the embedded copy follows the standard transcode/copy +
+ *   transfer-mode rules — same as the database-artwork branch below — and a
+ *   peer cover lands separately via `adapter.writeSidecar`. The device
+ *   reads the peer cover; the embedded copy survives in the file body
+ *   incidentally under `portable` (preserves) and `fast direct-copy`
+ *   (FFmpeg never re-muxes), and is stripped under `optimized` / `fast`
+ *   transcode (`-vn`).
+ *
+ *   **Caveat:** this predicate is *observational*, not a spec commitment.
+ *   The executor doesn't actively re-embed for sidecar-primary devices, so
+ *   the embedded copy's survival is determined entirely by what FFmpeg
+ *   happens to do during the transcode/copy that's already running. If a
+ *   future change were to actively strip embedded art on sidecar-primary
+ *   targets (which would be defensible — the device doesn't read it), the
+ *   matrix cells using this predicate would need to update. doc-012
+ *   §"Sidecar Artwork Devices" is the spec; this function reflects the
+ *   current executor's behaviour against the multi-format fixtures.
  * - **Database-artwork device** (iPod): the file's embedded cover is redundant
  *   (art lives in the iTunesDB), so transfer mode decides its fate —
  *   `portable` preserves it; `optimized` strips it on every path; `fast`
@@ -331,11 +342,17 @@ export function fileArtworkSurvives(
   if (!sourceHadArt) return false;
   const primary = artworkPrimary(capabilities);
   if (primary === 'embedded') return true;
-  if (primary === 'sidecar') return false;
-  // database: per transfer-mode rules
-  if (transferMode === 'portable') return true;
-  if (transferMode === 'optimized') return false;
-  return action === 'copy';
+  // sidecar-primary devices follow the same transcode/copy + transfer-mode
+  // rules as database — the peer cover is what the device actually reads,
+  // and the embedded copy is incidental. `portable` preserves on every
+  // path, `optimized` strips, `fast` strips on transcode but keeps on
+  // direct copy (no re-mux).
+  if (primary === 'sidecar' || primary === 'database') {
+    if (transferMode === 'portable') return true;
+    if (transferMode === 'optimized') return false;
+    return action === 'copy';
+  }
+  return false;
 }
 
 /**
@@ -343,19 +360,23 @@ export function fileArtworkSurvives(
  * source cover's size. Resize only ever downscales (never upscales — doc-012
  * §"Source artwork is smaller than device max"):
  *
- * - **Embedded-artwork device**: the file is the art source, so the executor
+ * - **Embedded-artwork device**: the file IS the art source, so the executor
  *   shrinks the cover to `artworkMaxResolution` (the FFmpeg `artworkResize`
  *   path) → `min(source, max)`.
- * - **Sidecar-primary device** (rockbox): the file body should not carry art at
- *   all (see {@link fileArtworkSurvives}); callers must guard before asking.
- *   This function returns `0` to make a mistaken use-site obvious — the cover
- *   was meant to land in a peer `cover.jpg`, not in the file.
+ * - **Sidecar-primary device** (rockbox): the file body is NOT the device's
+ *   art source — the peer `cover.jpg` is. Where the file's embedded cover
+ *   survives the transfer (`portable`, or `fast direct-copy`), it stays at
+ *   source size: there's no embed-resize path on sidecar-primary devices
+ *   (that would invoke the FFmpeg mjpeg/scale path which embeds INTO the
+ *   file — wrong on a sidecar-primary device, which wants the peer cover to
+ *   be the device-facing artwork).
  * - **Database-artwork device** (iPod): the file's cover is left at source
  *   size — the iPod resizes only its iTunesDB thumbnail (to
  *   `artworkMaxResolution`), not the file — so the file stays at `source`.
  *
  * Assumes the cover survives in the file at all (e.g. a `portable` sync on
- * iPod, or any sync on an embedded device); see {@link fileArtworkSurvives}.
+ * iPod, a direct copy on rockbox, any sync on an embedded device); see
+ * {@link fileArtworkSurvives}.
  */
 export function expectedFileArtworkSize(
   sourceSize: number,
@@ -366,12 +387,9 @@ export function expectedFileArtworkSize(
   if (primary === 'embedded' && max !== null) {
     return predictArtworkScaleSize(sourceSize, max);
   }
-  if (primary === 'sidecar') {
-    // File body should be art-free on sidecar-primary devices. Callers should
-    // gate on `fileArtworkSurvives` first; returning 0 here makes a misuse
-    // visible rather than silently lying with the source size.
-    return 0;
-  }
+  // Sidecar-primary and database-artwork both leave the file's embedded
+  // copy at source size where it survives. Sidecar's *peer* cover is
+  // resized separately — see expectedSidecarSize.
   return sourceSize;
 }
 

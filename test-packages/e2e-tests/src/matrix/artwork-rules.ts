@@ -32,6 +32,7 @@ import {
   getMultiFormatEmbeddedStrippedFixturesDir,
   HIRES_ARTIST,
   HIRES_COVER_SIZE,
+  MULTI_FORMAT_DEFAULT_COVER_SIZE,
 } from '@podkit/test-fixtures';
 import type { SyncOutput } from 'podkit/types';
 
@@ -49,10 +50,10 @@ import {
 } from './axes.js';
 import {
   FIXTURE_EMBEDS_ART,
-  artworkPrimary,
   artworkReaches,
   deviceAction,
   expectedFileArtworkSize,
+  expectedSidecarSize,
   fileArtworkSurvives,
   sourceEmbedsArt,
   PIPELINES,
@@ -64,6 +65,7 @@ import {
   probeFileArtwork,
   probeIpodDbArtwork,
   probeIpodDbArtworkColor,
+  probeSidecarArtwork,
   type RgbColor,
 } from './device-artwork.js';
 import {
@@ -71,18 +73,17 @@ import {
   formatOpsString,
   isArtworkIdempotent,
   opsForTrack,
-  skipBug,
   type CellExpectation,
   type OpSummary,
   type SkipDecision,
 } from './harness.js';
 
 /**
- * Devices the host artwork matrix sweeps. iPod (database artwork) and two
- * embedded-art mass-storage presets. Every cell asserts real behaviour — the
- * one remaining `skipBug` fence covers sidecar-primary devices (TASK-370), and
- * `ms-generic` / `ms-echo-mini` are both embedded-primary so they exercise the
- * full TASK-372 dispatch without skipping.
+ * Devices the host artwork matrix sweeps (the source-side scenario × format
+ * × pipeline matrix; the transfer-artwork and resize matrices each carry
+ * their own device sweeps including rockbox). iPod (database artwork) and
+ * two embedded-art mass-storage presets. Post-TASK-370 / TASK-372 every cell
+ * asserts real behaviour with no `skipBug` fences.
  */
 export const ARTWORK_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-echo-mini', 'ms-generic'];
 
@@ -261,11 +262,11 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
 }
 
 /**
- * Post-TASK-372 fence shape.
+ * Post-TASK-370 / TASK-372 fence shape.
  *
- * The DeviceTrack.artworkSink primitive collapsed the old "embed via FFmpeg
- * vs. taglib OGG carve-out vs. setArtworkFromData no-op" matrix into a single
- * dispatch on `track.artworkSink`. The pipeline now picks the write path:
+ * Two layered primitives collapsed the old "embed via FFmpeg vs. taglib
+ * OGG carve-out vs. setArtworkFromData no-op vs. nowhere-to-land" matrix
+ * into a single dispatch on `track.artworkSink`:
  *
  *   - iPod (sink = 'database')       → `setArtworkFromData` always lands.
  *   - mass-storage embedded primary  → `updateTrack({ embeddedPictureData })`
@@ -273,33 +274,20 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
  *     including non-OGG outputs that used to drop bytes. So
  *     `ms-echo-mini` and `ms-generic` now pass adapter-fallback bytes
  *     through to the device file regardless of format/scenario.
- *   - mass-storage sidecar primary   → there is no `adapter.writeSidecar()`
- *     yet; the dispatch returns `undefined` and the caller skips the
- *     syncTag.artworkHash claim (no churn loop). Rockbox is the only
- *     sidecar-primary device today and isn't in this matrix sweep, but if
- *     it were added it would land here.
+ *   - mass-storage sidecar primary   → `adapter.writeSidecar()` (TASK-370)
+ *     writes a peer `cover.jpg` at `artworkMaxResolution`. Rockbox stays
+ *     out of `ARTWORK_DEVICE_IDS` (that sweep is for the source-side
+ *     scenario × format × pipeline product); the transfer-artwork and
+ *     resize matrices each carry their own rockbox cells.
  *
- * Net effect: the old TASK-370 fence on `C-sidecar` × every mass-storage
- * non-OGG cell (≈40 cells) lifts entirely. The only fence still needed is
- * the sidecar-primary one — kept as a forward-defensive guard for when a
- * future sweep adds rockbox. Today this returns null for every cell in
- * ARTWORK_DEVICE_IDS (all embedded-primary).
+ * Net effect: no skipBug fences remain. The function is preserved so a
+ * future regression that breaks sink dispatch surfaces here rather than
+ * silently widening the diff. Today this returns null for every cell in
+ * ARTWORK_DEVICE_IDS.
  */
-export function skipArtworkCell(cell: PipelineDeviceCell): SkipDecision | null {
-  const spec = DEVICE_SPEC_BY_ID[cell.device];
-  if (spec.kind !== 'mass-storage') return null;
-  // Embedded-primary mass-storage cells all pass post-TASK-372: taglib
-  // handles every container, so adapter-fallback bytes always land.
-  if (artworkPrimary(spec.capabilities) !== 'sidecar') return null;
-  // Sidecar-primary devices still have no device-write path. The dispatch
-  // returns undefined so syncTag.artworkHash is suppressed — but the cell
-  // still observes `deviceHasArtwork = false` where the reference model
-  // would predict true. Fence those until TASK-370 lands the writer.
-  if (cell.scenario !== 'C-sidecar') return null;
-  return skipBug(
-    'sidecar-primary device-write deferred until adapter.writeSidecar() lands',
-    'TASK-370'
-  );
+export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null {
+  // Reserved for future regressions — every current cell passes.
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -669,90 +657,168 @@ export function predictCompilation(format: Format, checkArtwork: boolean): Compi
 // Transfer-mode × artwork (file-level strip/preserve), iPod
 // ---------------------------------------------------------------------------
 
-/** A transfer-mode × format cell (scenario fixed at B-embedded, device iPod). */
+/**
+ * A transfer-mode × format × device cell.
+ *
+ * Pre-TASK-370 this was iPod-only (`TRANSFER_ART_DEVICE = 'ipod-MA147'`); the
+ * transfer-mode rules only made sense for a database-artwork device because
+ * mass-storage's file body IS the artwork. With sidecar-primary devices
+ * (rockbox) landing the peer cover, the matrix now sweeps device too:
+ *
+ *   - iPod (database): same iTunesDB-vs-file-body gap as before.
+ *   - rockbox (sidecar): the peer cover lands in every transfer mode at
+ *     `artworkMaxResolution`; the file body's embedded copy follows the
+ *     transcode/copy + transfer-mode rules (strip / preserve), with no
+ *     embedded-art-only short-circuit.
+ *
+ * Embedded-primary devices (echo-mini / generic) stay out of this sweep —
+ * the resize matrix covers them.
+ */
 export interface TransferArtCell {
+  device: DeviceId;
   format: Format;
   transferMode: TransferMode;
 }
 
+/** Devices the transfer-artwork matrix sweeps. */
+export const TRANSFER_ART_DEVICE_IDS: readonly DeviceId[] = ['ipod-MA147', 'ms-rockbox'];
+
 export function transferArtCells(): TransferArtCell[] {
   const cells: TransferArtCell[] = [];
-  for (const transferMode of TRANSFER_MODES) {
-    for (const format of FORMATS) {
-      cells.push({ format, transferMode });
+  for (const device of TRANSFER_ART_DEVICE_IDS) {
+    for (const transferMode of TRANSFER_MODES) {
+      for (const format of FORMATS) {
+        cells.push({ device, format, transferMode });
+      }
     }
   }
   return cells;
 }
 export function transferArtCellKey(cell: TransferArtCell): string {
-  return `${cell.transferMode}/${cell.format}`;
+  return `${cell.device}/${cell.transferMode}/${cell.format}`;
 }
 export function transferArtCellLabel(cell: TransferArtCell): string {
-  return `${cell.transferMode} / ${cell.format}`;
+  return `${cell.device} / ${cell.transferMode} / ${cell.format}`;
 }
 
 /**
- * Expected outcome for a transfer-mode artwork cell. The point is the gap
- * between the two artwork signals: on the iPod the cover always reaches the
- * iTunesDB (`dbHasArtwork`), but whether the on-device *file* keeps its
- * embedded copy (`fileHasArt`) depends on the transfer mode.
+ * Expected outcome for a transfer-mode artwork cell. Two artwork signals,
+ * plus an optional peer cover for sidecar-primary devices:
+ *
+ *   - `dbHasArtwork` — the cover in the iTunesDB. Always present on iPod
+ *     (the source has art); `null` on non-database devices because there's
+ *     no second store to compare against.
+ *   - `fileHasArt` — the written file still carries an embedded cover.
+ *     Driven by `fileArtworkSurvives`: database devices follow transfer
+ *     mode, sidecar devices always strip (the file body is redundant when
+ *     a peer cover lives next to it).
+ *   - `sidecarPresent` / `sidecarSize` — the peer `cover.jpg` written by
+ *     `adapter.writeSidecar` on sidecar-primary devices. `null` for
+ *     non-sidecar devices (no peer to look for).
  */
 export interface TransferArtExpected extends CellExpectation {
   trackPresent: boolean;
-  /** `device.hasArtwork` (iTunesDB) — always true here (source has art). */
+  /** iTunesDB cover — `true` on iPod with source art, `null` elsewhere. */
   dbHasArtwork: boolean | null;
   /** The written file still carries an embedded cover. */
   fileHasArt: boolean;
+  /** Peer `cover.jpg` exists in the album dir (sidecar-primary only). */
+  sidecarPresent: boolean | null;
+  /**
+   * Sidecar cover edge length (px, square) — `expectedSidecarSize(source, caps)`.
+   * `null` for non-sidecar-primary devices and when the cover is absent.
+   */
+  sidecarSize: number | null;
 }
 
 export interface TransferArtObserved extends Record<string, unknown> {
   trackPresent: boolean;
   dbHasArtwork: boolean | null;
   fileHasArt: boolean;
+  sidecarPresent: boolean | null;
+  sidecarSize: number | null;
 }
 
-/** The iPod the transfer-mode artwork matrix syncs to (database-artwork). */
-const TRANSFER_ART_DEVICE: DeviceId = 'ipod-MA147';
-/** Pipeline that yields both copy (mp3/aac) and transcode (rest) paths on iPod. */
+/** Pipeline that yields both copy (mp3/aac) and transcode (rest) paths. */
 const TRANSFER_ART_PIPELINE: Pipeline = 'transcode-aac';
 
 /**
- * Transfer-mode × artwork on the iPod. The fixture is scenario B-embedded, so
- * every source carries embedded art. The cover always reaches the iTunesDB
- * (`dbHasArtwork = true`), but the file copied to the device keeps its embedded
- * copy only as the transfer mode + action allow (`fileArtworkSurvives`):
+ * Transfer-mode × artwork, swept across device. Fixture is B-embedded so the
+ * source always carries embedded art. The visible signals diverge across the
+ * two stores per `fileArtworkSurvives` + `artworkPrimary`:
  *
- * - `portable` → every file keeps art.
- * - `optimized` → every file is stripped (copy and transcode).
- * - `fast` → copies (mp3/aac) keep art; transcodes (the rest) are stripped.
+ *   - iPod (database): the iTunesDB cover always lands. The file body keeps
+ *     its embedded cover under `portable`, strips under `optimized`, and on
+ *     `fast` keeps it only for the copy path (mp3/aac native to iPod).
+ *   - rockbox (sidecar): the peer `cover.jpg` always lands at
+ *     `artworkMaxResolution`. The file body's embedded cover follows the
+ *     transcode/copy rule: `portable` keeps it (FFmpeg `-c:v copy`),
+ *     `optimized`/`fast` strip it (`-vn`) — but `fast` keeps it on a
+ *     direct copy because the file isn't re-muxed at all.
  *
- * This is the only matrix that reads the on-device file bytes
- * (`probeFileArtwork`); it's the only way to see the strip, which is invisible
- * to both the dry-run plan and `TrackInfo.hasArtwork`.
+ * This is the only matrix that reads on-device file bytes (`probeFileArtwork`)
+ * and the new peer cover (`probeSidecarArtwork`); both are invisible to the
+ * dry-run plan and to `TrackInfo.hasArtwork`.
  */
 export function predictTransferArtwork(
   cell: TransferArtCell,
   _checkArtwork: boolean
 ): TransferArtExpected {
-  const caps = DEVICE_SPEC_BY_ID[TRANSFER_ART_DEVICE].capabilities;
+  const spec = DEVICE_SPEC_BY_ID[cell.device];
+  const caps = spec.capabilities;
   const sourceHadArt = sourceEmbedsArt('B-embedded', cell.format);
-  const action = deviceAction(cell.format, caps, TRANSFER_ART_PIPELINE, 'ipod');
-  const dbHasArtwork = artworkReaches(sourceHadArt, caps);
+  const action = deviceAction(cell.format, caps, TRANSFER_ART_PIPELINE, spec.kind);
+  const isDatabase = caps.artworkSources[0] === 'database';
+  const isSidecarPrimary = caps.artworkSources[0] === 'sidecar';
+  const dbHasArtwork = isDatabase ? artworkReaches(sourceHadArt, caps) : null;
   const fileHasArt = fileArtworkSurvives(action, cell.transferMode, sourceHadArt, caps);
+  // Sidecar predictions only apply to sidecar-primary devices. The reference
+  // model returns null for non-sidecar; the matrix asserts null vs null on
+  // those cells so a peer cover unexpectedly landing on iPod would surface.
+  const sidecarPresent = isSidecarPrimary ? sourceHadArt : null;
+  const sidecarSize =
+    isSidecarPrimary && sourceHadArt
+      ? expectedSidecarSize(MULTI_FORMAT_DEFAULT_COVER_SIZE, caps)
+      : null;
 
   let reason: string;
-  if (cell.transferMode === 'portable') {
-    reason = `portable preserves the embedded cover in the ${action} output; DB also has it`;
-  } else if (cell.transferMode === 'optimized') {
-    reason = `optimized strips the redundant file cover (${action}); the iTunesDB keeps it`;
+  if (isDatabase) {
+    if (cell.transferMode === 'portable') {
+      reason = `portable preserves the embedded cover in the ${action} output; DB also has it`;
+    } else if (cell.transferMode === 'optimized') {
+      reason = `optimized strips the redundant file cover (${action}); the iTunesDB keeps it`;
+    } else {
+      reason =
+        action === 'copy'
+          ? 'fast direct-copies a device-native file → embedded cover rides along for free'
+          : 'fast strips the cover on the transcode path (-vn); the iTunesDB keeps it';
+    }
+  } else if (isSidecarPrimary) {
+    const sidecarPhrase = sourceHadArt
+      ? `peer cover.jpg lands at artworkMaxResolution ${caps.artworkMaxResolution}`
+      : 'no source art → no peer cover written';
+    if (cell.transferMode === 'portable') {
+      reason = `portable preserves the embedded cover in the file body; ${sidecarPhrase}`;
+    } else if (cell.transferMode === 'optimized') {
+      reason = `optimized strips the redundant file cover (${action}); ${sidecarPhrase}`;
+    } else {
+      reason =
+        action === 'copy'
+          ? `fast direct-copies the file → embedded cover rides along; ${sidecarPhrase}`
+          : `fast strips the cover on the transcode path (-vn); ${sidecarPhrase}`;
+    }
   } else {
-    reason =
-      action === 'copy'
-        ? 'fast direct-copies a device-native file → embedded cover rides along for free'
-        : 'fast strips the cover on the transcode path (-vn); the iTunesDB keeps it';
+    reason = `embedded-primary device should not be in the transfer-art sweep (use the resize matrix)`;
   }
 
-  return { trackPresent: true, dbHasArtwork, fileHasArt, reason };
+  return {
+    trackPresent: true,
+    dbHasArtwork,
+    fileHasArt,
+    sidecarPresent,
+    sidecarSize,
+    reason,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -771,11 +837,18 @@ export const RESIZE_FORMATS: readonly Format[] = ['flac', 'alac', 'mp3', 'aac', 
 
 /**
  * Devices the resize matrix sweeps: two embedded-art devices with very
- * different `artworkMaxResolution` (generic 500, echo-mini 127) so a regression
- * that hardcoded the wrong max would show up on at least one of them, plus the
- * iPod for the database-artwork side.
+ * different `artworkMaxResolution` (generic 500, echo-mini 127), the iPod for
+ * the database-artwork side, and rockbox for the sidecar-primary side.
+ * Together they cover every artworkPrimary value the reference model knows
+ * about, so a regression that hardcoded the wrong resize path or the wrong
+ * max would show up on at least one of them.
  */
-export const RESIZE_DEVICE_IDS: readonly DeviceId[] = ['ms-generic', 'ms-echo-mini', 'ipod-MA147'];
+export const RESIZE_DEVICE_IDS: readonly DeviceId[] = [
+  'ms-generic',
+  'ms-echo-mini',
+  'ipod-MA147',
+  'ms-rockbox',
+];
 
 /** A device × format × transfer-mode cell of the resize matrix. */
 export interface ResizeCell {
@@ -813,6 +886,13 @@ export interface ResizeExpected extends CellExpectation {
    * for embedded-art devices (no database thumbnail to inspect).
    */
   dbArtWithinMax: boolean | null;
+  /** Peer `cover.jpg` exists in the album dir (sidecar-primary only). */
+  sidecarPresent: boolean | null;
+  /**
+   * Sidecar cover edge length (px) — `expectedSidecarSize(HIRES_COVER_SIZE, caps)`.
+   * `null` for non-sidecar-primary devices and when the cover is absent.
+   */
+  sidecarSize: number | null;
 }
 
 export interface ResizeObserved extends Record<string, unknown> {
@@ -820,6 +900,8 @@ export interface ResizeObserved extends Record<string, unknown> {
   width: number | null;
   height: number | null;
   dbArtWithinMax: boolean | null;
+  sidecarPresent: boolean | null;
+  sidecarSize: number | null;
 }
 
 /** Pipeline the resize matrix syncs under (gives copy + transcode paths on iPod). */
@@ -827,16 +909,20 @@ export const RESIZE_PIPELINE: Pipeline = 'transcode-aac';
 
 /**
  * Artwork resize against `artworkMaxResolution`, swept across every transfer
- * mode — the artwork *size* must match the device's configuration regardless of
- * mode. The hires fixture's cover is 1024px (> every device max), so:
+ * mode and device — the artwork *size* must match the device's configuration
+ * regardless of mode. The hires fixture's cover is 1024px (> every device max):
  *
- * - `ms-generic` (embedded, max 500): the file cover is kept and downscaled to
- *   500 in **every** mode — transfer mode does not change an embedded device's
- *   resize, the cover is the device's only art source.
+ * - `ms-generic` (embedded, max 500) / `ms-echo-mini` (embedded, max 127): the
+ *   file cover is kept and downscaled to the device max in **every** mode —
+ *   transfer mode does not change an embedded device's resize.
  * - iPod (database, max 320): the file cover is left at the source 1024 where
  *   it survives (per `fileArtworkSurvives`: `portable`, or a `fast` direct
  *   copy) and stripped otherwise; either way the iTunesDB thumbnail is resized
  *   within 320 in **every** mode (`dbArtWithinMax`).
+ * - rockbox (sidecar, max 320): the file body strips its embedded cover (the
+ *   reference model says sidecar-primary devices never keep file-body art),
+ *   AND a peer `cover.jpg` at 320 lands next to every track. The sidecar
+ *   resize matches `expectedSidecarSize(HIRES_COVER_SIZE, caps)`.
  */
 export function predictResize(cell: ResizeCell, _checkArtwork: boolean): ResizeExpected {
   const spec = DEVICE_SPEC_BY_ID[cell.device];
@@ -844,12 +930,20 @@ export function predictResize(cell: ResizeCell, _checkArtwork: boolean): ResizeE
   const action = deviceAction(cell.format, caps, RESIZE_PIPELINE, spec.kind);
   const present = fileArtworkSurvives(action, cell.transferMode, true, caps);
   const size = present ? expectedFileArtworkSize(HIRES_COVER_SIZE, caps) : null;
-  const embedded = caps.artworkSources[0] === 'embedded';
-  const isDatabaseArt = !embedded && caps.artworkSources.length > 0;
+  const primary = caps.artworkSources[0];
+  const isEmbedded = primary === 'embedded';
+  const isDatabaseArt = primary === 'database';
+  const isSidecarPrimary = primary === 'sidecar';
+  const sidecarSize = isSidecarPrimary ? expectedSidecarSize(HIRES_COVER_SIZE, caps) : null;
 
   let reason: string;
-  if (embedded) {
+  if (isEmbedded) {
     reason = `embedded-art device → file cover kept and downscaled to artworkMaxResolution ${caps.artworkMaxResolution} (from ${HIRES_COVER_SIZE}) in every mode`;
+  } else if (isSidecarPrimary) {
+    const fileBodyPhrase = present
+      ? `file body preserves the embedded cover at source ${HIRES_COVER_SIZE} (${action})`
+      : `file body strips the embedded cover (${action})`;
+    reason = `sidecar-primary device: ${fileBodyPhrase}; peer cover.jpg at artworkMaxResolution ${caps.artworkMaxResolution} (from ${HIRES_COVER_SIZE}) lands in every mode`;
   } else if (present) {
     reason = `iPod ${cell.transferMode}: file cover preserved at source ${HIRES_COVER_SIZE} (${action}); the iTunesDB thumbnail is resized within ${caps.artworkMaxResolution}`;
   } else {
@@ -861,6 +955,8 @@ export function predictResize(cell: ResizeCell, _checkArtwork: boolean): ResizeE
     width: size,
     height: size,
     dbArtWithinMax: isDatabaseArt ? true : null,
+    sidecarPresent: isSidecarPrimary ? true : null,
+    sidecarSize,
     reason,
   };
 }
@@ -1035,19 +1131,26 @@ export async function observeCompilation(opts: {
 }
 
 /**
- * Transfer-mode artwork pass for ONE mode: sync the embedded fixture with
- * `--transfer-mode <mode>` onto a fresh iPod, then read both artwork signals —
- * the iTunesDB flag (`getTracks`) and the on-device file's embedded cover
- * (`probeFileArtwork`). Returns per-format observed, keyed by
- * `transferArtCellKey`.
+ * Transfer-mode artwork pass for ONE (device, mode): sync the embedded
+ * fixture with `--transfer-mode <mode>` onto a fresh target, then read each
+ * artwork signal. Returns per-format observed, keyed by `transferArtCellKey`.
+ *
+ * Three observation channels:
+ *   - `dbHasArtwork`: iTunesDB cover (iPod only — `null` elsewhere).
+ *   - `fileHasArt`: on-device file's embedded cover via `probeFileArtwork`.
+ *   - `sidecarPresent` / `sidecarSize`: peer `cover.jpg` next to the audio
+ *     file via `probeSidecarArtwork` — only meaningful on sidecar-primary
+ *     devices (`null` on iPod, where there's no peer cover to probe).
  */
 export async function observeTransferArtwork(opts: {
   target: SyncTarget;
   configPath: string;
+  device: DeviceId;
   transferMode: TransferMode;
   checkArtwork: boolean;
 }): Promise<Map<string, TransferArtObserved>> {
-  const { target, configPath, transferMode, checkArtwork } = opts;
+  const { target, configPath, device: deviceId, transferMode, checkArtwork } = opts;
+  const spec = DEVICE_SPEC_BY_ID[deviceId];
   const { deviceArg } = deviceAddressing(target);
   const baseArgs = [
     '--config',
@@ -1064,7 +1167,7 @@ export async function observeTransferArtwork(opts: {
   const { result, json } = await runCliJson<SyncOutput>(initArgs, runOpts(240000));
   if (result.exitCode !== 0 || !json?.success) {
     throw new Error(
-      `transfer-mode sync failed (${transferMode}, checkArtwork=${checkArtwork}): exit=${result.exitCode}\n` +
+      `transfer-mode sync failed (${deviceId}, ${transferMode}, checkArtwork=${checkArtwork}): exit=${result.exitCode}\n` +
         `  json: ${JSON.stringify(json, null, 2)}\n` +
         `  stderr: ${result.stderr}`
     );
@@ -1073,19 +1176,83 @@ export async function observeTransferArtwork(opts: {
   const deviceTracks = await target.getTracks();
   const fileArt = await probeFileArtwork(target.musicRoot());
   const artist = SCENARIO_ARTIST['B-embedded'];
+  // Database-artwork devices (iPod) get the DB signal; on others the cell
+  // explicitly predicts `null` so observation matches.
+  const isDatabase = spec.capabilities.artworkSources[0] === 'database';
+  const isSidecarPrimary = spec.capabilities.artworkSources[0] === 'sidecar';
+  // Album dir on the device: the multi-format fixture's album tag is
+  // `${albumCategory} (Embedded)`; we don't need to predict it precisely
+  // because every track on the B-embedded variant is in the *same* album dir.
+  // We discover it by walking the music root once and finding the directory
+  // containing any of our format files. Cheap: O(albums on device).
+  const sidecarAlbumDirs = isSidecarPrimary ? await findAlbumDirsUnder(target.musicRoot()) : [];
 
   const byKey = new Map<string, TransferArtObserved>();
   for (const format of FORMATS) {
     const title = FORMAT_TITLE[format];
     const device = findDeviceTrack(deviceTracks, artist, title);
     const file = fileArt.get(trackId(artist, title));
-    byKey.set(transferArtCellKey({ format, transferMode }), {
+    let sidecarPresent: boolean | null = null;
+    let sidecarSize: number | null = null;
+    if (isSidecarPrimary) {
+      // The fixture has ONE album dir containing every format; the peer
+      // cover lives there. Probe the first album dir we found (any will do
+      // — they all share the same cover).
+      const albumDir = sidecarAlbumDirs[0];
+      if (albumDir !== undefined) {
+        const cover = await probeSidecarArtwork(target.musicRoot(), albumDir);
+        sidecarPresent = cover.present;
+        // For the resize matrix the size assertion is pixel-perfect; here
+        // we report width as the dimension signal (cover is square) so a
+        // single `width === height === expectedSidecarSize` check holds.
+        sidecarSize = cover.width;
+      } else {
+        sidecarPresent = false;
+      }
+    }
+    byKey.set(transferArtCellKey({ device: deviceId, format, transferMode }), {
       trackPresent: device !== undefined,
-      dbHasArtwork: device ? device.hasArtwork : null,
+      dbHasArtwork: device ? (isDatabase ? device.hasArtwork : null) : null,
       fileHasArt: file?.hasEmbeddedArt ?? false,
+      sidecarPresent,
+      sidecarSize,
     });
   }
   return byKey;
+}
+
+/**
+ * Walk a device music root and return the relative paths of every leaf
+ * directory that contains at least one audio file. Used to find the album
+ * dir where a sidecar `cover.jpg` should live without hardcoding the path
+ * template (which differs across mass-storage presets).
+ */
+async function findAlbumDirsUnder(musicRoot: string): Promise<string[]> {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const audioExt = new Set(['.flac', '.mp3', '.m4a', '.opus', '.ogg', '.wav', '.aiff', '.aif']);
+  const albumDirs = new Set<string>();
+  async function walk(dir: string): Promise<void> {
+    let entries;
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(full);
+      } else if (entry.isFile()) {
+        const dot = entry.name.lastIndexOf('.');
+        if (dot !== -1 && audioExt.has(entry.name.slice(dot).toLowerCase())) {
+          albumDirs.add(path.relative(musicRoot, path.dirname(full)));
+        }
+      }
+    }
+  }
+  await walk(musicRoot);
+  return [...albumDirs];
 }
 
 /**
@@ -1126,9 +1293,19 @@ export async function observeResize(opts: {
   // Database-artwork devices (iPod) resize the iTunesDB thumbnail, not the
   // file; read it back to confirm it's bounded by artworkMaxResolution.
   const caps = target.capabilities;
-  const isDatabaseArt = caps.artworkSources[0] !== 'embedded' && caps.artworkSources.length > 0;
+  const primary = caps.artworkSources[0];
+  const isDatabaseArt = primary === 'database';
+  const isSidecarPrimary = primary === 'sidecar';
   const dbArt = isDatabaseArt ? await probeIpodDbArtwork(target.path) : new Map<string, number>();
   const max = caps.artworkMaxResolution;
+  // Sidecar-primary devices write peer cover.jpg per album. The hires fixture
+  // has ONE album dir containing every format; probe the first album dir we
+  // find. All anchor tracks share the same peer cover.
+  const sidecarAlbumDirs = isSidecarPrimary ? await findAlbumDirsUnder(target.musicRoot()) : [];
+  const sidecarCover =
+    isSidecarPrimary && sidecarAlbumDirs[0] !== undefined
+      ? await probeSidecarArtwork(target.musicRoot(), sidecarAlbumDirs[0])
+      : null;
 
   const byKey = new Map<string, ResizeObserved>();
   for (const format of RESIZE_FORMATS) {
@@ -1148,6 +1325,10 @@ export async function observeResize(opts: {
       width: file?.width ?? null,
       height: file?.height ?? null,
       dbArtWithinMax,
+      // The peer cover is per-album, not per-track; every anchor format on
+      // this album sees the same observation.
+      sidecarPresent: isSidecarPrimary ? (sidecarCover?.present ?? false) : null,
+      sidecarSize: isSidecarPrimary ? (sidecarCover?.width ?? null) : null,
     });
   }
   return byKey;

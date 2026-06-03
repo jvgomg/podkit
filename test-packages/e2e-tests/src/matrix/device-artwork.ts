@@ -26,7 +26,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
@@ -165,6 +165,66 @@ export async function probeFileArtwork(musicRoot: string): Promise<Map<string, F
   }
 
   return byTrack;
+}
+
+/** Sidecar artwork state for one album dir on a sidecar-primary device. */
+export interface SidecarArtwork {
+  /** A `cover.jpg` peer exists in the album dir. */
+  present: boolean;
+  /** Byte size of the cover file when present; `null` otherwise. */
+  sizeBytes: number | null;
+  /** Cover pixel width when present and ffprobe-readable; `null` otherwise. */
+  width: number | null;
+  /** Cover pixel height when present and ffprobe-readable; `null` otherwise. */
+  height: number | null;
+}
+
+/**
+ * Probe the peer `cover.jpg` for one album directory on a sidecar-primary
+ * device (rockbox). Reads the byte size via stat and the pixel dimensions via
+ * ffprobe — independent of podkit's writer so a bug in writeSidecar can't be
+ * masked by reading the bytes the same way they were written (same
+ * independence rationale as {@link probeFileArtwork}).
+ *
+ * The album dir is resolved relative to the device's music root — callers pass
+ * the *device-relative* path (e.g. `Artist/Album`), not an absolute path; this
+ * function joins against `musicRoot` for the final probe.
+ */
+export async function probeSidecarArtwork(
+  musicRoot: string,
+  albumRelativeDir: string
+): Promise<SidecarArtwork> {
+  const coverPath = join(musicRoot, albumRelativeDir, 'cover.jpg');
+  let stats;
+  try {
+    stats = await stat(coverPath);
+  } catch {
+    return { present: false, sizeBytes: null, width: null, height: null };
+  }
+  // ffprobe the cover image. cover.jpg has a single video (JPEG) stream;
+  // width/height come straight off it. If ffprobe fails (e.g. corrupt
+  // bytes), we still report present=true so the test can distinguish "no
+  // cover at all" from "torn write" — the size signal stays meaningful.
+  let width: number | null = null;
+  let height: number | null = null;
+  try {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v',
+      'error',
+      '-show_streams',
+      '-of',
+      'json',
+      coverPath,
+    ]);
+    const probe = JSON.parse(stdout) as { streams?: Array<{ width?: number; height?: number }> };
+    const stream = probe.streams?.[0];
+    width = stream?.width ?? null;
+    height = stream?.height ?? null;
+  } catch {
+    // Leave width/height as null — the caller's predictor only insists on
+    // dimensions when the cell is checking resize, not just presence.
+  }
+  return { present: true, sizeBytes: stats.size, width, height };
 }
 
 /**
