@@ -1,9 +1,10 @@
 ---
 id: TASK-371
 title: Mass-storage non-OGG embedded-art write via taglib
-status: To Do
+status: Done
 assignee: []
 created_date: '2026-06-02 08:10'
+updated_date: '2026-06-03 20:46'
 labels:
   - enhancement
   - artwork
@@ -55,3 +56,35 @@ TASK-142 scope was "source-side: detect sidecars + fetch from adapter". This is 
 - Care with M4A: taglib-sharp's M4A picture write rewrites the `udta`/`moov` atoms in place. Tested on iPod (`@podkit/libgpod-node` writes via libgpod, separate path).
 - Watch for the album cache → setArtworkFromData → updateTrack pipeline order: today the OGG branch fires `track.setArtworkFromData(cached.data)` first (no-op for mass-storage), THEN `this.device.updateTrack(track, { embeddedPictureData })`. After this change, `setArtworkFromData` writes directly and the `updateTrack` branch becomes redundant — collapse into one path.
 <!-- SECTION:DESCRIPTION:END -->
+
+## Final Summary
+
+<!-- SECTION:FINAL_SUMMARY:BEGIN -->
+## Closed by TASK-372 (commit 50a6247f)
+
+TASK-372's artworkSink primitive collapsed this task's scope. The `'embedded'` sink dispatches through `MusicPipeline.transferArtwork` → `device.updateTrack({ embeddedPictureData })` → `MassStorageTagWriter.writePicture` (node-taglib-sharp), which handles every common container without an `isOggExtension` guard. FLAC / MP3 / M4A / AIFF / WAV / OGG / Opus all work via the same path.
+
+### What landed
+
+- **OGG-only carve-out removed.** The `isOggExtension(track.filePath)` guard inside `pipeline.transferArtwork` (the OG hack for FFmpeg's no-OGG-embed limitation) is gone. All embed-capable containers now use the taglib path.
+- **doc-012 § "Embedded Artwork Devices"** updated from "Future" to "TASK-372 landed", with a new "How embed writes are dispatched" subsection.
+- **`MassStorageTrack.setArtworkFromData`** remains a no-op on the interface — kept for `DeviceTrack` conformance, but unreachable from the live pipeline (sink dispatch never calls it for `'embedded'`). Could be deleted from the interface when a future cleanup audits unused contract surface.
+- **Matrix fences:** `skipArtworkCell` (the TASK-370 fence) narrowed from 28 cells skipped to 0 on the currently-swept device axis. Only sidecar-primary devices (rockbox, not in `ARTWORK_DEVICE_IDS`) would still be fenced.
+
+### What did NOT need a separate change
+
+- The acceptance criterion "Implement `setArtworkFromData(bytes)` on `MassStorageTrack` via taglib" was satisfied by routing through `updateTrack({ embeddedPictureData })` instead. Functionally equivalent — bytes land in the file via taglib — and avoids a parallel implementation.
+- The acceptance criterion "Extend `embeddedPictureData` to all container types in `MassStorageAdapter.updateTrack`" was a no-op: the existing path already supports every taglib-handled container; only the pipeline gate was format-restrictive.
+
+### Verification
+
+- Host artwork matrices: 501 pass / 0 skip / 0 fail (all 5 art-matrix files).
+- Docker matrices (Navidrome): 96 pass / 0 fail.
+- Unit suite: 2879 pass.
+
+### Follow-ups (not in this task)
+
+- TASK-376: atomic on-file writes (doc-041 §3.4/§7.2).
+- TASK-377: normalize picture-write flush + typed `PictureWriteError` (doc-041 §3.1).
+- TASK-370: sidecar device-write (still open; the `'sidecar'` sink wiring is the remaining piece).
+<!-- SECTION:FINAL_SUMMARY:END -->

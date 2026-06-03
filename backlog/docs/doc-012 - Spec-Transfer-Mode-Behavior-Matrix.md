@@ -91,7 +91,7 @@ Note: MP3 output does not use `-f ipod` container format. The output format is i
 
 No FFmpeg involvement. Standard file copy operation.
 
-## Behavior Matrix: Embedded Artwork Devices (Future)
+## Behavior Matrix: Embedded Artwork Devices (TASK-372, landed)
 
 For devices that read artwork from embedded file data. The key difference: stripping artwork degrades the experience, so `optimized` resizes rather than strips.
 
@@ -101,7 +101,24 @@ For devices that read artwork from embedded file data. The key difference: strip
 | Lossless copy | Direct copy | Optimized copy, resize artwork | Direct copy |
 | Lossy copy | Direct copy | Optimized copy, resize artwork | Direct copy |
 
-**Not implemented in v1.** The `DeviceCapabilities` interface is designed to support this, but the resize/embed logic ships with Echo Mini device support.
+### How embed writes are dispatched
+
+After TASK-372 every `DeviceTrack` declares `artworkSink: 'database' | 'embedded' | 'sidecar' | 'noop'`. `MassStorageTrack` derives it from `capabilities.artworkSources[0]`: `'embedded'` for echo-mini / generic, `'sidecar'` for rockbox, `'noop'` for empty.
+
+`MusicPipeline.transferArtwork` switches on the sink:
+
+- `'embedded'` → `device.updateTrack(track, { embeddedPictureData: resizedBytes })`. Routes through `MassStorageTagWriter.writePicture` (node-taglib-sharp) which handles **every common container** — FLAC (`PICTURE` block), MP3 (`APIC`), M4A (`covr`), AIFF (`APIC` via `ID3v2`), WAV (`id3 ` RIFF chunk), OGG/Opus (`METADATA_BLOCK_PICTURE`). No format-specific carve-outs.
+
+`MassStorageTrack.setArtworkFromData` remains a no-op, but is unreachable from the live pipeline — the sink-driven dispatch never calls it for embedded devices. Kept on the interface for `DeviceTrack` conformance.
+
+### Resize
+
+The pipeline resizes the bytes to `capabilities.artworkMaxResolution` before handing them to the tag writer (`getResizedArtwork` reuses the album-level resize cache so siblings on one album cost one FFmpeg spawn). See `pipeline.ts:1539-1546`.
+
+### What's NOT here yet
+
+- **Atomic on-file writes** (TASK-376). A SIGKILL mid-write can leave a torn audio file; the tag writer opens in place rather than tmp+rename. doc-041 §3.4 + §7.2 has the design.
+- **Typed `PictureWriteError`** (TASK-377). Picture-write failures surface as raw rejections from `Promise.all`; categorisation relies on a path-in-message heuristic. doc-041 §3.1 + §3.3.
 
 ## Sidecar Artwork: Source-Side (TASK-142, landed)
 
