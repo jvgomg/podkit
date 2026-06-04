@@ -12,9 +12,9 @@
  * Usage (from a package directory):
  *   bun run /path/to/run-tests-parallel.ts \
  *       --pattern '*.integration.test.ts' \
- *       --concurrency 8
+ *       --concurrency 4
  *
- * Defaults: pattern = '*.integration.test.ts' under src/, concurrency = 8.
+ * Defaults: pattern = '*.integration.test.ts' under src/, concurrency = 4.
  *
  * Exit code: 0 if every file passed, 1 if any failed.
  */
@@ -38,7 +38,7 @@ function parseArgs(): Args {
   const out: Args = {
     pattern: '*.integration.test.ts',
     exclude: [],
-    concurrency: parseInt(process.env.TEST_CONCURRENCY ?? '8', 10),
+    concurrency: parseInt(process.env.TEST_CONCURRENCY ?? '4', 10),
     timeout: parseInt(process.env.TEST_TIMEOUT ?? '30000', 10),
     bail: false,
     root: 'src',

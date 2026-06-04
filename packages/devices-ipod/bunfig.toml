@@ -1,5 +1,2 @@
 [test]
-# See packages/podkit-cli/bunfig.toml for the rationale on why integration
-# tests are excluded by default.
-pathIgnorePatterns = ["**/*.integration.test.ts"]
 retry = 2

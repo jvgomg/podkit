@@ -37,7 +37,7 @@ export interface CliOptions {
   cwd?: string;
   /** Environment variables (merged with process.env). */
   env?: Record<string, string>;
-  /** Timeout in milliseconds (default: 30000). */
+  /** Timeout in milliseconds (default: 90000). */
   timeout?: number;
   /** Standard input to send to the process. */
   stdin?: string;
@@ -69,7 +69,7 @@ export function getCliPath(): string {
  */
 export async function runCli(args: string[], options: CliOptions = {}): Promise<CliResult> {
   const cliPath = getCliPath();
-  const timeout = options.timeout ?? 30000;
+  const timeout = options.timeout ?? 90000;
   const startTime = performance.now();
 
   return new Promise((resolveResult, rejectResult) => {

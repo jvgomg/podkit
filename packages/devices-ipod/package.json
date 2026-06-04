@@ -17,9 +17,8 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node --external koffi --external usb --external @podkit/ipod-firmware && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
-    "test": "bun test",
+    "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
-    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

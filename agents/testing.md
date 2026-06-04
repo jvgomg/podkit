@@ -186,11 +186,23 @@ bun run test --filter podkit-core    # Same composition, scoped to one package
 
 E2E packages are kept out of the global compose by using non-`test` task names — `@podkit/e2e-tests` runs `test:e2e` and `test:e2e:docker` (different turbo tasks, separate cache keys), `@podkit/e2e-vm-tests` runs `test:vm`. `bun run test` therefore only fans out to `test:unit` + `test:integration` across the workspace; the e2e suites only fire when explicitly requested via their named root scripts.
 
+**E2E scope, by command:**
+
+| Command | Runs what | Where |
+|---|---|---|
+| `bun run test:e2e` | `*.test.ts` (excluding `*.docker.test.ts`) — host CLI subprocess against dummy iPod. | `test-packages/e2e-tests/` only. |
+| `bun run test:e2e:docker` | `*.docker.test.ts` — host CLI subprocess against containerised back-ends. | `test-packages/e2e-tests/` only. |
+| `bun run test:vm` | `*.e2e.test.ts` + harness self-tests — Lima VM with `dummy_hcd` + FunctionFS. | `test-packages/e2e-vm-tests/` and `test-packages/device-testing/src/vm/`. |
+
+Note the naming gotcha: `*.e2e.test.ts` files are **not** picked up by `test:e2e`. They run via `test:vm` because they need the VM harness. Only files in `@podkit/e2e-tests` count toward `test:e2e` / `test:e2e:docker`.
+
 **Important:** Library-package `test` scripts are no-ops (`true`) because turbo handles the composition. Don't `cd` into a package and run `bun run test` directly — use turbo from the repo root. To run a single test file directly:
 
 ```bash
 bun test packages/podkit-core/src/foo.test.ts  # Run a single file (bypasses turbo)
 ```
+
+**Adding `test:integration` to a package:** Only add the script (and the `**/*.integration.test.ts` entry in `bunfig.toml`'s `pathIgnorePatterns`) when the package actually has integration tests. Packages without integration tests omit both — `bun run test:integration` from the root then just skips them, no ceremony. The pattern is opt-in: `podkit-core`, `podkit-cli`, `libgpod-node`, `gpod-testing` opt in because they ship real integration suites; everyone else stays at unit-only until they need it.
 
 ## Running Tests Efficiently
 
@@ -304,10 +316,11 @@ The tiers in the [Quick Reference](#quick-reference) are enforced by **bunfig.to
 
 ### How the gates compose
 
-- Every package's `bunfig.toml` lists `pathIgnorePatterns` covering the slower tiers it owns. Examples:
+- A package's `bunfig.toml` lists `pathIgnorePatterns` only for tiers it owns:
   - `packages/podkit-core/bunfig.toml` ignores `**/*.integration.test.ts` **and** `**/*.perf.test.ts` — so bare `bun test` runs only the fast unit tier.
-  - Most other packages ignore only `**/*.integration.test.ts` (no perf tests there).
-  - `test-packages/device-testing/bunfig.toml` also ignores `**/*.e2e.test.ts` so stray runs don't try to spin up VM personas.
+  - `packages/podkit-cli`, `libgpod-node`, `gpod-testing` ignore `**/*.integration.test.ts`.
+  - `test-packages/device-testing/bunfig.toml` ignores `**/*.e2e.test.ts` so stray runs don't try to spin up VM personas.
+  - Packages with no integration / perf / e2e files keep their bunfig minimal (just `retry = 2`) — nothing to gate.
 - Each task script clears the ignore for the tier it wants and filters in:
   - `test:integration` → `gpod-tests-parallel` (default pattern `*.integration.test.ts`).
   - `test:perf` → `gpod-tests-parallel --pattern '*.perf.test.ts'`.
@@ -658,8 +671,11 @@ When run via `bun turbo run test:integration` across all packages, total wall-cl
 
 **Tuning:**
 
+Default `TEST_CONCURRENCY=4`. The runner was originally tuned at 8, but full e2e runs under that setting reliably starved sub-1-second dry-run CLI invocations past the `runCli` 90 s timeout. 4-way parallelism gave each `bun test` subprocess real CPU headroom and wiped the flake class. Bump higher on a beefier machine if you want it back.
+
 ```bash
-TEST_CONCURRENCY=4 bun run test:integration   # lower if oversubscribed
+TEST_CONCURRENCY=8 bun run test:integration   # raise on a beefier host
+TEST_CONCURRENCY=1 bun run test:integration   # serial — for diagnosing contention
 TEST_TIMEOUT=60000 bun run test:integration   # bump if tests are CPU-starved
 ```
 

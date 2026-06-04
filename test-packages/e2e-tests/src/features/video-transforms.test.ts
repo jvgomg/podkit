@@ -307,6 +307,6 @@ describe('video transforms: showLanguage', () => {
           await rm(configDir, { recursive: true, force: true });
         }
       });
-    });
+    }, 120000);
   });
 });

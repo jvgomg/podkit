@@ -20,9 +20,8 @@
   "scripts": {
     "build": "bun build src/index.ts --outdir dist --target node --external @podkit/core --external @podkit/device-types && bun run build:types",
     "build:types": "tsc -p tsconfig.build.json --emitDeclarationOnly --outDir dist",
-    "test": "bun test",
+    "test": "true",
     "test:unit": "bun test --pass-with-no-tests",
-    "test:integration": "bun test --pass-with-no-tests --path-ignore-patterns= .integration.",
     "test:vm": "bun run scripts/preflight-vm.ts && bun test src/vm --path-ignore-patterns= --pass-with-no-tests",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist",
