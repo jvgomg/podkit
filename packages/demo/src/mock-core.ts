@@ -781,6 +781,29 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Demo-side stub for the real `PipelineBusyError` exported by `@podkit/core`.
+ * The demo never invokes concurrent execute() so this is purely a type-parity
+ * shim — `mock-core.check.ts` enforces that every `@podkit/core` named export
+ * has a counterpart here.
+ */
+export class PipelineBusyError extends Error {
+  constructor() {
+    super('PipelineBusyError (demo stub)');
+    this.name = 'PipelineBusyError';
+  }
+}
+
+/**
+ * Demo-side stub for `@podkit/core`'s `isOggExtension`. Same trivial predicate
+ * the real module exports; reproduced here so `mock-core.check.ts`'s
+ * export-parity guard holds.
+ */
+export function isOggExtension(filePath: string): boolean {
+  const ext = filePath.toLowerCase().match(/\.[^.]+$/)?.[0];
+  return ext === '.opus' || ext === '.ogg';
+}
+
 export class MusicPipeline {
   private _ipod: any;
   private _transcoder: any;
@@ -2543,6 +2566,9 @@ export function resolveIpodModel(_input: any): any {
   return null;
 }
 export function resolveCapabilities(_identity: any, _opts?: any): any {
+  return {};
+}
+export function resolveCapabilitiesResolved(_identity: any, _opts?: any): any {
   return {};
 }
 export function identifyCapabilities(_model: any, _opts?: any): any {

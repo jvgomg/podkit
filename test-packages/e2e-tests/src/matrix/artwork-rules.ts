@@ -286,7 +286,9 @@ export function pipelineDeviceCellLabel(cell: PipelineDeviceCell): string {
  * ARTWORK_DEVICE_IDS.
  */
 export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null {
-  // Reserved for future regressions — every current cell passes.
+  // No fences active — every cell in ARTWORK_DEVICE_IDS passes.
+  // Add a `skipBug(...)` here when a new device in ARTWORK_DEVICE_IDS exposes a
+  // known gap (e.g. a sidecar-primary preset that doesn't yet have a write path).
   return null;
 }
 
@@ -309,9 +311,9 @@ export function skipArtworkCell(_cell: PipelineDeviceCell): SkipDecision | null 
  * which handles ALL containers via node-taglib-sharp, not just OGG). The
  * iPod-vs-mass-storage split this predictor used to carry is gone.
  *
- * Sidecar-primary devices still fall out of the matrix via `skipArtworkCell`
- * (TASK-370 will land `adapter.writeSidecar()`); the predictor doesn't need
- * a branch for them.
+ * Sidecar-primary devices (rockbox) are covered by the transfer-artwork and
+ * resize matrices. `skipArtworkCell` documents that integration point — the
+ * predictor doesn't need a branch for them.
  */
 export function predictDirectory(
   cell: PipelineDeviceCell,

@@ -14,40 +14,12 @@ import { getDiagnosticCheckIds, getDiagnosticCheck } from '../index.js';
 import type { DiagnosticContext, RepairContext } from '../types.js';
 import type { IpodTrack } from '../../ipod/types.js';
 import type { IpodDatabase } from '../../ipod/database.js';
+import { makeMockIpodTrack } from '../../test-utils/tracks.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeIpodTrack(hasArtwork: boolean): IpodTrack {
-  return {
-    title: 'Test Track',
-    artist: 'Test Artist',
-    album: 'Test Album',
-    comment: undefined,
-    syncTag: null,
-    duration: 180000,
-    bitrate: 256,
-    sampleRate: 44100,
-    size: 5000000,
-    mediaType: 1,
-    filePath: ':iPod_Control:Music:F00:test.m4a',
-    timeAdded: 0,
-    timeModified: 0,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
-    hasArtwork,
-    hasFile: true,
-    compilation: false,
-    artworkSink: 'database',
-    update: mock(() => ({}) as IpodTrack),
-    remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IpodTrack),
-    setArtwork: mock(() => ({}) as IpodTrack),
-    setArtworkFromData: mock(() => ({}) as IpodTrack),
-    removeArtwork: mock(() => ({}) as IpodTrack),
-  } as IpodTrack;
+  return makeMockIpodTrack({ hasArtwork });
 }
 
 function makeMockDb(tracks: IpodTrack[]): IpodDatabase {

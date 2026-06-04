@@ -53,6 +53,7 @@ import type { DiagnosticContext, RepairContext } from '../types.js';
 import type { IpodTrack, TrackFields } from '../../ipod/types.js';
 import type { IpodDatabase } from '../../ipod/database.js';
 import type { CollectionAdapter, CollectionTrack, FileAccess } from '../../adapters/interface.js';
+import { makeMockIpodTrack, makeMockCollectionTrack } from '../../test-utils/tracks.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Filesystem builders
@@ -144,36 +145,7 @@ function makeTrack(overrides: {
   comment?: string;
   hasArtwork?: boolean;
 }): IpodTrack {
-  return {
-    title: overrides.title,
-    artist: overrides.artist,
-    album: overrides.album,
-    comment: overrides.comment,
-    syncTag: null,
-    duration: 180_000,
-    bitrate: 256,
-    sampleRate: 44_100,
-    size: 5_000_000,
-    mediaType: 1,
-    filePath: ':iPod_Control:Music:F00:test.m4a',
-    timeAdded: 0,
-    timeModified: 0,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
-    hasArtwork: overrides.hasArtwork ?? true,
-    hasFile: true,
-    compilation: false,
-    artworkSink: 'database',
-    update: mock(() => ({}) as IpodTrack),
-    remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IpodTrack),
-    setArtwork: mock(() => ({}) as IpodTrack),
-    setArtworkFromData: mock(() => ({}) as IpodTrack),
-    removeArtwork: mock(() => ({}) as IpodTrack),
-  } as IpodTrack;
+  return makeMockIpodTrack({ ...overrides, hasArtwork: overrides.hasArtwork ?? true });
 }
 
 interface MockDbHandle {
@@ -261,14 +233,13 @@ function makeCollectionTrack(args: {
   title: string;
   album: string;
 }): CollectionTrack {
-  return {
+  return makeMockCollectionTrack({
     id: `${args.artist}-${args.title}`,
     title: args.title,
     artist: args.artist,
     album: args.album,
     filePath: `/music/${args.artist}/${args.title}.flac`,
-    fileType: 'flac' as const,
-  } as CollectionTrack;
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

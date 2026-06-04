@@ -138,6 +138,9 @@ export {
   VIDEO_RETRY_CONFIG,
 } from './sync/engine/error-handling.js';
 
+// Audio container helpers
+export { isOggExtension } from './audio/containers.js';
+
 // Music sync pipeline (three-stage execution engine, ADR-011)
 export type {
   ExtendedExecuteOptions,
@@ -154,7 +157,6 @@ export {
   categorizeError,
   createCategorizedError,
   getRetriesForCategory,
-  isOggExtension,
   MUSIC_RETRY_CONFIG,
 } from './sync/music/pipeline.js';
 

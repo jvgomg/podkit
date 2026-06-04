@@ -17,7 +17,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as mm from 'music-metadata';
 
-import { atomicCopyFile, atomicWriteFile } from '../utils/atomic-fs.js';
+import { atomicCopyFile, atomicWriteFile, PODKIT_TEMP_SUFFIX } from '../utils/atomic-fs.js';
 
 import type {
   DeviceAdapter,
@@ -475,13 +475,9 @@ export class MassStorageTrack implements DeviceTrack {
  */
 export const SIDECAR_FILENAME = 'cover.jpg';
 
-/**
- * Suffix used while a sidecar cover is being written. A SIGKILL between the
- * tmp write and the rename leaves this file behind for a future doctor walk
- * to reap; the destination cover is either the previous version or absent,
- * never a torn write that the device would render as garbage.
- */
-const SIDECAR_TMP_SUFFIX = '.podkit-tmp';
+// PODKIT_TEMP_SUFFIX ('.podkit-tmp') is imported from atomic-fs.ts — the same
+// constant the pipeline uses for transcode temp files, keeping all in-flight
+// write markers uniform.
 
 /**
  * Write a sidecar cover image atomically: ensure the album dir exists, write
@@ -502,7 +498,7 @@ const SIDECAR_TMP_SUFFIX = '.podkit-tmp';
 async function writeSidecarAtomically(absoluteAlbumDir: string, imageData: Buffer): Promise<void> {
   await fs.promises.mkdir(absoluteAlbumDir, { recursive: true });
   const finalPath = path.join(absoluteAlbumDir, SIDECAR_FILENAME);
-  const tmpPath = finalPath + SIDECAR_TMP_SUFFIX;
+  const tmpPath = finalPath + PODKIT_TEMP_SUFFIX;
   // Open + write + fsync via a single FD so a power-cut after `rename` cannot
   // leave the renamed target pointing at unsynced blocks. (writeFile alone
   // returns once the data is in the page cache, not when it's on disk.)

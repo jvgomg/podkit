@@ -39,6 +39,24 @@ export interface AlbumArtworkCacheOptions {
 
 /**
  * Per-call options for {@link AlbumArtworkCache.get}.
+ *
+ * ## Behavioural branches
+ *
+ * The two fields compose to give four distinct cache behaviours. Understanding
+ * which branch applies is important for cache hygiene (null-poisoning risk):
+ *
+ * | `candidates` | `adapterFallback` | Null cached? | Source consulted           |
+ * |:---:         |:---:              |:---:         |:---                        |
+ * | absent       | absent            | no           | `sourceFilePath` only      |
+ * | absent       | present           | no           | `sourceFilePath`, then fallback |
+ * | present      | absent            | **yes**      | candidates in order        |
+ * | present      | present           | **yes**      | candidates, then fallback  |
+ *
+ * When `candidates` is present the cache commits to a final answer for the
+ * album — all siblings have been enumerated, so a null means no art exists
+ * anywhere and re-probing would be pointless. Without `candidates` the cache
+ * stays non-committal on null: a different caller may later supply siblings
+ * that reveal art (the artwork-repair route visits tracks individually).
  */
 export interface AlbumArtworkGetOptions {
   /**
@@ -133,16 +151,18 @@ export class AlbumArtworkCache {
   /**
    * Get artwork for a track, using the album-level cache.
    *
-   * Behaviour:
+   * Behaviour (see also {@link AlbumArtworkGetOptions} for the full matrix):
    * - Cache hit (positive or null): return cached entry immediately.
    * - Cache miss with `options.candidates`: iterate candidates in order,
-   *   cache + return the first positive. If all candidates yield null,
-   *   cache + return null (album exhausted — won't retry).
-   * - Cache miss without `options.candidates`: extract only `sourceFilePath`.
-   *   Cache positive; do NOT cache null (the album might still have art
-   *   reachable via a sibling we haven't seen yet).
+   *   extract the first positive. If all candidates miss, consult
+   *   `options.adapterFallback` (if provided). Cache the outcome — including
+   *   null — because all siblings have been enumerated.
+   * - Cache miss without `options.candidates`: extract only `sourceFilePath`,
+   *   then consult `options.adapterFallback` on miss. Cache positive; do NOT
+   *   cache null (the album might still have art reachable via a sibling we
+   *   haven't seen yet).
    *
-   * @returns Artwork data + hash, or `null` if no candidate yielded art.
+   * @returns Artwork data + hash, or `null` if no source yielded art.
    */
   async get(
     track: { artist: string; album: string },

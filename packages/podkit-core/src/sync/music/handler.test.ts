@@ -9,6 +9,7 @@ import type { UnifiedSyncDiff } from '../engine/content-type.js';
 import { parseSyncTag } from '../../metadata/sync-tags.js';
 import type { FFmpegTranscoder } from '../../transcode/ffmpeg.js';
 import type { DeviceCapabilities } from '@podkit/device-types';
+import { makeMockCollectionTrack, makeMockDeviceTrack } from '../../test-utils/tracks.js';
 
 // =============================================================================
 // Test Fixtures
@@ -39,42 +40,8 @@ function makeConfig(overrides: Partial<MusicSyncConfig> = {}): MusicSyncConfig {
   };
 }
 
-function makeCollectionTrack(overrides: Partial<CollectionTrack> = {}): CollectionTrack {
-  return {
-    artist: 'Test Artist',
-    title: 'Test Song',
-    album: 'Test Album',
-    fileType: 'flac',
-    filePath: '/music/test.flac',
-    lossless: true,
-    duration: 240000,
-    ...overrides,
-  } as CollectionTrack;
-}
-
-function makeDeviceTrack(overrides: Partial<DeviceTrack> = {}): DeviceTrack {
-  return {
-    artist: 'Test Artist',
-    title: 'Test Song',
-    album: 'Test Album',
-    filePath: ':iPod_Control:Music:F00:test.m4a',
-    duration: 240000,
-    bitrate: 256,
-    sampleRate: 44100,
-    size: 7680000,
-    mediaType: 0x0001, // Audio
-    hasArtwork: false,
-    hasFile: true,
-    compilation: false,
-    update: () => ({}) as DeviceTrack,
-    remove: () => {},
-    copyFile: () => ({}) as DeviceTrack,
-    setArtwork: () => ({}) as DeviceTrack,
-    setArtworkFromData: () => ({}) as DeviceTrack,
-    removeArtwork: () => ({}) as DeviceTrack,
-    ...overrides,
-  } as DeviceTrack;
-}
+const makeCollectionTrack = makeMockCollectionTrack;
+const makeDeviceTrack = makeMockDeviceTrack;
 
 // =============================================================================
 // Tests

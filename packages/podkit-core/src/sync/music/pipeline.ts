@@ -80,6 +80,14 @@ import type {
 } from '../../device/adapter.js';
 import { AlbumArtworkCache, getAlbumKey } from '../../artwork/album-cache.js';
 import { resizeArtwork } from '../../artwork/resize.js';
+import { isOggExtension } from '../../audio/containers.js';
+
+// =============================================================================
+// Container format helpers — re-exported from audio/containers.ts
+// =============================================================================
+
+/** @see audio/containers.ts for definition */
+export { isOggExtension } from '../../audio/containers.js';
 
 // =============================================================================
 // Extended Types — re-exported from types.ts (canonical definitions)
@@ -384,22 +392,6 @@ async function getTrackFilePath(
     path: track.filePath,
     isDownloaded: false,
   };
-}
-
-/**
- * Check if a file path has an OGG container extension (.opus, .ogg).
- *
- * Originally introduced because FFmpeg's OGG muxer cannot write image
- * streams (upstream tickets #4448, #9044), so the pipeline routed OGG/Opus
- * artwork through node-taglib-sharp. TASK-372 generalised that path —
- * every embedded-sink container now goes through the tag writer — so the
- * predicate is no longer used inside `transferArtwork`. Kept exported for
- * the e2e matrix's `artworkContainerRank` and for any caller that needs
- * to identify the OGG family by extension.
- */
-export function isOggExtension(filePath: string): boolean {
-  const ext = extname(filePath).toLowerCase();
-  return ext === '.opus' || ext === '.ogg';
 }
 
 /**
@@ -1659,10 +1651,17 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Execute a transcode operation
-   */
-  /**
-   * Execute a remove operation
+   * Execute a remove operation.
+   *
+   * **Live inline-completion path** — called directly by {@link executePipeline}'s
+   * downloader stage for non-file operations (`remove`, `update-metadata`,
+   * `update-sync-tag`, `relocate`). These four methods complete synchronously
+   * inside the downloader and do not enter the prepare/transfer pipeline stages.
+   *
+   * Note: the former `executeOperation`, `executeTranscode`, and `executeCopy`
+   * helper methods were deleted as dead code; these four are their still-active
+   * siblings and serve a different role (in-place database mutations, not
+   * file transfers).
    */
   private async executeRemove(
     operation: Extract<SyncOperation, { type: 'remove' }>
@@ -1690,9 +1689,12 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Execute an update-metadata operation
+   * Execute an update-metadata operation.
    *
-   * Updates iPod track metadata without transferring any files.
+   * Live inline-completion path — see {@link executeRemove} for the role of
+   * these four methods in {@link executePipeline}.
+   *
+   * Updates device track metadata without transferring any files.
    * Used for transform changes (e.g., clean artists enable/disable) where
    * only artist/title fields need updating.
    *
@@ -1770,9 +1772,12 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Execute an update-sync-tag operation
+   * Execute an update-sync-tag operation.
    *
-   * Writes a typed sync tag to the iPod track's comment field without
+   * Live inline-completion path — see {@link executeRemove} for the role of
+   * these four methods in {@link executePipeline}.
+   *
+   * Writes a typed sync tag to the device track's comment field without
    * changing any other metadata. Uses the device adapter's writeSyncTag
    * method directly.
    */
@@ -1804,7 +1809,10 @@ export class MusicPipeline implements SyncExecutor {
   }
 
   /**
-   * Execute a relocate operation
+   * Execute a relocate operation.
+   *
+   * Live inline-completion path — see {@link executeRemove} for the role of
+   * these four methods in {@link executePipeline}.
    *
    * Moves a track file to its expected path on a mass-storage device.
    * Uses fs.rename (same-filesystem, no data copy). Also applies any

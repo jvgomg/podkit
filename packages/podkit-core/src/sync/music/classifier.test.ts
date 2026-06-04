@@ -1,24 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { MusicTrackClassifier, classifierFromConfig } from './classifier.js';
 import type { ClassifierContext } from './classifier.js';
-import type { CollectionTrack } from '../../adapters/interface.js';
+import { makeMockCollectionTrack } from '../../test-utils/tracks.js';
 
 // =============================================================================
 // Test Fixtures
 // =============================================================================
 
-function makeTrack(overrides: Partial<CollectionTrack> = {}): CollectionTrack {
-  return {
-    artist: 'Test Artist',
-    title: 'Test Song',
-    album: 'Test Album',
-    fileType: 'flac',
-    filePath: '/music/test.flac',
-    lossless: true,
-    duration: 240000,
-    ...overrides,
-  } as CollectionTrack;
-}
+const makeTrack = makeMockCollectionTrack;
 
 function makeContext(overrides: Partial<ClassifierContext> = {}): ClassifierContext {
   return {

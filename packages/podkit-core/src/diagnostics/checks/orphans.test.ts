@@ -5,7 +5,7 @@
  * and repair, with only the IpodDatabase mocked.
  */
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,39 +14,12 @@ import { orphanFilesCheck } from './orphans.js';
 import type { DiagnosticContext, RepairContext } from '../types.js';
 import type { IpodTrack } from '../../ipod/types.js';
 import type { IpodDatabase } from '../../ipod/database.js';
+import { makeMockIpodTrack } from '../../test-utils/tracks.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 function makeTrack(filePath: string): IpodTrack {
-  return {
-    title: 'Test Track',
-    artist: 'Test Artist',
-    album: 'Test Album',
-    syncTag: null,
-    duration: 180000,
-    bitrate: 256,
-    sampleRate: 44100,
-    size: 5000000,
-    mediaType: 1,
-    filePath,
-    timeAdded: 0,
-    timeModified: 0,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
-    hasArtwork: false,
-    hasFile: true,
-    compilation: false,
-    artworkSink: 'database',
-    update: mock(() => ({}) as IpodTrack),
-    remove: mock(() => {}),
-    copyFile: mock(() => ({}) as IpodTrack),
-    setArtwork: mock(() => ({}) as IpodTrack),
-    setArtworkFromData: mock(() => ({}) as IpodTrack),
-    removeArtwork: mock(() => ({}) as IpodTrack),
-  } as IpodTrack;
+  return makeMockIpodTrack({ filePath });
 }
 
 function makeMockDb(tracks: IpodTrack[]): IpodDatabase {

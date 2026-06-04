@@ -63,6 +63,7 @@ function buildMusicDryRunOutput(ctx: {
     forceMetadata: false,
     checkArtwork: false,
     transcoder: null as never,
+    effectiveCodecPreference: { lossy: [], lossless: [] },
   };
   return presenter.buildDryRunJson(
     ctx.out,

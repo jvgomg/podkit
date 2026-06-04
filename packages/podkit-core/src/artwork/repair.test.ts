@@ -18,6 +18,7 @@ import type { RebuildDependencies, RebuildProgress } from './repair.js';
 import { rebuildArtworkDatabase, resetArtworkDatabase } from './repair.js';
 import { hashArtwork } from './hash.js';
 import type { ExtractedArtwork } from './types.js';
+import { makeMockIpodTrack, makeMockCollectionTrack } from '../test-utils/tracks.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -29,36 +30,16 @@ function makeIpodTrack(overrides: {
   comment?: string;
   hasArtwork?: boolean;
 }): IpodTrack {
-  return {
-    title: overrides.title,
-    artist: overrides.artist,
-    album: overrides.album,
-    comment: overrides.comment,
-    syncTag: null,
-    duration: 180000,
-    bitrate: 256,
-    sampleRate: 44100,
-    size: 5000000,
-    mediaType: 1,
-    filePath: ':iPod_Control:Music:F00:test.m4a',
-    timeAdded: 0,
-    timeModified: 0,
-    timePlayed: 0,
-    timeReleased: 0,
-    playCount: 0,
-    skipCount: 0,
-    rating: 0,
+  return makeMockIpodTrack({
+    ...overrides,
     hasArtwork: overrides.hasArtwork ?? true,
-    hasFile: true,
-    compilation: false,
-    artworkSink: 'database',
     update: mock(() => ({}) as IpodTrack),
     remove: mock(() => {}),
     copyFile: mock(() => ({}) as IpodTrack),
     setArtwork: mock(() => ({}) as IpodTrack),
     setArtworkFromData: mock(() => ({}) as IpodTrack),
     removeArtwork: mock(() => ({}) as IpodTrack),
-  } as IpodTrack;
+  });
 }
 
 /** Create a minimal mock CollectionTrack */
@@ -68,14 +49,13 @@ function makeCollectionTrack(overrides: {
   album: string;
   filePath?: string;
 }): CollectionTrack {
-  return {
+  return makeMockCollectionTrack({
     id: `${overrides.artist}-${overrides.title}`,
     title: overrides.title,
     artist: overrides.artist,
     album: overrides.album,
     filePath: overrides.filePath ?? `/music/${overrides.artist}/${overrides.title}.flac`,
-    fileType: 'flac' as const,
-  } as CollectionTrack;
+  });
 }
 
 /** Create a mock CollectionAdapter */

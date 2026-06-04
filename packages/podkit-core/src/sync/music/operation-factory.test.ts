@@ -1,49 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { MusicOperationFactory } from './operation-factory.js';
-import type { CollectionTrack } from '../../adapters/interface.js';
-import type { DeviceTrack } from '../../device/adapter.js';
 import type { MusicAction } from './classifier.js';
+import { makeMockCollectionTrack, makeMockDeviceTrack } from '../../test-utils/tracks.js';
 
 // =============================================================================
 // Test Fixtures
 // =============================================================================
 
-function makeCollectionTrack(overrides: Partial<CollectionTrack> = {}): CollectionTrack {
-  return {
-    artist: 'Test Artist',
-    title: 'Test Song',
-    album: 'Test Album',
-    fileType: 'flac',
-    filePath: '/music/test.flac',
-    lossless: true,
-    duration: 240000,
-    ...overrides,
-  } as CollectionTrack;
-}
-
-function makeDeviceTrack(overrides: Partial<DeviceTrack> = {}): DeviceTrack {
-  return {
-    artist: 'Test Artist',
-    title: 'Test Song',
-    album: 'Test Album',
-    filePath: ':iPod_Control:Music:F00:test.m4a',
-    duration: 240000,
-    bitrate: 256,
-    sampleRate: 44100,
-    size: 7680000,
-    mediaType: 0x0001,
-    hasArtwork: false,
-    hasFile: true,
-    compilation: false,
-    update: () => ({}) as DeviceTrack,
-    remove: () => {},
-    copyFile: () => ({}) as DeviceTrack,
-    setArtwork: () => ({}) as DeviceTrack,
-    setArtworkFromData: () => ({}) as DeviceTrack,
-    removeArtwork: () => ({}) as DeviceTrack,
-    ...overrides,
-  } as DeviceTrack;
-}
+const makeCollectionTrack = makeMockCollectionTrack;
+const makeDeviceTrack = makeMockDeviceTrack;
 
 // =============================================================================
 // Tests
