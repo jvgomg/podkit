@@ -56,6 +56,7 @@ import {
 } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
+import { withCleanOptions } from '../utils/option-source.js';
 
 /**
  * Error codes emitted by `podkit sync`.
@@ -545,38 +546,13 @@ export const syncCommand = new Command('sync')
   .option('--check-artwork', 'detect artwork changes by comparing content hashes')
   .option('--delete', 'remove tracks from device not in source')
   .option('--eject', 'eject device after successful sync')
-  .action(async (options: SyncOptions, command) => {
-    const { config, globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts, config);
-    // Strip option values whose source is `default` (commander synthesises
-    // `true` for un-passed `--no-X` flags, which would otherwise look like
-    // user intent and override the config file). Only fields whose source is
-    // the actual CLI invocation reach `runSync`.
-    const cleaned = stripDefaultOptionValues(options, command);
-    await runAction(out, () => runSync(cleaned, out));
-  });
-
-/**
- * Drop properties from `options` whose value came from commander's option
- * defaults rather than the user's CLI invocation. This is the only way to
- * disambiguate `--no-flag` (user said off → `false`) from "user said
- * nothing, default fired" (which commander also reports as `true` for
- * `--no-X` patterns). The synthetic default would otherwise win against
- * config-file values during merging.
- */
-export function stripDefaultOptionValues(
-  options: SyncOptions,
-  command: { getOptionValueSource?: (name: string) => string | undefined }
-): SyncOptions {
-  if (typeof command.getOptionValueSource !== 'function') return options;
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(options)) {
-    if (command.getOptionValueSource(key) !== 'default') {
-      out[key] = value;
-    }
-  }
-  return out as SyncOptions;
-}
+  .action(
+    withCleanOptions(async (options: SyncOptions) => {
+      const { config, globalOpts } = getContext();
+      const out = OutputContext.fromGlobalOpts(globalOpts, config);
+      await runAction(out, () => runSync(options, out));
+    })
+  );
 
 /**
  * Dependency injection seam for `runSync`. Tests pass stubs to avoid real

@@ -32,6 +32,7 @@ import type { DeviceConfig } from '../config/types.js';
 import { OutputContext } from '../output/index.js';
 import { CliError, runAction, type CliErrorOutput } from '../errors.js';
 import { loadCoreOrFail, type CoreLoaderDeps } from '../handler-deps.js';
+import { withCleanOptions } from '../utils/option-source.js';
 
 /**
  * Error codes emitted by `podkit doctor`.
@@ -310,11 +311,13 @@ export const doctorCommand = new Command('doctor')
       'restrict checks: system-only (no device required), device-only (requires -d), or all (default)'
     ).choices(['system', 'device', 'all'])
   )
-  .action(async (options: DoctorOptions) => {
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
-    await runAction(out, () => runDoctorAction(options, out));
-  });
+  .action(
+    withCleanOptions(async (options: DoctorOptions) => {
+      const { globalOpts } = getContext();
+      const out = OutputContext.fromGlobalOpts(globalOpts);
+      await runAction(out, () => runDoctorAction(options, out));
+    })
+  );
 
 /**
  * Body of the `podkit doctor` action callback, extracted so the flag-matrix

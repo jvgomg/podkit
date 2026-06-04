@@ -19,6 +19,7 @@ import { setLogger as setFirmwareLogger } from '@podkit/ipod-firmware';
 import { loadConfig, DEFAULT_CONFIG_PATH } from './config/index.js';
 import type { GlobalOptions } from './config/index.js';
 import { setContext } from './context.js';
+import { stripDefaultOptionValues } from './utils/option-source.js';
 
 declare const PODKIT_VERSION: string | undefined;
 
@@ -77,27 +78,24 @@ program.hook('preAction', (thisCommand, actionCommand) => {
     });
   }
 
-  // Get command-specific options that affect config.
+  // Get command-specific options that affect config. The strip drops
+  // Commander's synthesised defaults (e.g. the `true` value `--no-X`
+  // publishes when the user didn't pass `--no-X`) so they don't beat the
+  // user's TOML at the loader's merge layer. See utils/option-source.ts
+  // for the full rationale.
   //
-  // Commander synthesises a default `true` for negated boolean flags
-  // (`--no-X` populates `opts.X === true` even when the user didn't pass
-  // `--no-X`). Forwarding that synthetic default into the config merge would
-  // silently override an `artwork = false` line in the user's config file
-  // every time the sync command runs. Filter to options whose value source
-  // is the actual CLI invocation; defaults stay out.
-  const rawOpts = actionCommand.opts() as Record<string, unknown>;
-  const cliBoolean = (name: string): boolean | undefined => {
-    if (actionCommand.getOptionValueSource?.(name) !== 'cli') return undefined;
-    return rawOpts[name] as boolean;
-  };
-  const cliString = (name: string): string | undefined => {
-    if (actionCommand.getOptionValueSource?.(name) !== 'cli') return undefined;
-    return rawOpts[name] as string;
-  };
+  // Only the three keys `loadConfig`'s `commandOpts` parameter accepts
+  // (`quality`, `artwork`, `skipUpgrades`) are cherry-picked here. Adding
+  // a new command-level config override means updating both this list and
+  // the `LoadConfigCommandOpts`-shaped argument in `config/loader.ts`.
+  const rawOpts = stripDefaultOptionValues(
+    actionCommand.opts() as Record<string, unknown>,
+    actionCommand
+  );
   const commandOpts = {
-    quality: cliString('quality'),
-    artwork: cliBoolean('artwork'),
-    skipUpgrades: cliBoolean('skipUpgrades'),
+    quality: rawOpts.quality as string | undefined,
+    artwork: rawOpts.artwork as boolean | undefined,
+    skipUpgrades: rawOpts.skipUpgrades as boolean | undefined,
   };
 
   // Load and merge config from all sources

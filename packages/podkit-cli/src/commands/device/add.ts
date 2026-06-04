@@ -36,6 +36,7 @@ import type { DeviceConfig } from '../../config/index.js';
 import { DeviceErrorCodes } from './error-codes.js';
 import { formatIFlashEvidence, formatIFlashMountExplanation, resolveDeviceName } from './shared.js';
 import type { DeviceAddOutput } from './output-types.js';
+import { stripDefaultOptionValues } from '../../utils/option-source.js';
 import { printCapabilitySummary, confirmUnsupportedDeviceAdd } from './capability-summary.js';
 
 const SYSINFO_MISSING_PROMPT_LINES = [
@@ -172,11 +173,21 @@ export const addSubcommand = new Command('add')
     '--tv-shows-dir <name>',
     'TV shows directory name on device (default: Video/Shows, mass-storage only)'
   )
-  .action(async (positionalName: string | undefined, options: AddOptions & { path?: string }) => {
-    const { globalOpts } = getContext();
-    const out = OutputContext.fromGlobalOpts(globalOpts);
-    await runAction(out, () => runDeviceAdd({ ...options, name: positionalName }, out));
-  });
+  .action(
+    async (
+      positionalName: string | undefined,
+      options: AddOptions & { path?: string },
+      command
+    ) => {
+      const { globalOpts } = getContext();
+      const out = OutputContext.fromGlobalOpts(globalOpts);
+      // Drop Commander's synthesised `--no-X` defaults so unspecified flags
+      // don't silently write `artwork: true` (etc.) into the new device
+      // config on every `device add` run.
+      const cleaned = stripDefaultOptionValues(options, command);
+      await runAction(out, () => runDeviceAdd({ ...cleaned, name: positionalName }, out));
+    }
+  );
 
 /**
  * Dependency injection seam for `runDeviceAdd`. Tests pass stubs to avoid

@@ -9,8 +9,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildArtworkScaleFilter, resizeArtwork } from './resize.js';
 
-/** Read pix_fmt of the first video stream in a JPEG buffer via ffprobe. */
-function probePixFmt(data: Buffer): string {
+/**
+ * Probe a JPEG buffer via ffprobe. Returns `pix_fmt`, `width`, and `height`
+ * of the first video stream. Used by the resize tests so the assertions
+ * actually verify what FFmpeg produced, not just that the bytes parse as
+ * JPEG — magic-byte checks let regressions slip through (an upscaled image
+ * is still a valid JPEG).
+ */
+function probeImage(data: Buffer): { pixFmt: string; width: number; height: number } {
   const tmpfile = join(tmpdir(), `podkit-resize-test-${process.pid}-${Date.now()}.jpg`);
   writeFileSync(tmpfile, data);
   try {
@@ -22,14 +28,19 @@ function probePixFmt(data: Buffer): string {
         '-select_streams',
         'v:0',
         '-show_entries',
-        'stream=pix_fmt',
+        'stream=pix_fmt,width,height',
         '-of',
         'csv=p=0',
         tmpfile,
       ],
       { encoding: 'utf-8' }
     );
-    return out.trim();
+    // ffprobe always emits stream attributes in the fixed order
+    // `width,height,pix_fmt` under `-of csv=p=0`, regardless of the order
+    // requested via `-show_entries`. Don't reorder the destructure based on
+    // the request string — it'll silently misalign.
+    const [w, h, pf] = out.trim().split(',');
+    return { pixFmt: pf!, width: parseInt(w!, 10), height: parseInt(h!, 10) };
   } finally {
     unlinkSync(tmpfile);
   }
@@ -120,6 +131,13 @@ describe('resizeArtwork', () => {
 
     // Should be smaller than original
     expect(resized.length).toBeLessThan(largeImage.length);
+
+    // Largest dim landed at the cap; the other followed aspect ratio.
+    const { width, height } = probeImage(resized);
+    expect(Math.max(width, height)).toBeLessThanOrEqual(300);
+    // 800x600 → 300x225 (kept aspect ratio); allow ±1 for even-divisible-by-2 rounding.
+    expect(width).toBe(300);
+    expect(Math.abs(height - 225)).toBeLessThanOrEqual(1);
   });
 
   test('does not upscale a small image', async () => {
@@ -129,6 +147,13 @@ describe('resizeArtwork', () => {
     // Output should still be valid JPEG
     expect(resized[0]).toBe(0xff);
     expect(resized[1]).toBe(0xd8);
+
+    // The scale filter clamps to `min(maxDim, iw/ih)`, so a 100x100 source
+    // must land at 100x100 even with maxDim=600. Without dimension probing
+    // an upscaling regression would slip past the magic-byte assertions.
+    const { width, height } = probeImage(resized);
+    expect(width).toBe(100);
+    expect(height).toBe(100);
   });
 
   test('handles PNG input and outputs JPEG', async () => {
@@ -138,17 +163,22 @@ describe('resizeArtwork', () => {
     // Output should be JPEG regardless of input format
     expect(resized[0]).toBe(0xff);
     expect(resized[1]).toBe(0xd8);
+    expect(probeImage(resized).width).toBe(200);
   });
 
-  test('preserves aspect ratio', async () => {
-    // 800x400 image scaled to max 300 should become 300x150 (or close, with even rounding)
+  test('preserves aspect ratio (downscales wider images proportionally)', async () => {
+    // 800x400 image scaled to max 300 should become 300x150.
     const wideImage = generateTestJpeg(800, 400);
     const resized = await resizeArtwork(wideImage, 300);
 
-    // Just verify it's a valid, non-empty JPEG
     expect(resized[0]).toBe(0xff);
     expect(resized[1]).toBe(0xd8);
-    expect(resized.length).toBeGreaterThan(100);
+
+    const { width, height } = probeImage(resized);
+    expect(width).toBe(300);
+    expect(Math.abs(height - 150)).toBeLessThanOrEqual(1);
+    // Aspect ratio held to within a percent (rounding tolerance).
+    expect(Math.abs(width / height - 2.0)).toBeLessThan(0.05);
   });
 
   test('forces yuvj420p chroma even when source is yuvj444p', async () => {
@@ -156,10 +186,10 @@ describe('resizeArtwork', () => {
     // routes through resizeArtwork(), so the chroma conversion has to happen
     // here — the transcode-time embed filter is bypassed.
     const sourceJpeg = generateYuvj444pJpeg(400, 400);
-    expect(probePixFmt(sourceJpeg)).toBe('yuvj444p');
+    expect(probeImage(sourceJpeg).pixFmt).toBe('yuvj444p');
 
     const resized = await resizeArtwork(sourceJpeg, 200);
-    expect(probePixFmt(resized)).toBe('yuvj420p');
+    expect(probeImage(resized).pixFmt).toBe('yuvj420p');
   });
 });
 

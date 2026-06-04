@@ -2,9 +2,9 @@
  * Unit tests for the `sync` runner.
  *
  * The full sync flow is exercised end-to-end against real fixtures in
- * `sync.integration.test.ts`. These tests target the deps seam added in
- * TASK-315 — they confirm short-circuit paths (validation + core-load
- * failure) without performing a real USB walk.
+ * `sync.integration.test.ts`. These tests target the dependency-injection
+ * seam on `runSync` — they confirm the short-circuit paths (validation,
+ * core-load failure) without performing a real USB walk.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'bun:test';
@@ -144,7 +144,7 @@ describe('runSync: validation + deps seam', () => {
     expect(err.error).toContain('mock failure');
   });
 
-  it('refuses cleanly with DEVICE_UNSUPPORTED when cascade resolves to an unsupported generation (TASK-317.03)', async () => {
+  it('refuses cleanly with DEVICE_UNSUPPORTED when cascade resolves to an unsupported generation', async () => {
     const ctx = makeContext(sharedSourceDir);
     const { out, stdout, exitCode } = makeOut();
 
@@ -192,7 +192,9 @@ describe('runSync: validation + deps seam', () => {
     const err = stdout.json<ErrJson>();
     expect(err.code).toBe(SyncErrorCodes.DEVICE_UNSUPPORTED);
     expect(err.error).toContain('iPod nano (7th Generation) is not supported');
-    // Wording NEVER mentions libgpod (TASK-317.03 rule).
+    // Error wording must surface the unsupported-device reason without
+    // mentioning libgpod; the latter is an internal detail and would
+    // confuse end users running into this on an iPod nano 7g.
     expect(err.error.toLowerCase()).not.toContain('libgpod');
     // No track plan generated.
     expect(openedDevice).toBe(false);
