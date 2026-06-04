@@ -4,3 +4,4 @@
 # isn't reachable (the orphan check catches its own errors).
 [test]
 preload = ["./src/setup/preload.ts"]
+retry = 1

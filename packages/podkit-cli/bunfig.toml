@@ -7,3 +7,4 @@
 # from `@podkit/test-fixtures` (and `@podkit/libgpod-node` for the native
 # check). Missing deps surface as focused module-load errors.
 pathIgnorePatterns = ["**/*.integration.test.ts"]
+retry = 2

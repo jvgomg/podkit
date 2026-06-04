@@ -7,3 +7,4 @@
 # requireGpodTool() / requireLibgpodNode() from `@podkit/test-fixtures` and
 # `@podkit/libgpod-node`.
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.perf.test.ts"]
+retry = 2

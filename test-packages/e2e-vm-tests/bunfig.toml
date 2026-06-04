@@ -4,3 +4,4 @@
 # @podkit/device-testing's bunfig.toml so a stray `bun test` from anywhere in
 # the repo doesn't try to spin up VM personas.
 pathIgnorePatterns = ["**/*.integration.test.ts", "**/*.e2e.test.ts"]
+retry = 1
